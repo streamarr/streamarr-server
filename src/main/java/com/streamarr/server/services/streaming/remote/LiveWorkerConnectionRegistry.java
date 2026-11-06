@@ -836,6 +836,8 @@ final class LiveWorkerConnectionRegistry {
       }
       case StartReportFollowUp.WarnOfMissingEncoders _ ->
           warnIfMissingEncoders(workerId, connection);
+      case StartReportFollowUp.PublishHardwareEncoderFailure(var job) ->
+          publishHardwareEncoderFailedEvent(job);
     }
   }
 
@@ -843,6 +845,8 @@ final class LiveWorkerConnectionRegistry {
     record None() implements StartReportFollowUp {}
 
     record WarnOfMissingEncoders() implements StartReportFollowUp {}
+
+    record PublishHardwareEncoderFailure(VariantJob job) implements StartReportFollowUp {}
   }
 
   private Optional<WorkerConnection> currentConnection(UUID workerId, UUID workerSessionId) {
@@ -1642,6 +1646,22 @@ final class LiveWorkerConnectionRegistry {
         return new StartReportFollowUp.None();
       }
 
+      var softwareInPlace = reported.filter(backend -> isSoftwareEncoderInPlaceOf(backend, pinned));
+      if (softwareInPlace.isPresent()) {
+        // The variant keeps the hardware pin of its first attempt, so it continues in software in
+        // a new format attempt rather than on this attempt's output.
+        markHardwareEncoderFailure(job);
+        tryStop(jobAttemptId);
+        log.info(
+            "Worker session {} started job attempt {} on {} instead of the withdrawn {}; the"
+                + " variant continues in software",
+            workerSessionId,
+            jobAttemptId,
+            softwareInPlace.get().encoder(),
+            pinned.encoder());
+        return new StartReportFollowUp.PublishHardwareEncoderFailure(job);
+      }
+
       var stopped = tryStop(jobAttemptId);
       // The worker runs another encoder than it advertised, so no later attempt may rely on the
       // advertisement, including a replacement attempt of this variant.
@@ -1661,6 +1681,15 @@ final class LiveWorkerConnectionRegistry {
       }
 
       return new StartReportFollowUp.WarnOfMissingEncoders();
+    }
+
+    // A job sent for a hardware encoder carries no software flag, so a worker that withdrew that
+    // encoder before it read the job runs it on its software encoder of the family (ADR 0044).
+    private boolean isSoftwareEncoderInPlaceOf(EncoderBackend reported, EncoderBackend pinned) {
+      return pinned.kind() == EncoderBackend.Kind.HARDWARE
+          && Optional.ofNullable(softwareEncoders.get(pinned.codecFamily()))
+              .filter(software -> software.backend().equals(reported))
+              .isPresent();
     }
 
     // Unsynchronized: the start report that releases the wait takes this connection's monitor.

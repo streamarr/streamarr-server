@@ -2,8 +2,11 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.keyframeVerifiedHardwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,21 +31,26 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
+import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
+import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
 import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.VideoEncodersChanged;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
+import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -92,6 +100,7 @@ class HeldSegmentRequestConcurrencyIT {
   @TempDir Path tempDir;
 
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+  private final CapturingEventPublisher deliveryEvents = new CapturingEventPublisher();
   private PausingSegmentStore segmentStore;
   private WorkerSessionServer server;
   private LoopbackVariantWorker worker;
@@ -128,6 +137,7 @@ class HeldSegmentRequestConcurrencyIT {
                     .build())
             .runtimeRegistry(registry)
             .heldRequests(server.heldSegmentRequests())
+            .eventPublisher(deliveryEvents)
             .build();
   }
 
@@ -284,6 +294,52 @@ class HeldSegmentRequestConcurrencyIT {
     assertThat(transcodeExecutor.looks()).isZero();
     segmentStore.releasePublication();
     upload.get(BOUND.toSeconds(), TimeUnit.SECONDS);
+  }
+
+  // The worker withdrew NVENC before it read a job sent for NVENC without the software flag, so it
+  // ran the job on its software encoder, as the contract lets it (ADR 0044).
+  @Test
+  @DisplayName(
+      "Should continue the held request's variant in software when its worker starts a job sent"
+          + " for a hardware encoder that the worker withdrew")
+  void shouldContinueTheHeldVariantInSoftwareWhenItsWorkerStartsAWithdrawnHardwareJobInSoftware()
+      throws Exception {
+    var libx264 =
+        softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264").toBuilder()
+            .setKeyframeVerified(true)
+            .build();
+    try (var encodingWorker =
+        LoopbackVariantWorker.register(
+            server.port(),
+            UUID.randomUUID(),
+            WorkerCapabilities.newBuilder()
+                .addVideoEncoders(
+                    keyframeVerifiedHardwareEncoder(
+                        VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc"))
+                .addSoftwareVideoEncoders(libx264))) {
+      var session =
+          defaultLadderSessionBuilder().sourcePath(SOURCE_ROOT.resolve("movie.mkv")).build();
+      registry.save(session);
+      startedSessionIds.add(session.getSessionId());
+      rig.lifecycle().startFirstListedVariant(session);
+      var job = encodingWorker.nextJob();
+      var delivery =
+          requests.submit(
+              () -> rig.coordinator().deliver(session.getSessionId(), "480p", "480p/segment0.m4s"));
+      transcodeExecutor.awaitLooks(1);
+
+      encodingWorker.offerEncoders(libx264);
+      encodingWorker.reportStarted(job, libx264);
+
+      assertThat(delivery.get(BOUND.toSeconds(), TimeUnit.SECONDS))
+          .isInstanceOf(SegmentDelivery.Unrecoverable.class);
+      assertThat(deliveryEvents.getEventsOfType(RequestedVariantHardwareEncoderFailedEvent.class))
+          .containsExactly(
+              RequestedVariantHardwareEncoderFailedEvent.builder()
+                  .streamSessionId(session.getSessionId())
+                  .variantLabel("480p")
+                  .build());
+    }
   }
 
   private enum RaceOrder {
@@ -569,11 +625,11 @@ class HeldSegmentRequestConcurrencyIT {
         new LinkedBlockingQueue<>();
     private WorkerSessionAccepted session;
 
-    private LoopbackVariantWorker(int port) {
-      channel = plaintextChannelBuilder(port, WORKER_ID).build();
+    private LoopbackVariantWorker(int port, UUID workerId) {
+      channel = plaintextChannelBuilder(port, workerId).build();
       identity =
           WorkerIdentity.newBuilder()
-              .setWorkerId(toProto(WORKER_ID))
+              .setWorkerId(toProto(workerId))
               .setBootId(toProto(UUID.randomUUID()))
               .build();
       requests =
@@ -598,15 +654,20 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     private static LoopbackVariantWorker register(int port) throws InterruptedException {
-      var worker = new LoopbackVariantWorker(port);
+      return register(port, WORKER_ID, WorkerCapabilities.newBuilder());
+    }
+
+    private static LoopbackVariantWorker register(
+        int port, UUID workerId, WorkerCapabilities.Builder capabilities)
+        throws InterruptedException {
+      var worker = new LoopbackVariantWorker(port, workerId);
       worker.requests.onNext(
           EstablishWorkerSessionRequest.newBuilder()
               .setRegistration(
                   WorkerRegistration.newBuilder()
                       .setWorker(worker.identity)
                       .setCapabilities(
-                          WorkerCapabilities.newBuilder()
-                              .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID)))
+                          capabilities.addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID)))
                       .setAvailableSlots(4))
               .build());
       worker.session = worker.nextResponse().getSessionAccepted();
@@ -684,6 +745,25 @@ class HeldSegmentRequestConcurrencyIT {
           .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4)
           .setContentLengthBytes(data.length)
           .build();
+    }
+
+    // The server reads the session's events in order, so the change applies before a later start.
+    private void offerEncoders(WorkerVerifiedVideoEncoder... encoders) {
+      requests.onNext(
+          EstablishWorkerSessionRequest.newBuilder()
+              .setVideoEncodersChanged(
+                  VideoEncodersChanged.newBuilder().addAllVideoEncoders(List.of(encoders)))
+              .build());
+    }
+
+    private void reportStarted(VariantJob job, WorkerVerifiedVideoEncoder encoder) {
+      requests.onNext(
+          EstablishWorkerSessionRequest.newBuilder()
+              .setJobAttemptStarted(
+                  JobAttemptStarted.newBuilder()
+                      .setJobAttemptId(job.getJobAttemptId())
+                      .setEncoderBackend(encoder.getBackend()))
+              .build());
     }
 
     private void reportFailed(VariantJob job) {

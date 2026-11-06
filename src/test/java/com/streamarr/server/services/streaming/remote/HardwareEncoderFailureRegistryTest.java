@@ -16,6 +16,7 @@ import com.streamarr.server.services.streaming.events.HardwareEncoderFailedEvent
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
+import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
@@ -82,11 +83,12 @@ class HardwareEncoderFailureRegistryTest {
           .build();
 
   private final CapturingEventPublisher events = new CapturingEventPublisher();
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final LiveWorkerConnectionRegistry registry =
       LiveWorkerConnectionRegistry.builder()
           .eventPublisher(events)
           .configuration(WorkerSessionServerConfiguration.builder().build())
-          .meterRegistry(new SimpleMeterRegistry())
+          .meterRegistry(meterRegistry)
           .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
           .build();
 
@@ -398,6 +400,48 @@ class HardwareEncoderFailureRegistryTest {
     assertThat(registry.hasHardwareEncoderFailed(streamSessionId, "480p")).isFalse();
     registry.destroyStreamSession(streamSessionId);
     assertThat(registry.hasHardwareEncoderFailed(streamSessionId, "720p")).isFalse();
+  }
+
+  // The worker withdrew NVENC before it read a job sent for NVENC without the software flag, so it
+  // ran the job on its software encoder, as the contract lets it (ADR 0044).
+  @Test
+  @DisplayName(
+      "Should mark and publish the hardware encoder failure when a worker that withdrew its"
+          + " hardware encoder starts a job sent for it on the software encoder")
+  void shouldMarkAndPublishTheHardwareEncoderFailureWhenAWithdrawnHardwareJobStartsInSoftware() {
+    var workerId = UUID.randomUUID();
+    var workerSessionId =
+        registry.register(
+            workerId, nvencWorker(workerId, 2), collecting(new CopyOnWriteArrayList<>()));
+    var job = h264Encode(false);
+    var streamSessionId = fromProto(job.getStreamSessionId());
+    registry.dispatch(job);
+    registry.changeVideoEncoders(
+        workerId,
+        workerSessionId,
+        VideoEncodersChanged.newBuilder().addVideoEncoders(LIBX264).build());
+
+    registry.checkReportedEncoderBackend(workerId, workerSessionId, startedOn(job, LIBX264));
+
+    assertThat(registry.hasHardwareEncoderFailed(streamSessionId, "720p")).isTrue();
+    assertThat(registry.isRunning(streamSessionId, "720p")).isFalse();
+    assertThat(events.getEventsOfType(HardwareEncoderFailedEvent.class))
+        .containsExactly(
+            HardwareEncoderFailedEvent.builder()
+                .streamSessionId(streamSessionId)
+                .jobAttemptId(fromProto(job.getJobAttemptId()))
+                .variantLabel("720p")
+                .build());
+    assertThat(
+            meterRegistry.get("streamarr.streaming.encoder_backend_mismatches").counter().count())
+        .isZero();
+  }
+
+  private static JobAttemptStarted startedOn(VariantJob job, WorkerVerifiedVideoEncoder encoder) {
+    return JobAttemptStarted.newBuilder()
+        .setJobAttemptId(job.getJobAttemptId())
+        .setEncoderBackend(encoder.getBackend())
+        .build();
   }
 
   private static WorkerRegistration nvencWorker(UUID workerId, int slots) {
