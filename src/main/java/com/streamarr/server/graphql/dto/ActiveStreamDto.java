@@ -17,6 +17,7 @@ public record ActiveStreamDto(
     Integer positionSeconds,
     String state,
     PlaybackDecisionDto decision,
+    MediaTimeRangeDto producedRange,
     List<String> workers) {
 
   public record ProfileDto(String id, String name) {}
@@ -35,6 +36,7 @@ public record ActiveStreamDto(
         .positionSeconds(timeline.map(PlaybackSnapshot::positionSeconds).orElse(null))
         .state(timeline.map(snapshot -> snapshot.state().name()).orElse(null))
         .decision(stream.decision().map(PlaybackDecisionDto::from).orElse(null))
+        .producedRange(stream.producedRange().map(MediaTimeRangeDto::from).orElse(null))
         .workers(stream.workers())
         .build();
   }

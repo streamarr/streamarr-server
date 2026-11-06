@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.streaming.MediaTimeRange;
 import com.streamarr.server.domain.streaming.PlaybackSnapshot;
 import java.util.List;
 import java.util.Optional;
@@ -25,6 +26,7 @@ public record ActiveStream(
     @NonNull Optional<BaseCollectable<?>> media,
     @NonNull Optional<PlaybackSnapshot> timeline,
     @NonNull Optional<PlaybackDecision> decision,
+    @NonNull Optional<MediaTimeRange> producedRange,
     @NonNull List<String> workers) {
 
   public ActiveStream {

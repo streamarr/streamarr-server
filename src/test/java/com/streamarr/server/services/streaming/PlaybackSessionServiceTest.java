@@ -56,7 +56,10 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.events.watchprogress.StreamSessionTimelineReportedEvent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
+import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
+import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedEvent;
+import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
@@ -406,6 +409,55 @@ class PlaybackSessionServiceTest {
         new StreamSessionTimelineReportedEvent(UUID.randomUUID()));
 
     assertThat(events.getEventsOfType(PlaybackSessionChangedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce that the produced range may have moved when the replacement format attempt's"
+          + " stream session stores a media segment")
+  void shouldAnnounceThatTheProducedRangeMayHaveMovedWhenTheReplacementStoresAMediaSegment() {
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+    service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+    var replacement = streams.createdCommands.getLast().streamSessionId();
+    events.clear();
+
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(replacement));
+
+    assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class))
+        .containsExactly(new ProducedRangeMayHaveMovedEvent(initial.playbackSessionId()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce nothing when a retired format attempt's or an unknown stream session stores a"
+          + " media segment")
+  void shouldAnnounceNothingWhenARetiredOrUnknownStreamSessionStoresAMediaSegment() {
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+    var retired = initial.currentFormatAttempt().streamSessionId();
+    service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+    events.clear();
+
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(retired));
+    service.onMediaSegmentStored(new MediaSegmentStoredEvent(UUID.randomUUID()));
+
+    assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce that the produced range may have moved when the current format attempt's"
+          + " stream session changes its requested variant")
+  void shouldAnnounceThatTheProducedRangeMayHaveMovedWhenTheStreamChangesItsRequestedVariant() {
+    var playback = accepted(service.start(startCommand().build()));
+    var stream = playback.currentFormatAttempt().streamSessionId();
+
+    service.onRequestedVariantChanged(new RequestedVariantChangedEvent(stream));
+    service.onRequestedVariantChanged(new RequestedVariantChangedEvent(UUID.randomUUID()));
+
+    assertThat(events.getEventsOfType(ProducedRangeMayHaveMovedEvent.class))
+        .containsExactly(new ProducedRangeMayHaveMovedEvent(playback.playbackSessionId()));
   }
 
   @Test

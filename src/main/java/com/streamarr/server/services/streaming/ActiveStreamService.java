@@ -5,6 +5,7 @@ import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.streaming.MediaTimeRange;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -14,6 +15,7 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -39,6 +41,7 @@ public class ActiveStreamService {
   private final AuthorizationService authorizationService;
   private final PlaybackSessionService playbackSessions;
   private final TranscodeExecutor transcodeExecutor;
+  private final ProducerLifecycleService producerLifecycle;
   private final ProfileRepository profileRepository;
   private final AuthSessionRepository authSessionRepository;
   private final MediaFileRepository mediaFileRepository;
@@ -66,6 +69,18 @@ public class ActiveStreamService {
         .activity(playbackSessionId)
         .filter(ActiveStreamService::isActive)
         .map(activity -> describe(List.of(activity)).getFirst());
+  }
+
+  /**
+   * The produced range of the playback session's active stream, or empty when it has none or the
+   * stream ended or failed. The caller has already required a ServerAdmin.
+   */
+  public Optional<MediaTimeRange> producedRange(@NonNull UUID playbackSessionId) {
+    return playbackSessions
+        .activity(playbackSessionId)
+        .filter(ActiveStreamService::isActive)
+        .flatMap(ActiveStreamService::readySession)
+        .flatMap(this::producedRangeOf);
   }
 
   // A failed playback session plays nothing, though its client has not closed it yet.
@@ -106,6 +121,7 @@ public class ActiveStreamService {
         .media(Optional.ofNullable(media.get(activity.mediaFileId())))
         .timeline(ready.map(StreamSession::getPlaybackSnapshot))
         .decision(activity.decision())
+        .producedRange(ready.flatMap(this::producedRangeOf))
         .workers(ready.map(this::workersOf).orElseGet(List::of))
         .build();
   }
@@ -133,6 +149,12 @@ public class ActiveStreamService {
     }
 
     return Optional.empty();
+  }
+
+  // Around the position that the client last reported, on the same media timeline.
+  private Optional<MediaTimeRange> producedRangeOf(StreamSession session) {
+    var position = Duration.ofSeconds(session.getPlaybackSnapshot().positionSeconds());
+    return producerLifecycle.producedRangeAround(session, position);
   }
 
   private List<String> workersOf(StreamSession session) {

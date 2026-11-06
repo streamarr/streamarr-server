@@ -22,6 +22,7 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
@@ -117,6 +118,7 @@ class HlsStreamingSmokeTest {
     var producerLifecycle =
         ProducerLifecycleService.builder()
             .transcodeExecutor(transcodeExecutor)
+            .eventPublisher(new CapturingEventPublisher())
             .segmentStore(segmentStore)
             .properties(properties)
             .runtimeRegistry(sessionRegistry)

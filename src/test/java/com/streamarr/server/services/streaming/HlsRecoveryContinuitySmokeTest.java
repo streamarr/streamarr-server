@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
@@ -99,6 +100,7 @@ class HlsRecoveryContinuitySmokeTest {
     lifecycle =
         ProducerLifecycleService.builder()
             .transcodeExecutor(transcodeExecutor)
+            .eventPublisher(new CapturingEventPublisher())
             .segmentStore(segmentStore)
             .properties(properties)
             .runtimeRegistry(runtimeRegistry)
