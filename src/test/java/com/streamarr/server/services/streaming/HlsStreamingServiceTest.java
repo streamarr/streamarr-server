@@ -20,8 +20,10 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.av1Nvenc;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.hevcNvenc;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libsvtav1;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx265;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static com.streamarr.server.support.OutcomeTestSupport.rejectionOf;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +59,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -5306,6 +5309,56 @@ class HlsStreamingServiceTest {
         .singleElement()
         .extracting(request -> request.transcodeDecision().videoCodecFamily())
         .isEqualTo(expectedCodecFamily);
+  }
+
+  // libx265 costs more CPU than libx264, so only a hardware HEVC encoder moves a client that
+  // declares HEVC and H.264 off H.264 (ADR 0009). The worker advertises its encoders.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("hevcWorkerEncodersAndExpectedEncode")
+  @DisplayName(
+      "Should encode HEVC for a client that declares HEVC and H.264 only when a worker advertises a"
+          + " hardware HEVC encoder")
+  void
+      shouldEncodeHevcForAClientThatDeclaresHevcAndH264OnlyWhenAWorkerAdvertisesAHardwareHevcEncoder(
+          String scenario, List<WorkerVerifiedEncoder> encoders, String expectedCodecString) {
+    transcodeExecutor.setTargetEncoders(ExecutionTargetId.LOCAL, encoders);
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("mpeg2video").build());
+
+    createSession(seedMediaFile().getId(), declarationBuilderFor(HEVC, H264).build());
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(
+            TranscodeRequest::variantLabel,
+            request -> request.videoEncodeDecision().orElseThrow().codecString())
+        .containsExactly("480p", expectedCodecString);
+  }
+
+  // The first variant, 854x480 at 23.976 fps, needs H.265 level 3 and H.264 level 3.
+  static Stream<Arguments> hevcWorkerEncodersAndExpectedEncode() {
+    return Stream.of(
+        Arguments.of("hevc_nvenc and libx264", List.of(hevcNvenc(), libx264()), "hvc1.1.6.L90.90"),
+        Arguments.of("libx265 and libx264", List.of(libx265(), libx264()), "avc1.64001E"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode HEVC with libx265 when the client declares only HEVC and cannot play the"
+          + " source")
+  void shouldEncodeHevcWithLibx265WhenTheClientDeclaresOnlyHevcAndCannotPlayTheSource() {
+    transcodeExecutor.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(libx264(), libx265()));
+    probeResults.setDefaultProbe(defaultProbeBuilder().videoCodec("h264").build());
+
+    var session = createSession(seedMediaFile().getId(), declarationBuilderFor(HEVC).build());
+
+    assertThat(session.getTranscodeDecision().encodeCodecProfile())
+        .contains(EncodeCodecProfile.HEVC_MAIN);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(
+            TranscodeRequest::variantLabel,
+            request -> request.videoEncodeDecision().orElseThrow().codecString())
+        .containsExactly("480p", "hvc1.1.6.L90.90");
   }
 
   @Test

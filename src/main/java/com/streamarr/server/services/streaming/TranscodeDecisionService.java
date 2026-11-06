@@ -55,7 +55,7 @@ public class TranscodeDecisionService {
   // An encode forces one codec profile for each codec family (ADR 0013). These codec families
   // compress better than H.264, best first (ADR 0009).
   private static final List<EncodeCodecProfile> COMPRESSING_BETTER_THAN_H264 =
-      List.of(EncodeCodecProfile.AV1_MAIN);
+      List.of(EncodeCodecProfile.AV1_MAIN, EncodeCodecProfile.HEVC_MAIN);
   private static final List<BitstreamRewrite> STRIP_HDR10_PLUS =
       List.of(BitstreamRewrite.STRIP_HDR10_PLUS);
   private static final List<BitstreamRewrite> NORMALIZE_DOLBY_VISION_RECORD =
