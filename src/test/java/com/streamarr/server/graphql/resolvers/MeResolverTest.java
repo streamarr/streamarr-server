@@ -16,6 +16,7 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
+import com.streamarr.server.graphql.dataloaders.SelectedProfileDataLoader;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
@@ -54,6 +55,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @SpringBootTest(
     classes = {
       MeResolver.class,
+      SelectedProfileDataLoader.class,
       PaginationService.class,
       RelayConnectionAdapter.class,
       PositionCursorCodec.class,

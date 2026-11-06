@@ -278,6 +278,31 @@ class SelectedProfileStateResolverTest {
   }
 
   @Test
+  @DisplayName(
+      "Should read the selected Profile once when a response selects it from Me and from a title")
+  void shouldReadTheSelectedProfileOnceWhenAResponseSelectsItFromMeAndFromATitle() {
+    identity.set(session(personal.getId()));
+    var readsBefore = profiles.availableProfileReads();
+
+    var response =
+        execute(
+            """
+            {
+              me { selectedProfile { id } }
+              movie(id: "%s") { selectedProfileState { profile { id } } }
+            }
+            """
+                .formatted(movie.getId()));
+
+    assertThat(response.has("errors")).as("errors in %s", response).isFalse();
+    assertThat(response.at("/data/me/selectedProfile/id").asString())
+        .isEqualTo(personal.getId().toString());
+    assertThat(response.at("/data/movie/selectedProfileState/profile/id").asString())
+        .isEqualTo(personal.getId().toString());
+    assertThat(profiles.availableProfileReads() - readsBefore).isOne();
+  }
+
+  @Test
   @DisplayName("Should null only the selected Profile state when a non-null field under it fails")
   void shouldNullOnlyTheSelectedProfileStateWhenANonNullFieldUnderItFails() {
     identity.set(session(personal.getId()));
