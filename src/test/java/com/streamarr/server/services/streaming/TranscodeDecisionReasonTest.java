@@ -928,9 +928,9 @@ class TranscodeDecisionReasonTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("earlyEndingStreams")
   @DisplayName(
-      "Should encode each chosen stream that ends at least one segment before another stream of"
-          + " the source")
-  void shouldEncodeEachChosenStreamThatEndsAtLeastOneSegmentBeforeAnotherStreamOfTheSource(
+      "Should encode a chosen stream only when it ends at least one segment before another stream"
+          + " of the source")
+  void shouldEncodeAChosenStreamOnlyWhenItEndsAtLeastOneSegmentBeforeAnotherStreamOfTheSource(
       Source source, boolean copiesVideo, AudioMode audio, List<DecisionReason> expected) {
     var decision = decide(source.probe(), defaultDeclarationBuilder().build());
 
