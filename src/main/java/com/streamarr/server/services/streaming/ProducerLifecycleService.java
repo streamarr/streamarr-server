@@ -89,6 +89,12 @@ public class ProducerLifecycleService {
   // media segment of a variant other than the one it plays (ADR 0050).
   private final ConcurrentHashMap<UUID, String> variantsStartedForTheirPlaylist =
       new ConcurrentHashMap<>();
+  // The variant that each stream session started for its player: the first-listed variant, or the
+  // top variant that stays when the upload budget leaves it out, whether creation or a served
+  // playlist started it. Until the player's first media-segment request, any request of it may stop
+  // another stream session's left variant (ADR 0019).
+  private final ConcurrentHashMap<UUID, String> variantsStartedForTheirPlayer =
+      new ConcurrentHashMap<>();
   private final TranscodeLimit transcodeLimit = new TranscodeLimit();
 
   public enum RecoveryResult {
@@ -174,7 +180,9 @@ public class ProducerLifecycleService {
    * dead or stalled job attempt. When a media-segment request's replacement of the requested
    * variant finds no free worker job slot, it stops the stream session's own other video variants
    * that run on the replacement's worker and tries once more, then looks for another stream
-   * session's left variant to stop and tries once more.
+   * session's left variant to stop and tries once more. Before the player's first media-segment
+   * request, any request of the variant that the stream session started for its player, an
+   * initialization request included, also looks for another stream session's left variant.
    */
   public RecoveryResult recover(SegmentRequest request) {
     var reclaim = LeftVariantReclaim.allowed();
@@ -272,6 +280,7 @@ public class ProducerLifecycleService {
           playingVariants.remove(sessionId);
           sessionsKeepingLeftVariant.remove(sessionId);
           variantsStartedForTheirPlaylist.remove(sessionId);
+          variantsStartedForTheirPlayer.remove(sessionId);
         });
     seekPriority.forgetSession(sessionId);
   }
@@ -437,6 +446,7 @@ public class ProducerLifecycleService {
               .reason(reason)
               .target(target.get())
               .makesRoom(isMediaSegmentRequestOfRequestedVariant(request))
+              .startedForANewViewer(isNewViewersRequestOfTheVariantStartedForThePlayer(request))
               .reclaim(pending.reclaim())
               .build();
       var outcome = replaceAndTrack(state, session, command);
@@ -601,6 +611,7 @@ public class ProducerLifecycleService {
       ReplacementReason reason,
       ExecutionTargetId target,
       boolean makesRoom,
+      boolean startedForANewViewer,
       LeftVariantReclaim reclaim) {}
 
   private sealed interface ReplaceResult {
@@ -648,6 +659,7 @@ public class ProducerLifecycleService {
             }
 
             holdThePlaylistsPlaceUnlessFirstListed(current, variantLabel);
+            variantsStartedForTheirPlayer.put(sessionId, variantLabel);
             runtimeRegistry.save(current);
           }
 
@@ -702,6 +714,7 @@ public class ProducerLifecycleService {
           var started = startedForThePlaylist(current.get(), listedVariants.getFirst());
           if (started) {
             variantsStartedForTheirPlaylist.put(sessionId, listedVariants.getFirst());
+            variantsStartedForTheirPlayer.put(sessionId, listedVariants.getFirst());
           }
 
           return started;
@@ -979,6 +992,11 @@ public class ProducerLifecycleService {
     return SegmentNames.indexOf(request.segmentName()).isPresent()
         && newest != null
         && newest.variantLabel().equals(request.variantLabel());
+  }
+
+  private boolean isNewViewersRequestOfTheVariantStartedForThePlayer(SegmentRequest request) {
+    return !newestMediaSegmentRequests.containsKey(request.sessionId())
+        && request.variantLabel().equals(variantsStartedForTheirPlayer.get(request.sessionId()));
   }
 
   // The played variant while the newest media-segment request asks for another variant.
@@ -1586,6 +1604,13 @@ public class ProducerLifecycleService {
     if (stopPlaylistStartedVariantToMakeRoom(
         session, command.variantLabel(), replacementShortageOn(session, command))) {
       return startReplacement(session, command);
+    }
+
+    // A new viewer's request of the variant that its stream session started for its player, an
+    // initialization request included, may stop another stream session's left variant (ADR 0019).
+    if (command.startedForANewViewer()
+        && command.reclaim().tryRequest(replacementShortage(session, command.variantLabel()))) {
+      return new ReplaceResult.NoFreeSlot();
     }
 
     return result;
