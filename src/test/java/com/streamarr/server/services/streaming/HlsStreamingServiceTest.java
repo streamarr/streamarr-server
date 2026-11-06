@@ -6128,7 +6128,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should name no reason when the format attempt may not direct-play")
   void shouldNameNoReasonWhenTheFormatAttemptMayNotDirectPlay() {
     probeResults.setDefaultProbe(
-        directPlayableProbeBuilder().containerFormat(Optional.of("mpegts")).build());
+        directPlayableProbeBuilder().containerFormat(Optional.of("avi")).build());
     var file = seedMediaFile();
 
     var session =
