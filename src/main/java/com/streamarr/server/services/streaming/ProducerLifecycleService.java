@@ -1822,7 +1822,18 @@ public class ProducerLifecycleService {
         .transcodeDecision(session.getTranscodeDecision())
         .startSequenceNumber(startSequenceNumber)
         .mediaSegmentCount(timeline.mediaSegmentCount())
-        .segmentStartSlots(timeline.segmentStartSlots());
+        .segmentStartSlots(timeline.segmentStartSlots())
+        .advertisedEnd(advertisedEnd(timeline));
+  }
+
+  // Every encoded stream may hold its last frame or pad with silence up to the last advertised
+  // segment's end, so a source that ends early still fills every advertised segment (ADR 0037).
+  private static Optional<Duration> advertisedEnd(MediaSegmentTimeline timeline) {
+    if (timeline.mediaSegmentCount() == 0) {
+      return Optional.empty();
+    }
+
+    return Optional.of(timeline.mediaSegmentEnd(timeline.mediaSegmentCount() - 1));
   }
 
   private EncoderPreset pinEncoderPreset(StreamSession session, String variantLabel) {

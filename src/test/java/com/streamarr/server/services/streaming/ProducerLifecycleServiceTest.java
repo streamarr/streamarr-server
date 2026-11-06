@@ -1209,6 +1209,27 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
+      "Should carry the last advertised segment's end in every job attempt, first and replacement")
+  void shouldCarryTheLastAdvertisedSegmentsEndInEveryJobAttemptFirstAndReplacement() {
+    var session =
+        defaultSessionBuilder()
+            .mediaProbe(defaultProbeBuilder().duration(Duration.ofMillis(60_018)).build())
+            .transcodeDecision(fullTranscodeDecision("h264"))
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    transcodeExecutor.markDead(session.getSessionId());
+
+    recover(session);
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .hasSize(2)
+        .extracting(TranscodeRequest::advertisedEnd)
+        .containsOnly(Optional.of(Duration.ofMillis(60_018)));
+  }
+
+  @Test
+  @DisplayName(
       "Should leave the running producer in place when a request names a media segment past the advertised timeline")
   void shouldLeaveRunningProducerInPlaceWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();

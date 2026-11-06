@@ -29,7 +29,8 @@ public record TranscodeRequest(
     int mediaSegmentCount,
     @NonNull List<Integer> segmentStartSlots,
     @NonNull EncoderPreset encoderPreset,
-    @NonNull Optional<WorkerVerifiedEncoder> pinnedEncoder) {
+    @NonNull Optional<WorkerVerifiedEncoder> pinnedEncoder,
+    @NonNull Optional<Duration> advertisedEnd) {
 
   /**
    * A stream copy attempt after segment 0 carries {@code keyframeSeekPosition}, the decode time of
@@ -42,7 +43,9 @@ public record TranscodeRequest(
    * carries none. {@code segmentStartSlots} holds the stream session's segment list, each segment's
    * start in slots of {@code targetSegmentDuration}, or nothing on the plain grid (ADR 0037). Every
    * attempt of a stream copy session carries the copy's {@code exactSegmentStarts}; an attempt
-   * whose segments start on the plain grid carries none.
+   * whose segments start on the plain grid carries none. {@code advertisedEnd} is the end of the
+   * variant's last advertised media segment, up to which an encoded stream holds its last frame or
+   * pads with silence (ADR 0037, early ends).
    */
   public TranscodeRequest {
     segmentStartSlots = List.copyOf(segmentStartSlots);
@@ -98,6 +101,7 @@ public record TranscodeRequest(
         .exactSegmentStarts(Optional.empty())
         .outputFrameRate(Optional.empty())
         .pinnedEncoder(Optional.empty())
-        .segmentStartSlots(List.of());
+        .segmentStartSlots(List.of())
+        .advertisedEnd(Optional.empty());
   }
 }
