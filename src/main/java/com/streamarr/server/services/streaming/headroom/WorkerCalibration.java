@@ -48,6 +48,9 @@ public final class WorkerCalibration {
 
   private final CpuLimit cpuLimit;
   private final HeadroomConstants startingConstants;
+  // The value each starting constant pulls toward: its starting value, or, for a preset that
+  // follows the Automatic preset, its latest followed value.
+  private final Map<CostConstant, Double> anchors;
   private final ConstantFit fit =
       new ConstantFit(FORGETTING, this::withUnmeasuredPresetsFollowingAutomatic);
   private final Clock clock;
@@ -68,6 +71,7 @@ public final class WorkerCalibration {
       @Singular Set<CostConstant> measuredConstants) {
     this.cpuLimit = cpuLimit;
     this.startingConstants = startingConstants;
+    this.anchors = new HashMap<>(startingConstants.cpuSecondsPerMegapixel());
     this.constants = startingConstants;
     this.clock = clock;
     this.restoredMeasuredConstants = Set.copyOf(measuredConstants);
@@ -114,7 +118,7 @@ public final class WorkerCalibration {
             });
     fit.add(terms, share / measuredSpeed, constants.cpuSecondsPerMegapixel().keySet());
     fit.solve(
-            startingConstants.cpuSecondsPerMegapixel(),
+            Map.copyOf(anchors),
             STARTING_WEIGHT,
             constants.cpuSecondsPerMegapixel(),
             CURRENT_WEIGHT)
@@ -316,10 +320,11 @@ public final class WorkerCalibration {
           automaticPresetOf(encoderAndPreset)
               .filter(automatic -> starting.containsKey(automatic) && solved.containsKey(automatic))
               .ifPresent(
-                  automatic ->
-                      adjusted.put(
-                          constant,
-                          startingValue * solved.get(automatic) / starting.get(automatic)));
+                  automatic -> {
+                    var followed = startingValue * solved.get(automatic) / starting.get(automatic);
+                    adjusted.put(constant, followed);
+                    anchors.put(constant, followed);
+                  });
         });
 
     return adjusted;

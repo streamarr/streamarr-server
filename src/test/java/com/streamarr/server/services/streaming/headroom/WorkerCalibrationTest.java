@@ -602,9 +602,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should price a new constant against another preset's followed constant when one measurement prices both")
+        "Should price a new constant against another preset's followed constant, and keep both, when one measurement prices both")
     void
-        shouldPriceANewConstantAgainstAnotherPresetsFollowedConstantWhenOneMeasurementPricesBoth() {
+        shouldPriceANewConstantAgainstAnotherPresetsFollowedConstantAndKeepBothWhenOneMeasurementPricesBoth() {
       var libx264Veryfast = new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
       var calibration =
           tenCoreCalibration()
@@ -629,6 +629,10 @@ class WorkerCalibrationTest {
                   .build(),
               3.0,
               2));
+
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 2, 2));
+      }
 
       var constants = calibration.constants().cpuSecondsPerMegapixel();
       assertThat(constants.get(libx264Veryfast)).isCloseTo(0.04, withinPercentage(2));
