@@ -144,8 +144,8 @@ class WorkerCalibrationRepositoryIT extends AbstractIntegrationTest {
     assertThat(repository.findByKey(tenCoreWorker().build()))
         .hasValueSatisfying(
             kept ->
-                assertThat(kept.constants().cpuSecondsPerMegapixel().get(LIBX264_FASTER))
-                    .isEqualTo(0.05));
+                assertThat(kept.constants().cpuSecondsPerMegapixel())
+                    .containsEntry(LIBX264_FASTER, 0.05));
   }
 
   @Test
