@@ -1,9 +1,9 @@
 -- Probe version 8 adds three facts to a video stream (ADR 0032). An earlier probe version, and every
 -- stream that is not video, leaves them NULL.
 --
--- maximum_frame_rate_numerator and maximum_frame_rate_denominator hold the highest rate at which
--- the chosen video stream presents pictures anywhere in the file, as an exact fraction. Both are
--- NULL when the probe could not measure the maximum, so an unknown maximum is never zero.
+-- maximum_frame_rate_numerator and maximum_frame_rate_denominator hold the chosen video stream's
+-- maximum frame rate, as ADR 0032 defines it, as an exact fraction. Both are NULL when the probe
+-- could not measure the maximum, so an unknown maximum is never zero.
 --
 -- rpu_enhancement_layer classifies a Dolby Vision stream's enhancement layer by its RPUs' NLQ
 -- parameters: NONE, MEL or FEL, and NULL when the probe could not tell. rpu_max_content_light_level
