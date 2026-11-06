@@ -17,6 +17,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.IntPredicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Builder;
@@ -53,8 +54,23 @@ public class SeekPriority {
   private final Map<UUID, Long> newestArrivals = new HashMap<>();
   private final Map<UUID, Instant> latestSeeks = new HashMap<>();
   private final Map<ExecutionTargetId, Set<UUID>> yielding = new HashMap<>();
+  private final Map<VariantKey, StoredAtStart> storedAtStarts = new HashMap<>();
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
+
+  // What a relocation's job attempt found stored after its start: media up to firstMissing, which
+  // it reproduces before anything new, and from nextStored on, media it reaches only by
+  // reproducing it too. Only the media in between is the job attempt's own output once stored.
+  private record StoredAtStart(int startIndex, int firstMissing, int nextStored) {
+
+    private boolean isOwnOutputThrough(int index, IntPredicate isStored) {
+      if (index >= nextStored) {
+        return false;
+      }
+
+      return index >= firstMissing || isStored.test(firstMissing);
+    }
+  }
 
   // A request that arrived up to arrivalFloor came before the seek, so only the seek's own first
   // segment ends the seek when such a request delivers it. The target is the worker whose pauses
@@ -85,6 +101,7 @@ public class SeekPriority {
     highestRequestedSegments.put(sessionId, segmentIndex);
     latestSeeks.put(sessionId, clock.instant());
     var key = new VariantKey(sessionId, variantLabel);
+    storedAtStarts.put(key, storedAtStart(session, variantLabel, segmentIndex));
     var earlierWorker = Optional.ofNullable(pendingSeeks.get(key)).flatMap(PendingSeek::target);
     pendingSeeks.put(
         key,
@@ -198,9 +215,29 @@ public class SeekPriority {
     return transcodeExecutor.runningExecutionTarget(session.getSessionId(), variantLabel);
   }
 
+  private StoredAtStart storedAtStart(StreamSession session, String variantLabel, int startIndex) {
+    var timeline = MediaSegmentTimelines.of(session, properties);
+    var firstMissing = startIndex + 1;
+    while (timeline.advertises(firstMissing) && isStored(session, variantLabel, firstMissing)) {
+      firstMissing++;
+    }
+
+    var nextStored = firstMissing;
+    while (timeline.advertises(nextStored) && !isStored(session, variantLabel, nextStored)) {
+      nextStored++;
+    }
+
+    if (!timeline.advertises(nextStored)) {
+      nextStored = Integer.MAX_VALUE;
+    }
+
+    return new StoredAtStart(startIndex, firstMissing, nextStored);
+  }
+
   /** The stream session ended, so its seeks wait for nothing. */
   public synchronized void forgetSession(@NonNull UUID sessionId) {
     highestRequestedSegments.remove(sessionId);
+    storedAtStarts.keySet().removeIf(key -> key.sessionId().equals(sessionId));
     newestArrivals.remove(sessionId);
     latestSeeks.remove(sessionId);
     var ended =
@@ -289,9 +326,10 @@ public class SeekPriority {
   private boolean leadsItsViewer(
       StreamSession session, String variantLabel, TranscodeHandle handle, int viewerSegment) {
     var timeline = MediaSegmentTimelines.of(session, properties);
+    var ownOutput = ownOutputOf(session, variantLabel, handle);
     var stored = Duration.ZERO;
     var next = viewerSegment + 1;
-    while (timeline.advertises(next) && isStored(session, variantLabel, next)) {
+    while (timeline.advertises(next) && ownOutput.test(next)) {
       stored = stored.plus(timeline.mediaSegmentDuration(next));
       next++;
     }
@@ -308,6 +346,19 @@ public class SeekPriority {
             .plus(nextSegment)
             .plus(properties.seekPriorityPositionMargin());
     return stored.compareTo(needed) > 0;
+  }
+
+  // Stored media that the job attempt has produced or passed. A relocation's job attempt may find
+  // media already stored after its start, which counts only as far as its own output reaches.
+  private IntPredicate ownOutputOf(
+      StreamSession session, String variantLabel, TranscodeHandle handle) {
+    IntPredicate isStored = index -> isStored(session, variantLabel, index);
+    var atStart = storedAtStarts.get(new VariantKey(session.getSessionId(), variantLabel));
+    if (atStart == null || atStart.startIndex() != handle.startSequenceNumber()) {
+      return isStored;
+    }
+
+    return index -> isStored.test(index) && atStart.isOwnOutputThrough(index, isStored);
   }
 
   private boolean isStored(StreamSession session, String variantLabel, int index) {

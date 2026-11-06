@@ -407,6 +407,33 @@ class SeekPriorityIT {
 
   @Test
   @DisplayName(
+      "Should never name a job attempt that reproduces media stored before it started, and name it"
+          + " once it stores media past it")
+  void shouldNeverNameAJobAttemptThatReproducesMediaStoredBeforeItStartedAndNameItOncePast()
+      throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    var reproducing = startPlaying(worker);
+    storeSegments(reproducing, 21, 40);
+    assertThat(storeAndAwait(seek(worker, reproducing, 20)))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var reproducingAttempt = attemptOf(reproducing);
+    var seeking = startPlaying(worker);
+
+    seek(worker, seeking);
+
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+    storeSegments(reproducing, 41, 41);
+    seek(worker, seeking, 200);
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactlyInAnyOrder(steady.job().getJobAttemptId(), reproducingAttempt);
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the yield of a backward seek when the earlier seek's older request delivers its"
           + " segment")
   void shouldKeepTheYieldOfABackwardSeekWhenTheEarlierSeeksOlderRequestDeliversItsSegment()
