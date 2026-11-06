@@ -20,6 +20,8 @@ final class CopySegmentSizes {
   // gives every encoded rate.
   private static final BigDecimal ENCODED_AUDIO_PEAK_HEADROOM = new BigDecimal("1.2");
 
+  private static final int NANOSECOND_DIGITS = 9;
+
   private CopySegmentSizes() {}
 
   /**
@@ -42,13 +44,14 @@ final class CopySegmentSizes {
   }
 
   /**
-   * Each segment's copied audio. The worker puts an audio sample in the segment whose grid slot
-   * holds the sample's start: segment 0 also takes the audio before zero, and the last segment the
-   * audio after its slot (ADR 0037). The copy can snap a sample across a slot's edge, so a
-   * segment's audio is bounded by every keyframe interval that overlaps its slot widened by one
-   * audio frame on each side. Keyframe interval {@code i} holds the audio that presents from
-   * keyframe {@code i} to keyframe {@code i + 1}; the first is open below and the last above. The
-   * audio track's framing counts in every segment, even one without an audio sample.
+   * Each segment's copied audio. The worker puts an audio sample in the last segment that starts at
+   * or before the sample's start: segment 0 also takes the audio before zero, and the last segment
+   * the audio after the media end (ADR 0037, segment list). The copy can snap a sample across a
+   * segment's start, so a segment's audio is bounded by every keyframe interval that overlaps the
+   * segment widened by one audio frame on each side. Keyframe interval {@code i} holds the audio
+   * that presents from keyframe {@code i} to keyframe {@code i + 1}; the first is open below and
+   * the last above. The audio track's framing counts in every segment, even one without an audio
+   * sample.
    */
   static List<SegmentSize> copiedAudio(
       MeasuredStream audio, KeyframePositions positions, CopyMediaPlaylist playlist) {
@@ -59,13 +62,13 @@ final class CopySegmentSizes {
     var sizes = new ArrayList<SegmentSize>();
     for (var segment = 0; segment <= lastSegment; segment++) {
       if (segment > 0) {
-        first = intervals.firstEndingAfter(slotEdge(positions, playlist, segment), first);
+        first = intervals.firstEndingAfter(startEdge(positions, playlist, segment), first);
       }
 
       end =
           segment == lastSegment
               ? positions.keyframes().size()
-              : intervals.endStartingBefore(slotEdge(positions, playlist, segment + 1), end);
+              : intervals.endStartingBefore(startEdge(positions, playlist, segment + 1), end);
 
       sizes.add(
           sizeOf(trackBytes(audio, first, end), samples(audio, first, end), playlist, segment));
@@ -75,11 +78,11 @@ final class CopySegmentSizes {
   }
 
   /**
-   * Each segment's encoded audio, which the worker takes from the segment's grid slot as it does
-   * copied audio. The segment holds the frames that the encoder writes over the slot's audio, with
-   * its priming samples in segment 0, plus one frame that the snap can move across an edge. Each
-   * frame carries 1.2 × the encoded audio's bitrate over its length (ADR 0054) and its share of the
-   * audio track's framing.
+   * Each segment's encoded audio, which the worker takes from the segment's exact start to the next
+   * one's, as it does copied audio. The segment holds the frames that the encoder writes over that
+   * audio, with its priming samples in segment 0, plus one frame that the snap can move across an
+   * edge. Each frame carries 1.2 × the encoded audio's bitrate over its length (ADR 0054) and its
+   * share of the audio track's framing.
    */
   static List<SegmentSize> encodedAudio(
       EncodedAudioFrames encoded, long bitrate, CopyMediaPlaylist playlist) {
@@ -89,7 +92,7 @@ final class CopySegmentSizes {
             .divide(BigDecimal.valueOf(Byte.SIZE));
     var sizes = new ArrayList<SegmentSize>();
     for (var segment = 0; segment < playlist.segmentCount(); segment++) {
-      var audioSeconds = slotAudioSeconds(playlist, segment);
+      var audioSeconds = audioSeconds(playlist, segment);
       var frames = encoded.over(audioSeconds, segment == 0).add(BigInteger.ONE);
       var framing = SegmentFraming.trackBytes(BigInteger.ONE, frames);
       var payload = peakBytesPerSecond.multiply(encoded.secondsOf(frames));
@@ -145,34 +148,43 @@ final class CopySegmentSizes {
   }
 
   /**
-   * The seconds of audio in a segment's grid slots: up to the next segment's slot start, or for the
-   * last segment the rest of the playlist from its slot start.
+   * The seconds of audio in a segment: up to the next segment's start, rounded up, or for the last
+   * segment the rest of the playlist from its start, rounded down.
    */
-  private static BigDecimal slotAudioSeconds(CopyMediaPlaylist playlist, int segment) {
+  private static BigDecimal audioSeconds(CopyMediaPlaylist playlist, int segment) {
     var segments = playlist.segments();
-    var slotStart = BigDecimal.valueOf(segments.get(segment).slotStartSeconds());
+    var startTicks = segments.get(segment).startTicks();
     if (segment + 1 < segments.size()) {
-      return BigDecimal.valueOf(segments.get(segment + 1).slotStartSeconds()).subtract(slotStart);
+      var ticks = segments.get(segment + 1).startTicks() - startTicks;
+      return secondsOf(ticks, playlist, RoundingMode.CEILING);
     }
 
-    return playlist.durationSeconds().subtract(slotStart);
+    return playlist.durationSeconds().subtract(secondsOf(startTicks, playlist, RoundingMode.FLOOR));
+  }
+
+  private static BigDecimal secondsOf(
+      long ticks, CopyMediaPlaylist playlist, RoundingMode rounding) {
+    var timeBase = playlist.startTimeBase();
+    return new BigDecimal(
+            BigInteger.valueOf(ticks).multiply(BigInteger.valueOf(timeBase.numerator())))
+        .divide(BigDecimal.valueOf(timeBase.denominator()), NANOSECOND_DIGITS, rounding);
   }
 
   /**
-   * Where the grid slots of segment {@code segment} start, in ticks of the keyframe positions' time
-   * base times their numerator: the slot start in seconds times their denominator.
+   * Where segment {@code segment} starts, in ticks of the keyframe positions' time base times their
+   * numerator. The playlist counts its starts in ticks of the same keyframe positions.
    */
-  private static BigInteger slotEdge(
+  private static BigInteger startEdge(
       KeyframePositions positions, CopyMediaPlaylist playlist, int segment) {
-    return BigInteger.valueOf(playlist.segments().get(segment).slotStartSeconds())
-        .multiply(BigInteger.valueOf(positions.timeBaseDenominator()));
+    return BigInteger.valueOf(playlist.segments().get(segment).startTicks())
+        .multiply(BigInteger.valueOf(positions.timeBaseNumerator()));
   }
 
   /**
    * The keyframe intervals that a copied audio track's samples can fill, with one audio frame of
    * slack on each side. Interval {@code i} runs from keyframe {@code i}'s presentation time to the
    * next keyframe's; the first is open below and the last above. Times count ticks of the keyframe
-   * positions' time base times their numerator, as slot edges do.
+   * positions' time base times their numerator, as segment start edges do.
    */
   private record AudioIntervals(KeyframePositions positions, BigInteger frameTicks) {
 
