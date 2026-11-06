@@ -2063,7 +2063,7 @@ public class ProducerLifecycleService {
     }
 
     var timeline = timelineOf(session);
-    var variantLabel = requestedVariant(session);
+    var variantLabel = downloadedVariant(session);
     // Media that runs past its probed duration stores media segments that the playlist never
     // advertises, and the run ends at the last advertised one.
     IntPredicate stored =
@@ -2090,15 +2090,6 @@ public class ProducerLifecycleService {
 
     var start = timeline.mediaSegmentEnd(first).minus(timeline.mediaSegmentDuration(first));
     return Optional.of(new MediaTimeRange(start, timeline.mediaSegmentEnd(last)));
-  }
-
-  private String requestedVariant(StreamSession session) {
-    var newest = newestMediaSegmentRequests.get(session.getSessionId());
-    if (newest == null) {
-      return session.firstListedVariant();
-    }
-
-    return newest.variantLabel();
   }
 
   /** A session that no longer exists advertises nothing to refuse, so this answers false. */
