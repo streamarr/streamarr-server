@@ -34,8 +34,8 @@ public sealed interface DolbyVision {
 
     /**
      * This Dolby Vision after a copy converts single-track profile 7 to profile 8.1 (ADR 0036,
-     * streamarr/streamarr-server#651): a record of profile 8 with compatibility identifier 1, a base
-     * layer and an RPU at the level that the source's record names, an RPU header without an
+     * streamarr/streamarr-server#651): a record of profile 8 with compatibility identifier 1, a
+     * base layer and an RPU at the level that the source's record names, an RPU header without an
      * enhancement layer or residual, and each RPU at the end of its own picture's sample.
      */
     public Present convertedToProfile81() {

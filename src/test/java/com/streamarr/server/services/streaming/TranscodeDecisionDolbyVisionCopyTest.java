@@ -250,6 +250,11 @@ class TranscodeDecisionDolbyVisionCopyTest {
             Clients.dolbyVision(13),
             strippingDolbyVision(VideoRange.PQ)),
         Arguments.of(
+            "The enhancement layer track of a dual-track profile 7 source",
+            hevc(dualTrackEnhancementLayer()),
+            Clients.dolbyVision(13),
+            strippingDolbyVision(VideoRange.PQ)),
+        Arguments.of(
             "The base layer track of a profile 6 source",
             hevc(dualTrackBaseLayer(6, 1)),
             Clients.dolbyVision(13),
@@ -785,19 +790,32 @@ class TranscodeDecisionDolbyVisionCopyTest {
   }
 
   private static VideoDynamicRange singleTrackProfile7(OptionalInt recordLevel) {
+    return profile7WithRpusInTheStream(profile7RecordBuilder().level(recordLevel).build());
+  }
+
+  // The enhancement layer track of a dual-track source carries the RPUs beside a PQ transfer, and
+  // its record names no base layer.
+  private static VideoDynamicRange dualTrackEnhancementLayer() {
+    return profile7WithRpusInTheStream(profile7RecordBuilder().baseLayer(false).build());
+  }
+
+  // A profile 7 record at the source level with every layer, which a caller narrows.
+  private static DolbyVisionConfiguration.DolbyVisionConfigurationBuilder profile7RecordBuilder() {
+    return DolbyVisionConfiguration.builder()
+        .profile(OptionalInt.of(7))
+        .level(OptionalInt.of(SOURCE_LEVEL))
+        .baseLayerCompatibilityId(OptionalInt.of(6))
+        .baseLayer(true)
+        .enhancementLayer(true)
+        .rpu(true);
+  }
+
+  private static VideoDynamicRange profile7WithRpusInTheStream(DolbyVisionConfiguration record) {
     return new VideoDynamicRange(
         CompatibleBase.PQ,
         Presence.ABSENT,
         new DolbyVision.Present(
-            Optional.of(
-                DolbyVisionConfiguration.builder()
-                    .profile(OptionalInt.of(7))
-                    .level(recordLevel)
-                    .baseLayerCompatibilityId(OptionalInt.of(6))
-                    .baseLayer(true)
-                    .enhancementLayer(true)
-                    .rpu(true)
-                    .build()),
+            Optional.of(record),
             Presence.PRESENT,
             Optional.of(
                 DolbyVisionRpuHeader.builder()

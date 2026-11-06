@@ -110,13 +110,15 @@ sealed interface CopiedDolbyVision {
     return new Declarable(profile.get(), level.getAsInt());
   }
 
-  // A profile 7 record beside RPUs in the stream itself. A dual-track source's base layer carries no
-  // RPU, and its enhancement-layer track is never copied (ADR 0036).
+  // A profile 7 record that names a base layer, beside RPUs in the stream itself. A dual-track
+  // source's base layer track carries no RPU, and its enhancement layer track carries RPUs beside a
+  // PQ transfer but no base layer to convert (ADR 0036).
   private static boolean isSingleTrackProfile7(
       VideoStreamCopy copy, DolbyVision.Present present, int profileNumber) {
     return copy.codecFamily() == ProbedCodecFamily.HEVC
         && profileNumber == 7
         && copy.dynamicRange().compatibleBase() == CompatibleBase.PQ
+        && present.declared().map(DolbyVisionConfiguration::baseLayer).orElse(false)
         && present.observedRpu() == Presence.PRESENT;
   }
 

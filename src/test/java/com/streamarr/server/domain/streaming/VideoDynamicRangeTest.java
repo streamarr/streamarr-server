@@ -82,7 +82,8 @@ class VideoDynamicRangeTest {
   }
 
   // ADR 0036 and streamarr/streamarr-server#651: the converted copy carries profile 8.1 as the
-  // worker writes it: a record of profile 8 with compatibility identifier 1 and no enhancement layer
+  // worker writes it: a record of profile 8 with compatibility identifier 1 and no enhancement
+  // layer
   // at the source's level, and an RPU without residual at the end of each picture's sample.
   @Test
   @DisplayName(
