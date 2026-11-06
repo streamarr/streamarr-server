@@ -80,6 +80,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       new ConcurrentHashMap<>(unboundedEncodeSlots(Set.of("h264", "hevc", "av1")));
   private Set<String> hardwareEncodableVideoCodecFamilies = Set.of();
   private boolean healthy = true;
+  private final AtomicReference<Runnable> beforeNextRunningExecutionTargetRead =
+      new AtomicReference<>();
   private final AtomicReference<WorkerChange> workerChangeAroundNextVerifiedFamiliesRead =
       new AtomicReference<>();
   private volatile List<WorkerVerifiedCodecFamilies> listedWorkers;
@@ -301,6 +303,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public Optional<ExecutionTargetId> runningExecutionTarget(UUID sessionId, String variantLabel) {
+    var before = beforeNextRunningExecutionTargetRead.getAndSet(null);
+    if (before != null) {
+      before.run();
+    }
+
     var key = new ProcessKey(sessionId, variantLabel);
     if (!running.contains(key)) {
       return Optional.empty();
@@ -671,6 +678,14 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
         .filter(targets)
         .flatMap(target -> encoders.getOrDefault(target, Map.of()).values().stream())
         .toList();
+  }
+
+  /**
+   * Runs the action just before the next running execution target read, as a worker connection that
+   * a publication holds would make that read wait.
+   */
+  public void runBeforeNextRunningExecutionTargetRead(Runnable action) {
+    beforeNextRunningExecutionTargetRead.set(action);
   }
 
   /** Changes the connected workers just before and just after the next verified families read. */

@@ -229,16 +229,30 @@ public class SeekPriority {
    * variant follows its running job attempt to that job attempt's worker, which then pauses what
    * the seek needs, and ends when its job attempt stops.
    */
-  public synchronized void variantChanged(
-      @NonNull StreamSession session, @NonNull String variantLabel) {
+  public void variantChanged(@NonNull StreamSession session, @NonNull String variantLabel) {
+    // Learned before this monitor: the lookup can wait for a worker connection whose publication
+    // holds it through file I/O, and no other stream session's request may wait with it.
+    var running =
+        new RunningVariant(
+            session.getVariantHandle(variantLabel).map(TranscodeHandle::attemptId),
+            runningTarget(session, variantLabel));
+    variantChangedTo(session, variantLabel, running);
+  }
+
+  private record RunningVariant(Optional<UUID> attemptId, Optional<ExecutionTargetId> target) {}
+
+  private synchronized void variantChangedTo(
+      StreamSession session, String variantLabel, RunningVariant running) {
     reconsiderHoldBacks(session.getSessionId());
     var key = new VariantKey(session.getSessionId(), variantLabel);
     var pending = pendingSeeks.get(key);
-    if (pending == null) {
+    // A later change of the variant follows with the worker that it learned.
+    var current = session.getVariantHandle(variantLabel).map(TranscodeHandle::attemptId);
+    if (pending == null || !running.attemptId().equals(current)) {
       return;
     }
 
-    var target = runningTarget(session, variantLabel);
+    var target = running.target();
     if (target.isEmpty()) {
       endSeekWithoutJobAttempt(session, key, pending);
       return;
