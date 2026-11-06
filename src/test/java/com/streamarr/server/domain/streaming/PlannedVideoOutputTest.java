@@ -307,6 +307,25 @@ class PlannedVideoOutputTest {
                         CompatibleBase.PQ, Presence.ABSENT, new DolbyVision.Absent()))));
   }
 
+  // #397: only a PQ encode writes HDR10 static metadata.
+  @ParameterizedTest
+  @EnumSource(
+      value = CompatibleBase.class,
+      names = {"SDR", "HLG"})
+  @DisplayName("Should refuse static HDR metadata when the planned encode is not PQ")
+  void shouldRefuseStaticHdrMetadataWhenThePlannedEncodeIsNotPq(CompatibleBase base) {
+    var encode =
+        encodeBuilder()
+            .codecProfile(Optional.of(EncodeCodecProfile.AV1_MAIN))
+            .bitDepth(10)
+            .dynamicRange(new VideoDynamicRange(base, Presence.ABSENT, new DolbyVision.Absent()))
+            .contentLightLevel(Optional.of(new ContentLightLevel(0, 0)));
+
+    assertThatThrownBy(encode::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("static HDR metadata");
+  }
+
   private static PlannedVideoOutput.Encode.EncodeBuilder encodeBuilder() {
     return PlannedVideoOutput.Encode.builder()
         .codecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))

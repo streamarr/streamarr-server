@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -14,10 +15,12 @@ import lombok.NonNull;
 /**
  * What a transcode decision reads. {@code videoCopySupport} lists what each connected worker can
  * deliver beyond passing a copied video stream through, including busy workers. {@code
- * directPlayRefusals} names why the format attempt does not direct-play the source file, and the
- * decision names them before its own reasons. {@code softwareEncodeCodecFamily} names the only
- * codec family that the decision may encode, with the software encoder, after a hardware encoder
- * failed (ADR 0044).
+ * videoEncoders} are the worker-verified encoders whose encode features name the outputs beyond
+ * 8-bit SDR that an encode may plan (#397), and {@code verifiedVideoEncoders} adds busy workers'
+ * encoders. {@code directPlayRefusals} names why the format attempt does not direct-play the source
+ * file, and the decision names them before its own reasons. {@code softwareEncodeCodecFamily} names
+ * the only codec family that the decision may encode, with the software encoder, after a hardware
+ * encoder failed (ADR 0044).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecisionRequest(
@@ -30,6 +33,8 @@ public record TranscodeDecisionRequest(
     @NonNull Set<String> excludedEncodeCodecFamilies,
     @NonNull ViewerLimits viewerLimits,
     @NonNull List<WorkerVideoCopySupport> videoCopySupport,
+    @NonNull List<WorkerVerifiedEncoder> videoEncoders,
+    @NonNull List<WorkerVerifiedEncoder> verifiedVideoEncoders,
     @NonNull List<DecisionReason> directPlayRefusals,
     @NonNull Optional<String> softwareEncodeCodecFamily) {
 
@@ -41,6 +46,10 @@ public record TranscodeDecisionRequest(
     hardwareEncodableVideoCodecFamilies = Set.copyOf(hardwareEncodableVideoCodecFamilies);
     excludedEncodeCodecFamilies = Set.copyOf(excludedEncodeCodecFamilies);
     videoCopySupport = List.copyOf(videoCopySupport);
+    videoEncoders = List.copyOf(videoEncoders);
+    // An encoder of a worker with a free slot is a verified encoder.
+    verifiedVideoEncoders =
+        Stream.concat(verifiedVideoEncoders.stream(), videoEncoders.stream()).distinct().toList();
     directPlayRefusals = List.copyOf(directPlayRefusals);
   }
 
@@ -53,6 +62,8 @@ public record TranscodeDecisionRequest(
     private Set<String> excludedEncodeCodecFamilies = Set.of();
     private ViewerLimits viewerLimits = ViewerLimits.none();
     private List<WorkerVideoCopySupport> videoCopySupport = List.of();
+    private List<WorkerVerifiedEncoder> videoEncoders = List.of();
+    private List<WorkerVerifiedEncoder> verifiedVideoEncoders = List.of();
     private List<DecisionReason> directPlayRefusals = List.of();
     private Optional<String> softwareEncodeCodecFamily = Optional.empty();
 
@@ -67,6 +78,8 @@ public record TranscodeDecisionRequest(
           excludedEncodeCodecFamilies,
           viewerLimits,
           videoCopySupport,
+          videoEncoders,
+          verifiedVideoEncoders,
           directPlayRefusals,
           softwareEncodeCodecFamily);
     }

@@ -99,6 +99,7 @@ final class RemoteVariantJobMapper {
             // A planned encode refuses every chroma subsampling but 4:2:0 (#397).
             .setOutputChromaSubsampling(ChromaSubsampling.CHROMA_SUBSAMPLING_420)
             .setSoftwareEncoder(request.transcodeDecision().softwareEncoder());
+    plannedStaticMetadata(video, planned);
     source.ifPresent(
         facts ->
             video
@@ -188,6 +189,39 @@ final class RemoteVariantJobMapper {
         .ifPresent(video::setContentLightLevel);
   }
 
+  // A PQ encode writes its static HDR metadata as HDR10 (#397).
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static void plannedStaticMetadata(
+      com.streamarr.transcode.v1.VideoDecision.Builder video, PlannedVideoOutput.Encode planned) {
+    planned
+        .masteringDisplay()
+        .map(RemoteVariantJobMapper::masteringDisplay)
+        .ifPresent(video::setMasteringDisplay);
+    planned
+        .contentLightLevel()
+        .map(RemoteVariantJobMapper::contentLightLevel)
+        .ifPresent(video::setContentLightLevel);
+  }
+
+  // The worker needs a feature for an encode's output range and bit depth, and for a PQ output
+  // from Dolby Vision without a compatible base (#397).
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static void plannedEncodeOutput(
+      com.streamarr.transcode.v1.VideoDecision.Builder video, TranscodeDecision decision) {
+    if (!(decision.plannedVideoOutput() instanceof PlannedVideoOutput.Encode planned)) {
+      return;
+    }
+
+    video
+        .setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()))
+        .setOutputBitDepth(planned.bitDepth());
+    decision
+        .videoSource()
+        .map(VideoPlaybackFacts::dynamicRange)
+        .map(RemoteDynamicRangeMapper::toProto)
+        .ifPresent(video::setSourceDynamicRange);
+  }
+
   // The domain values already use the units of the SEI fields and the contract (ADR 0036).
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.streamarr.transcode.v1.MasteringDisplayColorVolume masteringDisplay(
@@ -233,6 +267,7 @@ final class RemoteVariantJobMapper {
             .setCodecFamily(codecFamily(decision.videoCodecFamily()))
             .setSoftwareEncoder(decision.softwareEncoder());
     plannedCopyOutput(video, decision.plannedVideoOutput());
+    plannedEncodeOutput(video, decision);
     return com.streamarr.transcode.v1.TranscodeDecision.newBuilder()
         .setMode(mode(decision.transcodeMode()))
         .setVideo(video)

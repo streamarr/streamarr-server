@@ -296,6 +296,7 @@ public class QualityLadderService {
             .bounds(bounds)
             .frameRate(request.frameRate())
             .bitrate(bitrate)
+            .format(request.encodeFormat())
             .build();
     return request.capabilityDeclaration().fitHlsEncode(variantRequest);
   }

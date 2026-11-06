@@ -9,9 +9,12 @@ import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.AudioTrackChannels;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
+import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.EncodedPictureSizes;
 import com.streamarr.server.domain.streaming.EncodedVariantRequest;
 import com.streamarr.server.domain.streaming.HlsAudioEncodes;
@@ -31,9 +34,12 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
@@ -43,6 +49,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.NonNull;
@@ -176,11 +183,12 @@ public class TranscodeDecisionService {
           case VideoCopyChoice.Refused _ -> Optional.<VideoCopyChoice.Copied>empty();
         };
     boolean videoCopyable = copy.isPresent();
-    var encodeCodecProfile =
-        videoCopyable ? Optional.<EncodeCodecProfile>empty() : selectEncodeCodecProfile(request);
-    if (!videoCopyable && encodeCodecProfile.isEmpty()) {
+    var encode = videoCopyable ? Optional.<EncodeChoice>empty() : selectEncode(request);
+    if (!videoCopyable && encode.isEmpty()) {
       return Optional.empty();
     }
+
+    var encodeCodecProfile = encode.map(EncodeChoice::codecProfile);
 
     var audioDecision = copy.map(VideoCopyChoice.Copied::audio).orElse(sessionAudio.decision());
     var subtitleDecision = SubtitleDecision.exclude();
@@ -213,6 +221,7 @@ public class TranscodeDecisionService {
             .dynamicRangeChoice(request.viewerLimits().dynamicRangeChoice())
             .softwareEncoder(
                 encodeCodecProfile.isPresent() && request.softwareEncodeCodecFamily().isPresent())
+            .videoEncodeFormat(encode.map(EncodeChoice::format).orElse(EncodeFormat.SDR_8_BIT))
             .build());
   }
 
@@ -422,9 +431,16 @@ public class TranscodeDecisionService {
     var declaration = request.capabilityDeclaration();
     return Arrays.stream(EncodeCodecProfile.values())
         .filter(profile -> request.verifiedVideoCodecFamilies().contains(profile.codecFamilyName()))
-        .map(profile -> encodedVariantRequest(source, profile))
-        .flatMap(Optional::stream)
-        .anyMatch(variantRequest -> declaration.fitHlsEncode(variantRequest).isPresent());
+        .anyMatch(
+            profile ->
+                encodedVariantRequest(source, profile).stream()
+                    .flatMap(
+                        variantRequest ->
+                            encodeFormats(request, profile, request.verifiedVideoEncoders())
+                                .stream()
+                                .map(format -> variantRequest.toBuilder().format(format).build()))
+                    .anyMatch(
+                        variantRequest -> declaration.fitHlsEncode(variantRequest).isPresent()));
   }
 
   private PlanChoice acceptedVideoCopyPlan(
@@ -605,15 +621,87 @@ public class TranscodeDecisionService {
   }
 
   /**
-   * The frame rate at which one entry encodes the source-sized variant in the codec profile, or
-   * empty when no entry fits. An encode takes the codec family with the fastest such rate. A source
-   * without an output frame rate or a picture that the worker encodes at any size has no encoded
-   * variant, and the stream session refuses its encode for that reason, so only the codec profile
-   * is checked, at a frame rate of 0 for every family.
+   * The client's declaration, the source and the viewer's HDR choice, which together decide the
+   * formats in which an encode of the source can fit the client. An empty choice permits HDR.
    */
-  static OptionalDouble encodedFrameRate(
+  record EncodeFitting(
+      @NonNull ClientCapabilityDeclaration declaration,
+      @NonNull MediaProbe source,
+      @NonNull Optional<DynamicRangeChoice> dynamicRangeChoice) {}
+
+  /**
+   * The fastest frame rate at which one entry encodes the source-sized variant in the codec profile
+   * and one of the permitted encode formats, or empty when no entry fits. An encode takes the codec
+   * family with the fastest such rate. A source without an output frame rate or a picture that the
+   * worker encodes at any size has no encoded variant, and the stream session refuses its encode
+   * for that reason, so only the codec profile is checked, at a frame rate of 0 for every family.
+   */
+  static OptionalDouble encodedFrameRate(EncodeFitting fitting, EncodeCodecProfile profile) {
+    return permittedEncodeFormats(fitting, profile).stream()
+        .map(format -> encodedFrameRate(fitting, profile, format))
+        .flatMapToDouble(OptionalDouble::stream)
+        .max();
+  }
+
+  /**
+   * The permitted encode formats at the codec profile's fastest encoded frame rate, best first. The
+   * encode takes the fastest rate first, so only these formats can win the codec profile.
+   */
+  static List<EncodeFormat> fastestEncodeFormats(
+      EncodeFitting fitting, EncodeCodecProfile profile) {
+    var fastest = encodedFrameRate(fitting, profile);
+    return permittedEncodeFormats(fitting, profile).stream()
+        .filter(
+            format ->
+                fastest.isPresent() && encodedFrameRate(fitting, profile, format).equals(fastest))
+        .toList();
+  }
+
+  /** Whether one entry accepts an 8-bit SDR encode of the source in the codec profile. */
+  static boolean acceptsEightBitSdrEncode(
       ClientCapabilityDeclaration declaration, MediaProbe source, EncodeCodecProfile profile) {
-    var variantRequest = encodedVariantRequest(source, profile);
+    return encodedFrameRate(
+            new EncodeFitting(declaration, source, Optional.empty()),
+            profile,
+            EncodeFormat.SDR_8_BIT)
+        .isPresent();
+  }
+
+  // The formats that an encode of the source may write in the codec profile, best first: the
+  // source's PQ or HLG range, then 10-bit SDR for a 10-bit SDR source, then 8-bit SDR. PQ also
+  // stands for Dolby Vision without a compatible base, which the worker reshapes with its RPUs.
+  // H.264 output stays 8-bit SDR, because almost no device decodes 10-bit H.264 (#397). The
+  // viewer's SDR choice keeps no HDR range (ADR 0013).
+  private static List<EncodeFormat> permittedEncodeFormats(
+      EncodeFitting fitting, EncodeCodecProfile profile) {
+    if (profile == EncodeCodecProfile.H264_HIGH) {
+      return List.of(EncodeFormat.SDR_8_BIT);
+    }
+
+    var source = fitting.source();
+    var hdr =
+        switch (sourceBase(source)) {
+          case PQ, NONE -> Optional.of(EncodeFormat.hdr(VideoRange.PQ));
+          case HLG -> Optional.of(EncodeFormat.hdr(VideoRange.HLG));
+          case SDR, UNSPECIFIED -> Optional.<EncodeFormat>empty();
+        };
+    if (fitting.dynamicRangeChoice().filter(DynamicRangeChoice.SDR::equals).isPresent()) {
+      hdr = Optional.empty();
+    }
+
+    var tenBitSdr =
+        isTenBitSdr(source) ? Optional.of(EncodeFormat.SDR_10_BIT) : Optional.<EncodeFormat>empty();
+    return Stream.of(hdr, tenBitSdr, Optional.of(EncodeFormat.SDR_8_BIT))
+        .flatMap(Optional::stream)
+        .toList();
+  }
+
+  private static OptionalDouble encodedFrameRate(
+      EncodeFitting fitting, EncodeCodecProfile profile, EncodeFormat format) {
+    var declaration = fitting.declaration();
+    var variantRequest =
+        encodedVariantRequest(fitting.source(), profile)
+            .map(request -> request.toBuilder().format(format).build());
     if (variantRequest.isPresent()) {
       return declaration
           .fitHlsEncode(variantRequest.get())
@@ -621,7 +709,9 @@ public class TranscodeDecisionService {
           .orElseGet(OptionalDouble::empty);
     }
 
-    if (declaresHlsCodecProfile(declaration, profile.codecProfile())) {
+    // A source without an encoded variant is refused its encode, so only 8-bit SDR stands in.
+    if (format.equals(EncodeFormat.SDR_8_BIT)
+        && declaresHlsCodecProfile(declaration, profile.codecProfile())) {
       return OptionalDouble.of(0);
     }
 
@@ -829,9 +919,10 @@ public class TranscodeDecisionService {
         .orElse(true);
   }
 
-  private Optional<EncodeCodecProfile> selectEncodeCodecProfile(TranscodeDecisionRequest request) {
-    var declaration = request.capabilityDeclaration();
-    var source = request.source();
+  // The encode at the fastest frame rate wins, then an HDR encode, so an HDR source keeps its range
+  // for a client that declares it even in a codec family after H.264, then the codec preference
+  // and, within a codec family, 10-bit SDR before 8-bit SDR.
+  private static Optional<EncodeChoice> selectEncode(TranscodeDecisionRequest request) {
     return codecPreference(request).stream()
         .filter(
             profile -> request.encodableVideoCodecFamilies().contains(profile.codecFamilyName()))
@@ -843,12 +934,79 @@ public class TranscodeDecisionService {
                     .softwareEncodeCodecFamily()
                     .map(profile.codecFamilyName()::equals)
                     .orElse(true))
+        .flatMap(profile -> fittingEncodes(request, profile))
+        .reduce(TranscodeDecisionService::preferredEncode);
+  }
+
+  private static EncodeChoice preferredEncode(EncodeChoice preferred, EncodeChoice next) {
+    var byFrameRate = Double.compare(next.frameRate(), preferred.frameRate());
+    if (byFrameRate != 0) {
+      return byFrameRate > 0 ? next : preferred;
+    }
+
+    if (next.format().isHdr() && !preferred.format().isHdr()) {
+      return next;
+    }
+
+    return preferred;
+  }
+
+  // Each format that an entry fits, best first: the source's HDR range, then 10-bit SDR, then 8-bit
+  // SDR.
+  private static Stream<EncodeChoice> fittingEncodes(
+      TranscodeDecisionRequest request, EncodeCodecProfile profile) {
+    var fitting = encodeFitting(request);
+    return encodeFormats(request, profile, request.videoEncoders()).stream()
         .flatMap(
-            profile ->
-                encodedFrameRate(declaration, source, profile).stream()
-                    .mapToObj(rate -> new EncodeCandidate(profile, rate)))
-        .reduce((preferred, next) -> next.frameRate() > preferred.frameRate() ? next : preferred)
-        .map(EncodeCandidate::codecProfile);
+            format ->
+                encodedFrameRate(fitting, profile, format).stream()
+                    .mapToObj(rate -> new EncodeChoice(profile, format, rate)));
+  }
+
+  private static EncodeFitting encodeFitting(TranscodeDecisionRequest request) {
+    return new EncodeFitting(
+        request.capabilityDeclaration(),
+        request.source(),
+        request.viewerLimits().dynamicRangeChoice());
+  }
+
+  // Any format beyond 8-bit SDR needs one encoder of the codec family that lists every feature the
+  // format needs.
+  private static List<EncodeFormat> encodeFormats(
+      TranscodeDecisionRequest request,
+      EncodeCodecProfile profile,
+      List<WorkerVerifiedEncoder> encoders) {
+    return permittedEncodeFormats(encodeFitting(request), profile).stream()
+        .filter(
+            format ->
+                isWrittenByAnEncoder(
+                    format.encodeFeaturesFrom(sourceBase(request.source())), profile, encoders))
+        .toList();
+  }
+
+  // 8-bit SDR needs no feature, so the encodable codec families alone decide it.
+  private static boolean isWrittenByAnEncoder(
+      Set<VideoEncodeFeature> needed,
+      EncodeCodecProfile profile,
+      List<WorkerVerifiedEncoder> encoders) {
+    return needed.isEmpty()
+        || encoders.stream()
+            .filter(encoder -> encoder.backend().codecFamily().equals(profile.codecFamilyName()))
+            .anyMatch(encoder -> encoder.encodeFeatures().containsAll(needed));
+  }
+
+  private static CompatibleBase sourceBase(MediaProbe source) {
+    return source
+        .videoPlaybackFacts()
+        .map(facts -> facts.dynamicRange().compatibleBase())
+        .orElse(CompatibleBase.UNSPECIFIED);
+  }
+
+  // An HDR source that the encode tone-maps to SDR keeps 8 bits.
+  private static boolean isTenBitSdr(MediaProbe source) {
+    var base = sourceBase(source);
+    return (base == CompatibleBase.SDR || base == CompatibleBase.UNSPECIFIED)
+        && source.videoPlaybackFacts().map(facts -> facts.bitDepth().orElse(8) >= 10).orElse(false);
   }
 
   // The codec families that a worker encodes in hardware, then H.264, then the rest (ADR 0009).
@@ -867,5 +1025,6 @@ public class TranscodeDecisionService {
         .toList();
   }
 
-  private record EncodeCandidate(EncodeCodecProfile codecProfile, double frameRate) {}
+  private record EncodeChoice(
+      EncodeCodecProfile codecProfile, EncodeFormat format, double frameRate) {}
 }

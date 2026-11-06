@@ -6,6 +6,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.streaming.AudioSteps;
 import com.streamarr.server.domain.streaming.AudioTrackChannels;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamDelivery;
@@ -13,6 +14,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -161,6 +163,8 @@ public class HlsStreamingService implements StreamingService {
             .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
             .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
+            .videoEncoders(encodableVideoEncoders(command.softwareEncodeCodecFamily()))
+            .verifiedVideoEncoders(verifiedVideoEncoders(command.softwareEncodeCodecFamily()))
             .directPlayRefusals(directPlay.refusals())
             .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
             .build();
@@ -321,7 +325,7 @@ public class HlsStreamingService implements StreamingService {
     // When no left variant runs on a worker that encodes the preferred family, the next family's
     // workers may still hold one.
     while (candidate.isPresent()
-        && !producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, candidate.get())) {
+        && !stopLeftVariantForTheFamilyOf(sessionId, request, candidate.get())) {
       excludedFamilies.add(candidate.get().videoCodecFamily());
       candidate = stoppableEncodeCandidate(request, excludedFamilies);
     }
@@ -334,13 +338,55 @@ public class HlsStreamingService implements StreamingService {
             .build());
   }
 
+  // Only some workers may write the candidate's 10-bit or HDR output, so a left variant on a worker
+  // that writes the codec family in 8-bit SDR also makes room before the family is given up, when
+  // the client plays that encode.
+  private boolean stopLeftVariantForTheFamilyOf(
+      UUID sessionId, TranscodeDecisionRequest request, TranscodeDecision candidate) {
+    if (producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, candidate)) {
+      return true;
+    }
+
+    return !candidate.videoEncodeFormat().equals(EncodeFormat.SDR_8_BIT)
+        && candidate
+            .encodeCodecProfile()
+            .filter(
+                profile ->
+                    TranscodeDecisionService.acceptsEightBitSdrEncode(
+                        request.capabilityDeclaration(), request.source(), profile))
+            .isPresent()
+        && producerLifecycle.stopLeftVariantOfAnotherStreamSession(
+            sessionId, candidate.toBuilder().videoEncodeFormat(EncodeFormat.SDR_8_BIT).build());
+  }
+
   // The request as the workers' encoders with a free slot stand now.
   private TranscodeDecisionRequest withEncodersFreeNow(TranscodeDecisionRequest request) {
     return request.toBuilder()
         .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
         .hardwareEncodableVideoCodecFamilies(
             transcodeExecutor.hardwareEncodableVideoCodecFamilies())
+        .videoEncoders(encodableVideoEncoders(request.softwareEncodeCodecFamily()))
         .build();
+  }
+
+  // A software encode after a hardware encoder failure runs on the software encoders, which may
+  // write less than the hardware encoders of the same codec family (ADR 0044).
+  private List<WorkerVerifiedEncoder> encodableVideoEncoders(
+      Optional<String> softwareEncodeCodecFamily) {
+    if (softwareEncodeCodecFamily.isPresent()) {
+      return transcodeExecutor.encodableSoftwareVideoEncoders();
+    }
+
+    return transcodeExecutor.encodableVideoEncoders();
+  }
+
+  private List<WorkerVerifiedEncoder> verifiedVideoEncoders(
+      Optional<String> softwareEncodeCodecFamily) {
+    if (softwareEncodeCodecFamily.isPresent()) {
+      return transcodeExecutor.verifiedSoftwareVideoEncoders();
+    }
+
+    return transcodeExecutor.verifiedVideoEncoders();
   }
 
   private Optional<TranscodeDecision> stoppableEncodeCandidate(
@@ -389,13 +435,14 @@ public class HlsStreamingService implements StreamingService {
   }
 
   // The encode that a connected worker's verified encoder could run once it had a free slot. Busy
-  // workers' hardware encoders count too, so the encode is the one that the server would decide
-  // once those workers had a free slot.
+  // workers' hardware encoders and encode features count too, so the encode is the one that the
+  // server would decide once those workers had a free slot.
   private Optional<TranscodeDecision> verifiedEncodeCandidate(TranscodeDecisionRequest request) {
     return encodeCandidate(
         request.toBuilder()
             .hardwareEncodableVideoCodecFamilies(
                 transcodeExecutor.verifiedHardwareVideoCodecFamilies())
+            .videoEncoders(request.verifiedVideoEncoders())
             .build(),
         request.verifiedVideoCodecFamilies());
   }
@@ -540,6 +587,7 @@ public class HlsStreamingService implements StreamingService {
             .viewerLimits(ladderLimits(decisionRequest))
             .capabilityDeclaration(declaration)
             .codecProfile(codecProfile)
+            .encodeFormat(decision.videoEncodeFormat())
             // The stream session refuses an encode without an output frame rate before it sizes a
             // variant.
             .frameRate(decision.outputFrameRate().orElseThrow())

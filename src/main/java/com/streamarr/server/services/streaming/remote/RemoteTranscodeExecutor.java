@@ -163,4 +163,24 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   public List<WorkerVideoCopySupport> videoCopySupportByWorker() {
     return workerServer.videoCopySupportByWorker(sourceNamespaceId);
   }
+
+  @Override
+  public List<WorkerVerifiedEncoder> encodableVideoEncoders() {
+    return workerServer.encodableVideoEncoders(sourceNamespaceId);
+  }
+
+  @Override
+  public List<WorkerVerifiedEncoder> verifiedVideoEncoders() {
+    return workerServer.verifiedVideoEncoders(sourceNamespaceId);
+  }
+
+  @Override
+  public List<WorkerVerifiedEncoder> encodableSoftwareVideoEncoders() {
+    return workerServer.encodableSoftwareVideoEncoders(sourceNamespaceId);
+  }
+
+  @Override
+  public List<WorkerVerifiedEncoder> verifiedSoftwareVideoEncoders() {
+    return workerServer.verifiedSoftwareVideoEncoders(sourceNamespaceId);
+  }
 }

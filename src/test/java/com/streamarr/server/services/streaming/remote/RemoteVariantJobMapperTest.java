@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.ExactSegmentStarts;
 import com.streamarr.server.domain.streaming.FieldOrder;
@@ -22,6 +23,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
@@ -360,6 +362,86 @@ class RemoteVariantJobMapperTest {
     assertThat(video.getOutputBitDepth()).isEqualTo(8);
     assertThat(video.getOutputChromaSubsampling())
         .isEqualTo(ChromaSubsampling.CHROMA_SUBSAMPLING_420);
+  }
+
+  // #397: a PQ encode writes the source's static HDR values as HDR10, and every job attempt of the
+  // variant carries the same values, from stored facts, wherever it starts.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should send the PQ range, 10 bits and the same static HDR values when two attempts of an"
+          + " HDR10 encode start at different positions")
+  void shouldSendThePqRange10BitsAndTheSameStaticHdrValuesWhenTwoAttemptsOfAnHdr10EncodeStart() {
+    var hdr10 =
+        hdrEncodeAttempt(
+            com.streamarr.server.domain.streaming.CompatibleBase.PQ,
+            com.streamarr.server.domain.streaming.EncodeFormat.hdr(VideoRange.PQ));
+
+    var first = mapper.map(hdr10.seekPosition(0).build()).getDecision().getVideo();
+    var later = mapper.map(hdr10.seekPosition(600).build()).getDecision().getVideo();
+
+    assertThat(first.getOutputDynamicRange().getCompatibleBase())
+        .isEqualTo(CompatibleBase.COMPATIBLE_BASE_PQ);
+    assertThat(first.getOutputBitDepth()).isEqualTo(10);
+    assertThat(first.getCodecString()).endsWith(".10");
+    assertThat(first.getMasteringDisplay())
+        .isEqualTo(
+            MasteringDisplayColorVolume.newBuilder()
+                .setRed(ChromaticityCoordinates.newBuilder().setX(34_000).setY(16_000))
+                .setGreen(ChromaticityCoordinates.newBuilder().setX(13_250).setY(34_500))
+                .setBlue(ChromaticityCoordinates.newBuilder().setX(7_500).setY(3_000))
+                .setWhitePoint(ChromaticityCoordinates.newBuilder().setX(15_635).setY(16_450))
+                .setMaxLuminance(10_000_000)
+                .setMinLuminance(50)
+                .build());
+    assertThat(first.getContentLightLevel().getMaxContentLightLevel()).isEqualTo(1_000);
+    assertThat(first.getContentLightLevel().getMaxFrameAverageLightLevel()).isEqualTo(400);
+    assertThat(later.getMasteringDisplay()).isEqualTo(first.getMasteringDisplay());
+    assertThat(later.getContentLightLevel()).isEqualTo(first.getContentLightLevel());
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName("Should send the HLG range and 10 bits without static HDR values for an HLG encode")
+  void shouldSendTheHlgRangeAnd10BitsWithoutStaticHdrValuesForAnHlgEncode() {
+    var video =
+        mapper
+            .map(
+                hdrEncodeAttempt(
+                        com.streamarr.server.domain.streaming.CompatibleBase.HLG,
+                        com.streamarr.server.domain.streaming.EncodeFormat.hdr(VideoRange.HLG))
+                    .build())
+            .getDecision()
+            .getVideo();
+
+    assertThat(video.getOutputDynamicRange().getCompatibleBase())
+        .isEqualTo(CompatibleBase.COMPATIBLE_BASE_HLG);
+    assertThat(video.getOutputBitDepth()).isEqualTo(10);
+    assertThat(video.hasMasteringDisplay()).isFalse();
+    assertThat(video.hasContentLightLevel()).isFalse();
+  }
+
+  // The slot counts and execution targets read the encode's range, bit depth and source range, so
+  // only a worker whose encoder writes the encode counts for it (#397).
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should project an HDR encode's range, bit depth and source range for the worker routing")
+  void shouldProjectAnHdrEncodesRangeBitDepthAndSourceRangeForTheWorkerRouting() {
+    var decision =
+        hdrEncodeAttempt(
+                com.streamarr.server.domain.streaming.CompatibleBase.PQ,
+                com.streamarr.server.domain.streaming.EncodeFormat.hdr(VideoRange.PQ))
+            .build()
+            .transcodeDecision();
+
+    var video = RemoteVariantJobMapper.decision(decision).getVideo();
+
+    assertThat(video.getOutputDynamicRange().getCompatibleBase())
+        .isEqualTo(CompatibleBase.COMPATIBLE_BASE_PQ);
+    assertThat(video.getOutputBitDepth()).isEqualTo(10);
+    assertThat(video.getSourceDynamicRange().getCompatibleBase())
+        .isEqualTo(CompatibleBase.COMPATIBLE_BASE_PQ);
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -1466,6 +1548,31 @@ class RemoteVariantJobMapperTest {
                             .build()))
                 .build())
         .encoderPreset(EncoderPreset.FASTER);
+  }
+
+  // A 1080p60 AV1 encode of a 10-bit HEVC source with the probed static HDR values.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static TranscodeRequest.TranscodeRequestBuilder hdrEncodeAttempt(
+      com.streamarr.server.domain.streaming.CompatibleBase base,
+      com.streamarr.server.domain.streaming.EncodeFormat format) {
+    var attempt = encodeAttempt("av1");
+    var decision =
+        attempt.build().transcodeDecision().toBuilder()
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.AV1_MAIN))
+            .videoEncodeFormat(format)
+            .videoSource(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .frameRateRule(
+                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+                        .bitDepth(OptionalInt.of(10))
+                        .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(base))
+                        .masteringDisplay(Optional.of(VideoPlaybackFactsFixture.MASTERING_DISPLAY))
+                        .contentLightLevel(
+                            Optional.of(VideoPlaybackFactsFixture.CONTENT_LIGHT_LEVEL))
+                        .build()))
+            .build();
+    return attempt.transcodeDecision(decision);
   }
 
   // 1080i at 29.97 frames, 59.94 fields, per second.

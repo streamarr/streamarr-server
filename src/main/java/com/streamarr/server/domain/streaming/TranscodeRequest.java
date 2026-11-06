@@ -78,6 +78,7 @@ public record TranscodeRequest(
                 .height(height)
                 .probedFrameRate(outputFrameRate)
                 .bitrate(bitrate)
+                .format(transcodeDecision.videoEncodeFormat())
                 .build()));
   }
 

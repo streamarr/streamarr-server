@@ -117,7 +117,8 @@ class TranscodeDecisionTest {
                         null,
                         OptionalInt.empty(),
                         Optional.empty(),
-                        false)),
+                        false,
+                        EncodeFormat.SDR_8_BIT)),
         Arguments.of(
             "audioStreamIndex",
             (ThrowingCallable)
@@ -135,7 +136,8 @@ class TranscodeDecisionTest {
                         List.of(),
                         null,
                         Optional.empty(),
-                        false)),
+                        false,
+                        EncodeFormat.SDR_8_BIT)),
         Arguments.of(
             "dynamicRangeChoice",
             (ThrowingCallable)
@@ -153,7 +155,8 @@ class TranscodeDecisionTest {
                         List.of(),
                         OptionalInt.empty(),
                         null,
-                        false)));
+                        false,
+                        EncodeFormat.SDR_8_BIT)));
   }
 
   @Test
@@ -442,6 +445,19 @@ class TranscodeDecisionTest {
               assertThat(encode.bitDepth()).isEqualTo(8);
               assertThat(encode.chromaSubsampling()).isEqualTo(ChromaSubsampling.CHROMA_420);
             });
+  }
+
+  @Test
+  @DisplayName("Should refuse a decision that copies the video when it holds a 10-bit HDR format")
+  void shouldRefuseADecisionThatCopiesTheVideoWhenItHoldsA10BitHdrFormat() {
+    var copy =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
+            .videoEncodeFormat(EncodeFormat.hdr(VideoRange.PQ));
+
+    assertThatThrownBy(copy::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("encode format");
   }
 
   @ParameterizedTest

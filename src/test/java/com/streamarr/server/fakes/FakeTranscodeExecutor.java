@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
@@ -59,6 +60,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       new ConcurrentHashMap<>();
   private final Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>> encodersByTarget =
       new ConcurrentHashMap<>();
+  private final Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>>
+      softwareEncodersByTarget = new ConcurrentHashMap<>();
   private final AtomicLong livenessChecks = new AtomicLong();
   private final AtomicLong jobSlotRefusals = new AtomicLong();
   private final Map<ProcessKey, AtomicLong> livenessChecksByVariant = new ConcurrentHashMap<>();
@@ -145,8 +148,9 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       return Optional.empty();
     }
 
+    var encoders = decision.softwareEncoder() ? softwareEncodersByTarget : encodersByTarget;
     return Optional.ofNullable(
-        encodersByTarget.getOrDefault(target, Map.of()).get(decision.videoCodecFamily()));
+        encoders.getOrDefault(target, Map.of()).get(decision.videoCodecFamily()));
   }
 
   private TranscodeHandle doStart(
@@ -478,9 +482,16 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
+  // As a worker does, the target runs the pinned backend with the same keyframe verification,
+  // whatever encode features its encoder lists.
   private boolean advertises(ExecutionTargetId target, WorkerVerifiedEncoder pinnedEncoder) {
-    return pinnedEncoder.equals(
-        encodersByTarget.getOrDefault(target, Map.of()).get(pinnedEncoder.backend().codecFamily()));
+    return Optional.ofNullable(
+            encodersByTarget
+                .getOrDefault(target, Map.of())
+                .get(pinnedEncoder.backend().codecFamily()))
+        .filter(encoder -> encoder.backend().equals(pinnedEncoder.backend()))
+        .filter(encoder -> encoder.keyframeVerified() == pinnedEncoder.keyframeVerified())
+        .isPresent();
   }
 
   /**
@@ -501,6 +512,20 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
             .collect(Collectors.toUnmodifiableSet()));
   }
 
+  /**
+   * The target runs these software encoders, one for each codec family, for a software encode after
+   * a hardware encoder failure (ADR 0044).
+   */
+  public void setTargetSoftwareEncoders(
+      ExecutionTargetId target, List<WorkerVerifiedEncoder> encoders) {
+    softwareEncodersByTarget.put(
+        target,
+        encoders.stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    encoder -> encoder.backend().codecFamily(), Function.identity())));
+  }
+
   public void setExecutionTargets(List<ExecutionTargetId> targets) {
     executionTargets = new LinkedHashSet<>(targets);
   }
@@ -513,8 +538,21 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private boolean canRun(ExecutionTargetId target, TranscodeDecision decision) {
     var families = encodableVideoCodecFamiliesByTarget.get(target);
     return !encodesVideo(decision)
-        || families == null
-        || families.contains(decision.videoCodecFamily());
+        || (families == null || families.contains(decision.videoCodecFamily()))
+            && writesThePlannedOutput(target, decision);
+  }
+
+  // A target's advertised encoder must list every encode feature that the planned output needs.
+  private boolean writesThePlannedOutput(ExecutionTargetId target, TranscodeDecision decision) {
+    var sourceBase =
+        decision
+            .videoSource()
+            .map(facts -> facts.dynamicRange().compatibleBase())
+            .orElse(CompatibleBase.UNSPECIFIED);
+    var needed = decision.videoEncodeFormat().encodeFeaturesFrom(sourceBase);
+    return advertisedEncoder(target, decision)
+        .map(encoder -> encoder.encodeFeatures().containsAll(needed))
+        .orElse(needed.isEmpty());
   }
 
   @Override
@@ -568,6 +606,38 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   @Override
   public List<WorkerVideoCopySupport> videoCopySupportByWorker() {
     return videoCopySupport;
+  }
+
+  /** The encoders that targets with a free job slot advertise. */
+  @Override
+  public List<WorkerVerifiedEncoder> encodableVideoEncoders() {
+    return advertisedEncoders(encodersByTarget, target -> freeJobSlotsOn(target) > 0);
+  }
+
+  /** Busy targets' encoders count too. */
+  @Override
+  public List<WorkerVerifiedEncoder> verifiedVideoEncoders() {
+    return advertisedEncoders(encodersByTarget, _ -> true);
+  }
+
+  /** The software encoders that targets with a free job slot advertise. */
+  @Override
+  public List<WorkerVerifiedEncoder> encodableSoftwareVideoEncoders() {
+    return advertisedEncoders(softwareEncodersByTarget, target -> freeJobSlotsOn(target) > 0);
+  }
+
+  @Override
+  public List<WorkerVerifiedEncoder> verifiedSoftwareVideoEncoders() {
+    return advertisedEncoders(softwareEncodersByTarget, _ -> true);
+  }
+
+  private List<WorkerVerifiedEncoder> advertisedEncoders(
+      Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>> encoders,
+      Predicate<ExecutionTargetId> targets) {
+    return executionTargets.stream()
+        .filter(targets)
+        .flatMap(target -> encoders.getOrDefault(target, Map.of()).values().stream())
+        .toList();
   }
 
   /** Changes the connected workers just before and just after the next verified families read. */

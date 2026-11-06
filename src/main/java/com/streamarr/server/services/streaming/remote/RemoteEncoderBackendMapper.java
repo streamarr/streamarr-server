@@ -1,12 +1,15 @@
 package com.streamarr.server.services.streaming.remote;
 
 import com.streamarr.server.domain.streaming.EncoderBackend;
+import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.transcode.v1.EncoderKind;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoEncoderBackend;
 import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 // Empty for an entry whose codec family or encoder kind this server does not know.
 final class RemoteEncoderBackendMapper {
@@ -20,7 +23,15 @@ final class RemoteEncoderBackendMapper {
                 WorkerVerifiedEncoder.builder()
                     .backend(backend)
                     .keyframeVerified(encoder.getKeyframeVerified())
+                    .encodeFeatures(encodeFeatures(encoder))
                     .build());
+  }
+
+  private static Set<VideoEncodeFeature> encodeFeatures(WorkerVerifiedVideoEncoder encoder) {
+    return encoder.getEncodeFeaturesList().stream()
+        .map(RemoteVideoEncodeRequirements::fromProto)
+        .flatMap(Optional::stream)
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   static Optional<EncoderBackend> encoderBackend(VideoEncoderBackend backend) {

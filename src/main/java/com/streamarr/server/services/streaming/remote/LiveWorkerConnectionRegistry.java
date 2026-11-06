@@ -63,6 +63,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -453,8 +454,7 @@ final class LiveWorkerConnectionRegistry {
       UUID sourceNamespaceId, TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
     return executionTargets(
         connectionsFor(sourceNamespaceId)
-            .filter(connection -> connection.runsEncoder(pinnedEncoder))
-            .filter(connection -> connection.canEncodeAudioLayout(decision)));
+            .filter(connection -> connection.canEncodeOnPinnedEncoder(decision, pinnedEncoder)));
   }
 
   private Stream<WorkerConnection> connectionsFor(UUID sourceNamespaceId) {
@@ -547,6 +547,25 @@ final class LiveWorkerConnectionRegistry {
     return connectionsFor(sourceNamespaceId).map(WorkerConnection::videoCopySupport).toList();
   }
 
+  List<WorkerVerifiedEncoder> encodableVideoEncoders(UUID sourceNamespaceId) {
+    return encodersOfWorkersWithFreeSlot(sourceNamespaceId).toList();
+  }
+
+  List<WorkerVerifiedEncoder> verifiedVideoEncoders(UUID sourceNamespaceId) {
+    return connectionsFor(sourceNamespaceId).flatMap(WorkerConnection::countedEncoders).toList();
+  }
+
+  List<WorkerVerifiedEncoder> encodableSoftwareVideoEncoders(UUID sourceNamespaceId) {
+    return connectionsFor(sourceNamespaceId)
+        .filter(connection -> connection.availableSlots() > 0)
+        .flatMap(WorkerConnection::softwareEncoders)
+        .toList();
+  }
+
+  List<WorkerVerifiedEncoder> verifiedSoftwareVideoEncoders(UUID sourceNamespaceId) {
+    return connectionsFor(sourceNamespaceId).flatMap(WorkerConnection::softwareEncoders).toList();
+  }
+
   boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {
     return connectionsFor(sourceNamespaceId)
         .anyMatch(connection -> connection.probeVersions.contains(probeVersion));
@@ -606,8 +625,7 @@ final class LiveWorkerConnectionRegistry {
   int availableSlots(
       UUID sourceNamespaceId, TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
     return connectionsFor(sourceNamespaceId)
-        .filter(connection -> connection.runsEncoder(pinnedEncoder))
-        .filter(connection -> connection.canEncodeAudioLayout(decision))
+        .filter(connection -> connection.canEncodeOnPinnedEncoder(decision, pinnedEncoder))
         .mapToInt(WorkerConnection::availableSlots)
         .sum();
   }
@@ -1029,7 +1047,8 @@ final class LiveWorkerConnectionRegistry {
       return dispatch;
     }
 
-    // Empty when the job encodes video on an encoder that this worker does not run.
+    // Empty when the job encodes video on an encoder that this worker does not run, or on one that
+    // does not list every feature that the planned output needs.
     private Optional<VariantDispatch> dispatchFor(
         TranscodeDecision decision, Optional<WorkerVerifiedEncoder> pinnedEncoder) {
       if (!encodesVideo(decision)) {
@@ -1038,8 +1057,9 @@ final class LiveWorkerConnectionRegistry {
 
       var encoder =
           pinnedEncoder.isPresent()
-              ? pinnedEncoder.filter(this::runsEncoder)
-              : encoderFor(decision);
+              ? pinnedEncoder.filter(
+                  pinned -> runsPinnedEncoderWritingThePlannedOutput(pinned, decision))
+              : encoderFor(decision).filter(chosen -> writesThePlannedOutput(chosen, decision));
       return encoder.map(chosen -> new VariantDispatch(Optional.of(chosen)));
     }
 
@@ -1301,9 +1321,30 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private boolean canEncode(TranscodeDecision decision) {
-      return (!encodesVideo(decision) || encoderFor(decision).isPresent())
+      return (!encodesVideo(decision) || encoderWritesThePlannedOutput(decision))
           && canEncodeAudioLayout(decision)
           && canDeliverVideoAsPlanned(decision.getVideo());
+    }
+
+    private boolean encoderWritesThePlannedOutput(TranscodeDecision decision) {
+      return encoderFor(decision)
+          .filter(encoder -> writesThePlannedOutput(encoder, decision))
+          .isPresent();
+    }
+
+    private static boolean writesThePlannedOutput(
+        WorkerVerifiedEncoder encoder, TranscodeDecision decision) {
+      return encoder
+          .encodeFeatures()
+          .containsAll(RemoteVideoEncodeRequirements.features(decision.getVideo()));
+    }
+
+    private Stream<WorkerVerifiedEncoder> countedEncoders() {
+      return countedEncoders.values().stream();
+    }
+
+    private Stream<WorkerVerifiedEncoder> softwareEncoders() {
+      return softwareEncoders.values().stream();
     }
 
     // A rewrite or copy feature that the server's domain does not name yet, such as the profile 7
@@ -1364,14 +1405,36 @@ final class LiveWorkerConnectionRegistry {
     }
 
     // The keyframe-verified flag must match too: a playlist that carries
-    // EXT-X-INDEPENDENT-SEGMENTS for the pin needs closed GOPs from every attempt. A worker runs
-    // its
-    // software encoder whichever encoder it prefers, so a variant pinned to the software encoder
-    // keeps it once a hardware encoder is offered again (ADR 0044).
-    private boolean runsEncoder(WorkerVerifiedEncoder pinnedEncoder) {
+    // EXT-X-INDEPENDENT-SEGMENTS for the pin needs closed GOPs from every attempt. The encode
+    // features need not match, because dispatch and the pinned queries check those that the
+    // attempt's output needs. A worker runs its software encoder whichever encoder it prefers, so a
+    // variant pinned to the software encoder keeps it once a hardware encoder is offered again
+    // (ADR 0044).
+    private Optional<WorkerVerifiedEncoder> advertisedEncoder(WorkerVerifiedEncoder pinnedEncoder) {
       var family = pinnedEncoder.backend().codecFamily();
-      return pinnedEncoder.equals(countedEncoders.get(family))
-          || pinnedEncoder.equals(softwareEncoders.get(family));
+      return Stream.of(countedEncoders.get(family), softwareEncoders.get(family))
+          .filter(Objects::nonNull)
+          .filter(encoder -> encoder.backend().equals(pinnedEncoder.backend()))
+          .filter(encoder -> encoder.keyframeVerified() == pinnedEncoder.keyframeVerified())
+          .findFirst();
+    }
+
+    private boolean runsEncoder(WorkerVerifiedEncoder pinnedEncoder) {
+      return advertisedEncoder(pinnedEncoder).isPresent();
+    }
+
+    private boolean runsPinnedEncoderWritingThePlannedOutput(
+        WorkerVerifiedEncoder pinnedEncoder, TranscodeDecision decision) {
+      return advertisedEncoder(pinnedEncoder)
+          .filter(encoder -> writesThePlannedOutput(encoder, decision))
+          .isPresent();
+    }
+
+    private boolean canEncodeOnPinnedEncoder(
+        TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
+      return runsPinnedEncoderWritingThePlannedOutput(pinnedEncoder, decision)
+          && canEncodeAudioLayout(decision)
+          && canDeliverVideoAsPlanned(decision.getVideo());
     }
 
     private boolean canAccessSourceNamespace(Uuid sourceNamespaceId) {

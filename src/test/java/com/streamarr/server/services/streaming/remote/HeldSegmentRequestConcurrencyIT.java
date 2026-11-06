@@ -613,6 +613,26 @@ class HeldSegmentRequestConcurrencyIT {
     public List<WorkerVideoCopySupport> videoCopySupportByWorker() {
       return delegate.videoCopySupportByWorker();
     }
+
+    @Override
+    public List<WorkerVerifiedEncoder> encodableVideoEncoders() {
+      return delegate.encodableVideoEncoders();
+    }
+
+    @Override
+    public List<WorkerVerifiedEncoder> verifiedVideoEncoders() {
+      return delegate.verifiedVideoEncoders();
+    }
+
+    @Override
+    public List<WorkerVerifiedEncoder> encodableSoftwareVideoEncoders() {
+      return delegate.encodableSoftwareVideoEncoders();
+    }
+
+    @Override
+    public List<WorkerVerifiedEncoder> verifiedSoftwareVideoEncoders() {
+      return delegate.verifiedSoftwareVideoEncoders();
+    }
   }
 
   /** A worker session that the test drives: it receives variant jobs and uploads segments. */

@@ -124,4 +124,30 @@ public interface TranscodeExecutor {
    * through runs only on a worker that delivers it.
    */
   List<WorkerVideoCopySupport> videoCopySupportByWorker();
+
+  /**
+   * The worker-verified encoders of connected, source-accessible workers with a free slot, with the
+   * encode features that each lists (#397). An encode that needs a feature runs only on a worker
+   * whose encoder of its codec family lists it.
+   */
+  List<WorkerVerifiedEncoder> encodableVideoEncoders();
+
+  /**
+   * The worker-verified encoders of connected, source-accessible workers, including busy workers,
+   * with the encode features that each lists.
+   */
+  List<WorkerVerifiedEncoder> verifiedVideoEncoders();
+
+  /**
+   * The software encoders of connected, source-accessible workers with a free slot, with the encode
+   * features that each lists. A software encode after a hardware encoder failure runs only on a
+   * software encoder, so it plans the outputs that these encoders write (ADR 0044, #397).
+   */
+  List<WorkerVerifiedEncoder> encodableSoftwareVideoEncoders();
+
+  /**
+   * The software encoders of connected, source-accessible workers, including busy workers, with the
+   * encode features that each lists.
+   */
+  List<WorkerVerifiedEncoder> verifiedSoftwareVideoEncoders();
 }

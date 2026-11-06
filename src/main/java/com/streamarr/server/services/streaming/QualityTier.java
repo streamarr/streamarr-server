@@ -1,12 +1,14 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncodedVariantRequest;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.services.streaming.TranscodeDecisionService.EncodeFitting;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -30,6 +32,10 @@ enum QualityTier {
   TIER_360P("360p", new PictureSize(640, 360), 800_000L, 800_000L);
 
   private static final List<QualityTier> LARGEST_FIRST = Arrays.asList(values());
+
+  // A fixed quality may play with HDR permitted or with the viewer's SDR choice.
+  private static final List<Optional<DynamicRangeChoice>> VIEWER_HDR_CHOICES =
+      List.of(Optional.empty(), Optional.of(DynamicRangeChoice.SDR));
 
   private final String label;
   private final PictureSize box;
@@ -94,9 +100,10 @@ enum QualityTier {
   // A copy plays the source's own picture, so it reaches the tier when the source fits the tier's
   // box. The keyframe check is left out: it refuses few sources, and the encode that replaces a
   // refused copy of the source's own tier usually reaches it too. An encode reaches the tier when
-  // one capability entry fits the tier's picture, in the codec family that the encode takes,
-  // without shrinking it into a smaller tier's box. The workers connected now do not count,
-  // because the offered choices last for the whole playback session.
+  // one capability entry fits the tier's picture, in the codec family and a format that the encode
+  // can take at its fastest frame rate with HDR permitted or with the viewer's SDR choice, without
+  // shrinking it into a smaller tier's box. The workers connected now do not count, because the
+  // offered choices last for the whole playback session.
   private boolean isReachedIn(MediaProbe source, ClientCapabilityDeclaration declaration) {
     var picture = source.displayedSize();
     if (picture.fitsWithinEitherOrientation(box)
@@ -104,22 +111,34 @@ enum QualityTier {
       return true;
     }
 
+    return VIEWER_HDR_CHOICES.stream()
+        .map(choice -> new EncodeFitting(declaration, source, choice))
+        .anyMatch(this::isReachedByAnEncode);
+  }
+
+  private boolean isReachedByAnEncode(EncodeFitting fitting) {
+    var source = fitting.source();
+    var picture = source.displayedSize();
     var frameRate = source.videoPlaybackFacts().flatMap(VideoPlaybackFacts::encodedFrameRate);
     if (frameRate.isEmpty()) {
       return false;
     }
 
-    return fastestEncodeCodecProfiles(source, declaration).stream()
-        .map(
+    return fastestEncodeCodecProfiles(fitting).stream()
+        .flatMap(
             codecProfile ->
-                EncodedVariantRequest.builder()
-                    .codecProfile(codecProfile)
-                    .source(picture)
-                    .bounds(box.orientedLike(picture))
-                    .frameRate(frameRate.get())
-                    .bitrate(videoBitrate(codecProfile))
-                    .build())
-        .map(declaration::fitHlsEncode)
+                TranscodeDecisionService.fastestEncodeFormats(fitting, codecProfile).stream()
+                    .map(
+                        format ->
+                            EncodedVariantRequest.builder()
+                                .codecProfile(codecProfile)
+                                .format(format)
+                                .source(picture)
+                                .bounds(box.orientedLike(picture))
+                                .frameRate(frameRate.get())
+                                .bitrate(videoBitrate(codecProfile))
+                                .build()))
+        .map(fitting.declaration()::fitHlsEncode)
         .flatMap(Optional::stream)
         .anyMatch(output -> containing(new PictureSize(output.width(), output.height())) == this);
   }
@@ -127,19 +146,17 @@ enum QualityTier {
   // The codec profiles whose entries encode the source-sized variant at the fastest frame rate. On
   // a tie the encode follows a codec preference that depends on the workers, so each tied profile
   // counts.
-  private static List<EncodeCodecProfile> fastestEncodeCodecProfiles(
-      MediaProbe source, ClientCapabilityDeclaration declaration) {
+  private static List<EncodeCodecProfile> fastestEncodeCodecProfiles(EncodeFitting fitting) {
     var fastest =
         Arrays.stream(EncodeCodecProfile.values())
-            .map(profile -> TranscodeDecisionService.encodedFrameRate(declaration, source, profile))
+            .map(profile -> TranscodeDecisionService.encodedFrameRate(fitting, profile))
             .flatMapToDouble(OptionalDouble::stream)
             .max();
     return Arrays.stream(EncodeCodecProfile.values())
         .filter(
             profile ->
                 fastest.isPresent()
-                    && TranscodeDecisionService.encodedFrameRate(declaration, source, profile)
-                        .equals(fastest))
+                    && TranscodeDecisionService.encodedFrameRate(fitting, profile).equals(fastest))
         .toList();
   }
 

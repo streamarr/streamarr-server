@@ -8,11 +8,17 @@ import lombok.NonNull;
 
 /**
  * The planned output of one encoded variant that its codec level must allow: the picture size, the
- * frame rate and the bitrate that the worker caps the encode at.
+ * frame rate and the bitrate that the worker caps the encode at, and the range and bit depth that
+ * the codec string names.
  */
 @Builder(toBuilder = true)
 public record EncodedVideoOutput(
-    @NonNull String codecFamily, int width, int height, @NonNull Fraction frameRate, long bitrate) {
+    @NonNull String codecFamily,
+    int width,
+    int height,
+    @NonNull Fraction frameRate,
+    long bitrate,
+    @NonNull EncodeFormat format) {
 
   // The fitting of an encode to the capability entries keeps the frame rate before the picture
   // size (ADR 0049), then prefers the larger picture, then the higher bitrate.
@@ -23,6 +29,9 @@ public record EncodedVideoOutput(
               .thenComparingLong(EncodedVideoOutput::bitrate);
 
   public static class EncodedVideoOutputBuilder {
+    // Lombok builder default — its generated setter assigns it
+    @SuppressWarnings({"java:S1068", "java:S9438"})
+    private EncodeFormat format = EncodeFormat.SDR_8_BIT;
 
     /** An encode runs at the probed frame rate, so a source without one has no planned output. */
     public EncodedVideoOutputBuilder probedFrameRate(@NonNull Optional<Fraction> probedFrameRate) {

@@ -130,15 +130,32 @@ public sealed interface PlannedVideoOutput {
   /**
    * An encode, in the codec profile that it forces, with the bit depth, 8 or 10, and the chroma
    * subsampling that it writes. Every encode writes 4:2:0, and an H.264 encode is always 8-bit SDR,
-   * because almost no device decodes 10-bit H.264 (#397).
+   * because almost no device decodes 10-bit H.264 (#397). {@code masteringDisplay} and {@code
+   * contentLightLevel} are the HDR10 static metadata that a PQ encode writes, and only a PQ encode
+   * holds them.
    */
   @Builder
   record Encode(
       @NonNull Optional<EncodeCodecProfile> codecProfile,
       @NonNull VideoDynamicRange dynamicRange,
       int bitDepth,
-      @NonNull ChromaSubsampling chromaSubsampling)
+      @NonNull ChromaSubsampling chromaSubsampling,
+      @NonNull Optional<MasteringDisplayColorVolume> masteringDisplay,
+      @NonNull Optional<ContentLightLevel> contentLightLevel)
       implements PlannedVideoOutput {
+
+    // Decision 173 of #397: a P3 D65 display of 1000 and 0.0001 cd/m², in HEVC SEI units, and a
+    // content light level of 0, which CTA-861.3 reads as unknown. Never invented source values.
+    private static final MasteringDisplayColorVolume FALLBACK_DISPLAY =
+        MasteringDisplayColorVolume.builder()
+            .red(new ChromaticityCoordinates(34_000, 16_000))
+            .green(new ChromaticityCoordinates(13_250, 34_500))
+            .blue(new ChromaticityCoordinates(7_500, 3_000))
+            .whitePoint(new ChromaticityCoordinates(15_635, 16_450))
+            .maxLuminance(10_000_000)
+            .minLuminance(1)
+            .build();
+    private static final ContentLightLevel UNKNOWN_LIGHT_LEVEL = new ContentLightLevel(0, 0);
 
     public Encode {
       requireSpecified(dynamicRange);
@@ -154,9 +171,14 @@ public sealed interface PlannedVideoOutput {
           && (bitDepth != 8 || dynamicRange.compatibleBase() != CompatibleBase.SDR)) {
         throw new IllegalArgumentException("A planned H.264 encode must be 8-bit SDR");
       }
+
+      if (dynamicRange.compatibleBase() != CompatibleBase.PQ
+          && (masteringDisplay.isPresent() || contentLightLevel.isPresent())) {
+        throw new IllegalArgumentException("Only a planned PQ encode holds static HDR metadata");
+      }
     }
 
-    /** Every encode is 8-bit 4:2:0 SDR until the server encodes 10-bit and HDR (#397). */
+    /** Every encode is 8-bit 4:2:0 SDR unless the decision names another format (#397). */
     public static Encode sdr(@NonNull Optional<EncodeCodecProfile> codecProfile) {
       return Encode.builder()
           .codecProfile(codecProfile)
@@ -164,6 +186,45 @@ public sealed interface PlannedVideoOutput {
           .bitDepth(8)
           .chromaSubsampling(ChromaSubsampling.CHROMA_420)
           .build();
+    }
+
+    /**
+     * The 4:2:0 encode in the format. A PQ encode takes each static HDR value that the probe stored
+     * for the source, and otherwise the fallback display and an unknown content light level, so
+     * every job attempt of a variant writes the same metadata (#397).
+     */
+    public static Encode of(
+        @NonNull Optional<EncodeCodecProfile> codecProfile,
+        @NonNull EncodeFormat format,
+        @NonNull Optional<VideoPlaybackFacts> source) {
+      var encode =
+          Encode.builder()
+              .codecProfile(codecProfile)
+              .dynamicRange(
+                  new VideoDynamicRange(
+                      format.compatibleBase(), Presence.ABSENT, new DolbyVision.Absent()))
+              .bitDepth(format.bitDepth())
+              .chromaSubsampling(ChromaSubsampling.CHROMA_420);
+      if (format.range() == VideoRange.PQ) {
+        encode
+            .masteringDisplay(
+                Optional.of(
+                    source.flatMap(VideoPlaybackFacts::masteringDisplay).orElse(FALLBACK_DISPLAY)))
+            .contentLightLevel(
+                Optional.of(
+                    source
+                        .flatMap(VideoPlaybackFacts::contentLightLevel)
+                        .orElse(UNKNOWN_LIGHT_LEVEL)));
+      }
+
+      return encode.build();
+    }
+
+    // Lombok builder defaults — its generated setters assign them
+    @SuppressWarnings({"java:S1068", "java:S9438"})
+    public static class EncodeBuilder {
+      private Optional<MasteringDisplayColorVolume> masteringDisplay = Optional.empty();
+      private Optional<ContentLightLevel> contentLightLevel = Optional.empty();
     }
   }
 }

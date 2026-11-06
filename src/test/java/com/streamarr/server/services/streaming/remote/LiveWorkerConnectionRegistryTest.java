@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
@@ -26,6 +27,7 @@ import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.ContentLightLevel;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.DolbyVisionOutput;
+import com.streamarr.transcode.v1.DolbyVisionPresent;
 import com.streamarr.transcode.v1.DolbyVisionSampleEntry;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptProgress;
@@ -43,6 +45,7 @@ import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoCopyFeature;
 import com.streamarr.transcode.v1.VideoDecision;
 import com.streamarr.transcode.v1.VideoDynamicRange;
+import com.streamarr.transcode.v1.VideoEncodeFeature;
 import com.streamarr.transcode.v1.VideoMode;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
@@ -896,6 +899,285 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, stripping)).isOne();
     assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, stripping))
         .containsExactly(new ExecutionTargetId(listingSessionId.toString()));
+  }
+
+  // An older worker refuses an encode whose output is not 8-bit SDR, and an encoder that passed the
+  // 8-bit test encode can still fail a 10-bit one (streamarr/streamarr-transcode-worker#27), so
+  // the server sends a 10-bit or HDR encode only to a worker whose encoder of the codec family
+  // lists every feature the encode needs (#397).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("encodesBeyond8BitSdr")
+  @DisplayName(
+      "Should dispatch a 10-bit or HDR encode only to a worker whose encoder of the codec family"
+          + " lists every feature that the encode needs")
+  void shouldDispatchA10BitOrHdrEncodeOnlyToAWorkerWhoseEncoderListsEveryFeatureThatItNeeds(
+      String encode, VideoDecision.Builder video, List<VideoEncodeFeature> needed) {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var listingWorkerId = UUID.randomUUID();
+    var listingResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var everyOtherFeature = EnumSet.complementOf(EnumSet.copyOf(needed));
+    everyOtherFeature.removeAll(
+        EnumSet.of(
+            VideoEncodeFeature.VIDEO_ENCODE_FEATURE_UNSPECIFIED, VideoEncodeFeature.UNRECOGNIZED));
+    var partialFeatures = new ArrayList<>(everyOtherFeature);
+    partialFeatures.addAll(needed.subList(1, needed.size()));
+    registry.register(
+        WORKER_ID,
+        registration(WORKER_ID, svtAv1Encoder(partialFeatures), libx264Encoder()),
+        new CancellableObserver());
+    var job = encodeJob(video);
+
+    assertThat(registry.dispatch(job)).isEmpty();
+
+    registry.register(
+        listingWorkerId,
+        registration(listingWorkerId, svtAv1Encoder(needed)),
+        collecting(listingResponses));
+
+    assertThat(registry.dispatch(job)).isPresent();
+    assertThat(listingResponses).anyMatch(EstablishWorkerSessionResponse::hasStartVariant);
+  }
+
+  static Stream<Arguments> encodesBeyond8BitSdr() {
+    return Stream.of(
+        Arguments.of(
+            "a 10-bit SDR encode",
+            av1Encode(sdrRange()).setOutputBitDepth(10),
+            List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_TEN_BIT)),
+        Arguments.of(
+            "an HDR10 encode",
+            av1Encode(rangeOf(CompatibleBase.COMPATIBLE_BASE_PQ)).setOutputBitDepth(10),
+            List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_PQ)),
+        Arguments.of(
+            "an HLG encode",
+            av1Encode(rangeOf(CompatibleBase.COMPATIBLE_BASE_HLG)).setOutputBitDepth(10),
+            List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_HLG)),
+        Arguments.of(
+            "an HDR10 encode of Dolby Vision without a compatible base",
+            av1Encode(rangeOf(CompatibleBase.COMPATIBLE_BASE_PQ))
+                .setOutputBitDepth(10)
+                .setSourceDynamicRange(
+                    VideoDynamicRange.newBuilder()
+                        .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_NONE)
+                        .setHdr10Plus(Presence.PRESENCE_ABSENT)
+                        .setDolbyVisionPresent(DolbyVisionPresent.getDefaultInstance())),
+            List.of(
+                VideoEncodeFeature.VIDEO_ENCODE_FEATURE_DOLBY_VISION_TO_PQ,
+                VideoEncodeFeature.VIDEO_ENCODE_FEATURE_PQ)));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("eightBitSdrEncodes")
+  @DisplayName(
+      "Should dispatch an 8-bit SDR encode to a worker whose encoder lists no encode feature, also"
+          + " when an older server names no bit depth")
+  void shouldDispatchAn8BitSdrEncodeToAWorkerWhoseEncoderListsNoEncodeFeature(
+      String encode, VideoDecision.Builder video) {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID, registration(WORKER_ID, svtAv1Encoder(List.of())), new CancellableObserver());
+
+    assertThat(registry.dispatch(encodeJob(video))).isPresent();
+  }
+
+  static Stream<Arguments> eightBitSdrEncodes() {
+    return Stream.of(
+        Arguments.of("an 8-bit SDR encode", av1Encode(sdrRange()).setOutputBitDepth(8)),
+        Arguments.of("an SDR encode from an older server", av1Encode(sdrRange())));
+  }
+
+  @Test
+  @DisplayName(
+      "Should count free slots and offer execution targets only on workers whose encoder lists an"
+          + " HDR encode's feature")
+  void shouldCountFreeSlotsAndOfferTargetsOnlyOnWorkersWhoseEncoderListsAnHdrEncodesFeature() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var listingWorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, svtAv1Encoder(List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_TEN_BIT))),
+        new CancellableObserver());
+    var hdr10 =
+        encodeJob(av1Encode(rangeOf(CompatibleBase.COMPATIBLE_BASE_PQ)).setOutputBitDepth(10))
+            .getDecision();
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, hdr10)).isZero();
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, hdr10)).isEmpty();
+
+    var listingSessionId =
+        registry.register(
+            listingWorkerId,
+            registration(
+                listingWorkerId,
+                svtAv1Encoder(List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_PQ))),
+            new CancellableObserver());
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, hdr10)).isOne();
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, hdr10))
+        .containsExactly(new ExecutionTargetId(listingSessionId.toString()));
+  }
+
+  // The decision plans an encode only in a codec family whose encoder a worker with a free slot
+  // runs, so a busy worker's encode features must not plan an encode that only it writes. The
+  // refusal of an encode that no free worker runs still counts busy workers' encoders.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should list only the encoders of workers with a free slot as encodable, and every connected"
+          + " worker's encoders as verified")
+  void shouldListOnlyTheEncodersOfWorkersWithAFreeSlotAsEncodableAndEveryWorkersAsVerified() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var idleWorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        registration(WORKER_ID, svtAv1Encoder(List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_PQ))),
+        new CancellableObserver());
+    assertThat(registry.dispatch(encodeJob(av1Encode(sdrRange())))).isPresent();
+    registry.register(
+        idleWorkerId,
+        registration(
+            idleWorkerId,
+            svtAv1Encoder(List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_TEN_BIT)).toBuilder()
+                .addEncodeFeaturesValue(99)
+                .build()),
+        new CancellableObserver());
+
+    assertThat(registry.encodableVideoEncoders(SOURCE_NAMESPACE_ID))
+        .extracting(WorkerVerifiedEncoder::encodeFeatures)
+        .containsExactly(Set.of(com.streamarr.server.domain.streaming.VideoEncodeFeature.TEN_BIT));
+    assertThat(registry.verifiedVideoEncoders(SOURCE_NAMESPACE_ID))
+        .extracting(WorkerVerifiedEncoder::encodeFeatures)
+        .containsExactlyInAnyOrder(
+            Set.of(com.streamarr.server.domain.streaming.VideoEncodeFeature.PQ),
+            Set.of(com.streamarr.server.domain.streaming.VideoEncodeFeature.TEN_BIT));
+  }
+
+  // A software encode after a hardware encoder failure runs on the software encoder, so its plan
+  // reads the software encoders apart from the hardware encoders of the same codec family
+  // (ADR 0044).
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should list the software encoders apart from the hardware encoders, the encodable ones only"
+          + " from workers with a free slot")
+  void shouldListTheSoftwareEncodersApartFromTheHardwareEncoders() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var idleWorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        withSoftwareEncoder(
+            registration(WORKER_ID, av1Nvenc()),
+            svtAv1Encoder(List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_PQ))),
+        new CancellableObserver());
+    assertThat(registry.dispatch(encodeJob(av1Encode(sdrRange())))).isPresent();
+    registry.register(
+        idleWorkerId,
+        withSoftwareEncoder(
+            registration(idleWorkerId, av1Nvenc()),
+            svtAv1Encoder(List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_TEN_BIT))),
+        new CancellableObserver());
+
+    assertThat(registry.encodableSoftwareVideoEncoders(SOURCE_NAMESPACE_ID))
+        .extracting(WorkerVerifiedEncoder::encodeFeatures)
+        .containsExactly(Set.of(com.streamarr.server.domain.streaming.VideoEncodeFeature.TEN_BIT));
+    assertThat(registry.verifiedSoftwareVideoEncoders(SOURCE_NAMESPACE_ID))
+        .extracting(WorkerVerifiedEncoder::encodeFeatures)
+        .containsExactlyInAnyOrder(
+            Set.of(com.streamarr.server.domain.streaming.VideoEncodeFeature.PQ),
+            Set.of(com.streamarr.server.domain.streaming.VideoEncodeFeature.TEN_BIT));
+    assertThat(registry.verifiedVideoEncoders(SOURCE_NAMESPACE_ID))
+        .extracting(encoder -> encoder.backend().encoder())
+        .containsExactly("av1_nvenc", "av1_nvenc");
+  }
+
+  private static WorkerVerifiedVideoEncoder av1Nvenc() {
+    return keyframeVerifiedHardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc");
+  }
+
+  private static WorkerRegistration withSoftwareEncoder(
+      WorkerRegistration registration, WorkerVerifiedVideoEncoder softwareEncoder) {
+    var withSoftware = registration.toBuilder();
+    withSoftware.getCapabilitiesBuilder().addSoftwareVideoEncoders(softwareEncoder);
+    return withSoftware.build();
+  }
+
+  // A later job attempt must run the pinned backend, which decides the variant's initialization
+  // segment, but encode features that its output does not need must not keep it off a worker.
+  @Test
+  @DisplayName(
+      "Should restart a pinned 8-bit SDR variant on a worker whose same encoder lists encode"
+          + " features that the pin did not list")
+  void shouldRestartAPinnedSdrVariantOnAWorkerWhoseSameEncoderListsFeaturesThatThePinDidNotList() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var sessionId =
+        registry.register(
+            WORKER_ID,
+            registration(
+                WORKER_ID,
+                svtAv1Encoder(
+                    List.of(
+                        VideoEncodeFeature.VIDEO_ENCODE_FEATURE_TEN_BIT,
+                        VideoEncodeFeature.VIDEO_ENCODE_FEATURE_PQ))),
+            new CancellableObserver());
+    var pinned = WorkerVerifiedEncoderFixture.libsvtav1();
+    var sdr = encodeJob(av1Encode(sdrRange()).setOutputBitDepth(8));
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, sdr.getDecision(), pinned)).isOne();
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, sdr.getDecision(), pinned))
+        .containsExactly(new ExecutionTargetId(sessionId.toString()));
+    assertThat(registry.dispatch(sdr, pinned)).isPresent();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should keep a pinned HDR10 variant off a worker whose same encoder does not list PQ")
+  void shouldKeepAPinnedHdr10VariantOffAWorkerWhoseSameEncoderDoesNotListPq() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID,
+        registration(
+            WORKER_ID, svtAv1Encoder(List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_TEN_BIT))),
+        new CancellableObserver());
+    var pinned =
+        WorkerVerifiedEncoder.builder()
+            .backend(WorkerVerifiedEncoderFixture.libsvtav1().backend())
+            .keyframeVerified(true)
+            .encodeFeatures(Set.of(com.streamarr.server.domain.streaming.VideoEncodeFeature.PQ))
+            .build();
+    var hdr10 =
+        encodeJob(av1Encode(rangeOf(CompatibleBase.COMPATIBLE_BASE_PQ)).setOutputBitDepth(10));
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, hdr10.getDecision(), pinned)).isZero();
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, hdr10.getDecision(), pinned))
+        .isEmpty();
+    assertThat(registry.dispatch(hdr10, pinned)).isEmpty();
+  }
+
+  private static VideoDecision.Builder av1Encode(VideoDynamicRange outputRange) {
+    return VideoDecision.newBuilder()
+        .setMode(VideoMode.VIDEO_MODE_ENCODE)
+        .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1)
+        .setSourceDynamicRange(outputRange)
+        .setOutputDynamicRange(outputRange);
+  }
+
+  private static VariantJob encodeJob(VideoDecision.Builder video) {
+    var job = encodeJob("av1").toBuilder();
+    job.getDecisionBuilder().setVideo(video);
+    return job.build();
+  }
+
+  private static WorkerVerifiedVideoEncoder svtAv1Encoder(List<VideoEncodeFeature> features) {
+    return softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1").toBuilder()
+        .setKeyframeVerified(true)
+        .addAllEncodeFeatures(features)
+        .build();
+  }
+
+  private static VideoDynamicRange rangeOf(CompatibleBase base) {
+    return sdrRange().toBuilder().setCompatibleBase(base).build();
   }
 
   // A later job attempt of a pinned variant carries the session's audio, so the pinned queries

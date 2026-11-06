@@ -14,7 +14,24 @@ class WorkerVerifiedEncoderTest {
   @DisplayName("Should reject construction when the encoder backend is missing")
   void shouldRejectConstructionWhenTheEncoderBackendIsMissing() {
     assertThatNullPointerException()
-        .isThrownBy(() -> new WorkerVerifiedEncoder(null, true))
+        .isThrownBy(() -> WorkerVerifiedEncoder.builder().keyframeVerified(true).build())
         .withMessageContaining("backend");
+  }
+
+  @Test
+  @DisplayName("Should reject construction when the encode features are missing")
+  void shouldRejectConstructionWhenTheEncodeFeaturesAreMissing() {
+    var encoder =
+        WorkerVerifiedEncoder.builder()
+            .backend(
+                EncoderBackend.builder()
+                    .codecFamily("av1")
+                    .encoder("libsvtav1")
+                    .kind(EncoderBackend.Kind.SOFTWARE)
+                    .build());
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> encoder.encodeFeatures(null).build())
+        .withMessageContaining("encodeFeatures");
   }
 }

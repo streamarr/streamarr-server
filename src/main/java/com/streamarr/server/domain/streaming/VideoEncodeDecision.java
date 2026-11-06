@@ -26,7 +26,8 @@ public record VideoEncodeDecision(
     return switch (output.codecFamily()) {
       case "h264" -> H264Level.smallestAllowing(output).map(VideoEncodeDecision::h264);
       case "hevc" -> H265Level.smallestAllowing(output).map(VideoEncodeDecision::hevc);
-      case "av1" -> Av1Level.smallestAllowing(output).map(VideoEncodeDecision::av1);
+      case "av1" ->
+          Av1Level.smallestAllowing(output).map(level -> av1(level, output.format().bitDepth()));
       default ->
           throw new UnsupportedVideoEncodeException(
               "The server has no level table for a " + output.codecFamily() + " encode");
@@ -51,12 +52,12 @@ public record VideoEncodeDecision(
         .build();
   }
 
-  private static VideoEncodeDecision av1(Av1Level level) {
+  private static VideoEncodeDecision av1(Av1Level level, int bitDepth) {
     return VideoEncodeDecision.builder()
         .codecProfile(EncodeCodecProfile.AV1_MAIN)
         .tier(Optional.of(VideoCodecTier.MAIN))
         .level(level.level())
-        .codecString(level.mainProfileCodecString())
+        .codecString(level.mainProfileCodecString(bitDepth))
         .build();
   }
 
