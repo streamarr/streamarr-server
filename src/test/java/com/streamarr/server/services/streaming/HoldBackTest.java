@@ -6,6 +6,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.FakeTranscodeExecutor.HeldBack;
 import com.streamarr.server.fakes.MutableClock;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -24,8 +25,9 @@ class HoldBackTest {
 
   private final FakeTranscodeExecutor executor = new FakeTranscodeExecutor();
   private final MutableClock clock = new MutableClock();
+  private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final HoldBack holdBack =
-      new HoldBack(executor, StreamingProperties.builder().build(), clock);
+      new HoldBack(executor, StreamingProperties.builder().build(), clock, meters);
   private final UUID sessionId = UUID.randomUUID();
   private final UUID attemptId = UUID.randomUUID();
 
@@ -191,6 +193,59 @@ class HoldBackTest {
             new HeldBack(OTHER_WORKER, Map.of(otherAttempt, Duration.ofSeconds(60))),
             new HeldBack(WORKER, Map.of()),
             new HeldBack(OTHER_WORKER, Map.of()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should count each hold-back command, each hold started and each hold ended, a lapsed hold"
+          + " held again counting as both")
+  void shouldCountEachHoldBackCommandEachHoldStartedAndEachHoldEnded() {
+    holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 66)));
+    clock.advance(Duration.ofSeconds(37));
+    holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 72)));
+
+    holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 30)));
+
+    assertThat(executor.holdBacks()).hasSize(4);
+    assertThat(count("streamarr.streaming.hold_back_commands")).isEqualTo(4);
+    assertThat(count("streamarr.streaming.hold_backs")).isEqualTo(2);
+    assertThat(count("streamarr.streaming.hold_back_releases")).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count no hold started or ended when a command only moves a held job attempt's"
+          + " release earlier")
+  void shouldCountNoHoldStartedOrEndedWhenACommandOnlyMovesAHeldJobAttemptsReleaseEarlier() {
+    holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 66)));
+
+    holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 40)));
+
+    assertThat(executor.holdBacks()).hasSize(2);
+    assertThat(count("streamarr.streaming.hold_back_commands")).isEqualTo(2);
+    assertThat(count("streamarr.streaming.hold_backs")).isEqualTo(1);
+    assertThat(count("streamarr.streaming.hold_back_releases")).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count another stream session's hold on the same worker once, however many commands"
+          + " list it")
+  void shouldCountAnotherStreamSessionsHoldOnTheSameWorkerOnceHoweverManyCommandsListIt() {
+    var otherSession = UUID.randomUUID();
+    var otherAttempt = UUID.randomUUID();
+    holdBack.reconsider(otherSession, List.of(lead(WORKER, otherAttempt, 70)));
+    holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 66)));
+
+    holdBack.forget(sessionId);
+
+    assertThat(executor.holdBacks()).hasSize(3);
+    assertThat(count("streamarr.streaming.hold_backs")).isEqualTo(2);
+    assertThat(count("streamarr.streaming.hold_back_releases")).isEqualTo(1);
+  }
+
+  private double count(String name) {
+    return meters.counter(name).count();
   }
 
   // A lead whose segments ahead last the plain 6 s.

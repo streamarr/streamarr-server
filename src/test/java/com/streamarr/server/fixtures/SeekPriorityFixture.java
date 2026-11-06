@@ -10,6 +10,9 @@ public final class SeekPriorityFixture {
 
   /** Seek priority whose held segment requests no coordinator shares, so none is ever held. */
   public static SeekPriority.SeekPriorityBuilder seekPriorityBuilder() {
-    return SeekPriority.builder().heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()));
+    var meters = new SimpleMeterRegistry();
+    return SeekPriority.builder()
+        .heldRequests(new HeldSegmentRequests(meters))
+        .meterRegistry(meters);
   }
 }
