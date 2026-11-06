@@ -15,7 +15,8 @@ import lombok.NonNull;
  * rotation. {@code videoProperties} is empty before probe version 5. {@code masteringDisplay} and
  * {@code contentLightLevel} are the static HDR metadata values that the probe stored, and are empty
  * when it stored none. {@code sampleEntry} is the sample entry that an MP4 or MOV file stores for
- * the stream, from probe version 7.
+ * the stream, from probe version 7. {@code maximumFrameRate} is the stream's maximum frame rate,
+ * from probe version 8, and is empty when the probe stored none ({@link StreamInfo}).
  */
 @Builder
 public record VideoPlaybackFacts(
@@ -31,7 +32,8 @@ public record VideoPlaybackFacts(
     @NonNull Optional<VideoStreamProperties> videoProperties,
     @NonNull Optional<MasteringDisplayColorVolume> masteringDisplay,
     @NonNull Optional<ContentLightLevel> contentLightLevel,
-    @NonNull Optional<String> sampleEntry) {
+    @NonNull Optional<String> sampleEntry,
+    @NonNull Optional<Fraction> maximumFrameRate) {
 
   /**
    * The output frame rate that the rule chose for the stream (ADR 0037), empty when the rule
@@ -128,5 +130,6 @@ public record VideoPlaybackFacts(
     private Optional<MasteringDisplayColorVolume> masteringDisplay = Optional.empty();
     private Optional<ContentLightLevel> contentLightLevel = Optional.empty();
     private Optional<String> sampleEntry = Optional.empty();
+    private Optional<Fraction> maximumFrameRate = Optional.empty();
   }
 }

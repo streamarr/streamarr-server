@@ -289,7 +289,7 @@ public record VideoCapabilityEntry(
       refusals.add(DecisionReason.VIDEO_PICTURE_SIZE_NOT_DECLARED);
     }
 
-    if (!acceptsFrameRate(copy.frameRate())) {
+    if (!acceptsFrameRate(copy.highestFrameRate())) {
       refusals.add(DecisionReason.VIDEO_FRAME_RATE_NOT_DECLARED);
     }
 
@@ -370,15 +370,19 @@ public record VideoCapabilityEntry(
   }
 
   // Direct play sends the stream under its own sample entry and configuration record, so a profile
-  // 5 or 10.0 stream plays where the entry lists its profile.
+  // 5 or 10.0 stream plays where the entry lists its profile, and only at a level that its record
+  // names.
   private boolean acceptsDirectPlayDolbyVision(VideoStreamCopy video, SourceContainer container) {
     return switch (CopiedDolbyVision.of(video)) {
       case CopiedDolbyVision.None _ -> true;
       case CopiedDolbyVision.KeptUnderSdrBase(var baseSampleEntry) ->
           playsAsItsSdrBase(video, container, baseSampleEntry);
-      case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
+      case CopiedDolbyVision.Declarable(var profile, var level) ->
+          CopiedDolbyVision.isLevelNamedByRecord(video) && listsDolbyVision(profile, level);
       case CopiedDolbyVision.NeedsDolbyVisionSampleEntry(var profile, var level) ->
-          level.isPresent() && listsDolbyVision(profile, level.getAsInt());
+          level.isPresent()
+              && CopiedDolbyVision.isLevelNamedByRecord(video)
+              && listsDolbyVision(profile, level.getAsInt());
       case CopiedDolbyVision.Undeclarable _,
           CopiedDolbyVision.ConvertibleToProfile81 _,
           CopiedDolbyVision.Unknown _ ->

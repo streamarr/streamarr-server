@@ -102,6 +102,42 @@ class TranscodeDecisionReasonTest {
     assertThat(decision.reasons()).isEmpty();
   }
 
+  @Test
+  @DisplayName(
+      "Should encode the video when a variable-rate stream's maximum frame rate exceeds the entry's"
+          + " although its frame rate fits")
+  void shouldEncodeTheVideoWhenAVariableRateStreamsMaximumFrameRateExceedsTheEntrysMaximum() {
+    // The first 30 s run at 24 fps, and a later section at 60 fps.
+    var source =
+        Source.builder()
+            .frameRateRule(VideoPlaybackFactsFixture.packetScanRule(24, new Fraction(24, 1)))
+            .maximumFrameRate(new Fraction(60, 1))
+            .build()
+            .probe();
+
+    var decision = decide(source, client(h264EntryBuilder().maxFrameRate(30).build()));
+
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.reasons()).containsExactly(DecisionReason.VIDEO_FRAME_RATE_NOT_DECLARED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy the video when a variable-rate stream's maximum frame rate is unknown and its"
+          + " frame rate fits the entry")
+  void shouldCopyTheVideoWhenAVariableRateStreamsMaximumFrameRateIsUnknownAndItsFrameRateFits() {
+    var source =
+        Source.builder()
+            .frameRateRule(VideoPlaybackFactsFixture.packetScanRule(24, new Fraction(24, 1)))
+            .build()
+            .probe();
+
+    var decision = decide(source, client(h264EntryBuilder().maxFrameRate(30).build()));
+
+    assertThat(decision.transcodeMode().copiesVideo()).isTrue();
+    assertThat(decision.reasons()).isEmpty();
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("refusedProperties")
   @DisplayName("Should name each property that the closest entry refuses when the video is encoded")
@@ -1033,6 +1069,7 @@ class TranscodeDecisionReasonTest {
       VideoDynamicRange dynamicRange,
       Optional<VideoStreamProperties> videoProperties,
       FrameRateRule frameRateRule,
+      Fraction maximumFrameRate,
       KeyframeKnowledge keyframes,
       String audioCodec,
       String audioCodecString,
@@ -1090,6 +1127,8 @@ class TranscodeDecisionReasonTest {
       if (frameRateRule != null) {
         facts.frameRateRule(frameRateRule);
       }
+
+      facts.maximumFrameRate(Optional.ofNullable(maximumFrameRate));
 
       var probe =
           MediaProbe.builder()

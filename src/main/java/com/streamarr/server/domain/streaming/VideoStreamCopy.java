@@ -15,11 +15,10 @@ import lombok.NonNull;
  * decoder outputs, before the container's cropping and the rotation, because decoder limits bound
  * decoded frames. It is empty when the probe could not read a width or a height. {@code frameRate}
  * is the rate at which the copied frames run, empty when the frame-rate rule refused one. {@code
- * maximumFrameRate} is the highest rate at which the stream presents pictures anywhere in the file.
- * It is empty when the probe stores no maximum, which holds for every outcome until
- * streamarr/streamarr-server#652. {@code frameRate} is never a maximum. {@code sampleEntry} is the
- * sample entry that an MP4 or MOV file stores for the stream, which direct play delivers as it is,
- * empty in other source containers and before probe version 7.
+ * maximumFrameRate} is the stream's maximum frame rate ({@link StreamInfo}), empty when the probe
+ * stores none, as before probe version 8. {@code frameRate} is never a maximum. {@code sampleEntry}
+ * is the sample entry that an MP4 or MOV file stores for the stream, which direct play delivers as
+ * it is, empty in other source containers and before probe version 7.
  */
 @Builder(toBuilder = true)
 public record VideoStreamCopy(
@@ -60,10 +59,23 @@ public record VideoStreamCopy(
                     .bitDepth(facts.bitDepth())
                     .decodedSize(decodedSize(source))
                     .frameRate(frameRate(facts.frameRateRule()))
-                    .maximumFrameRate(Optional.empty())
+                    .maximumFrameRate(facts.maximumFrameRate())
                     .dynamicRange(facts.dynamicRange())
                     .sampleEntry(facts.sampleEntry())
                     .build());
+  }
+
+  /**
+   * The maximum frame rate when the probe stores one, else the frame rate: the rate that a
+   * capability entry's maximum frame rate accepts and that the playlist's FRAME-RATE carries. Empty
+   * when both are unknown.
+   */
+  public OptionalDouble highestFrameRate() {
+    if (maximumFrameRate.isPresent()) {
+      return OptionalDouble.of(maximumFrameRate.get().toDouble());
+    }
+
+    return frameRate;
   }
 
   /**

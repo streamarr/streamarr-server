@@ -207,13 +207,15 @@ public class HlsPlaylistService {
                 RoundingMode.HALF_UP));
   }
 
-  // A copy writes the frame rate that the copy match checks against the entry for a probe version
-  // 5 outcome. The probe measures no maximum until #652, so a variable-rate source can briefly run
-  // faster. A copy whose frame rate the rule refused writes none, even when it announces PQ or HLG:
-  // no encode can replace it (#446), and players other than AVPlayer may play it (ADR 0013).
+  // A copy writes the rate that the copy match checks against the entry: the maximum frame rate
+  // when the probe stored one, else the copied frame rate. A copy without either writes none, even
+  // when it announces PQ or HLG: no encode can replace it (#446), and players other than AVPlayer
+  // may play it (ADR 0013).
   private static void appendCopiedFrameRate(StringBuilder sb, MediaProbe probe) {
     var frameRate =
-        VideoStreamCopy.of(probe).map(VideoStreamCopy::frameRate).orElseGet(OptionalDouble::empty);
+        VideoStreamCopy.of(probe)
+            .map(VideoStreamCopy::highestFrameRate)
+            .orElseGet(OptionalDouble::empty);
     if (frameRate.isEmpty()) {
       return;
     }

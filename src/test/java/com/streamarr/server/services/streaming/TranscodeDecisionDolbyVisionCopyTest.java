@@ -18,6 +18,8 @@ import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
+import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.Presence;
@@ -99,6 +101,59 @@ class TranscodeDecisionDolbyVisionCopyTest {
                 .build());
 
     assertThat(decision.map(Outcome::of)).contains(expected);
+  }
+
+  // Dolby's level table puts 1920×1080 at 30 fps at level 4 and at 60 fps at level 5. Each source
+  // runs at 24 fps for the first 30 s that the frame-rate rule scans.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("levelsFromTheMaximumFrameRate")
+  @DisplayName(
+      "Should keep Dolby Vision at the level of the maximum frame rate when no record names a"
+          + " level")
+  void shouldKeepDolbyVisionAtTheLevelOfTheMaximumFrameRateWhenNoRecordNamesALevel(
+      String scenario, MediaProbe source, int clientLevel) {
+    var decision = decide(source, Clients.dolbyVision(clientLevel)).map(Outcome::of).orElseThrow();
+
+    assertThat(decision.dolbyVisionOutput())
+        .contains(new DolbyVisionOutput(DolbyVisionProfile.PROFILE_8_1, clientLevel));
+  }
+
+  static Stream<Arguments> levelsFromTheMaximumFrameRate() {
+    return Stream.of(
+        Arguments.of(
+            "No record, and a later section at 60 fps, to a client up to level 5",
+            variableRateHevc(profile81FromItsRpuHeader(), new Fraction(60, 1)),
+            5),
+        Arguments.of(
+            "A record without a level, and a later section at 30 fps, to a client up to level 4",
+            variableRateHevc(profile81WithoutRecordLevel(), new Fraction(30, 1)),
+            4));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("dolbyVisionCopiesWithoutALevel")
+  @DisplayName(
+      "Should strip Dolby Vision when the maximum frame rate puts the copy above the client's level"
+          + " or is unknown")
+  void shouldStripDolbyVisionWhenTheMaximumFrameRatePutsTheCopyAboveTheClientsLevelOrIsUnknown(
+      String scenario, MediaProbe source, int clientLevel) {
+    var decision = decide(source, Clients.dolbyVision(clientLevel)).map(Outcome::of).orElseThrow();
+
+    assertThat(decision.dolbyVisionOutput()).isEmpty();
+    assertThat(decision.mode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.rewrites()).contains(BitstreamRewrite.STRIP_DOLBY_VISION);
+  }
+
+  static Stream<Arguments> dolbyVisionCopiesWithoutALevel() {
+    return Stream.of(
+        Arguments.of(
+            "No record, and a later section at 60 fps, to a client up to level 4",
+            variableRateHevc(profile81FromItsRpuHeader(), new Fraction(60, 1)),
+            4),
+        Arguments.of(
+            "No record, and an unknown maximum frame rate, to a client up to level 13",
+            hevc(profile81FromItsRpuHeader()),
+            13));
   }
 
   static Stream<Arguments> decisionMatrix() {
@@ -190,7 +245,7 @@ class TranscodeDecisionDolbyVisionCopyTest {
             Clients.baseOnly(true),
             strippingDolbyVision(VideoRange.PQ)),
         Arguments.of(
-            "Profile 8.1 whose record names no level, until the maximum frame rate is stored",
+            "Profile 8.1 whose record names no level, without a stored maximum frame rate",
             hevc(profile81WithoutRecordLevel()),
             Clients.dolbyVision(13),
             strippingDolbyVision(VideoRange.PQ)),
@@ -812,18 +867,36 @@ class TranscodeDecisionDolbyVisionCopyTest {
 
   private static VideoDynamicRange profile7WithRpusInTheStream(
       DolbyVisionConfiguration configuration) {
+    return withRpusInTheStream(
+        Optional.of(configuration),
+        DolbyVisionRpuHeader.builder()
+            .vdrRpuProfile(1)
+            .enhancementLayerSpatialResamplingFilter(true)
+            .vdrBitDepth(12)
+            .build());
+  }
+
+  // Without a record, the RPU header of a single-layer stream at 12 bits on a PQ base names
+  // profile 8.1.
+  private static VideoDynamicRange profile81FromItsRpuHeader() {
+    return withRpusInTheStream(
+        Optional.empty(),
+        DolbyVisionRpuHeader.builder()
+            .vdrRpuProfile(1)
+            .disableResidual(true)
+            .vdrBitDepth(12)
+            .build());
+  }
+
+  private static VideoDynamicRange withRpusInTheStream(
+      Optional<DolbyVisionConfiguration> configuration, DolbyVisionRpuHeader firstRpuHeader) {
     return new VideoDynamicRange(
         CompatibleBase.PQ,
         Presence.ABSENT,
         new DolbyVision.Present(
-            Optional.of(configuration),
+            configuration,
             Presence.PRESENT,
-            Optional.of(
-                DolbyVisionRpuHeader.builder()
-                    .vdrRpuProfile(1)
-                    .enhancementLayerSpatialResamplingFilter(true)
-                    .vdrBitDepth(12)
-                    .build()),
+            Optional.of(firstRpuHeader),
             DolbyVisionRpuPlacement.AFTER_OWN_PICTURE));
   }
 
@@ -893,6 +966,19 @@ class TranscodeDecisionDolbyVisionCopyTest {
         .probe();
   }
 
+  // 1920×1080, at 24 fps in the first 30 s, which the frame-rate rule scans.
+  private static MediaProbe variableRateHevc(VideoDynamicRange range, Fraction maximumFrameRate) {
+    return Source.builder()
+        .codec("hevc")
+        .codecString("hvc1.2.4.L150.90")
+        .dynamicRange(range)
+        .videoProperties(Optional.of(properties(VideoCodecProfile.HEVC_MAIN_10)))
+        .frameRateRule(VideoPlaybackFactsFixture.packetScanRule(24, new Fraction(24, 1)))
+        .maximumFrameRate(maximumFrameRate)
+        .build()
+        .probe();
+  }
+
   // ADR 0036: profile 9 keeps its RPUs under an SDR base, so the server never strips it.
   private static MediaProbe h264(VideoDynamicRange range) {
     return Source.builder()
@@ -955,9 +1041,23 @@ class TranscodeDecisionDolbyVisionCopyTest {
       @NonNull String codecString,
       Integer bitDepth,
       @NonNull VideoDynamicRange dynamicRange,
-      @NonNull Optional<VideoStreamProperties> videoProperties) {
+      @NonNull Optional<VideoStreamProperties> videoProperties,
+      FrameRateRule frameRateRule,
+      Fraction maximumFrameRate) {
 
     MediaProbe probe() {
+      var facts =
+          VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+              .codecFamily(Optional.of(ProbedCodecFamily.fromProbedName(codec)))
+              .dynamicRange(dynamicRange)
+              .bitDepth(OptionalInt.of(bitDepth == null ? 10 : bitDepth))
+              .codecString(Optional.of(codecString))
+              .videoProperties(videoProperties)
+              .maximumFrameRate(Optional.ofNullable(maximumFrameRate));
+      if (frameRateRule != null) {
+        facts.frameRateRule(frameRateRule);
+      }
+
       return MediaProbe.builder()
           .duration(Duration.ofMinutes(10))
           .framerate(OptionalDouble.of(24))
@@ -968,15 +1068,7 @@ class TranscodeDecisionDolbyVisionCopyTest {
           .streams(List.of(ProbeFixture.audioStreamBuilder("aac").index(2).build()))
           .bitrate(5_000_000)
           .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(2), Duration.ofMinutes(10)))
-          .videoPlaybackFacts(
-              Optional.of(
-                  VideoPlaybackFactsFixture.sdrH264FactsBuilder()
-                      .codecFamily(Optional.of(ProbedCodecFamily.fromProbedName(codec)))
-                      .dynamicRange(dynamicRange)
-                      .bitDepth(OptionalInt.of(bitDepth == null ? 10 : bitDepth))
-                      .codecString(Optional.of(codecString))
-                      .videoProperties(videoProperties)
-                      .build()))
+          .videoPlaybackFacts(Optional.of(facts.build()))
           .build();
     }
   }
