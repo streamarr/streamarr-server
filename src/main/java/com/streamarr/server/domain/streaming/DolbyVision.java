@@ -39,7 +39,7 @@ public sealed interface DolbyVision {
      * enhancement layer or residual, and each RPU at the end of its own picture's sample.
      */
     public Present convertedToProfile81() {
-      var record =
+      var configuration =
           DolbyVisionConfiguration.builder()
               .profile(OptionalInt.of(8))
               .level(declared.map(DolbyVisionConfiguration::level).orElse(OptionalInt.empty()))
@@ -48,7 +48,7 @@ public sealed interface DolbyVision {
               .rpu(true)
               .build();
       return new Present(
-          Optional.of(record),
+          Optional.of(configuration),
           Presence.PRESENT,
           firstRpuHeader.map(Present::withoutEnhancementLayer),
           DolbyVisionRpuPlacement.AFTER_OWN_PICTURE);

@@ -810,12 +810,13 @@ class TranscodeDecisionDolbyVisionCopyTest {
         .rpu(true);
   }
 
-  private static VideoDynamicRange profile7WithRpusInTheStream(DolbyVisionConfiguration record) {
+  private static VideoDynamicRange profile7WithRpusInTheStream(
+      DolbyVisionConfiguration configuration) {
     return new VideoDynamicRange(
         CompatibleBase.PQ,
         Presence.ABSENT,
         new DolbyVision.Present(
-            Optional.of(record),
+            Optional.of(configuration),
             Presence.PRESENT,
             Optional.of(
                 DolbyVisionRpuHeader.builder()
