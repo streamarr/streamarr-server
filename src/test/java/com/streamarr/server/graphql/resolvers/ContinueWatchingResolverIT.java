@@ -208,7 +208,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
             SEASONS_AND_SERIES_QUERY,
             statistics -> statistics.getEntityStatistics(Library.class.getName()).getLoadCount());
 
-    assertThat(librariesLoaded).isZero();
+    assertThat(librariesLoaded).as("libraries loaded while Continue Watching resolves").isZero();
   }
 
   @Test
