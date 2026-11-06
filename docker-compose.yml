@@ -11,7 +11,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
 
   streamarr-server:
-    image: streamarr/streamarr-server:latest
+    image: ${STREAMARR_SERVER_IMAGE:-streamarr/streamarr-server:0.0.11-SNAPSHOT} # x-release-please-version
     restart: always
     # Outlasts the 30 s shutdown drain of library operations.
     stop_grace_period: 45s

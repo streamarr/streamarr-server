@@ -11,6 +11,9 @@
       "include-component-in-tag": false,
       "include-v-in-tag": true,
       "include-commit-authors": false,
+      "extra-files": [
+        { "type": "generic", "path": "docker-compose.yml" }
+      ],
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug fixes" },
