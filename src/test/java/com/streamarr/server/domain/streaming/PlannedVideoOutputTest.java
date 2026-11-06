@@ -54,14 +54,9 @@ class PlannedVideoOutputTest {
   @Test
   @DisplayName("Should refuse a planned encode when its dynamic range is unspecified")
   void shouldRefuseAPlannedEncodeWhenItsDynamicRangeIsUnspecified() {
-    var codecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
+    var encode = encodeBuilder().dynamicRange(VideoDynamicRange.UNSPECIFIED);
 
-    assertThatThrownBy(
-            () ->
-                encodeBuilder()
-                    .codecProfile(codecProfile)
-                    .dynamicRange(VideoDynamicRange.UNSPECIFIED)
-                    .build())
+    assertThatThrownBy(encode::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("UNSPECIFIED");
   }
