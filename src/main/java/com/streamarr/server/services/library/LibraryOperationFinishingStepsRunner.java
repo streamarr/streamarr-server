@@ -101,6 +101,7 @@ public class LibraryOperationFinishingStepsRunner {
     // row, and an unmounted share looks like a library whose every media file is missing.
     libraryFolderCheck.requireScannableFolder(library);
     libraryFolderScannable.set(true);
-    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+    orphanedMediaFileCleanupService.removeMissingMediaFiles(
+        library, orphanedMediaFileCleanupService.findMissingMediaFileIds(library));
   }
 }

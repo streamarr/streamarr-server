@@ -4,6 +4,7 @@ import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -83,8 +84,7 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
                 .mediaId(retainedMovie.getId())
                 .build());
 
-    transactionTemplate.executeWithoutResult(
-        _ -> orphanedMediaFileCleanupService.cleanupOrphanedFiles(library));
+    removeMissingMediaFiles(library);
 
     assertThat(movieRepository.findById(deletedMovie.getId())).isEmpty();
     assertThat(movieRepository.findById(retainedMovie.getId())).isPresent();
@@ -118,8 +118,7 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
     imageService.saveImages(poster.images(), requestedAttempt(poster.images()));
     assertThat(itemResults.findByItem(movie.getId(), ImageEntityType.MOVIE)).isNotEmpty();
 
-    transactionTemplate.executeWithoutResult(
-        _ -> orphanedMediaFileCleanupService.cleanupOrphanedFiles(library));
+    removeMissingMediaFiles(library);
 
     assertThat(movieRepository.findById(movie.getId())).isEmpty();
     assertThat(itemResults.findByItem(movie.getId(), ImageEntityType.MOVIE)).isEmpty();
@@ -128,6 +127,12 @@ class OrphanedMediaFileCleanupServiceIT extends AbstractIntegrationTest {
     assertThat(poster.writtenFiles())
         .isNotEmpty()
         .allSatisfy(path -> assertThat(path).doesNotExist());
+  }
+
+  private void removeMissingMediaFiles(Library library) {
+    var missingMediaFileIds = orphanedMediaFileCleanupService.findMissingMediaFileIds(library);
+    transactionTemplate.executeWithoutResult(
+        _ -> orphanedMediaFileCleanupService.removeMissingMediaFiles(library, missingMediaFileIds));
   }
 
   private static MediaFile.MediaFileBuilder<?, ?> mediaFileBuilder(Path path) {

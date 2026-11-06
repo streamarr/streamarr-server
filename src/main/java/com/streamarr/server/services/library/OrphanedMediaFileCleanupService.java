@@ -10,6 +10,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -30,14 +31,22 @@ public class OrphanedMediaFileCleanupService {
   private final ApplicationEventPublisher events;
 
   /**
-   * Removes the library's media files that no longer exist on disk, in the caller's transaction,
-   * and deletes each movie that has no media file left. A media file whose path cannot be decoded
-   * counts as missing.
+   * Returns the ids of the library's media files that no longer exist on disk. A media file whose
+   * path cannot be decoded counts as missing.
    */
-  public void cleanupOrphanedFiles(Library library) {
-    var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
+  public List<UUID> findMissingMediaFileIds(Library library) {
+    return mediaFileRepository.findByLibraryId(library.getId()).stream()
+        .filter(file -> !isFileStillOnDisk(file))
+        .map(MediaFile::getId)
+        .toList();
+  }
 
-    var orphanedFiles = mediaFiles.stream().filter(file -> !isFileStillOnDisk(file)).toList();
+  /**
+   * Removes the given missing media files of the library, in the caller's transaction, and deletes
+   * each movie that has no media file left. A media file that is already gone is skipped.
+   */
+  public void removeMissingMediaFiles(Library library, List<UUID> missingMediaFileIds) {
+    var orphanedFiles = mediaFileRepository.findAllById(missingMediaFileIds);
 
     if (orphanedFiles.isEmpty()) {
       return;
