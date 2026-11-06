@@ -380,15 +380,17 @@ public class SeekPriority {
         SegmentNames.storedSegmentName(variantLabel, SegmentNames.mediaSegmentName(index)));
   }
 
+  // The farther of the reported position and the highest requested segment: a seek within stored
+  // media relocates nothing, so the player's requests can run ahead of its last report.
   private OptionalInt viewerSegment(StreamSession session) {
-    var reported = reportedPosition(session);
-    if (reported.isPresent()) {
-      return OptionalInt.of(
-          MediaSegmentTimelines.of(session, properties).mediaSegmentIndexAt(reported.get()));
-    }
-
-    var requested = highestRequestedSegments.get(session.getSessionId());
-    return requested == null ? OptionalInt.empty() : OptionalInt.of(requested);
+    var requested = Optional.ofNullable(highestRequestedSegments.get(session.getSessionId()));
+    var reported =
+        reportedPosition(session)
+            .map(MediaSegmentTimelines.of(session, properties)::mediaSegmentIndexAt);
+    return Stream.of(reported, requested)
+        .flatMap(Optional::stream)
+        .mapToInt(Integer::intValue)
+        .max();
   }
 
   // A playing viewer's position advances with the clock from its report.

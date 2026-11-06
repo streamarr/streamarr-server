@@ -519,6 +519,30 @@ class SeekPriorityIT {
   }
 
   @Test
+  @DisplayName(
+      "Should place a viewer at its highest requested segment when it lies past the viewer's"
+          + " reported position")
+  void shouldPlaceAViewerAtItsHighestRequestedSegmentWhenItLiesPastTheReportedPosition()
+      throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    var skipping = startPlaying(worker);
+    deliverAhead(skipping, 9);
+    registry.updatePlaybackState(skipping.sessionId(), 0, PlaybackState.PLAYING);
+    // A forward seek within the stored media relocates nothing, and its report is still to come.
+    assertThat(request(skipping.sessionId(), segmentName(8)).delivery().await(REQUEST_LIMIT))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    var seeking = startPlaying(worker);
+
+    seek(worker, seeking);
+
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+  }
+
+  @Test
   @DisplayName("Should advance a playing viewer's reported position with the clock")
   void shouldAdvanceAPlayingViewersReportedPositionWithTheClock() throws Exception {
     var worker = registerWorker(WORKER_ID, 8);
