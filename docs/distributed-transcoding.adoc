@@ -219,6 +219,26 @@ To fix the worker, run the worker image pinned in `worker-image.env`, or rebuild
 The worker's `FFmpeg capabilities:` line lists its encoder backends, as <<_confirm_gpu_encoding>> describes.
 The worker runs its test encodes again only when it restarts, so restart it after the fix.
 
+== Worker host requirements
+
+The worker runs every FFmpeg and ffprobe under https://docs.kernel.org/userspace-api/landlock.html[Linux Landlock].
+The Landlock policy lets each tool read the media roots and nothing else outside the runtime, so a soft link swapped into the media library after the worker's check leads to a file that the tool cannot open.
+The worker therefore needs a host with:
+
+* Linux 5.13 or later.
+* `landlock` among the enabled security modules that `/sys/kernel/security/lsm` lists.
+Most distribution kernels enable it.
+A kernel built with Landlock that does not list it needs `landlock` added to the `lsm=` boot parameter.
+* A seccomp profile that allows the `landlock_create_ruleset`, `landlock_add_rule` and `landlock_restrict_self` system calls.
+Docker's default seccomp profile allows them, and the WSL2 kernel of Docker Desktop enables Landlock.
+
+Check a host with `cat /sys/kernel/security/lsm`.
+A worker on a host without Landlock refuses to start, and its log names what to change.
+
+Two rights depend on the kernel's Landlock ABI, which the worker logs at startup.
+Before Linux 6.2, the policy cannot stop a tool from truncating a file that it may otherwise write.
+Before Linux 6.7, the policy cannot deny TCP connections.
+
 == Filename encoding
 
 The server and every worker must run under a UTF-8 locale.
