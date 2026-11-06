@@ -7432,6 +7432,49 @@ class HlsStreamingServiceTest {
     assertThat(lower.keyframeSeekPosition()).contains(Duration.ofSeconds(10));
   }
 
+  // At the 6 s period, keyframes 10 s apart open the copy's segments at 0, 10, 20, 30 and 40 s, so
+  // segment 3 starts at 30 s, in slot 5. The encode reads from the last keyframe at least half a
+  // second before that start, at 20 s, not from one before slot 3's grid start at 18 s.
+  @Test
+  @DisplayName(
+      "Should seek a lower variant's encode from the last keyframe at least half a second before"
+          + " the copy's start of its first segment when the copy merges slots")
+  void shouldSeekALowerVariantsEncodeFromTheKeyframeBeforeTheCopysStartWhenTheCopyMergesSlots() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(50))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(10), Duration.ofSeconds(40)))
+            .build());
+
+    var lower = firstLowerVariantJobFor("480p", "480p/segment3.m4s");
+
+    assertThat(lower.startSequenceNumber()).isEqualTo(3);
+    assertThat(lower.keyframeSeekPosition()).contains(Duration.ofSeconds(20));
+  }
+
+  // The copy's segments open at its keyframes, and the lower variant forces its keyframes at the
+  // same exact starts, so a player that switches between them at a segment boundary repeats or
+  // skips less than one output frame (A77, ADR 0050).
+  @Test
+  @DisplayName(
+      "Should carry the copy's exact segment starts in a lower variant's job when the player"
+          + " requests one of its segments")
+  void shouldCarryTheCopysExactSegmentStartsInALowerVariantsJob() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(50))
+            .keyframes(keyframesAtMillis(0, 6_500, 12_500, 23_000, 31_000, 40_000))
+            .build());
+
+    var lower = firstLowerVariantJobFor("480p", "480p/segment2.m4s");
+
+    assertThat(lower.exactSegmentStarts())
+        .hasValue(
+            new ExactSegmentStarts(
+                List.of(0L, 6_500L, 12_500L, 23_000L, 31_000L, 40_000L), new Fraction(1, 1_000)))
+        .isEqualTo(transcodeExecutor.getStartedRequests().getFirst().exactSegmentStarts());
+  }
+
   // Creates an Auto copy session, then requests a lower variant's segment as its player would, and
   // answers the job that the request started.
   private TranscodeRequest firstLowerVariantJobFor(String variantLabel, String segmentName) {
