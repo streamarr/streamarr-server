@@ -164,8 +164,10 @@ class ServerImageConfigurationTests(unittest.TestCase):
                         if "STREAMARR_SERVER_IMAGE" in line), "")
 
         self.assertIn({"type": "generic", "path": "docker-compose.yml"},
-                      package.get("extra-files", []))
-        self.assertIn("x-release-please-version", default)
+                      package.get("extra-files", []),
+                      "Release Please would bump pom.xml but leave the Compose server image behind")
+        self.assertIn("x-release-please-version", default,
+                      "Release Please rewrites only lines marked x-release-please-version")
 
 
 def compose_config_with_example_environment(variables):
