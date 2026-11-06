@@ -453,6 +453,12 @@ public class TranscodeDecisionService {
       return choice;
     }
 
+    // A copy's last segment cannot take in the audio after the video's end, while an encode holds
+    // the last frame up to the advertised end (ADR 0037, early ends).
+    if (source.videoEndsEarly(properties.targetSegmentDuration())) {
+      return new PlanChoice.Refused(List.of(DecisionReason.VIDEO_ENDS_EARLY));
+    }
+
     var refusal = streamCopyRefusal(source);
     if (refusal.isEmpty()) {
       return choice;
@@ -844,7 +850,8 @@ public class TranscodeDecisionService {
             .or(
                 () ->
                     sourceStream.flatMap(
-                        stream -> audioBlockSizeRefusal(declaration, stream, sourceChannels)));
+                        stream -> audioBlockSizeRefusal(declaration, stream, sourceChannels)))
+            .or(() -> audioEndRefusal(source));
     if (encodeReason.isPresent()) {
       return new SessionAudio(HlsAudioEncodes.forTrack(declaration, track), encodeReason);
     }
@@ -861,6 +868,16 @@ public class TranscodeDecisionService {
             .sourceCodecString(sourceCodecString)
             .build();
     return new SessionAudio(copy, Optional.empty());
+  }
+
+  // Only an encode can pad audio that ends early with silence up to the advertised end, so that
+  // every segment after the audio's end carries audio (ADR 0037, early ends).
+  private Optional<DecisionReason> audioEndRefusal(MediaProbe source) {
+    if (!source.sessionAudioEndsEarly(properties.targetSegmentDuration())) {
+      return Optional.empty();
+    }
+
+    return Optional.of(DecisionReason.AUDIO_ENDS_EARLY);
   }
 
   private static Optional<DecisionReason> audioEncodeReason(

@@ -925,6 +925,87 @@ class TranscodeDecisionReasonTest {
             DecisionReason.SOURCE_INTERLACED, DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED);
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("earlyEndingStreams")
+  @DisplayName(
+      "Should encode each chosen stream that ends at least one segment before another stream of"
+          + " the source")
+  void shouldEncodeEachChosenStreamThatEndsAtLeastOneSegmentBeforeAnotherStreamOfTheSource(
+      Source source, boolean copiesVideo, AudioMode audio, List<DecisionReason> expected) {
+    var decision = decide(source.probe(), defaultDeclarationBuilder().build());
+
+    assertThat(decision.transcodeMode().copiesVideo()).isEqualTo(copiesVideo);
+    assertThat(decision.audioDecision().mode()).isEqualTo(audio);
+    assertThat(decision.reasons()).containsExactlyElementsOf(expected);
+  }
+
+  // The source's container is 10 minutes long, cut into 6 s segments.
+  static Stream<Arguments> earlyEndingStreams() {
+    var tenMinutes = Duration.ofMinutes(10);
+    var oneSegmentEarlier = tenMinutes.minusSeconds(6);
+    var justUnderOneSegmentEarlier = oneSegmentEarlier.plusMillis(1);
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "audio that ends one segment before the video",
+                Source.builder().videoEnd(tenMinutes).audioEnd(oneSegmentEarlier).build()),
+            true,
+            AudioMode.TRANSCODE,
+            List.of(DecisionReason.AUDIO_ENDS_EARLY)),
+        Arguments.of(
+            Named.of(
+                "audio that ends just under one segment before the video",
+                Source.builder().videoEnd(tenMinutes).audioEnd(justUnderOneSegmentEarlier).build()),
+            true,
+            AudioMode.COPY,
+            List.of()),
+        Arguments.of(
+            Named.of(
+                "video that ends one segment before the audio",
+                Source.builder().videoEnd(oneSegmentEarlier).audioEnd(tenMinutes).build()),
+            false,
+            AudioMode.COPY,
+            List.of(DecisionReason.VIDEO_ENDS_EARLY)),
+        Arguments.of(
+            Named.of(
+                "video that ends just under one segment before the audio",
+                Source.builder().videoEnd(justUnderOneSegmentEarlier).audioEnd(tenMinutes).build()),
+            true,
+            AudioMode.COPY,
+            List.of()),
+        Arguments.of(
+            Named.of(
+                "video and audio that end one segment before a second audio track",
+                Source.builder()
+                    .videoEnd(oneSegmentEarlier)
+                    .audioEnd(oneSegmentEarlier)
+                    .secondAudioEnd(tenMinutes)
+                    .build()),
+            false,
+            AudioMode.TRANSCODE,
+            List.of(DecisionReason.VIDEO_ENDS_EARLY, DecisionReason.AUDIO_ENDS_EARLY)),
+        Arguments.of(
+            Named.of(
+                "audio whose end the probe states beside video whose end it does not",
+                Source.builder().audioEnd(Duration.ofSeconds(20)).build()),
+            true,
+            AudioMode.COPY,
+            List.of()),
+        Arguments.of(
+            Named.of(
+                "audio that ends early beside video that the client cannot copy",
+                Source.builder()
+                    .codec("hevc")
+                    .codecString("hvc1.1.6.L120.90")
+                    .videoProperties(Optional.of(properties(VideoCodecProfile.HEVC_MAIN)))
+                    .videoEnd(tenMinutes)
+                    .audioEnd(oneSegmentEarlier)
+                    .build()),
+            false,
+            AudioMode.TRANSCODE,
+            List.of(DecisionReason.VIDEO_CODEC_NOT_DECLARED, DecisionReason.AUDIO_ENDS_EARLY)));
+  }
+
   private TranscodeDecision decide(MediaProbe source, ClientCapabilityDeclaration client) {
     return decide(request(source, client).build());
   }
@@ -1078,7 +1159,10 @@ class TranscodeDecisionReasonTest {
       boolean audioChannelsUnreported,
       Integer audioBitrate,
       Long videoBitrate,
-      String containerFormat) {
+      String containerFormat,
+      Duration videoEnd,
+      Duration audioEnd,
+      Duration secondAudioEnd) {
 
     private OptionalInt reportedAudioChannels() {
       if (audioChannelsUnreported) {
@@ -1149,11 +1233,22 @@ class TranscodeDecisionReasonTest {
           ProbeFixture.audioStreamBuilder(audio)
               .index(2)
               .codecString(Optional.ofNullable(audioCodecString(audio)))
+              .endTime(Optional.ofNullable(audioEnd))
               .build());
-      if (videoBitrate != null) {
+      if (secondAudioEnd != null) {
+        streams.add(
+            ProbeFixture.audioStreamBuilder(audio)
+                .index(3)
+                .endTime(Optional.of(secondAudioEnd))
+                .build());
+      }
+
+      if (videoBitrate != null || videoEnd != null) {
         streams.add(
             ProbeFixture.videoStreamBuilder(probe.build())
-                .bitrate(OptionalLong.of(videoBitrate))
+                .bitrate(
+                    videoBitrate == null ? OptionalLong.empty() : OptionalLong.of(videoBitrate))
+                .endTime(Optional.ofNullable(videoEnd))
                 .build());
       }
 

@@ -41,6 +41,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
@@ -392,7 +393,7 @@ class HlsCopySeekSmokeTest {
             .worker()
             .generateMedia(
                 sourceRoot.resolve("paced-audio-tail.mkv"), VIDEO_ENDS_LONG_BEFORE_AUDIO_MATROSKA);
-    storeProbeWithKeyframes(source);
+    storeProbeWithoutStreamEndTimes(probeWithKeyframes(source));
     var session = createSession(source);
     var sessionId = session.getSessionId();
     var firstAttempt = session.getHandle().orElseThrow().attemptId();
@@ -471,9 +472,15 @@ class HlsCopySeekSmokeTest {
     return List.copyOf(arguments);
   }
 
+  private KeyframePositions storeProbeWithKeyframes(Path source) {
+    var success = probeWithKeyframes(source);
+    probeRepository.setDefaultOutcome(success);
+    return ((KeyframeKnowledge.Known) success.keyframes()).positions();
+  }
+
   // An MPEG-TS source has no index, so the probe asks for a packet scan. The scan is a new attempt,
   // so it carries a new attempt ID, as the worker contract requires.
-  private KeyframePositions storeProbeWithKeyframes(Path source) {
+  private ProbeOutcome.Success probeWithKeyframes(Path source) {
     var requestBuilder =
         ProbeExecutionRequest.builder()
             .sourcePath(source)
@@ -488,8 +495,25 @@ class HlsCopySeekSmokeTest {
     assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
     var success = (ProbeOutcome.Success) outcome;
     assertThat(success.keyframes()).isInstanceOf(KeyframeKnowledge.Known.class);
-    probeRepository.setDefaultOutcome(success);
-    return ((KeyframeKnowledge.Known) success.keyframes()).positions();
+    return success;
+  }
+
+  // A copy runs past its video's end only when the probe states no stream end times, as for a
+  // container header that states none: a stated video end before the audio's makes the session
+  // encode the video and hold its last frame (ADR 0037, early ends).
+  private void storeProbeWithoutStreamEndTimes(ProbeOutcome.Success stored) {
+    var streams =
+        stored.streams().stream()
+            .map(stream -> stream.toBuilder().endTime(Optional.empty()).build())
+            .toList();
+    probeRepository.setDefaultOutcome(
+        new ProbeOutcome.Success(
+            stored.container(),
+            streams,
+            stored.keyframes(),
+            stored.chosenVideoStream(),
+            stored.streamTitlesOmitted(),
+            stored.streamMeasurements()));
   }
 
   private StreamSession createSession(Path source) throws Exception {

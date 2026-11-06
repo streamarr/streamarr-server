@@ -241,6 +241,10 @@ enum DecisionReason {
     audio and video rates that the server encodes.
     """
     AUDIO_LOWERED_FOR_BITRATE_LIMIT
+    "The source's video ends at least one segment before another stream of the source, so the encode holds its last frame to the end."
+    VIDEO_ENDS_EARLY
+    "The audio ends at least one segment before another stream of the source, so the encode pads it with silence to the end."
+    AUDIO_ENDS_EARLY
     "The probe found no single source container that a client can declare for direct play."
     SOURCE_CONTAINER_UNKNOWN
     """
