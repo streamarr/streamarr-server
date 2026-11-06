@@ -533,19 +533,18 @@ class HdrStreamCopySmokeTest {
         .build();
   }
 
-  // An MPEG-TS source has no index, so the probe asks for a packet scan of its keyframes.
+  // An MPEG-TS source has no index, so the probe asks for a packet scan of its keyframes. The scan
+  // is a new attempt, so it carries a new attempt ID, as the worker contract requires.
   private void storeProbe(Path source) {
-    var request =
+    var requestBuilder =
         ProbeExecutionRequest.builder()
             .sourcePath(source)
-            .attemptId(UUID.randomUUID())
             .probeVersion(ProbeVersion.CURRENT)
-            .priority(ProbePriority.BACKGROUND)
-            .build();
-    var outcome = probes.probe(request);
+            .priority(ProbePriority.BACKGROUND);
+    var outcome = probes.probe(requestBuilder.attemptId(UUID.randomUUID()).build());
     if (outcome instanceof ProbeOutcome.Success success
         && success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired) {
-      outcome = probes.scanKeyframePackets(request);
+      outcome = probes.scanKeyframePackets(requestBuilder.attemptId(UUID.randomUUID()).build());
     }
 
     assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
