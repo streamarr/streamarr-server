@@ -37,6 +37,10 @@ public final class ProbeVersion {
   // direct play reads.
   public static final int FIRST_TO_REPORT_SOURCE_FACTS = 7;
 
+  // The chosen video stream's maximum frame rate, and a Dolby Vision stream's enhancement layer and
+  // the MaxCLL and MaxFALL of its RPUs' level 6 block.
+  public static final int FIRST_TO_REPORT_MAXIMUM_FRAME_RATE_AND_RPU_FACTS = 8;
+
   // A worker that lists this version encodes each audio track in the layout that the job names. The
   // server sends a job that names a layout of 3, 4, 7 or 8 channels only to such a worker.
   public static final int FIRST_TO_ENCODE_NAMED_LAYOUTS = 7;

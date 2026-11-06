@@ -231,7 +231,7 @@ final class RemoteProbeResultMapper {
             .isForced(stream.getIsForced());
     var reportsFrameFacts = reportsFrameFacts(probeVersion);
     if (reportsPlaybackFacts(probeVersion)) {
-      playbackFactsMapper.addStreamFacts(builder, stream, reportsFrameFacts);
+      playbackFactsMapper.addStreamFacts(builder, stream, probeVersion);
     }
 
     if (reportsFrameFacts) {

@@ -16,7 +16,9 @@ import lombok.NonNull;
  * streams only. {@code audioProperties} comes from probe version 7 and later, for audio streams
  * only. An empty {@code comment} counts as false, and so does each disposition of an empty {@code
  * audioProperties}. {@code sampleEntry} comes from probe version 7 and later, for video streams
- * whose MP4 or MOV file stores one.
+ * whose MP4 or MOV file stores one. {@code maximumFrameRate}, the highest rate that the stream's
+ * presentation times show over 1 to 24 consecutive frame intervals, comes from probe version 8 and
+ * later, for the chosen progressive video stream when the probe measured it; empty means unknown.
  */
 @Builder
 public record StreamInfo(
@@ -48,7 +50,8 @@ public record StreamInfo(
     @NonNull Optional<VideoStreamProperties> videoProperties,
     @NonNull Optional<Boolean> comment,
     @NonNull Optional<AudioStreamProperties> audioProperties,
-    @NonNull Optional<String> sampleEntry) {
+    @NonNull Optional<String> sampleEntry,
+    @NonNull Optional<Fraction> maximumFrameRate) {
 
   // Lombok builder defaults — its generated setters assign them
   @SuppressWarnings({"java:S1068", "java:S9438"})
@@ -78,5 +81,6 @@ public record StreamInfo(
     private Optional<Boolean> comment = Optional.empty();
     private Optional<AudioStreamProperties> audioProperties = Optional.empty();
     private Optional<String> sampleEntry = Optional.empty();
+    private Optional<Fraction> maximumFrameRate = Optional.empty();
   }
 }

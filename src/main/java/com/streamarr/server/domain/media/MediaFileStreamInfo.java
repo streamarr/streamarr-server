@@ -10,8 +10,10 @@ import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionEnhancementLayer;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.Presence;
@@ -170,6 +172,14 @@ public class MediaFileStreamInfo {
   private Boolean dependent;
   private Integer flacMinimumBlockSizeSamples;
   private String sampleEntry;
+  private Integer maximumFrameRateNumerator;
+  private Integer maximumFrameRateDenominator;
+
+  @Enumerated(EnumType.STRING)
+  private DolbyVisionEnhancementLayer rpuEnhancementLayer;
+
+  private Integer rpuMaxContentLightLevel;
+  private Integer rpuMaxFrameAverageLightLevel;
 
   @Override
   public boolean equals(Object other) {
@@ -225,6 +235,9 @@ public class MediaFileStreamInfo {
         .comment(Optional.ofNullable(comment))
         .audioProperties(audioProperties())
         .sampleEntry(Optional.ofNullable(sampleEntry))
+        .maximumFrameRate(
+            Optional.ofNullable(maximumFrameRateNumerator)
+                .map(numerator -> new Fraction(numerator, maximumFrameRateDenominator)))
         .build();
   }
 
@@ -301,12 +314,20 @@ public class MediaFileStreamInfo {
       case UNSPECIFIED -> new DolbyVision.Unspecified();
       case ABSENT -> new DolbyVision.Absent();
       case PRESENT ->
-          new DolbyVision.Present(
-              dolbyVisionRecord(),
-              dolbyVisionObservedRpu,
-              firstRpuHeader(),
-              Optional.ofNullable(dolbyVisionRpuPlacement)
-                  .orElse(DolbyVisionRpuPlacement.UNSPECIFIED));
+          DolbyVision.Present.builder()
+              .declared(dolbyVisionRecord())
+              .observedRpu(dolbyVisionObservedRpu)
+              .firstRpuHeader(firstRpuHeader())
+              .rpuPlacement(
+                  Optional.ofNullable(dolbyVisionRpuPlacement)
+                      .orElse(DolbyVisionRpuPlacement.UNSPECIFIED))
+              .enhancementLayer(
+                  Optional.ofNullable(rpuEnhancementLayer)
+                      .orElse(DolbyVisionEnhancementLayer.UNSPECIFIED))
+              .rpuContentLightLevel(
+                  Optional.ofNullable(rpuMaxContentLightLevel)
+                      .map(maximum -> new ContentLightLevel(maximum, rpuMaxFrameAverageLightLevel)))
+              .build();
     };
   }
 
@@ -396,6 +417,8 @@ public class MediaFileStreamInfo {
       comment = info.comment().orElse(null);
       info.audioProperties().ifPresent(this::audioProperties);
       sampleEntry = info.sampleEntry().orElse(null);
+      maximumFrameRateNumerator = info.maximumFrameRate().map(Fraction::numerator).orElse(null);
+      maximumFrameRateDenominator = info.maximumFrameRate().map(Fraction::denominator).orElse(null);
       return this;
     }
 
@@ -450,7 +473,9 @@ public class MediaFileStreamInfo {
                 var declared,
                 var observedRpu,
                 var firstRpuHeader,
-                var rpuPlacement) -> {
+                var rpuPlacement,
+                var enhancementLayer,
+                var rpuContentLightLevel) -> {
           dolbyVision = Presence.PRESENT;
           dolbyVisionObservedRpu = observedRpu;
           declared.ifPresent(this::dolbyVisionRecord);
@@ -458,8 +483,19 @@ public class MediaFileStreamInfo {
           if (rpuPlacement != DolbyVisionRpuPlacement.UNSPECIFIED) {
             dolbyVisionRpuPlacement = rpuPlacement;
           }
+
+          if (enhancementLayer != DolbyVisionEnhancementLayer.UNSPECIFIED) {
+            rpuEnhancementLayer = enhancementLayer;
+          }
+
+          rpuContentLightLevel.ifPresent(this::rpuContentLightLevel);
         }
       }
+    }
+
+    private void rpuContentLightLevel(ContentLightLevel level) {
+      rpuMaxContentLightLevel = level.maxContentLightLevel();
+      rpuMaxFrameAverageLightLevel = level.maxFrameAverageLightLevel();
     }
 
     private void dolbyVisionRecord(DolbyVisionConfiguration configuration) {

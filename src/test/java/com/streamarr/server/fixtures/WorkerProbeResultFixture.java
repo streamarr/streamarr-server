@@ -1,12 +1,17 @@
 package com.streamarr.server.fixtures;
 
 import com.streamarr.transcode.v1.ChromaticityCoordinates;
+import com.streamarr.transcode.v1.CompatibleBase;
+import com.streamarr.transcode.v1.DolbyVisionEnhancementLayer;
+import com.streamarr.transcode.v1.DolbyVisionPresent;
 import com.streamarr.transcode.v1.Fraction;
 import com.streamarr.transcode.v1.FrameRateRuleResult;
 import com.streamarr.transcode.v1.MasteringDisplayColorVolume;
 import com.streamarr.transcode.v1.OutputFrameRateBasis;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
+import com.streamarr.transcode.v1.TransferCharacteristics;
+import com.streamarr.transcode.v1.VideoDynamicRange;
 import lombok.experimental.UtilityClass;
 
 /** Worker probe results in the shape that probe version 4 reports. */
@@ -39,5 +44,25 @@ public class WorkerProbeResultFixture {
         .setGreen(coordinates)
         .setBlue(coordinates)
         .setWhitePoint(coordinates);
+  }
+
+  /**
+   * Gives the video stream a PQ transfer and Dolby Vision on a PQ base, and returns its Dolby
+   * Vision for the caller's RPU facts.
+   */
+  public static DolbyVisionPresent.Builder pqDolbyVisionOf(ProbeStreamInfo.Builder video) {
+    return video
+        .setTransferCharacteristics(TransferCharacteristics.TRANSFER_CHARACTERISTICS_SMPTE2084)
+        .setDynamicRange(
+            VideoDynamicRange.newBuilder()
+                .setCompatibleBase(CompatibleBase.COMPATIBLE_BASE_PQ)
+                .setDolbyVisionPresent(DolbyVisionPresent.newBuilder()))
+        .getDynamicRangeBuilder()
+        .getDolbyVisionPresentBuilder();
+  }
+
+  /** The contract's enhancement layer of this name, such as FEL. */
+  public static DolbyVisionEnhancementLayer reportedEnhancementLayer(String name) {
+    return DolbyVisionEnhancementLayer.valueOf("DOLBY_VISION_ENHANCEMENT_LAYER_" + name);
   }
 }

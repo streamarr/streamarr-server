@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import com.google.protobuf.DurationOrBuilder;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
@@ -9,6 +10,7 @@ import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionEnhancementLayer;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.FrameRatePacketScan;
@@ -34,8 +36,9 @@ import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.function.Function;
 
-// Maps the facts that probe version 4 adds for playback, and the RPU facts of probe version 5.
-// Domain and protobuf contracts intentionally share simple names.
+// Maps the facts that probe version 4 adds for playback, the RPU facts of probe version 5, and the
+// maximum frame rate and RPU facts of probe version 8. Domain and protobuf contracts intentionally
+// share simple names.
 final class RemotePlaybackFactsMapper {
 
   private static final String WORKER_PROBE_PREFIX = "Worker probe ";
@@ -52,12 +55,14 @@ final class RemotePlaybackFactsMapper {
 
   // A probe version that reads no frames reports no RPU header and no RPU placement.
   StreamInfo.StreamInfoBuilder addStreamFacts(
-      StreamInfo.StreamInfoBuilder builder, ProbeStreamInfo stream, boolean readsFrames) {
+      StreamInfo.StreamInfoBuilder builder, ProbeStreamInfo stream, int probeVersion) {
     return builder
         .dynamicRange(
             stream.hasDynamicRange()
-                ? Optional.of(dynamicRange(stream.getDynamicRange(), readsFrames))
+                ? Optional.of(dynamicRange(stream.getDynamicRange(), probeVersion))
                 : Optional.empty())
+        .maximumFrameRate(
+            reportsRpuFacts(probeVersion) ? maximumFrameRate(stream) : Optional.empty())
         .bitDepth(positive(stream.hasBitDepth(), stream.getBitDepth(), "bit depth"))
         .chromaSubsampling(chromaSubsampling(stream.getChromaSubsampling()))
         .rotationDegrees(rotation(stream))
@@ -139,6 +144,31 @@ final class RemotePlaybackFactsMapper {
     return value;
   }
 
+  private static boolean readsFrames(int probeVersion) {
+    return Integer.compareUnsigned(probeVersion, ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS) >= 0;
+  }
+
+  private static boolean reportsRpuFacts(int probeVersion) {
+    return Integer.compareUnsigned(
+            probeVersion, ProbeVersion.FIRST_TO_REPORT_MAXIMUM_FRAME_RATE_AND_RPU_FACTS)
+        >= 0;
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static Optional<com.streamarr.server.domain.streaming.Fraction> maximumFrameRate(
+      ProbeStreamInfo stream) {
+    if (!stream.hasMaximumFrameRate()) {
+      return Optional.empty();
+    }
+
+    if (!"video".equals(stream.getCodecType())) {
+      throw contractViolation(
+          "Worker probe gave a maximum frame rate to a stream that is not video");
+    }
+
+    return Optional.of(fraction(stream.getMaximumFrameRate()));
+  }
+
   private static Optional<String> streamText(boolean present, String value) {
     if (!present) {
       return Optional.empty();
@@ -171,7 +201,7 @@ final class RemotePlaybackFactsMapper {
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static VideoDynamicRange dynamicRange(
-      com.streamarr.transcode.v1.VideoDynamicRange range, boolean readsFrames) {
+      com.streamarr.transcode.v1.VideoDynamicRange range, int probeVersion) {
     // The contract gives NONE only beside Dolby Vision in every probe version, so this check also
     // covers a version 4 result, which carries no typed transfer.
     if (range.getCompatibleBase() == com.streamarr.transcode.v1.CompatibleBase.COMPATIBLE_BASE_NONE
@@ -182,7 +212,7 @@ final class RemotePlaybackFactsMapper {
     return new VideoDynamicRange(
         compatibleBase(range.getCompatibleBase()),
         presence(range.getHdr10Plus()),
-        dolbyVision(range, readsFrames));
+        dolbyVision(range, probeVersion));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -209,32 +239,56 @@ final class RemotePlaybackFactsMapper {
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static DolbyVision dolbyVision(
-      com.streamarr.transcode.v1.VideoDynamicRange range, boolean readsFrames) {
+      com.streamarr.transcode.v1.VideoDynamicRange range, int probeVersion) {
     return switch (range.getDolbyVisionCase()) {
       case DOLBY_VISION_ABSENT -> new DolbyVision.Absent();
-      case DOLBY_VISION_PRESENT -> dolbyVisionPresent(range.getDolbyVisionPresent(), readsFrames);
+      case DOLBY_VISION_PRESENT -> dolbyVisionPresent(range.getDolbyVisionPresent(), probeVersion);
       case DOLBYVISION_NOT_SET -> new DolbyVision.Unspecified();
     };
   }
 
   private static DolbyVision.Present dolbyVisionPresent(
-      DolbyVisionPresent present, boolean readsFrames) {
+      DolbyVisionPresent present, int probeVersion) {
     var declared =
         present.hasDeclared()
             ? Optional.of(configuration(present.getDeclared()))
             : Optional.<DolbyVisionConfiguration>empty();
-    var observedRpu = presence(present.getObservedRpu());
-    if (!readsFrames) {
-      return new DolbyVision.Present(declared, observedRpu);
+    var mapped = DolbyVision.Present.builder().declared(declared);
+    mapped.observedRpu(presence(present.getObservedRpu()));
+    if (!readsFrames(probeVersion)) {
+      return mapped.build();
     }
 
-    return new DolbyVision.Present(
-        declared,
-        observedRpu,
-        present.hasFirstRpuHeader()
-            ? Optional.of(RemoteStreamPropertiesMapper.rpuHeader(present.getFirstRpuHeader()))
-            : Optional.empty(),
-        rpuPlacement(present.getRpuPlacement()));
+    mapped
+        .firstRpuHeader(
+            present.hasFirstRpuHeader()
+                ? Optional.of(RemoteStreamPropertiesMapper.rpuHeader(present.getFirstRpuHeader()))
+                : Optional.empty())
+        .rpuPlacement(rpuPlacement(present.getRpuPlacement()));
+    if (!reportsRpuFacts(probeVersion)) {
+      return mapped.build();
+    }
+
+    return mapped
+        .enhancementLayer(enhancementLayer(present.getEnhancementLayer()))
+        .rpuContentLightLevel(
+            present.hasRpuContentLightLevel()
+                ? Optional.of(contentLightLevel(present.getRpuContentLightLevel()))
+                : Optional.empty())
+        .build();
+  }
+
+  // A value that a newer worker adds tells this server nothing it can use.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static DolbyVisionEnhancementLayer enhancementLayer(
+      com.streamarr.transcode.v1.DolbyVisionEnhancementLayer layer) {
+    return switch (layer) {
+      case DOLBY_VISION_ENHANCEMENT_LAYER_NONE -> DolbyVisionEnhancementLayer.NONE;
+      case DOLBY_VISION_ENHANCEMENT_LAYER_MEL -> DolbyVisionEnhancementLayer.MEL;
+      case DOLBY_VISION_ENHANCEMENT_LAYER_FEL -> DolbyVisionEnhancementLayer.FEL;
+      case DOLBY_VISION_ENHANCEMENT_LAYER_UNSPECIFIED, UNRECOGNIZED ->
+          DolbyVisionEnhancementLayer.UNSPECIFIED;
+    };
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
