@@ -23,16 +23,19 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
+import com.streamarr.server.graphql.cursor.PositionCursorCodec;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dataloaders.SelectedProfileDataLoader;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
-import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.identity.IdentityQueryService;
 import com.streamarr.server.services.identity.SelectableProfilesList;
 import com.streamarr.server.services.identity.UsableHouseholdsList;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,6 +56,10 @@ import tools.jackson.databind.ObjectMapper;
     classes = {
       SelectedProfileStateResolver.class,
       SelectedProfileDataLoader.class,
+      MeResolver.class,
+      PaginationService.class,
+      PositionCursorCodec.class,
+      RelayConnectionAdapter.class,
       JacksonAutoConfiguration.class,
       StreamarrDataFetcherExceptionHandler.class,
       SelectedProfileStateResolverTest.Fakes.class,
@@ -77,7 +84,7 @@ class SelectedProfileStateResolverTest {
   @Autowired private FakeMovieRepository movies;
   @Autowired private FakeHouseholdRepository households;
   @Autowired private FakeUserAccountRepository accounts;
-  @Autowired private FakeProfileRepository profiles;
+  @Autowired private ReadCountingProfileRepository profiles;
   @Autowired private FakeProfileHouseholdShareRepository shares;
 
   private Household home;
@@ -95,6 +102,25 @@ class SelectedProfileStateResolverTest {
     @DgsQuery
     public Movie movie(@InputArgument String id) {
       return movies.findById(UUID.fromString(id)).orElse(null);
+    }
+  }
+
+  static class ReadCountingProfileRepository extends FakeProfileRepository {
+
+    private final AtomicInteger availableProfileReads = new AtomicInteger();
+
+    ReadCountingProfileRepository(FakeProfileHouseholdShareRepository shares) {
+      super(shares);
+    }
+
+    int availableProfileReads() {
+      return availableProfileReads.get();
+    }
+
+    @Override
+    public List<Profile> findAvailableInHousehold(UUID householdId) {
+      availableProfileReads.incrementAndGet();
+      return super.findAvailableInHousehold(householdId);
     }
   }
 
@@ -122,8 +148,8 @@ class SelectedProfileStateResolverTest {
     }
 
     @Bean
-    FakeProfileRepository profiles(FakeProfileHouseholdShareRepository shares) {
-      return new FakeProfileRepository(shares);
+    ReadCountingProfileRepository profiles(FakeProfileHouseholdShareRepository shares) {
+      return new ReadCountingProfileRepository(shares);
     }
 
     @Bean
@@ -140,7 +166,7 @@ class SelectedProfileStateResolverTest {
     IdentityQueryService identityQueryService(
         FakeUserAccountRepository accounts,
         FakeHouseholdRepository households,
-        FakeProfileRepository profiles,
+        ReadCountingProfileRepository profiles,
         FakeAuthorizationService authorizationService) {
       return new IdentityQueryService(
           accounts,
@@ -202,6 +228,10 @@ class SelectedProfileStateResolverTest {
   @Test
   @DisplayName("Should return the selected Profile when the session has a selected Profile")
   void shouldReturnTheSelectedProfileWhenTheSessionHasASelectedProfile() {
+    var listedFirst =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(home.getId()).name("Abby").build());
+    shares.share(listedFirst.getId(), home.getId(), true);
     identity.set(session(personal.getId()));
 
     var response =
@@ -222,7 +252,7 @@ class SelectedProfileStateResolverTest {
     var second = movies.save(buildMovie("Second"));
     var third = movies.save(buildMovie("Third"));
     identity.set(session(personal.getId()));
-    var intentsBefore = authorization.recordedIntents().size();
+    var readsBefore = profiles.availableProfileReads();
 
     var response =
         execute(
@@ -244,15 +274,12 @@ class SelectedProfileStateResolverTest {
                             .at("/data/" + alias + "/selectedProfileState/profile/id")
                             .asString())
                     .isEqualTo(personal.getId().toString()));
-    var intents = authorization.recordedIntents();
-    assertThat(intents.subList(intentsBefore, intents.size()))
-        .filteredOn(Intent.ViewProfilePicker.class::isInstance)
-        .hasSize(1);
+    assertThat(profiles.availableProfileReads() - readsBefore).isOne();
   }
 
   @Test
-  @DisplayName("Should null only the selected Profile state when a field under it fails")
-  void shouldNullOnlyTheSelectedProfileStateWhenAFieldUnderItFails() {
+  @DisplayName("Should null only the selected Profile state when a non-null field under it fails")
+  void shouldNullOnlyTheSelectedProfileStateWhenANonNullFieldUnderItFails() {
     identity.set(session(personal.getId()));
     authorization.denyAll();
 

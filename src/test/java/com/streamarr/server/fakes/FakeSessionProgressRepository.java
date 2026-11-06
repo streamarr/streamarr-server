@@ -7,11 +7,9 @@ import com.streamarr.server.services.pagination.Position;
 import com.streamarr.server.services.pagination.Row;
 import com.streamarr.server.services.pagination.Seek;
 import com.streamarr.server.services.pagination.SortValue;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 
@@ -19,10 +17,6 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
     implements SessionProgressRepository {
 
   private final Predicate<UUID> hasStreamSessionCompletion;
-  private final List<ProgressRead> progressReads = new ArrayList<>();
-
-  /** One read of a Profile's progress for a set of media files. */
-  public record ProgressRead(UUID profileId, Set<UUID> mediaFileIds) {}
 
   /** A repository that sees no completions, so every progress report is saved. */
   public FakeSessionProgressRepository() {
@@ -32,16 +26,6 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   /** A repository that saves no progress for a stream session once it saved its completion. */
   public FakeSessionProgressRepository(FakeWatchHistoryRepository watchHistory) {
     this.hasStreamSessionCompletion = watchHistory::hasStreamSessionCompletion;
-  }
-
-  public List<ProgressRead> progressReads() {
-    return List.copyOf(progressReads);
-  }
-
-  @Override
-  public void deleteAll() {
-    super.deleteAll();
-    progressReads.clear();
   }
 
   @Override
@@ -68,7 +52,6 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   @Override
   public List<SessionProgress> findByProfileIdAndMediaFileIdIn(
       UUID profileId, Collection<UUID> mediaFileIds) {
-    progressReads.add(new ProgressRead(profileId, Set.copyOf(mediaFileIds)));
     return database.values().stream()
         .filter(
             sp -> profileId.equals(sp.getProfileId()) && mediaFileIds.contains(sp.getMediaFileId()))
