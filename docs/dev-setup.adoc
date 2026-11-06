@@ -85,6 +85,13 @@ Stable `X.Y.Z` tags are published by the release workflow.
 The worker follows the same convention. The server consumes its tag and digest from `worker-image.env`.
 Renovate refreshes snapshot digests and proposes the stable version when it is released. Later snapshots require an explicit opt-in.
 
+`docker-compose.yml` runs `streamarr/streamarr-server:<Maven version>` unless `STREAMARR_SERVER_IMAGE` is set.
+Release Please rewrites that default, marked `x-release-please-version`, in every snapshot and release PR, so `main` runs its current snapshot and a release tag runs its own release.
+**Verify deployment image configuration** fails when the default differs from the Maven version.
+The snapshot tag moves with each `main` build.
+To keep one build, set `STREAMARR_SERVER_IMAGE` in `.env` to a `sha-<commit>` tag or a digest, for example `streamarr/streamarr-server:X.Y.Z-SNAPSHOT@sha256:<digest>`.
+`docker buildx imagetools inspect streamarr/streamarr-server:X.Y.Z-SNAPSHOT` prints the current digest.
+
 == Worker Protocol
 
 The server publishes `src/main/protobuf` to `buf.build/streamarr-org/transcode` after merges to `main` through `.github/workflows/buf-publish.yml`.

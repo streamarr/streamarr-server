@@ -242,6 +242,7 @@ Load the checked-in image from `worker-image.env` and set `STREAMARR_MEDIA_PATH`
 The pin file contains one unquoted `STREAMARR_WORKER_IMAGE=<image>@sha256:<digest>` assignment.
 Blank lines and full-line comments are allowed. Do not add an `export` prefix or other assignments.
 Set `STREAMARR_WORKER_IMAGE` in `.env` or the shell to override the pin.
+The server image defaults to the tag of the checked-in Maven version. Set `STREAMARR_SERVER_IMAGE` in `.env` or the shell to run another build; see link:dev-setup.adoc#_container_images[Container Images].
 Both containers mount the media directory read-only at `/media`, which is the library root inside the server.
 `STREAMARR_WORKER_ID` and `STREAMARR_SOURCE_NAMESPACE_ID` override the example UUIDs.
 

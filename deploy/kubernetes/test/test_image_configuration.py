@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import tempfile
 import unittest
+from xml.etree import ElementTree
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 
@@ -134,6 +135,48 @@ class WorkerImageConfigurationTests(unittest.TestCase):
             self.assertIn("STREAMARR_WORKER_IMAGE", result.stderr)
             self.assertNotIn("Unexpected build", result.stderr)
             self.assertEqual(list(root.glob("streamarr-mesh.*")), [])
+
+
+class ServerImageConfigurationTests(unittest.TestCase):
+    def test_compose_runs_the_maven_version_when_no_server_image_is_set(self):
+        version = ElementTree.parse(REPOSITORY / "pom.xml").getroot().findtext(
+            "maven:version", default="", namespaces={"maven": "http://maven.apache.org/POM/4.0.0"})
+        self.assertTrue(version, "pom.xml declares no project version")
+
+        result = compose_config_with_example_environment({})
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["services"]["streamarr-server"]["image"],
+                         "streamarr/streamarr-server:" + version)
+
+    def test_compose_runs_the_server_image_when_one_is_set(self):
+        reference = "streamarr/streamarr-server:0.2.0-SNAPSHOT@sha256:" + "d" * 64
+
+        result = compose_config_with_example_environment({"STREAMARR_SERVER_IMAGE": reference})
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["services"]["streamarr-server"]["image"],
+                         reference)
+
+    def test_release_please_moves_the_compose_default_with_each_maven_version(self):
+        package = json.loads((REPOSITORY / "release-please-config.json").read_text())["packages"]["."]
+        default = next((line for line in (REPOSITORY / "docker-compose.yml").read_text().splitlines()
+                        if "STREAMARR_SERVER_IMAGE" in line), "")
+
+        self.assertIn({"type": "generic", "path": "docker-compose.yml"},
+                      package.get("extra-files", []))
+        self.assertIn("x-release-please-version", default)
+
+
+def compose_config_with_example_environment(variables):
+    environment = dict(os.environ)
+    environment.pop("STREAMARR_SERVER_IMAGE", None)
+    environment.update(variables)
+    return subprocess.run(
+        ["docker", "compose", "--env-file", "worker-image.env", "--env-file", ".env.example",
+         "config", "--format", "json"],
+        cwd=REPOSITORY, env=environment, capture_output=True, text=True, timeout=10, check=False,
+    )
 
 
 if __name__ == "__main__":
