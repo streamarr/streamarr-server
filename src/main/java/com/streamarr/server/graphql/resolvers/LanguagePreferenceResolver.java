@@ -18,6 +18,7 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.graphql.dataloaders.LanguagePreferenceDataLoader;
 import com.streamarr.server.graphql.dataloaders.LanguagePreferenceLoaderKey;
+import com.streamarr.server.graphql.dto.SelectedProfileState;
 import com.streamarr.server.graphql.mutation.InputPath;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.language.ClearLanguageOverrideInput;
@@ -169,39 +170,11 @@ public class LanguagePreferenceResolver {
     };
   }
 
-  @DgsData(parentType = "Movie", field = "languagePreference")
-  public CompletableFuture<LanguagePreference> movieLanguagePreference(
-      DataFetchingEnvironment dfe) {
-    Movie movie = dfe.getSource();
-    return loadPreference(dfe, movie.getId());
-  }
-
-  @DgsData(parentType = "Series", field = "languagePreference")
-  public CompletableFuture<LanguagePreference> seriesLanguagePreference(
-      DataFetchingEnvironment dfe) {
-    Series series = dfe.getSource();
-    return loadPreference(dfe, series.getId());
-  }
-
-  @DgsData(parentType = "Season", field = "languagePreference")
-  public CompletableFuture<LanguagePreference> seasonLanguagePreference(
-      DataFetchingEnvironment dfe) {
-    Season season = dfe.getSource();
-    return loadPreference(dfe, season.getId());
-  }
-
-  @DgsData(parentType = "Episode", field = "languagePreference")
-  public CompletableFuture<LanguagePreference> episodeLanguagePreference(
-      DataFetchingEnvironment dfe) {
-    Episode episode = dfe.getSource();
-    return loadPreference(dfe, episode.getId());
-  }
-
-  private CompletableFuture<LanguagePreference> loadPreference(
-      DataFetchingEnvironment dfe, UUID titleId) {
+  @DgsData(parentType = "SelectedProfileState", field = "languagePreference")
+  public CompletableFuture<LanguagePreference> languagePreference(DataFetchingEnvironment dfe) {
+    SelectedProfileState state = dfe.getSource();
     DataLoader<LanguagePreferenceLoaderKey, LanguagePreference> loader =
         dfe.getDataLoader(LanguagePreferenceDataLoader.NAME);
-    return loader.load(
-        new LanguagePreferenceLoaderKey(authorizationService.requireProfile(), titleId));
+    return loader.load(new LanguagePreferenceLoaderKey(state.profileId(), state.titleId()));
   }
 }

@@ -201,7 +201,7 @@ After every reconnect, the client subscribes and queries again.
 === What a change holds
 
 Each committed write sends one change.
-A change lists each movie or episode whose `watchStatus`, `watchProgress` or `lastWatchedAt` changed.
+A change lists each movie or episode whose watch state changed, and a client selects that watch state through each item's `selectedProfileState { watchState { ... } }`.
 It also lists the season and the series of each such episode, because their aggregate values may have changed.
 Each item appears once in a change.
 The server reads the values when it delivers the change, so they are current values, not differences.
@@ -256,13 +256,14 @@ When the client loads the next page, it drops items it already holds by id, beca
 === Failed changes
 
 The server resolves each change for each subscriber.
-A field that waits on a batched load, such as `watchStatus`, fails when it cannot resolve within `GRAPHQL_SUBSCRIPTION_DELIVERY_FETCH_TIMEOUT`, so later changes do not wait behind it.
+A field that waits on a batched load, such as `watchStatus` under `selectedProfileState`, fails when it cannot resolve within `GRAPHQL_SUBSCRIPTION_DELIVERY_FETCH_TIMEOUT`, so later changes do not wait behind it.
 The timeout does not bound `items`, which reads the database directly.
 A stalled read of `items` holds back the operation's later changes until the read completes.
 Every database statement that waits on a lock fails after `DATABASE_LOCK_TIMEOUT`, `30s` by default, so a read held back by a lock ends within that bound.
 PostgreSQL ends a database session whose transaction issues no statement for `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT`, `60s` by default, and releases the locks that transaction held.
 A failed nullable field, such as `watchProgress` or `lastWatchedAt`, arrives as null in a `next` message.
-A failed non-null field of an item, such as `watchStatus`, `library` or `unmatched`, makes that item null in `items`.
+A failed non-null field under `selectedProfileState`, such as `watchStatus`, makes `selectedProfileState` null, and the item keeps its other fields.
+A failed non-null field of the item itself, such as `library` or `unmatched`, makes that item null in `items`.
 The other items of the change arrive intact.
 When the change's items cannot be resolved, `watchStateChanged` arrives as null.
 The operation continues in every case, and the client recovers as <<Field errors>> describes.

@@ -35,7 +35,6 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import com.streamarr.server.support.security.TestIdentityConstants;
-import com.streamarr.server.support.security.WithAccountContext;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.time.Instant;
 import java.util.List;
@@ -58,6 +57,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @SpringBootTest(
     classes = {
       WatchProgressFieldResolver.class,
+      SelectedProfileStateResolver.class,
       WatchProgressDataLoader.class,
       WatchStatusDataLoader.class,
       MovieResolver.class,
@@ -174,12 +174,21 @@ class WatchProgressFieldResolverTest {
       var context =
           dgsQueryExecutor.executeAndGetDocumentContext(
               String.format(
-                  "{ movie(id: \"%s\") { watchProgress { positionSeconds percentComplete durationSeconds } } }",
+                  "{ movie(id: \"%s\") { selectedProfileState { watchState { watchProgress { positionSeconds percentComplete durationSeconds } } } } }",
                   movie.getId()));
 
-      assertThat(context.<Integer>read("data.movie.watchProgress.positionSeconds")).isEqualTo(1800);
-      assertThat(context.<Double>read("data.movie.watchProgress.percentComplete")).isEqualTo(50.0);
-      assertThat(context.<Integer>read("data.movie.watchProgress.durationSeconds")).isEqualTo(3600);
+      assertThat(
+              context.<Integer>read(
+                  "data.movie.selectedProfileState.watchState.watchProgress.positionSeconds"))
+          .isEqualTo(1800);
+      assertThat(
+              context.<Double>read(
+                  "data.movie.selectedProfileState.watchState.watchProgress.percentComplete"))
+          .isEqualTo(50.0);
+      assertThat(
+              context.<Integer>read(
+                  "data.movie.selectedProfileState.watchState.watchProgress.durationSeconds"))
+          .isEqualTo(3600);
     }
 
     @Test
@@ -190,25 +199,11 @@ class WatchProgressFieldResolverTest {
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format(
-                  "{ movie(id: \"%s\") { watchProgress { positionSeconds } } }", movie.getId()),
-              "data.movie.watchProgress");
+                  "{ movie(id: \"%s\") { selectedProfileState { watchState { watchProgress { positionSeconds } } } } }",
+                  movie.getId()),
+              "data.movie.selectedProfileState.watchState.watchProgress");
 
       assertThat(watchProgress).isNull();
-    }
-
-    @Test
-    @DisplayName("Should require profile when movie has no files")
-    @WithAccountContext
-    void shouldRequireProfileWhenMovieHasNoFiles() {
-      var movie = setupMovie();
-
-      var result =
-          dgsQueryExecutor.execute(
-              String.format(
-                  "{ movie(id: \"%s\") { watchProgress { positionSeconds } } }", movie.getId()));
-
-      assertThat(result.getErrors()).isNotEmpty();
-      assertThat(result.getErrors().getFirst().getMessage()).contains("profile must be selected");
     }
 
     @Test
@@ -222,8 +217,9 @@ class WatchProgressFieldResolverTest {
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format(
-                  "{ movie(id: \"%s\") { watchProgress { positionSeconds } } }", movie.getId()),
-              "data.movie.watchProgress");
+                  "{ movie(id: \"%s\") { selectedProfileState { watchState { watchProgress { positionSeconds } } } } }",
+                  movie.getId()),
+              "data.movie.selectedProfileState.watchState.watchProgress");
 
       assertThat(watchProgress).isNull();
     }
@@ -247,10 +243,55 @@ class WatchProgressFieldResolverTest {
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("{ movie(id: \"%s\") { watchStatus } }", movie.getId()),
-              "data.movie.watchStatus");
+              String.format(
+                  "{ movie(id: \"%s\") { selectedProfileState { watchState { watchStatus } } } }",
+                  movie.getId()),
+              "data.movie.selectedProfileState.watchState.watchStatus");
 
       assertThat(status).isEqualTo("IN_PROGRESS");
+    }
+  }
+
+  @Nested
+  @DisplayName("Batched Watch State")
+  class BatchedWatchState {
+
+    // DGS may split one level's loads into more than one batch, so only the per-file reads are
+    // fixed.
+    @Test
+    @DisplayName(
+        "Should read each movie's progress once for the selected Profile when several movies"
+            + " select their watched status")
+    void shouldReadEachMoviesProgressOnceForTheSelectedProfileWhenSeveralMoviesSelectTheirStatus() {
+      var movies = List.of(setupMovie(), setupMovie(), setupMovie());
+      var fileIds =
+          movies.stream()
+              .map(
+                  movie -> {
+                    var mediaFile = buildMediaFile();
+                    mediaFile.setMediaId(movie.getId());
+                    return mediaFileRepository.save(mediaFile).getId();
+                  })
+              .toList();
+
+      var result =
+          dgsQueryExecutor.execute(
+              """
+              {
+                first: movie(id: "%s") { selectedProfileState { watchState { watchStatus } } }
+                second: movie(id: "%s") { selectedProfileState { watchState { watchStatus } } }
+                third: movie(id: "%s") { selectedProfileState { watchState { watchStatus } } }
+              }
+              """
+                  .formatted(movies.get(0).getId(), movies.get(1).getId(), movies.get(2).getId()));
+
+      assertThat(result.getErrors()).isEmpty();
+      assertThat(sessionProgressRepository.progressReads())
+          .allSatisfy(read -> assertThat(read.profileId()).isEqualTo(PROFILE_ID));
+      assertThat(
+              sessionProgressRepository.progressReads().stream()
+                  .flatMap(read -> read.mediaFileIds().stream()))
+          .containsExactlyInAnyOrderElementsOf(fileIds);
     }
   }
 
@@ -276,20 +317,20 @@ class WatchProgressFieldResolverTest {
       var context =
           dgsQueryExecutor.executeAndGetDocumentContext(
               String.format(
-                  "{ series(id: \"%s\") { seasons { episodes { watchProgress { positionSeconds percentComplete durationSeconds } } } } }",
+                  "{ series(id: \"%s\") { seasons { episodes { selectedProfileState { watchState { watchProgress { positionSeconds percentComplete durationSeconds } } } } } } }",
                   graph.series().getId()));
 
       assertThat(
               context.<Integer>read(
-                  "data.series.seasons[0].episodes[0].watchProgress.positionSeconds"))
+                  "data.series.seasons[0].episodes[0].selectedProfileState.watchState.watchProgress.positionSeconds"))
           .isEqualTo(600);
       assertThat(
               context.<Double>read(
-                  "data.series.seasons[0].episodes[0].watchProgress.percentComplete"))
+                  "data.series.seasons[0].episodes[0].selectedProfileState.watchState.watchProgress.percentComplete"))
           .isEqualTo(25.0);
       assertThat(
               context.<Integer>read(
-                  "data.series.seasons[0].episodes[0].watchProgress.durationSeconds"))
+                  "data.series.seasons[0].episodes[0].selectedProfileState.watchState.watchProgress.durationSeconds"))
           .isEqualTo(2400);
     }
 
@@ -308,9 +349,9 @@ class WatchProgressFieldResolverTest {
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format(
-                  "{ series(id: \"%s\") { seasons { episodes { watchStatus } } } }",
+                  "{ series(id: \"%s\") { seasons { episodes { selectedProfileState { watchState { watchStatus } } } } } }",
                   graph.series().getId()),
-              "data.series.seasons[0].episodes[0].watchStatus");
+              "data.series.seasons[0].episodes[0].selectedProfileState.watchState.watchStatus");
 
       assertThat(status).isEqualTo("IN_PROGRESS");
     }
@@ -338,8 +379,9 @@ class WatchProgressFieldResolverTest {
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format(
-                  "{ series(id: \"%s\") { seasons { watchStatus } } }", graph.series().getId()),
-              "data.series.seasons[0].watchStatus");
+                  "{ series(id: \"%s\") { seasons { selectedProfileState { watchState { watchStatus } } } } }",
+                  graph.series().getId()),
+              "data.series.seasons[0].selectedProfileState.watchState.watchStatus");
 
       assertThat(status).isEqualTo("IN_PROGRESS");
     }
@@ -401,14 +443,20 @@ class WatchProgressFieldResolverTest {
       var context =
           dgsQueryExecutor.executeAndGetDocumentContext(
               String.format(
-                  "{ series(id: \"%s\") { seasons { watchProgress { positionSeconds percentComplete durationSeconds } } } }",
+                  "{ series(id: \"%s\") { seasons { selectedProfileState { watchState { watchProgress { positionSeconds percentComplete durationSeconds } } } } } }",
                   seriesId));
 
-      assertThat(context.<Integer>read("data.series.seasons[0].watchProgress.positionSeconds"))
+      assertThat(
+              context.<Integer>read(
+                  "data.series.seasons[0].selectedProfileState.watchState.watchProgress.positionSeconds"))
           .isEqualTo(900);
-      assertThat(context.<Double>read("data.series.seasons[0].watchProgress.percentComplete"))
+      assertThat(
+              context.<Double>read(
+                  "data.series.seasons[0].selectedProfileState.watchState.watchProgress.percentComplete"))
           .isEqualTo(75.0);
-      assertThat(context.<Integer>read("data.series.seasons[0].watchProgress.durationSeconds"))
+      assertThat(
+              context.<Integer>read(
+                  "data.series.seasons[0].selectedProfileState.watchState.watchProgress.durationSeconds"))
           .isEqualTo(1200);
     }
 
@@ -428,9 +476,9 @@ class WatchProgressFieldResolverTest {
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format(
-                  "{ series(id: \"%s\") { seasons { watchProgress { positionSeconds } } } }",
+                  "{ series(id: \"%s\") { seasons { selectedProfileState { watchState { watchProgress { positionSeconds } } } } } }",
                   seriesId),
-              "data.series.seasons[0].watchProgress");
+              "data.series.seasons[0].selectedProfileState.watchState.watchProgress");
 
       assertThat(watchProgress).isNull();
     }
@@ -461,8 +509,10 @@ class WatchProgressFieldResolverTest {
       // would fall back to UNWATCHED
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("{ series(id: \"%s\") { watchStatus } }", series.getId()),
-              "data.series.watchStatus");
+              String.format(
+                  "{ series(id: \"%s\") { selectedProfileState { watchState { watchStatus } } } }",
+                  series.getId()),
+              "data.series.selectedProfileState.watchState.watchStatus");
 
       assertThat(status).isEqualTo("IN_PROGRESS");
     }
@@ -527,12 +577,20 @@ class WatchProgressFieldResolverTest {
       var context =
           dgsQueryExecutor.executeAndGetDocumentContext(
               String.format(
-                  "{ series(id: \"%s\") { watchProgress { positionSeconds percentComplete durationSeconds } } }",
+                  "{ series(id: \"%s\") { selectedProfileState { watchState { watchProgress { positionSeconds percentComplete durationSeconds } } } } }",
                   series.getId()));
 
-      assertThat(context.<Integer>read("data.series.watchProgress.positionSeconds")).isEqualTo(900);
-      assertThat(context.<Double>read("data.series.watchProgress.percentComplete")).isEqualTo(25.0);
-      assertThat(context.<Integer>read("data.series.watchProgress.durationSeconds"))
+      assertThat(
+              context.<Integer>read(
+                  "data.series.selectedProfileState.watchState.watchProgress.positionSeconds"))
+          .isEqualTo(900);
+      assertThat(
+              context.<Double>read(
+                  "data.series.selectedProfileState.watchState.watchProgress.percentComplete"))
+          .isEqualTo(25.0);
+      assertThat(
+              context.<Integer>read(
+                  "data.series.selectedProfileState.watchState.watchProgress.durationSeconds"))
           .isEqualTo(3600);
     }
 
@@ -548,8 +606,9 @@ class WatchProgressFieldResolverTest {
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format(
-                  "{ series(id: \"%s\") { watchProgress { positionSeconds } } }", seriesId),
-              "data.series.watchProgress");
+                  "{ series(id: \"%s\") { selectedProfileState { watchState { watchProgress { positionSeconds } } } } }",
+                  seriesId),
+              "data.series.selectedProfileState.watchState.watchProgress");
 
       assertThat(watchProgress).isNull();
     }
