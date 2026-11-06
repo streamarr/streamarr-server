@@ -660,7 +660,9 @@ class WorkerCalibrationTest {
             PredictionCheck.builder()
                 .relativeError(i / 100.0)
                 .besideOtherEncodes(true)
-                .outputToSourceRatio(0.5)
+                .outputPixelRate(SMALL_OUTPUT)
+                .sourcePixelRate(SOURCE)
+                .measuredCpuSecondsPerMediaSecond(1.5)
                 .measuredAt(clock.instant())
                 .build());
       }
@@ -780,6 +782,37 @@ class WorkerCalibrationTest {
 
       assertThat(calibration.isValidatedFor(List.of(load))).as("seven days later").isFalse();
       assertThat(calibration.latestPredictions().get(load.configuration())).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should lose the validation when another configuration's measurements move a constant that both configurations share")
+    void
+        shouldLoseTheValidationWhenAnotherConfigurationsMeasurementsMoveAConstantThatBothConfigurationsShare() {
+      var softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(
+                          Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01, softwareHevc, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0))
+                      .build())
+              .build();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(load))).as("before").isTrue();
+
+      // From HEVC sources, faster costs 0.016 CPU s per megapixel: 0.4 + 0.5 and 0.8 + 0.5.
+      var fromHevc = libx264FasterLoad().sourceDecoder(softwareHevc);
+      for (var i = 0; i < 150; i++) {
+        calibration.fit(measuredAtCost(fromHevc.outputPixelRate(SMALL_OUTPUT).build(), 0.9, 2));
+        calibration.fit(measuredAtCost(fromHevc.outputPixelRate(LARGE_OUTPUT).build(), 1.3, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(load))).as("after").isFalse();
     }
 
     @Test
@@ -928,6 +961,19 @@ class WorkerCalibrationTest {
     }
 
     @Test
+    @DisplayName(
+        "Should leave another preset unvalidated when the constants cannot price it, although the Automatic preset is validated")
+    void
+        shouldLeaveAnotherPresetUnvalidatedWhenTheConstantsCannotPriceItAlthoughTheAutomaticPresetIsValidated() {
+      var calibration = tenCoreCalibration().build();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(veryfast))).isFalse();
+    }
+
+    @Test
     @DisplayName("Should let another preset's own predictions decide once it has twenty of them")
     void shouldLetAnotherPresetsOwnPredictionsDecideOnceItHasTwentyOfThem() {
       var calibration = benchmarkedAtFasterAndVeryfast();
@@ -955,22 +1001,35 @@ class WorkerCalibrationTest {
     private final JobAttemptLoad veryfast =
         libx264FasterLoad().encoderAndPreset(LIBX264_VERYFAST).build();
 
-    /** Twenty concurrent predictions at ratios 0.5 and 1 whose errors cycle through these. */
+    /**
+     * Twenty concurrent predictions that alternate between the small and large rungs, whose errors
+     * cycle through these, and whose measured costs the current constants predict exactly.
+     */
     private List<PredictionCheck> twentyPredictionsMissingBy(double... relativeErrors) {
       var checks = new ArrayList<PredictionCheck>();
       for (var i = 0; i < 20; i++) {
-        checks.add(
-            predictionMissingBy(relativeErrors[i % relativeErrors.length], 0.5 + i % 2 * 0.5));
+        var check = smallRungPredictionMissingBy(relativeErrors[i % relativeErrors.length]);
+        if (i % 2 == 1) {
+          check =
+              check.toBuilder()
+                  .outputPixelRate(LARGE_OUTPUT)
+                  .measuredCpuSecondsPerMediaSecond(2.5)
+                  .build();
+        }
+
+        checks.add(check);
       }
 
       return checks;
     }
 
-    private PredictionCheck predictionMissingBy(double relativeError, double outputToSourceRatio) {
+    private PredictionCheck smallRungPredictionMissingBy(double relativeError) {
       return PredictionCheck.builder()
           .relativeError(relativeError)
           .besideOtherEncodes(true)
-          .outputToSourceRatio(outputToSourceRatio)
+          .outputPixelRate(SMALL_OUTPUT)
+          .sourcePixelRate(SOURCE)
+          .measuredCpuSecondsPerMediaSecond(1.5)
           .measuredAt(clock.instant())
           .build();
     }
@@ -1027,11 +1086,23 @@ class WorkerCalibrationTest {
         shouldTakeTheAutomaticPresetsPredictionsIntoTheMarginWhenAnotherPresetSharesItsValidation() {
       var calibration =
           tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(
+                          Map.of(LIBX264_FASTER, 0.04, LIBX264_VERYFAST, 0.02, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, LIBX264_VERYFAST, 6.0))
+                      .build())
               .clock(clock)
               .latestPrediction(faster.configuration(), twentyPredictionsMissingBy(0.09, -0.03))
               .latestPrediction(
                   veryfast.configuration(),
-                  List.of(predictionMissingBy(0.02, 0.5), predictionMissingBy(-0.01, 0.5)))
+                  List.of(
+                      smallRungPredictionMissingBy(0.02).toBuilder()
+                          .measuredCpuSecondsPerMediaSecond(1.0)
+                          .build(),
+                      smallRungPredictionMissingBy(-0.01).toBuilder()
+                          .measuredCpuSecondsPerMediaSecond(1.0)
+                          .build()))
               .build();
 
       assertThat(calibration.overpredictionMarginFor(List.of(veryfast)))
@@ -1046,6 +1117,12 @@ class WorkerCalibrationTest {
       var fromHevc = libx264FasterLoad().sourceDecoder(softwareHevc).build();
       var calibration =
           tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(
+                          Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01, softwareHevc, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0))
+                      .build())
               .clock(clock)
               .latestPrediction(faster.configuration(), twentyPredictionsMissingBy(0.03, -0.03))
               .latestPrediction(fromHevc.configuration(), twentyPredictionsMissingBy(0.07, -0.02))

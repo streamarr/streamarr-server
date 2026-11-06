@@ -103,26 +103,26 @@ class HeadroomInputsTest {
   @Test
   @DisplayName("Should reject the prediction check when its error is not a finite number")
   void shouldRejectThePredictionCheckWhenItsErrorIsNotAFiniteNumber() {
-    var check =
-        PredictionCheck.builder()
-            .relativeError(Double.NaN)
-            .besideOtherEncodes(false)
-            .outputToSourceRatio(0.5)
-            .measuredAt(Instant.EPOCH);
+    var check = validPredictionCheck().relativeError(Double.NaN);
 
     assertThatThrownBy(check::build).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  @DisplayName("Should reject the prediction check when its ratio of output to source is zero")
-  void shouldRejectThePredictionCheckWhenItsRatioOfOutputToSourceIsZero() {
-    var check =
-        PredictionCheck.builder()
-            .relativeError(0.1)
-            .besideOtherEncodes(true)
-            .outputToSourceRatio(0)
-            .measuredAt(Instant.EPOCH);
+  @DisplayName("Should reject the prediction check when its measured cost is zero")
+  void shouldRejectThePredictionCheckWhenItsMeasuredCostIsZero() {
+    var check = validPredictionCheck().measuredCpuSecondsPerMediaSecond(0);
 
     assertThatThrownBy(check::build).isInstanceOf(IllegalArgumentException.class);
+  }
+
+  private static PredictionCheck.PredictionCheckBuilder validPredictionCheck() {
+    return PredictionCheck.builder()
+        .relativeError(0.1)
+        .besideOtherEncodes(true)
+        .outputPixelRate(PixelRate.of(1280, 720, 24))
+        .sourcePixelRate(PixelRate.of(1920, 1080, 24))
+        .measuredCpuSecondsPerMediaSecond(1.5)
+        .measuredAt(Instant.EPOCH);
   }
 }

@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.ToDoubleFunction;
 
 /** One encode configuration's latest predictions, and what they say about its validation. */
 final class PredictionWindow {
@@ -41,14 +42,17 @@ final class PredictionWindow {
   }
 
   /**
-   * Failed when at least 5 live predictions have a median error above 10 %. Validated when 20 live
-   * predictions have a median error of at most 10 %, at least 5 of them ran beside other encodes,
-   * and two of their ratios of output to source differ by a factor of 2 or more. Otherwise the
-   * predictions are too little evidence either way.
+   * Failed when at least 5 live predictions, or the current constants' predictions of their
+   * measurements, have a median error above 10 %. Validated when 20 live predictions pass both
+   * checks, at least 5 of them ran beside other encodes, and two of their ratios of output to
+   * source differ by a factor of 2 or more. Otherwise the predictions are too little evidence
+   * either way.
    */
-  Verdict verdict(Instant now) {
+  Verdict verdict(Instant now, ToDoubleFunction<PredictionCheck> currentError) {
     var live = live(now);
-    if (live.size() >= FAILING_REQUIRED && medianError(live) > VALIDATED_MEDIAN_ERROR) {
+    if (live.size() >= FAILING_REQUIRED
+        && (medianError(live, PredictionCheck::relativeError) > VALIDATED_MEDIAN_ERROR
+            || medianError(live, currentError) > VALIDATED_MEDIAN_ERROR)) {
       return Verdict.FAILED;
     }
 
@@ -67,9 +71,24 @@ final class PredictionWindow {
     return concurrent >= CONCURRENT_REQUIRED && spread >= REQUIRED_RATIO_SPREAD;
   }
 
-  private static double medianError(List<PredictionCheck> live) {
+  /**
+   * The largest overprediction among the live predictions and the current constants' predictions of
+   * their measurements, or zero when none overpredicted.
+   */
+  double largestOverprediction(Instant now, ToDoubleFunction<PredictionCheck> currentError) {
+    var largest =
+        live(now).stream()
+            .mapToDouble(
+                check -> Math.max(check.relativeError(), currentError.applyAsDouble(check)))
+            .max()
+            .orElse(0);
+    return Math.max(0, largest);
+  }
+
+  private static double medianError(
+      List<PredictionCheck> live, ToDoubleFunction<PredictionCheck> error) {
     var errors =
-        live.stream().mapToDouble(check -> Math.abs(check.relativeError())).sorted().toArray();
+        live.stream().mapToDouble(check -> Math.abs(error.applyAsDouble(check))).sorted().toArray();
     var middle = errors.length / 2;
     if (errors.length % 2 == 1) {
       return errors[middle];

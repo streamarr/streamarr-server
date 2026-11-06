@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.headroom.EncoderAndPreset;
 import com.streamarr.server.domain.streaming.headroom.HeadroomConstants;
 import com.streamarr.server.domain.streaming.headroom.JobAttemptLoad;
 import com.streamarr.server.domain.streaming.headroom.PredictionCheck;
+import com.streamarr.server.domain.streaming.headroom.ToneMapping;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -98,9 +99,9 @@ public final class WorkerCalibration {
                       PredictionCheck.builder()
                           .relativeError(share / cost / measuredSpeed - 1)
                           .besideOtherEncodes(!measurement.otherEncodes().isEmpty())
-                          .outputToSourceRatio(
-                              load.outputPixelRate().pixelsPerSecond()
-                                  / load.sourcePixelRate().pixelsPerSecond())
+                          .outputPixelRate(load.outputPixelRate())
+                          .sourcePixelRate(load.sourcePixelRate())
+                          .measuredCpuSecondsPerMediaSecond(share / measuredSpeed)
                           .measuredAt(clock.instant())
                           .build());
             });
@@ -206,6 +207,10 @@ public final class WorkerCalibration {
    * predictions (ADR 0044).
    */
   private boolean isValidated(EncodeConfiguration configuration, Instant now) {
+    if (!isPriced(configuration)) {
+      return false;
+    }
+
     return switch (verdictOf(configuration, now)) {
       case VALIDATED -> true;
       case FAILED -> false;
@@ -215,6 +220,14 @@ public final class WorkerCalibration {
               .map(automatic -> verdictOf(automatic, now) == PredictionWindow.Verdict.VALIDATED)
               .orElse(false);
     };
+  }
+
+  private boolean isPriced(EncodeConfiguration configuration) {
+    var priced = constants.cpuSecondsPerMegapixel();
+    return priced.containsKey(configuration.encoderAndPreset())
+        && priced.containsKey(configuration.sourceDecoder())
+        && (configuration.toneMapping() == ToneMapping.NONE
+            || priced.containsKey(configuration.toneMapping()));
   }
 
   private double marginOf(EncodeConfiguration configuration, Instant now) {
@@ -235,9 +248,28 @@ public final class WorkerCalibration {
       return 0;
     }
 
-    var largest =
-        window.live(now).stream().mapToDouble(PredictionCheck::relativeError).max().orElse(0);
-    return Math.max(0, largest);
+    return window.largestOverprediction(now, check -> currentError(configuration, check));
+  }
+
+  /**
+   * How far the current constants miss a prediction's measurement, or an unbounded error while a
+   * constant that the configuration needs is unknown.
+   */
+  private double currentError(EncodeConfiguration configuration, PredictionCheck check) {
+    var load =
+        JobAttemptLoad.builder()
+            .encoderAndPreset(configuration.encoderAndPreset())
+            .outputPixelRate(check.outputPixelRate())
+            .sourceDecoder(configuration.sourceDecoder())
+            .sourcePixelRate(check.sourcePixelRate())
+            .toneMapping(configuration.toneMapping())
+            .build();
+    var cost = constants.cpuSecondsPerMediaSecond(load);
+    if (cost.isEmpty()) {
+      return Double.POSITIVE_INFINITY;
+    }
+
+    return check.relativeErrorAtCost(cost.getAsDouble());
   }
 
   private PredictionWindow.Verdict verdictOf(EncodeConfiguration configuration, Instant now) {
@@ -246,7 +278,7 @@ public final class WorkerCalibration {
       return PredictionWindow.Verdict.TOO_LITTLE_EVIDENCE;
     }
 
-    return window.verdict(now);
+    return window.verdict(now, check -> currentError(configuration, check));
   }
 
   private PredictionWindow windowOf(EncodeConfiguration configuration) {
