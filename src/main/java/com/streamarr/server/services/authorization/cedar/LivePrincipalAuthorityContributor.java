@@ -1,8 +1,10 @@
 package com.streamarr.server.services.authorization.cedar;
 
 import com.cedarpolicy.value.PrimBool;
+import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -28,12 +30,20 @@ class LivePrincipalAuthorityContributor implements FactContributor {
   @Override
   public void contribute(
       AuthenticatedIdentity identity, AuthorizationCheck check, EntitySlice slice) {
-    userAccountRepository
-        .findAuthorityFacts(identity.accountId())
+    authorityFacts(identity, check)
         .ifPresent(
             facts -> {
               slice.principalAttribute(ENABLED, new PrimBool(facts.enabled()));
               slice.principalAttribute(SERVER_ADMIN, new PrimBool(facts.serverAdmin()));
             });
+  }
+
+  private Optional<AccountAuthorityFacts> authorityFacts(
+      AuthenticatedIdentity identity, AuthorizationCheck check) {
+    if (check.action().authorizesWrite()) {
+      return userAccountRepository.lockAuthorityFacts(identity.accountId());
+    }
+
+    return userAccountRepository.findAuthorityFacts(identity.accountId());
   }
 }

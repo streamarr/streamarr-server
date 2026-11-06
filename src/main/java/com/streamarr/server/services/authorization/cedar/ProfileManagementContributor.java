@@ -6,6 +6,7 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -51,8 +52,7 @@ class ProfileManagementContributor implements FactContributor {
                 .findById(identity.accountId())
                 .map(account -> profileId.equals(account.getPersonalProfileId()))
                 .orElse(false);
-    var directManager =
-        profileManagerRepository.lockDirectManagement(identity.accountId(), profileId);
+    var directManager = directlyManages(identity, check, profileId);
     slice.resourceAttribute(MANAGED_BY_PRINCIPAL, new PrimBool(selfManaged || directManager));
     // Relinquishing needs a stored grant to give up; self-management has no row to relinquish.
     slice.resourceAttribute(DIRECTLY_MANAGED_BY_PRINCIPAL, new PrimBool(directManager));
@@ -69,5 +69,14 @@ class ProfileManagementContributor implements FactContributor {
     slice.resourceAttribute(
         AVAILABLE_IN_PRINCIPAL_HOUSEHOLD,
         new PrimBool(shareRepository.isActivelyShared(profileId, identity.householdId())));
+  }
+
+  private boolean directlyManages(
+      AuthenticatedIdentity identity, AuthorizationCheck check, UUID profileId) {
+    if (check.action().authorizesWrite()) {
+      return profileManagerRepository.lockDirectManagement(identity.accountId(), profileId);
+    }
+
+    return profileManagerRepository.existsByAccountIdAndProfileId(identity.accountId(), profileId);
   }
 }
