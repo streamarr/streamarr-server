@@ -238,6 +238,18 @@ public final class WorkerSessionServer
     return workerConnections.verifiedVideoEncoders(sourceNamespaceId);
   }
 
+  public synchronized List<WorkerVerifiedEncoder> encodableSoftwareVideoEncoders(
+      UUID sourceNamespaceId) {
+    requireStarted();
+    return workerConnections.encodableSoftwareVideoEncoders(sourceNamespaceId);
+  }
+
+  public synchronized List<WorkerVerifiedEncoder> verifiedSoftwareVideoEncoders(
+      UUID sourceNamespaceId) {
+    requireStarted();
+    return workerConnections.verifiedSoftwareVideoEncoders(sourceNamespaceId);
+  }
+
   /** Whether a connected worker can read the source namespace and probe at the version. */
   public synchronized boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {
     requireStarted();

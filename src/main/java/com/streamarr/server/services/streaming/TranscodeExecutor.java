@@ -137,4 +137,17 @@ public interface TranscodeExecutor {
    * with the encode features that each lists.
    */
   List<WorkerVerifiedEncoder> verifiedVideoEncoders();
+
+  /**
+   * The software encoders of connected, source-accessible workers with a free slot, with the encode
+   * features that each lists. A software encode after a hardware encoder failure runs only on a
+   * software encoder, so it plans the outputs that these encoders write (ADR 0044, #397).
+   */
+  List<WorkerVerifiedEncoder> encodableSoftwareVideoEncoders();
+
+  /**
+   * The software encoders of connected, source-accessible workers, including busy workers, with the
+   * encode features that each lists.
+   */
+  List<WorkerVerifiedEncoder> verifiedSoftwareVideoEncoders();
 }

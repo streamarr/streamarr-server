@@ -554,6 +554,17 @@ final class LiveWorkerConnectionRegistry {
     return connectionsFor(sourceNamespaceId).flatMap(WorkerConnection::countedEncoders).toList();
   }
 
+  List<WorkerVerifiedEncoder> encodableSoftwareVideoEncoders(UUID sourceNamespaceId) {
+    return connectionsFor(sourceNamespaceId)
+        .filter(connection -> connection.availableSlots() > 0)
+        .flatMap(WorkerConnection::softwareEncoders)
+        .toList();
+  }
+
+  List<WorkerVerifiedEncoder> verifiedSoftwareVideoEncoders(UUID sourceNamespaceId) {
+    return connectionsFor(sourceNamespaceId).flatMap(WorkerConnection::softwareEncoders).toList();
+  }
+
   boolean hasProbeWorker(UUID sourceNamespaceId, int probeVersion) {
     return connectionsFor(sourceNamespaceId)
         .anyMatch(connection -> connection.probeVersions.contains(probeVersion));
@@ -1299,6 +1310,10 @@ final class LiveWorkerConnectionRegistry {
 
     private Stream<WorkerVerifiedEncoder> countedEncoders() {
       return countedEncoders.values().stream();
+    }
+
+    private Stream<WorkerVerifiedEncoder> softwareEncoders() {
+      return softwareEncoders.values().stream();
     }
 
     // A rewrite or copy feature that the server's domain does not name yet, such as the profile 7

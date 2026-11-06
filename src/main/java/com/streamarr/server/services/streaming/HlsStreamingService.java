@@ -14,6 +14,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -162,8 +163,8 @@ public class HlsStreamingService implements StreamingService {
             .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
             .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
-            .videoEncoders(transcodeExecutor.encodableVideoEncoders())
-            .verifiedVideoEncoders(transcodeExecutor.verifiedVideoEncoders())
+            .videoEncoders(encodableVideoEncoders(command.softwareEncodeCodecFamily()))
+            .verifiedVideoEncoders(verifiedVideoEncoders(command.softwareEncodeCodecFamily()))
             .directPlayRefusals(directPlay.refusals())
             .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
             .build();
@@ -364,8 +365,28 @@ public class HlsStreamingService implements StreamingService {
         .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
         .hardwareEncodableVideoCodecFamilies(
             transcodeExecutor.hardwareEncodableVideoCodecFamilies())
-        .videoEncoders(transcodeExecutor.encodableVideoEncoders())
+        .videoEncoders(encodableVideoEncoders(request.softwareEncodeCodecFamily()))
         .build();
+  }
+
+  // A software encode after a hardware encoder failure runs on the software encoders, which may
+  // write less than the hardware encoders of the same codec family (ADR 0044).
+  private List<WorkerVerifiedEncoder> encodableVideoEncoders(
+      Optional<String> softwareEncodeCodecFamily) {
+    if (softwareEncodeCodecFamily.isPresent()) {
+      return transcodeExecutor.encodableSoftwareVideoEncoders();
+    }
+
+    return transcodeExecutor.encodableVideoEncoders();
+  }
+
+  private List<WorkerVerifiedEncoder> verifiedVideoEncoders(
+      Optional<String> softwareEncodeCodecFamily) {
+    if (softwareEncodeCodecFamily.isPresent()) {
+      return transcodeExecutor.verifiedSoftwareVideoEncoders();
+    }
+
+    return transcodeExecutor.verifiedVideoEncoders();
   }
 
   private Optional<TranscodeDecision> stoppableEncodeCandidate(

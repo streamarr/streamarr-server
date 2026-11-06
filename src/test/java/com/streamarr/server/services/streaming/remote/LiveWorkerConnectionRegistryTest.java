@@ -1053,6 +1053,55 @@ class LiveWorkerConnectionRegistryTest {
             Set.of(com.streamarr.server.domain.streaming.VideoEncodeFeature.TEN_BIT));
   }
 
+  // A software encode after a hardware encoder failure runs on the software encoder, so its plan
+  // reads the software encoders apart from the hardware encoders of the same codec family
+  // (ADR 0044).
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @Test
+  @DisplayName(
+      "Should list the software encoders apart from the hardware encoders, the encodable ones only"
+          + " from workers with a free slot")
+  void shouldListTheSoftwareEncodersApartFromTheHardwareEncoders() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var idleWorkerId = UUID.randomUUID();
+    registry.register(
+        WORKER_ID,
+        withSoftwareEncoder(
+            registration(WORKER_ID, av1Nvenc()),
+            svtAv1Encoder(List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_PQ))),
+        new CancellableObserver());
+    assertThat(registry.dispatch(encodeJob(av1Encode(sdrRange())))).isPresent();
+    registry.register(
+        idleWorkerId,
+        withSoftwareEncoder(
+            registration(idleWorkerId, av1Nvenc()),
+            svtAv1Encoder(List.of(VideoEncodeFeature.VIDEO_ENCODE_FEATURE_TEN_BIT))),
+        new CancellableObserver());
+
+    assertThat(registry.encodableSoftwareVideoEncoders(SOURCE_NAMESPACE_ID))
+        .extracting(WorkerVerifiedEncoder::encodeFeatures)
+        .containsExactly(Set.of(com.streamarr.server.domain.streaming.VideoEncodeFeature.TEN_BIT));
+    assertThat(registry.verifiedSoftwareVideoEncoders(SOURCE_NAMESPACE_ID))
+        .extracting(WorkerVerifiedEncoder::encodeFeatures)
+        .containsExactlyInAnyOrder(
+            Set.of(com.streamarr.server.domain.streaming.VideoEncodeFeature.PQ),
+            Set.of(com.streamarr.server.domain.streaming.VideoEncodeFeature.TEN_BIT));
+    assertThat(registry.verifiedVideoEncoders(SOURCE_NAMESPACE_ID))
+        .extracting(encoder -> encoder.backend().encoder())
+        .containsExactly("av1_nvenc", "av1_nvenc");
+  }
+
+  private static WorkerVerifiedVideoEncoder av1Nvenc() {
+    return keyframeVerifiedHardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "av1_nvenc");
+  }
+
+  private static WorkerRegistration withSoftwareEncoder(
+      WorkerRegistration registration, WorkerVerifiedVideoEncoder softwareEncoder) {
+    var withSoftware = registration.toBuilder();
+    withSoftware.getCapabilitiesBuilder().addSoftwareVideoEncoders(softwareEncoder);
+    return withSoftware.build();
+  }
+
   // A later job attempt must run the pinned backend, which decides the variant's initialization
   // segment, but encode features that its output does not need must not keep it off a worker.
   @Test

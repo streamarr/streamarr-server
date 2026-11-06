@@ -60,6 +60,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       new ConcurrentHashMap<>();
   private final Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>> encodersByTarget =
       new ConcurrentHashMap<>();
+  private final Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>>
+      softwareEncodersByTarget = new ConcurrentHashMap<>();
   private final AtomicLong livenessChecks = new AtomicLong();
   private final AtomicLong jobSlotRefusals = new AtomicLong();
   private final Map<ProcessKey, AtomicLong> livenessChecksByVariant = new ConcurrentHashMap<>();
@@ -146,8 +148,9 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       return Optional.empty();
     }
 
+    var encoders = decision.softwareEncoder() ? softwareEncodersByTarget : encodersByTarget;
     return Optional.ofNullable(
-        encodersByTarget.getOrDefault(target, Map.of()).get(decision.videoCodecFamily()));
+        encoders.getOrDefault(target, Map.of()).get(decision.videoCodecFamily()));
   }
 
   private TranscodeHandle doStart(
@@ -509,6 +512,20 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
             .collect(Collectors.toUnmodifiableSet()));
   }
 
+  /**
+   * The target runs these software encoders, one for each codec family, for a software encode after
+   * a hardware encoder failure (ADR 0044).
+   */
+  public void setTargetSoftwareEncoders(
+      ExecutionTargetId target, List<WorkerVerifiedEncoder> encoders) {
+    softwareEncodersByTarget.put(
+        target,
+        encoders.stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    encoder -> encoder.backend().codecFamily(), Function.identity())));
+  }
+
   public void setExecutionTargets(List<ExecutionTargetId> targets) {
     executionTargets = new LinkedHashSet<>(targets);
   }
@@ -594,19 +611,32 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   /** The encoders that targets with a free job slot advertise. */
   @Override
   public List<WorkerVerifiedEncoder> encodableVideoEncoders() {
-    return advertisedEncoders(target -> freeJobSlotsOn(target) > 0);
+    return advertisedEncoders(encodersByTarget, target -> freeJobSlotsOn(target) > 0);
   }
 
   /** Busy targets' encoders count too. */
   @Override
   public List<WorkerVerifiedEncoder> verifiedVideoEncoders() {
-    return advertisedEncoders(_ -> true);
+    return advertisedEncoders(encodersByTarget, _ -> true);
   }
 
-  private List<WorkerVerifiedEncoder> advertisedEncoders(Predicate<ExecutionTargetId> targets) {
+  /** The software encoders that targets with a free job slot advertise. */
+  @Override
+  public List<WorkerVerifiedEncoder> encodableSoftwareVideoEncoders() {
+    return advertisedEncoders(softwareEncodersByTarget, target -> freeJobSlotsOn(target) > 0);
+  }
+
+  @Override
+  public List<WorkerVerifiedEncoder> verifiedSoftwareVideoEncoders() {
+    return advertisedEncoders(softwareEncodersByTarget, _ -> true);
+  }
+
+  private List<WorkerVerifiedEncoder> advertisedEncoders(
+      Map<ExecutionTargetId, Map<String, WorkerVerifiedEncoder>> encoders,
+      Predicate<ExecutionTargetId> targets) {
     return executionTargets.stream()
         .filter(targets)
-        .flatMap(target -> encodersByTarget.getOrDefault(target, Map.of()).values().stream())
+        .flatMap(target -> encoders.getOrDefault(target, Map.of()).values().stream())
         .toList();
   }
 

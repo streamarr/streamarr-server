@@ -567,6 +567,16 @@ class HeldSegmentRequestConcurrencyIT {
     public List<WorkerVerifiedEncoder> verifiedVideoEncoders() {
       return delegate.verifiedVideoEncoders();
     }
+
+    @Override
+    public List<WorkerVerifiedEncoder> encodableSoftwareVideoEncoders() {
+      return delegate.encodableSoftwareVideoEncoders();
+    }
+
+    @Override
+    public List<WorkerVerifiedEncoder> verifiedSoftwareVideoEncoders() {
+      return delegate.verifiedSoftwareVideoEncoders();
+    }
   }
 
   /** A worker session that the test drives: it receives variant jobs and uploads segments. */

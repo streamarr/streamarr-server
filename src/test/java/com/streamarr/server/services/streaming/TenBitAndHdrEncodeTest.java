@@ -52,6 +52,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
@@ -585,6 +586,55 @@ class TenBitAndHdrEncodeTest {
     }
   }
 
+  // ADR 0044: after a hardware encoder fails, the encode continues on the software encoder of the
+  // codec family, so it keeps only the range and bit depth that the software encoders write.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("softwareEncodersAndTheirOutput")
+  @DisplayName(
+      "Should plan the software encode's range and bit depth from the software encoders when the"
+          + " hardware encoder of an HDR10 encode fails")
+  void shouldPlanTheSoftwareEncodesRangeAndBitDepthFromTheSoftwareEncodersWhenTheHardwareFails(
+      Set<VideoEncodeFeature> softwareFeatures,
+      VideoDynamicRange expectedRange,
+      int expectedBitDepth) {
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL, List.of(av1Nvenc(EVERY_ENCODE_FEATURE), libx264(Set.of())));
+    workers.setTargetSoftwareEncoders(ExecutionTargetId.LOCAL, List.of(svtAv1(softwareFeatures)));
+    probes.setDefaultProbe(
+        hdr10Source(Optional.of(SOURCE_DISPLAY), Optional.of(SOURCE_LIGHT_LEVEL)));
+    var command = start(options(VideoQuality.AUTO, null), hdrAv1Client());
+    var hardware = accepted(playback.start(command));
+    assertThat(sessionOf(hardware).getVideoRange()).isEqualTo(VideoRange.PQ);
+
+    playback.onRequestedVariantHardwareEncoderFailed(
+        RequestedVariantHardwareEncoderFailedEvent.builder()
+            .streamSessionId(hardware.currentFormatAttempt().streamSessionId())
+            .variantLabel("default")
+            .build());
+
+    var software = workers.getStartedRequests().getLast().transcodeDecision();
+    assertThat(software.softwareEncoder()).isTrue();
+    assertThat(software.plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.Encode.class,
+            encode -> {
+              assertThat(encode.dynamicRange()).isEqualTo(expectedRange);
+              assertThat(encode.bitDepth()).isEqualTo(expectedBitDepth);
+            });
+  }
+
+  static Stream<Arguments> softwareEncodersAndTheirOutput() {
+    return Stream.of(
+        Arguments.of(
+            Named.of("software encoders that write only 8-bit SDR", Set.of()),
+            VideoDynamicRange.SDR,
+            8),
+        Arguments.of(
+            Named.of("software encoders that write HDR10", EVERY_ENCODE_FEATURE),
+            rangeOf(CompatibleBase.PQ),
+            10));
+  }
+
   private void assertThatAn8BitSdrEncodePlays(PlaybackSessionSnapshot snapshot) {
     var planned = plannedEncode();
     assertThat(planned.bitDepth()).isEqualTo(8);
@@ -678,6 +728,19 @@ class TenBitAndHdrEncodeTest {
 
   private static WorkerVerifiedEncoder svtAv1(Set<VideoEncodeFeature> features) {
     return encoder("av1", "libsvtav1", features);
+  }
+
+  private static WorkerVerifiedEncoder av1Nvenc(Set<VideoEncodeFeature> features) {
+    return WorkerVerifiedEncoder.builder()
+        .backend(
+            EncoderBackend.builder()
+                .codecFamily("av1")
+                .encoder("av1_nvenc")
+                .kind(EncoderBackend.Kind.HARDWARE)
+                .build())
+        .keyframeVerified(true)
+        .encodeFeatures(features)
+        .build();
   }
 
   private static WorkerVerifiedEncoder libx264(Set<VideoEncodeFeature> features) {
