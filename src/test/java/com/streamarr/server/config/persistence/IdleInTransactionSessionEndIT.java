@@ -6,10 +6,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -27,13 +28,13 @@ class IdleInTransactionSessionEndIT extends AbstractIntegrationTest {
   private static final String LOCK_SETTINGS_ROW =
       "SELECT id FROM server_settings WHERE singleton FOR UPDATE";
 
-  @Autowired private DataSource dataSource;
+  @Autowired private HikariDataSource pool;
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @Test
   @DisplayName("Should end the session and release its row lock when its transaction stays idle")
   void shouldEndTheSessionAndReleaseItsRowLockWhenItsTransactionStaysIdle() throws SQLException {
-    try (var holder = dataSource.getConnection()) {
+    try (var holder = pool.getConnection()) {
       lockSettingsRowUntilTheSessionEnds(holder);
 
       lockSettingsRowWithoutWaiting();
@@ -44,26 +45,38 @@ class IdleInTransactionSessionEndIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should hand out a working connection when an ended connection returns to the pool")
   void shouldHandOutAWorkingConnectionWhenAnEndedConnectionReturnsToThePool() throws SQLException {
-    try (var holder = dataSource.getConnection()) {
-      lockSettingsRowUntilTheSessionEnds(holder);
-      assertEndedByIdleTimeout(holder);
-    }
+    // A pool of one connection, configured like the application's, hands the ended connection
+    // back on the next borrow unless it replaced it.
+    try (var singleConnectionPool = singleConnectionPoolLike(pool)) {
+      int endedPid;
+      try (var holder = singleConnectionPool.getConnection()) {
+        endedPid = lockSettingsRowUntilTheSessionEnds(holder);
+        assertEndedByIdleTimeout(holder);
+      }
 
-    // The pool hands this thread's most recently returned connection out first, so a pool that
-    // kept the ended connection would return it here.
-    try (var next = dataSource.getConnection();
-        var statement = next.createStatement();
-        var result = statement.executeQuery("SELECT 1")) {
-      assertThat(result.next()).isTrue();
+      try (var next = singleConnectionPool.getConnection()) {
+        assertThat(backendPid(next)).isNotEqualTo(endedPid);
+      }
     }
   }
 
-  private void lockSettingsRowUntilTheSessionEnds(Connection holder) throws SQLException {
+  private static HikariDataSource singleConnectionPoolLike(HikariDataSource pool) {
+    var config = new HikariConfig();
+    config.setJdbcUrl(pool.getJdbcUrl());
+    config.setUsername(pool.getUsername());
+    config.setPassword(pool.getPassword());
+    config.setDataSourceProperties(pool.getDataSourceProperties());
+    config.setMaximumPoolSize(1);
+    return new HikariDataSource(config);
+  }
+
+  private int lockSettingsRowUntilTheSessionEnds(Connection holder) throws SQLException {
     holder.setAutoCommit(false);
     lockSettingsRow(holder);
     var holderPid = backendPid(holder);
 
     await().atMost(Duration.ofSeconds(10)).until(() -> !isBackendConnected(holderPid));
+    return holderPid;
   }
 
   private static void assertEndedByIdleTimeout(Connection holder) {
@@ -82,7 +95,7 @@ class IdleInTransactionSessionEndIT extends AbstractIntegrationTest {
   }
 
   private void lockSettingsRowWithoutWaiting() throws SQLException {
-    try (var contender = dataSource.getConnection()) {
+    try (var contender = pool.getConnection()) {
       contender.setAutoCommit(false);
       try (var statement = contender.createStatement();
           var rows = statement.executeQuery(LOCK_SETTINGS_ROW + " NOWAIT")) {
