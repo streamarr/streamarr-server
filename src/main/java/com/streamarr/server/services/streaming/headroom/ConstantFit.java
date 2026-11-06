@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.ojalgo.matrix.decomposition.Cholesky;
 import org.ojalgo.matrix.store.R064Store;
 import org.ojalgo.optimisation.convex.ConvexSolver;
@@ -32,10 +34,10 @@ final class ConstantFit {
   // measurement's own cost, not this guess, gives it its value.
   private static final double NEW_CONSTANT = 0.01;
   private static final double NEW_CONSTANT_WEIGHT = 1e-6;
-  // The measurements settle a new constant when, with every constant that has a value held, the
-  // nominal value of every new constant could move it by at most this share of its value, or of the
-  // anchor floor for a smaller constant. Each nominal value may be off by up to the largest
-  // measured constant, in either direction.
+  // The measurements settle a new constant when the nominal value of every new constant could move
+  // it, through the whole fit, by at most this share of its value, or of the anchor floor for a
+  // smaller constant. Each nominal value may be off by up to the largest measured constant, in
+  // either direction.
   private static final double SETTLED_SHARE = 1e-3;
   private static final double NOMINAL_ERROR = 0.1;
   // A measurement whose weight has faded below this no longer counts.
@@ -112,7 +114,6 @@ final class ConstantFit {
         index.keySet().stream()
             .filter(constant -> !starting.containsKey(constant) && !current.containsKey(constant))
             .toList();
-    var nominalPull = nominalPullOn(newConstants, index, normal);
     index.forEach(
         (constant, row) -> {
           var start = starting.get(constant);
@@ -129,15 +130,16 @@ final class ConstantFit {
         constant ->
             anchor(normal, moments, index.get(constant), NEW_CONSTANT, NEW_CONSTANT_WEIGHT));
 
+    var newRows = newConstants.stream().map(index::get).collect(Collectors.toSet());
     return smallestPositiveSolution(normal, moments)
         .map(
             values -> {
+              var nominalPull = nominalPull(normal, values, newRows);
               var solved = new HashMap<CostConstant, Double>();
               index.forEach(
                   (constant, row) -> {
-                    var position = newConstants.indexOf(constant);
-                    if (position < 0
-                        || nominalPull[position]
+                    if (!newRows.contains(row)
+                        || nominalPull[row]
                             <= SETTLED_SHARE * Math.max(values[row], ANCHOR_FLOOR)) {
                       solved.put(constant, values[row]);
                     }
@@ -147,40 +149,54 @@ final class ConstantFit {
   }
 
   /**
-   * For each new constant, the most that the nominal values of the new constants can move it, with
-   * every other constant held, when each nominal value is off by up to the nominal error. The
-   * nominal prior moves the new constants by (M + pI)^-1 p times the nominal values' errors, where
-   * M is the measurements' normal matrix of the new constants and p the nominal precision. Along a
-   * direction of the new constants that the measurements do not see, this move is at least the
-   * nominal error times the constant's part of that direction, however small that part is.
+   * For each constant, the most that the nominal values of the new constants can move it through
+   * the whole fit, when each nominal value is off by up to the nominal error. The nominal values
+   * move the solution by N^-1 p times their errors, where N is the fit's normal matrix and p the
+   * nominal precision. Along a direction of the new constants that the measurements do not see,
+   * this move is at least the nominal error times the constant's part of that direction, however
+   * small that part is. A constant at the positive floor stays there for a small move, so the pull
+   * is also taken with those constants held, and the larger of the two counts.
    */
-  private static double[] nominalPullOn(
-      List<CostConstant> newConstants, Map<CostConstant, Integer> index, double[][] normal) {
-    var size = newConstants.size();
-    var nominalPrecision = NEW_CONSTANT_WEIGHT / (NEW_CONSTANT * NEW_CONSTANT);
-    var posterior = R064Store.FACTORY.make(size, size);
+  private static double[] nominalPull(double[][] normal, double[] values, Set<Integer> newRows) {
+    var pull = new double[values.length];
+    var everyRow = IntStream.range(0, values.length).boxed().toList();
+    raiseToNominalPull(pull, normal, everyRow, newRows);
+    raiseToNominalPull(
+        pull,
+        normal,
+        everyRow.stream().filter(row -> values[row] >= 2 * SMALLEST_CONSTANT).toList(),
+        newRows);
+    return pull;
+  }
+
+  private static void raiseToNominalPull(
+      double[] pull, double[][] normal, List<Integer> moving, Set<Integer> newRows) {
+    var size = moving.size();
+    if (size == 0) {
+      return;
+    }
+
+    var matrix = R064Store.FACTORY.make(size, size);
     for (var row = 0; row < size; row++) {
       for (var column = 0; column < size; column++) {
-        posterior.set(
-            row,
-            column,
-            normal[index.get(newConstants.get(row))][index.get(newConstants.get(column))]);
+        matrix.set(row, column, normal[moving.get(row)][moving.get(column)]);
       }
-
-      posterior.add(row, row, nominalPrecision);
     }
 
     var cholesky = Cholesky.R064.make();
-    cholesky.decompose(posterior);
+    cholesky.decompose(matrix);
     var inverse = cholesky.getInverse();
-    var pull = new double[size];
+    var nominalPrecision = NEW_CONSTANT_WEIGHT / (NEW_CONSTANT * NEW_CONSTANT);
     for (var row = 0; row < size; row++) {
+      var move = 0.0;
       for (var column = 0; column < size; column++) {
-        pull[row] += NOMINAL_ERROR * nominalPrecision * Math.abs(inverse.doubleValue(row, column));
+        if (newRows.contains(moving.get(column))) {
+          move += NOMINAL_ERROR * nominalPrecision * Math.abs(inverse.doubleValue(row, column));
+        }
       }
-    }
 
-    return pull;
+      pull[moving.get(row)] = Math.max(pull[moving.get(row)], move);
+    }
   }
 
   /**

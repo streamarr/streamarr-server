@@ -512,6 +512,61 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
+        "Should leave a new tone-mapping constant unknown when a new decode constant held at the positive floor lets another new constant's nominal value move it")
+    void
+        shouldLeaveANewToneMappingConstantUnknownWhenANewDecodeConstantHeldAtThePositiveFloorLetsAnotherNewConstantsNominalValueMoveIt() {
+      var medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(ACCURATE.cpuSecondsPerMegapixel())
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, medium, 6.0))
+                      .build())
+              .build();
+      var mediumFrom2160pHevc =
+          libx264FasterLoad()
+              .encoderAndPreset(medium)
+              .sourceDecoder(softwareHevc)
+              .sourcePixelRate(PixelRate.of(3840, 2160, 24));
+
+      // Three outputs of one source whose costs drive the HEVC decode constant to the floor.
+      calibration.fit(
+          measuredAtCost(
+              mediumFrom2160pHevc.outputPixelRate(PixelRate.of(640, 360, 24)).build(),
+              1.9889648837812222,
+              2));
+      for (var i = 0; i < 347; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      calibration.fit(
+          measuredAtCost(
+              mediumFrom2160pHevc
+                  .outputPixelRate(PixelRate.of(1280, 720, 24))
+                  .toneMapping(ToneMapping.PQ)
+                  .build(),
+              9.05919681750958,
+              2));
+      for (var i = 0; i < 40; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      calibration.fit(
+          measuredAtCost(
+              mediumFrom2160pHevc
+                  .outputPixelRate(PixelRate.of(1920, 1080, 24))
+                  .toneMapping(ToneMapping.NONE)
+                  .build(),
+              18.17211992397742,
+              2));
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel())
+          .doesNotContainKey(ToneMapping.PQ);
+    }
+
+    @Test
+    @DisplayName(
         "Should price a new constant close to zero and keep fitting the known constants when its first measurement implies a negative cost")
     void
         shouldPriceANewConstantCloseToZeroAndKeepFittingTheKnownConstantsWhenItsFirstMeasurementImpliesANegativeCost() {
@@ -594,9 +649,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should price a new constant against another preset's followed constant, and keep both, when one measurement prices both")
+        "Should keep another preset's followed constant, and price a new constant only once that preset is measured apart, when one measurement prices both")
     void
-        shouldPriceANewConstantAgainstAnotherPresetsFollowedConstantAndKeepBothWhenOneMeasurementPricesBoth() {
+        shouldKeepAnotherPresetsFollowedConstantAndPriceANewConstantOnlyOnceThatPresetIsMeasuredApartWhenOneMeasurementPricesBoth() {
       var libx264Veryfast = new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
       var calibration =
           tenCoreCalibration()
@@ -626,9 +681,25 @@ class WorkerCalibrationTest {
         calibration.fit(rungMeasurement(i, 2, 2));
       }
 
-      var constants = calibration.constants().cpuSecondsPerMegapixel();
-      assertThat(constants.get(libx264Veryfast)).isCloseTo(0.04, withinPercentage(2));
-      assertThat(constants.get(ToneMapping.PQ)).isCloseTo(0.02, withinPercentage(5));
+      assertThat(calibration.constants().cpuSecondsPerMegapixel())
+          .hasEntrySatisfying(
+              libx264Veryfast,
+              constant -> assertThat(constant).isCloseTo(0.04, withinPercentage(2)))
+          .as("while veryfast only follows faster")
+          .doesNotContainKey(ToneMapping.PQ);
+
+      // Veryfast at 0.04 with H264 decode at 0.02: 1.0 + 1.0 and 2.0 + 1.0.
+      var veryfast = libx264FasterLoad().encoderAndPreset(libx264Veryfast);
+      for (var i = 0; i < 5; i++) {
+        calibration.fit(measuredAtCost(veryfast.outputPixelRate(SMALL_OUTPUT).build(), 2.0, 2));
+        calibration.fit(measuredAtCost(veryfast.outputPixelRate(LARGE_OUTPUT).build(), 3.0, 2));
+      }
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel())
+          .as("once veryfast is measured apart")
+          .hasEntrySatisfying(
+              ToneMapping.PQ,
+              constant -> assertThat(constant).isCloseTo(0.02, withinPercentage(5)));
     }
 
     @Test
@@ -1136,13 +1207,15 @@ class WorkerCalibrationTest {
         new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
     private static final EncoderAndPreset LIBX264_MEDIUM =
         new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
+    private static final EncoderAndPreset LIBX264_SLOW =
+        new EncoderAndPreset(LIBX264, EncoderPreset.SLOW);
 
     private final JobAttemptLoad veryfast =
         libx264FasterLoad().encoderAndPreset(LIBX264_VERYFAST).build();
 
     /**
-     * Faster on H264 validated, with medium's cores alone but no constant for medium, so medium on
-     * H264 would share faster's validation as soon as its constant had a value.
+     * Faster on H264 validated, with medium's and slow's cores alone but no constant for either, so
+     * medium on H264 would share faster's validation as soon as its constant had a value.
      */
     private WorkerCalibration validatedAtFasterWithMediumCoresAlone() {
       var calibration =
@@ -1150,7 +1223,8 @@ class WorkerCalibrationTest {
               .startingConstants(
                   HeadroomConstants.builder()
                       .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
-                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, LIBX264_MEDIUM, 6.0))
+                      .coresAlone(
+                          Map.of(LIBX264_FASTER, 6.0, LIBX264_MEDIUM, 6.0, LIBX264_SLOW, 6.0))
                       .build())
               .build();
       for (var i = 0; i < 20; i++) {
@@ -1474,6 +1548,46 @@ class WorkerCalibrationTest {
 
       calibration.fit(measuredAtCost(mediumFromVp9, 1.2386304, 2));
       calibration.fit(measuredAtCost(mediumFromHevc, 4.0808448, 2));
+
+      assertMediumUnvalidatedAlsoAfterARestart(calibration);
+    }
+
+    @Test
+    @DisplayName(
+        "Should leave another preset unvalidated, also after a restart, when the fit can move a valued decode constant that its measurements share")
+    void
+        shouldLeaveAnotherPresetUnvalidatedAlsoAfterARestartWhenTheFitCanMoveAValuedDecodeConstantThatItsMeasurementsShare() {
+      var calibration = validatedAtFasterWithMediumCoresAlone();
+      var softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
+
+      // Slow at 0.08 and HEVC decode at 0.002 settle from 1080p and 720p outputs of a 1080p source.
+      var slowFromHevc =
+          libx264FasterLoad()
+              .encoderAndPreset(LIBX264_SLOW)
+              .sourceDecoder(softwareHevc)
+              .sourcePixelRate(PixelRate.of(1920, 1080, 24));
+      calibration.fit(
+          measuredAtCost(
+              slowFromHevc.outputPixelRate(PixelRate.of(1920, 1080, 24)).build(), 4.0808448, 2));
+      calibration.fit(
+          measuredAtCost(
+              slowFromHevc.outputPixelRate(PixelRate.of(1280, 720, 24)).build(), 1.8690048, 2));
+      calibration.fit(
+          measuredAtCost(
+              slowFromHevc.outputPixelRate(PixelRate.of(1920, 1080, 24)).build(), 4.0808448, 2));
+
+      // Medium at 0.08 from an 8K HEVC source: 0.442 + 1.593 CPU s per media s, so a small rise of
+      // the decode constant would pay for most of medium's cost.
+      var mediumFrom8kHevc =
+          libx264FasterLoad()
+              .encoderAndPreset(LIBX264_MEDIUM)
+              .outputPixelRate(PixelRate.of(640, 360, 24))
+              .sourceDecoder(softwareHevc)
+              .sourcePixelRate(PixelRate.of(7680, 4320, 24))
+              .build();
+      for (var i = 0; i < 4; i++) {
+        calibration.fit(measuredAtCost(mediumFrom8kHevc, 2.0348928, 2));
+      }
 
       assertMediumUnvalidatedAlsoAfterARestart(calibration);
     }
