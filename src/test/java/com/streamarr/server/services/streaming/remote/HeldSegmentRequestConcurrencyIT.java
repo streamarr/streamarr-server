@@ -59,6 +59,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -466,6 +467,11 @@ class HeldSegmentRequestConcurrencyIT {
     @Override
     public void yieldToSeek(ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit) {
       delegate.yieldToSeek(target, jobAttemptIds, holdLimit);
+    }
+
+    @Override
+    public void holdBack(ExecutionTargetId target, Map<UUID, Duration> releaseAfterByJobAttempt) {
+      delegate.holdBack(target, releaseAfterByJobAttempt);
     }
 
     @Override

@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -45,6 +46,13 @@ public interface TranscodeExecutor {
    * (ADR 0044, seek priority). The target resumes each one after the hold limit at the latest.
    */
   void yieldToSeek(ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit);
+
+  /**
+   * Tells the execution target which of its job attempts to hold back because they run far ahead of
+   * their viewers, each with the time after which the target resumes it, replacing the job attempts
+   * that it held back before; an empty map resumes them all (ADR 0044, hold-back).
+   */
+  void holdBack(ExecutionTargetId target, Map<UUID, Duration> releaseAfterByJobAttempt);
 
   boolean isRunning(UUID sessionId, String variantLabel);
 

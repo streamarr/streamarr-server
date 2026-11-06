@@ -1633,6 +1633,31 @@ message YieldToSeekCommand {
   google.protobuf.Duration hold_limit = 3;
 }
 
+// The worker pauses the listed job attempts, which run far ahead of their
+// viewers, until a later command leaves them out or their release time passes
+// (ADR 0044, hold-back). Each command replaces the previous list, and an empty
+// list resumes every held job attempt. A job attempt stays paused while this
+// command or a YieldToSeekCommand lists it; no rule of YieldToSeekCommand bounds
+// a hold. A worker that predates this command ignores it.
+message HoldBackCommand {
+  WorkerIdentity target = 1;
+  // A job attempt whose hold ended at its release time stays unheld, whatever
+  // later commands list it, until a command leaves it out, since a listing sent
+  // before that time can arrive after it. The server sends a command without the
+  // job attempt before it holds that job attempt again.
+  repeated HeldBackJobAttempt job_attempts = 2;
+}
+
+message HeldBackJobAttempt {
+  // The worker ignores a job attempt that it does not run.
+  Uuid job_attempt_id = 1;
+  // This field holds the time, counted from this command, after which the
+  // worker resumes the job attempt even when no later command arrives. For a
+  // job attempt that is already held, the earlier release time applies, so a
+  // late command never extends a hold. An absent or zero value holds nothing.
+  google.protobuf.Duration release_after = 2;
+}
+
 message EstablishWorkerSessionResponse {
   oneof command {
     WorkerSessionAccepted session_accepted = 1;
@@ -1641,6 +1666,7 @@ message EstablishWorkerSessionResponse {
     StartProbeCommand start_probe = 4;
     CancelProbeCommand cancel_probe = 5;
     YieldToSeekCommand yield_to_seek = 6;
+    HoldBackCommand hold_back = 7;
   }
 }
 

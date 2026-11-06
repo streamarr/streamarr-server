@@ -29,6 +29,7 @@ import com.streamarr.server.services.streaming.remote.protocol.ProtoUuid;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.HoldBackCommand;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptProgress;
@@ -506,6 +507,12 @@ final class LiveWorkerConnectionRegistry {
         .forEach(connection -> connection.yieldToSeek(jobAttemptIds, holdLimit));
   }
 
+  void holdBack(ExecutionTargetId target, Map<UUID, Duration> releaseAfterByJobAttempt) {
+    connections.values().stream()
+        .filter(connection -> connection.executionTargetId().equals(target))
+        .forEach(connection -> connection.holdBack(releaseAfterByJobAttempt));
+  }
+
   synchronized void destroyStreamSession(UUID streamSessionId) {
     try {
       stopStreamSession(streamSessionId);
@@ -842,7 +849,7 @@ final class LiveWorkerConnectionRegistry {
     heldRequests.wakeVariant(fromProto(streamSessionId), variantLabel);
   }
 
-  private void publishMediaSegment(SegmentUploadMetadata metadata) {
+  private void publishMediaSegment(WorkerConnection connection, SegmentUploadMetadata metadata) {
     var index = SegmentNames.indexOf(metadata.getSegmentName());
     if (index.isEmpty()) {
       return;
@@ -854,6 +861,7 @@ final class LiveWorkerConnectionRegistry {
             .jobAttemptId(fromProto(metadata.getJobAttemptId()))
             .variantLabel(metadata.getVariantLabel())
             .segmentIndex(index.getAsInt())
+            .executionTarget(connection.executionTargetId())
             .build());
   }
 
@@ -926,7 +934,7 @@ final class LiveWorkerConnectionRegistry {
     // attempt's output.
     outcome
         .filter(SegmentPublication.PUBLISHED::equals)
-        .ifPresent(_ -> publishMediaSegment(metadata));
+        .ifPresent(_ -> publishMediaSegment(connection, metadata));
     outcome.ifPresent(
         _ ->
             heldRequests.wakeVariant(
@@ -968,6 +976,10 @@ final class LiveWorkerConnectionRegistry {
     // its session.
     private final AtomicReference<GrantedProbeCapacities> grantedProbeCapacities;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
+    // Guards the response observer, which gRPC does not make thread safe. A command that reads no
+    // connection state takes only this lock, so it never waits for a publication that holds the
+    // connection's monitor through its file I/O. Taken after the monitor, never before it.
+    private final Object outbound = new Object();
 
     private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
     // Each active encode, keyed by job attempt id, with the encoder it was dispatched for. Its
@@ -1041,8 +1053,10 @@ final class LiveWorkerConnectionRegistry {
           WorkerSessionAccepted.newBuilder()
               .setWorkerSessionId(toProto(workerSessionId))
               .setSegmentUploadLimit(SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER);
-      responseObserver.onNext(
-          EstablishWorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
+      synchronized (outbound) {
+        responseObserver.onNext(
+            EstablishWorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
+      }
     }
 
     // The encoder is chosen under this monitor, so an encoder change cannot come between the
@@ -1222,14 +1236,16 @@ final class LiveWorkerConnectionRegistry {
       abandonAllJobsWithoutWaiting()
           .forEach(job -> logAbandonedJob(job, "probe cancellation timed out"));
       synchronized (this) {
-        try {
-          responseObserver.onError(
-              Status.DEADLINE_EXCEEDED
-                  .withDescription("Worker did not stop a cancelled probe")
-                  .asRuntimeException());
-        } catch (RuntimeException failure) {
-          log.debug(
-              "Worker session {} already closed after probe timeout", workerSessionId, failure);
+        synchronized (outbound) {
+          try {
+            responseObserver.onError(
+                Status.DEADLINE_EXCEEDED
+                    .withDescription("Worker did not stop a cancelled probe")
+                    .asRuntimeException());
+          } catch (RuntimeException failure) {
+            log.debug(
+                "Worker session {} already closed after probe timeout", workerSessionId, failure);
+          }
         }
       }
     }
@@ -1503,12 +1519,14 @@ final class LiveWorkerConnectionRegistry {
 
     /** A send can fail when the worker call died but its disconnect has not been reaped yet. */
     private boolean trySend(EstablishWorkerSessionResponse response) {
-      try {
-        responseObserver.onNext(response);
-        return true;
-      } catch (RuntimeException e) {
-        log.warn("Failed to send command over worker session {}", workerSessionId, e);
-        return false;
+      synchronized (outbound) {
+        try {
+          responseObserver.onNext(response);
+          return true;
+        } catch (RuntimeException e) {
+          log.warn("Failed to send command over worker session {}", workerSessionId, e);
+          return false;
+        }
       }
     }
 
@@ -1686,7 +1704,7 @@ final class LiveWorkerConnectionRegistry {
       return grantedProbeCapacities.get().capacity(runningProbeKinds());
     }
 
-    private synchronized void yieldToSeek(Set<UUID> jobAttemptIds, Duration holdLimit) {
+    private void yieldToSeek(Set<UUID> jobAttemptIds, Duration holdLimit) {
       var command =
           YieldToSeekCommand.newBuilder()
               .setTarget(worker)
@@ -1696,6 +1714,19 @@ final class LiveWorkerConnectionRegistry {
           .setSeconds(holdLimit.getSeconds())
           .setNanos(holdLimit.getNano());
       trySend(EstablishWorkerSessionResponse.newBuilder().setYieldToSeek(command).build());
+    }
+
+    private void holdBack(Map<UUID, Duration> releaseAfterByJobAttempt) {
+      var command = HoldBackCommand.newBuilder().setTarget(worker);
+      releaseAfterByJobAttempt.forEach(
+          (jobAttemptId, releaseAfter) ->
+              command
+                  .addJobAttemptsBuilder()
+                  .setJobAttemptId(ProtoUuid.toProto(jobAttemptId))
+                  .getReleaseAfterBuilder()
+                  .setSeconds(releaseAfter.getSeconds())
+                  .setNanos(releaseAfter.getNano()));
+      trySend(EstablishWorkerSessionResponse.newBuilder().setHoldBack(command).build());
     }
 
     private synchronized void stopStreamSession(UUID streamSessionId) {
@@ -1869,13 +1900,16 @@ final class LiveWorkerConnectionRegistry {
       return drained;
     }
 
+    // The monitor orders the replacement after any publication that the old session started.
     private void closeAsReplaced() {
       synchronized (this) {
-        try {
-          responseObserver.onError(
-              Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
-        } catch (RuntimeException _) {
-          // The previous call is already dead; the replacement proceeds regardless.
+        synchronized (outbound) {
+          try {
+            responseObserver.onError(
+                Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
+          } catch (RuntimeException _) {
+            // The previous call is already dead; the replacement proceeds regardless.
+          }
         }
       }
     }

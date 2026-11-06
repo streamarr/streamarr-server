@@ -29,6 +29,8 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.FieldOrder;
 import com.streamarr.transcode.v1.Fraction;
+import com.streamarr.transcode.v1.HeldBackJobAttempt;
+import com.streamarr.transcode.v1.HoldBackCommand;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
@@ -1634,6 +1636,31 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
+      "Should carry every held-back job attempt with its release time when the server sends a hold-back command")
+  void shouldCarryEveryHeldBackJobAttemptWithItsReleaseTimeWhenTheServerSendsAHoldBackCommand()
+      throws Exception {
+    var ahead = uuid(UUID.randomUUID());
+    var fartherAhead = uuid(UUID.randomUUID());
+    var command =
+        EstablishWorkerSessionResponse.newBuilder()
+            .setHoldBack(
+                HoldBackCommand.newBuilder()
+                    .setTarget(workerIdentity())
+                    .addJobAttempts(heldBack(ahead, 12))
+                    .addJobAttempts(heldBack(fartherAhead, 40)))
+            .build();
+
+    var parsed = EstablishWorkerSessionResponse.parseFrom(command.toByteArray());
+
+    assertThat(parsed.getCommandCase())
+        .isEqualTo(EstablishWorkerSessionResponse.CommandCase.HOLD_BACK);
+    assertThat(parsed.getHoldBack().getTarget()).isEqualTo(workerIdentity());
+    assertThat(parsed.getHoldBack().getJobAttemptsList())
+        .containsExactly(heldBack(ahead, 12), heldBack(fartherAhead, 40));
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the field numbers and types that workers build against when publishing the hardware encoder failure")
   void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingHardwareFailure() {
     var softwareEncoders =
@@ -1657,6 +1684,40 @@ class TranscodeWorkerContractTest {
         .isEqualTo(WorkerVerifiedVideoEncoder.getDescriptor());
     assertThat(JobAttemptFailure.JOB_ATTEMPT_FAILURE_HARDWARE_ENCODER_FAILED.getNumber())
         .isEqualTo(9);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when publishing the hold-back command")
+  void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingTheHoldBackCommand() {
+    var command = EstablishWorkerSessionResponse.getDescriptor().findFieldByName("hold_back");
+    var holdBack = HoldBackCommand.getDescriptor();
+    var heldBack = HeldBackJobAttempt.getDescriptor();
+
+    assertThat(command.getNumber()).isEqualTo(7);
+    assertThat(command.getContainingOneof().getName()).isEqualTo("command");
+    assertThat(command.getMessageType()).isEqualTo(holdBack);
+    assertThat(
+            Stream.concat(
+                Stream.of("target", "job_attempts").map(holdBack::findFieldByName),
+                Stream.of("job_attempt_id", "release_after").map(heldBack::findFieldByName)))
+        .extracting(
+            FieldDescriptor::getName,
+            FieldDescriptor::getNumber,
+            FieldDescriptor::isRepeated,
+            field -> field.getMessageType().getFullName())
+        .containsExactly(
+            tuple("target", 1, false, WorkerIdentity.getDescriptor().getFullName()),
+            tuple("job_attempts", 2, true, heldBack.getFullName()),
+            tuple("job_attempt_id", 1, false, Uuid.getDescriptor().getFullName()),
+            tuple("release_after", 2, false, Duration.getDescriptor().getFullName()));
+  }
+
+  private static HeldBackJobAttempt heldBack(Uuid jobAttemptId, long releaseAfterSeconds) {
+    return HeldBackJobAttempt.newBuilder()
+        .setJobAttemptId(jobAttemptId)
+        .setReleaseAfter(Duration.newBuilder().setSeconds(releaseAfterSeconds))
+        .build();
   }
 
   private AudioDecision.Builder audioEncode() {

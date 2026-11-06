@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -34,20 +35,23 @@ import lombok.NonNull;
  * position comes from the viewer's latest timeline report while that report is fresh and follows
  * the stream session's latest seek, and otherwise from the highest media segment that the player
  * has requested since that seek. No job attempt that a player's segment request waits on yields.
+ * The same leads decide which job attempts {@link HoldBack} holds back because they run far ahead
+ * of their viewers.
  */
-@Builder
 public class SeekPriority {
 
   // Clients report their timeline every 10 s of playback; a report older than three intervals is
   // too sparse to place the viewer.
   private static final Duration FRESH_REPORT = Duration.ofSeconds(30);
 
-  @NonNull private final TranscodeExecutor transcodeExecutor;
-  @NonNull private final SegmentStore segmentStore;
-  @NonNull private final RuntimeStreamSessionRegistry runtimeRegistry;
-  @NonNull private final HeldSegmentRequests heldRequests;
-  @NonNull private final StreamingProperties properties;
-  @Builder.Default private final Clock clock = Clock.systemUTC();
+  private final TranscodeExecutor transcodeExecutor;
+  private final SegmentStore segmentStore;
+  private final RuntimeStreamSessionRegistry runtimeRegistry;
+  private final HeldSegmentRequests heldRequests;
+  private final StreamingProperties properties;
+  private final Clock clock;
+  // Guarded by this monitor.
+  private final HoldBack holdBack;
 
   // Guarded by this monitor.
   private final Map<VariantKey, PendingSeek> pendingSeeks = new HashMap<>();
@@ -58,25 +62,52 @@ public class SeekPriority {
   private final Map<ExecutionTargetId, Set<UUID>> yielding = new HashMap<>();
   private final Map<VariantKey, OwnOutput> ownOutputs = new HashMap<>();
 
+  @Builder
+  private SeekPriority(
+      @NonNull TranscodeExecutor transcodeExecutor,
+      @NonNull SegmentStore segmentStore,
+      @NonNull RuntimeStreamSessionRegistry runtimeRegistry,
+      @NonNull HeldSegmentRequests heldRequests,
+      @NonNull StreamingProperties properties,
+      Clock clock) {
+    this.transcodeExecutor = transcodeExecutor;
+    this.segmentStore = segmentStore;
+    this.runtimeRegistry = runtimeRegistry;
+    this.heldRequests = heldRequests;
+    this.properties = properties;
+    var chosenClock = clock;
+    if (chosenClock == null) {
+      chosenClock = Clock.systemUTC();
+    }
+
+    this.clock = chosenClock;
+    holdBack = new HoldBack(transcodeExecutor, properties, chosenClock);
+  }
+
   private record VariantKey(UUID sessionId, String variantLabel) {}
 
   // A job attempt's own output: the media segments that its uploads stored, in order from its start
   // through storedThrough, short of nextStored. From nextStored on lies media that it found stored
   // past a gap when it started, which it reaches only by reproducing that media too. An upload of
   // another job attempt, even one that a disconnected worker finishes late, credits this one
-  // nothing.
-  private record OwnOutput(UUID attemptId, int storedThrough, int nextStored) {
+  // nothing. The execution target is where its uploads came from, known once it stored a segment.
+  private record OwnOutput(
+      UUID attemptId, int storedThrough, int nextStored, Optional<ExecutionTargetId> uploadedFrom) {
 
     private boolean includes(int index) {
       return index <= storedThrough && index < nextStored;
     }
 
-    private OwnOutput storedBy(UUID uploader, int index) {
-      if (!uploader.equals(attemptId)) {
+    private OwnOutput storedBy(MediaSegmentPublishedEvent published) {
+      if (!published.jobAttemptId().equals(attemptId)) {
         return this;
       }
 
-      return new OwnOutput(attemptId, Math.max(storedThrough, index), nextStored);
+      return new OwnOutput(
+          attemptId,
+          Math.max(storedThrough, published.segmentIndex()),
+          nextStored,
+          Optional.of(published.executionTarget()));
     }
   }
 
@@ -132,15 +163,18 @@ public class SeekPriority {
    */
   public synchronized void segmentRequestWaits(
       @NonNull StreamSession session, @NonNull String variantLabel) {
+    reconsiderHoldBacks(session.getSessionId());
     var attempt = session.getVariantHandle(variantLabel).map(TranscodeHandle::attemptId);
-    var target = transcodeExecutor.runningExecutionTarget(session.getSessionId(), variantLabel);
-    if (attempt.isEmpty()
-        || target.isEmpty()
-        || !yielding.getOrDefault(target.get(), Set.of()).contains(attempt.get())) {
+    if (attempt.isEmpty()) {
       return;
     }
 
-    sendYields(target.get());
+    // The yields name the worker, so no lookup waits on a worker connection under this monitor.
+    yielding.entrySet().stream()
+        .filter(entry -> entry.getValue().contains(attempt.get()))
+        .map(Map.Entry::getKey)
+        .toList()
+        .forEach(this::sendYields);
   }
 
   /**
@@ -167,6 +201,7 @@ public class SeekPriority {
         .map(Map.Entry::getKey)
         .toList()
         .forEach(this::sendYields);
+    reconsiderHoldBacks(sessionId);
   }
 
   /**
@@ -194,15 +229,30 @@ public class SeekPriority {
    * variant follows its running job attempt to that job attempt's worker, which then pauses what
    * the seek needs, and ends when its job attempt stops.
    */
-  public synchronized void variantChanged(
-      @NonNull StreamSession session, @NonNull String variantLabel) {
+  public void variantChanged(@NonNull StreamSession session, @NonNull String variantLabel) {
+    // Learned before this monitor: the lookup can wait for a worker connection whose publication
+    // holds it through file I/O, and no other stream session's request may wait with it.
+    var running =
+        new RunningVariant(
+            session.getVariantHandle(variantLabel).map(TranscodeHandle::attemptId),
+            runningTarget(session, variantLabel));
+    variantChangedTo(session, variantLabel, running);
+  }
+
+  private record RunningVariant(Optional<UUID> attemptId, Optional<ExecutionTargetId> target) {}
+
+  private synchronized void variantChangedTo(
+      StreamSession session, String variantLabel, RunningVariant running) {
+    reconsiderHoldBacks(session.getSessionId());
     var key = new VariantKey(session.getSessionId(), variantLabel);
     var pending = pendingSeeks.get(key);
-    if (pending == null) {
+    // A later change of the variant follows with the worker that it learned.
+    var current = session.getVariantHandle(variantLabel).map(TranscodeHandle::attemptId);
+    if (pending == null || !running.attemptId().equals(current)) {
       return;
     }
 
-    var target = runningTarget(session, variantLabel);
+    var target = running.target();
     if (target.isEmpty()) {
       endSeekWithoutJobAttempt(session, key, pending);
       return;
@@ -265,7 +315,72 @@ public class SeekPriority {
   public synchronized void mediaSegmentPublished(@NonNull MediaSegmentPublishedEvent published) {
     ownOutputs.computeIfPresent(
         new VariantKey(published.streamSessionId(), published.variantLabel()),
-        (_, output) -> output.storedBy(published.jobAttemptId(), published.segmentIndex()));
+        (_, output) -> output.storedBy(published));
+    reconsiderHoldBacks(published.streamSessionId());
+  }
+
+  // Guarded by this monitor. A job attempt's lead changes when its viewer moves, when it stores
+  // media and when a player starts to wait on it.
+  private void reconsiderHoldBacks(UUID sessionId) {
+    var session =
+        runtimeRegistry
+            .findById(sessionId)
+            .filter(found -> found.getDelivery() == StreamDelivery.HLS);
+    if (session.isEmpty()) {
+      holdBack.forget(sessionId);
+      return;
+    }
+
+    holdBack.reconsider(sessionId, leadsOf(session.get()));
+  }
+
+  private List<HoldBack.AttemptLead> leadsOf(StreamSession session) {
+    var viewerSegment = viewerSegment(session);
+    if (viewerSegment.isEmpty()) {
+      return List.of();
+    }
+
+    var sessionId = session.getSessionId();
+    return session.getVariantHandles().entrySet().stream()
+        .filter(entry -> !heldRequests.holdsRequestsOn(sessionId, entry.getKey()))
+        .flatMap(
+            entry ->
+                attemptLead(session, entry.getKey(), entry.getValue(), viewerSegment.getAsInt())
+                    .stream())
+        .toList();
+  }
+
+  private Optional<HoldBack.AttemptLead> attemptLead(
+      StreamSession session, String variantLabel, TranscodeHandle handle, int viewerSegment) {
+    var target = uploadTarget(session, variantLabel, handle);
+    if (target.isEmpty() || !isActive(session, variantLabel)) {
+      return Optional.empty();
+    }
+
+    return ownLead(session, variantLabel, handle, viewerSegment)
+        .map(
+            lead ->
+                HoldBack.AttemptLead.builder()
+                    .attemptId(handle.attemptId())
+                    .target(target.get())
+                    .lead(lead.stored())
+                    .longestSegmentAhead(longestSegmentFrom(session, lead.nextIndex()))
+                    .build());
+  }
+
+  // A hold delays every segment that the job attempt makes after it, and a long merged segment
+  // well past the next one can then reach the viewer too late.
+  private Duration longestSegmentFrom(StreamSession session, int firstIndex) {
+    var timeline = MediaSegmentTimelines.of(session, properties);
+    var longest = Duration.ZERO;
+    for (var index = firstIndex; timeline.advertises(index); index++) {
+      var duration = timeline.mediaSegmentDuration(index);
+      if (duration.compareTo(longest) > 0) {
+        longest = duration;
+      }
+    }
+
+    return longest;
   }
 
   private OwnOutput ownOutputAtStart(
@@ -285,11 +400,13 @@ public class SeekPriority {
       nextStored = Integer.MAX_VALUE;
     }
 
-    return new OwnOutput(handle.attemptId(), handle.startSequenceNumber() - 1, nextStored);
+    return new OwnOutput(
+        handle.attemptId(), handle.startSequenceNumber() - 1, nextStored, Optional.empty());
   }
 
   /** The stream session ended, so its seeks wait for nothing. */
   public synchronized void forgetSession(@NonNull UUID sessionId) {
+    holdBack.forget(sessionId);
     highestRequestedSegments.remove(sessionId);
     newestRequestedSegments.remove(sessionId);
     ownOutputs.keySet().removeIf(key -> key.sessionId().equals(sessionId));
@@ -360,25 +477,51 @@ public class SeekPriority {
     return session.getVariantHandles().entrySet().stream()
         .filter(entry -> !waitedOn.contains(new VariantKey(sessionId, entry.getKey())))
         .filter(entry -> !heldRequests.holdsRequestsOn(sessionId, entry.getKey()))
-        .filter(entry -> runsOn(session, entry.getKey(), target))
+        .filter(
+            entry ->
+                uploadTarget(session, entry.getKey(), entry.getValue())
+                    .filter(target::equals)
+                    .isPresent())
         .filter(
             entry ->
                 leadsItsViewer(session, entry.getKey(), entry.getValue(), viewerSegment.getAsInt()))
         .map(entry -> entry.getValue().attemptId());
   }
 
-  private boolean runsOn(StreamSession session, String variantLabel, ExecutionTargetId target) {
-    return transcodeExecutor
-        .runningExecutionTarget(session.getSessionId(), variantLabel)
-        .filter(target::equals)
+  // The worker comes from the job attempt's own uploads rather than from the executor, so that no
+  // request waits for a worker connection that is busy publishing a segment. A job attempt that has
+  // uploaded nothing has no own lead to name it for.
+  private Optional<ExecutionTargetId> uploadTarget(
+      StreamSession session, String variantLabel, TranscodeHandle handle) {
+    return Optional.ofNullable(ownOutputs.get(new VariantKey(session.getSessionId(), variantLabel)))
+        .filter(output -> output.attemptId().equals(handle.attemptId()))
+        .flatMap(OwnOutput::uploadedFrom);
+  }
+
+  // The media that the job attempt has stored itself without a gap after the viewer's segment
+  // outlasts the hold limit, the time to produce the longest segment ahead at real time and the
+  // position margin, so its viewer plays through the longest pause and every segment after it, even
+  // after many pauses.
+  private boolean leadsItsViewer(
+      StreamSession session, String variantLabel, TranscodeHandle handle, int viewerSegment) {
+    return ownLead(session, variantLabel, handle, viewerSegment)
+        .filter(
+            lead ->
+                lead.stored()
+                        .compareTo(
+                            properties
+                                .seekPriorityHoldLimit()
+                                .plus(longestSegmentFrom(session, lead.nextIndex()))
+                                .plus(properties.seekPriorityPositionMargin()))
+                    > 0)
         .isPresent();
   }
 
-  // The media that the variant has stored without a gap after the viewer's segment outlasts the
-  // hold limit, the time to produce the job attempt's next segment at real time and the position
-  // margin, and the job attempt started within that media, so its viewer plays through the longest
-  // pause and the next segment.
-  private boolean leadsItsViewer(
+  // The media that the job attempt has stored itself without a gap after the viewer's segment, and
+  // the index of the segment that it produces next. Empty when it has produced nothing past the
+  // viewer, or when a stored segment that is not its own output follows that media: its next work
+  // is then reproducing that media rather than a segment that a lead budgets.
+  private Optional<OwnLead> ownLead(
       StreamSession session, String variantLabel, TranscodeHandle handle, int viewerSegment) {
     var timeline = MediaSegmentTimelines.of(session, properties);
     var ownOutput = ownOutputOf(session, variantLabel, handle);
@@ -389,21 +532,14 @@ public class SeekPriority {
       next++;
     }
 
-    // A stored segment that is not the job attempt's own output lies ahead of where it produces, so
-    // its next work is reproducing that media rather than the segment this lead budgets.
     if (handle.startSequenceNumber() >= next || isStored(session, variantLabel, next)) {
-      return false;
+      return Optional.empty();
     }
 
-    var nextSegment =
-        timeline.advertises(next) ? timeline.mediaSegmentDuration(next) : Duration.ZERO;
-    var needed =
-        properties
-            .seekPriorityHoldLimit()
-            .plus(nextSegment)
-            .plus(properties.seekPriorityPositionMargin());
-    return stored.compareTo(needed) > 0;
+    return Optional.of(new OwnLead(stored, next));
   }
+
+  private record OwnLead(Duration stored, int nextIndex) {}
 
   // Stored media that the job attempt's own uploads stored. Media that it found stored, or that
   // another job attempt's upload stored, counts once its own upload stores that segment again.

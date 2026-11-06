@@ -2,6 +2,7 @@ package com.streamarr.server.config;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Objects;
 import lombok.Builder;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -25,7 +26,13 @@ public record StreamingProperties(
     // this margin, which covers errors in the viewer's position (ADR 0044, seek priority).
     Duration seekPriorityPositionMargin,
     // The longest the worker keeps such a job attempt paused without a later yield command.
-    Duration seekPriorityHoldLimit) {
+    Duration seekPriorityHoldLimit,
+    // A job attempt whose own media stored ahead of its viewer outlasts this high-water mark is
+    // held
+    // back until that media falls to the low-water mark, which leaves the viewer that much media
+    // while the job attempt resumes (ADR 0044, hold-back).
+    Duration holdBackHighWater,
+    Duration holdBackLowWater) {
 
   public StreamingProperties {
     if (maxConcurrentTranscodes == null) {
@@ -87,6 +94,30 @@ public record StreamingProperties(
     }
 
     requirePositive("streaming.seek-priority-hold-limit", seekPriorityHoldLimit);
+
+    holdBackHighWater = Objects.requireNonNullElse(holdBackHighWater, Duration.ofSeconds(60));
+    holdBackLowWater = Objects.requireNonNullElse(holdBackLowWater, Duration.ofSeconds(30));
+
+    // A held job attempt's viewer must have the next segment, a seek's pause and the position
+    // margin left when it resumes, or a hold could stall its own viewer.
+    var resumeNeeds =
+        targetSegmentDuration.plus(seekPriorityHoldLimit).plus(seekPriorityPositionMargin);
+    if (holdBackLowWater.compareTo(resumeNeeds) < 0) {
+      throw new IllegalArgumentException(
+          "streaming.hold-back-low-water must cover the target segment duration, the seek priority"
+              + " hold limit and position margin, "
+              + resumeNeeds
+              + ", got "
+              + holdBackLowWater);
+    }
+
+    if (holdBackHighWater.compareTo(holdBackLowWater) <= 0) {
+      throw new IllegalArgumentException(
+          "streaming.hold-back-high-water must exceed streaming.hold-back-low-water, got "
+              + holdBackHighWater
+              + " and "
+              + holdBackLowWater);
+    }
 
     if (segmentBasePath == null || segmentBasePath.isBlank()) {
       segmentBasePath =

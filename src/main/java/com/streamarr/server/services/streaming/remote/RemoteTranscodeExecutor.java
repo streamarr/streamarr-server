@@ -14,6 +14,7 @@ import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -90,6 +91,12 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
       @NonNull Set<UUID> jobAttemptIds,
       @NonNull Duration holdLimit) {
     workerServer.yieldToSeek(target, jobAttemptIds, holdLimit);
+  }
+
+  @Override
+  public void holdBack(
+      @NonNull ExecutionTargetId target, @NonNull Map<UUID, Duration> releaseAfterByJobAttempt) {
+    workerServer.holdBack(target, releaseAfterByJobAttempt);
   }
 
   @Override
