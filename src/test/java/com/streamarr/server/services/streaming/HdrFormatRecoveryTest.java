@@ -96,6 +96,8 @@ class HdrFormatRecoveryTest {
   private static final int SOURCE_LEVEL = 6;
   private static final Set<String> ENCODED_CODEC_FAMILIES = Set.of("h264", "av1");
   private static final Pattern VIDEO_RANGE_ATTRIBUTE = Pattern.compile("VIDEO-RANGE=(\\w+)");
+  private static final Pattern AV1_CODEC_BIT_DEPTH =
+      Pattern.compile("av01\\.\\d\\.\\d\\d[MH]\\.(\\d\\d)");
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeTranscodeExecutor workers = new FakeTranscodeExecutor();
@@ -414,7 +416,7 @@ class HdrFormatRecoveryTest {
             .quality(original)
             .attempt(delivered(Output.COPY, VideoRange.PQ).choice(original).build())
             .attempt(autoEncode().changed(copyFailed).build())
-            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).codec("av1").build())
             .end(noEligibleFormat)
             .build(),
         scenario("HLG in Original")
@@ -422,7 +424,7 @@ class HdrFormatRecoveryTest {
             .quality(original)
             .attempt(delivered(Output.COPY, VideoRange.HLG).choice(original).build())
             .attempt(autoEncode().changed(copyFailed).build())
-            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).codec("av1").build())
             .end(noEligibleFormat)
             .build(),
         scenario("10-bit SDR in Original")
@@ -430,7 +432,7 @@ class HdrFormatRecoveryTest {
             .quality(original)
             .attempt(delivered(Output.COPY, VideoRange.SDR).choice(original).build())
             .attempt(autoEncode().changed(copyFailed).build())
-            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).codec("av1").build())
             .end(noEligibleFormat)
             .build(),
         scenario("Dolby Vision 8.1 in Original")
@@ -443,20 +445,25 @@ class HdrFormatRecoveryTest {
                     .changed(stripped)
                     .build())
             .attempt(autoEncode().changed(copyFailed).build())
-            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).codec("av1").build())
             .end(exhausted)
             .build(),
         scenario("Dolby Vision 10.4 in Original")
             .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_10_4).build())
             .quality(original)
-            .attempt(delivered(Output.DOLBY_VISION_COPY, VideoRange.HLG).choice(original).build())
+            .attempt(
+                delivered(Output.DOLBY_VISION_COPY, VideoRange.HLG)
+                    .choice(original)
+                    .codec("av1")
+                    .build())
             .attempt(
                 delivered(Output.STRIPPED_COPY, VideoRange.HLG)
                     .choice(original)
                     .changed(stripped)
+                    .codec("av1")
                     .build())
             .attempt(autoEncode().changed(copyFailed).build())
-            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).codec("av1").build())
             .end(exhausted)
             .build(),
         scenario("HDR10 in Original, direct play first")
@@ -466,7 +473,7 @@ class HdrFormatRecoveryTest {
             .attempt(delivered(Output.DIRECT_PLAY, VideoRange.PQ).choice(original).build())
             .attempt(delivered(Output.COPY, VideoRange.PQ).choice(original).build())
             .attempt(autoEncode().changed(copyFailed).build())
-            .attempt(autoEncode().changed(copyFailed).build())
+            .attempt(autoEncode().changed(copyFailed).codec("av1").build())
             .end(exhausted)
             .build(),
         scenario("Dolby Vision 8.1 in Original, direct play first")
@@ -614,11 +621,17 @@ class HdrFormatRecoveryTest {
       @NonNull VideoRange range,
       @NonNull Optional<PlaybackFormatChange> change,
       @NonNull String picture,
-      int variants) {
+      int variants,
+      @NonNull String codec,
+      int bitDepth) {
 
     private static class DeliveredAttemptBuilder {
       DeliveredAttemptBuilder changed(PlaybackFormatChange formatChange) {
         return change(Optional.of(formatChange));
+      }
+
+      DeliveredAttemptBuilder video(String codecFamily, int videoBitDepth) {
+        return codec(codecFamily).bitDepth(videoBitDepth);
       }
     }
   }
@@ -645,8 +658,8 @@ class HdrFormatRecoveryTest {
         .client(dolbyVisionClient());
   }
 
-  // The source's own 1080p picture in one variant, with no change named. An encode's picture is its
-  // top variant.
+  // The source's own 1080p 10-bit HEVC picture in one variant, with no change named. An encode's
+  // picture is its top variant.
   private static DeliveredAttempt.DeliveredAttemptBuilder delivered(
       Output output, VideoRange range) {
     return DeliveredAttempt.builder()
@@ -654,12 +667,17 @@ class HdrFormatRecoveryTest {
         .range(range)
         .change(Optional.empty())
         .picture("1920x1080")
-        .variants(1);
+        .variants(1)
+        .video("hevc", 10);
   }
 
-  // Auto's SDR ladder for the 1080p source, topped by its 1080p variant (ADR 0050 and ADR 0052).
+  // Auto's 8-bit H.264 SDR ladder for the 1080p source, topped by its 1080p variant (ADR 0050 and
+  // ADR 0052).
   private static DeliveredAttempt.DeliveredAttemptBuilder autoEncode() {
-    return delivered(Output.ENCODE, VideoRange.SDR).choice(VideoQuality.AUTO).variants(4);
+    return delivered(Output.ENCODE, VideoRange.SDR)
+        .choice(VideoQuality.AUTO)
+        .variants(4)
+        .video("h264", 8);
   }
 
   // A fixed quality's one SDR variant, which fills the quality's picture box (ADR 0050).
@@ -670,7 +688,10 @@ class HdrFormatRecoveryTest {
           case HIGH_720P -> "1280x720";
           default -> throw new IllegalArgumentException("No fixture picture for " + quality);
         };
-    return delivered(Output.ENCODE, VideoRange.SDR).choice(quality).picture(picture);
+    return delivered(Output.ENCODE, VideoRange.SDR)
+        .choice(quality)
+        .picture(picture)
+        .video("h264", 8);
   }
 
   // ADR 0013: the answer keeps the viewer's HDR choice beside the range that plays, so a client
@@ -697,6 +718,9 @@ class HdrFormatRecoveryTest {
           .change(snapshot.formatChange())
           .picture(sourcePicture(session))
           .variants(1)
+          .codec(session.getMediaProbe().videoCodec())
+          .bitDepth(
+              session.getMediaProbe().videoPlaybackFacts().orElseThrow().bitDepth().orElseThrow())
           .build();
     }
 
@@ -718,6 +742,8 @@ class HdrFormatRecoveryTest {
         .change(snapshot.formatChange())
         .picture(picture)
         .variants(playlist.split("#EXT-X-STREAM-INF:", -1).length - 1)
+        .codec(session.getTranscodeDecision().videoCodecFamily())
+        .bitDepth(announcedBitDepth(session, playlist))
         .build();
   }
 
@@ -756,6 +782,26 @@ class HdrFormatRecoveryTest {
     assertThat(announced)
         .as("the playlist's range")
         .isEqualTo(planned == VideoRange.SDR ? Set.of() : Set.of(planned));
+    return planned;
+  }
+
+  // The bit depth that the decision plans, which every AV1 codec string in the playlist must name.
+  private static int announcedBitDepth(StreamSession session, String playlist) {
+    var planned =
+        switch (session.getTranscodeDecision().plannedVideoOutput()) {
+          case PlannedVideoOutput.Encode encode -> encode.bitDepth();
+          case PlannedVideoOutput.StreamCopy copy -> copy.bitDepth().orElseThrow();
+        };
+    var announced =
+        AV1_CODEC_BIT_DEPTH
+            .matcher(playlist)
+            .results()
+            .map(match -> Integer.parseInt(match.group(1)))
+            .collect(Collectors.toSet());
+    if (session.getTranscodeDecision().videoCodecFamily().equals("av1")) {
+      assertThat(announced).as("the playlist's AV1 bit depth").containsExactly(planned);
+    }
+
     return planned;
   }
 
