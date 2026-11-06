@@ -1508,9 +1508,10 @@ message YieldToSeekCommand {
   // attempt that it does not run.
   repeated Uuid job_attempt_ids = 2;
   // This field holds the longest time that the worker keeps a listed job
-  // attempt paused, counted from this command. The worker then resumes the job
-  // attempt even when no later command arrives. An absent or zero value pauses
-  // nothing.
+  // attempt paused, counted from the command that paused it. The worker then
+  // resumes the job attempt even when no later command arrives. A later command
+  // that lists a job attempt that is still paused keeps its first deadline. An
+  // absent or zero value pauses nothing.
   google.protobuf.Duration hold_limit = 3;
 }
 
