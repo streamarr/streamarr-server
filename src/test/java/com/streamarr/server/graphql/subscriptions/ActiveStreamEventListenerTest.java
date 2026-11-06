@@ -374,8 +374,8 @@ class ActiveStreamEventListenerTest {
     var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
     var checkedAt = clock.instant();
     List<Instant> waitingAfterTheCheck;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var listener = listenerReading(mediaFiles, Schedulers.fromExecutorService(executor));
+    try (var readers = Executors.newVirtualThreadPerTaskExecutor()) {
+      var listener = listenerReading(mediaFiles, Schedulers.fromExecutorService(readers));
       broadcaster.getChanges().register().subscribe(delivered::add);
       store(playback, 0);
       BoundedTask.runWithin(
@@ -404,8 +404,8 @@ class ActiveStreamEventListenerTest {
     var mediaFiles = new ParkingMediaFileRepository();
     var playback = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
     long waitingWithoutSubscribers;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var listener = listenerReading(mediaFiles, Schedulers.fromExecutorService(executor));
+    try (var readers = Executors.newVirtualThreadPerTaskExecutor()) {
+      var listener = listenerReading(mediaFiles, Schedulers.fromExecutorService(readers));
       var leaving = broadcaster.getChanges().register().subscribe();
       store(playback, 0);
       BoundedTask.runWithin(
