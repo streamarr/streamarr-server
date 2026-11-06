@@ -379,7 +379,10 @@ public record VideoCapabilityEntry(
       case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
       case CopiedDolbyVision.NeedsDolbyVisionSampleEntry(var profile, var level) ->
           level.isPresent() && listsDolbyVision(profile, level.getAsInt());
-      case CopiedDolbyVision.Undeclarable _, CopiedDolbyVision.Unknown _ -> false;
+      case CopiedDolbyVision.Undeclarable _,
+          CopiedDolbyVision.ConvertibleToProfile81 _,
+          CopiedDolbyVision.Unknown _ ->
+          false;
     };
   }
 
@@ -392,6 +395,7 @@ public record VideoCapabilityEntry(
           CopiedDolbyVision.KeptUnderSdrBase _,
           CopiedDolbyVision.Declarable _,
           CopiedDolbyVision.Undeclarable _,
+          CopiedDolbyVision.ConvertibleToProfile81 _,
           CopiedDolbyVision.NeedsDolbyVisionSampleEntry _ ->
           DecisionReason.DOLBY_VISION_NOT_DECLARED;
     };
@@ -415,7 +419,10 @@ public record VideoCapabilityEntry(
       case CopiedDolbyVision.Declarable(var profile, var level) -> listsDolbyVision(profile, level);
       case CopiedDolbyVision.NeedsDolbyVisionSampleEntry(var profile, var level) ->
           level.isPresent() && listsDolbyVision(profile, level.getAsInt());
-      case CopiedDolbyVision.Undeclarable _, CopiedDolbyVision.Unknown _ -> false;
+      case CopiedDolbyVision.Undeclarable _,
+          CopiedDolbyVision.ConvertibleToProfile81 _,
+          CopiedDolbyVision.Unknown _ ->
+          false;
     };
   }
 

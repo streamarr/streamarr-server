@@ -63,6 +63,16 @@ public class TranscodeDecisionService {
       List.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
   private static final List<BitstreamRewrite> STRIP_HDR10_PLUS_AND_NORMALIZE_DOLBY_VISION_RECORD =
       List.of(BitstreamRewrite.STRIP_HDR10_PLUS, BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
+  private static final List<BitstreamRewrite> CONVERT_PROFILE_7_AND_NORMALIZE_DOLBY_VISION_RECORD =
+      List.of(
+          BitstreamRewrite.CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1,
+          BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
+  private static final List<BitstreamRewrite>
+      STRIP_HDR10_PLUS_CONVERT_PROFILE_7_AND_NORMALIZE_DOLBY_VISION_RECORD =
+          List.of(
+              BitstreamRewrite.STRIP_HDR10_PLUS,
+              BitstreamRewrite.CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1,
+              BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
   private static final CopyPlan STRIPPING_DOLBY_VISION =
       new CopyPlan(List.of(BitstreamRewrite.STRIP_DOLBY_VISION), Optional.empty());
   private static final CopyPlan STRIPPING_DOLBY_VISION_AND_HDR10_PLUS =
@@ -529,9 +539,10 @@ public class TranscodeDecisionService {
 
   // The copies that the server can plan, the best picture first: the server picks one output for
   // each client and format attempt (ADR 0013). A copy that keeps Dolby Vision on a PQ or HLG base
-  // writes the record that the playlist describes, and strips HDR10+ by default (ADR 0036). A
-  // client that declares the base range but not the Dolby Vision gets the copy with Dolby Vision
-  // stripped, and one that declares the base range but not HDR10+ gets the copy with HDR10+
+  // writes the record that the playlist describes, and strips HDR10+ by default (ADR 0036); a copy
+  // of single-track profile 7 converts it to profile 8.1 the same way (streamarr/streamarr-server
+  // #651). A client that declares the base range but not the Dolby Vision gets the copy with Dolby
+  // Vision stripped, and one that declares the base range but not HDR10+ gets the copy with HDR10+
   // stripped.
   private static List<CopyPlan> copyPlans(VideoStreamCopy copy) {
     var hasHdr10Plus = copy.dynamicRange().hdr10Plus() == Presence.PRESENT;
@@ -564,6 +575,11 @@ public class TranscodeDecisionService {
       return List.of(new CopyPlan(keepingDolbyVisionRewrites(hasHdr10Plus), dolbyVisionOutput));
     }
 
+    var convertedOutput = copy.dolbyVisionOutputAfterConversionToProfile81();
+    if (convertedOutput.isPresent()) {
+      return List.of(new CopyPlan(convertingProfile7Rewrites(hasHdr10Plus), convertedOutput));
+    }
+
     var passThrough = new CopyPlan(List.of(), Optional.empty());
     if (!hasHdr10Plus) {
       return List.of(passThrough);
@@ -578,6 +594,14 @@ public class TranscodeDecisionService {
     }
 
     return NORMALIZE_DOLBY_VISION_RECORD;
+  }
+
+  private static List<BitstreamRewrite> convertingProfile7Rewrites(boolean hasHdr10Plus) {
+    if (hasHdr10Plus) {
+      return STRIP_HDR10_PLUS_CONVERT_PROFILE_7_AND_NORMALIZE_DOLBY_VISION_RECORD;
+    }
+
+    return CONVERT_PROFILE_7_AND_NORMALIZE_DOLBY_VISION_RECORD;
   }
 
   /**

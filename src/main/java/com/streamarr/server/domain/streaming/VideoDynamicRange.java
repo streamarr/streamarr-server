@@ -28,8 +28,9 @@ public record VideoDynamicRange(
 
   /**
    * The range that a stream copy of this range delivers after the bitstream rewrites (ADR 0036).
-   * Stripping Dolby Vision from a range without a compatible base throws, because the server never
-   * strips profiles 5 and 10.0.
+   * Converting profile 7 describes the profile 8.1 that the copy then carries. Stripping Dolby
+   * Vision from a range without a compatible base throws, because the server never strips profiles
+   * 5 and 10.0.
    */
   public VideoDynamicRange afterRewrites(@NonNull Collection<BitstreamRewrite> rewrites) {
     var hdr10PlusAfter = hdr10Plus;
@@ -38,6 +39,11 @@ public record VideoDynamicRange(
     }
 
     var dolbyVisionAfter = dolbyVision;
+    if (rewrites.contains(BitstreamRewrite.CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1)
+        && dolbyVision instanceof DolbyVision.Present present) {
+      dolbyVisionAfter = present.convertedToProfile81();
+    }
+
     if (rewrites.contains(BitstreamRewrite.STRIP_DOLBY_VISION)) {
       dolbyVisionAfter = new DolbyVision.Absent();
     }

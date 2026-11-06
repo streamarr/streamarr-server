@@ -24,19 +24,15 @@ class RemoteBitstreamRewriteMapperTest {
     assertThat(RemoteBitstreamRewriteMapper.fromProto(value)).contains(rewrite);
   }
 
-  // streamarr/streamarr-server#651 defines the profile 7 conversion, so no decision lists it yet.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  @ParameterizedTest
-  @EnumSource(
-      value = com.streamarr.transcode.v1.BitstreamRewrite.class,
-      names = {
-        "BITSTREAM_REWRITE_UNSPECIFIED",
-        "BITSTREAM_REWRITE_CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1"
-      })
-  @DisplayName("Should name no rewrite when a worker lists a value that the server does not plan")
-  void shouldNameNoRewriteWhenAWorkerListsAValueThatTheServerDoesNotPlan(
-      com.streamarr.transcode.v1.BitstreamRewrite listed) {
-    assertThat(RemoteBitstreamRewriteMapper.fromProto(listed.getNumber())).isEmpty();
+  @Test
+  @DisplayName("Should name no rewrite when a worker lists the unspecified value")
+  void shouldNameNoRewriteWhenAWorkerListsTheUnspecifiedValue() {
+    assertThat(
+            RemoteBitstreamRewriteMapper.fromProto(
+                com.streamarr.transcode.v1.BitstreamRewrite.BITSTREAM_REWRITE_UNSPECIFIED
+                    .getNumber()))
+        .isEmpty();
   }
 
   // A newer worker can list a value that this server's contract does not know.

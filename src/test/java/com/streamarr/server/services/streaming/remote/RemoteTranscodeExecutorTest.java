@@ -215,7 +215,10 @@ class RemoteTranscodeExecutorTest {
                     .build(),
                 WorkerVideoCopySupport.builder()
                     .plannedOutput(true)
-                    .bitstreamRewrites(Set.of(BitstreamRewrite.STRIP_HDR10_PLUS))
+                    .bitstreamRewrites(
+                        Set.of(
+                            BitstreamRewrite.STRIP_HDR10_PLUS,
+                            BitstreamRewrite.CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1))
                     .build());
       } finally {
         olderChannel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
