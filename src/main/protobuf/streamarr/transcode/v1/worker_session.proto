@@ -515,9 +515,9 @@ message VideoDecision {
   // HEVC copy's hvcC as its own SEI message (ADR 0036).
   MasteringDisplayColorVolume mastering_display = 17;
   // An encode with a PQ output sets this field and mastering_display, which
-  // the encoder writes as HDR10 static metadata: the source's, else the RPU's
-  // level 6 values, else a P3 D65 display of 1000 and 0.0001 cd/m^2 and a
-  // content light level of 0, which means unknown. Other encodes set neither.
+  // the encoder writes as HDR10 static metadata: each value the probe holds,
+  // else a P3 D65 display of 1000 and 0.0001 cd/m^2 and a content light level
+  // of 0, which means unknown. Other encodes set neither.
   ContentLightLevel content_light_level = 18;
   // An encode sets this field to 8 or 10, and the encoder writes that bit
   // depth. An H.264 encode sets 8, and a PQ or HLG encode sets 10. A copy
