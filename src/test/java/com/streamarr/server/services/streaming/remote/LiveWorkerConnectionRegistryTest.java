@@ -617,6 +617,21 @@ class LiveWorkerConnectionRegistryTest {
         .isEqualTo(job);
   }
 
+  @Test
+  @DisplayName(
+      "Should dispatch and count a job that names a quad layout on a worker that lists only a later"
+          + " probe version")
+  void shouldDispatchAndCountAJobThatNamesAQuadLayoutOnAWorkerThatListsOnlyALaterProbeVersion() {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    registry.register(
+        WORKER_ID, registrationListingProbeVersion(WORKER_ID, 8), new CancellableObserver());
+    var job = audioEncodeJob(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD);
+
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, job.getDecision())).isOne();
+    assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, job.getDecision())).hasSize(1);
+    assertThat(registry.dispatch(job)).isPresent();
+  }
+
   @ParameterizedTest
   @EnumSource(
       value = AudioChannelLayout.class,
