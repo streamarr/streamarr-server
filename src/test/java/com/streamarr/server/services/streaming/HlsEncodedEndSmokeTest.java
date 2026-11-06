@@ -152,19 +152,24 @@ class HlsEncodedEndSmokeTest {
         .isEqualTo(FRAMES_IN_A_SEGMENT_AT_24_FPS);
   }
 
+  // Segment 7 starts 30 s after the video's end, past the running attempt's relocation gap, so the
+  // request starts a job attempt there.
   @Test
   @DisplayName(
-      "Should serve a segment after the video's end with the held last frame when a player seeks"
-          + " there before the first attempt reaches it")
-  void shouldServeASegmentAfterTheVideosEndWithTheHeldLastFrameWhenAPlayerSeeksThere()
+      "Should serve a segment long after the video's end with the held last frame when a player"
+          + " seeks there")
+  void shouldServeASegmentLongAfterTheVideosEndWithTheHeldLastFrameWhenAPlayerSeeksThere()
       throws Exception {
-    var source = generateSource("video-ends-at-12-of-24.mp4", "24", 12, 24);
+    var source = generateSource("video-ends-at-12-of-48.mp4", "24", 12, 48);
     var session = startedEncode(source, copiedAudioEncode());
+    var firstAttempt = session.getHandle().orElseThrow().attemptId();
 
-    assertThat(deliveryOf(session, "segment3.m4s"))
+    assertThat(deliveryOf(session, "segment7.m4s"))
         .succeedsWithin(DELIVERY_BOUND)
         .isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(decodedVideoFrames(session, "segment3.m4s"))
+    assertThat(session.getHandle().orElseThrow().attemptId()).isNotEqualTo(firstAttempt);
+    assertThat(session.getHandle().orElseThrow().startSequenceNumber()).isEqualTo(7);
+    assertThat(decodedVideoFrames(session, "segment7.m4s"))
         .isEqualTo(FRAMES_IN_A_SEGMENT_AT_24_FPS);
   }
 
