@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.LearnedStreamEnd;
 import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.ProbeVersion;
@@ -21,6 +22,7 @@ import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeLearnedStreamEndRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fakes.MutableNanoClock;
@@ -75,6 +77,8 @@ class PlaybackProbeServiceTest {
         }
       };
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+  private final FakeLearnedStreamEndRepository learnedStreamEnds =
+      new FakeLearnedStreamEndRepository();
   private final ProbeAttemptEnds attemptEnds = new ProbeAttemptEnds(meterRegistry);
   private final PlaybackProbeClaims claims = new PlaybackProbeClaims(nanoClock, meterRegistry);
   private final CapturingEventPublisher events = new CapturingEventPublisher();
@@ -114,6 +118,53 @@ class PlaybackProbeServiceTest {
       assertThat(probe.width()).isEqualTo(1920);
       assertThat(probe.height()).isEqualTo(1080);
       assertThat(events.getEventsOfType(MediaFileProbeTaskRequested.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should read a learned end time into a stream whose header states none when the end was"
+            + " learned for the stored outcome's snapshot")
+    void shouldReadALearnedEndTimeIntoAStreamWhoseHeaderStatesNoneWhenLearnedForTheSnapshot() {
+      outcomes.store(audioAndVideo(Optional.empty()));
+      learnedStreamEnds.store(learnedEnd(REQUESTED_INPUTS.snapshot(), 1, Duration.ofSeconds(20)));
+
+      var probe = probeOf(service().read(mediaFileId));
+
+      assertThat(probe.audioStreams())
+          .singleElement()
+          .extracting(StreamInfo::endTime)
+          .isEqualTo(Optional.of(Duration.ofSeconds(20)));
+      assertThat(probe.sourceSnapshot()).contains(REQUESTED_INPUTS.snapshot());
+    }
+
+    @Test
+    @DisplayName(
+        "Should keep a stream without an end time when its end was learned for another snapshot")
+    void shouldKeepAStreamWithoutAnEndTimeWhenItsEndWasLearnedForAnotherSnapshot() {
+      outcomes.store(audioAndVideo(Optional.empty()));
+      var earlierFile = new SourceFileSnapshot(999, Instant.EPOCH);
+      learnedStreamEnds.store(learnedEnd(earlierFile, 1, Duration.ofSeconds(20)));
+
+      var probe = probeOf(service().read(mediaFileId));
+
+      assertThat(probe.audioStreams())
+          .singleElement()
+          .extracting(StreamInfo::endTime)
+          .isEqualTo(Optional.empty());
+    }
+
+    @Test
+    @DisplayName("Should keep the header's end time when an end was also learned for the stream")
+    void shouldKeepTheHeadersEndTimeWhenAnEndWasAlsoLearnedForTheStream() {
+      outcomes.store(audioAndVideo(Optional.of(Duration.ofSeconds(30))));
+      learnedStreamEnds.store(learnedEnd(REQUESTED_INPUTS.snapshot(), 1, Duration.ofSeconds(20)));
+
+      var probe = probeOf(service().read(mediaFileId));
+
+      assertThat(probe.audioStreams())
+          .singleElement()
+          .extracting(StreamInfo::endTime)
+          .isEqualTo(Optional.of(Duration.ofSeconds(30)));
     }
 
     @Test
@@ -500,6 +551,7 @@ class PlaybackProbeServiceTest {
         .nanoClock(nanoClock)
         .meterRegistry(meterRegistry)
         .playbackProbeClaims(claims)
+        .learnedStreamEnds(learnedStreamEnds)
         .properties(StreamingProperties.builder().probeWaitLimit(WAIT_LIMIT).build());
   }
 
@@ -580,6 +632,41 @@ class PlaybackProbeServiceTest {
         .snapshot(REQUESTED_INPUTS.snapshot())
         .probeVersion(ProbeVersion.CURRENT)
         .probeError(reason)
+        .build();
+  }
+
+  private LearnedStreamEnd learnedEnd(SourceFileSnapshot snapshot, int streamIndex, Duration end) {
+    return LearnedStreamEnd.builder()
+        .mediaFileId(mediaFileId)
+        .snapshot(snapshot)
+        .streamIndex(streamIndex)
+        .endTime(end)
+        .build();
+  }
+
+  // A video stream, and an audio stream at index 1 whose header states the given end time.
+  private MediaFileContainerInfo audioAndVideo(Optional<Duration> audioEnd) {
+    return MediaFileContainerInfo.builder()
+        .mediaFileId(mediaFileId)
+        .snapshot(REQUESTED_INPUTS.snapshot())
+        .probeVersion(ProbeVersion.CURRENT)
+        .container(
+            ProbeContainer.builder()
+                .duration(Optional.of(Duration.ofSeconds(73)))
+                .bitrate(OptionalLong.of(4_000_000))
+                .build())
+        .streams(
+            List.of(
+                videoStream("h264"),
+                MediaFileStreamInfo.builder().stream(
+                        mediaFileId,
+                        StreamInfo.builder()
+                            .index(1)
+                            .codecType("audio")
+                            .codec(Optional.of("aac"))
+                            .endTime(audioEnd)
+                            .build())
+                    .build()))
         .build();
   }
 

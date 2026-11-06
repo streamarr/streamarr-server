@@ -8,18 +8,21 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlayback
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.fakes.FakeLearnedStreamEndRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
@@ -28,8 +31,10 @@ import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
+import com.streamarr.server.services.streaming.LearnedStreamEndListener;
 import com.streamarr.server.services.streaming.PlaybackFormatAttempt;
 import com.streamarr.server.services.streaming.PlaybackFormatChange;
+import com.streamarr.server.services.streaming.PlaybackProbeService;
 import com.streamarr.server.services.streaming.PlaybackSessionRequest;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
@@ -252,6 +257,50 @@ class WorkerPlaybackRecoveryIT {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should read each stream's end that the first job attempt learned when the stored probe"
+          + " states no end times")
+  void shouldReadEachStreamsEndThatTheFirstJobAttemptLearnedWhenTheStoredProbeStatesNoEndTimes()
+      throws Exception {
+    var source =
+        worker.generateMedia(sourceRoot.resolve("movie.mp4"), soundedSourceArguments(12, 6));
+    var storedProbe = withoutStreamEndTimes(probe(source));
+    try (var playback = new PlaybackRig(autoPlayback(source, storedProbe))) {
+      var started = accepted(playback.sessions.start(playback.command));
+      var session = ((PlaybackFormatAttempt.Ready) started.currentFormatAttempt()).session();
+
+      assertThat(playback.deliverDefault(session, "segment0.m4s"))
+          .isInstanceOf(SegmentDelivery.Ready.class);
+      await()
+          .atMost(30, TimeUnit.SECONDS)
+          .until(() -> learnedEndsOf(playback.readProbe()).size() == 2);
+
+      assertThat(learnedEndsOf(playback.readProbe()))
+          .as("the end of the 12 s video and of the 6 s audio, read from the source")
+          .satisfiesExactly(
+              video -> assertThat(video.toMillis()).isCloseTo(12_000, within(50L)),
+              audio -> assertThat(audio.toMillis()).isCloseTo(6_000, within(50L)));
+    }
+  }
+
+  private static List<Duration> learnedEndsOf(MediaProbe probe) {
+    return probe.streams().stream().flatMap(stream -> stream.endTime().stream()).toList();
+  }
+
+  // A container header that states no stream end times, as a live-written file's does.
+  private static ProbeOutcome.Success withoutStreamEndTimes(ProbeOutcome.Success probed) {
+    return new ProbeOutcome.Success(
+        probed.container(),
+        probed.streams().stream()
+            .map(stream -> stream.toBuilder().endTime(Optional.empty()).build())
+            .toList(),
+        probed.keyframes(),
+        probed.chosenVideoStream(),
+        probed.streamTitlesOmitted(),
+        probed.streamMeasurements());
+  }
+
   private ProbeOutcome.Success probe(Path source) {
     var outcome =
         new RemoteFfprobeService(server, SOURCE_NAMESPACE, source.getParent())
@@ -388,6 +437,8 @@ class WorkerPlaybackRecoveryIT {
     private final StartPlaybackSessionCommand command;
     private final SegmentDeliveryCoordinator delivery;
     private final HlsPlaylistService playlists;
+    private final PlaybackProbeService probeService;
+    private final UUID mediaFileId;
 
     private PlaybackRig(PlayedSource played) {
       var source = played.file();
@@ -408,6 +459,9 @@ class WorkerPlaybackRecoveryIT {
               .targetSegmentDuration(Duration.ofSeconds(6))
               .build();
       var registry = new InMemoryStreamSessionRegistry();
+      var learnedEnds = new FakeLearnedStreamEndRepository();
+      probeService = playbackProbeServiceBuilder(probes).learnedStreamEnds(learnedEnds).build();
+      mediaFileId = file.getId();
       var lifecycle =
           StreamingRigFixture.streamingRigBuilder()
               .transcodeExecutor(executor)
@@ -424,7 +478,7 @@ class WorkerPlaybackRecoveryIT {
               .mediaFileRepository(files)
               .transcodeExecutor(executor)
               .segmentStore(segments)
-              .playbackProbeService(playbackProbeServiceBuilder(probes).build())
+              .playbackProbeService(probeService)
               .transcodeDecisionService(
                   new TranscodeDecisionService(properties, new SimpleMeterRegistry()))
               .qualityLadderService(new QualityLadderService())
@@ -445,6 +499,8 @@ class WorkerPlaybackRecoveryIT {
       var shortCopies = new ShortCopyListener(lifecycle.lifecycle(), events);
       events.listen(JobAttemptCompletedEvent.class, shortCopies::onJobAttemptCompleted);
       events.listen(CopiedVariantRanShortEvent.class, sessions::onCopiedVariantRanShort);
+      var learning = new LearnedStreamEndListener(registry, learnedEnds);
+      events.listen(JobAttemptCompletedEvent.class, learning::onJobAttemptCompleted);
       playlists = new HlsPlaylistService(properties);
       command =
           StartPlaybackSessionCommand.builder()
@@ -480,6 +536,16 @@ class WorkerPlaybackRecoveryIT {
       var result = delivery.deliver(session.getSessionId(), variant, variant + "/" + name);
       assertThat(result).isInstanceOf(SegmentDelivery.Ready.class);
       return ((SegmentDelivery.Ready) result).data();
+    }
+
+    private MediaProbe readProbe() {
+      return probeService
+          .read(mediaFileId)
+          .fold(
+              probe -> probe,
+              rejections -> {
+                throw new AssertionError("Expected a stored probe: " + rejections);
+              });
     }
 
     private SegmentDelivery deliverDefault(StreamSession session, String name) {

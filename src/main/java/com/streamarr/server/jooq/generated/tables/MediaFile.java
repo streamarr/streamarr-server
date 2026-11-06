@@ -13,6 +13,7 @@ import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectabl
 import com.streamarr.server.jooq.generated.tables.Library.LibraryPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileBitrateScanChunk.MediaFileBitrateScanChunkPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MediaFileContainerInfoPath;
+import com.streamarr.server.jooq.generated.tables.MediaFileLearnedStreamEnd.MediaFileLearnedStreamEndPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest.MediaFileProbeTaskRequestPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileStreamMeasurement.MediaFileStreamMeasurementPath;
 import com.streamarr.server.jooq.generated.tables.SessionProgress.SessionProgressPath;
@@ -274,6 +275,19 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
             _mediaFileContainerInfo = new MediaFileContainerInfoPath(this, null, Keys.MEDIA_FILE_CONTAINER_INFO__MEDIA_FILE_CONTAINER_INFO_MEDIA_FILE_ID_FKEY.getInverseKey());
 
         return _mediaFileContainerInfo;
+    }
+
+    private transient MediaFileLearnedStreamEndPath _mediaFileLearnedStreamEnd;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.media_file_learned_stream_end</code> table
+     */
+    public MediaFileLearnedStreamEndPath mediaFileLearnedStreamEnd() {
+        if (_mediaFileLearnedStreamEnd == null)
+            _mediaFileLearnedStreamEnd = new MediaFileLearnedStreamEndPath(this, null, Keys.MEDIA_FILE_LEARNED_STREAM_END__MEDIA_FILE_LEARNED_STREAM_END_MEDIA_FILE_ID_FKEY.getInverseKey());
+
+        return _mediaFileLearnedStreamEnd;
     }
 
     private transient MediaFileProbeTaskRequestPath _mediaFileProbeTaskRequest;

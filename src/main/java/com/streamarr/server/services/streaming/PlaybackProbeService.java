@@ -5,6 +5,7 @@ import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.concurrency.NanoClock;
 import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
@@ -19,6 +20,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
@@ -43,6 +45,7 @@ public class PlaybackProbeService {
   private final StreamingProperties properties;
   private final MeterRegistry meterRegistry;
   private final PlaybackProbeClaims playbackProbeClaims;
+  private final LearnedStreamEndRepository learnedStreamEnds;
 
   /**
    * Reads the media file's stored probe outcome. When the file has none, requests its probe ahead
@@ -54,7 +57,7 @@ public class PlaybackProbeService {
   public Outcome<MediaProbe, CreateStreamSessionRejection> read(@NonNull UUID mediaFileId) {
     var stored = reader.find(mediaFileId);
     if (stored.isPresent()) {
-      return playable(stored.get());
+      return playable(mediaFileId, stored.get());
     }
 
     // A saved failure time keeps only microseconds, rounded to the nearest one. Truncating the
@@ -103,7 +106,7 @@ public class PlaybackProbeService {
       try (var nextEnd = attemptEnds.next(mediaFileId)) {
         var stored = reader.find(mediaFileId);
         if (stored.isPresent()) {
-          return playable(stored.get());
+          return playable(mediaFileId, stored.get());
         }
 
         if (hasEndedWithoutOutcome(mediaFileId, requestedAt)) {
@@ -131,7 +134,7 @@ public class PlaybackProbeService {
   private Outcome<MediaProbe, CreateStreamSessionRejection> storedOrNotReady(UUID mediaFileId) {
     return reader
         .find(mediaFileId)
-        .map(PlaybackProbeService::playable)
+        .map(stored -> playable(mediaFileId, stored))
         .orElseGet(PlaybackProbeService::notReady);
   }
 
@@ -169,10 +172,17 @@ public class PlaybackProbeService {
     }
   }
 
-  private static Outcome<MediaProbe, CreateStreamSessionRejection> playable(
-      PersistedProbeOutcome stored) {
+  // Playback reads the file's stored outcome with the stream end times that job attempts learned
+  // for the same source file (ADR 0037, early ends).
+  private Outcome<MediaProbe, CreateStreamSessionRejection> playable(
+      UUID mediaFileId, PersistedProbeOutcome stored) {
     return switch (stored.outcome()) {
-      case ProbeOutcome.Success success -> Outcome.accepted(success.mediaProbe());
+      case ProbeOutcome.Success success ->
+          Outcome.accepted(
+              success.mediaProbe().toBuilder()
+                  .sourceSnapshot(Optional.of(stored.snapshot()))
+                  .build()
+                  .withLearnedEndTimes(learnedStreamEnds.findFor(mediaFileId, stored.snapshot())));
       case ProbeOutcome.Failure(var reason) ->
           Outcome.rejected(new CreateStreamSessionRejection.ProbeFailed(reason));
     };

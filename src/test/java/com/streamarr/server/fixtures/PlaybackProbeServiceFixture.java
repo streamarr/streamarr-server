@@ -2,6 +2,7 @@ package com.streamarr.server.fixtures;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeLearnedStreamEndRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;
@@ -30,6 +31,7 @@ public final class PlaybackProbeServiceFixture {
         .nanoClock(System::nanoTime)
         .meterRegistry(new SimpleMeterRegistry())
         .playbackProbeClaims(new PlaybackProbeClaims(System::nanoTime, new SimpleMeterRegistry()))
+        .learnedStreamEnds(new FakeLearnedStreamEndRepository())
         .properties(StreamingProperties.builder().build());
   }
 }
