@@ -16,6 +16,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import java.time.Clock;
@@ -1754,22 +1755,23 @@ public class ProducerLifecycleService {
    * the short copy when this completion showed it.
    */
   public Optional<ShortCopy> settleCompletedJobAttempt(
-      UUID sessionId, String variantLabel, UUID attemptId) {
+      @NonNull JobAttemptCompletedEvent completion) {
     return withSessionLock(
-        sessionId,
+        completion.streamSessionId(),
         () ->
             runtimeRegistry
-                .findById(sessionId)
+                .findById(completion.streamSessionId())
                 .filter(session -> session.getTranscodeDecision().transcodeMode().copiesVideo())
-                .flatMap(session -> shortCopyShownBy(session, variantLabel, attemptId)));
+                .flatMap(session -> shortCopyShownBy(session, completion)));
   }
 
   private Optional<ShortCopy> shortCopyShownBy(
-      StreamSession session, String variantLabel, UUID attemptId) {
+      StreamSession session, JobAttemptCompletedEvent completion) {
+    var variantLabel = completion.variantLabel();
     var handle =
         session
             .getVariantHandle(variantLabel)
-            .filter(current -> current.attemptId().equals(attemptId));
+            .filter(current -> current.attemptId().equals(completion.jobAttemptId()));
     if (handle.isEmpty()) {
       return Optional.empty();
     }
@@ -1789,7 +1791,8 @@ public class ProducerLifecycleService {
       return Optional.empty();
     }
 
-    var shortCopy = ShortCopy.endingWith(firstMissing - 1, timeline, session.getMediaProbe());
+    var probed = ShortCopy.endingWith(firstMissing - 1, timeline, session.getMediaProbe());
+    var shortCopy = completion.sourceEndedEarly().map(probed::settledBy).orElse(probed);
     if (!session.tryMarkShortCopy(shortCopy)) {
       return Optional.empty();
     }

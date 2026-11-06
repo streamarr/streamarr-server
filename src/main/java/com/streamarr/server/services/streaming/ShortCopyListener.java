@@ -22,8 +22,7 @@ public class ShortCopyListener {
   @EventListener
   public void onJobAttemptCompleted(@NonNull JobAttemptCompletedEvent event) {
     producerLifecycle
-        .settleCompletedJobAttempt(
-            event.streamSessionId(), event.variantLabel(), event.jobAttemptId())
+        .settleCompletedJobAttempt(event)
         .filter(shortCopy -> !shortCopy.everySourceStreamEnded())
         .ifPresent(
             _ ->
