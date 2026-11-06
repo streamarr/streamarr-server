@@ -83,6 +83,12 @@ public enum DecisionReason {
   /** The source's keyframe timestamps go backwards or out of range. */
   KEYFRAME_TIMESTAMPS_INVALID,
   /**
+   * The source's demuxer allows timestamp discontinuities, and the probe stored no start time
+   * correction, without which a copy cannot place the source's keyframes at their stored times (ADR
+   * 0037).
+   */
+  START_TIME_CORRECTION_UNKNOWN,
+  /**
    * A measured segment of the copy, with the audio beside it, would exceed the segment cap (ADR
    * 0037).
    */

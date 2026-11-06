@@ -407,6 +407,64 @@ class TranscodeDecisionServiceTest {
         .isEqualTo(expectedRefusals);
   }
 
+  // FFmpeg corrects the start time of a source whose demuxer allows timestamp discontinuities, so a
+  // copy places its keyframes at their stored ticks only with the probe's start time correction,
+  // which no stored probe outcome carries yet (ADR 0037, segment list). MP4, MOV, Matroska and AVI
+  // demuxers allow none.
+  @ParameterizedTest(name = "{0}")
+  @CsvSource({
+    "mpegts, VIDEO_TRANSCODE, 1",
+    "mpeg, VIDEO_TRANSCODE, 1",
+    "ogg, VIDEO_TRANSCODE, 1",
+    "'mov,mp4,m4a,3gp,3g2,mj2', REMUX, 0",
+    "'matroska,webm', REMUX, 0",
+    "avi, REMUX, 0"
+  })
+  @DisplayName(
+      "Should encode the video when the source's demuxer allows timestamp discontinuities and the"
+          + " probe stored no start time correction")
+  void shouldEncodeTheVideoWhenTheSourcesDemuxerAllowsTimestampDiscontinuities(
+      String containerFormat, TranscodeMode expectedMode, double expectedRefusals) {
+    var source = probeBuilder("h264", null).containerFormat(Optional.of(containerFormat)).build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(expectedMode);
+    assertThat(
+            meterRegistry
+                .counter(STREAM_COPY_REFUSALS, "reason", "no_start_time_correction")
+                .count())
+        .isEqualTo(expectedRefusals);
+  }
+
+  @Test
+  @DisplayName(
+      "Should give the missing start time correction as the reason when an MPEG-TS source's video"
+          + " is encoded")
+  void shouldGiveTheMissingStartTimeCorrectionAsTheReasonWhenAnMpegTsSourcesVideoIsEncoded() {
+    var source = probeBuilder("h264", null).containerFormat(Optional.of("mpegts")).build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.reasons()).containsExactly(DecisionReason.START_TIME_CORRECTION_UNKNOWN);
+  }
+
   // The copied AC-3 track's frames join each segment's video: segment 0's 200 audio frames add
   // 1,000,000 bytes, their framing and their heap cost to a video segment that fits alone.
   @Test

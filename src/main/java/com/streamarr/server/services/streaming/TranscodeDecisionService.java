@@ -25,6 +25,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.Presence;
+import com.streamarr.server.domain.streaming.StartTimeCorrections;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -757,9 +758,13 @@ public class TranscodeDecisionService {
 
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
   // only when the known keyframes open its segment list. A slot without a keyframe merges into the
-  // segment before it.
+  // segment before it. Each segment starts at its keyframe's stored tick, which a copy keeps only
+  // when FFmpeg makes no start time correction, as no stored probe outcome carries one yet.
   private Optional<StreamCopyRefusal> streamCopyRefusal(MediaProbe source) {
     return switch (source.keyframes()) {
+      case KeyframeKnowledge.Known _
+          when StartTimeCorrections.isCorrectedBy(source.containerFormat()) ->
+          Optional.of(StreamCopyRefusal.NO_START_TIME_CORRECTION);
       case KeyframeKnowledge.Known(var positions) ->
           streamCopyRefusal(positions, MediaSegmentTimelines.of(source, properties));
       case KeyframeKnowledge.PacketScanRequired _ ->
@@ -790,8 +795,8 @@ public class TranscodeDecisionService {
     Counter.builder(STREAM_COPY_REFUSALS_METRIC)
         .description(
             "Stream copies of a video codec the client plays, refused because the source's"
-                + " keyframes are not known or open no segment list, or a measured segment would"
-                + " exceed the segment cap")
+                + " keyframes are not known or open no segment list, a measured segment would"
+                + " exceed the segment cap, or the copy could not keep the keyframes' stored times")
         .tag("reason", refusal.name().toLowerCase(Locale.ROOT))
         .register(meterRegistry)
         .increment();
@@ -806,6 +811,8 @@ public class TranscodeDecisionService {
     PRESENTATION_TIME_REGRESSED(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
     PRESENTATION_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
     DECODE_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
+    // FFmpeg corrects the source's start time, and the probe stored no correction to cancel it.
+    NO_START_TIME_CORRECTION(DecisionReason.START_TIME_CORRECTION_UNKNOWN),
     // A measured segment of the copy, with its audio, would exceed the segment cap (ADR 0037).
     EXCEEDS_SEGMENT_CAP(DecisionReason.SEGMENT_EXCEEDS_CAP);
 
