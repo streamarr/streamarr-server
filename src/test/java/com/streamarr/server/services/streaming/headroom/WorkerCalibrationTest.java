@@ -154,31 +154,38 @@ class WorkerCalibrationTest {
   @DisplayName("Continuous Fit Tests")
   class ContinuousFitTests {
 
+    private WorkerCalibration recordedHostCalibrationWithoutCostConstants() {
+      return WorkerCalibration.builder()
+          .cpuLimit(RecordedCapacityRuns.CPU_LIMIT)
+          .startingConstants(
+              HeadroomConstants.builder()
+                  .cpuSecondsPerMegapixel(Map.of())
+                  .coresAlone(RecordedCapacityRuns.CORES_ALONE)
+                  .build())
+          .clock(new MutableClock())
+          .build();
+    }
+
+    private ProductionMeasurement recordedMeasurement(
+        RecordedCapacityRuns.RecordedRun run, RecordedCapacityRuns.RecordedVariant variant) {
+      return ProductionMeasurement.builder()
+          .load(variant.load())
+          .otherEncodes(run.loadsBeside(variant))
+          .mediaDuration(variant.segment())
+          .productionTime(variant.productionTime())
+          .build();
+    }
+
     @Test
     @DisplayName(
         "Should predict the recorded production speeds when the constants are fitted from the recorded production times")
     void
         shouldPredictTheRecordedProductionSpeedsWhenTheConstantsAreFittedFromTheRecordedProductionTimes() {
       var runs = RecordedCapacityRuns.load();
-      var calibration =
-          WorkerCalibration.builder()
-              .cpuLimit(RecordedCapacityRuns.CPU_LIMIT)
-              .startingConstants(
-                  HeadroomConstants.builder()
-                      .cpuSecondsPerMegapixel(Map.of())
-                      .coresAlone(RecordedCapacityRuns.CORES_ALONE)
-                      .build())
-              .clock(new MutableClock())
-              .build();
+      var calibration = recordedHostCalibrationWithoutCostConstants();
       for (var run : runs) {
         for (var variant : run.variants()) {
-          calibration.fit(
-              ProductionMeasurement.builder()
-                  .load(variant.load())
-                  .otherEncodes(run.loadsBeside(variant))
-                  .mediaDuration(variant.segment())
-                  .productionTime(variant.productionTime())
-                  .build());
+          calibration.fit(recordedMeasurement(run, variant));
         }
       }
 
