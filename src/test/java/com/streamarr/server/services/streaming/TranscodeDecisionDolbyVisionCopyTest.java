@@ -39,11 +39,13 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -260,6 +262,97 @@ class TranscodeDecisionDolbyVisionCopyTest {
             hevcFromProbeVersion4(profile8(CompatibleBase.PQ, 1)),
             Clients.dolbyVision(13),
             ENCODE));
+  }
+
+  // ADR 0036: a copy would hand players the misplaced RPUs, so the property issue rules out every
+  // copy, whatever the client declares. Each client copies the same source when its RPUs end their
+  // own pictures' samples.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("clientsThatCopyTheSourceWithoutThePropertyIssue")
+  @DisplayName(
+      "Should encode an H.264 or HEVC Dolby Vision stream for every client when its RPUs start"
+          + " their samples")
+  void shouldEncodeAnH264OrHevcDolbyVisionStreamForEveryClientWhenItsRpusStartTheirSamples(
+      String scenario,
+      Function<VideoDynamicRange, MediaProbe> codec,
+      VideoDynamicRange range,
+      ClientCapabilityDeclaration client) {
+    var copied = decide(codec.apply(range), client);
+    var misplaced = decide(codec.apply(withRpusStartingTheirSamples(range)), client);
+
+    assertThat(copied.map(Outcome::of).map(Outcome::mode)).contains(TranscodeMode.REMUX);
+    assertThat(misplaced.map(Outcome::of)).contains(ENCODE);
+  }
+
+  static Stream<Arguments> clientsThatCopyTheSourceWithoutThePropertyIssue() {
+    Function<VideoDynamicRange, MediaProbe> hevc = TranscodeDecisionDolbyVisionCopyTest::hevc;
+    Function<VideoDynamicRange, MediaProbe> h264 = TranscodeDecisionDolbyVisionCopyTest::h264;
+    return Stream.of(
+        Arguments.of(
+            "HEVC profile 8.1 to a client that declares profile 8.1",
+            hevc,
+            profile8(CompatibleBase.PQ, 1),
+            Clients.dolbyVision(13)),
+        Arguments.of(
+            "HEVC profile 8.1 to a client that declares only PQ",
+            hevc,
+            profile8(CompatibleBase.PQ, 1),
+            Clients.baseOnly(false)),
+        Arguments.of(
+            "HEVC profile 8.4 to a client that declares profile 8.4",
+            hevc,
+            profile8(CompatibleBase.HLG, 4),
+            Clients.dolbyVision(13)),
+        Arguments.of(
+            "HEVC profile 8.2 to a client that declares only SDR",
+            hevc,
+            profile8(CompatibleBase.SDR, 2),
+            Clients.sdrOnly()),
+        Arguments.of(
+            "HEVC profile 5 to a client that declares profile 5",
+            hevc,
+            dolbyVisionRecord(CompatibleBase.NONE, 5, 0),
+            Clients.baseless(13)),
+        Arguments.of(
+            "H.264 profile 9 to a client that declares only SDR",
+            h264,
+            dolbyVisionRecord(CompatibleBase.SDR, 9, 2),
+            Clients.sdrOnly()));
+  }
+
+  // ADR 0036: an AV1 RPU belongs ahead of its frame, so the probe names no RPU placement for AV1
+  // and reports no property issue. The profile 10.1 copy keeps its Dolby Vision.
+  @Test
+  @DisplayName(
+      "Should copy AV1 profile 10.1 with its Dolby Vision when the probe observes RPUs ahead of"
+          + " their frames")
+  void shouldCopyAv1Profile101WithItsDolbyVisionWhenTheProbeObservesRpusAheadOfTheirFrames() {
+    var record = (DolbyVision.Present) profile10(CompatibleBase.PQ, 1).dolbyVision();
+    var observedAheadOfTheirFrames =
+        new VideoDynamicRange(
+            CompatibleBase.PQ,
+            Presence.ABSENT,
+            new DolbyVision.Present(
+                record.declared(),
+                Presence.PRESENT,
+                Optional.empty(),
+                DolbyVisionRpuPlacement.UNSPECIFIED));
+
+    var decision = decide(av1(observedAheadOfTheirFrames), Clients.dolbyVision(13));
+
+    assertThat(decision.map(Outcome::of))
+        .contains(keepingDolbyVision(DolbyVisionProfile.PROFILE_10_1, VideoRange.PQ));
+  }
+
+  private Optional<TranscodeDecision> decide(
+      MediaProbe source, ClientCapabilityDeclaration client) {
+    return service.decide(
+        TranscodeDecisionRequest.builder()
+            .source(source)
+            .capabilityDeclaration(client)
+            .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+            .videoCopySupport(List.of(EVERY_REWRITE_WORKER, workerWriting(VideoSampleEntry.DVH1)))
+            .build());
   }
 
   // ADR 0052: after a failed Dolby Vision copy, the next format attempt may only strip the Dolby
