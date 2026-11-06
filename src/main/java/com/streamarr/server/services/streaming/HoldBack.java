@@ -19,8 +19,10 @@ import lombok.NonNull;
  * attempt whose own media stored ahead of its viewer outlasts the high-water mark is held until
  * that media falls to the low-water mark. Each hold tells the worker to resume the job attempt by
  * the time a viewer playing at real time reaches the low-water mark, so a hold ends even when no
- * later command arrives; listing the job attempt again renews it. Seek priority hands each stream
- * session's leads to this class under its own monitor, which guards this class's state.
+ * later command arrives. A later command moves a held job attempt's release only earlier, so a late
+ * command never extends a hold; a job attempt that the worker released is held again at its next
+ * stored segment. Seek priority hands each stream session's leads to this class under its own
+ * monitor, which guards this class's state.
  */
 final class HoldBack {
 
