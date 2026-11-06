@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.stream.Stream;
 import lombok.Builder;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
@@ -81,6 +82,33 @@ class TranscodeDecisionTest {
     assertThatThrownBy(() -> decision.videoSource(null))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("videoSource");
+  }
+
+  // The builder defaults the entry refusals, so only the canonical constructor can receive null.
+  @Test
+  @DisplayName(
+      "Should refuse a decision when its constructor receives no video capability entry refusals")
+  void shouldRefuseADecisionWhenItsConstructorReceivesNoVideoCapabilityEntryRefusals() {
+    var audio = AudioDecision.stereoAac();
+    var subtitles = SubtitleDecision.exclude();
+    ThrowingCallable construct =
+        () ->
+            new TranscodeDecision(
+                TranscodeMode.FULL_TRANSCODE,
+                "h264",
+                Optional.empty(),
+                audio,
+                subtitles,
+                Optional.empty(),
+                List.of(),
+                Optional.empty(),
+                List.of(),
+                null,
+                OptionalInt.empty());
+
+    assertThatThrownBy(construct)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("videoCapabilityEntryRefusals");
   }
 
   @Test

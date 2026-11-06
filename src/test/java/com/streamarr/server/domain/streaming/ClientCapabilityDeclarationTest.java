@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.fixtures.VideoStreamCopyFixture;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -14,9 +15,11 @@ import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -184,6 +187,77 @@ class ClientCapabilityDeclarationTest {
     assertThatThrownBy(() -> entry.acceptsHlsCopy(null, 2))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("stream");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("entryRefusalListingsWithoutAValue")
+  @DisplayName("Should refuse to list an entry's refusals when the caller leaves out a value")
+  void shouldRefuseToListAnEntrysRefusalsWhenTheCallerLeavesOutAValue(
+      ThrowingCallable listing, String missing) {
+    assertThatThrownBy(listing)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining(missing);
+  }
+
+  // A declaration without entries never hands the value to an entry, so only its own check refuses.
+  static Stream<Arguments> entryRefusalListingsWithoutAValue() {
+    var declaration =
+        ClientCapabilityDeclaration.builder().video(List.of()).audio(List.of()).build();
+    var entry = hevcEntryBuilder().build();
+    var stream = VideoStreamCopyFixture.sdrHevcCopyBuilder().build();
+    var container = SourceContainer.MATROSKA;
+    return Stream.of(
+        callWithout(
+            "copy",
+            "the HLS refusals by entry of no copy",
+            () -> declaration.hlsCopyRefusalsByEntry(null)),
+        callWithout(
+            "copy",
+            "whether an HLS entry names the codec family of no copy",
+            () -> declaration.namesHlsCodecFamilyOf(null)),
+        callWithout(
+            "stream",
+            "the direct play refusals by entry of no stream",
+            () -> declaration.directPlayRefusalsByEntry(null, container)),
+        callWithout(
+            "container",
+            "the direct play refusals by entry in no container",
+            () -> declaration.directPlayRefusalsByEntry(stream, null)),
+        callWithout(
+            "video",
+            "an entry's direct play refusals of no stream",
+            () -> entry.directPlayRefusals(null, container)),
+        callWithout(
+            "container",
+            "an entry's direct play refusals in no container",
+            () -> entry.directPlayRefusals(stream, null)));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("entryRefusalsWithoutAValue")
+  @DisplayName("Should refuse an entry refusal when it leaves out its delivery or reasons")
+  void shouldRefuseAnEntryRefusalWhenItLeavesOutItsDeliveryOrReasons(
+      ThrowingCallable construction, String missing) {
+    assertThatThrownBy(construction)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining(missing);
+  }
+
+  static Stream<Arguments> entryRefusalsWithoutAValue() {
+    return Stream.of(
+        callWithout(
+            "delivery",
+            "an entry refusal of no delivery",
+            () -> new VideoCapabilityEntryRefusal(null, 0, List.of())),
+        callWithout(
+            "reasons",
+            "an entry refusal without its reasons",
+            () -> new VideoCapabilityEntryRefusal(CapabilityEntryDelivery.HLS, 0, null)));
+  }
+
+  private static Arguments callWithout(
+      String missing, String description, ThrowingCallable callable) {
+    return Arguments.of(Named.of(description, callable), missing);
   }
 
   @ParameterizedTest
