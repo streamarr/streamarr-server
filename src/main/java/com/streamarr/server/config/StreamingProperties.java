@@ -2,6 +2,7 @@ package com.streamarr.server.config;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Objects;
 import lombok.Builder;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -94,13 +95,8 @@ public record StreamingProperties(
 
     requirePositive("streaming.seek-priority-hold-limit", seekPriorityHoldLimit);
 
-    if (holdBackHighWater == null) {
-      holdBackHighWater = Duration.ofSeconds(60);
-    }
-
-    if (holdBackLowWater == null) {
-      holdBackLowWater = Duration.ofSeconds(30);
-    }
+    holdBackHighWater = Objects.requireNonNullElse(holdBackHighWater, Duration.ofSeconds(60));
+    holdBackLowWater = Objects.requireNonNullElse(holdBackLowWater, Duration.ofSeconds(30));
 
     // A held job attempt's viewer must have the next segment, a seek's pause and the position
     // margin left when it resumes, or a hold could stall its own viewer.

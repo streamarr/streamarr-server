@@ -40,8 +40,7 @@ class SeekPriorityTest {
   @DisplayName(
       "Should take another stream session's media segment request while a variant change waits to"
           + " learn which worker runs a seek's job attempt")
-  void shouldTakeAnotherStreamSessionsRequestWhileAVariantChangeWaitsToLearnWhichWorkerRunsASeek()
-      throws Exception {
+  void shouldTakeAnotherStreamSessionsRequestWhileAVariantChangeWaitsToLearnWhichWorkerRunsASeek() {
     var seeking = defaultSessionBuilder().build();
     seeking.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
     runtimeRegistry.save(seeking);
