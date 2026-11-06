@@ -6,6 +6,8 @@ import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,18 +15,36 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
 import java.util.Optional;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
+import org.springframework.dao.DataAccessException;
+import org.springframework.transaction.TransactionException;
 
 /**
  * Learns the end time of each stream whose container header states none from the first job attempt
  * that reads the stream's last sample, and stores it beside the probe facts (ADR 0037, early ends).
  */
-@RequiredArgsConstructor
 public class LearnedStreamEndListener {
 
-  @NonNull private final RuntimeStreamSessionRegistry runtimeRegistry;
-  @NonNull private final LearnedStreamEndRepository learnedStreamEnds;
+  private static final String STORE_FAILURES_METRIC =
+      "streamarr.streaming.learned_stream_end_store_failures";
+
+  private final RuntimeStreamSessionRegistry runtimeRegistry;
+  private final LearnedStreamEndRepository learnedStreamEnds;
+  private final Counter storeFailures;
+
+  public LearnedStreamEndListener(
+      @NonNull RuntimeStreamSessionRegistry runtimeRegistry,
+      @NonNull LearnedStreamEndRepository learnedStreamEnds,
+      @NonNull MeterRegistry meterRegistry) {
+    this.runtimeRegistry = runtimeRegistry;
+    this.learnedStreamEnds = learnedStreamEnds;
+    storeFailures =
+        Counter.builder(STORE_FAILURES_METRIC)
+            .description(
+                "Stream end times that a completed job attempt reported but the database did not"
+                    + " store")
+            .register(meterRegistry);
+  }
 
   /**
    * The end holds for the source file that the stream session's probe outcome describes, and only
@@ -51,13 +71,23 @@ public class LearnedStreamEndListener {
 
     unstated.forEach(
         end ->
-            learnedStreamEnds.store(
+            store(
                 LearnedStreamEnd.builder()
                     .mediaFileId(session.getMediaFileId())
                     .snapshot(snapshot.get())
                     .streamIndex(end.streamIndex())
                     .endTime(end.endTime())
                     .build()));
+  }
+
+  // This listener runs inside the worker's completion report, so a failed write that escaped it
+  // would abort the report and close the worker's control stream.
+  private void store(LearnedStreamEnd learned) {
+    try {
+      learnedStreamEnds.store(learned);
+    } catch (DataAccessException | TransactionException _) {
+      storeFailures.increment();
+    }
   }
 
   // The worker reports no snapshot of the file it read, so the file must still hold the probed

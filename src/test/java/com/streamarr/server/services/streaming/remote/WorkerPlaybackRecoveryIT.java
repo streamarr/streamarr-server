@@ -519,7 +519,7 @@ class WorkerPlaybackRecoveryIT {
       var shortCopies = new ShortCopyListener(lifecycle.lifecycle(), events);
       events.listen(JobAttemptCompletedEvent.class, shortCopies::onJobAttemptCompleted);
       events.listen(CopiedVariantRanShortEvent.class, sessions::onCopiedVariantRanShort);
-      var learning = new LearnedStreamEndListener(registry, learnedEnds);
+      var learning = new LearnedStreamEndListener(registry, learnedEnds, new SimpleMeterRegistry());
       events.listen(JobAttemptCompletedEvent.class, learning::onJobAttemptCompleted);
       playlists = new HlsPlaylistService(properties);
       command =

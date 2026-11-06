@@ -152,8 +152,10 @@ public class StreamingConfig {
 
   @Bean
   public LearnedStreamEndListener learnedStreamEndListener(
-      RuntimeStreamSessionRegistry runtimeRegistry, LearnedStreamEndRepository learnedStreamEnds) {
-    return new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds);
+      RuntimeStreamSessionRegistry runtimeRegistry,
+      LearnedStreamEndRepository learnedStreamEnds,
+      MeterRegistry meterRegistry) {
+    return new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, meterRegistry);
   }
 
   @Bean

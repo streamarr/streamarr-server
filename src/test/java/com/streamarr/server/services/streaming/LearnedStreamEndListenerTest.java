@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.streamarr.server.domain.media.LearnedStreamEnd;
 import com.streamarr.server.domain.media.MediaFileContainerInfo;
@@ -16,7 +17,9 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fakes.FakeLearnedStreamEndRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,6 +33,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 @Tag("UnitTest")
 @DisplayName("Learned Stream End Listener Tests")
@@ -47,8 +51,9 @@ class LearnedStreamEndListenerTest {
       new FakeMediaFileContainerInfoRepository();
   private final FakeLearnedStreamEndRepository learnedStreamEnds =
       new FakeLearnedStreamEndRepository(probeOutcomes);
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final LearnedStreamEndListener listener =
-      new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds);
+      new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, meterRegistry);
   private Path source;
   private SourceFileSnapshot probedSnapshot;
 
@@ -140,6 +145,36 @@ class LearnedStreamEndListenerTest {
         completion(session, new SourceStreamEnd(7, Duration.ofMillis(84_021))));
 
     assertThat(learnedStreamEnds.findFor(session.getMediaFileId(), probedSnapshot)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count each end it fails to store and let the completion finish when the database"
+          + " refuses the write")
+  void shouldCountEachEndItFailsToStoreAndLetTheCompletionFinishWhenTheDatabaseRefusesTheWrite() {
+    var session = savedSession(probeOf(Optional.of(probedSnapshot)));
+    var withoutDatabase =
+        new LearnedStreamEndListener(
+            runtimeRegistry, new UnavailableLearnedStreamEndRepository(), meterRegistry);
+
+    assertThatCode(() -> withoutDatabase.onJobAttemptCompleted(completion(session, AUDIO_END)))
+        .doesNotThrowAnyException();
+    assertThat(meterRegistry.get("streamarr.streaming.learned_stream_end_store_failures").counter())
+        .satisfies(failures -> assertThat(failures.count()).isEqualTo(1));
+  }
+
+  private static final class UnavailableLearnedStreamEndRepository
+      implements LearnedStreamEndRepository {
+
+    @Override
+    public boolean store(LearnedStreamEnd learned) {
+      throw new DataAccessResourceFailureException("The database refused the connection.");
+    }
+
+    @Override
+    public List<LearnedStreamEnd> findFor(UUID mediaFileId, SourceFileSnapshot snapshot) {
+      return List.of();
+    }
   }
 
   // The file's stored probe outcome holds the snapshot that the source had when it was probed.
