@@ -118,6 +118,7 @@ final class MeshMediaHandler implements HttpHandler {
             .encoderPreset(EncoderPreset.VERYFAST)
             .targetSegmentDuration(FIXTURE_TIMELINE.targetSegmentDurationSeconds())
             .mediaSegmentCount(FIXTURE_TIMELINE.mediaSegmentCount())
+            .segmentStartSlots(FIXTURE_TIMELINE.segmentStartSlots())
             .framerate(OptionalDouble.of(24))
             .build());
     try {
