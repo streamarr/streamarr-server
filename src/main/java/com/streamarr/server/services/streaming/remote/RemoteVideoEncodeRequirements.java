@@ -4,7 +4,6 @@ import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.transcode.v1.CompatibleBase;
 import com.streamarr.transcode.v1.VideoDecision;
 import com.streamarr.transcode.v1.VideoMode;
-import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
 
@@ -20,24 +19,28 @@ final class RemoteVideoEncodeRequirements {
       return Set.of();
     }
 
-    var features = EnumSet.noneOf(VideoEncodeFeature.class);
-    switch (video.getOutputDynamicRange().getCompatibleBase()) {
-      case COMPATIBLE_BASE_PQ -> features.add(VideoEncodeFeature.PQ);
-      case COMPATIBLE_BASE_HLG -> features.add(VideoEncodeFeature.HLG);
-      case COMPATIBLE_BASE_UNSPECIFIED, COMPATIBLE_BASE_NONE, COMPATIBLE_BASE_SDR, UNRECOGNIZED -> {
-        if (video.getOutputBitDepth() > 8) {
-          features.add(VideoEncodeFeature.TEN_BIT);
-        }
-      }
+    return switch (video.getOutputDynamicRange().getCompatibleBase()) {
+      case COMPATIBLE_BASE_PQ -> pqFeaturesFrom(video.getSourceDynamicRange().getCompatibleBase());
+      case COMPATIBLE_BASE_HLG -> Set.of(VideoEncodeFeature.HLG);
+      case COMPATIBLE_BASE_UNSPECIFIED, COMPATIBLE_BASE_NONE, COMPATIBLE_BASE_SDR, UNRECOGNIZED ->
+          sdrFeaturesAt(video.getOutputBitDepth());
+    };
+  }
+
+  private static Set<VideoEncodeFeature> pqFeaturesFrom(CompatibleBase sourceBase) {
+    if (sourceBase == CompatibleBase.COMPATIBLE_BASE_NONE) {
+      return Set.of(VideoEncodeFeature.PQ, VideoEncodeFeature.DOLBY_VISION_TO_PQ);
     }
 
-    if (features.contains(VideoEncodeFeature.PQ)
-        && video.getSourceDynamicRange().getCompatibleBase()
-            == CompatibleBase.COMPATIBLE_BASE_NONE) {
-      features.add(VideoEncodeFeature.DOLBY_VISION_TO_PQ);
+    return Set.of(VideoEncodeFeature.PQ);
+  }
+
+  private static Set<VideoEncodeFeature> sdrFeaturesAt(int outputBitDepth) {
+    if (outputBitDepth > 8) {
+      return Set.of(VideoEncodeFeature.TEN_BIT);
     }
 
-    return features;
+    return Set.of();
   }
 
   // Empty for a feature that this server does not know yet, which no decision needs.

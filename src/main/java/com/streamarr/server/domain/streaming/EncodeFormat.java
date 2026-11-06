@@ -1,6 +1,5 @@
 package com.streamarr.server.domain.streaming;
 
-import java.util.EnumSet;
 import java.util.Set;
 import lombok.NonNull;
 
@@ -46,22 +45,27 @@ public record EncodeFormat(@NonNull VideoRange range, int bitDepth) {
    * reshaped into PQ.
    */
   public Set<VideoEncodeFeature> encodeFeaturesFrom(@NonNull CompatibleBase sourceBase) {
-    var features = EnumSet.noneOf(VideoEncodeFeature.class);
-    switch (range) {
-      case PQ -> features.add(VideoEncodeFeature.PQ);
-      case HLG -> features.add(VideoEncodeFeature.HLG);
-      case SDR -> {
-        if (bitDepth == 10) {
-          features.add(VideoEncodeFeature.TEN_BIT);
-        }
-      }
+    return switch (range) {
+      case SDR -> sdrEncodeFeatures();
+      case PQ -> pqEncodeFeaturesFrom(sourceBase);
+      case HLG -> Set.of(VideoEncodeFeature.HLG);
+    };
+  }
+
+  private Set<VideoEncodeFeature> sdrEncodeFeatures() {
+    if (bitDepth == 10) {
+      return Set.of(VideoEncodeFeature.TEN_BIT);
     }
 
-    if (range == VideoRange.PQ && sourceBase == CompatibleBase.NONE) {
-      features.add(VideoEncodeFeature.DOLBY_VISION_TO_PQ);
+    return Set.of();
+  }
+
+  private static Set<VideoEncodeFeature> pqEncodeFeaturesFrom(CompatibleBase sourceBase) {
+    if (sourceBase == CompatibleBase.NONE) {
+      return Set.of(VideoEncodeFeature.PQ, VideoEncodeFeature.DOLBY_VISION_TO_PQ);
     }
 
-    return Set.copyOf(features);
+    return Set.of(VideoEncodeFeature.PQ);
   }
 
   /** Whether the encode keeps an HDR range. */
