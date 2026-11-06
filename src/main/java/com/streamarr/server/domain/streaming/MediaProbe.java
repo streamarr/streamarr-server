@@ -277,4 +277,12 @@ public record MediaProbe(
   public List<StreamInfo> subtitleStreams() {
     return streams.stream().filter(s -> "subtitle".equals(s.codecType())).toList();
   }
+
+  /** The chosen video stream's probed end time, or empty when the probe states none. */
+  public Optional<Duration> videoEndTime() {
+    return videoPlaybackFacts
+        .flatMap(
+            facts -> streams.stream().filter(s -> s.index() == facts.streamIndex()).findFirst())
+        .flatMap(StreamInfo::endTime);
+  }
 }

@@ -6,7 +6,6 @@ import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.MediaTimeRange;
 import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.StreamDelivery;
-import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -1841,25 +1840,15 @@ public class ProducerLifecycleService {
     var period = timeline.targetSegmentDuration();
     var defaultRead =
         Duration.ofSeconds(timeline.mediaSegmentStartSeconds(startSequenceNumber)).minus(period);
-    return videoEnd(session)
+    return session
+        .getMediaProbe()
+        .videoEndTime()
         .filter(end -> defaultRead.compareTo(end) >= 0)
         .map(end -> latestOf(end.minus(period), Duration.ZERO));
   }
 
   private static Duration latestOf(Duration first, Duration second) {
     return first.compareTo(second) >= 0 ? first : second;
-  }
-
-  private static Optional<Duration> videoEnd(StreamSession session) {
-    var probe = session.getMediaProbe();
-    return probe
-        .videoPlaybackFacts()
-        .flatMap(
-            facts ->
-                probe.streams().stream()
-                    .filter(stream -> stream.index() == facts.streamIndex())
-                    .findFirst())
-        .flatMap(StreamInfo::endTime);
   }
 
   // Every encoded stream may hold its last frame or pad with silence up to the last advertised
