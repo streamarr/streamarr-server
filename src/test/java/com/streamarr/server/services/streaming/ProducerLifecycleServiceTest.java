@@ -860,9 +860,9 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
-      "Should count each yield-to-seek command and each job attempt that a yield newly names, not"
-          + " one that a later command names again")
-  void shouldCountEachYieldToSeekCommandAndEachJobAttemptThatAYieldNewlyNames() {
+      "Should count each job attempt that a yield to a seek newly names, not one that a later"
+          + " yield names again")
+  void shouldCountEachJobAttemptThatAYieldNewlyNamesWhenALaterYieldNamesItAgain() {
     var steady = startedSession();
     publishDefaultSegments(steady, 1, 9);
     lifecycle.prepareRequestedVariant(
@@ -881,7 +881,7 @@ class ProducerLifecycleServiceTest {
         .containsExactlyInAnyOrder(
             steady.getHandle().orElseThrow().attemptId(),
             secondSteady.getHandle().orElseThrow().attemptId());
-    assertThat(meters.counter("streamarr.streaming.seek_yield_commands").count()).isEqualTo(2);
+    assertThat(transcodeExecutor.yields()).hasSize(2);
     assertThat(meters.counter("streamarr.streaming.seek_yielded_job_attempts").count())
         .isEqualTo(2);
   }

@@ -197,9 +197,9 @@ class HoldBackTest {
 
   @Test
   @DisplayName(
-      "Should count each hold-back command, each hold started and each hold ended, a lapsed hold"
-          + " held again counting as both")
-  void shouldCountEachHoldBackCommandEachHoldStartedAndEachHoldEnded() {
+      "Should count each hold started and each hold ended, a lapsed hold held again counting as"
+          + " both")
+  void shouldCountEachHoldStartedAndEachHoldEndedWhenALapsedHoldIsHeldAgain() {
     holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 66)));
     clock.advance(Duration.ofSeconds(37));
     holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 72)));
@@ -207,7 +207,6 @@ class HoldBackTest {
     holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 30)));
 
     assertThat(executor.holdBacks()).hasSize(4);
-    assertThat(count("streamarr.streaming.hold_back_commands")).isEqualTo(4);
     assertThat(count("streamarr.streaming.hold_backs")).isEqualTo(2);
     assertThat(count("streamarr.streaming.hold_back_releases")).isEqualTo(2);
   }
@@ -222,7 +221,6 @@ class HoldBackTest {
     holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 40)));
 
     assertThat(executor.holdBacks()).hasSize(2);
-    assertThat(count("streamarr.streaming.hold_back_commands")).isEqualTo(2);
     assertThat(count("streamarr.streaming.hold_backs")).isEqualTo(1);
     assertThat(count("streamarr.streaming.hold_back_releases")).isZero();
   }

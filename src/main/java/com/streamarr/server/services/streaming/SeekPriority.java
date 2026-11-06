@@ -47,7 +47,6 @@ public class SeekPriority {
   // Clients report their timeline every 10 s of playback; a report older than three intervals is
   // too sparse to place the viewer.
   private static final Duration FRESH_REPORT = Duration.ofSeconds(30);
-  private static final String YIELD_COMMANDS_METRIC = "streamarr.streaming.seek_yield_commands";
   private static final String YIELDED_ATTEMPTS_METRIC =
       "streamarr.streaming.seek_yielded_job_attempts";
 
@@ -57,7 +56,6 @@ public class SeekPriority {
   private final HeldSegmentRequests heldRequests;
   private final StreamingProperties properties;
   private final Clock clock;
-  private final Counter yieldCommands;
   private final Counter yieldedAttempts;
   // Guarded by this monitor.
   private final HoldBack holdBack;
@@ -91,10 +89,6 @@ public class SeekPriority {
     }
 
     this.clock = chosenClock;
-    yieldCommands =
-        Counter.builder(YIELD_COMMANDS_METRIC)
-            .description("Yield-to-seek commands sent to workers")
-            .register(meterRegistry);
     yieldedAttempts =
         Counter.builder(YIELDED_ATTEMPTS_METRIC)
             .description("Job attempts that a yield-to-seek command names and the last one did not")
@@ -461,7 +455,6 @@ public class SeekPriority {
     }
 
     transcodeExecutor.yieldToSeek(target, named, properties.seekPriorityHoldLimit());
-    yieldCommands.increment();
     yieldedAttempts.increment(newlyNamed);
     log.debug(
         "Sent a yield to seek to {} naming {} job attempts, {} newly",

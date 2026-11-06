@@ -62,6 +62,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -1608,6 +1609,72 @@ class LiveWorkerConnectionRegistryTest {
             EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED,
             EstablishWorkerSessionResponse.CommandCase.START_VARIANT);
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count each yield-to-seek and hold-back command when it reaches a connected worker's"
+          + " stream")
+  void shouldCountEachYieldToSeekAndHoldBackCommandWhenItReachesAConnectedWorkersStream() {
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = registryMetering(meterRegistry);
+    var responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    registry.register(WORKER_ID, registration(), collecting(responses));
+    var target = runningTargetOf(registry);
+
+    registry.yieldToSeek(target, Set.of(UUID.randomUUID()), Duration.ofSeconds(3));
+    registry.yieldToSeek(target, Set.of(), Duration.ofSeconds(3));
+    registry.holdBack(target, Map.of(UUID.randomUUID(), Duration.ofSeconds(30)));
+
+    assertThat(responses)
+        .extracting(EstablishWorkerSessionResponse::getCommandCase)
+        .containsSubsequence(
+            EstablishWorkerSessionResponse.CommandCase.YIELD_TO_SEEK,
+            EstablishWorkerSessionResponse.CommandCase.YIELD_TO_SEEK,
+            EstablishWorkerSessionResponse.CommandCase.HOLD_BACK);
+    assertThat(meterRegistry.counter("streamarr.streaming.seek_yield_commands").count())
+        .isEqualTo(2);
+    assertThat(meterRegistry.counter("streamarr.streaming.hold_back_commands").count())
+        .isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count no yield-to-seek or hold-back command when the worker's stream refuses it or no"
+          + " worker runs the target")
+  void shouldCountNoYieldToSeekOrHoldBackCommandWhenTheWorkersStreamRefusesIt() {
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = registryMetering(meterRegistry);
+    var observer = new CancellableObserver();
+    registry.register(WORKER_ID, registration(), observer);
+    var target = runningTargetOf(registry);
+    observer.cancel();
+
+    registry.yieldToSeek(target, Set.of(UUID.randomUUID()), Duration.ofSeconds(3));
+    registry.holdBack(target, Map.of(UUID.randomUUID(), Duration.ofSeconds(30)));
+    registry.yieldToSeek(
+        new ExecutionTargetId("no-such-worker"), Set.of(UUID.randomUUID()), Duration.ofSeconds(3));
+
+    assertThat(meterRegistry.counter("streamarr.streaming.seek_yield_commands").count()).isZero();
+    assertThat(meterRegistry.counter("streamarr.streaming.hold_back_commands").count()).isZero();
+  }
+
+  private static LiveWorkerConnectionRegistry registryMetering(SimpleMeterRegistry meterRegistry) {
+    return LiveWorkerConnectionRegistry.builder()
+        .eventPublisher(new CapturingEventPublisher())
+        .configuration(WorkerSessionServerConfiguration.builder().build())
+        .meterRegistry(meterRegistry)
+        .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+        .build();
+  }
+
+  private static ExecutionTargetId runningTargetOf(LiveWorkerConnectionRegistry registry) {
+    var job = variantJob();
+    assertThat(registry.dispatch(job)).isPresent();
+    return registry
+        .runningExecutionTarget(
+            fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel())
+        .orElseThrow();
   }
 
   @Test

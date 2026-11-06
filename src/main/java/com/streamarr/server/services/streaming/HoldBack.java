@@ -33,14 +33,12 @@ final class HoldBack {
   // A release that comes this much earlier than the one the worker holds is sent at once; a later
   // one waits until the worker releases the job attempt and its next segment holds it again.
   private static final Duration RELEASE_TOLERANCE = Duration.ofSeconds(1);
-  private static final String COMMANDS_METRIC = "streamarr.streaming.hold_back_commands";
   private static final String HOLDS_METRIC = "streamarr.streaming.hold_backs";
   private static final String RELEASES_METRIC = "streamarr.streaming.hold_back_releases";
 
   private final TranscodeExecutor transcodeExecutor;
   private final StreamingProperties properties;
   private final Clock clock;
-  private final Counter commands;
   private final Counter holdsStarted;
   private final Counter holdsEnded;
   private final Map<ExecutionTargetId, Map<UUID, Hold>> holds = new HashMap<>();
@@ -53,10 +51,6 @@ final class HoldBack {
     this.transcodeExecutor = transcodeExecutor;
     this.properties = properties;
     this.clock = clock;
-    commands =
-        Counter.builder(COMMANDS_METRIC)
-            .description("Hold-back commands sent to workers")
-            .register(meterRegistry);
     holdsStarted =
         Counter.builder(HOLDS_METRIC)
             .description("Job attempts held back that the worker did not still hold")
@@ -213,7 +207,6 @@ final class HoldBack {
 
   private void send(ExecutionTargetId target, Map<UUID, Hold> next, Instant now) {
     log.debug("Holding back {} job attempts on {}", next.size(), target);
-    commands.increment();
     transcodeExecutor.holdBack(
         target,
         next.entrySet().stream()
