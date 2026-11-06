@@ -510,6 +510,7 @@ class ProducerLifecycleServiceTest {
     for (var index = 40; index < 100; index++) {
       segmentStore.addSegment(sessionId, SegmentNames.mediaSegmentName(index), new byte[] {1});
     }
+
     var request =
         earliestArrivingSegmentRequestBuilder()
             .sessionId(sessionId)
