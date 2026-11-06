@@ -26,13 +26,12 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentDelivery;
-import com.streamarr.server.services.streaming.SegmentPublication;
-import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.remote.PausingSegmentStore.PublicationPause;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
@@ -65,7 +64,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -393,89 +391,6 @@ class HeldSegmentRequestConcurrencyIT {
         .rootCause()
         .matches(
             failure -> Status.fromThrowable(failure).getCode() == Status.Code.PERMISSION_DENIED);
-  }
-
-  private enum PublicationPause {
-    BEFORE_THE_SEGMENT_IS_READABLE,
-    AFTER_THE_SEGMENT_IS_READABLE
-  }
-
-  /** A local segment store that can hold one publication open at a chosen point. */
-  private static final class PausingSegmentStore implements SegmentStore {
-
-    private final LocalSegmentStore delegate;
-    private final CountDownLatch paused = new CountDownLatch(1);
-    private final CountDownLatch released = new CountDownLatch(1);
-    private final AtomicReference<PublicationPause> nextPause = new AtomicReference<>();
-
-    private PausingSegmentStore(LocalSegmentStore delegate) {
-      this.delegate = delegate;
-    }
-
-    private void pauseNextPublication(PublicationPause pause) {
-      nextPause.set(pause);
-    }
-
-    private void awaitPausedPublication() throws InterruptedException {
-      assertThat(paused.await(BOUND.toSeconds(), TimeUnit.SECONDS))
-          .as("the upload reached its publication")
-          .isTrue();
-    }
-
-    private void releasePublication() {
-      released.countDown();
-    }
-
-    @Override
-    public byte[] readSegment(UUID sessionId, String segmentName) {
-      return delegate.readSegment(sessionId, segmentName);
-    }
-
-    @Override
-    public boolean segmentExists(UUID sessionId, String segmentName) {
-      return delegate.segmentExists(sessionId, segmentName);
-    }
-
-    @Override
-    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
-      var prepared = delegate.prepareSegment(sessionId, segmentName, data);
-      var pause = nextPause.getAndSet(null);
-      return new PreparedSegment() {
-        @Override
-        public SegmentPublication publish() {
-          holdAt(pause, PublicationPause.BEFORE_THE_SEGMENT_IS_READABLE);
-          var publication = prepared.publish();
-          holdAt(pause, PublicationPause.AFTER_THE_SEGMENT_IS_READABLE);
-          return publication;
-        }
-
-        @Override
-        public void close() {
-          prepared.close();
-        }
-      };
-    }
-
-    private void holdAt(PublicationPause pause, PublicationPause point) {
-      if (pause != point) {
-        return;
-      }
-
-      paused.countDown();
-      try {
-        if (!released.await(BOUND.toSeconds(), TimeUnit.SECONDS)) {
-          throw new AssertionError("Timed out holding the segment publication");
-        }
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new AssertionError("Interrupted while holding the segment publication", e);
-      }
-    }
-
-    @Override
-    public void deleteSession(UUID sessionId) {
-      delegate.deleteSession(sessionId);
-    }
   }
 
   /**
