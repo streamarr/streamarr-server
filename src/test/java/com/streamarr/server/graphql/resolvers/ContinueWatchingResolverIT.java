@@ -34,9 +34,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -354,8 +356,13 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
   }
 
-  // Hibernate statistics are global, so the count holds only while no other test uses the context.
   private long statementsPreparedBy(String query) throws Exception {
+    return countedWhileExecuting(query, Statistics::getPrepareStatementCount);
+  }
+
+  // Hibernate statistics are global, so the count holds only while no other test uses the context.
+  private long countedWhileExecuting(String query, ToLongFunction<Statistics> count)
+      throws Exception {
     var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
     var previouslyEnabled = statistics.isStatisticsEnabled();
     statistics.setStatisticsEnabled(true);
@@ -363,7 +370,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
 
     try {
       execute(query);
-      return statistics.getPrepareStatementCount();
+      return count.applyAsLong(statistics);
     } finally {
       statistics.clear();
       statistics.setStatisticsEnabled(previouslyEnabled);
