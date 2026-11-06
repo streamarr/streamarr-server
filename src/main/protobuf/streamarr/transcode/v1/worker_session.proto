@@ -1132,7 +1132,7 @@ message ProbeStreamInfo {
   // stream without one, such as cover art, and on other streams (ADR 0032).
   optional string sample_entry = 48;
   // From probe version 8, the chosen video stream reports the highest frame
-  // rate, in frames per second, that its presentation times prove over 1 to
+  // rate, in frames per second, that its presentation times show over 1 to
   // 24 consecutive frame intervals, as a listed rate when one lies within the
   // times' precision. A constant-rate stream reports its base rate. The field
   // is absent when the worker cannot measure it, on an interlaced stream and
