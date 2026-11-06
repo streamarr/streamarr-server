@@ -24,6 +24,8 @@ final class ConstantFit {
 
   // A held constant at zero adds nothing to any cost, so it stays out of the solved constants.
   private static final double UNKNOWN = 0;
+  // CPU seconds per megapixel. Measured constants range from about 0.002 to 0.1.
+  private static final double ANCHOR_FLOOR = 0.01;
 
   private final double forgetting;
   private final List<CostConstant> fitted = new ArrayList<>();
@@ -216,9 +218,14 @@ final class ConstantFit {
     }
   }
 
+  /**
+   * Pulls the constant toward the value. The pull counts relative to the value, except that a value
+   * below the anchor floor counts as if it were the floor, so a constant near zero can still grow.
+   */
   private static void anchor(double[][] matrix, int row, double value, double weight) {
-    matrix[row][row] += weight / (value * value);
-    matrix[row][matrix.length] += weight / value;
+    var scale = Math.max(value, ANCHOR_FLOOR);
+    matrix[row][row] += weight / (scale * scale);
+    matrix[row][matrix.length] += weight * value / (scale * scale);
   }
 
   private void copyMeasuredRow(double[][] matrix, List<CostConstant> unknowns, int row) {

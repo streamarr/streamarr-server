@@ -42,17 +42,20 @@ final class PredictionWindow {
   }
 
   /**
-   * Failed when at least 5 live predictions, or the current constants' predictions of their
-   * measurements, have a median error above 10 %. Validated when 20 live predictions pass both
-   * checks, at least 5 of them ran beside other encodes, and two of their ratios of output to
-   * source differ by a factor of 2 or more. Otherwise the predictions are too little evidence
-   * either way.
+   * Failed when the current constants miss the live predictions' measurements by a median above 10
+   * %, or when at least 5 live predictions have a median error above 10 %. Validated when 20 live
+   * predictions pass both checks, at least 5 of them ran beside other encodes, and two of their
+   * ratios of output to source differ by a factor of 2 or more. Otherwise the predictions are too
+   * little evidence either way.
    */
   Verdict verdict(Instant now, ToDoubleFunction<PredictionCheck> currentError) {
     var live = live(now);
+    if (!live.isEmpty() && medianError(live, currentError) > VALIDATED_MEDIAN_ERROR) {
+      return Verdict.FAILED;
+    }
+
     if (live.size() >= FAILING_REQUIRED
-        && (medianError(live, PredictionCheck::relativeError) > VALIDATED_MEDIAN_ERROR
-            || medianError(live, currentError) > VALIDATED_MEDIAN_ERROR)) {
+        && medianError(live, PredictionCheck::relativeError) > VALIDATED_MEDIAN_ERROR) {
       return Verdict.FAILED;
     }
 

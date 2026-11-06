@@ -416,6 +416,29 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
+        "Should learn a new constant's real cost when it first came out close to zero and later measurements separate it")
+    void
+        shouldLearnANewConstantsRealCostWhenItFirstCameOutCloseToZeroAndLaterMeasurementsSeparateIt() {
+      var calibration = tenCoreCalibration().build();
+      var pq = libx264FasterLoad().toneMapping(ToneMapping.PQ);
+      calibration.fit(measuredAtCost(pq.build(), 1.5 + 2e-9, 1));
+
+      // PQ truly costs 0.02 CPU s per megapixel: 1.0 more at either rung.
+      for (var i = 0; i < 1000; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+        calibration.fit(
+            measuredAtCost(
+                pq.outputPixelRate(i % 2 == 0 ? SMALL_OUTPUT : LARGE_OUTPUT).build(),
+                i % 2 == 0 ? 2.5 : 3.5,
+                2));
+      }
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel().get(ToneMapping.PQ))
+          .isCloseTo(0.02, withinPercentage(5));
+    }
+
+    @Test
+    @DisplayName(
         "Should keep fitting the known constants when two new constants have only appeared together")
     void shouldKeepFittingTheKnownConstantsWhenTwoNewConstantsHaveOnlyAppearedTogether() {
       var calibration = tenCoreCalibration().build();
@@ -1076,6 +1099,45 @@ class WorkerCalibrationTest {
         shouldLeaveAnotherPresetUnvalidatedWhenTheConstantsCannotPriceItAlthoughTheAutomaticPresetIsValidated() {
       var calibration = tenCoreCalibration().build();
       for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(veryfast))).isFalse();
+    }
+
+    @Test
+    @DisplayName(
+        "Should leave another preset unvalidated when the current constants miss its few live measurements, although the Automatic preset is validated")
+    void
+        shouldLeaveAnotherPresetUnvalidatedWhenTheCurrentConstantsMissItsFewLiveMeasurementsAlthoughTheAutomaticPresetIsValidated() {
+      var softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(
+                          Map.of(
+                              LIBX264_FASTER, 0.04,
+                              LIBX264_VERYFAST, 0.02,
+                              SOFTWARE_H264, 0.01,
+                              softwareHevc, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, LIBX264_VERYFAST, 6.0))
+                      .build())
+              .build();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      for (var i = 0; i < 2; i++) {
+        calibration.fit(measuredAtCost(veryfast, 1.0, 2));
+      }
+
+      // From HEVC sources, veryfast costs 0.002 CPU s per megapixel: 0.05 + 0.5 and 0.1 + 0.5.
+      var fromHevc =
+          libx264FasterLoad().encoderAndPreset(LIBX264_VERYFAST).sourceDecoder(softwareHevc);
+      for (var i = 0; i < 100; i++) {
+        calibration.fit(measuredAtCost(fromHevc.outputPixelRate(SMALL_OUTPUT).build(), 0.55, 2));
+        calibration.fit(measuredAtCost(fromHevc.outputPixelRate(LARGE_OUTPUT).build(), 0.6, 2));
         calibration.fit(rungMeasurement(i, 1, 2));
       }
 
