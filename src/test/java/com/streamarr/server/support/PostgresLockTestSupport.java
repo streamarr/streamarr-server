@@ -36,6 +36,8 @@ public final class PostgresLockTestSupport {
         AND activity.query ILIKE ?
       """;
 
+  private static final String ANY_QUERY = "%";
+
   private PostgresLockTestSupport() {}
 
   public static void lockArtworkRows(Connection connection, UUID entityId) throws SQLException {
@@ -149,20 +151,35 @@ public final class PostgresLockTestSupport {
 
   public static int awaitBlockedBackendPid(
       Connection observer, int blockerPid, String expectedWaitEvent) {
+    return awaitBlockedBackendPid(
+        observer, new BlockedBackend(blockerPid, expectedWaitEvent, ANY_QUERY));
+  }
+
+  /**
+   * Waits for a backend that {@code blockerPid} blocks and whose current statement matches {@code
+   * queryPattern} (ILIKE), so a table lock that also blocks unrelated readers yields the backend
+   * under test.
+   */
+  public static int awaitBlockedBackendPidRunning(
+      Connection observer, int blockerPid, String queryPattern) {
+    return awaitBlockedBackendPid(observer, new BlockedBackend(blockerPid, null, queryPattern));
+  }
+
+  private static int awaitBlockedBackendPid(Connection observer, BlockedBackend wanted) {
     var blockedPid = new AtomicInteger();
     await()
         .atMost(Duration.ofSeconds(5))
         .until(
             () -> {
-              var candidate = blockedBackendPid(observer, blockerPid, expectedWaitEvent);
+              var candidate = blockedBackendPid(observer, wanted);
               candidate.ifPresent(blockedPid::set);
               return candidate.isPresent();
             });
     return blockedPid.get();
   }
 
-  private static OptionalInt blockedBackendPid(
-      Connection observer, int blockerPid, String expectedWaitEvent) throws SQLException {
+  private static OptionalInt blockedBackendPid(Connection observer, BlockedBackend wanted)
+      throws SQLException {
     var sql =
         """
         SELECT pid
@@ -170,14 +187,16 @@ public final class PostgresLockTestSupport {
         WHERE ? = ANY(pg_blocking_pids(pid))
           AND wait_event_type = 'Lock'
           AND (? IS NULL OR wait_event = ?)
+          AND query ILIKE ?
         ORDER BY pid
         LIMIT 1
         """;
     clearActivitySnapshot(observer);
     try (var statement = observer.prepareStatement(sql)) {
-      statement.setInt(1, blockerPid);
-      statement.setString(2, expectedWaitEvent);
-      statement.setString(3, expectedWaitEvent);
+      statement.setInt(1, wanted.blockerPid());
+      statement.setString(2, wanted.waitEvent());
+      statement.setString(3, wanted.waitEvent());
+      statement.setString(4, wanted.queryPattern());
       try (var result = statement.executeQuery()) {
         return result.next() ? OptionalInt.of(result.getInt(1)) : OptionalInt.empty();
       }
@@ -191,6 +210,8 @@ public final class PostgresLockTestSupport {
       statement.execute("SELECT pg_stat_clear_snapshot()");
     }
   }
+
+  private record BlockedBackend(int blockerPid, String waitEvent, String queryPattern) {}
 
   /** The row to lock; rows are addressed by {@code id} unless {@code keyColumn} says otherwise. */
   @Builder

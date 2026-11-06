@@ -35,6 +35,7 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
+import org.jooq.SelectConditionStep;
 import org.jooq.TableField;
 import org.jooq.impl.DSL;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -71,15 +72,28 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
 
   @Override
   public Optional<AccountAuthorityFacts> findAuthorityFacts(UUID accountId) {
-    return dsl.select(USER_ACCOUNT.ENABLED, USER_ACCOUNT.SERVER_ADMIN)
-        .from(USER_ACCOUNT)
-        .where(USER_ACCOUNT.ID.eq(accountId))
-        .forShare()
-        .fetchOptional(row -> new AccountAuthorityFacts(row.value1(), row.value2()));
+    return authorityFacts(accountId).fetchOptional(UserAccountRepositoryCustomImpl::authorityOf);
   }
 
   @Override
-  public Optional<AccountShareFacts> findShareFacts(UUID accountId) {
+  public Optional<AccountAuthorityFacts> lockAuthorityFacts(UUID accountId) {
+    return authorityFacts(accountId)
+        .forShare()
+        .fetchOptional(UserAccountRepositoryCustomImpl::authorityOf);
+  }
+
+  private SelectConditionStep<Record2<Boolean, Boolean>> authorityFacts(UUID accountId) {
+    return dsl.select(USER_ACCOUNT.ENABLED, USER_ACCOUNT.SERVER_ADMIN)
+        .from(USER_ACCOUNT)
+        .where(USER_ACCOUNT.ID.eq(accountId));
+  }
+
+  private static AccountAuthorityFacts authorityOf(Record2<Boolean, Boolean> row) {
+    return new AccountAuthorityFacts(row.value1(), row.value2());
+  }
+
+  @Override
+  public Optional<AccountShareFacts> lockShareFacts(UUID accountId) {
     return dsl.select(
             USER_ACCOUNT.HOUSEHOLD_ID,
             USER_ACCOUNT.HOUSEHOLD_ROLE,

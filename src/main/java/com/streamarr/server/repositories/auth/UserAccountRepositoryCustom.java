@@ -32,10 +32,16 @@ public interface UserAccountRepositoryCustom {
   Optional<AccountAuthorityFacts> findAuthorityFacts(UUID accountId);
 
   /**
+   * Like {@link #findAuthorityFacts}, but held with a shared row lock until the surrounding
+   * transaction ends, so the authority cannot be revoked before the write it authorizes commits.
+   */
+  Optional<AccountAuthorityFacts> lockAuthorityFacts(UUID accountId);
+
+  /**
    * The Account relationships that can authorize a Share transition, held stable with a shared row
    * lock until the surrounding transaction ends.
    */
-  Optional<AccountShareFacts> findShareFacts(UUID accountId);
+  Optional<AccountShareFacts> lockShareFacts(UUID accountId);
 
   /**
    * ADR 0024 "may use a Household": the Account is a member, or its Personal Profile is actively

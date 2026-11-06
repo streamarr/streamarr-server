@@ -83,7 +83,7 @@ class CedarAuthorizationWiringTest {
   @Test
   @DisplayName("Should decide through the wired Cedar engine when the context starts")
   void shouldDecideThroughWiredCedarEngineWhenContextStarts() {
-    when(userAccountRepository.findAuthorityFacts(any()))
+    when(userAccountRepository.lockAuthorityFacts(any()))
         .thenReturn(Optional.of(new AccountAuthorityFacts(true, true)));
     var identity = AuthenticatedIdentityFixture.profileScopedBuilder().build();
 
