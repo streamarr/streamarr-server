@@ -350,9 +350,10 @@ class HdrStreamCopySmokeTest {
             .staticHdrMetadata(base == CompatibleBase.PQ)
             .build()
             .writtenBy(workerFixture.worker(), sourceRoot);
-    assertThat(workerFixture.worker().videoColorSignaling(source))
-        .as("the source's own signaling, which the encode must not keep")
-        .isEqualTo("yuv420p10le,bt2020nc,%s,bt2020".formatted(transferOf(base)));
+    assertThat(workerFixture.worker().decodedVideoFrames(source))
+        .as("the source's own decoded frames, whose HDR the encode must not keep")
+        .contains("pix_fmt=yuv420p10le", "color_transfer=" + transferOf(base))
+        .containsAll(hdrSideDataOf(base));
 
     var session =
         sessionFor(
@@ -382,10 +383,29 @@ class HdrStreamCopySmokeTest {
             codecs -> assertThat(codecs).startsWith(codecStringOf(delivered.initialization())));
     var media = sourceRoot.resolve("delivered-" + session.getSessionId() + ".mp4");
     Files.write(media, delivered.playable());
-    assertThat(workerFixture.worker().videoColorSignaling(media))
-        .isEqualTo("yuv420p,bt709,bt709,bt709");
-    assertThat(workerFixture.worker().firstVideoFrameSideDataTypes(media))
-        .noneMatch(type -> type.contains("Mastering display") || type.contains("light level"));
+    var frames = workerFixture.worker().decodedVideoFrames(media);
+    assertThat(frames)
+        .as("the decoded frames of the delivered segment")
+        .contains("pix_fmt=yuv420p");
+    assertThat(frames)
+        .filteredOn(line -> line.startsWith("color_") || line.startsWith("pix_fmt="))
+        .containsOnly(
+            "pix_fmt=yuv420p",
+            "color_space=bt709",
+            "color_transfer=bt709",
+            "color_primaries=bt709");
+    assertThat(frames).doesNotContainAnyElementsOf(hdrSideDataOf(CompatibleBase.PQ));
+  }
+
+  // The side data that FFmpeg's decoder attaches for HDR10 static metadata; a PQ source carries
+  // both, and an HLG source neither.
+  private static List<String> hdrSideDataOf(CompatibleBase base) {
+    if (base != CompatibleBase.PQ) {
+      return List.of();
+    }
+
+    return List.of(
+        "side_data_type=Mastering display metadata", "side_data_type=Content light level metadata");
   }
 
   static Stream<CompatibleBase> hdrBasesToToneMap() {
