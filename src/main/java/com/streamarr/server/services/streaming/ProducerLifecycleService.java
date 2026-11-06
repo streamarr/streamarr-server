@@ -907,7 +907,9 @@ public class ProducerLifecycleService {
     }
 
     SegmentNames.indexOf(request.segmentName())
-        .ifPresent(index -> seekPriority.mediaSegmentRequested(request.sessionId(), index));
+        .ifPresent(
+            index ->
+                seekPriority.mediaSegmentRequested(request.sessionId(), index, request.arrival()));
     var previous = newestMediaSegmentRequests.put(request.sessionId(), request);
     if (previous == null || !previous.variantLabel().equals(request.variantLabel())) {
       newestVariantArrivals.put(request.sessionId(), request.arrival());
@@ -947,7 +949,10 @@ public class ProducerLifecycleService {
   /** The player received the request's segment, which ends a seek that waited for it. */
   public void segmentDelivered(SegmentRequest delivered) {
     seekPriority.segmentDelivered(
-        delivered.sessionId(), delivered.variantLabel(), delivered.segmentName());
+        delivered.sessionId(),
+        delivered.variantLabel(),
+        delivered.segmentName(),
+        delivered.arrival());
   }
 
   /**
@@ -1577,6 +1582,8 @@ public class ProducerLifecycleService {
     }
 
     var segmentIndex = SegmentNames.indexOf(segmentName).orElseThrow();
+    // Before the start, which can fail and leave the seek to a recovery replacement.
+    seekPriority.seekStarted(session, variantLabel, segmentIndex);
     if (transcodeExecutor.isRunning(sessionId, variantLabel)) {
       transcodeExecutor.stopVariant(sessionId, variantLabel);
     }
@@ -1584,7 +1591,7 @@ public class ProducerLifecycleService {
     startVariant(session, variantLabel, segmentIndex);
     session.setLastAccessedAt(Instant.now());
     runtimeRegistry.save(session);
-    seekPriority.seekStarted(session, variantLabel, segmentIndex);
+    seekPriority.variantChanged(session, variantLabel);
 
     log.info(
         "Relocated variant {} of session {} to segment {}", variantLabel, sessionId, segmentIndex);

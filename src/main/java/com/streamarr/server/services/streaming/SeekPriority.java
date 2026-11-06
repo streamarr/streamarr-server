@@ -50,16 +50,33 @@ public class SeekPriority {
   // Guarded by this monitor.
   private final Map<VariantKey, PendingSeek> pendingSeeks = new HashMap<>();
   private final Map<UUID, Integer> highestRequestedSegments = new HashMap<>();
+  private final Map<UUID, Long> newestArrivals = new HashMap<>();
   private final Map<UUID, Instant> latestSeeks = new HashMap<>();
   private final Map<ExecutionTargetId, Set<UUID>> yielding = new HashMap<>();
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
 
-  private record PendingSeek(int segmentIndex, ExecutionTargetId target) {}
+  // A request that arrived up to arrivalFloor came before the seek, so only the seek's own first
+  // segment ends the seek when such a request delivers it. The target is the worker whose pauses
+  // the seek holds: empty before the seek's first job attempt runs, and the earlier seek's worker
+  // until the new job attempt runs. Announced once the seek's job attempt runs on the target.
+  private record PendingSeek(
+      int segmentIndex, long arrivalFloor, Optional<ExecutionTargetId> target, boolean announced) {
+
+    private PendingSeek announcedOn(ExecutionTargetId running) {
+      return new PendingSeek(segmentIndex, arrivalFloor, Optional.of(running), true);
+    }
+
+    private boolean endsWith(int deliveredIndex, long arrival) {
+      return deliveredIndex == segmentIndex
+          || (deliveredIndex > segmentIndex && arrival > arrivalFloor);
+    }
+  }
 
   /**
-   * A relocation started the variant's job attempt at the seek's first segment. A seek that the
-   * variant still waited on ends, and its worker resumes what only that seek needed.
+   * A relocation is about to start the variant's job attempt at the seek's first segment, which
+   * replaces a seek that the variant still waited on. The seek's worker learns what to pause once
+   * {@link #variantChanged} finds the seek's job attempt running.
    */
   public synchronized void seekStarted(
       @NonNull StreamSession session, @NonNull String variantLabel, int segmentIndex) {
@@ -67,18 +84,14 @@ public class SeekPriority {
     highestRequestedSegments.remove(sessionId);
     latestSeeks.put(sessionId, clock.instant());
     var key = new VariantKey(sessionId, variantLabel);
-    var previous = Optional.ofNullable(pendingSeeks.remove(key)).map(PendingSeek::target);
-    var target = runningTarget(session, variantLabel);
-    target.ifPresent(running -> pendingSeeks.put(key, new PendingSeek(segmentIndex, running)));
-    previous.filter(earlier -> !target.equals(Optional.of(earlier))).ifPresent(this::sendYields);
-    if (target.isEmpty()) {
-      return;
-    }
-
-    var named = yieldingAttempts(target.get());
-    if (!named.isEmpty() || yielding.containsKey(target.get())) {
-      send(target.get(), named);
-    }
+    var earlierWorker = Optional.ofNullable(pendingSeeks.get(key)).flatMap(PendingSeek::target);
+    pendingSeeks.put(
+        key,
+        new PendingSeek(
+            segmentIndex,
+            newestArrivals.getOrDefault(sessionId, Long.MIN_VALUE),
+            earlierWorker,
+            false));
   }
 
   /**
@@ -99,49 +112,85 @@ public class SeekPriority {
   }
 
   /** The player requested the media segment, which counts toward its position. */
-  public synchronized void mediaSegmentRequested(@NonNull UUID sessionId, int segmentIndex) {
+  public synchronized void mediaSegmentRequested(
+      @NonNull UUID sessionId, int segmentIndex, long arrival) {
     highestRequestedSegments.merge(sessionId, segmentIndex, Math::max);
+    newestArrivals.merge(sessionId, arrival, Math::max);
   }
 
-  /** The server delivered the segment to a player, which ends a seek that waited for it. */
+  /**
+   * The server delivered the segment to a player. The seek's first segment ends the seek, and so
+   * does a later segment of a request that arrived after the seek.
+   */
   public synchronized void segmentDelivered(
-      @NonNull UUID sessionId, @NonNull String variantLabel, @NonNull String segmentName) {
+      @NonNull UUID sessionId,
+      @NonNull String variantLabel,
+      @NonNull String segmentName,
+      long arrival) {
     var key = new VariantKey(sessionId, variantLabel);
     var pending = pendingSeeks.get(key);
     var index = SegmentNames.indexOf(segmentName);
-    if (pending == null || index.isEmpty() || index.getAsInt() < pending.segmentIndex()) {
+    if (pending == null || index.isEmpty() || !pending.endsWith(index.getAsInt(), arrival)) {
       return;
     }
 
     pendingSeeks.remove(key);
-    sendYields(pending.target());
+    pending.target().ifPresent(this::sendYields);
   }
 
   /**
-   * The variant's job attempt was replaced, stopped or exhausted. A seek that waited on it waits on
-   * the replacement, on whichever worker that runs, and ends when no job attempt runs.
+   * The variant's job attempt started, was replaced, stopped or exhausted. A seek that waits on the
+   * variant follows its running job attempt to that job attempt's worker, which then pauses what
+   * the seek needs, and ends when its job attempt stops.
    */
   public synchronized void variantChanged(
       @NonNull StreamSession session, @NonNull String variantLabel) {
     var key = new VariantKey(session.getSessionId(), variantLabel);
-    var pending = pendingSeeks.remove(key);
+    var pending = pendingSeeks.get(key);
     if (pending == null) {
       return;
     }
 
     var target = runningTarget(session, variantLabel);
-    target.ifPresent(
-        running -> pendingSeeks.put(key, new PendingSeek(pending.segmentIndex(), running)));
-    sendYields(pending.target());
-    target.filter(running -> !running.equals(pending.target())).ifPresent(this::sendYields);
+    if (target.isEmpty()) {
+      endSeekWithoutJobAttempt(session, key, pending);
+      return;
+    }
+
+    if (pending.announced() && target.equals(pending.target())) {
+      return;
+    }
+
+    pendingSeeks.put(key, pending.announcedOn(target.get()));
+    pending.target().filter(earlier -> !earlier.equals(target.get())).ifPresent(this::sendYields);
+    var named = yieldingAttempts(target.get());
+    if (!named.isEmpty() || yielding.containsKey(target.get())) {
+      send(target.get(), named);
+    }
+  }
+
+  // A seek whose job attempt failed to start keeps waiting for a recovery replacement while the
+  // variant's handle stays active; a stopped, exhausted or suspended variant ends it.
+  private void endSeekWithoutJobAttempt(
+      StreamSession session, VariantKey key, PendingSeek pending) {
+    var active = isActive(session, key.variantLabel());
+    if (active && !pending.announced()) {
+      return;
+    }
+
+    pendingSeeks.remove(key);
+    pending.target().ifPresent(this::sendYields);
+  }
+
+  private static boolean isActive(StreamSession session, String variantLabel) {
+    return session
+        .getVariantHandle(variantLabel)
+        .filter(handle -> handle.status() == TranscodeStatus.ACTIVE)
+        .isPresent();
   }
 
   private Optional<ExecutionTargetId> runningTarget(StreamSession session, String variantLabel) {
-    var active =
-        session
-            .getVariantHandle(variantLabel)
-            .filter(handle -> handle.status() == TranscodeStatus.ACTIVE);
-    if (active.isEmpty()) {
+    if (!isActive(session, variantLabel)) {
       return Optional.empty();
     }
 
@@ -151,13 +200,17 @@ public class SeekPriority {
   /** The stream session ended, so its seeks wait for nothing. */
   public synchronized void forgetSession(@NonNull UUID sessionId) {
     highestRequestedSegments.remove(sessionId);
+    newestArrivals.remove(sessionId);
     latestSeeks.remove(sessionId);
     var ended =
         pendingSeeks.entrySet().stream()
             .filter(entry -> entry.getKey().sessionId().equals(sessionId))
             .toList();
     ended.forEach(entry -> pendingSeeks.remove(entry.getKey()));
-    ended.stream().map(entry -> entry.getValue().target()).distinct().forEach(this::sendYields);
+    ended.stream()
+        .flatMap(entry -> entry.getValue().target().stream())
+        .distinct()
+        .forEach(this::sendYields);
   }
 
   // Guarded by this monitor. Sends only a change, because the hold limit still runs on the job
@@ -184,7 +237,7 @@ public class SeekPriority {
   private Set<UUID> yieldingAttempts(ExecutionTargetId target) {
     var waitedOn =
         pendingSeeks.entrySet().stream()
-            .filter(entry -> entry.getValue().target().equals(target))
+            .filter(entry -> entry.getValue().target().filter(target::equals).isPresent())
             .map(Map.Entry::getKey)
             .collect(Collectors.toSet());
     if (waitedOn.isEmpty()) {

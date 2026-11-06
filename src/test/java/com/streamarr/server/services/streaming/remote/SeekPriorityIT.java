@@ -379,6 +379,27 @@ class SeekPriorityIT {
 
   @Test
   @DisplayName(
+      "Should keep the yield of a backward seek when the earlier seek's older request delivers its"
+          + " segment")
+  void shouldKeepTheYieldOfABackwardSeekWhenTheEarlierSeeksOlderRequestDeliversItsSegment()
+      throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    var seeking = startPlaying(worker);
+    var earlierSeek = seek(worker, seeking);
+    request(seeking.sessionId(), segmentName(50));
+    assertThat(worker.nextJobs(1).getFirst().getExecution().getStartSequenceNumber()).isEqualTo(50);
+
+    assertThat(storeAndAwait(earlierSeek)).isInstanceOf(SegmentDelivery.Ready.class);
+
+    assertThat(yieldsUntilTheSteadyAttemptStops(worker, steady).getLast().getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+  }
+
+  @Test
+  @DisplayName(
       "Should end the yield when the seeking stream session switches to another variant before"
           + " the seek's first segment arrives")
   void
