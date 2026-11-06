@@ -1676,15 +1676,29 @@ final class LiveWorkerConnectionRegistry {
       };
     }
 
-    // Only a stream session that copies the video cuts keyframe-merged segments. An encode runs on
-    // the plain grid, which keeps ordinary recovery for a segment over the cap even when its final
-    // slot merges into the last segment and the job lists every segment's start (ADR 0037).
+    // Only a stream session that copies the video cuts keyframe-merged segments: the copy, and each
+    // encoded lower variant beside it, which carries the copy's keyframe ticks (ADR 0050). An
+    // encode
+    // on the plain grid keeps ordinary recovery for a segment over the cap even when its final slot
+    // merges into the last segment and the job lists every segment's start (ADR 0037).
     private static Optional<TranscodeFailure> segmentCapFailure(VariantJob job) {
-      if (!copiesVideo(job)) {
+      if (!copiesVideo(job) && !listsKeyframeTicks(job)) {
         return Optional.empty();
       }
 
       return Optional.of(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
+    }
+
+    // The contract counts a merged plain grid's starts in whole seconds, the time base 1/1, and a
+    // copy's starts in the time base of its stored keyframe positions.
+    private static boolean listsKeyframeTicks(VariantJob job) {
+      var execution = job.getExecution();
+      if (!execution.hasSegmentStartTimeBase()) {
+        return false;
+      }
+
+      var timeBase = execution.getSegmentStartTimeBase();
+      return timeBase.getNumerator() != timeBase.getDenominator();
     }
 
     private static boolean isCopyOutputMismatch(VariantJob job, JobAttemptFailed failed) {
