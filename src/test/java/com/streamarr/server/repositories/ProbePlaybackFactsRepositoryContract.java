@@ -16,6 +16,7 @@ import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionEnhancementLayer;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.FieldOrder;
@@ -189,6 +190,52 @@ public interface ProbePlaybackFactsRepositoryContract {
                 .mediaFileId(mediaFileId)
                 .snapshot(PLAYBACK_FACTS_SNAPSHOT)
                 .probeVersion(ProbeVersion.FIRST_TO_REPORT_FRAME_FACTS)
+                .outcome(published)
+                .build());
+
+    assertThat(storedOutcome(mediaFileId).streams()).isEqualTo(published.streams());
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = DolbyVisionEnhancementLayer.class,
+      mode = EnumSource.Mode.EXCLUDE,
+      names = "UNSPECIFIED")
+  @DisplayName(
+      "Should read the RPUs' enhancement layer and level 6 light levels back when a version 8"
+          + " outcome stores them")
+  default void
+      shouldReadTheRpusEnhancementLayerAndLevel6LightLevelsBackWhenAVersion8OutcomeStoresThem(
+          DolbyVisionEnhancementLayer enhancementLayer) {
+    var mediaFileId = createMediaFile();
+    var chosen =
+        video()
+            .codec(Optional.of("hevc"))
+            .dynamicRange(
+                Optional.of(
+                    new VideoDynamicRange(
+                        CompatibleBase.PQ,
+                        Presence.ABSENT,
+                        DolbyVision.Present.builder()
+                            .observedRpu(Presence.PRESENT)
+                            .enhancementLayer(enhancementLayer)
+                            .rpuContentLightLevel(Optional.of(new ContentLightLevel(1_000, 0)))
+                            .build())))
+            .videoProperties(
+                Optional.of(VideoStreamProperties.builder().firstFramesRead(true).build()))
+            .build();
+    var published =
+        outcomeBuilder()
+            .streams(List.of(chosen))
+            .chosenVideoStream(Optional.of(new ChosenVideoStream(0, declaredFilmRate())))
+            .build();
+
+    repository()
+        .publish(
+            ProbePublication.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(PLAYBACK_FACTS_SNAPSHOT)
+                .probeVersion(ProbeVersion.FIRST_TO_REPORT_MAXIMUM_FRAME_RATE_AND_RPU_FACTS)
                 .outcome(published)
                 .build());
 
