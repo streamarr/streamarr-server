@@ -259,10 +259,14 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
 
   // findById reads no row lock, so only a table lock parks it.
   private HeldTableLock lockLibraryTable() throws SQLException {
+    return lockTable("library");
+  }
+
+  private HeldTableLock lockTable(String table) throws SQLException {
     var connection = dataSource.getConnection();
     connection.setAutoCommit(false);
     try (var statement = connection.createStatement()) {
-      statement.execute("LOCK TABLE library IN ACCESS EXCLUSIVE MODE");
+      statement.execute("LOCK TABLE " + table + " IN ACCESS EXCLUSIVE MODE");
     } catch (SQLException failure) {
       connection.close();
       throw failure;
