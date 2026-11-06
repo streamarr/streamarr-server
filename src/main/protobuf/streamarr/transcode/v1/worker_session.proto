@@ -1496,6 +1496,24 @@ message StopVariantCommand {
   Uuid job_attempt_id = 2;
 }
 
+// The server sends this command to the worker that runs a seek's new job
+// attempt while the seek's first media segment is pending. The worker pauses
+// each listed job attempt, so that the seek's encode gets the CPU, and resumes
+// it when a later command leaves it out (ADR 0044, seek priority). Each command
+// replaces the list of the previous one, and an empty list resumes every paused
+// job attempt. A worker that predates this command ignores it.
+message YieldToSeekCommand {
+  WorkerIdentity target = 1;
+  // This field lists the job attempts to pause. The worker ignores a job
+  // attempt that it does not run.
+  repeated Uuid job_attempt_ids = 2;
+  // This field holds the longest time that the worker keeps a listed job
+  // attempt paused, counted from this command. The worker then resumes the job
+  // attempt even when no later command arrives. An absent or zero value pauses
+  // nothing.
+  google.protobuf.Duration hold_limit = 3;
+}
+
 message EstablishWorkerSessionResponse {
   oneof command {
     WorkerSessionAccepted session_accepted = 1;
@@ -1503,6 +1521,7 @@ message EstablishWorkerSessionResponse {
     StopVariantCommand stop_variant = 3;
     StartProbeCommand start_probe = 4;
     CancelProbeCommand cancel_probe = 5;
+    YieldToSeekCommand yield_to_seek = 6;
   }
 }
 
