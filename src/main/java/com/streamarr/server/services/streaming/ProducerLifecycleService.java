@@ -17,6 +17,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import java.time.Clock;
 import java.time.Duration;
@@ -944,6 +945,11 @@ public class ProducerLifecycleService {
     runtimeRegistry
         .findById(waiting.sessionId())
         .ifPresent(session -> seekPriority.segmentRequestWaits(session, waiting.variantLabel()));
+  }
+
+  /** A job attempt's upload stored the media segment, which counts as that job attempt's output. */
+  public void mediaSegmentPublished(@NonNull MediaSegmentPublishedEvent published) {
+    seekPriority.mediaSegmentPublished(published);
   }
 
   /** The player received the request's segment, which ends a seek that waited for it. */

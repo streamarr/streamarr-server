@@ -8,6 +8,7 @@ import com.streamarr.server.services.streaming.HardwareEncoderFailureListener;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.JobAttemptProgressListener;
+import com.streamarr.server.services.streaming.MediaSegmentPublicationListener;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.PlaybackLanguagePreferences;
 import com.streamarr.server.services.streaming.PlaybackProbeService;
@@ -125,6 +126,12 @@ public class StreamingConfig {
   public JobAttemptProgressListener jobAttemptProgressListener(
       ProducerLifecycleService producerLifecycleService) {
     return new JobAttemptProgressListener(producerLifecycleService);
+  }
+
+  @Bean
+  public MediaSegmentPublicationListener mediaSegmentPublicationListener(
+      ProducerLifecycleService producerLifecycleService) {
+    return new MediaSegmentPublicationListener(producerLifecycleService);
   }
 
   @Bean

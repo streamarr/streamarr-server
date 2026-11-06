@@ -6,11 +6,18 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.google.protobuf.ByteString;
+import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
+import com.streamarr.transcode.v1.JobAttemptStarted;
+import com.streamarr.transcode.v1.SegmentContentType;
+import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
+import com.streamarr.transcode.v1.UploadSegmentRequest;
+import com.streamarr.transcode.v1.UploadSegmentResponse;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VideoCodecFamily;
@@ -27,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -42,15 +50,27 @@ final class LoopbackWorker implements AutoCloseable {
   private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(5);
   private static final int DEFAULT_AVAILABLE_SLOTS = 8;
 
+  private final ManagedChannel channel;
+  private final WorkerIdentity identity;
   private final StreamObserver<EstablishWorkerSessionRequest> requests;
   private final BlockingQueue<EstablishWorkerSessionResponse> responses;
   private final Map<Uuid, VariantJob> runningJobs = new LinkedHashMap<>();
+  // Known once the test reads the server's acceptance of the worker session.
+  private Uuid workerSessionId;
+  private boolean closed;
 
   private LoopbackWorker(
-      StreamObserver<EstablishWorkerSessionRequest> requests,
+      ManagedChannel channel,
+      WorkerRegistration registration,
       BlockingQueue<EstablishWorkerSessionResponse> responses) {
-    this.requests = requests;
+    this.channel = channel;
+    identity = registration.getWorker();
     this.responses = responses;
+    requests =
+        TranscodeWorkerServiceGrpc.newStub(channel)
+            .establishWorkerSession(new QueueingObserver(responses));
+    requests.onNext(
+        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
   }
 
   static LoopbackWorker register(ManagedChannel channel) {
@@ -89,13 +109,7 @@ final class LoopbackWorker implements AutoCloseable {
   }
 
   private static LoopbackWorker register(ManagedChannel channel, WorkerRegistration registration) {
-    var responses = new LinkedBlockingQueue<EstablishWorkerSessionResponse>();
-    var requests =
-        TranscodeWorkerServiceGrpc.newStub(channel)
-            .establishWorkerSession(new QueueingObserver(responses));
-    requests.onNext(
-        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
-    return new LoopbackWorker(requests, responses);
+    return new LoopbackWorker(channel, registration, new LinkedBlockingQueue<>());
   }
 
   private static WorkerRegistration registration(
@@ -116,7 +130,41 @@ final class LoopbackWorker implements AutoCloseable {
   EstablishWorkerSessionResponse nextResponse() throws InterruptedException {
     var response = responses.poll(RESPONSE_TIMEOUT.toNanos(), TimeUnit.NANOSECONDS);
     assertThat(response).as("worker session response must arrive").isNotNull();
+    if (response.hasSessionAccepted()) {
+      workerSessionId = response.getSessionAccepted().getWorkerSessionId();
+    }
+
     return response;
+  }
+
+  /**
+   * Uploads the job attempt's media segment over its own call, as the worker's producer does. The
+   * future completes with the server's answer, or fails with its refusal.
+   */
+  CompletableFuture<UploadSegmentResponse> uploadMediaSegment(VariantJob job, int index) {
+    assertThat(workerSessionId).as("the server accepted the worker session").isNotNull();
+    var segmentName = SegmentNames.mediaSegmentName(index);
+    var data = new byte[] {1};
+    var answer = new CompletableFuture<UploadSegmentResponse>();
+    var upload =
+        TranscodeWorkerServiceGrpc.newStub(channel).uploadSegment(new AnswerObserver(answer));
+    upload.onNext(
+        UploadSegmentRequest.newBuilder()
+            .setMetadata(
+                SegmentUploadMetadata.newBuilder()
+                    .setWorkerSessionId(workerSessionId)
+                    .setWorker(identity)
+                    .setStreamSessionId(job.getStreamSessionId())
+                    .setJobId(job.getJobId())
+                    .setJobAttemptId(job.getJobAttemptId())
+                    .setVariantLabel(job.getVariant().getVariantLabel())
+                    .setSegmentName(segmentName)
+                    .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4)
+                    .setContentLengthBytes(data.length))
+            .build());
+    upload.onNext(UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(data)).build());
+    upload.onCompleted();
+    return answer;
   }
 
   /** The next jobs the server starts on this worker, skipping stop commands. */
@@ -186,6 +234,19 @@ final class LoopbackWorker implements AutoCloseable {
                 job -> job.getExecution().getStartSequenceNumber()));
   }
 
+  /** Reports that the job attempt started on the libx264 encoder that this worker registered. */
+  void reportStarted(VariantJob job) {
+    requests.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptStarted(
+                JobAttemptStarted.newBuilder()
+                    .setJobAttemptId(job.getJobAttemptId())
+                    .setEncoderBackend(
+                        softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")
+                            .getBackend()))
+            .build());
+  }
+
   void reportFailed(VariantJob job) {
     requests.onNext(
         EstablishWorkerSessionRequest.newBuilder()
@@ -196,9 +257,35 @@ final class LoopbackWorker implements AutoCloseable {
             .build());
   }
 
+  // Ends the worker session once; a test may end it before teardown does.
   @Override
   public void close() {
+    if (closed) {
+      return;
+    }
+
+    closed = true;
     requests.onCompleted();
+  }
+
+  private record AnswerObserver(CompletableFuture<UploadSegmentResponse> answer)
+      implements StreamObserver<UploadSegmentResponse> {
+
+    @Override
+    public void onNext(UploadSegmentResponse value) {
+      answer.complete(value);
+    }
+
+    @Override
+    public void onError(Throwable throwable) {
+      answer.completeExceptionally(throwable);
+    }
+
+    @Override
+    public void onCompleted() {
+      answer.completeExceptionally(
+          new IllegalStateException("Segment upload closed without an answer"));
+    }
   }
 
   private record QueueingObserver(BlockingQueue<EstablishWorkerSessionResponse> responses)

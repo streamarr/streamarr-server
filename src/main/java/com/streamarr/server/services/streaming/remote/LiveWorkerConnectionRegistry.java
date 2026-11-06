@@ -21,6 +21,7 @@ import com.streamarr.server.services.streaming.events.DolbyVisionConversionFaile
 import com.streamarr.server.services.streaming.events.HardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
@@ -841,6 +842,21 @@ final class LiveWorkerConnectionRegistry {
     heldRequests.wakeVariant(fromProto(streamSessionId), variantLabel);
   }
 
+  private void publishMediaSegment(SegmentUploadMetadata metadata) {
+    var index = SegmentNames.indexOf(metadata.getSegmentName());
+    if (index.isEmpty()) {
+      return;
+    }
+
+    eventPublisher.publishEvent(
+        MediaSegmentPublishedEvent.builder()
+            .streamSessionId(fromProto(metadata.getStreamSessionId()))
+            .jobAttemptId(fromProto(metadata.getJobAttemptId()))
+            .variantLabel(metadata.getVariantLabel())
+            .segmentIndex(index.getAsInt())
+            .build());
+  }
+
   private void publishCompletion(VariantJob job) {
     eventPublisher.publishEvent(
         JobAttemptCompletedEvent.builder()
@@ -906,6 +922,11 @@ final class LiveWorkerConnectionRegistry {
     }
 
     var outcome = connection.publishIfStillAuthorized(metadata, publish);
+    // Credited before the wake, so that a woken request finds the segment counted as the job
+    // attempt's output.
+    outcome
+        .filter(SegmentPublication.PUBLISHED::equals)
+        .ifPresent(_ -> publishMediaSegment(metadata));
     outcome.ifPresent(
         _ ->
             heldRequests.wakeVariant(

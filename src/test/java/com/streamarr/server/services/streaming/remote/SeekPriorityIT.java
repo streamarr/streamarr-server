@@ -25,7 +25,6 @@ import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.AdvanceableSystemClock;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
@@ -33,11 +32,14 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.streaming.HlsStreamingService;
+import com.streamarr.server.services.streaming.MediaSegmentPublicationListener;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
+import com.streamarr.server.services.streaming.remote.PausingSegmentStore.PublicationPause;
 import com.streamarr.server.services.streaming.remote.protocol.ProtoUuid;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -83,7 +85,8 @@ class SeekPriorityIT {
   private static final int SEEK_SEGMENT = 100;
   private static final Duration REQUEST_LIMIT = Duration.ofSeconds(5);
 
-  private final FakeSegmentStore segmentStore = new FakeSegmentStore();
+  private final FakeSegmentStore storedSegments = new FakeSegmentStore();
+  private final PausingSegmentStore segmentStore = new PausingSegmentStore(storedSegments);
   private final FakeRuntimeStreamSessionRegistry registry = new FakeRuntimeStreamSessionRegistry();
   private final FakeMediaFileContainerInfoRepository probeResults =
       new FakeMediaFileContainerInfoRepository();
@@ -95,6 +98,8 @@ class SeekPriorityIT {
   // carry before or after the start.
   private final Deque<YieldToSeekCommand> unreadYields = new ArrayDeque<>();
   private WorkerSessionServer server;
+  private RemoteTranscodeExecutor transcodeExecutor;
+  private volatile MediaSegmentPublicationListener publications;
   private HlsStreamingService streamingService;
   private SegmentDeliveryCoordinator coordinator;
   private MediaFile mediaFile;
@@ -103,7 +108,7 @@ class SeekPriorityIT {
   void setUp() throws Exception {
     server =
         WorkerSessionServer.builder()
-            .eventPublisher(new CapturingEventPublisher())
+            .eventPublisher(this::forwardPublication)
             .configuration(serverConfigurationBuilder().build())
             .segmentStore(segmentStore)
             .meterRegistry(new SimpleMeterRegistry())
@@ -117,7 +122,7 @@ class SeekPriorityIT {
             .seekPriorityPositionMargin(POSITION_MARGIN)
             .seekPriorityHoldLimit(HOLD_LIMIT)
             .build();
-    var transcodeExecutor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, SOURCE_ROOT);
+    transcodeExecutor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, SOURCE_ROOT);
     var rig =
         StreamingRigFixture.streamingRigBuilder()
             .transcodeExecutor(transcodeExecutor)
@@ -128,6 +133,7 @@ class SeekPriorityIT {
             .seekPriorityClock(clock)
             .build();
     coordinator = rig.coordinator();
+    publications = new MediaSegmentPublicationListener(rig.lifecycle());
 
     var mediaFiles = new FakeMediaFileRepository();
     mediaFile =
@@ -318,8 +324,7 @@ class SeekPriorityIT {
     var steadySeek = request(steady.sessionId(), segmentName(50));
     var relocated = new Playing(steady.sessionId(), worker.nextJobs(1).getFirst());
     assertThat(storeAndAwait(steadySeek)).isInstanceOf(SegmentDelivery.Ready.class);
-    segmentStore.addSegment(steady.sessionId(), segmentName(51), SEGMENT_BYTES);
-    segmentStore.addSegment(steady.sessionId(), segmentName(52), SEGMENT_BYTES);
+    storeSegments(relocated, 51, 52);
     registry.touch(steady.sessionId(), Instant.now());
     var seeking = startPlaying(worker);
 
@@ -484,6 +489,42 @@ class SeekPriorityIT {
 
   @Test
   @DisplayName(
+      "Should never name a job attempt for media that a disconnected worker's upload stored after"
+          + " the job attempt started")
+  void shouldNeverNameAJobAttemptForMediaThatADisconnectedWorkersUploadStoredAfterItStarted()
+      throws Exception {
+    var departing = registerWorker(WORKER_ID, 8);
+    var replaced = startPlaying(departing);
+    storeSegments(replaced, 11, 40);
+    departing.reportStarted(replaced.job());
+    segmentStore.pauseNextPublication(PublicationPause.BEFORE_THE_SEGMENT_IS_READABLE);
+    var lateUpload = departing.uploadMediaSegment(replaced.job(), 41);
+    segmentStore.awaitPausedPublication();
+    var remaining = registerWorker(OTHER_WORKER_ID, 8);
+    departing.close();
+    await()
+        .atMost(REQUEST_LIMIT)
+        .until(() -> !transcodeExecutor.isRunning(replaced.sessionId(), "480p"));
+    assertThat(storeAndAwait(seek(remaining, replaced, 10)))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    segmentStore.releasePublication();
+    lateUpload.handle((_, _) -> null).get(REQUEST_LIMIT.toSeconds(), TimeUnit.SECONDS);
+    assertThat(storedSegments.segmentExists(replaced.sessionId(), segmentName(41)))
+        .as("the authorized upload stored its segment after the replacement started")
+        .isTrue();
+    var steady = startPlaying(remaining);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    var seeking = startPlaying(remaining);
+
+    seek(remaining, seeking);
+
+    assertThat(nextYield(remaining).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the yield of a backward seek when the earlier seek's older request delivers its"
           + " segment")
   void shouldKeepTheYieldOfABackwardSeekWhenTheEarlierSeeksOlderRequestDeliversItsSegment()
@@ -499,7 +540,7 @@ class SeekPriorityIT {
     // Once the earlier request waits for its next wake, it reads its segment, stored without a
     // wake, only at the pass that the backward relocation's stop starts.
     await().atMost(REQUEST_LIMIT).until(earlierSeek.delivery()::isAwaitingALatchWithDeadline);
-    segmentStore.addSegment(seeking.sessionId(), segmentName(SEEK_SEGMENT), SEGMENT_BYTES);
+    storeAsUpload(seeking.sessionId(), "480p", SEEK_SEGMENT);
 
     seek(worker, seeking, 50);
 
@@ -755,7 +796,7 @@ class SeekPriorityIT {
   private void storeSegments(
       Playing playing, String variantLabel, int firstSegment, int lastSegment) {
     for (var index = firstSegment; index <= lastSegment; index++) {
-      segmentStore.addSegment(playing.sessionId(), segmentName(variantLabel, index), SEGMENT_BYTES);
+      storeAsUpload(playing.sessionId(), variantLabel, index);
     }
   }
 
@@ -771,7 +812,7 @@ class SeekPriorityIT {
   private void deliverAhead(Playing playing, int lastSegment) {
     var label = playing.job().getVariant().getVariantLabel();
     for (var index = 0; index <= lastSegment; index++) {
-      segmentStore.addSegment(playing.sessionId(), segmentName(label, index), SEGMENT_BYTES);
+      storeAsUpload(playing.sessionId(), label, index);
     }
   }
 
@@ -844,9 +885,37 @@ class SeekPriorityIT {
   // The loopback worker uploads nothing, so the test stores each segment and wakes the requests
   // held on its variant, as a stored upload does.
   private SegmentDelivery storeAndAwait(PendingRequest pending) throws Exception {
-    segmentStore.addSegment(pending.sessionId(), pending.segmentName(), SEGMENT_BYTES);
+    storeAsUpload(
+        pending.sessionId(),
+        pending.variantLabel(),
+        SegmentNames.indexOf(pending.segmentName()).orElseThrow());
     server.heldSegmentRequests().wakeVariant(pending.sessionId(), pending.variantLabel());
     return pending.delivery().await(REQUEST_LIMIT);
+  }
+
+  // Stores the media segment as an upload of the variant's running job attempt does, which credits
+  // the segment to that job attempt.
+  private void storeAsUpload(UUID sessionId, String variantLabel, int index) {
+    storedSegments.addSegment(sessionId, segmentName(variantLabel, index), SEGMENT_BYTES);
+    registry
+        .findById(sessionId)
+        .flatMap(session -> session.getVariantHandle(variantLabel))
+        .ifPresent(
+            handle ->
+                publications.onMediaSegmentPublished(
+                    MediaSegmentPublishedEvent.builder()
+                        .streamSessionId(sessionId)
+                        .jobAttemptId(handle.attemptId())
+                        .variantLabel(variantLabel)
+                        .segmentIndex(index)
+                        .build()));
+  }
+
+  // A real upload's publication reaches seek priority as the application's event does.
+  private void forwardPublication(Object event) {
+    if (event instanceof MediaSegmentPublishedEvent published) {
+      publications.onMediaSegmentPublished(published);
+    }
   }
 
   private record Playing(UUID sessionId, VariantJob job) {}

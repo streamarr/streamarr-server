@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TimelineReport;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -55,21 +56,27 @@ public class SeekPriority {
   private final Map<UUID, Integer> newestRequestedSegments = new HashMap<>();
   private final Map<UUID, Instant> latestSeeks = new HashMap<>();
   private final Map<ExecutionTargetId, Set<UUID>> yielding = new HashMap<>();
-  private final Map<VariantKey, StoredAtStart> storedAtStarts = new HashMap<>();
+  private final Map<VariantKey, OwnOutput> ownOutputs = new HashMap<>();
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
 
-  // What a job attempt found stored after its start: media up to firstMissing, which it reproduces
-  // before anything new, and from nextStored on, media it reaches only by reproducing it too. Only
-  // the media in between is the job attempt's own output once stored.
-  private record StoredAtStart(UUID attemptId, int firstMissing, int nextStored) {
+  // A job attempt's own output: the media segments that its uploads stored, in order from its start
+  // through storedThrough, short of nextStored. From nextStored on lies media that it found stored
+  // past a gap when it started, which it reaches only by reproducing that media too. An upload of
+  // another job attempt, even one that a disconnected worker finishes late, credits this one
+  // nothing.
+  private record OwnOutput(UUID attemptId, int storedThrough, int nextStored) {
 
-    private boolean isOwnOutputThrough(int index, IntPredicate isStored) {
-      if (index >= nextStored) {
-        return false;
+    private boolean includes(int index) {
+      return index <= storedThrough && index < nextStored;
+    }
+
+    private OwnOutput storedBy(UUID uploader, int index) {
+      if (!uploader.equals(attemptId)) {
+        return this;
       }
 
-      return index >= firstMissing || isStored.test(firstMissing);
+      return new OwnOutput(attemptId, Math.max(storedThrough, index), nextStored);
     }
   }
 
@@ -249,12 +256,19 @@ public class SeekPriority {
       @NonNull StreamSession session,
       @NonNull String variantLabel,
       @NonNull TranscodeHandle handle) {
-    storedAtStarts.put(
+    ownOutputs.put(
         new VariantKey(session.getSessionId(), variantLabel),
-        storedAtStart(session, variantLabel, handle));
+        ownOutputAtStart(session, variantLabel, handle));
   }
 
-  private StoredAtStart storedAtStart(
+  /** A job attempt's upload stored the media segment, which counts as that job attempt's output. */
+  public synchronized void mediaSegmentPublished(@NonNull MediaSegmentPublishedEvent published) {
+    ownOutputs.computeIfPresent(
+        new VariantKey(published.streamSessionId(), published.variantLabel()),
+        (_, output) -> output.storedBy(published.jobAttemptId(), published.segmentIndex()));
+  }
+
+  private OwnOutput ownOutputAtStart(
       StreamSession session, String variantLabel, TranscodeHandle handle) {
     var timeline = MediaSegmentTimelines.of(session, properties);
     var firstMissing = handle.startSequenceNumber() + 1;
@@ -271,14 +285,14 @@ public class SeekPriority {
       nextStored = Integer.MAX_VALUE;
     }
 
-    return new StoredAtStart(handle.attemptId(), firstMissing, nextStored);
+    return new OwnOutput(handle.attemptId(), handle.startSequenceNumber() - 1, nextStored);
   }
 
   /** The stream session ended, so its seeks wait for nothing. */
   public synchronized void forgetSession(@NonNull UUID sessionId) {
     highestRequestedSegments.remove(sessionId);
     newestRequestedSegments.remove(sessionId);
-    storedAtStarts.keySet().removeIf(key -> key.sessionId().equals(sessionId));
+    ownOutputs.keySet().removeIf(key -> key.sessionId().equals(sessionId));
     newestArrivals.remove(sessionId);
     latestSeeks.remove(sessionId);
     var ended =
@@ -391,17 +405,18 @@ public class SeekPriority {
     return stored.compareTo(needed) > 0;
   }
 
-  // Stored media that the job attempt has produced or passed. A job attempt may find media already
-  // stored after its start, which counts only as far as its own output reaches.
+  // Stored media that the job attempt's own uploads stored. Media that it found stored, or that
+  // another job attempt's upload stored, counts once its own upload stores that segment again.
   private IntPredicate ownOutputOf(
       StreamSession session, String variantLabel, TranscodeHandle handle) {
-    IntPredicate isStored = index -> isStored(session, variantLabel, index);
-    var atStart = storedAtStarts.get(new VariantKey(session.getSessionId(), variantLabel));
-    if (atStart == null || !atStart.attemptId().equals(handle.attemptId())) {
-      return isStored;
+    var output =
+        Optional.ofNullable(ownOutputs.get(new VariantKey(session.getSessionId(), variantLabel)))
+            .filter(recorded -> recorded.attemptId().equals(handle.attemptId()));
+    if (output.isEmpty()) {
+      return _ -> false;
     }
 
-    return index -> isStored.test(index) && atStart.isOwnOutputThrough(index, isStored);
+    return index -> output.get().includes(index) && isStored(session, variantLabel, index);
   }
 
   private boolean isStored(StreamSession session, String variantLabel, int index) {
