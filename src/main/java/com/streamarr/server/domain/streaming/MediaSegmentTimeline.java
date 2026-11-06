@@ -248,21 +248,34 @@ public sealed interface MediaSegmentTimeline {
         return Optional.empty();
       }
 
-      var latestPresentation =
-          Duration.ofSeconds(mediaSegmentStartSeconds(index)).minus(SEEK_MARGIN);
+      return Optional.of(
+          encodeSeekPosition(
+              positions, seekTime, Duration.ofSeconds(mediaSegmentStartSeconds(index))));
+    }
+
+    /**
+     * Where an encode whose first segment starts at the given time reads from: the time, by which
+     * the container's demuxer seeks, of the last keyframe that presents at least half a second
+     * before that start, or the source's start when no keyframe presents early enough or the
+     * keyframe decodes before zero.
+     */
+    public static Duration encodeSeekPosition(
+        @NonNull KeyframePositions positions,
+        @NonNull DemuxerSeekTime seekTime,
+        @NonNull Duration segmentStart) {
+      var latestPresentation = segmentStart.minus(SEEK_MARGIN);
       // Rounding up keeps a seek from reaching back to the keyframe before.
-      var position =
-          positions.keyframes().stream()
-              .filter(keyframe -> presentsAtOrBefore(keyframe, latestPresentation))
-              .reduce((earlier, later) -> later)
-              .map(keyframe -> positions.timeOf(seekTime.ticksOf(keyframe), RoundingMode.CEILING))
-              .filter(time -> !time.isNegative())
-              .orElse(Duration.ZERO);
-      return Optional.of(position);
+      return positions.keyframes().stream()
+          .filter(keyframe -> presentsAtOrBefore(positions, keyframe, latestPresentation))
+          .reduce((earlier, later) -> later)
+          .map(keyframe -> positions.timeOf(seekTime.ticksOf(keyframe), RoundingMode.CEILING))
+          .filter(time -> !time.isNegative())
+          .orElse(Duration.ZERO);
     }
 
     // Rounding up keeps out a keyframe that presents a fraction of a nanosecond after the time.
-    private boolean presentsAtOrBefore(KeyframePosition keyframe, Duration time) {
+    private static boolean presentsAtOrBefore(
+        KeyframePositions positions, KeyframePosition keyframe, Duration time) {
       return positions.timeOf(keyframe.presentationTime(), RoundingMode.CEILING).compareTo(time)
           <= 0;
     }
@@ -377,10 +390,10 @@ public sealed interface MediaSegmentTimeline {
     public Duration mediaSegmentDuration(int index) {
       var end = mediaDuration;
       if (index + 1 < openingKeyframes.size()) {
-        end = openingTime(index + 1);
+        end = segmentStart(index + 1);
       }
 
-      return end.minus(openingTime(index));
+      return end.minus(segmentStart(index));
     }
 
     /**
@@ -402,7 +415,11 @@ public sealed interface MediaSegmentTimeline {
       return Optional.of(decodeTime);
     }
 
-    private Duration openingTime(int index) {
+    /**
+     * Where segment {@code index} starts: zero for segment 0, and its opening keyframe's
+     * presentation time, rounded down to a nanosecond, for every later segment.
+     */
+    public Duration segmentStart(int index) {
       if (index == 0) {
         return Duration.ZERO;
       }
