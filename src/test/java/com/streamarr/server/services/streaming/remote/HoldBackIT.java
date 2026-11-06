@@ -252,25 +252,36 @@ class HoldBackIT {
     registry.updatePlaybackState(playing.sessionId(), 0, PlaybackState.PAUSED);
     upload(playing, 1, 11);
     worker.responsesThrough(EstablishWorkerSessionResponse::hasHoldBack);
-    publications.pauseNextPublication(PublicationPause.BEFORE_THE_SEGMENT_IS_READABLE);
-    var publishing = worker.uploadMediaSegment(playing.job(), 12);
-    publications.awaitPausedPublication();
-    // A dispatch that holds the worker session server's monitor while it waits for the worker's.
-    try (var waitingDispatch =
-        BoundedTask.start(() -> server.stopVariant(UUID.randomUUID(), "480p"))) {
-      await().atMost(REQUEST_LIMIT).until(waitingDispatch::isBlockedOnAMonitor);
 
-      // Segment 6 places the viewer 30 s behind the job attempt's own media, so its request
-      // releases the hold. It must arrive well before the paused publication gives up after 5 s.
-      var delivery = request(playing.sessionId(), segmentName(6)).await(Duration.ofSeconds(2));
+    assertSegmentSixArrivesAndReleasesTheHoldWhileAPublicationAndADispatchWait(playing);
+  }
 
-      assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
-      var released = worker.responsesThrough(EstablishWorkerSessionResponse::hasHoldBack);
-      assertThat(released.getLast().getHoldBack().getJobAttemptsList()).isEmpty();
-      publications.releasePublication();
-      publishing.get(REQUEST_LIMIT.toSeconds(), TimeUnit.SECONDS);
-      assertThat(waitingDispatch.await(REQUEST_LIMIT)).isFalse();
-    }
+  @Test
+  @DisplayName(
+      "Should deliver a stored media segment of a job attempt that is held back and yields to a"
+          + " seek while another upload of the same worker is being published and a dispatch waits"
+          + " for that worker")
+  void shouldDeliverAStoredMediaSegmentOfAJobAttemptThatIsHeldBackAndYieldsToASeek()
+      throws Exception {
+    var worker = registerWorker();
+    var playing = startPlaying(worker);
+    registry.updatePlaybackState(playing.sessionId(), 0, PlaybackState.PAUSED);
+    upload(playing, 1, 11);
+    worker.responsesThrough(EstablishWorkerSessionResponse::hasHoldBack);
+    var seeking = startPlaying(worker);
+    request(seeking.sessionId(), segmentName(100));
+    var relocation =
+        worker
+            .responsesThrough(EstablishWorkerSessionResponse::hasStartVariant)
+            .getLast()
+            .getStartVariant()
+            .getJob();
+    worker.reportStarted(relocation);
+    var yielded = worker.responsesThrough(EstablishWorkerSessionResponse::hasYieldToSeek);
+    assertThat(yielded.getLast().getYieldToSeek().getJobAttemptIdsList())
+        .contains(playing.job().getJobAttemptId());
+
+    assertSegmentSixArrivesAndReleasesTheHoldWhileAPublicationAndADispatchWait(playing);
   }
 
   @Test
@@ -374,6 +385,31 @@ class HoldBackIT {
                         .getStopVariant()
                         .getJobAttemptId()
                         .equals(playing.job().getJobAttemptId()));
+  }
+
+  // Pauses the job attempt's upload of segment 12 inside its publication, which holds its worker
+  // connection's monitor, and parks a dispatch that holds the worker session server's monitor while
+  // it waits for that connection. Segment 6 places the viewer 30 s behind the job attempt's own
+  // media, so its request releases the hold; it must arrive well before the paused publication
+  // gives up after 5 s.
+  private void assertSegmentSixArrivesAndReleasesTheHoldWhileAPublicationAndADispatchWait(
+      Playing playing) throws Exception {
+    publications.pauseNextPublication(PublicationPause.BEFORE_THE_SEGMENT_IS_READABLE);
+    var publishing = playing.worker().uploadMediaSegment(playing.job(), 12);
+    publications.awaitPausedPublication();
+    try (var waitingDispatch =
+        BoundedTask.start(() -> server.stopVariant(UUID.randomUUID(), "480p"))) {
+      await().atMost(REQUEST_LIMIT).until(waitingDispatch::isBlockedOnAMonitor);
+
+      var delivery = request(playing.sessionId(), segmentName(6)).await(Duration.ofSeconds(2));
+
+      assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
+      var released = playing.worker().responsesThrough(EstablishWorkerSessionResponse::hasHoldBack);
+      assertThat(released.getLast().getHoldBack().getJobAttemptsList()).isEmpty();
+      publications.releasePublication();
+      publishing.get(REQUEST_LIMIT.toSeconds(), TimeUnit.SECONDS);
+      assertThat(waitingDispatch.await(REQUEST_LIMIT)).isFalse();
+    }
   }
 
   private LoopbackWorker registerWorker() throws InterruptedException {

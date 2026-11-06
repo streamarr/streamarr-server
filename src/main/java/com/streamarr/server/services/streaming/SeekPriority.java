@@ -165,14 +165,16 @@ public class SeekPriority {
       @NonNull StreamSession session, @NonNull String variantLabel) {
     reconsiderHoldBacks(session.getSessionId());
     var attempt = session.getVariantHandle(variantLabel).map(TranscodeHandle::attemptId);
-    var target = transcodeExecutor.runningExecutionTarget(session.getSessionId(), variantLabel);
-    if (attempt.isEmpty()
-        || target.isEmpty()
-        || !yielding.getOrDefault(target.get(), Set.of()).contains(attempt.get())) {
+    if (attempt.isEmpty()) {
       return;
     }
 
-    sendYields(target.get());
+    // The yields name the worker, so no lookup waits on a worker connection under this monitor.
+    yielding.entrySet().stream()
+        .filter(entry -> entry.getValue().contains(attempt.get()))
+        .map(Map.Entry::getKey)
+        .toList()
+        .forEach(this::sendYields);
   }
 
   /**
@@ -334,14 +336,9 @@ public class SeekPriority {
         .toList();
   }
 
-  // The target comes from the job attempt's own uploads rather than from the executor, so that no
-  // segment request waits for a worker connection that is busy publishing a segment.
   private Optional<HoldBack.AttemptLead> attemptLead(
       StreamSession session, String variantLabel, TranscodeHandle handle, int viewerSegment) {
-    var target =
-        Optional.ofNullable(ownOutputs.get(new VariantKey(session.getSessionId(), variantLabel)))
-            .filter(output -> output.attemptId().equals(handle.attemptId()))
-            .flatMap(OwnOutput::uploadedFrom);
+    var target = uploadTarget(session, variantLabel, handle);
     if (target.isEmpty() || !isActive(session, variantLabel)) {
       return Optional.empty();
     }
@@ -466,18 +463,25 @@ public class SeekPriority {
     return session.getVariantHandles().entrySet().stream()
         .filter(entry -> !waitedOn.contains(new VariantKey(sessionId, entry.getKey())))
         .filter(entry -> !heldRequests.holdsRequestsOn(sessionId, entry.getKey()))
-        .filter(entry -> runsOn(session, entry.getKey(), target))
+        .filter(
+            entry ->
+                uploadTarget(session, entry.getKey(), entry.getValue())
+                    .filter(target::equals)
+                    .isPresent())
         .filter(
             entry ->
                 leadsItsViewer(session, entry.getKey(), entry.getValue(), viewerSegment.getAsInt()))
         .map(entry -> entry.getValue().attemptId());
   }
 
-  private boolean runsOn(StreamSession session, String variantLabel, ExecutionTargetId target) {
-    return transcodeExecutor
-        .runningExecutionTarget(session.getSessionId(), variantLabel)
-        .filter(target::equals)
-        .isPresent();
+  // The worker comes from the job attempt's own uploads rather than from the executor, so that no
+  // request waits for a worker connection that is busy publishing a segment. A job attempt that has
+  // uploaded nothing has no own lead to name it for.
+  private Optional<ExecutionTargetId> uploadTarget(
+      StreamSession session, String variantLabel, TranscodeHandle handle) {
+    return Optional.ofNullable(ownOutputs.get(new VariantKey(session.getSessionId(), variantLabel)))
+        .filter(output -> output.attemptId().equals(handle.attemptId()))
+        .flatMap(OwnOutput::uploadedFrom);
   }
 
   // The media that the job attempt has stored itself without a gap after the viewer's segment
