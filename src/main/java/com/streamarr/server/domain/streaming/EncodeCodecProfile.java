@@ -8,6 +8,7 @@ import java.util.OptionalLong;
 /** The codec profile that an encoded variant forces (ADR 0013). */
 public enum EncodeCodecProfile {
   H264_HIGH(VideoCodecProfile.H264_HIGH),
+  HEVC_MAIN(VideoCodecProfile.HEVC_MAIN),
   AV1_MAIN(VideoCodecProfile.AV1_MAIN);
 
   private final VideoCodecProfile codecProfile;
@@ -35,6 +36,7 @@ public enum EncodeCodecProfile {
   OptionalLong highestBitrateAtOrBelow(int maxLevel) {
     return switch (this) {
       case H264_HIGH -> H264Level.highestBitrateAtOrBelow(maxLevel);
+      case HEVC_MAIN -> H265Level.highestBitrateAtOrBelow(maxLevel);
       case AV1_MAIN -> Av1Level.highestBitrateAtOrBelow(maxLevel);
     };
   }

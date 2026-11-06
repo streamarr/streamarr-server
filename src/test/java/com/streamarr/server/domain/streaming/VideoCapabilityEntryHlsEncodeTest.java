@@ -3,6 +3,7 @@ package com.streamarr.server.domain.streaming;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
@@ -334,6 +335,34 @@ class VideoCapabilityEntryHlsEncodeTest {
     // AV1 Annex A.3 allows level 4.0 12 Mb/s in the Main tier.
     assertThat(output.map(EncodedVideoOutput::bitrate)).contains(12_000_000L);
     assertThat(pictureOf(output)).contains(FULL_HD);
+  }
+
+  @Test
+  @DisplayName(
+      "Should cap an HEVC encode's bitrate at half the Main tier buffer of the entry's maximum level"
+          + " when the requested bitrate needs a higher level")
+  void
+      shouldCapAnHevcEncodesBitrateAtHalfTheMainTierBufferOfTheEntrysMaximumLevelWhenTheRequestedBitrateNeedsAHigherLevel() {
+    var entry =
+        hevcEntryBuilder()
+            .codecProfiles(
+                List.of(
+                    VideoCodecProfileCapability.builder()
+                        .profile(VideoCodecProfile.HEVC_MAIN)
+                        .maxLevel(40)
+                        .maxTier(Optional.of(VideoCodecTier.MAIN))
+                        .build()))
+            .build();
+
+    var output =
+        entry.fitHlsEncode(
+            fullHdRequest().codecProfile(EncodeCodecProfile.HEVC_MAIN).bitrate(20_000_000L).build());
+
+    // H.265 Tables A.8 and A.9 give level 4 a 12,000,000-bit buffer and 12 Mb/s in the Main tier.
+    // The worker's buffer is twice the bitrate, so the buffer allows only 6 Mb/s.
+    assertThat(output.map(EncodedVideoOutput::bitrate)).contains(6_000_000L);
+    assertThat(pictureOf(output)).contains(FULL_HD);
+    assertThat(output.map(VideoEncodeDecision::of).map(VideoEncodeDecision::level)).contains(40);
   }
 
   @ParameterizedTest(name = "{0}")

@@ -513,38 +513,39 @@ class LiveWorkerConnectionRegistryTest {
     assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
   }
 
-  @Test
+  @ParameterizedTest(name = "{2} encode")
+  @CsvSource({"VIDEO_CODEC_FAMILY_AV1, libsvtav1, av1", "VIDEO_CODEC_FAMILY_HEVC, libx265, hevc"})
   @DisplayName(
       "Should dispatch an encode only to a worker that advertises an encoder for its codec family")
-  void shouldDispatchAnEncodeOnlyToAWorkerThatAdvertisesAnEncoderForItsCodecFamily() {
+  void shouldDispatchAnEncodeOnlyToAWorkerThatAdvertisesAnEncoderForItsCodecFamily(
+      VideoCodecFamily family, String encoder, String codecFamilyName) {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var h264OnlyResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
-    var av1Responses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
-    var av1WorkerId = UUID.randomUUID();
+    var familyResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    var familyWorkerId = UUID.randomUUID();
     registry.register(
         WORKER_ID,
         registration(
             WORKER_ID, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")),
         collecting(h264OnlyResponses));
-    var av1Job = encodeJob("av1");
+    var job = encodeJob(codecFamilyName);
 
-    assertThat(registry.dispatch(av1Job)).isEmpty();
+    assertThat(registry.dispatch(job)).isEmpty();
 
     registry.register(
-        av1WorkerId,
-        registration(
-            av1WorkerId, softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1, "libsvtav1")),
-        collecting(av1Responses));
+        familyWorkerId,
+        registration(familyWorkerId, softwareEncoder(family, encoder)),
+        collecting(familyResponses));
 
-    assertThat(registry.dispatch(av1Job)).isPresent();
+    assertThat(registry.dispatch(job)).isPresent();
     assertThat(h264OnlyResponses)
         .extracting(EstablishWorkerSessionResponse::getCommandCase)
         .containsExactly(EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED);
-    assertThat(av1Responses)
+    assertThat(familyResponses)
         .filteredOn(EstablishWorkerSessionResponse::hasStartVariant)
         .singleElement()
         .extracting(response -> response.getStartVariant().getJob())
-        .isEqualTo(av1Job);
+        .isEqualTo(job);
   }
 
   @Test
@@ -1191,6 +1192,7 @@ class LiveWorkerConnectionRegistryTest {
   @ParameterizedTest(name = "{2} encode with only {1}")
   @CsvSource({
     "VIDEO_CODEC_FAMILY_AV1, av1_nvenc, av1",
+    "VIDEO_CODEC_FAMILY_HEVC, hevc_nvenc, hevc",
     "VIDEO_CODEC_FAMILY_H264, h264_nvenc, h264"
   })
   @DisplayName(

@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.a
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.audioEntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -254,6 +255,44 @@ class QualityLadderServiceTest {
         pictureBitrate(new PictureSize(1920, 1080), 5_000_000L),
         pictureBitrate(new PictureSize(1280, 720), 3_000_000L),
         pictureBitrate(new PictureSize(1000, 562), 3_000_000L),
+        pictureBitrate(new PictureSize(854, 480), 1_500_000L),
+        pictureBitrate(new PictureSize(320, 180), 800_000L));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("picturesAndTheirSmallestTiersHevcBitrate")
+  @DisplayName(
+      "Should encode HEVC at the nominal bitrate of the smallest tier whose box holds the picture"
+          + " when the probe names no source bitrate")
+  void
+      shouldEncodeHevcAtTheNominalBitrateOfTheSmallestTierWhoseBoxHoldsThePictureWhenTheProbeNamesNoSourceBitrate(
+          PictureBitrate expected) {
+    var picture = expected.picture();
+    var probe = buildProbeBuilder(picture.width(), picture.height()).bitrate(0L).build();
+    var options = StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build();
+
+    var variants =
+        variantsOf(
+            ladderRequest(probe, options)
+                .capabilityDeclaration(
+                    defaultDeclarationBuilder().video(List.of(hevcEntryBuilder().build())).build())
+                .codecProfile(EncodeCodecProfile.HEVC_MAIN)
+                .build());
+
+    assertThat(variants)
+        .extracting(QualityVariant::videoBitrate)
+        .containsExactly(expected.bitrate());
+  }
+
+  // The 2160p and 1440p rates are the lowest 3840x2160 and the 2560x1440 rates of the HEVC ladder
+  // in Apple's HLS Authoring Specification for Apple Devices, item 1.25. Below 1440p, HEVC keeps
+  // the H.264 rates, as AV1 does.
+  static Stream<PictureBitrate> picturesAndTheirSmallestTiersHevcBitrate() {
+    return Stream.of(
+        pictureBitrate(new PictureSize(3840, 2160), 11_600_000L),
+        pictureBitrate(new PictureSize(2560, 1440), 8_100_000L),
+        pictureBitrate(new PictureSize(1920, 1080), 5_000_000L),
+        pictureBitrate(new PictureSize(1280, 720), 3_000_000L),
         pictureBitrate(new PictureSize(854, 480), 1_500_000L),
         pictureBitrate(new PictureSize(320, 180), 800_000L));
   }

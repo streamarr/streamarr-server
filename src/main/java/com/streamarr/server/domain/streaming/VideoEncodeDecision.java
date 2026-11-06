@@ -25,6 +25,7 @@ public record VideoEncodeDecision(
   static Optional<VideoEncodeDecision> allowing(@NonNull EncodedVideoOutput output) {
     return switch (output.codecFamily()) {
       case "h264" -> H264Level.smallestAllowing(output).map(VideoEncodeDecision::h264);
+      case "hevc" -> H265Level.smallestAllowing(output).map(VideoEncodeDecision::hevc);
       case "av1" -> Av1Level.smallestAllowing(output).map(VideoEncodeDecision::av1);
       default ->
           throw new UnsupportedVideoEncodeException(
@@ -38,6 +39,15 @@ public record VideoEncodeDecision(
         .tier(Optional.empty())
         .level(level.levelIdc())
         .codecString(level.highProfileCodecString())
+        .build();
+  }
+
+  private static VideoEncodeDecision hevc(H265Level level) {
+    return VideoEncodeDecision.builder()
+        .codecProfile(EncodeCodecProfile.HEVC_MAIN)
+        .tier(Optional.of(VideoCodecTier.MAIN))
+        .level(level.level())
+        .codecString(level.mainProfileCodecString())
         .build();
   }
 

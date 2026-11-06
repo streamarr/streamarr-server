@@ -1029,7 +1029,7 @@ class TranscodeDecisionServiceTest {
             TranscodeDecisionRequest.builder()
                 .source(source)
                 .capabilityDeclaration(declaration)
-                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .encodableVideoCodecFamilies(Set.of("h264", "av1"))
                 .build());
 
     assertThat(decision).isEmpty();

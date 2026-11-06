@@ -59,8 +59,30 @@ class VideoEncodeDecisionTest {
     assertThat(decision.codecString()).isEqualTo(levelCase.codecString());
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("h265LevelCases")
+  @DisplayName(
+      "Should force H.265 Main in the Main tier at the smallest Annex A level when the output fits"
+          + " it")
+  void shouldForceH265MainInTheMainTierAtTheSmallestAnnexALevelWhenTheOutputFitsIt(
+      LevelCase levelCase) {
+    var decision =
+        VideoEncodeDecision.of(
+            output("hevc")
+                .width(levelCase.width())
+                .height(levelCase.height())
+                .frameRate(levelCase.frameRate())
+                .bitrate(levelCase.bitrate())
+                .build());
+
+    assertThat(decision.codecProfile()).isEqualTo(EncodeCodecProfile.HEVC_MAIN);
+    assertThat(decision.tier()).isEqualTo(Optional.of(VideoCodecTier.MAIN));
+    assertThat(decision.level()).isEqualTo(levelCase.level());
+    assertThat(decision.codecString()).isEqualTo(levelCase.codecString());
+  }
+
   @ParameterizedTest
-  @CsvSource({"h264", "av1"})
+  @CsvSource({"h264", "av1", "hevc"})
   @DisplayName("Should refuse the encode when no level allows the output")
   void shouldRefuseTheEncodeWhenNoLevelAllowsTheOutput(String codecFamily) {
     var output =
@@ -92,7 +114,7 @@ class VideoEncodeDecisionTest {
   @DisplayName("Should refuse the encode when the codec family has no level table")
   void shouldRefuseTheEncodeWhenTheCodecFamilyHasNoLevelTable() {
     var output =
-        output("hevc")
+        output("vp9")
             .width(1920)
             .height(1080)
             .frameRate(new Fraction(24, 1))
@@ -101,7 +123,7 @@ class VideoEncodeDecisionTest {
 
     assertThatThrownBy(() -> VideoEncodeDecision.of(output))
         .isInstanceOf(UnsupportedVideoEncodeException.class)
-        .hasMessageContaining("hevc");
+        .hasMessageContaining("vp9");
   }
 
   @Test
@@ -127,8 +149,18 @@ class VideoEncodeDecisionTest {
                   .bitrate(5_000_000L)
                   .build());
 
+      var hevc =
+          VideoEncodeDecision.of(
+              output("hevc")
+                  .width(1920)
+                  .height(1080)
+                  .frameRate(new Fraction(60, 1))
+                  .bitrate(5_000_000L)
+                  .build());
+
       assertThat(h264.codecString()).isEqualTo("avc1.64002A");
       assertThat(av1.codecString()).isEqualTo("av01.0.09M.08");
+      assertThat(hevc.codecString()).isEqualTo("hvc1.1.6.L123.90");
     } finally {
       Locale.setDefault(defaultLocale);
     }
@@ -406,6 +438,200 @@ class VideoEncodeDecisionTest {
             .bitrate(160000000L)
             .level(62)
             .codecString("av01.0.18M.08")
+            .build());
+  }
+
+  private static Stream<LevelCase> h265LevelCases() {
+    return Stream.of(
+        // ADR 0013: 1080p60 needs level 4.1, and libx265 refused level 4.
+        LevelCase.builder()
+            .width(1920)
+            .height(1080)
+            .frameRate(new Fraction(60, 1))
+            .bitrate(5000000L)
+            .level(41)
+            .codecString("hvc1.1.6.L123.90")
+            .build(),
+        LevelCase.builder()
+            .width(1920)
+            .height(1080)
+            .frameRate(new Fraction(30, 1))
+            .bitrate(5000000L)
+            .level(40)
+            .codecString("hvc1.1.6.L120.90")
+            .build(),
+        LevelCase.builder()
+            .width(1920)
+            .height(1080)
+            .frameRate(new Fraction(24000, 1001))
+            .bitrate(5000000L)
+            .level(40)
+            .codecString("hvc1.1.6.L120.90")
+            .build(),
+        // The luma sample rate equals level 4's 66,846,720 samples per second.
+        LevelCase.builder()
+            .width(1920)
+            .height(1080)
+            .frameRate(new Fraction(66846720, 2073600))
+            .bitrate(5000000L)
+            .level(40)
+            .codecString("hvc1.1.6.L120.90")
+            .build(),
+        // One sample per second more than level 4 allows.
+        LevelCase.builder()
+            .width(1920)
+            .height(1080)
+            .frameRate(new Fraction(66846721, 2073600))
+            .bitrate(5000000L)
+            .level(41)
+            .codecString("hvc1.1.6.L123.90")
+            .build(),
+        LevelCase.builder()
+            .width(1280)
+            .height(720)
+            .frameRate(new Fraction(60, 1))
+            .bitrate(3000000L)
+            .level(40)
+            .codecString("hvc1.1.6.L120.90")
+            .build(),
+        LevelCase.builder()
+            .width(1280)
+            .height(720)
+            .frameRate(new Fraction(30, 1))
+            .bitrate(3000000L)
+            .level(31)
+            .codecString("hvc1.1.6.L93.90")
+            .build(),
+        // A portrait source after rotation, as FFmpeg scales it to 1080 lines. Its buffer of
+        // 10,000,000 bits fills level 3.1's buffer exactly.
+        LevelCase.builder()
+            .width(608)
+            .height(1080)
+            .frameRate(new Fraction(30, 1))
+            .bitrate(5000000L)
+            .level(31)
+            .codecString("hvc1.1.6.L93.90")
+            .build(),
+        LevelCase.builder()
+            .width(854)
+            .height(480)
+            .frameRate(new Fraction(24000, 1001))
+            .bitrate(1500000L)
+            .level(30)
+            .codecString("hvc1.1.6.L90.90")
+            .build(),
+        LevelCase.builder()
+            .width(640)
+            .height(360)
+            .frameRate(new Fraction(24000, 1001))
+            .bitrate(800000L)
+            .level(21)
+            .codecString("hvc1.1.6.L63.90")
+            .build(),
+        // 36,864 samples at 15 fps fill level 1's picture and sample rate exactly.
+        LevelCase.builder()
+            .width(256)
+            .height(144)
+            .frameRate(new Fraction(15, 1))
+            .bitrate(100000L)
+            .level(10)
+            .codecString("hvc1.1.6.L30.90")
+            .build(),
+        // At 30 fps the same picture exceeds level 1's 552,960 samples per second.
+        LevelCase.builder()
+            .width(256)
+            .height(144)
+            .frameRate(new Fraction(30, 1))
+            .bitrate(200000L)
+            .level(20)
+            .codecString("hvc1.1.6.L60.90")
+            .build(),
+        // Coded in whole 8-sample blocks, the 642x382 picture is 648x384: 248,832 samples,
+        // above level 2.1's 245,760, although 642 x 382 is below.
+        LevelCase.builder()
+            .width(642)
+            .height(382)
+            .frameRate(new Fraction(1, 1))
+            .bitrate(100000L)
+            .level(30)
+            .codecString("hvc1.1.6.L90.90")
+            .build(),
+        // The buffer, twice the bitrate, exceeds level 4's 12,000,000 bits.
+        LevelCase.builder()
+            .width(1920)
+            .height(1080)
+            .frameRate(new Fraction(30, 1))
+            .bitrate(8000000L)
+            .level(41)
+            .codecString("hvc1.1.6.L123.90")
+            .build(),
+        // The bitrate exceeds level 4's 12 Mb/s, and the buffer level 4.1's 20,000,000 bits.
+        LevelCase.builder()
+            .width(1920)
+            .height(1080)
+            .frameRate(new Fraction(30, 1))
+            .bitrate(12500000L)
+            .level(50)
+            .codecString("hvc1.1.6.L150.90")
+            .build(),
+        // 4,096 columns exceed the square root of 8 x MaxLumaPs below level 4.
+        LevelCase.builder()
+            .width(4096)
+            .height(64)
+            .frameRate(new Fraction(1, 1))
+            .bitrate(100000L)
+            .level(40)
+            .codecString("hvc1.1.6.L120.90")
+            .build(),
+        // 2,560 lines exceed the square root of 8 x MaxLumaPs below level 3.1.
+        LevelCase.builder()
+            .width(64)
+            .height(2560)
+            .frameRate(new Fraction(1, 1))
+            .bitrate(100000L)
+            .level(31)
+            .codecString("hvc1.1.6.L93.90")
+            .build(),
+        LevelCase.builder()
+            .width(2560)
+            .height(1440)
+            .frameRate(new Fraction(30, 1))
+            .bitrate(8100000L)
+            .level(50)
+            .codecString("hvc1.1.6.L150.90")
+            .build(),
+        LevelCase.builder()
+            .width(3840)
+            .height(2160)
+            .frameRate(new Fraction(30, 1))
+            .bitrate(11600000L)
+            .level(50)
+            .codecString("hvc1.1.6.L150.90")
+            .build(),
+        LevelCase.builder()
+            .width(3840)
+            .height(2160)
+            .frameRate(new Fraction(60, 1))
+            .bitrate(16800000L)
+            .level(51)
+            .codecString("hvc1.1.6.L153.90")
+            .build(),
+        // The buffer of 200,000,000 bits exceeds level 6.1's 120,000,000.
+        LevelCase.builder()
+            .width(7680)
+            .height(4320)
+            .frameRate(new Fraction(60, 1))
+            .bitrate(100000000L)
+            .level(62)
+            .codecString("hvc1.1.6.L186.90")
+            .build(),
+        LevelCase.builder()
+            .width(8192)
+            .height(4320)
+            .frameRate(new Fraction(2147483647, 2147483647))
+            .bitrate(1000000L)
+            .level(60)
+            .codecString("hvc1.1.6.L180.90")
             .build());
   }
 
