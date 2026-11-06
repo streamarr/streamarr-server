@@ -161,6 +161,7 @@ public class HlsStreamingService implements StreamingService {
             .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
             .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
+            .encodeFeatures(transcodeExecutor.encodeFeaturesByCodecFamily())
             .directPlayRefusals(directPlay.refusals())
             .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
             .build();
@@ -540,6 +541,7 @@ public class HlsStreamingService implements StreamingService {
             .viewerLimits(ladderLimits(decisionRequest))
             .capabilityDeclaration(declaration)
             .codecProfile(codecProfile)
+            .encodeFormat(decision.videoEncodeFormat())
             // The stream session refuses an encode without an output frame rate before it sizes a
             // variant.
             .frameRate(decision.outputFrameRate().orElseThrow())

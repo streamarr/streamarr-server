@@ -124,6 +124,7 @@ public class HlsPlaylistService {
                 .height(variant.height())
                 .frameRate(variant.frameRate())
                 .bitrate(variant.videoBitrate())
+                .format(decision.videoEncodeFormat())
                 .build())
         .codecString();
   }

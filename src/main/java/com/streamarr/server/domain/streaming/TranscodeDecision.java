@@ -22,7 +22,8 @@ import lombok.NonNull;
  * empty when the decision carries no audio. {@code dynamicRangeChoice} is the viewer's HDR choice
  * in a fixed quality, and is empty in Auto and Original (ADR 0013). {@code softwareEncoder} is true
  * when the encode runs on the software encoder of its codec family after a hardware encoder failed
- * (ADR 0044).
+ * (ADR 0044). {@code videoEncodeFormat} is the range and bit depth that the decision's encode
+ * writes, and a decision that copies the video holds 8-bit SDR (#397).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -38,7 +39,8 @@ public record TranscodeDecision(
     @NonNull List<VideoCapabilityEntryRefusal> videoCapabilityEntryRefusals,
     @NonNull OptionalInt audioStreamIndex,
     @NonNull Optional<DynamicRangeChoice> dynamicRangeChoice,
-    boolean softwareEncoder) {
+    boolean softwareEncoder,
+    @NonNull EncodeFormat videoEncodeFormat) {
 
   public TranscodeDecision {
     var copiesVideo = transcodeMode != null && transcodeMode.copiesVideo();
@@ -55,6 +57,11 @@ public record TranscodeDecision(
     if (!copiesVideo && !videoBitstreamRewrites.isEmpty()) {
       throw new IllegalArgumentException(
           "A decision that encodes the video cannot list a bitstream rewrite");
+    }
+
+    if (copiesVideo && !videoEncodeFormat.equals(EncodeFormat.SDR_8_BIT)) {
+      throw new IllegalArgumentException(
+          "A decision that copies the video cannot hold an encode format");
     }
 
     if (!copiesVideo && videoDolbyVisionOutput.isPresent()) {
@@ -132,7 +139,7 @@ public record TranscodeDecision(
   /** What the decision plans the video to become: a copy of the chosen stream or an encode. */
   public PlannedVideoOutput plannedVideoOutput() {
     if (transcodeMode == null || !transcodeMode.copiesVideo()) {
-      return PlannedVideoOutput.Encode.sdr(encodeCodecProfile);
+      return PlannedVideoOutput.Encode.of(encodeCodecProfile, videoEncodeFormat, videoSource);
     }
 
     var copy = PlannedVideoOutput.StreamCopy.of(videoSource.orElseThrow(), videoBitstreamRewrites);
@@ -169,5 +176,6 @@ public record TranscodeDecision(
     private List<VideoCapabilityEntryRefusal> videoCapabilityEntryRefusals = List.of();
     private OptionalInt audioStreamIndex = OptionalInt.empty();
     private Optional<DynamicRangeChoice> dynamicRangeChoice = Optional.empty();
+    private EncodeFormat videoEncodeFormat = EncodeFormat.SDR_8_BIT;
   }
 }

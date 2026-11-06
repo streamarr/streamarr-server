@@ -65,8 +65,8 @@ enum Av1Level {
   }
 
   // Profile 0 (Main) in the Main tier at 8 bits.
-  String mainProfileCodecString() {
-    return String.format(Locale.ROOT, "av01.0.%02dM.08", seqLevelIdx);
+  String mainProfileCodecString(int bitDepth) {
+    return String.format(Locale.ROOT, "av01.0.%02dM.%02d", seqLevelIdx, bitDepth);
   }
 
   private boolean allows(EncodedVideoOutput output) {

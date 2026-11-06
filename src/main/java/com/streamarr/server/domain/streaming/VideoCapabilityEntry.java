@@ -43,7 +43,6 @@ public record VideoCapabilityEntry(
   // 50 × 1.005 in binary floating point is 50.24999999999999.
   private static final BigDecimal FRAME_RATE_MARGIN = new BigDecimal("1.005");
   // Every encode is 8-bit SDR video without Dolby Vision or HDR10+ information.
-  private static final int ENCODED_BIT_DEPTH = 8;
   // ADR 0037's frame-rate rule chooses no output frame rate below 10 fps.
   private static final BigDecimal LOWEST_ENCODED_FRAME_RATE = BigDecimal.TEN;
 
@@ -180,7 +179,7 @@ public record VideoCapabilityEntry(
    * and a bitrate above what that level allows is capped at it.
    */
   public Optional<EncodedVideoOutput> fitHlsEncode(@NonNull EncodedVariantRequest request) {
-    if (!acceptsHlsEncode(request.codecProfile())) {
+    if (!acceptsHlsEncode(request.codecProfile(), request.format())) {
       return Optional.empty();
     }
 
@@ -196,11 +195,11 @@ public record VideoCapabilityEntry(
         .max(EncodedVideoOutput.FASTER_FRAME_RATE_THEN_LARGER_PICTURE_THEN_HIGHER_BITRATE);
   }
 
-  private boolean acceptsHlsEncode(EncodeCodecProfile codecProfile) {
+  private boolean acceptsHlsEncode(EncodeCodecProfile codecProfile, EncodeFormat format) {
     return hls
         && codecProfile.codecProfile().codecFamily() == codecFamily
-        && compatibleBases.contains(CompatibleBase.SDR)
-        && ENCODED_BIT_DEPTH <= maxBitDepth;
+        && compatibleBases.contains(format.compatibleBase())
+        && format.bitDepth() <= maxBitDepth;
   }
 
   // The margin also lets a declared 29.97 or 59.94 accept the exact NTSC rate 30000/1001 or
@@ -256,6 +255,7 @@ public record VideoCapabilityEntry(
                     .height(size.height())
                     .frameRate(frameRate)
                     .bitrate(bitrate)
+                    .format(request.format())
                     .build())
         .filter(output -> acceptsLevelAndTier(capability, output))
         .findFirst();
