@@ -51,6 +51,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import java.time.Duration;
 import java.time.Instant;
@@ -187,6 +188,32 @@ class ProducerLifecycleServiceTest {
     runtimeRegistry.save(session);
     lifecycle.startFirstListedVariant(session);
     return session;
+  }
+
+  private void storeDefaultSegments(StreamSession session, int firstSegment, int lastSegment) {
+    for (var index = firstSegment; index <= lastSegment; index++) {
+      segmentStore.addSegment(session.getSessionId(), "segment" + index + ".m4s", new byte[] {1});
+    }
+  }
+
+  // Stores the media segments as uploads of the variant's running job attempt do, which credits
+  // them to that job attempt.
+  private void publishDefaultSegments(StreamSession session, int firstSegment, int lastSegment) {
+    storeDefaultSegments(session, firstSegment, lastSegment);
+    var attemptId = session.getHandle().orElseThrow().attemptId();
+    for (var index = firstSegment; index <= lastSegment; index++) {
+      lifecycle.mediaSegmentPublished(published(session, attemptId, index));
+    }
+  }
+
+  private static MediaSegmentPublishedEvent published(
+      StreamSession session, UUID attemptId, int index) {
+    return MediaSegmentPublishedEvent.builder()
+        .streamSessionId(session.getSessionId())
+        .jobAttemptId(attemptId)
+        .variantLabel(StreamSession.defaultVariant())
+        .segmentIndex(index)
+        .build();
   }
 
   private StreamSession startedLadderSession() {
@@ -788,6 +815,96 @@ class ProducerLifecycleServiceTest {
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.seekPosition()).isEqualTo(600);
     assertThat(lastRequest.startSequenceNumber()).isEqualTo(100);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a newer request's position when an older request relocates the variant, so"
+          + " seek priority credits no media the viewer passed")
+  void shouldKeepANewerRequestsPositionWhenAnOlderRequestRelocatesTheVariant() {
+    var steady = startedSession();
+    publishDefaultSegments(steady, 1, 9);
+    lifecycle.prepareRequestedVariant(
+        steady.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+    var relocated = startedSession();
+    var sessionId = relocated.getSessionId();
+    storeDefaultSegments(relocated, 21, 31);
+    var older =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment20.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, StreamSession.defaultVariant(), "segment30.m4s");
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment20.m4s");
+    publishDefaultSegments(relocated, 20, 31);
+    lifecycle.segmentDelivered(older);
+    publishDefaultSegments(relocated, 32, 32);
+    var seeking = startedSession();
+
+    lifecycle.ensurePositioned(
+        seeking.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
+
+    assertThat(transcodeExecutor.yields().getLast().jobAttemptIds())
+        .containsExactly(steady.getHandle().orElseThrow().attemptId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the farthest of the newer requests' positions when an older request relocates"
+          + " the variant")
+  void shouldKeepTheFarthestOfTheNewerRequestsPositionsWhenAnOlderRequestRelocatesTheVariant() {
+    var steady = startedSession();
+    publishDefaultSegments(steady, 1, 9);
+    lifecycle.prepareRequestedVariant(
+        steady.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+    var relocated = startedSession();
+    var sessionId = relocated.getSessionId();
+    storeDefaultSegments(relocated, 21, 31);
+    var older =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment20.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, StreamSession.defaultVariant(), "segment31.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, StreamSession.defaultVariant(), "segment25.m4s");
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment20.m4s");
+    publishDefaultSegments(relocated, 20, 31);
+    lifecycle.segmentDelivered(older);
+    publishDefaultSegments(relocated, 32, 32);
+    var seeking = startedSession();
+
+    lifecycle.ensurePositioned(
+        seeking.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
+
+    assertThat(transcodeExecutor.yields().getLast().jobAttemptIds())
+        .containsExactly(steady.getHandle().orElseThrow().attemptId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should never credit a job attempt with media that an earlier job attempt's upload stored"
+          + " after it started")
+  void shouldNeverCreditAJobAttemptWithMediaThatAnEarlierJobAttemptsUploadStoredAfterItStarted() {
+    var steady = startedSession();
+    publishDefaultSegments(steady, 1, 9);
+    lifecycle.prepareRequestedVariant(
+        steady.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+    var replaced = startedSession();
+    var sessionId = replaced.getSessionId();
+    var earlierAttempt = replaced.getHandle().orElseThrow().attemptId();
+    publishDefaultSegments(replaced, 21, 40);
+    var seek =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment20.m4s");
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment20.m4s");
+    publishDefaultSegments(replaced, 20, 20);
+    lifecycle.segmentDelivered(seek);
+    storeDefaultSegments(replaced, 41, 41);
+    lifecycle.mediaSegmentPublished(published(replaced, earlierAttempt, 41));
+    var seeking = startedSession();
+
+    lifecycle.ensurePositioned(
+        seeking.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
+
+    assertThat(replaced.getHandle().orElseThrow().attemptId()).isNotEqualTo(earlierAttempt);
+    assertThat(transcodeExecutor.yields().getLast().jobAttemptIds())
+        .containsExactly(steady.getHandle().orElseThrow().attemptId());
   }
 
   @Test

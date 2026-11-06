@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.accountScopedBuilder;
+import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
@@ -111,6 +112,13 @@ class EncoderPresetSmokeTest {
             .runtimeRegistry(runtimeRegistry)
             .sessionMutex(new MutexFactory<>())
             .serverSettings(serverSettings)
+            .seekPriority(
+                seekPriorityBuilder()
+                    .transcodeExecutor(transcodeExecutor)
+                    .segmentStore(segmentStore)
+                    .runtimeRegistry(runtimeRegistry)
+                    .properties(StreamingProperties.builder().build())
+                    .build())
             .build();
   }
 

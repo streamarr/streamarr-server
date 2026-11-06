@@ -36,6 +36,11 @@ public final class HeldSegmentRequests {
     return new Wake(key, nextWakes.compute(key, (_, current) -> withOneMoreHolder(current)));
   }
 
+  /** Whether a segment request of the variant holds its next wake: a player waits on it. */
+  public boolean holdsRequestsOn(UUID sessionId, String variantLabel) {
+    return nextWakes.containsKey(new VariantKey(sessionId, variantLabel));
+  }
+
   /**
    * Wakes the requests held on the variant: one of its segments is stored or a job attempt ended.
    */

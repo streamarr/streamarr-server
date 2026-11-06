@@ -117,6 +117,26 @@ class BoundedTaskTest {
   }
 
   @Test
+  @DisplayName("Should answer that the task awaits a latch with a deadline when it waits for one")
+  void shouldAnswerThatTheTaskAwaitsALatchWithADeadlineWhenItWaitsForOne() {
+    try (var task = BoundedTask.start(() -> neverReleased.await(1, TimeUnit.MINUTES))) {
+      await().atMost(LONG_BOUND).until(task::isAwaitingALatchWithDeadline);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer that the task awaits no latch with a deadline when it waits for one without a"
+          + " deadline")
+  void shouldAnswerThatTheTaskAwaitsNoLatchWithADeadlineWhenItWaitsForOneWithoutADeadline() {
+    try (var task = BoundedTask.start(this::waitUntilInterrupted)) {
+      await().atMost(LONG_BOUND).until(task::isWaiting);
+
+      assertThat(task.isAwaitingALatchWithDeadline()).isFalse();
+    }
+  }
+
+  @Test
   @DisplayName(
       "Should answer that the task awaits no latch while it waits for a lock that another thread holds")
   void shouldAnswerThatTheTaskAwaitsNoLatchWhileItWaitsForALockThatAnotherThreadHolds() {

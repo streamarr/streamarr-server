@@ -121,6 +121,37 @@ class StreamingPropertiesTest {
   }
 
   @Test
+  @DisplayName(
+      "Should default the seek priority margin and hold limit to one 3 second slot when unset")
+  void shouldDefaultTheSeekPriorityMarginAndHoldLimitToOne3SecondSlotWhenUnset() {
+    var properties = StreamingProperties.builder().build();
+
+    assertThat(properties.seekPriorityPositionMargin()).isEqualTo(Duration.ofSeconds(3));
+    assertThat(properties.seekPriorityHoldLimit()).isEqualTo(Duration.ofSeconds(3));
+  }
+
+  @Test
+  @DisplayName("Should reject the seek priority position margin when negative")
+  void shouldRejectTheSeekPriorityPositionMarginWhenNegative() {
+    var builder = StreamingProperties.builder().seekPriorityPositionMargin(Duration.ofSeconds(-1));
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("streaming.seek-priority-position-margin");
+  }
+
+  @ParameterizedTest
+  @ValueSource(longs = {0, -1})
+  @DisplayName("Should reject the seek priority hold limit when not positive")
+  void shouldRejectTheSeekPriorityHoldLimitWhenNotPositive(long seconds) {
+    var builder = StreamingProperties.builder().seekPriorityHoldLimit(Duration.ofSeconds(seconds));
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("streaming.seek-priority-hold-limit");
+  }
+
+  @Test
   @DisplayName("Should default probe wait limit to 15 seconds when null")
   void shouldDefaultProbeWaitLimitToFifteenSecondsWhenNull() {
     assertThat(StreamingProperties.builder().build().probeWaitLimit())

@@ -16,9 +16,11 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
+import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.transcode.v1.AudioChannelLayout;
 import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
@@ -1606,6 +1608,45 @@ class LiveWorkerConnectionRegistryTest {
             EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED,
             EstablishWorkerSessionResponse.CommandCase.START_VARIANT);
     assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should credit a published media segment to the job attempt that uploaded it, and no"
+          + " initialization segment")
+  void shouldCreditAPublishedMediaSegmentToTheJobAttemptThatUploadedItAndNoInitializationSegment() {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .eventPublisher(events)
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .build();
+    var workerRegistration = registration();
+    var workerSessionId =
+        registry.register(WORKER_ID, workerRegistration, collecting(new CopyOnWriteArrayList<>()));
+    var job = variantJob();
+    assertThat(registry.dispatch(job)).isPresent();
+    var upload = uploadMetadata(workerSessionId, workerRegistration.getWorker(), job);
+
+    registry.publishIfAuthorized(
+        WORKER_ID,
+        upload.toBuilder().setSegmentName(SegmentNames.INITIALIZATION_SEGMENT_NAME).build(),
+        () -> SegmentPublication.PUBLISHED);
+    registry.publishIfAuthorized(
+        WORKER_ID,
+        upload.toBuilder().setSegmentName(SegmentNames.mediaSegmentName(7)).build(),
+        () -> SegmentPublication.PUBLISHED);
+
+    assertThat(events.getEventsOfType(MediaSegmentPublishedEvent.class))
+        .containsExactly(
+            MediaSegmentPublishedEvent.builder()
+                .streamSessionId(fromProto(job.getStreamSessionId()))
+                .jobAttemptId(fromProto(job.getJobAttemptId()))
+                .variantLabel(job.getVariant().getVariantLabel())
+                .segmentIndex(7)
+                .build());
   }
 
   @Test

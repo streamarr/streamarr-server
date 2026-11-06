@@ -17,6 +17,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import java.time.Clock;
 import java.time.Duration;
@@ -62,6 +63,7 @@ public class ProducerLifecycleService {
   private final MutexFactory<UUID> sessionMutex;
   private final ServerSettingsService serverSettings;
   @NonNull private final ApplicationEventPublisher eventPublisher;
+  @NonNull private final SeekPriority seekPriority;
   @Builder.Default private final Clock clock = Clock.systemUTC();
   private final ConcurrentHashMap<VariantKey, VariantDeliveryState> recoveryStates =
       new ConcurrentHashMap<>();
@@ -266,6 +268,7 @@ public class ProducerLifecycleService {
           playingVariants.remove(sessionId);
           sessionsKeepingLeftVariant.remove(sessionId);
         });
+    seekPriority.forgetSession(sessionId);
   }
 
   private RecoveryResult doRecover(SegmentRequest request, LeftVariantReclaim reclaim) {
@@ -904,6 +907,10 @@ public class ProducerLifecycleService {
       return;
     }
 
+    SegmentNames.indexOf(request.segmentName())
+        .ifPresent(
+            index ->
+                seekPriority.mediaSegmentRequested(request.sessionId(), index, request.arrival()));
     var previous = newestMediaSegmentRequests.put(request.sessionId(), request);
     if (previous == null || !previous.variantLabel().equals(request.variantLabel())) {
       newestVariantArrivals.put(request.sessionId(), request.arrival());
@@ -931,6 +938,27 @@ public class ProducerLifecycleService {
     }
 
     return next;
+  }
+
+  /** The request waits for its segment, so no seek pauses the job attempt that produces it. */
+  public void segmentRequestWaits(SegmentRequest waiting) {
+    runtimeRegistry
+        .findById(waiting.sessionId())
+        .ifPresent(session -> seekPriority.segmentRequestWaits(session, waiting.variantLabel()));
+  }
+
+  /** A job attempt's upload stored the media segment, which counts as that job attempt's output. */
+  public void mediaSegmentPublished(@NonNull MediaSegmentPublishedEvent published) {
+    seekPriority.mediaSegmentPublished(published);
+  }
+
+  /** The player received the request's segment, which ends a seek that waited for it. */
+  public void segmentDelivered(SegmentRequest delivered) {
+    seekPriority.segmentDelivered(
+        delivered.sessionId(),
+        delivered.variantLabel(),
+        delivered.segmentName(),
+        delivered.arrival());
   }
 
   /**
@@ -1083,6 +1111,7 @@ public class ProducerLifecycleService {
     }
 
     session.removeVariantHandle(variantLabel);
+    seekPriority.variantChanged(session, variantLabel);
   }
 
   private OnDemandStart tryStartVariantOnDemand(SegmentRequest request) {
@@ -1332,6 +1361,10 @@ public class ProducerLifecycleService {
     }
 
     runtimeRegistry.save(session);
+    session
+        .getVariantHandles()
+        .keySet()
+        .forEach(label -> seekPriority.variantChanged(session, label));
   }
 
   /**
@@ -1408,6 +1441,7 @@ public class ProducerLifecycleService {
 
     installHandle(session, command.variantLabel(), replacement);
     runtimeRegistry.save(session);
+    seekPriority.variantChanged(session, command.variantLabel());
     return new ReplaceResult.Replaced(replacement.attemptId());
   }
 
@@ -1464,6 +1498,7 @@ public class ProducerLifecycleService {
 
     session.setVariantHandle(variantLabel, handle.withStatus(TranscodeStatus.FAILED));
     runtimeRegistry.save(session);
+    seekPriority.variantChanged(session, variantLabel);
     return true;
   }
 
@@ -1553,6 +1588,8 @@ public class ProducerLifecycleService {
     }
 
     var segmentIndex = SegmentNames.indexOf(segmentName).orElseThrow();
+    // Before the start, which can fail and leave the seek to a recovery replacement.
+    seekPriority.seekStarted(session, variantLabel, segmentIndex);
     if (transcodeExecutor.isRunning(sessionId, variantLabel)) {
       transcodeExecutor.stopVariant(sessionId, variantLabel);
     }
@@ -1560,6 +1597,7 @@ public class ProducerLifecycleService {
     startVariant(session, variantLabel, segmentIndex);
     session.setLastAccessedAt(Instant.now());
     runtimeRegistry.save(session);
+    seekPriority.variantChanged(session, variantLabel);
 
     log.info(
         "Relocated variant {} of session {} to segment {}", variantLabel, sessionId, segmentIndex);
@@ -1757,8 +1795,8 @@ public class ProducerLifecycleService {
   // The first job attempt that reports an encoder pins the variant to that encoder backend. Every
   // started job attempt moves the session's start segment, which the current segment falls back to
   // before the player requests a media segment, to its first media segment.
-  private static void installHandle(
-      StreamSession session, String variantLabel, TranscodeHandle handle) {
+  private void installHandle(StreamSession session, String variantLabel, TranscodeHandle handle) {
+    seekPriority.jobAttemptStarted(session, variantLabel, handle);
     session.setVariantHandle(variantLabel, handle);
     session.setCurrentSegment(handle.startSequenceNumber());
     handle.encoder().ifPresent(encoder -> session.pinEncoder(variantLabel, encoder));

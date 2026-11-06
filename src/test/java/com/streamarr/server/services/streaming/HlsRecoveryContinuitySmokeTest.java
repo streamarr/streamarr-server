@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecisionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -106,6 +107,13 @@ class HlsRecoveryContinuitySmokeTest {
             .runtimeRegistry(runtimeRegistry)
             .sessionMutex(new MutexFactory<>())
             .serverSettings(ServerSettingsFixture.defaultServerSettings())
+            .seekPriority(
+                seekPriorityBuilder()
+                    .transcodeExecutor(transcodeExecutor)
+                    .segmentStore(segmentStore)
+                    .runtimeRegistry(runtimeRegistry)
+                    .properties(properties)
+                    .build())
             .build();
     coordinator =
         SegmentDeliveryCoordinator.builder()

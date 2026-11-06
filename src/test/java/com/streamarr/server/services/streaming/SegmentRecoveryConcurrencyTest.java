@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuilder;
 import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -214,6 +215,13 @@ class SegmentRecoveryConcurrencyTest {
             .sessionMutex(race.mutexFactory())
             .serverSettings(ServerSettingsFixture.defaultServerSettings())
             .clock(clock)
+            .seekPriority(
+                seekPriorityBuilder()
+                    .transcodeExecutor(race.executor)
+                    .segmentStore(store)
+                    .runtimeRegistry(registry)
+                    .properties(properties)
+                    .build())
             .build();
     var coordinator =
         SegmentDeliveryCoordinator.builder()

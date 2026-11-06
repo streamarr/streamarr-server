@@ -45,6 +45,7 @@ public class SegmentDeliveryCoordinator {
           return completed(request, outcome);
         }
 
+        producerLifecycle.segmentRequestWaits(request);
         if (!tryAwait(wake, request)) {
           return new SegmentDelivery.Cancelled();
         }
@@ -54,6 +55,7 @@ public class SegmentDeliveryCoordinator {
 
   private SegmentDelivery completed(SegmentRequest request, SegmentDelivery outcome) {
     if (outcome instanceof SegmentDelivery.Ready) {
+      producerLifecycle.segmentDelivered(request);
       producerLifecycle.completeVariantSwitch(request);
     }
 
