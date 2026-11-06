@@ -622,12 +622,16 @@ public class ProducerLifecycleService {
 
   private Optional<RecoveryResult> replaceAndTrack(
       VariantDeliveryState state, StreamSession session, ReplaceProducerCommand command) {
+    // Read before the replacement starts, so that none of its own output counts as stored before
+    // it.
+    var firstUnstored = firstUnstoredSegmentFromTheStart(session, command);
     return switch (doReplace(command)) {
       case ReplaceResult.Replaced(UUID newAttemptId) -> {
         state.trackReplacement(
             command.target(),
             session.getVariantHandle(command.variantLabel()).orElseThrow(),
             clock.instant());
+        state.skipSegmentsStoredBefore(firstUnstored);
         log.info(
             "Replaced producer for session {} variant {} on target {} at segment {} (attempt {})",
             command.sessionId(),
@@ -657,6 +661,17 @@ public class ProducerLifecycleService {
       case ReplaceResult.Superseded() -> Optional.of(RecoveryResult.WAITING);
       case ReplaceResult.SessionGone() -> Optional.of(RecoveryResult.SESSION_GONE);
     };
+  }
+
+  private int firstUnstoredSegmentFromTheStart(
+      StreamSession session, ReplaceProducerCommand command) {
+    var index = startWithSourceMedia(session, command.segmentIndex());
+    while (segmentStore.segmentExists(
+        command.sessionId(), SegmentNames.siblingName(command.segmentName(), index))) {
+      index++;
+    }
+
+    return index;
   }
 
   private void syncProgress(

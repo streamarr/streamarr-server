@@ -495,6 +495,37 @@ class ProducerLifecycleServiceTest {
             });
   }
 
+  // Segments 40 to 99 are stored, so a replacement that starts at segment 40 makes progress only
+  // when it stores segment 100.
+  @Test
+  @DisplayName(
+      "Should exhaust recovery when replacements at the last segment with source media store"
+          + " nothing past the segments already stored")
+  void shouldExhaustRecoveryWhenReplacementsAtTheLastSegmentWithSourceMediaStoreNothingNew() {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    lifecycle.settleCompletedJobAttempt(
+        completionEndingEarly(session, StreamSession.defaultVariant(), 40));
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment100.m4s");
+    for (var index = 40; index < 100; index++) {
+      segmentStore.addSegment(sessionId, SegmentNames.mediaSegmentName(index), new byte[] {1});
+    }
+    var request =
+        earliestArrivingSegmentRequestBuilder()
+            .sessionId(sessionId)
+            .segmentName("segment100.m4s")
+            .build();
+    lifecycle.recover(request);
+    clock.advance(Duration.ofSeconds(16));
+    lifecycle.recover(request);
+    clock.advance(Duration.ofSeconds(60));
+
+    assertThat(lifecycle.recover(request))
+        .isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+    assertThat(transcodeExecutor.getStartedRequests().getLast().startSequenceNumber())
+        .isEqualTo(40);
+  }
+
   private static JobAttemptCompletedEvent completionEndingEarly(
       StreamSession session, String variantLabel, int lastSegmentWithSourceMedia) {
     return JobAttemptCompletedEvent.builder()
