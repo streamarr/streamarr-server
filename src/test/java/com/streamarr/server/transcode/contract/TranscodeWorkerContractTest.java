@@ -1428,8 +1428,7 @@ class TranscodeWorkerContractTest {
   @DisplayName(
       "Should keep the field numbers and types that workers build against when publishing the yield command")
   void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingTheYieldCommand() {
-    var command =
-        EstablishWorkerSessionResponse.getDescriptor().findFieldByName("yield_to_seek");
+    var command = EstablishWorkerSessionResponse.getDescriptor().findFieldByName("yield_to_seek");
     var yieldToSeek = YieldToSeekCommand.getDescriptor();
 
     assertThat(command.getNumber()).isEqualTo(6);
