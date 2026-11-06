@@ -1134,9 +1134,44 @@ class WorkerCalibrationTest {
 
     private static final EncoderAndPreset LIBX264_VERYFAST =
         new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
+    private static final EncoderAndPreset LIBX264_MEDIUM =
+        new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
 
     private final JobAttemptLoad veryfast =
         libx264FasterLoad().encoderAndPreset(LIBX264_VERYFAST).build();
+
+    /**
+     * Faster on H264 validated, with medium's cores alone but no constant for medium, so medium on
+     * H264 would share faster's validation as soon as its constant had a value.
+     */
+    private WorkerCalibration validatedAtFasterWithMediumCoresAlone() {
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, LIBX264_MEDIUM, 6.0))
+                      .build())
+              .build();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      return calibration;
+    }
+
+    private void assertMediumUnvalidatedAlsoAfterARestart(WorkerCalibration calibration) {
+      var restarted =
+          tenCoreCalibration()
+              .startingConstants(calibration.constants())
+              .measuredConstants(calibration.measuredConstants())
+              .latestPredictions(calibration.latestPredictions())
+              .build();
+
+      var medium = List.of(libx264FasterLoad().encoderAndPreset(LIBX264_MEDIUM).build());
+      assertThat(calibration.isValidatedFor(medium)).as("before the restart").isFalse();
+      assertThat(restarted.isValidatedFor(medium)).as("after the restart").isFalse();
+    }
 
     private WorkerCalibration benchmarkedAtFasterAndVeryfast() {
       return benchmarkedAtFasterAndVeryfastBuilder().build();
@@ -1323,39 +1358,19 @@ class WorkerCalibrationTest {
         "Should leave another preset unvalidated, also after a restart, when its only measurement cannot separate its constant from two new constants")
     void
         shouldLeaveAnotherPresetUnvalidatedAlsoAfterARestartWhenItsOnlyMeasurementCannotSeparateItsConstantFromTwoNewConstants() {
-      var libx264Medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
-      var calibration =
-          tenCoreCalibration()
-              .startingConstants(
-                  HeadroomConstants.builder()
-                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
-                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Medium, 6.0))
-                      .build())
-              .build();
-      for (var i = 0; i < 20; i++) {
-        calibration.fit(rungMeasurement(i, 1, 2));
-      }
+      var calibration = validatedAtFasterWithMediumCoresAlone();
 
       // Medium at 0.08 with HEVC decode and PQ at 0.02 together costs 3.0, as does any other split.
       calibration.fit(
           measuredAtCost(
               libx264FasterLoad()
-                  .encoderAndPreset(libx264Medium)
+                  .encoderAndPreset(LIBX264_MEDIUM)
                   .sourceDecoder(new SourceDecoder("hevc", DecodeBackend.SOFTWARE))
                   .toneMapping(ToneMapping.PQ)
                   .build(),
               3.0,
               1));
-      var restarted =
-          tenCoreCalibration()
-              .startingConstants(calibration.constants())
-              .measuredConstants(calibration.measuredConstants())
-              .latestPredictions(calibration.latestPredictions())
-              .build();
-
-      var medium = List.of(libx264FasterLoad().encoderAndPreset(libx264Medium).build());
-      assertThat(calibration.isValidatedFor(medium)).as("before the restart").isFalse();
-      assertThat(restarted.isValidatedFor(medium)).as("after the restart").isFalse();
+      assertMediumUnvalidatedAlsoAfterARestart(calibration);
     }
 
     @Test
@@ -1363,24 +1378,13 @@ class WorkerCalibrationTest {
         "Should leave another preset unvalidated, also after a restart, when repeated measurements of one load cannot separate its constant from a new decode constant")
     void
         shouldLeaveAnotherPresetUnvalidatedAlsoAfterARestartWhenRepeatedMeasurementsOfOneLoadCannotSeparateItsConstantFromANewDecodeConstant() {
-      var libx264Medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
-      var calibration =
-          tenCoreCalibration()
-              .startingConstants(
-                  HeadroomConstants.builder()
-                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
-                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Medium, 6.0))
-                      .build())
-              .build();
-      for (var i = 0; i < 20; i++) {
-        calibration.fit(rungMeasurement(i, 1, 2));
-      }
+      var calibration = validatedAtFasterWithMediumCoresAlone();
 
       // 16 megapixels per second of output and 50 of source: medium at 0.02 with HEVC decode at
       // 0.0016 costs 0.4, as does any other split.
       var mediumFromHevc =
           libx264FasterLoad()
-              .encoderAndPreset(libx264Medium)
+              .encoderAndPreset(LIBX264_MEDIUM)
               .outputPixelRate(PixelRate.of(640, 1000, 25))
               .sourceDecoder(new SourceDecoder("hevc", DecodeBackend.SOFTWARE))
               .build();
@@ -1388,41 +1392,21 @@ class WorkerCalibrationTest {
         calibration.fit(measuredAtCost(mediumFromHevc, 0.4, 2));
       }
 
-      var restarted =
-          tenCoreCalibration()
-              .startingConstants(calibration.constants())
-              .measuredConstants(calibration.measuredConstants())
-              .latestPredictions(calibration.latestPredictions())
-              .build();
-
-      var medium = List.of(libx264FasterLoad().encoderAndPreset(libx264Medium).build());
-      assertThat(calibration.isValidatedFor(medium)).as("before the restart").isFalse();
-      assertThat(restarted.isValidatedFor(medium)).as("after the restart").isFalse();
+      assertMediumUnvalidatedAlsoAfterARestart(calibration);
     }
 
     @Test
     @DisplayName(
-        "Should leave another preset unknown and unvalidated when measurements at nearly equal ratios barely separate it from a new decode constant")
+        "Should leave another preset unknown and unvalidated, also after a restart, when measurements at nearly equal ratios barely separate it from a new decode constant")
     void
-        shouldLeaveAnotherPresetUnknownAndUnvalidatedWhenMeasurementsAtNearlyEqualRatiosBarelySeparateItFromANewDecodeConstant() {
-      var libx264Medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
-      var calibration =
-          tenCoreCalibration()
-              .startingConstants(
-                  HeadroomConstants.builder()
-                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
-                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Medium, 6.0))
-                      .build())
-              .build();
-      for (var i = 0; i < 20; i++) {
-        calibration.fit(rungMeasurement(i, 1, 2));
-      }
+        shouldLeaveAnotherPresetUnknownAndUnvalidatedAlsoAfterARestartWhenMeasurementsAtNearlyEqualRatiosBarelySeparateItFromANewDecodeConstant() {
+      var calibration = validatedAtFasterWithMediumCoresAlone();
 
       // Medium costs 0.02 and HEVC decode 0.002: 1.0 + 0.1 at 50 output megapixels per second and
       // 0.992 + 0.1 at 49.6.
       var mediumFromHevc =
           libx264FasterLoad()
-              .encoderAndPreset(libx264Medium)
+              .encoderAndPreset(LIBX264_MEDIUM)
               .sourceDecoder(new SourceDecoder("hevc", DecodeBackend.SOFTWARE));
       for (var i = 0; i < 20; i++) {
         calibration.fit(
@@ -1432,11 +1416,9 @@ class WorkerCalibrationTest {
                 mediumFromHevc.outputPixelRate(PixelRate.of(1984, 1000, 25)).build(), 1.092, 2));
       }
 
-      assertThat(calibration.constants().cpuSecondsPerMegapixel()).doesNotContainKey(libx264Medium);
-      assertThat(
-              calibration.isValidatedFor(
-                  List.of(libx264FasterLoad().encoderAndPreset(libx264Medium).build())))
-          .isFalse();
+      assertThat(calibration.constants().cpuSecondsPerMegapixel())
+          .doesNotContainKey(LIBX264_MEDIUM);
+      assertMediumUnvalidatedAlsoAfterARestart(calibration);
     }
 
     @Test
