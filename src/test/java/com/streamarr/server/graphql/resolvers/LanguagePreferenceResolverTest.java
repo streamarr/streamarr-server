@@ -48,6 +48,7 @@ import tools.jackson.databind.ObjectMapper;
 @SpringBootTest(
     classes = {
       LanguagePreferenceResolver.class,
+      SelectedProfileStateResolver.class,
       LanguagePreferenceDataLoader.class,
       JacksonAutoConfiguration.class,
       StreamarrDataFetcherExceptionHandler.class,
@@ -59,8 +60,10 @@ class LanguagePreferenceResolverTest {
 
   private static final String PREFERENCE_FIELDS =
       """
-      languagePreference {
-        audioLanguages subtitleLanguage subtitleMode audioSource subtitleSource
+      selectedProfileState {
+        languagePreference {
+          audioLanguages subtitleLanguage subtitleMode audioSource subtitleSource
+        }
       }
       """;
 
@@ -252,9 +255,10 @@ class LanguagePreferenceResolverTest {
 
     assertThat(payload.path("userErrors").size()).isZero();
     assertThat(payload.at("/item/__typename").asString()).isEqualTo("Series");
-    assertThat(payload.at("/item/languagePreference/audioLanguages"))
+    assertThat(payload.at("/item/selectedProfileState/languagePreference/audioLanguages"))
         .isEqualTo(mapper.valueToTree(List.of("JA")));
-    assertThat(payload.at("/item/languagePreference/audioSource").asString()).isEqualTo("SERIES");
+    assertThat(payload.at("/item/selectedProfileState/languagePreference/audioSource").asString())
+        .isEqualTo("SERIES");
   }
 
   @Test
@@ -271,7 +275,7 @@ class LanguagePreferenceResolverTest {
 
     var payload = setOverride(subtitleCleared);
 
-    var preference = payload.at("/item/languagePreference");
+    var preference = payload.at("/item/selectedProfileState/languagePreference");
     assertThat(payload.at("/item/__typename").asString()).isEqualTo("Episode");
     assertThat(preference.path("audioLanguages")).isEqualTo(mapper.valueToTree(List.of("JA")));
     assertThat(preference.path("audioSource").asString()).isEqualTo("TITLE");
@@ -293,8 +297,10 @@ class LanguagePreferenceResolverTest {
             Map.of("itemId", movie.getId().toString()));
 
     assertThat(payload.at("/item/__typename").asString()).isEqualTo("Movie");
-    assertThat(payload.at("/item/languagePreference/subtitleMode").asString()).isEqualTo("FORCED");
-    assertThat(payload.at("/item/languagePreference/subtitleSource").asString())
+    assertThat(payload.at("/item/selectedProfileState/languagePreference/subtitleMode").asString())
+        .isEqualTo("FORCED");
+    assertThat(
+            payload.at("/item/selectedProfileState/languagePreference/subtitleSource").asString())
         .isEqualTo("PROFILE");
   }
 

@@ -561,7 +561,7 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
           "series",
           """
           subscription { libraryItemUpdated(libraryId: "%s") {
-            itemId kind item { ... on Series { watchStatus lastWatchedAt } }
+            itemId kind item { ... on Series { selectedProfileState { watchState { watchStatus lastWatchedAt } } } }
             edge(sort: {by: LAST_WATCHED, direction: DESC}, filter: {watchStatus: WATCHED}) {
               cursor orderKey node { ... on Series { id } }
             }
@@ -585,7 +585,8 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
       assertThat(change.path("kind").asString()).isEqualTo("SERIES");
       assertThat(change.at("/edge/node/id").asString()).isEqualTo(series.getId().toString());
       assertThat(change.path("excluded").isNull()).isTrue();
-      assertThat(change.at("/item/watchStatus").asString()).isEqualTo("WATCHED");
+      assertThat(change.at("/item/selectedProfileState/watchState/watchStatus").asString())
+          .isEqualTo("WATCHED");
       var query =
           http.execute(
               bearer,

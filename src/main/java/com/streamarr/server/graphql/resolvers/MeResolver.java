@@ -6,17 +6,21 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
+import com.streamarr.server.graphql.dataloaders.SelectedProfileDataLoader;
 import com.streamarr.server.graphql.dto.HouseholdSummary;
 import com.streamarr.server.graphql.dto.Me;
 import com.streamarr.server.graphql.dto.SelectableProfile;
 import com.streamarr.server.graphql.dto.UsableHousehold;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.IdentityQueryService;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
+import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
+import org.dataloader.DataLoader;
 
 @DgsComponent
 @RequiredArgsConstructor
@@ -67,16 +71,14 @@ public class MeResolver {
         positionCursors.pageRequest(
             list, ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE));
     var page = identityQueryService.selectableProfiles(identity, request);
-    return relayConnectionAdapter.toConnection(page, list, MeResolver::toSelectable);
+    return relayConnectionAdapter.toConnection(page, list, SelectableProfile::from);
   }
 
   @DgsData(parentType = "Me", field = "selectedProfile")
-  public SelectableProfile selectedProfile() {
-    var identity = authorizationService.currentIdentity();
-    return identityQueryService
-        .selectedProfile(identity)
-        .map(MeResolver::toSelectable)
-        .orElse(null);
+  public CompletableFuture<SelectableProfile> selectedProfile(DataFetchingEnvironment dfe) {
+    DataLoader<AuthenticatedIdentity, SelectableProfile> loader =
+        dfe.getDataLoader(SelectedProfileDataLoader.NAME);
+    return loader.load(authorizationService.currentIdentity());
   }
 
   private static HouseholdSummary toSummary(IdentityQueryService.HouseholdSummaryDetails details) {
@@ -85,19 +87,5 @@ public class MeResolver {
 
   private static UsableHousehold toUsable(IdentityQueryService.UsableHouseholdDetails details) {
     return new UsableHousehold(toSummary(details.household()), details.membership());
-  }
-
-  private static SelectableProfile toSelectable(
-      IdentityQueryService.SelectableProfileDetails details) {
-    return SelectableProfile.builder()
-        .id(details.id())
-        .name(details.name())
-        .picture(details.picture().orElse(null))
-        .kind(details.kind())
-        .personal(details.personal())
-        .pinConfigured(details.pinConfigured())
-        .locked(details.locked())
-        .selected(details.selected())
-        .build();
   }
 }

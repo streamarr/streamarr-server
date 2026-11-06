@@ -70,7 +70,7 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
         libraryStatusChanged {
           id
           administration { status }
-          items(first: 1) { edges { node { __typename ... on Movie { id watchStatus } } } }
+          items(first: 1) { edges { node { __typename ... on Movie { id selectedProfileState { watchState { watchStatus } } } } } }
           alphabetIndex { letter count }
         }
       }
@@ -673,7 +673,13 @@ class LibrarySubscriptionIT extends AbstractIntegrationTest {
   }
 
   private static String firstItemWatchStatus(JsonNode change) {
-    return change.path("items").path("edges").path(0).path("node").path("watchStatus").asString();
+    return change
+        .path("items")
+        .path("edges")
+        .path(0)
+        .path("node")
+        .at("/selectedProfileState/watchState/watchStatus")
+        .asString();
   }
 
   private Movie saveMovie(Library library) {
