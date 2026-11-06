@@ -128,11 +128,25 @@ public class SeekPriority {
     sendYields(target.get());
   }
 
-  /** The player requested the media segment, which counts toward its position. */
+  /**
+   * The player requested the media segment, which counts toward its position. A request within
+   * stored media can move the viewer past the lead of a job attempt that a yield named, so the
+   * yield is sent again without it.
+   */
   public synchronized void mediaSegmentRequested(
       @NonNull UUID sessionId, int segmentIndex, long arrival) {
     highestRequestedSegments.merge(sessionId, segmentIndex, Math::max);
     newestArrivals.merge(sessionId, arrival, Math::max);
+    var attempts =
+        runtimeRegistry.findById(sessionId).stream()
+            .flatMap(session -> session.getVariantHandles().values().stream())
+            .map(TranscodeHandle::attemptId)
+            .collect(Collectors.toSet());
+    yielding.entrySet().stream()
+        .filter(entry -> entry.getValue().stream().anyMatch(attempts::contains))
+        .map(Map.Entry::getKey)
+        .toList()
+        .forEach(this::sendYields);
   }
 
   /**

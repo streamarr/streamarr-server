@@ -543,6 +543,27 @@ class SeekPriorityIT {
   }
 
   @Test
+  @DisplayName(
+      "Should resume a named job attempt as soon as its player's request within stored media"
+          + " takes its lead")
+  void shouldResumeANamedJobAttemptAsSoonAsItsPlayersRequestWithinStoredMediaTakesItsLead()
+      throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var steady = startPlaying(worker);
+    deliverAhead(steady, 9);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    var seeking = startPlaying(worker);
+    seek(worker, seeking);
+    assertThat(nextYield(worker).getJobAttemptIdsList())
+        .containsExactly(steady.job().getJobAttemptId());
+
+    assertThat(request(steady.sessionId(), segmentName(8)).delivery().await(REQUEST_LIMIT))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+
+    assertThat(nextYield(worker).getJobAttemptIdsList()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should advance a playing viewer's reported position with the clock")
   void shouldAdvanceAPlayingViewersReportedPositionWithTheClock() throws Exception {
     var worker = registerWorker(WORKER_ID, 8);
