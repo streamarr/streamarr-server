@@ -38,8 +38,10 @@ import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
+import com.streamarr.server.services.streaming.remote.protocol.ProtoUuid;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.YieldToSeekCommand;
 import io.grpc.ManagedChannel;
@@ -390,6 +392,21 @@ class SeekPriorityIT {
 
   @Test
   @DisplayName(
+      "Should place a viewer at its seek's first segment before its player requests another")
+  void shouldPlaceAViewerAtItsSeeksFirstSegmentBeforeItsPlayerRequestsAnother() throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    var sought = startPlaying(worker);
+    assertThat(storeAndAwait(seek(worker, sought, 20))).isInstanceOf(SegmentDelivery.Ready.class);
+    storeSegments(sought, 21, 30);
+    var seeking = startPlaying(worker);
+
+    seek(worker, seeking);
+
+    assertThat(nextYield(worker).getJobAttemptIdsList()).containsExactly(attemptOf(sought));
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the yield of a backward seek when the earlier seek's older request delivers its"
           + " segment")
   void shouldKeepTheYieldOfABackwardSeekWhenTheEarlierSeeksOlderRequestDeliversItsSegment()
@@ -607,6 +624,17 @@ class SeekPriorityIT {
     assertThat(response.getStartVariant().getJob().getExecution().getStartSequenceNumber())
         .isEqualTo(segmentIndex);
     return seek;
+  }
+
+  private void storeSegments(Playing playing, int firstSegment, int lastSegment) {
+    for (var index = firstSegment; index <= lastSegment; index++) {
+      segmentStore.addSegment(playing.sessionId(), segmentName(index), SEGMENT_BYTES);
+    }
+  }
+
+  private Uuid attemptOf(Playing playing) {
+    var handle = registry.findById(playing.sessionId()).orElseThrow().getVariantHandle("480p");
+    return ProtoUuid.toProto(handle.orElseThrow().attemptId());
   }
 
   private void deliverAhead(Playing playing, int lastSegment) {
