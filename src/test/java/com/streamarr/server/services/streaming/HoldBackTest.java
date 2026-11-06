@@ -99,6 +99,23 @@ class HoldBackTest {
 
   @Test
   @DisplayName(
+      "Should send a command without a job attempt before a new hold of it once the release time"
+          + " that the server counted has passed")
+  void shouldSendACommandWithoutAJobAttemptBeforeANewHoldOfItOnceTheReleaseTimeHasPassed() {
+    holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 66)));
+    clock.advance(Duration.ofSeconds(37));
+
+    holdBack.reconsider(sessionId, List.of(lead(WORKER, attemptId, 72)));
+
+    assertThat(executor.holdBacks())
+        .containsExactly(
+            new HeldBack(WORKER, Map.of(attemptId, Duration.ofSeconds(36))),
+            new HeldBack(WORKER, Map.of()),
+            new HeldBack(WORKER, Map.of(attemptId, Duration.ofSeconds(42))));
+  }
+
+  @Test
+  @DisplayName(
       "Should release a job attempt explicitly when its player waits after the release time that the"
           + " server counted, since the worker may have received the hold late")
   void

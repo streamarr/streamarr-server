@@ -247,8 +247,12 @@ class HoldBackIT {
     // The worker resumed the job attempt at its release time, and it stored its next segment.
     clock.advance(Duration.ofSeconds(37));
     upload(playing, 12, 12);
+    var released = worker.responsesThrough(EstablishWorkerSessionResponse::hasHoldBack);
     var renewed = worker.responsesThrough(EstablishWorkerSessionResponse::hasHoldBack);
 
+    // The worker ignores a listing of a job attempt whose hold ended at its release time until a
+    // command leaves it out, since the listing may have been sent before that time.
+    assertThat(released.getLast().getHoldBack().getJobAttemptsList()).isEmpty();
     assertThat(renewed.getLast().getHoldBack().getJobAttemptsList())
         .containsExactly(heldBack(playing.job(), Duration.ofSeconds(42)));
   }

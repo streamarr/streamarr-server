@@ -21,8 +21,8 @@ import lombok.NonNull;
  * the time a viewer playing at real time reaches the low-water mark, so a hold ends even when no
  * later command arrives. A later command moves a held job attempt's release only earlier, so a late
  * command never extends a hold; a job attempt that the worker released is held again at its next
- * stored segment. Seek priority hands each stream session's leads to this class under its own
- * monitor, which guards this class's state.
+ * stored segment, by a command that follows one without it. Seek priority hands each stream
+ * session's leads to this class under its own monitor, which guards this class's state.
  */
 final class HoldBack {
 
@@ -103,9 +103,28 @@ final class HoldBack {
                     .ifPresent(at -> next.put(lead.attemptId(), new Hold(sessionId, at))));
     var changed = !next.equals(lastSent);
     keep(target, next);
-    if (changed) {
-      send(target, next, now);
+    if (!changed) {
+      return;
     }
+
+    var withoutFreshHolds = withoutFreshHolds(next, sent, lastSent);
+    if (withoutFreshHolds.size() < next.size()) {
+      send(target, withoutFreshHolds, now);
+    }
+
+    send(target, next, now);
+  }
+
+  // A worker may still keep a hold that the server counts as past, and ignores a listing of a job
+  // attempt whose hold ended at its release time until a command leaves it out. So a new hold of a
+  // job attempt that the last command listed follows a command without it.
+  private static Map<UUID, Hold> withoutFreshHolds(
+      Map<UUID, Hold> next, Map<UUID, Hold> sent, Map<UUID, Hold> lastSent) {
+    var without = new HashMap<>(next);
+    without
+        .keySet()
+        .removeIf(attemptId -> !sent.containsKey(attemptId) && lastSent.containsKey(attemptId));
+    return without;
   }
 
   // The holds that the worker still keeps: each ends at its release time without a command.

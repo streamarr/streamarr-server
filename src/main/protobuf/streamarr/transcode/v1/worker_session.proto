@@ -1641,6 +1641,10 @@ message YieldToSeekCommand {
 // a hold. A worker that predates this command ignores it.
 message HoldBackCommand {
   WorkerIdentity target = 1;
+  // A job attempt whose hold ended at its release time stays unheld, whatever
+  // later commands list it, until a command leaves it out, since a listing sent
+  // before that time can arrive after it. The server sends a command without the
+  // job attempt before it holds that job attempt again.
   repeated HeldBackJobAttempt job_attempts = 2;
 }
 
