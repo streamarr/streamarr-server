@@ -50,6 +50,7 @@ import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.StopVariantCommand;
 import com.streamarr.transcode.v1.TranscodeDecision;
+import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
@@ -85,6 +86,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
@@ -1689,16 +1691,22 @@ final class LiveWorkerConnectionRegistry {
       return Optional.of(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
     }
 
-    // The contract counts a merged plain grid's starts in whole seconds, the time base 1/1, and a
-    // copy's starts in the time base of its stored keyframe positions.
+    // A merged plain grid lists segment N at N periods in the time base 1/1. Any other list counts
+    // a copy's keyframe ticks, even in a 1/1 keyframe time base.
     private static boolean listsKeyframeTicks(VariantJob job) {
       var execution = job.getExecution();
-      if (!execution.hasSegmentStartTimeBase()) {
+      return execution.getSegmentStartTicksCount() > 0 && !listsThePlainGrid(execution);
+    }
+
+    private static boolean listsThePlainGrid(TranscodeExecution execution) {
+      var timeBase = execution.getSegmentStartTimeBase();
+      if (timeBase.getNumerator() != 1 || timeBase.getDenominator() != 1) {
         return false;
       }
 
-      var timeBase = execution.getSegmentStartTimeBase();
-      return timeBase.getNumerator() != timeBase.getDenominator();
+      long period = execution.getTargetSegmentDurationSeconds();
+      var ticks = execution.getSegmentStartTicksList();
+      return IntStream.range(0, ticks.size()).allMatch(index -> ticks.get(index) == index * period);
     }
 
     private static boolean isCopyOutputMismatch(VariantJob job, JobAttemptFailed failed) {

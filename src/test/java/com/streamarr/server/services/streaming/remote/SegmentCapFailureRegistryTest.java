@@ -45,12 +45,22 @@ class SegmentCapFailureRegistryTest {
   private static final UUID WORKER_ID = UUID.randomUUID();
   private static final TranscodeExecution EXACT_STARTS =
       TranscodeExecution.newBuilder()
+          .setTargetSegmentDurationSeconds(6)
           .setMediaSegmentCount(3)
           .addAllSegmentStartTicks(List.of(0L, 6_006L, 18_018L))
           .setSegmentStartTimeBase(Fraction.newBuilder().setNumerator(1).setDenominator(1_000))
           .build();
+  // A source whose video time base is 1/1 stores its keyframe ticks in whole seconds too.
+  private static final TranscodeExecution WHOLE_SECOND_KEYFRAME_STARTS =
+      TranscodeExecution.newBuilder()
+          .setTargetSegmentDurationSeconds(6)
+          .setMediaSegmentCount(3)
+          .addAllSegmentStartTicks(List.of(0L, 7L, 19L))
+          .setSegmentStartTimeBase(Fraction.newBuilder().setNumerator(1).setDenominator(1))
+          .build();
   private static final TranscodeExecution MERGED_PLAIN_GRID_TICKS =
       TranscodeExecution.newBuilder()
+          .setTargetSegmentDurationSeconds(6)
           .setMediaSegmentCount(2)
           .addAllSegmentStartTicks(List.of(0L, 6L))
           .setSegmentStartTimeBase(Fraction.newBuilder().setNumerator(1).setDenominator(1))
@@ -101,16 +111,21 @@ class SegmentCapFailureRegistryTest {
 
   // In Auto, an encoded lower variant beside a copy carries the copy's keyframe-merged starts
   // (ADR 0050), so every replacement attempt cuts the same oversized segment.
+  static Stream<Arguments> lowerVariantsOnACopysSegmentList() {
+    return Stream.of(
+        Arguments.of(TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE, EXACT_STARTS),
+        Arguments.of(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE, EXACT_STARTS),
+        Arguments.of(TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE, WHOLE_SECOND_KEYFRAME_STARTS));
+  }
+
   @ParameterizedTest
-  @EnumSource(
-      value = TranscodeMode.class,
-      names = {"TRANSCODE_MODE_VIDEO_TRANSCODE", "TRANSCODE_MODE_FULL_TRANSCODE"})
+  @MethodSource("lowerVariantsOnACopysSegmentList")
   @DisplayName(
       "Should end the stream session's recovery when a lower variant's encode on the copy's"
           + " segment list passes the segment cap")
   void shouldEndTheStreamSessionsRecoveryWhenALowerVariantOnTheCopysListPassesTheSegmentCap(
-      TranscodeMode mode) {
-    var job = jobRunning(mode, VideoMode.VIDEO_MODE_ENCODE, EXACT_STARTS);
+      TranscodeMode mode, TranscodeExecution execution) {
+    var job = jobRunning(mode, VideoMode.VIDEO_MODE_ENCODE, execution);
 
     failOverTheCap(job);
 
