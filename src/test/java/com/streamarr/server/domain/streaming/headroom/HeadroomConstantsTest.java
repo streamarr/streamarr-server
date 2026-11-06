@@ -34,10 +34,14 @@ class HeadroomConstantsTest {
       HeadroomConstants.builder()
           .cpuSecondsPerMegapixel(
               Map.of(
-                  LIBX264_FASTER, 0.04,
-                  SOFTWARE_HEVC, 0.01,
-                  HARDWARE_HEVC, 0.001,
-                  ToneMapping.PQ, 0.02))
+                  LIBX264_FASTER,
+                  0.04,
+                  SOFTWARE_HEVC,
+                  0.01,
+                  HARDWARE_HEVC,
+                  0.001,
+                  ToneMapping.PQ,
+                  0.02))
           .coresAlone(Map.of(LIBX264_FASTER, 8.0))
           .build();
 
@@ -53,7 +57,8 @@ class HeadroomConstantsTest {
   @Test
   @DisplayName(
       "Should cost the encode term in output pixel rate plus the decode term in source pixel rate when the job attempt does not tone-map")
-  void shouldCostTheEncodeTermInOutputPixelRatePlusTheDecodeTermInSourcePixelRateWhenTheJobAttemptDoesNotToneMap() {
+  void
+      shouldCostTheEncodeTermInOutputPixelRatePlusTheDecodeTermInSourcePixelRateWhenTheJobAttemptDoesNotToneMap() {
     var cost = CONSTANTS.cpuSecondsPerMediaSecond(hevcSourceEncodedWithLibx264Faster().build());
 
     assertThat(cost).hasValueCloseTo(0.04 * 25 + 0.01 * 50, within(1e-12));
@@ -92,7 +97,8 @@ class HeadroomConstantsTest {
   }
 
   @Test
-  @DisplayName("Should have no cost when the encoder-and-preset constant of the job attempt is unknown")
+  @DisplayName(
+      "Should have no cost when the encoder-and-preset constant of the job attempt is unknown")
   void shouldHaveNoCostWhenTheEncoderAndPresetConstantOfTheJobAttemptIsUnknown() {
     var veryfast = new EncoderAndPreset(LIBX264_FASTER.backend(), EncoderPreset.VERYFAST);
 

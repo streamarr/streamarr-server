@@ -1,27 +1,27 @@
 package com.streamarr.server.services.streaming.headroom;
 
-import com.streamarr.server.domain.streaming.headroom.CpuLimit;
-import com.streamarr.server.domain.streaming.headroom.PixelRate;
-import com.streamarr.server.domain.streaming.headroom.DecodeBackend;
-import com.streamarr.server.domain.streaming.headroom.SourceDecoder;
-import com.streamarr.server.domain.streaming.headroom.EncoderAndPreset;
-import com.streamarr.server.domain.streaming.headroom.ToneMapping;
-import com.streamarr.server.domain.streaming.headroom.JobAttemptLoad;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.headroom.CpuLimit;
+import com.streamarr.server.domain.streaming.headroom.DecodeBackend;
+import com.streamarr.server.domain.streaming.headroom.EncoderAndPreset;
+import com.streamarr.server.domain.streaming.headroom.JobAttemptLoad;
+import com.streamarr.server.domain.streaming.headroom.PixelRate;
+import com.streamarr.server.domain.streaming.headroom.SourceDecoder;
+import com.streamarr.server.domain.streaming.headroom.ToneMapping;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Arrays;
 import java.util.stream.Collectors;
 
 /**
@@ -49,7 +49,8 @@ final class RecordedCapacityRuns {
   static final Map<EncoderAndPreset, Double> CORES_ALONE =
       Arrays.stream(EncoderPreset.values())
           .collect(
-              Collectors.toMap(preset -> new EncoderAndPreset(LIBX264, preset), _ -> CPU_LIMIT.cores()));
+              Collectors.toMap(
+                  preset -> new EncoderAndPreset(LIBX264, preset), _ -> CPU_LIMIT.cores()));
 
   /** One variant of one run. */
   record RecordedVariant(JobAttemptLoad load, Duration segment, Duration productionTime) {
@@ -63,7 +64,10 @@ final class RecordedCapacityRuns {
   record RecordedRun(String name, List<RecordedVariant> variants) {
 
     List<JobAttemptLoad> loadsBeside(RecordedVariant variant) {
-      return variants.stream().filter(other -> other != variant).map(RecordedVariant::load).toList();
+      return variants.stream()
+          .filter(other -> other != variant)
+          .map(RecordedVariant::load)
+          .toList();
     }
   }
 
@@ -75,8 +79,7 @@ final class RecordedCapacityRuns {
         .forEach(
             row -> {
               var columns = row.split(",");
-              runs.computeIfAbsent(columns[0], _ -> new ArrayList<>())
-                  .add(variant(columns));
+              runs.computeIfAbsent(columns[0], _ -> new ArrayList<>()).add(variant(columns));
             });
     return runs.entrySet().stream()
         .map(run -> new RecordedRun(run.getKey(), List.copyOf(run.getValue())))
@@ -86,8 +89,7 @@ final class RecordedCapacityRuns {
   private static RecordedVariant variant(String[] columns) {
     var preset = EncoderPreset.valueOf(columns[1].toUpperCase(Locale.ROOT));
     var output =
-        PixelRate.of(
-            Integer.parseInt(columns[2]), Integer.parseInt(columns[3]), FRAMES_PER_SECOND);
+        PixelRate.of(Integer.parseInt(columns[2]), Integer.parseInt(columns[3]), FRAMES_PER_SECOND);
     var load =
         JobAttemptLoad.builder()
             .encoderAndPreset(new EncoderAndPreset(LIBX264, preset))

@@ -15,7 +15,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 class PixelRateTest {
 
   @Test
-  @DisplayName("Should multiply width, height and frame rate when a picture size and frame rate are given")
+  @DisplayName(
+      "Should multiply width, height and frame rate when a picture size and frame rate are given")
   void shouldMultiplyWidthHeightAndFrameRateWhenAPictureSizeAndFrameRateAreGiven() {
     var rate = PixelRate.of(1920, 1080, 24_000.0 / 1_001);
 
@@ -23,7 +24,8 @@ class PixelRateTest {
   }
 
   @Test
-  @DisplayName("Should rate a 60 fps source 2.5 times a 24 fps source of the same size when both are 1080p")
+  @DisplayName(
+      "Should rate a 60 fps source 2.5 times a 24 fps source of the same size when both are 1080p")
   void shouldRateA60FpsSource25TimesA24FpsSourceOfTheSameSizeWhenBothAre1080p() {
     var film = PixelRate.of(1920, 1080, 24);
     var sport = PixelRate.of(1920, 1080, 60);
