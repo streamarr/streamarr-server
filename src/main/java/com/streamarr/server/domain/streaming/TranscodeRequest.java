@@ -42,10 +42,11 @@ public record TranscodeRequest(
    * frame rate unless the variant names another; a stream copy keeps the source's timing and
    * carries none. {@code segmentStartSlots} holds the stream session's segment list, each segment's
    * start in slots of {@code targetSegmentDuration}, or nothing on the plain grid (ADR 0037). Every
-   * attempt of a stream copy session carries the copy's {@code exactSegmentStarts}; an attempt
-   * whose segments start on the plain grid carries none. {@code advertisedEnd} is the end of the
-   * variant's last advertised media segment, up to which an encoded stream holds its last frame or
-   * pads with silence (ADR 0037, early ends).
+   * attempt of a stream copy session carries the copy's {@code exactSegmentStarts}, and every
+   * attempt on a plain grid that merges its final slot carries the grid's whole-second starts; an
+   * attempt on any other plain grid carries none. {@code advertisedEnd} is the end of the variant's
+   * last advertised media segment, up to which an encoded stream holds its last frame or pads with
+   * silence (ADR 0037, early ends).
    */
   public TranscodeRequest {
     segmentStartSlots = List.copyOf(segmentStartSlots);

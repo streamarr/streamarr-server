@@ -40,17 +40,26 @@ final class MediaSegmentTimelines {
   }
 
   /**
-   * Each segment's exact start, which every job attempt of a stream copy session carries, or empty
-   * when the session's segments start on the plain grid (ADR 0037, segment list).
+   * Each segment's exact start, which every job attempt of the stream session carries: a stream
+   * copy's keyframe ticks, or a plain grid's whole seconds when it merges its final slot. Empty
+   * when the session's segments start on the plain grid unmerged (ADR 0037, segment list).
    */
   static Optional<ExactSegmentStarts> exactSegmentStartsOf(
       StreamSession session, MediaSegmentTimeline timeline) {
-    return switch (session.getMediaProbe().keyframes()) {
-      case KeyframeKnowledge.Known(var positions)
-          when timeline instanceof MediaSegmentTimeline.StreamCopy copy ->
-          Optional.of(copy.exactStartsIn(positions));
-      default -> Optional.empty();
+    return switch (timeline) {
+      case MediaSegmentTimeline.PlainGrid grid -> grid.exactStarts();
+      case MediaSegmentTimeline.KeyframeSeekingGrid seekingGrid -> seekingGrid.grid().exactStarts();
+      case MediaSegmentTimeline.StreamCopy copy -> copyStartsOf(session, copy);
     };
+  }
+
+  private static Optional<ExactSegmentStarts> copyStartsOf(
+      StreamSession session, MediaSegmentTimeline.StreamCopy copy) {
+    if (!(session.getMediaProbe().keyframes() instanceof KeyframeKnowledge.Known(var positions))) {
+      return Optional.empty();
+    }
+
+    return Optional.of(copy.exactStartsIn(positions));
   }
 
   // Without the keyframes, the worker reads from one period before the attempt's first segment.

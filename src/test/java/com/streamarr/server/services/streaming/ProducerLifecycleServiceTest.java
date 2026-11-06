@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.ExactSegmentStarts;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
@@ -1236,6 +1237,10 @@ class ProducerLifecycleServiceTest {
 
     assertThat(first.mediaSegmentCount()).isEqualTo(10);
     assertThat(first.segmentStartSlots()).containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+    assertThat(first.exactSegmentStarts())
+        .hasValue(
+            new ExactSegmentStarts(
+                List.of(0L, 6L, 12L, 18L, 24L, 30L, 36L, 42L, 48L, 54L), new Fraction(1, 1)));
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
     assertThat(transcodeExecutor.getStartedRequests()).containsExactly(first);
   }

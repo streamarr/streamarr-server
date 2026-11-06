@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
+import java.util.stream.LongStream;
 import lombok.NonNull;
 
 /**
@@ -114,6 +115,8 @@ public sealed interface MediaSegmentTimeline {
      */
     public static final Duration MINIMUM_LAST_SEGMENT_DURATION = Duration.ofSeconds(2);
 
+    private static final Fraction WHOLE_SECONDS = new Fraction(1, 1);
+
     @Override
     public int mediaSegmentCount() {
       if (mergesFinalSlot()) {
@@ -140,6 +143,24 @@ public sealed interface MediaSegmentTimeline {
       }
 
       return IntStream.range(0, mediaSegmentCount()).boxed().toList();
+    }
+
+    /**
+     * Each segment's start in whole seconds, in the time base 1/1, when the grid merges its final
+     * slot, so that every job attempt groups that slot into the last segment; otherwise empty. The
+     * plain grid has no stored keyframe time base to count its starts in (ADR 0037, segment list).
+     */
+    public Optional<ExactSegmentStarts> exactStarts() {
+      if (!mergesFinalSlot()) {
+        return Optional.empty();
+      }
+
+      var ticks =
+          LongStream.range(0, mediaSegmentCount())
+              .map(index -> index * targetSegmentDurationSeconds())
+              .boxed()
+              .toList();
+      return Optional.of(new ExactSegmentStarts(ticks, WHOLE_SECONDS));
     }
 
     /** The slots that the media reaches into, counted in whole milliseconds. */

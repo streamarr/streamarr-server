@@ -3039,6 +3039,35 @@ class HlsStreamingServiceTest {
         .allSatisfy(request -> assertThat(request.exactSegmentStarts()).isEmpty());
   }
 
+  // At the 6 s period, the 24.5 s media ends 0.5 s into slot 4, so that slot merges into segment 3.
+  // An encode has no stored keyframe time base for its starts, so they count whole seconds (ADR
+  // 0037, segment list).
+  @Test
+  @DisplayName(
+      "Should send each segment's whole-second start in time base 1/1 when an encode's plain grid"
+          + " merges its final slot")
+  void shouldSendEachSegmentsWholeSecondStartWhenAnEncodesPlainGridMergesItsFinalSlot() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofMillis(24_500))
+            .videoCodec("hevc")
+            .keyframes(keyframesAtMillis(0, 6_000, 12_000, 18_000, 24_000))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .allSatisfy(
+            request ->
+                assertThat(request.exactSegmentStarts())
+                    .hasValue(
+                        new ExactSegmentStarts(List.of(0L, 6L, 12L, 18L), new Fraction(1, 1))));
+  }
+
   // At the 6 s period, the keyframe at 12 s opens slot 2 only 14 ms after the segment that the
   // keyframe at 11.986 s opens, so it stays in that segment. A 24 fps encode would have no frame
   // between the two starts (ADR 0037, segment list).
