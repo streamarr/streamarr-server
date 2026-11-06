@@ -50,10 +50,10 @@ final class PendingMeasurements {
 
   /**
    * The value of each waiting constant that the waiting measurements determine once the known
-   * constants are held at these values. Waiting measurements that share no waiting constant are
-   * solved apart, so measurements that cannot separate two constants leave the others free. A
-   * measurement that prices a constant which comes out not positive is set aside while the rest are
-   * solved again, so its cost never moves another constant.
+   * constants are held at these values, even when they cannot separate some other waiting
+   * constants. Waiting measurements that share no waiting constant are solved apart. A measurement
+   * that prices a constant which comes out not positive is set aside while the rest are solved
+   * again, so its cost never moves another constant.
    */
   Map<CostConstant, Double> solve(Map<CostConstant, Double> known) {
     return solveSeparately(waiting, known);
@@ -70,21 +70,17 @@ final class PendingMeasurements {
   private static Map<CostConstant, Double> solveGroup(
       List<Measured> group, Map<CostConstant, Double> known) {
     var unknowns = List.copyOf(unknownsOf(group, known));
-    var values = LinearSystem.solve(normalEquations(group, unknowns, known));
-    if (values.isEmpty()) {
-      return Map.of();
-    }
-
     var notPositive = new HashSet<CostConstant>();
     var solved = new HashMap<CostConstant, Double>();
-    for (var index = 0; index < unknowns.size(); index++) {
-      var value = values.get()[index];
-      if (value <= 0 || !Double.isFinite(value)) {
-        notPositive.add(unknowns.get(index));
-      }
+    LinearSystem.solveDetermined(normalEquations(group, unknowns, known))
+        .forEach(
+            (index, value) -> {
+              if (value <= 0 || !Double.isFinite(value)) {
+                notPositive.add(unknowns.get(index));
+              }
 
-      solved.put(unknowns.get(index), value);
-    }
+              solved.put(unknowns.get(index), value);
+            });
 
     if (notPositive.isEmpty()) {
       return solved;

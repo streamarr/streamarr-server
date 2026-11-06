@@ -593,6 +593,40 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
+        "Should give a new constant its value when the waiting measurements that share it also price two constants they cannot separate")
+    void
+        shouldGiveANewConstantItsValueWhenTheWaitingMeasurementsThatShareItAlsoPriceTwoConstantsTheyCannotSeparate() {
+      var libx264Medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Medium, 6.0))
+                      .build())
+              .build();
+      var mediumHdr =
+          libx264FasterLoad()
+              .encoderAndPreset(libx264Medium)
+              .sourceDecoder(softwareHevc)
+              .toneMapping(ToneMapping.PQ)
+              .build();
+      // 0.08 x 25 + 0.01 x 50 = 2.5 CPU s per media s.
+      var mediumSdr = libx264FasterLoad().encoderAndPreset(libx264Medium).build();
+
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(measuredAtCost(mediumHdr, 3.0, 1));
+        calibration.fit(measuredAtCost(mediumSdr, 2.5, 1));
+      }
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel())
+          .doesNotContainKeys(softwareHevc, ToneMapping.PQ)
+          .hasEntrySatisfying(
+              libx264Medium, constant -> assertThat(constant).isCloseTo(0.08, within(1e-3)));
+    }
+
+    @Test
+    @DisplayName(
         "Should give a new constant its value when other waiting measurements cannot separate two other new constants")
     void
         shouldGiveANewConstantItsValueWhenOtherWaitingMeasurementsCannotSeparateTwoOtherNewConstants() {
