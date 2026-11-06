@@ -52,6 +52,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -413,15 +414,25 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
     var listedStreams = listed.path("data").path("activeStreams");
     var movie = listedMedia(listedStreams, moviePlayback);
     var episode = listedMedia(listedStreams, episodePlayback);
-    var season = episode.path("season");
-    var series = season.path("series");
     assertThat(movie.path("title").asString()).as("movie title").isEqualTo("Streamed Movie");
-    assertThat(episode.path("title").asString()).as("episode title").isEqualTo("Pilot");
-    assertThat(season.path("seasonNumber").asInt()).as("season number").isEqualTo(2);
-    assertThat(series.path("title").asString()).as("series title").isEqualTo("A Series");
-    assertThat(List.of(movie, episode, season, series))
+    assertEpisodeTitles(episode);
+    assertThat(Stream.concat(Stream.of(movie), episodeTitles(episode).stream()))
         .as("selectedProfileState in %s", listed)
         .allSatisfy(title -> assertThat(title.path("selectedProfileState").isNull()).isTrue());
+  }
+
+  private static List<JsonNode> episodeTitles(JsonNode episode) {
+    var season = episode.path("season");
+    return List.of(episode, season, season.path("series"));
+  }
+
+  private static void assertEpisodeTitles(JsonNode episode) {
+    var season = episode.path("season");
+    assertThat(episode.path("title").asString()).as("episode title").isEqualTo("Pilot");
+    assertThat(season.path("seasonNumber").asInt()).as("season number").isEqualTo(2);
+    assertThat(season.path("series").path("title").asString())
+        .as("series title")
+        .isEqualTo("A Series");
   }
 
   private static void assertMovie(String source, JsonNode media) {
