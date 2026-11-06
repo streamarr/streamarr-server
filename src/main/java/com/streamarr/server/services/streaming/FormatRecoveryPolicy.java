@@ -11,9 +11,9 @@ import lombok.NonNull;
  * failed copy, because an encode that Original reaches plays in Auto, so it falls back to an encode
  * in Auto. A fixed quality's failed copy falls back to an encode at the same fixed quality, and the
  * failure of the fixed quality's own encode ends playback. In every playback choice, a Dolby Vision
- * copy on a PQ or HLG base that the client rejects first falls back to the copy with Dolby Vision
- * stripped, which keeps the playback choice; a worker's mismatch or a short copy would repeat in
- * that copy, so it goes straight to the encode.
+ * copy on a PQ or HLG base that the client rejects, or whose Dolby Vision conversion the worker
+ * fails, first falls back to the copy with Dolby Vision stripped, which keeps the playback choice;
+ * a worker's mismatch or a short copy would repeat in that copy, so it goes straight to the encode.
  */
 record FormatRecoveryPolicy(int maximumFormatAttempts) {
   private static final PlayingChoice AUTO_AFTER_A_FAILED_COPY =
@@ -30,7 +30,7 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
   NextFormatAttempt after(
       @NonNull PlayingChoice choice, @NonNull FailedFormatAttempt failed, int formatAttemptCount) {
     if (failed.output() instanceof FailedFormatAttempt.DolbyVisionCopyOnAnHdrBase
-        && failed.reason() instanceof PlaybackSessionFailure.FixedFormatFailed) {
+        && stripsDolbyVisionAfter(failed.reason())) {
       return withinBudget(
           new NextFormatAttempt.CopyWithDolbyVisionStrippedOrEncode(
               choiceWhenStrippingDolbyVision(choice), choiceWhenEncodingAfterACopy(choice)),
@@ -42,6 +42,20 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
       case ORIGINAL -> afterOriginalsFailure(choice, failed, formatAttemptCount);
       case LOW_360P, MEDIUM_480P, HIGH_720P, FULL_HD_1080P, UHD_4K ->
           afterAFixedQualitysFailure(choice, failed, formatAttemptCount);
+    };
+  }
+
+  private static boolean stripsDolbyVisionAfter(PlaybackSessionFailure reason) {
+    return switch (reason) {
+      case PlaybackSessionFailure.FixedFormatFailed _,
+          PlaybackSessionFailure.DolbyVisionConversionFailed _ ->
+          true;
+      case PlaybackSessionFailure.OutputMismatch _,
+          PlaybackSessionFailure.InvalidSpecification _,
+          PlaybackSessionFailure.AttemptsExhausted _,
+          PlaybackSessionFailure.CreationRejected _,
+          PlaybackSessionFailure.StartupFailed _ ->
+          false;
     };
   }
 

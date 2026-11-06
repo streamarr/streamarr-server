@@ -1019,8 +1019,10 @@ class PlaybackSessionServiceTest {
   @CsvSource({
     "AUTO,OUTPUT_MISMATCH",
     "AUTO,INVALID_SPECIFICATION",
+    "AUTO,DOLBY_VISION_CONVERSION_FAILED",
     "HIGH_720P,OUTPUT_MISMATCH",
-    "ORIGINAL,INVALID_SPECIFICATION"
+    "ORIGINAL,INVALID_SPECIFICATION",
+    "ORIGINAL,DOLBY_VISION_CONVERSION_FAILED"
   })
   @DisplayName("Should fail playback without a new format attempt when a job failure is final")
   void shouldFailPlaybackWithoutNewFormatAttemptWhenJobFailureIsFinal(
@@ -1185,6 +1187,8 @@ class PlaybackSessionServiceTest {
       case OUTPUT_MISMATCH -> new PlaybackSessionFailure.OutputMismatch();
       case INVALID_SPECIFICATION -> new PlaybackSessionFailure.InvalidSpecification();
       case SEGMENT_CAP_EXCEEDED -> new PlaybackSessionFailure.OutputMismatch();
+      case DOLBY_VISION_CONVERSION_FAILED ->
+          new PlaybackSessionFailure.DolbyVisionConversionFailed();
     };
   }
 

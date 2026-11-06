@@ -28,6 +28,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.SegmentDelivery;
+import com.streamarr.server.services.streaming.events.DolbyVisionConversionFailedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
@@ -333,6 +334,42 @@ class RemoteFormatFailureIT {
     }
   }
 
+  // The worker's Dolby Vision conversion failure repeats in every attempt with the same decision
+  // (streamarr/streamarr-server#651): a copy moves to the copy with Dolby Vision stripped, and any
+  // other decision ends with the typed failure.
+  @ParameterizedTest
+  @CsvSource({
+    "REMUX,true",
+    "AUDIO_TRANSCODE,true",
+    "VIDEO_TRANSCODE,false",
+    "FULL_TRANSCODE,false"
+  })
+  @DisplayName(
+      "Should treat a Dolby Vision conversion failure as terminal when the decision copies or"
+          + " encodes video")
+  void shouldTreatADolbyVisionConversionFailureAsTerminalWhenTheDecisionCopiesOrEncodesVideo(
+      TranscodeMode mode, boolean copiesVideo) throws Exception {
+    var events = new CapturingEventPublisher();
+    try (var rig = new FailureRig(events);
+        var worker = new TestWorker(rig.server)) {
+      rig.executor.start(rig.requestBuilder().transcodeDecision(rig.decision(mode)).build());
+      var job = worker.nextJob();
+      worker.fail(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_DOLBY_VISION_CONVERSION_FAILED);
+      worker.awaitProcessed(rig.server);
+
+      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+          .contains(TranscodeFailure.DOLBY_VISION_CONVERSION_FAILED);
+      assertThat(events.getEventsOfType(DolbyVisionConversionFailedEvent.class))
+          .isEqualTo(copiesVideo ? List.of(conversionEventFor(job)) : List.of());
+      assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
+          .isEqualTo(
+              copiesVideo
+                  ? List.of()
+                  : List.of(
+                      terminalEventFor(job, TranscodeFailure.DOLBY_VISION_CONVERSION_FAILED)));
+    }
+  }
+
   // Every attempt on the same segment list cuts the same segments, so each would exceed the cap
   // again; a new format attempt on the plain grid avoids it (ADR 0037, ADR 0052).
   @ParameterizedTest
@@ -458,6 +495,13 @@ class RemoteFormatFailureIT {
 
   private static VideoCopyOutputMismatchEvent eventFor(VariantJob job) {
     return new VideoCopyOutputMismatchEvent(
+        fromProto(job.getStreamSessionId()),
+        fromProto(job.getJobAttemptId()),
+        job.getVariant().getVariantLabel());
+  }
+
+  private static DolbyVisionConversionFailedEvent conversionEventFor(VariantJob job) {
+    return new DolbyVisionConversionFailedEvent(
         fromProto(job.getStreamSessionId()),
         fromProto(job.getJobAttemptId()),
         job.getVariant().getVariantLabel());

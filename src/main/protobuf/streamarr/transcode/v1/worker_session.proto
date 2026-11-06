@@ -724,6 +724,12 @@ enum JobAttemptFailure {
   // at the driver's session limit. The worker reports it only for an attempt
   // on a hardware backend (ADR 0044, hardware failure).
   JOB_ATTEMPT_FAILURE_HARDWARE_ENCODER_FAILED = 9;
+  // A copy that converts single-track Dolby Vision profile 7 to profile 8.1
+  // met a picture whose RPU it cannot convert: the sample holds no RPU or more
+  // than one, or the RPU cannot be read or serves another profile. Another
+  // attempt with the same decision meets the same picture, so the server moves
+  // to the copy with Dolby Vision stripped (ADR 0036, ADR 0052).
+  JOB_ATTEMPT_FAILURE_DOLBY_VISION_CONVERSION_FAILED = 10;
 }
 
 message JobAttemptFailed {
