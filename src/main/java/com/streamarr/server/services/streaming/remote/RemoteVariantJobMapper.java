@@ -478,7 +478,7 @@ final class RemoteVariantJobMapper {
   private static VideoCodecFamily codecFamily(EncodeCodecProfile profile) {
     return switch (profile) {
       case H264_HIGH -> VideoCodecFamily.VIDEO_CODEC_FAMILY_H264;
-      case HEVC_MAIN -> VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC;
+      case HEVC_MAIN, HEVC_MAIN_10 -> VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC;
       case AV1_MAIN -> VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1;
     };
   }
@@ -487,6 +487,7 @@ final class RemoteVariantJobMapper {
     return switch (profile) {
       case H264_HIGH -> VideoCodecProfile.VIDEO_CODEC_PROFILE_H264_HIGH;
       case HEVC_MAIN -> VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN;
+      case HEVC_MAIN_10 -> VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN_10;
       case AV1_MAIN -> VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN;
     };
   }

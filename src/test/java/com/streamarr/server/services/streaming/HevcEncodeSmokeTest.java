@@ -1,6 +1,8 @@
 package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
@@ -11,6 +13,8 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -22,6 +26,7 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.SyntheticHdrSource;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -29,6 +34,7 @@ import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -44,17 +50,18 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * Real-worker proof of the H.265 level table (ADR 0013, streamarr/streamarr-server#58). Each test
- * probes a synthetic source through the pinned worker image and starts an Auto stream session for a
- * client that declares only HEVC, so every variant of the ladder is a libx265 encode. For each
- * variant, the playlist's codec string must equal the codec string of the initialization segment
- * that the worker produced with the forced level and tier, and the codec string that libx265 writes
- * when it chooses the level and tier on its own with the worker's other settings.
+ * Real-worker proof of the H.265 level table and of H.265 Main 10 HDR10 encodes (ADR 0013,
+ * streamarr/streamarr-server#58). Each test probes a synthetic source through the worker image and
+ * starts an Auto stream session whose encode is libx265. The playlist's codec string must equal the
+ * codec string of the initialization segment that the worker produced with the forced level and
+ * tier, and the codec string that libx265 writes when it chooses the level and tier on its own with
+ * the worker's other settings.
  */
 @Tag("SmokeTest")
 @DisplayName("HEVC Encode Smoke Tests")
@@ -178,6 +185,55 @@ class HevcEncodeSmokeTest {
     }
   }
 
+  // #58: an HEVC encode that keeps PQ forces H.265 Main 10 and writes the source's static HDR
+  // metadata. The H.264 source is 10-bit PQ, which the client's H.264 entry cannot play, so the
+  // server encodes; an HDR encode wins over H.264 at the same frame rate.
+  @Test
+  @DisplayName(
+      "Should deliver 10-bit PQ with the source's mastering display and the advertised Main 10"
+          + " codec string when the server encodes an HDR10 source to HEVC")
+  void shouldDeliver10BitPqWithTheSourcesMasteringDisplayWhenTheServerEncodesAnHdr10SourceToHevc()
+      throws Exception {
+    var session =
+        sessionFor(
+            writtenHdr10Source(),
+            declarationBuilderFor(ProbedCodecFamily.H264)
+                .video(
+                    List.of(
+                        h264EntryBuilder().build(),
+                        hevcEntryBuilder()
+                            .compatibleBases(
+                                List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+                            .build()))
+                .build());
+    assertThat(session.getTranscodeDecision().encodeCodecProfile())
+        .contains(EncodeCodecProfile.HEVC_MAIN_10);
+    var variant = session.getVariants().getFirst();
+    var initialization = producedInitializationSegment(session, variant);
+
+    assertThat(advertisedVideoCodecStrings(session).get(variant.label()))
+        .startsWith("hvc1.2.4.")
+        .isEqualTo(Fmp4Fixture.hevcCodecString(initialization))
+        .isEqualTo(Fmp4Fixture.hevcCodecString(libx265OwnChoice(session, variant)));
+    assertThat(workerFixture.worker().firstVideoFrame(firstMediaSegment(session, variant)))
+        .containsEntry("pix_fmt", "yuv420p10le")
+        .containsEntry("color_primaries", "bt2020")
+        .containsEntry("color_transfer", "smpte2084")
+        .containsEntry("color_space", "bt2020nc")
+        .containsEntry("red_x", "35400/50000")
+        .containsEntry("red_y", "14600/50000")
+        .containsEntry("green_x", "8500/50000")
+        .containsEntry("green_y", "39850/50000")
+        .containsEntry("blue_x", "6550/50000")
+        .containsEntry("blue_y", "2300/50000")
+        .containsEntry("white_point_x", "15635/50000")
+        .containsEntry("white_point_y", "16450/50000")
+        .containsEntry("max_luminance", "10000000/10000")
+        .containsEntry("min_luminance", "50/10000")
+        .containsEntry("max_content", "1000")
+        .containsEntry("max_average", "400");
+  }
+
   // Each source opens on a keyframe, so its one segment interval starts on one.
   static List<LadderSource> ladderSources() {
     return List.of(
@@ -206,6 +262,11 @@ class HevcEncodeSmokeTest {
 
   private StreamSession sessionFor(LadderSource ladderSource) throws Exception {
     var source = writtenSource(ladderSource);
+    return sessionFor(source, declarationBuilderFor(ProbedCodecFamily.HEVC).build());
+  }
+
+  private StreamSession sessionFor(Path source, ClientCapabilityDeclaration declaration)
+      throws Exception {
     storeProbe(source);
     var file =
         mediaFileRepository.save(
@@ -218,7 +279,7 @@ class HevcEncodeSmokeTest {
     return OutcomeTestSupport.accepted(
         streamingService.createSession(
             createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
-                .capabilityDeclaration(declarationBuilderFor(ProbedCodecFamily.HEVC).build())
+                .capabilityDeclaration(declaration)
                 .build()));
   }
 
@@ -244,6 +305,64 @@ class HevcEncodeSmokeTest {
                 "-force_key_frames",
                 "expr:gte(t,n_forced*2)",
                 "-an"));
+  }
+
+  // A 10-bit PQ H.264 source with SyntheticHdrSource's mastering display and content light level.
+  private Path writtenHdr10Source() throws Exception {
+    var display = SyntheticHdrSource.MASTERING_DISPLAY;
+    var lightLevel = SyntheticHdrSource.CONTENT_LIGHT_LEVEL;
+    var parameters =
+        ("colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc"
+                + ":mastering-display=G(%d,%d)B(%d,%d)R(%d,%d)WP(%d,%d)L(%d,%d):cll=%d,%d")
+            .formatted(
+                display.green().x(),
+                display.green().y(),
+                display.blue().x(),
+                display.blue().y(),
+                display.red().x(),
+                display.red().y(),
+                display.whitePoint().x(),
+                display.whitePoint().y(),
+                display.maxLuminance(),
+                display.minLuminance(),
+                lightLevel.maxContentLightLevel(),
+                lightLevel.maxFrameAverageLightLevel());
+    return workerFixture
+        .worker()
+        .generateMedia(
+            sourceRoot.resolve("hdr10.mp4"),
+            List.of(
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=640x360:rate=24:duration=%d".formatted(SOURCE_SECONDS),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p10le",
+                "-x264-params",
+                parameters,
+                "-an"));
+  }
+
+  // The variant's initialization segment and first media segment as one decodable file.
+  private Path firstMediaSegment(StreamSession session, QualityVariant variant) throws Exception {
+    var sessionId = session.getSessionId();
+    var segment = SegmentNames.storedSegmentName(variant.label(), SegmentNames.mediaSegmentName(0));
+    await("the first media segment of " + variant.label())
+        .atMost(DELIVERY_LIMIT)
+        .until(() -> segmentStore.segmentExists(sessionId, segment));
+    var media = new ByteArrayOutputStream();
+    media.writeBytes(
+        segmentStore.readSegment(
+            sessionId,
+            SegmentNames.storedSegmentName(
+                variant.label(), SegmentNames.INITIALIZATION_SEGMENT_NAME)));
+    media.writeBytes(segmentStore.readSegment(sessionId, segment));
+    return Files.write(
+        temporaryDirectory.resolve("decodable-" + variant.label() + ".mp4"), media.toByteArray());
   }
 
   private void storeProbe(Path source) {

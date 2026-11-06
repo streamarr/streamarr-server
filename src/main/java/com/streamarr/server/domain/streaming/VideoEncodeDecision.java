@@ -25,7 +25,8 @@ public record VideoEncodeDecision(
   static Optional<VideoEncodeDecision> allowing(@NonNull EncodedVideoOutput output) {
     return switch (output.codecFamily()) {
       case "h264" -> H264Level.smallestAllowing(output).map(VideoEncodeDecision::h264);
-      case "hevc" -> H265Level.smallestAllowing(output).map(VideoEncodeDecision::hevc);
+      case "hevc" ->
+          H265Level.smallestAllowing(output).map(level -> hevc(level, output.format().bitDepth()));
       case "av1" ->
           Av1Level.smallestAllowing(output).map(level -> av1(level, output.format().bitDepth()));
       default ->
@@ -43,11 +44,19 @@ public record VideoEncodeDecision(
         .build();
   }
 
-  private static VideoEncodeDecision hevc(H265Level level) {
-    return VideoEncodeDecision.builder()
+  // A 10-bit HEVC encode forces H.265 Main 10, which an 8-bit encode leaves at Main.
+  private static VideoEncodeDecision hevc(H265Level level, int bitDepth) {
+    var builder =
+        VideoEncodeDecision.builder().tier(Optional.of(VideoCodecTier.MAIN)).level(level.level());
+    if (bitDepth == 10) {
+      return builder
+          .codecProfile(EncodeCodecProfile.HEVC_MAIN_10)
+          .codecString(level.main10ProfileCodecString())
+          .build();
+    }
+
+    return builder
         .codecProfile(EncodeCodecProfile.HEVC_MAIN)
-        .tier(Optional.of(VideoCodecTier.MAIN))
-        .level(level.level())
         .codecString(level.mainProfileCodecString())
         .build();
   }

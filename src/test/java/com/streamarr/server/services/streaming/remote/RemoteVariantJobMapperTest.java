@@ -523,6 +523,39 @@ class RemoteVariantJobMapperTest {
         .isEqualTo(ChromaSubsampling.CHROMA_SUBSAMPLING_UNSPECIFIED);
   }
 
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoRange.class,
+      names = {"PQ", "HLG"})
+  @DisplayName(
+      "Should send H.265 Main 10, 10 bits and the codec string of Main 10 when the job encodes"
+          + " HEVC with an HDR range")
+  void shouldSendH265Main1010BitsAndTheCodecStringOfMain10WhenTheJobEncodesHevcWithAnHdrRange(
+      VideoRange range) {
+    var attempt =
+        hdrEncodeAttempt(
+            range == VideoRange.PQ
+                ? com.streamarr.server.domain.streaming.CompatibleBase.PQ
+                : com.streamarr.server.domain.streaming.CompatibleBase.HLG,
+            com.streamarr.server.domain.streaming.EncodeFormat.hdr(range));
+    var hevc =
+        attempt.build().transcodeDecision().toBuilder()
+            .videoCodecFamily("hevc")
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.HEVC_MAIN_10))
+            .build();
+
+    var video = mapper.map(attempt.transcodeDecision(hevc).build()).getDecision().getVideo();
+
+    assertThat(video.getCodecFamily()).isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC);
+    assertThat(video.getCodecProfile())
+        .isEqualTo(VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN_10);
+    assertThat(video.getTier()).isEqualTo(VideoCodecTier.VIDEO_CODEC_TIER_MAIN);
+    assertThat(video.getLevel()).isEqualTo(41);
+    assertThat(video.getOutputBitDepth()).isEqualTo(10);
+    assertThat(video.getCodecString()).isEqualTo("hvc1.2.4.L123.90");
+  }
+
   @ParameterizedTest
   @EnumSource(
       value = TranscodeMode.class,

@@ -10,9 +10,11 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.testcontainers.Testcontainers;
@@ -280,6 +282,43 @@ public final class WorkerContainerFixture implements AutoCloseable {
     var result = container.execInContainer("cat", input + ".pts");
     assertThat(result.getExitCode()).as(result.getStderr()).isZero();
     return result.getStdout().lines().map(String::trim).filter(line -> !line.isEmpty()).toList();
+  }
+
+  /**
+   * The first video frame as the worker image's ffprobe describes it, by field name: its pixel
+   * format, colour description and the fields of its side data, such as the mastering display.
+   */
+  public Map<String, String> firstVideoFrame(Path media) throws Exception {
+    var input = "/tmp/frame-" + UUID.randomUUID() + ".mp4";
+    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
+    var probe =
+        container.execInContainer(
+            "/cnb/lifecycle/launcher",
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_frames",
+            "-read_intervals",
+            "%+#1",
+            "-of",
+            "default=noprint_wrappers=1",
+            "-o",
+            input + ".frame",
+            input);
+    assertThat(probe.getExitCode()).as(probe.getStderr()).isZero();
+    var result = container.execInContainer("cat", input + ".frame");
+    assertThat(result.getExitCode()).as(result.getStderr()).isZero();
+    return result
+        .getStdout()
+        .lines()
+        .filter(line -> line.contains("="))
+        .collect(
+            Collectors.toMap(
+                line -> line.substring(0, line.indexOf('=')),
+                line -> line.substring(line.indexOf('=') + 1),
+                (first, _) -> first));
   }
 
   public boolean probeRunning() throws Exception {
