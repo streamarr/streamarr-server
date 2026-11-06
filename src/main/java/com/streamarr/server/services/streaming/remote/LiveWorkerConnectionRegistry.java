@@ -649,6 +649,10 @@ final class LiveWorkerConnectionRegistry {
       return;
     }
 
+    publishHardwareEncoderFailedEvent(job);
+  }
+
+  private void publishHardwareEncoderFailedEvent(VariantJob job) {
     eventPublisher.publishEvent(
         HardwareEncoderFailedEvent.builder()
             .streamSessionId(fromProto(job.getStreamSessionId()))
@@ -821,8 +825,24 @@ final class LiveWorkerConnectionRegistry {
 
   void checkReportedEncoderBackend(UUID workerId, UUID workerSessionId, JobAttemptStarted started) {
     currentConnection(workerId, workerSessionId)
-        .filter(connection -> connection.tryWithdrawMismatchedEncoder(started))
-        .ifPresent(connection -> warnIfMissingEncoders(workerId, connection));
+        .ifPresent(connection -> followUpStartReport(workerId, connection, started));
+  }
+
+  private void followUpStartReport(
+      UUID workerId, WorkerConnection connection, JobAttemptStarted started) {
+    switch (connection.checkReportedEncoderBackend(started)) {
+      case StartReportFollowUp.None _ -> {
+        // The attempt runs its pinned encoder, or no encoder was withdrawn.
+      }
+      case StartReportFollowUp.WarnOfMissingEncoders _ ->
+          warnIfMissingEncoders(workerId, connection);
+    }
+  }
+
+  private sealed interface StartReportFollowUp {
+    record None() implements StartReportFollowUp {}
+
+    record WarnOfMissingEncoders() implements StartReportFollowUp {}
   }
 
   private Optional<WorkerConnection> currentConnection(UUID workerId, UUID workerSessionId) {
@@ -1402,16 +1422,20 @@ final class LiveWorkerConnectionRegistry {
       }
 
       if (job != null && isHardwareEncoderFailure(job, failed)) {
-        RemoteEncoderBackendMapper.videoCodecFamilyName(
-                job.getDecision().getVideo().getCodecFamily())
-            .ifPresent(hardwareFailedFamilies::add);
-        hardwareEncoderFailures
-            .computeIfAbsent(
-                fromProto(job.getStreamSessionId()), _ -> ConcurrentHashMap.newKeySet())
-            .add(job.getVariant().getVariantLabel());
+        markHardwareEncoderFailure(job);
       }
 
       return endReportedJobAttempt(attemptId);
+    }
+
+    // Callers mark the failure before they end the attempt, so a held request that the end wakes
+    // already finds it.
+    private void markHardwareEncoderFailure(VariantJob job) {
+      RemoteEncoderBackendMapper.videoCodecFamilyName(job.getDecision().getVideo().getCodecFamily())
+          .ifPresent(hardwareFailedFamilies::add);
+      hardwareEncoderFailures
+          .computeIfAbsent(fromProto(job.getStreamSessionId()), _ -> ConcurrentHashMap.newKeySet())
+          .add(job.getVariant().getVariantLabel());
     }
 
     // The worker contract says that a replacement attempt with the same decision repeats an output
@@ -1598,16 +1622,13 @@ final class LiveWorkerConnectionRegistry {
 
     // Dispatch sends an encode only to a worker that advertises the variant's pinned backend, so
     // the encoder that the attempt was dispatched for is the pin.
-    private synchronized boolean tryWithdrawMismatchedEncoder(JobAttemptStarted started) {
+    private synchronized StartReportFollowUp checkReportedEncoderBackend(
+        JobAttemptStarted started) {
       var jobAttemptId = fromProto(started.getJobAttemptId());
       var job = activeVariants.get(jobAttemptId);
-      if (job == null) {
-        return false;
-      }
-
       var attempt = encodeAttempts.get(jobAttemptId);
-      if (attempt == null) {
-        return false;
+      if (job == null || attempt == null) {
+        return new StartReportFollowUp.None();
       }
 
       var pinned = attempt.encoder().backend();
@@ -1618,7 +1639,7 @@ final class LiveWorkerConnectionRegistry {
               .flatMap(RemoteEncoderBackendMapper::encoderBackend);
       if (reported.equals(Optional.of(pinned))) {
         attempt.backendConfirmed().complete(true);
-        return false;
+        return new StartReportFollowUp.None();
       }
 
       var stopped = tryStop(jobAttemptId);
@@ -1635,7 +1656,11 @@ final class LiveWorkerConnectionRegistry {
           reported.map(EncoderBackend::encoder).orElse("none"),
           pinned.encoder(),
           stopped);
-      return withdrawn;
+      if (!withdrawn) {
+        return new StartReportFollowUp.None();
+      }
+
+      return new StartReportFollowUp.WarnOfMissingEncoders();
     }
 
     // Unsynchronized: the start report that releases the wait takes this connection's monitor.
