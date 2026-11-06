@@ -772,15 +772,18 @@ public class PlaybackSessionService implements AutoCloseable {
   public void onRequestedVariantHardwareEncoderFailed(
       @NonNull RequestedVariantHardwareEncoderFailedEvent event) {
     var failedId = event.streamSessionId();
-    handleJobFailure(failedId, playback -> reserveSoftwareContinuation(playback, failedId));
+    handleJobFailure(
+        failedId,
+        playback -> reserveSoftwareContinuation(playback, failedId, event.variantLabel()));
   }
 
+  // The failed variant's own decision: a lower variant beside a copy encodes (ADR 0050).
   private Optional<FormatAttemptReservation> reserveSoftwareContinuation(
-      PlaybackSession playback, UUID failedId) {
+      PlaybackSession playback, UUID failedId, String variantLabel) {
     if (!isCurrentAttempt(playback, failedId)
         || endedNormally(playback)
         || !(playback.current instanceof PlaybackFormatAttempt.Ready(var session))
-        || !(outputOf(session.getTranscodeDecision())
+        || !(outputOf(session.decisionOf(variantLabel))
             instanceof FailedFormatAttempt.Encode(var codecFamily, var _))) {
       return Optional.empty();
     }

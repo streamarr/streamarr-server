@@ -1199,6 +1199,29 @@ class PlaybackSessionServiceTest {
     assertThat(current.currentFormatAttempt()).isEqualTo(initial.currentFormatAttempt());
   }
 
+  // In Auto, an AV1 lower variant encodes beside an H.264 copy. Its hardware encoder failing must
+  // continue that lower variant's encode in software, although the stream session copies.
+  @Test
+  @DisplayName(
+      "Should continue the encode in software when the hardware encoder of a lower variant beside a"
+          + " copy fails")
+  void shouldContinueTheEncodeInSoftwareWhenTheHardwareEncoderOfALowerVariantBesideACopyFails() {
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.AV1_MAIN);
+    var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
+    var initial = accepted(service.start(command));
+
+    service.onRequestedVariantHardwareEncoderFailed(
+        RequestedVariantHardwareEncoderFailedEvent.builder()
+            .streamSessionId(initial.currentFormatAttempt().streamSessionId())
+            .variantLabel("720p")
+            .build());
+
+    var continued = service.access(request(initial, command)).orElseThrow();
+    assertThat(continued.formatAttemptCount()).isEqualTo(1);
+    assertThat(continued.currentFormatAttempt()).isNotEqualTo(initial.currentFormatAttempt());
+    assertThat(streams.createdCommands.getLast().softwareEncodeCodecFamily()).contains("av1");
+  }
+
   private static RequestedVariantHardwareEncoderFailedEvent hardwareEncoderFailure(
       UUID streamSessionId) {
     return RequestedVariantHardwareEncoderFailedEvent.builder()
