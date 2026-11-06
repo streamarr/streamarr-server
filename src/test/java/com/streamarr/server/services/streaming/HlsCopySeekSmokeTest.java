@@ -202,6 +202,13 @@ class HlsCopySeekSmokeTest {
             .runtimeRegistry(sessionRegistry)
             .sessionMutex(new MutexFactory<>())
             .serverSettings(ServerSettingsFixture.defaultServerSettings())
+            .seekPriority(
+                SeekPriority.builder()
+                    .transcodeExecutor(transcodeExecutor)
+                    .segmentStore(segmentStore)
+                    .runtimeRegistry(sessionRegistry)
+                    .properties(properties)
+                    .build())
             .build();
     progressListener = new JobAttemptProgressListener(producerLifecycle);
     coordinator =

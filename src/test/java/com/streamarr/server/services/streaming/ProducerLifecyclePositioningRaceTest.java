@@ -54,6 +54,13 @@ class ProducerLifecyclePositioningRaceTest {
             .runtimeRegistry(runtimeRegistry)
             .sessionMutex(raceGate.mutexFactory())
             .serverSettings(ServerSettingsFixture.defaultServerSettings())
+            .seekPriority(
+                SeekPriority.builder()
+                    .transcodeExecutor(transcodeExecutor)
+                    .segmentStore(segmentStore)
+                    .runtimeRegistry(runtimeRegistry)
+                    .properties(StreamingProperties.builder().build())
+                    .build())
             .build();
   }
 

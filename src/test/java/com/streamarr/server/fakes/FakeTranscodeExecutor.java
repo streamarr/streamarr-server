@@ -15,6 +15,7 @@ import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -53,6 +54,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final List<ExecutionTargetId> startedTargets =
       Collections.synchronizedList(new ArrayList<>());
   private final List<String> stoppedVariants = Collections.synchronizedList(new ArrayList<>());
+  private final List<Yield> yields = Collections.synchronizedList(new ArrayList<>());
   private final Set<ExecutionTargetId> refusingTargets = ConcurrentHashMap.newKeySet();
   private Set<ExecutionTargetId> executionTargets =
       new LinkedHashSet<>(Set.of(ExecutionTargetId.LOCAL));
@@ -211,6 +213,21 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     end(new ProcessKey(sessionId, variantLabel));
     stoppedVariants.add(sessionId + "/" + variantLabel);
   }
+
+  /** Records each yield, in the order the executor received them. */
+  @Override
+  public void yieldToSeek(ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit) {
+    yields.add(new Yield(target, Set.copyOf(jobAttemptIds), holdLimit));
+  }
+
+  /** Every yield to a seek that this executor received, oldest first. */
+  public List<Yield> yields() {
+    synchronized (yields) {
+      return List.copyOf(yields);
+    }
+  }
+
+  public record Yield(ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit) {}
 
   /**
    * The requests held until this executor's job attempts store their segments. Like the worker

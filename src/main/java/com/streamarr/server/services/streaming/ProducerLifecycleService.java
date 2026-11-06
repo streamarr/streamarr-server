@@ -62,6 +62,7 @@ public class ProducerLifecycleService {
   private final MutexFactory<UUID> sessionMutex;
   private final ServerSettingsService serverSettings;
   @NonNull private final ApplicationEventPublisher eventPublisher;
+  @NonNull private final SeekPriority seekPriority;
   @Builder.Default private final Clock clock = Clock.systemUTC();
   private final ConcurrentHashMap<VariantKey, VariantDeliveryState> recoveryStates =
       new ConcurrentHashMap<>();
@@ -266,6 +267,7 @@ public class ProducerLifecycleService {
           playingVariants.remove(sessionId);
           sessionsKeepingLeftVariant.remove(sessionId);
         });
+    seekPriority.forgetSession(sessionId);
   }
 
   private RecoveryResult doRecover(SegmentRequest request, LeftVariantReclaim reclaim) {
@@ -904,6 +906,8 @@ public class ProducerLifecycleService {
       return;
     }
 
+    SegmentNames.indexOf(request.segmentName())
+        .ifPresent(index -> seekPriority.mediaSegmentRequested(request.sessionId(), index));
     var previous = newestMediaSegmentRequests.put(request.sessionId(), request);
     if (previous == null || !previous.variantLabel().equals(request.variantLabel())) {
       newestVariantArrivals.put(request.sessionId(), request.arrival());
@@ -931,6 +935,12 @@ public class ProducerLifecycleService {
     }
 
     return next;
+  }
+
+  /** The player received the request's segment, which ends a seek that waited for it. */
+  public void segmentDelivered(SegmentRequest delivered) {
+    seekPriority.segmentDelivered(
+        delivered.sessionId(), delivered.variantLabel(), delivered.segmentName());
   }
 
   /**
@@ -1560,6 +1570,7 @@ public class ProducerLifecycleService {
     startVariant(session, variantLabel, segmentIndex);
     session.setLastAccessedAt(Instant.now());
     runtimeRegistry.save(session);
+    seekPriority.seekStarted(session, variantLabel, segmentIndex);
 
     log.info(
         "Relocated variant {} of session {} to segment {}", variantLabel, sessionId, segmentIndex);

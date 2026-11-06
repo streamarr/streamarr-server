@@ -106,6 +106,13 @@ class HlsRecoveryContinuitySmokeTest {
             .runtimeRegistry(runtimeRegistry)
             .sessionMutex(new MutexFactory<>())
             .serverSettings(ServerSettingsFixture.defaultServerSettings())
+            .seekPriority(
+                SeekPriority.builder()
+                    .transcodeExecutor(transcodeExecutor)
+                    .segmentStore(segmentStore)
+                    .runtimeRegistry(runtimeRegistry)
+                    .properties(properties)
+                    .build())
             .build();
     coordinator =
         SegmentDeliveryCoordinator.builder()

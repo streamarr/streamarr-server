@@ -91,6 +91,13 @@ class ProducerLifecycleDestroyRaceTest {
         .runtimeRegistry(runtimeRegistry)
         .sessionMutex(sessionMutex)
         .serverSettings(ServerSettingsFixture.defaultServerSettings())
+        .seekPriority(
+            SeekPriority.builder()
+                .transcodeExecutor(transcodeExecutor)
+                .segmentStore(new FakeSegmentStore())
+                .runtimeRegistry(runtimeRegistry)
+                .properties(StreamingProperties.builder().build())
+                .build())
         .build();
   }
 

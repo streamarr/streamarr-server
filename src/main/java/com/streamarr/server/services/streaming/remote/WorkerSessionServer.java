@@ -15,6 +15,7 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -178,6 +179,12 @@ public final class WorkerSessionServer
   public synchronized boolean stopVariant(UUID streamSessionId, String variantLabel) {
     requireStarted();
     return workerConnections.stopVariant(streamSessionId, variantLabel);
+  }
+
+  public synchronized void yieldToSeek(
+      ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit) {
+    requireStarted();
+    workerConnections.yieldToSeek(target, jobAttemptIds, holdLimit);
   }
 
   public synchronized void stopStreamSession(UUID streamSessionId) {

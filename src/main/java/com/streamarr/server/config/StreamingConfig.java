@@ -15,6 +15,7 @@ import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
+import com.streamarr.server.services.streaming.SeekPriority;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentFolderSpace;
 import com.streamarr.server.services.streaming.SegmentStore;
@@ -69,6 +70,20 @@ public class StreamingConfig {
   }
 
   @Bean
+  public SeekPriority seekPriority(
+      TranscodeExecutor transcodeExecutor,
+      SegmentStore segmentStore,
+      StreamingProperties properties,
+      RuntimeStreamSessionRegistry runtimeRegistry) {
+    return SeekPriority.builder()
+        .transcodeExecutor(transcodeExecutor)
+        .segmentStore(segmentStore)
+        .properties(properties)
+        .runtimeRegistry(runtimeRegistry)
+        .build();
+  }
+
+  @Bean
   public ProducerLifecycleService producerLifecycleService(
       TranscodeExecutor transcodeExecutor,
       SegmentStore segmentStore,
@@ -76,7 +91,8 @@ public class StreamingConfig {
       RuntimeStreamSessionRegistry runtimeRegistry,
       MutexFactoryProvider mutexFactoryProvider,
       ServerSettingsService serverSettingsService,
-      ApplicationEventPublisher eventPublisher) {
+      ApplicationEventPublisher eventPublisher,
+      SeekPriority seekPriority) {
     return ProducerLifecycleService.builder()
         .transcodeExecutor(transcodeExecutor)
         .segmentStore(segmentStore)
@@ -85,6 +101,7 @@ public class StreamingConfig {
         .sessionMutex(mutexFactoryProvider.getMutexFactory())
         .serverSettings(serverSettingsService)
         .eventPublisher(eventPublisher)
+        .seekPriority(seekPriority)
         .build();
   }
 

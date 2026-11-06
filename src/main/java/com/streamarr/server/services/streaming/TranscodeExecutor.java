@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -37,6 +38,13 @@ public interface TranscodeExecutor {
   void destroySession(UUID sessionId);
 
   void stopVariant(UUID sessionId, String variantLabel);
+
+  /**
+   * Tells the execution target which of its job attempts to pause while a seek's first segment is
+   * pending there, replacing the job attempts that it named before; an empty set resumes them all
+   * (ADR 0044, seek priority). The target resumes each one after the hold limit at the latest.
+   */
+  void yieldToSeek(ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit);
 
   boolean isRunning(UUID sessionId, String variantLabel);
 

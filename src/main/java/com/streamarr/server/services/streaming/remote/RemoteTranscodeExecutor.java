@@ -12,6 +12,7 @@ import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -81,6 +82,14 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   @Override
   public void stopVariant(UUID sessionId, String variantLabel) {
     workerServer.stopVariant(sessionId, variantLabel);
+  }
+
+  @Override
+  public void yieldToSeek(
+      @NonNull ExecutionTargetId target,
+      @NonNull Set<UUID> jobAttemptIds,
+      @NonNull Duration holdLimit) {
+    workerServer.yieldToSeek(target, jobAttemptIds, holdLimit);
   }
 
   @Override

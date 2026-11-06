@@ -54,6 +54,7 @@ public class SegmentDeliveryCoordinator {
 
   private SegmentDelivery completed(SegmentRequest request, SegmentDelivery outcome) {
     if (outcome instanceof SegmentDelivery.Ready) {
+      producerLifecycle.segmentDelivered(request);
       producerLifecycle.completeVariantSwitch(request);
     }
 

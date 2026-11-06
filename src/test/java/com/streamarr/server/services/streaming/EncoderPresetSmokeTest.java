@@ -111,6 +111,13 @@ class EncoderPresetSmokeTest {
             .runtimeRegistry(runtimeRegistry)
             .sessionMutex(new MutexFactory<>())
             .serverSettings(serverSettings)
+            .seekPriority(
+                SeekPriority.builder()
+                    .transcodeExecutor(transcodeExecutor)
+                    .segmentStore(segmentStore)
+                    .runtimeRegistry(runtimeRegistry)
+                    .properties(StreamingProperties.builder().build())
+                    .build())
             .build();
   }
 

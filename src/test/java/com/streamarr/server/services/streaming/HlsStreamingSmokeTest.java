@@ -124,6 +124,13 @@ class HlsStreamingSmokeTest {
             .runtimeRegistry(sessionRegistry)
             .sessionMutex(new MutexFactory<>())
             .serverSettings(ServerSettingsFixture.defaultServerSettings())
+            .seekPriority(
+                SeekPriority.builder()
+                    .transcodeExecutor(transcodeExecutor)
+                    .segmentStore(segmentStore)
+                    .runtimeRegistry(sessionRegistry)
+                    .properties(properties)
+                    .build())
             .build();
     streamingService =
         HlsStreamingService.builder()

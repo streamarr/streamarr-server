@@ -24,6 +24,7 @@ import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
+import com.streamarr.server.services.streaming.remote.protocol.ProtoUuid;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -53,6 +54,7 @@ import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
+import com.streamarr.transcode.v1.YieldToSeekCommand;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.Counter;
@@ -495,6 +497,12 @@ final class LiveWorkerConnectionRegistry {
 
   void stopStreamSession(UUID streamSessionId) {
     connections.values().forEach(connection -> connection.stopStreamSession(streamSessionId));
+  }
+
+  void yieldToSeek(ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit) {
+    connections.values().stream()
+        .filter(connection -> connection.executionTargetId().equals(target))
+        .forEach(connection -> connection.yieldToSeek(jobAttemptIds, holdLimit));
   }
 
   synchronized void destroyStreamSession(UUID streamSessionId) {
@@ -1655,6 +1663,18 @@ final class LiveWorkerConnectionRegistry {
 
     private synchronized ProbeCapacity probeCapacity() {
       return grantedProbeCapacities.get().capacity(runningProbeKinds());
+    }
+
+    private synchronized void yieldToSeek(Set<UUID> jobAttemptIds, Duration holdLimit) {
+      var command =
+          YieldToSeekCommand.newBuilder()
+              .setTarget(worker)
+              .addAllJobAttemptIds(jobAttemptIds.stream().map(ProtoUuid::toProto).toList());
+      command
+          .getHoldLimitBuilder()
+          .setSeconds(holdLimit.getSeconds())
+          .setNanos(holdLimit.getNano());
+      trySend(EstablishWorkerSessionResponse.newBuilder().setYieldToSeek(command).build());
     }
 
     private synchronized void stopStreamSession(UUID streamSessionId) {

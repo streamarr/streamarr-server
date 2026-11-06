@@ -549,6 +549,11 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     @Override
+    public void yieldToSeek(ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit) {
+      delegate.yieldToSeek(target, jobAttemptIds, holdLimit);
+    }
+
+    @Override
     public Optional<TranscodeFailure> terminalFailure(UUID sessionId) {
       return delegate.terminalFailure(sessionId);
     }

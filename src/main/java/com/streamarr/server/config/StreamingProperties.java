@@ -19,7 +19,12 @@ public record StreamingProperties(
     Duration producerStallThreshold,
     String segmentBasePath,
     // How long createStreamSession waits for the probe of a file that has no probe outcome yet.
-    Duration probeWaitLimit) {
+    Duration probeWaitLimit,
+    // While a seek's first segment is pending, a job attempt on the seek's worker that runs more
+    // than this many media segments ahead of its viewer pauses (ADR 0044, seek priority).
+    Integer seekPriorityLeadSegments,
+    // The longest the worker keeps such a job attempt paused without a later yield command.
+    Duration seekPriorityHoldLimit) {
 
   public StreamingProperties {
     if (maxConcurrentTranscodes == null) {
@@ -65,6 +70,22 @@ public record StreamingProperties(
     }
 
     requirePositive("streaming.probe-wait-limit", probeWaitLimit);
+
+    if (seekPriorityLeadSegments == null) {
+      seekPriorityLeadSegments = 3;
+    }
+
+    if (seekPriorityLeadSegments < 0) {
+      throw new IllegalArgumentException(
+          "streaming.seek-priority-lead-segments must not be negative, got "
+              + seekPriorityLeadSegments);
+    }
+
+    if (seekPriorityHoldLimit == null) {
+      seekPriorityHoldLimit = Duration.ofSeconds(3);
+    }
+
+    requirePositive("streaming.seek-priority-hold-limit", seekPriorityHoldLimit);
 
     if (segmentBasePath == null || segmentBasePath.isBlank()) {
       segmentBasePath =

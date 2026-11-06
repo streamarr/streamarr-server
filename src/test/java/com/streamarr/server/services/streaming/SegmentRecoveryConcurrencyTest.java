@@ -214,6 +214,13 @@ class SegmentRecoveryConcurrencyTest {
             .sessionMutex(race.mutexFactory())
             .serverSettings(ServerSettingsFixture.defaultServerSettings())
             .clock(clock)
+            .seekPriority(
+                SeekPriority.builder()
+                    .transcodeExecutor(race.executor)
+                    .segmentStore(store)
+                    .runtimeRegistry(registry)
+                    .properties(properties)
+                    .build())
             .build();
     var coordinator =
         SegmentDeliveryCoordinator.builder()

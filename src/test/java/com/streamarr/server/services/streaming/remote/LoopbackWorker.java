@@ -29,6 +29,7 @@ import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -61,6 +62,15 @@ final class LoopbackWorker implements AutoCloseable {
         channel,
         registration(
             WORKER_ID,
+            availableSlots,
+            softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")));
+  }
+
+  static LoopbackWorker register(ManagedChannel channel, UUID workerId, int availableSlots) {
+    return register(
+        channel,
+        registration(
+            workerId,
             availableSlots,
             softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")));
   }
@@ -120,6 +130,20 @@ final class LoopbackWorker implements AutoCloseable {
     }
 
     return jobs;
+  }
+
+  /**
+   * The commands that the server sends up to and including the first one that matches, in the order
+   * the server sent them.
+   */
+  List<EstablishWorkerSessionResponse> responsesThrough(
+      Predicate<EstablishWorkerSessionResponse> last) throws InterruptedException {
+    var received = new ArrayList<EstablishWorkerSessionResponse>();
+    while (received.isEmpty() || !last.test(received.getLast())) {
+      received.add(nextResponse());
+    }
+
+    return received;
   }
 
   /**
