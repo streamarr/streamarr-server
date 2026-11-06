@@ -203,9 +203,11 @@ class HdrStreamCopySmokeTest {
                     CONTENT_LIGHT_LEVEL_PAYLOAD, contentLightLevelPayload(CONTENT_LIGHT_LEVEL))));
   }
 
-  // ADR 0037: every job attempt of a variant writes the same initialization segment. The MPEG-TS
-  // source keeps its parameter sets and SEI messages in its samples, and each keyframe carries its
-  // own number, so a record built from an attempt's first sample would differ between attempts.
+  // ADR 0037: every job attempt of a variant writes the same initialization segment. Each keyframe
+  // carries its own number in an SEI message in its sample, so a record built from an attempt's
+  // first sample would differ between attempts. An MPEG-TS source, which also keeps its parameter
+  // sets in its samples, copies only once the probe stores its start time correction (ADR 0037,
+  // segment list), so the source is an MP4 file.
   @Test
   @DisplayName(
       "Should deliver the same initialization segment from a replacement attempt that starts at a"
@@ -218,7 +220,6 @@ class HdrStreamCopySmokeTest {
             .compatibleBase(CompatibleBase.PQ)
             .staticHdrMetadata(true)
             .numberedKeyframeMessages(true)
-            .mpegTsContainer(true)
             .build()
             .writtenBy(workerFixture.worker(), sourceRoot);
     var session = sessionFor(source, hevcEntryBuilder().compatibleBases(hdrBases()).build());

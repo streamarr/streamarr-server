@@ -43,6 +43,7 @@ import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.StopVariantCommand;
 import com.streamarr.transcode.v1.TranscodeDecision;
+import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
@@ -77,6 +78,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
@@ -1514,8 +1516,8 @@ final class LiveWorkerConnectionRegistry {
 
     // The worker contract says that a replacement attempt with the same decision repeats an output
     // mismatch on the same encoder backend, an invalid specification on every worker, and a Dolby
-    // Vision conversion failure on the same picture. Every attempt on the same segment list cuts
-    // the same segments, so it repeats a segment over the cap too (ADR 0037).
+    // Vision conversion failure on the same picture. Every attempt of a copy cuts the same
+    // keyframe-merged segments, so it repeats a segment over the cap too (ADR 0037).
     private static Optional<TranscodeFailure> terminalFailure(
         VariantJob job, JobAttemptFailed failed) {
       return switch (failed.getFailure()) {
@@ -1537,13 +1539,35 @@ final class LiveWorkerConnectionRegistry {
       };
     }
 
-    // A job on the plain grid keeps ordinary recovery for a segment over the cap.
+    // Only a stream session that copies the video cuts keyframe-merged segments: the copy, and each
+    // encoded lower variant beside it, which carries the copy's keyframe ticks (ADR 0050). An
+    // encode
+    // on the plain grid keeps ordinary recovery for a segment over the cap even when its final slot
+    // merges into the last segment and the job lists every segment's start (ADR 0037).
     private static Optional<TranscodeFailure> segmentCapFailure(VariantJob job) {
-      if (job.getExecution().getSegmentStartSlotsCount() == 0) {
+      if (!copiesVideo(job) && !listsKeyframeTicks(job)) {
         return Optional.empty();
       }
 
       return Optional.of(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
+    }
+
+    // A merged plain grid lists segment N at N periods in the time base 1/1. Any other list counts
+    // a copy's keyframe ticks, even in a 1/1 keyframe time base.
+    private static boolean listsKeyframeTicks(VariantJob job) {
+      var execution = job.getExecution();
+      return execution.getSegmentStartTicksCount() > 0 && !listsThePlainGrid(execution);
+    }
+
+    private static boolean listsThePlainGrid(TranscodeExecution execution) {
+      var timeBase = execution.getSegmentStartTimeBase();
+      if (timeBase.getNumerator() != 1 || timeBase.getDenominator() != 1) {
+        return false;
+      }
+
+      long period = execution.getTargetSegmentDurationSeconds();
+      var ticks = execution.getSegmentStartTicksList();
+      return IntStream.range(0, ticks.size()).allMatch(index -> ticks.get(index) == index * period);
     }
 
     private static boolean isCopyOutputMismatch(VariantJob job, JobAttemptFailed failed) {

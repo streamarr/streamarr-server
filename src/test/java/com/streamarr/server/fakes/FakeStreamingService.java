@@ -93,4 +93,9 @@ public final class FakeStreamingService implements StreamingService {
   public int getActiveSessionCount() {
     return registry.count();
   }
+
+  @Override
+  public Optional<String> playedVariantOf(UUID sessionId) {
+    return Optional.empty();
+  }
 }

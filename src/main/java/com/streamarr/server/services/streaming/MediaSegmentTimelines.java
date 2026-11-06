@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamSession;
+import java.time.Duration;
 import java.util.Optional;
 
 /**
@@ -40,17 +41,50 @@ final class MediaSegmentTimelines {
   }
 
   /**
-   * Each segment's exact start, which every job attempt of a stream copy session carries, or empty
-   * when the session's segments start on the plain grid (ADR 0037, segment list).
+   * Each segment's exact start, which every job attempt of the stream session carries: a stream
+   * copy's keyframe ticks, or a plain grid's whole seconds when it merges its final slot. Empty
+   * when the session's segments start on the plain grid unmerged (ADR 0037, segment list).
    */
   static Optional<ExactSegmentStarts> exactSegmentStartsOf(
       StreamSession session, MediaSegmentTimeline timeline) {
-    return switch (session.getMediaProbe().keyframes()) {
-      case KeyframeKnowledge.Known(var positions)
-          when timeline instanceof MediaSegmentTimeline.StreamCopy copy ->
-          Optional.of(copy.exactStartsIn(positions));
-      default -> Optional.empty();
+    return switch (timeline) {
+      case MediaSegmentTimeline.PlainGrid grid -> grid.exactStarts();
+      case MediaSegmentTimeline.KeyframeSeekingGrid seekingGrid -> seekingGrid.grid().exactStarts();
+      case MediaSegmentTimeline.StreamCopy copy -> copyStartsOf(session, copy);
     };
+  }
+
+  private static Optional<ExactSegmentStarts> copyStartsOf(
+      StreamSession session, MediaSegmentTimeline.StreamCopy copy) {
+    if (!(session.getMediaProbe().keyframes() instanceof KeyframeKnowledge.Known(var positions))) {
+      return Optional.empty();
+    }
+
+    return Optional.of(copy.exactStartsIn(positions));
+  }
+
+  /**
+   * Where a variant's job attempt from this segment reads from. A copy, and every variant of a
+   * session that encodes the video, read where the session's timeline says. An encoded lower
+   * variant beside a copy runs on the copy's segments and reads, as every encode does, from the
+   * last keyframe that presents at least half a second before its first segment's start, the copy's
+   * start of that segment, never from the copy's keyframe (ADR 0050).
+   */
+  static Optional<Duration> keyframeSeekPositionOf(
+      StreamSession session, String variantLabel, MediaSegmentTimeline timeline, int index) {
+    var probe = session.getMediaProbe();
+    if (index == 0 || session.decisionOf(variantLabel).transcodeMode().copiesVideo()) {
+      return timeline.keyframeSeekPosition(index);
+    }
+
+    if (!(timeline instanceof MediaSegmentTimeline.StreamCopy copy)
+        || !(probe.keyframes() instanceof KeyframeKnowledge.Known(var positions))) {
+      return timeline.keyframeSeekPosition(index);
+    }
+
+    return Optional.of(
+        MediaSegmentTimeline.KeyframeSeekingGrid.encodeSeekPosition(
+            positions, DemuxerSeekTime.of(probe.containerFormat()), copy.segmentStart(index)));
   }
 
   // Without the keyframes, the worker reads from one period before the attempt's first segment.

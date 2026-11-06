@@ -258,7 +258,8 @@ public class ProducerLifecycleService {
 
     var deadline =
         state.stallDeadline(
-            properties.producerStallThreshold(), startupStallThreshold(session.get(), state));
+            properties.producerStallThreshold(),
+            startupStallThreshold(session.get(), key.variantLabel(), state));
     var remaining = Duration.between(clock.instant(), deadline);
     if (remaining.isNegative()) {
       return Duration.ZERO;
@@ -412,7 +413,7 @@ public class ProducerLifecycleService {
       var handle = session.getVariantHandle(request.variantLabel()).orElseThrow();
       syncProgress(state, handle, pending);
       var running = transcodeExecutor.isRunning(request.sessionId(), request.variantLabel());
-      if (running && !hasStalled(state, session)) {
+      if (running && !hasStalled(state, session, request.variantLabel())) {
         return RecoveryResult.WAITING;
       }
 
@@ -424,7 +425,8 @@ public class ProducerLifecycleService {
       var eligibleTargets = eligibleTargets(session, request.variantLabel());
       // Segment publication is external to the session mutex and may advance during discovery.
       syncProgress(state, handle, pending);
-      if (noLongerNeedsRecovery(pending, running && !hasStalled(state, session))) {
+      if (noLongerNeedsRecovery(
+          pending, running && !hasStalled(state, session, request.variantLabel()))) {
         return RecoveryResult.WAITING;
       }
 
@@ -480,8 +482,8 @@ public class ProducerLifecycleService {
   private Set<ExecutionTargetId> eligibleTargets(StreamSession session, String variantLabel) {
     return session
         .getPinnedEncoder(variantLabel)
-        .map(pinned -> transcodeExecutor.executionTargets(session.getTranscodeDecision(), pinned))
-        .orElseGet(() -> transcodeExecutor.executionTargets(session.getTranscodeDecision()));
+        .map(pinned -> transcodeExecutor.executionTargets(session.decisionOf(variantLabel), pinned))
+        .orElseGet(() -> transcodeExecutor.executionTargets(session.decisionOf(variantLabel)));
   }
 
   private boolean noLongerNeedsRecovery(PendingSegment pending, boolean runningWithoutStall) {
@@ -555,19 +557,21 @@ public class ProducerLifecycleService {
         clock.instant());
   }
 
-  private boolean hasStalled(VariantDeliveryState state, StreamSession session) {
+  private boolean hasStalled(
+      VariantDeliveryState state, StreamSession session, String variantLabel) {
     return state.hasStalled(
         properties.producerStallThreshold(),
-        startupStallThreshold(session, state),
+        startupStallThreshold(session, variantLabel, state),
         clock.instant());
   }
 
   // Before its first media segment is stored, a job attempt gets the stall threshold plus the grid
   // slots of each segment it encodes: its first segment and, when it encodes video from after
   // segment 0, the preroll segment before it, where the worker starts encoding.
-  private Duration startupStallThreshold(StreamSession session, VariantDeliveryState state) {
+  private Duration startupStallThreshold(
+      StreamSession session, String variantLabel, VariantDeliveryState state) {
     var timeline = timelineOf(session);
-    if (session.getTranscodeDecision().transcodeMode().copiesVideo() || state.runStart() == 0) {
+    if (session.decisionOf(variantLabel).transcodeMode().copiesVideo() || state.runStart() == 0) {
       return startupStallThreshold(timeline.slotSpan(state.runStart(), FIRST_SEGMENT_ONLY));
     }
 
@@ -648,7 +652,7 @@ public class ProducerLifecycleService {
                   .orElseThrow(() -> new SessionNotFoundException(sessionId));
           try (var _ =
               transcodeLimit
-                  .tryReserve(current)
+                  .tryReserve(current, variantLabel)
                   .orElseThrow(() -> new TranscodeLimitReachedException(sessionId))) {
             startVariant(current, variantLabel, current.getCurrentSegment());
             if (runtimeRegistry.findById(sessionId).isEmpty()) {
@@ -968,7 +972,7 @@ public class ProducerLifecycleService {
   }
 
   private static boolean takesConfiguredTranscodeSlot(StreamSession session, String variantLabel) {
-    return requiresTranscode(session)
+    return requiresTranscode(session, variantLabel)
         && session
             .getVariantHandle(variantLabel)
             .filter(ProducerLifecycleService::takesConfiguredTranscodeSlot)
@@ -996,6 +1000,24 @@ public class ProducerLifecycleService {
         && request.variantLabel().equals(variantsStartedForTheirPlayer.get(request.sessionId()));
   }
 
+  /**
+   * The variant that the player plays: the one whose segment it received last; before it received
+   * one, the variant of its newest media-segment request; and before it requested one, the variant
+   * that the stream session started for its playlist. Empty when none is known.
+   */
+  public Optional<String> playedVariantOf(UUID sessionId) {
+    // Read without the session mutex, in the reverse of the order that
+    // rememberNewestMediaSegmentRequest writes: a first media-segment request is published before
+    // it clears the playlist's variant, so a read that races it still sees one of the two.
+    var startedForPlaylist = Optional.ofNullable(variantsStartedForTheirPlaylist.get(sessionId));
+    var requested =
+        Optional.ofNullable(newestMediaSegmentRequests.get(sessionId))
+            .map(SegmentRequest::variantLabel);
+    return Optional.ofNullable(playingVariants.get(sessionId))
+        .or(() -> requested)
+        .or(() -> startedForPlaylist);
+  }
+
   // The played variant while the newest media-segment request asks for another variant.
   private Optional<String> leftVariant(StreamSession session) {
     var newest = newestMediaSegmentRequests.get(session.getSessionId());
@@ -1017,16 +1039,17 @@ public class ProducerLifecycleService {
       return;
     }
 
-    // A request for the variant that the player plays can be one sent before the player read the
-    // playlist that started another variant, so it keeps that variant.
-    if (!request.variantLabel().equals(playingVariants.get(request.sessionId()))) {
-      variantsStartedForTheirPlaylist.remove(request.sessionId());
-    }
-
     var previous = newestMediaSegmentRequests.put(request.sessionId(), request);
     if (previous == null || !previous.variantLabel().equals(request.variantLabel())) {
       newestVariantArrivals.put(request.sessionId(), request.arrival());
       eventPublisher.publishEvent(new RequestedVariantChangedEvent(request.sessionId()));
+    }
+
+    // A request for the variant that the player plays can be one sent before the player read the
+    // playlist that started another variant, so it keeps that variant. The playlist's variant is
+    // cleared only after the request is published, for playedVariantOf's unlocked read.
+    if (!request.variantLabel().equals(playingVariants.get(request.sessionId()))) {
+      variantsStartedForTheirPlaylist.remove(request.sessionId());
     }
   }
 
@@ -1182,7 +1205,8 @@ public class ProducerLifecycleService {
       return false;
     }
 
-    var segmentName = variantLabel + "/" + SegmentNames.mediaSegmentName(segmentIndex);
+    var segmentName =
+        SegmentNames.storedSegmentName(variantLabel, SegmentNames.mediaSegmentName(segmentIndex));
     return !requiresRelocation(session, variantLabel, segmentName);
   }
 
@@ -1322,7 +1346,7 @@ public class ProducerLifecycleService {
 
   private Optional<String> attemptOnDemandStart(
       StreamSession session, String variantLabel, int startSequenceNumber) {
-    var place = transcodeLimit.tryReserve(session);
+    var place = transcodeLimit.tryReserve(session, variantLabel);
     if (place.isEmpty()) {
       return Optional.of("the transcode limit is reached");
     }
@@ -1352,7 +1376,7 @@ public class ProducerLifecycleService {
   // Which of a configured transcode slot and a worker job slot are taken for the variant's start.
   private SlotShortage slotShortage(StreamSession session, String variantLabel) {
     return SlotShortage.builder()
-        .configuredTranscodeSlot(!hasConfiguredTranscodeSlotFor(session))
+        .configuredTranscodeSlot(!hasConfiguredTranscodeSlotFor(session, variantLabel))
         .workerJobSlot(!hasFreeWorkerJobSlotFor(session, variantLabel))
         .usableTargets(eligibleTargets(session, variantLabel))
         .build();
@@ -1364,13 +1388,15 @@ public class ProducerLifecycleService {
     var freeSlots =
         session
             .getPinnedEncoder(variantLabel)
-            .map(pinned -> transcodeExecutor.availableSlots(session.getTranscodeDecision(), pinned))
-            .orElseGet(() -> transcodeExecutor.availableSlots(session.getTranscodeDecision()));
+            .map(
+                pinned ->
+                    transcodeExecutor.availableSlots(session.decisionOf(variantLabel), pinned))
+            .orElseGet(() -> transcodeExecutor.availableSlots(session.decisionOf(variantLabel)));
     return freeSlots > 0;
   }
 
-  private boolean hasConfiguredTranscodeSlotFor(StreamSession session) {
-    return !requiresTranscode(session) || freeConfiguredTranscodeSlots() > 0;
+  private boolean hasConfiguredTranscodeSlotFor(StreamSession session, String variantLabel) {
+    return !requiresTranscode(session, variantLabel) || freeConfiguredTranscodeSlots() > 0;
   }
 
   /**
@@ -1405,15 +1431,15 @@ public class ProducerLifecycleService {
     private synchronized long freePlaces() {
       var runningJobAttempts =
           runtimeRegistry.findAll().stream()
-              .filter(ProducerLifecycleService::requiresTranscode)
               .mapToLong(ProducerLifecycleService::countRunningJobAttempts)
               .sum();
       return properties.maxConcurrentTranscodes() - runningJobAttempts - reservedPlaces;
     }
 
-    // Empty when no place is free. A stream session that only remuxes needs no place.
-    private synchronized Optional<TranscodeLimitPlace> tryReserve(StreamSession session) {
-      if (!requiresTranscode(session)) {
+    // Empty when no place is free. A variant that only remuxes needs no place.
+    private synchronized Optional<TranscodeLimitPlace> tryReserve(
+        StreamSession session, String variantLabel) {
+      if (!requiresTranscode(session, variantLabel)) {
         return Optional.of(() -> {});
       }
 
@@ -1438,14 +1464,15 @@ public class ProducerLifecycleService {
   }
 
   // A direct-play stream session starts no job attempt and holds no transcode decision.
-  private static boolean requiresTranscode(StreamSession session) {
+  private static boolean requiresTranscode(StreamSession session, String variantLabel) {
     return session.getDelivery() == StreamDelivery.HLS
-        && session.getTranscodeDecision().transcodeMode() != TranscodeMode.REMUX;
+        && session.decisionOf(variantLabel).transcodeMode() != TranscodeMode.REMUX;
   }
 
   private static long countRunningJobAttempts(StreamSession session) {
-    return session.getVariantHandles().values().stream()
-        .filter(ProducerLifecycleService::takesConfiguredTranscodeSlot)
+    return session.getVariantHandles().entrySet().stream()
+        .filter(handle -> requiresTranscode(session, handle.getKey()))
+        .filter(handle -> takesConfiguredTranscodeSlot(handle.getValue()))
         .count();
   }
 
@@ -1771,7 +1798,7 @@ public class ProducerLifecycleService {
         () ->
             runtimeRegistry
                 .findById(sessionId)
-                .filter(session -> session.getTranscodeDecision().transcodeMode().copiesVideo())
+                .filter(session -> session.decisionOf(variantLabel).transcodeMode().copiesVideo())
                 .flatMap(session -> shortCopyShownBy(session, variantLabel, attemptId)));
   }
 
@@ -1948,7 +1975,8 @@ public class ProducerLifecycleService {
 
   private TranscodeRequest.TranscodeRequestBuilder baseRequest(
       StreamSession session, String variantLabel, int startSequenceNumber) {
-    var frameRate = session.getTranscodeDecision().outputFrameRate();
+    var decision = session.decisionOf(variantLabel);
+    var frameRate = decision.outputFrameRate();
     var timeline = timelineOf(session);
     return TranscodeRequest.builder()
         .sessionId(session.getSessionId())
@@ -1956,24 +1984,26 @@ public class ProducerLifecycleService {
         .pinnedEncoder(session.getPinnedEncoder(variantLabel))
         .sourcePath(session.getSourcePath())
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
-        .keyframeSeekPosition(timeline.keyframeSeekPosition(startSequenceNumber))
+        .keyframeSeekPosition(
+            MediaSegmentTimelines.keyframeSeekPositionOf(
+                session, variantLabel, timeline, startSequenceNumber))
         .exactSegmentStarts(MediaSegmentTimelines.exactSegmentStartsOf(session, timeline))
         .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
         .framerate(
             frameRate
                 .map(rate -> OptionalDouble.of(rate.toDouble()))
                 .orElseGet(OptionalDouble::empty))
-        .transcodeDecision(session.getTranscodeDecision())
+        .transcodeDecision(decision)
         .startSequenceNumber(startSequenceNumber)
-        .mediaSegmentCount(timeline.mediaSegmentCount())
-        .segmentStartSlots(timeline.segmentStartSlots());
+        .mediaSegmentCount(timeline.mediaSegmentCount());
   }
 
   private EncoderPreset pinEncoderPreset(StreamSession session, String variantLabel) {
     return session.pinEncoderPreset(
         variantLabel,
         () ->
-            serverSettings.resolveEncoderPreset(session.getTranscodeDecision().videoCodecFamily()));
+            serverSettings.resolveEncoderPreset(
+                session.decisionOf(variantLabel).videoCodecFamily()));
   }
 
   private void withSessionLock(UUID sessionId, Runnable action) {

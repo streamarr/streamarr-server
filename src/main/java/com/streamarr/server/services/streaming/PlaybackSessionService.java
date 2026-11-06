@@ -771,15 +771,19 @@ public class PlaybackSessionService implements AutoCloseable {
   public void onRequestedVariantHardwareEncoderFailed(
       @NonNull RequestedVariantHardwareEncoderFailedEvent event) {
     var failedId = event.streamSessionId();
-    handleJobFailure(failedId, playback -> reserveSoftwareContinuation(playback, failedId));
+    handleJobFailure(
+        failedId,
+        playback -> reserveSoftwareContinuation(playback, failedId, event.variantLabel()));
   }
 
+  // The failed variant's own decision: a lower variant beside a copy encodes (ADR 0050).
   private Optional<FormatAttemptReservation> reserveSoftwareContinuation(
-      PlaybackSession playback, UUID failedId) {
+      PlaybackSession playback, UUID failedId, String variantLabel) {
     if (!isCurrentAttempt(playback, failedId)
         || endedNormally(playback)
         || !(playback.current instanceof PlaybackFormatAttempt.Ready(var session))
-        || !(outputOf(session) instanceof FailedFormatAttempt.Encode(var codecFamily))) {
+        || !(outputOf(session.decisionOf(variantLabel))
+            instanceof FailedFormatAttempt.Encode(var codecFamily))) {
       return Optional.empty();
     }
 
@@ -817,13 +821,17 @@ public class PlaybackSessionService implements AutoCloseable {
   // worker reports a Dolby Vision conversion failure only from a copy that converts profile 7 on a
   // PQ base (streamarr/streamarr-server#651), so that report names a Dolby Vision copy on an HDR
   // base; its output mismatch names a copy.
-  private static FailedFormatAttempt failedAttempt(
+  private FailedFormatAttempt failedAttempt(
       PlaybackSession playback, PlaybackSessionFailure reason) {
-    if (playback.current instanceof PlaybackFormatAttempt.Ready(var session)) {
-      return new FailedFormatAttempt(reason, outputOf(session));
+    if (!(playback.current instanceof PlaybackFormatAttempt.Ready(var session))) {
+      return new FailedFormatAttempt(reason, outputOfAPendingCopy(reason));
     }
 
-    return new FailedFormatAttempt(reason, outputOfAPendingCopy(reason));
+    if (session.getDelivery() == StreamDelivery.DIRECT_PLAY) {
+      return new FailedFormatAttempt(reason, new FailedFormatAttempt.DirectPlay());
+    }
+
+    return new FailedFormatAttempt(reason, outputOf(decisionThatFailed(session, reason)));
   }
 
   private static FailedFormatAttempt.Output outputOfAPendingCopy(PlaybackSessionFailure reason) {
@@ -834,12 +842,23 @@ public class PlaybackSessionService implements AutoCloseable {
     return new FailedFormatAttempt.Copy();
   }
 
-  private static FailedFormatAttempt.Output outputOf(StreamSession session) {
-    if (session.getDelivery() == StreamDelivery.DIRECT_PLAY) {
-      return new FailedFormatAttempt.DirectPlay();
+  // The player reports a failure of the variant that it plays, whose decision can differ from the
+  // stream session's: a copy's lower variants encode (ADR 0050). A job failure fails as a copy
+  // does, whichever variant's job it was: a segment over the cap fails the segment list, not the
+  // codec (ADR 0037).
+  private TranscodeDecision decisionThatFailed(
+      StreamSession session, PlaybackSessionFailure reason) {
+    if (!(reason instanceof PlaybackSessionFailure.FixedFormatFailed)) {
+      return session.getTranscodeDecision();
     }
 
-    var decision = session.getTranscodeDecision();
+    return streamingService
+        .playedVariantOf(session.getSessionId())
+        .map(session::decisionOf)
+        .orElseGet(session::getTranscodeDecision);
+  }
+
+  private static FailedFormatAttempt.Output outputOf(TranscodeDecision decision) {
     if (!decision.transcodeMode().copiesVideo()) {
       return new FailedFormatAttempt.Encode(decision.videoCodecFamily());
     }

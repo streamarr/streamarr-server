@@ -17,6 +17,7 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -36,6 +37,7 @@ import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -59,7 +61,8 @@ import org.junit.jupiter.params.provider.ValueSource;
  * Real-FFmpeg proof that a stream copy seeks to the keyframe that opens the requested segment. A
  * replacement attempt must deliver the same video samples as the attempt that copied the source
  * from its start, also when its segment merges slots without a keyframe (ADR 0037). A copy whose
- * audio runs on long after its video keeps its producer while it copies that audio.
+ * audio runs on long after its video keeps its producer while it copies that audio. An encoded
+ * lower variant beside a copy starts only when the player requests one of its segments.
  */
 @Tag("SmokeTest")
 @DisplayName("HLS Stream Copy Seek Smoke Tests")
@@ -79,12 +82,14 @@ class HlsCopySeekSmokeTest {
 
   // 4 fps with two B-frames: each keyframe decodes 0.5 s before it presents. The keyframe that
   // opens segment 2 presents at 12 s, on the boundary, and decodes at 11.5 s. A seek to 12 s
-  // reads past it.
-  private static final List<String> BOUNDARY_MPEG_TS =
+  // reads past it. An MPEG-TS source would copy only once the probe stores its start time
+  // correction (ADR 0037, segment list), so the stream goes into Matroska, whose demuxer also
+  // seeks by decode time.
+  private static final List<String> BOUNDARY_B_FRAMES =
       source(
           "rate=4",
           List.of("-bf", "2", "-force_key_frames", "0,6,12,19,25,30"),
-          List.of("-f", "mpegts"));
+          List.of("-f", "matroska"));
 
   // 24 fps with a keyframe every 10 s, as a long-GOP encode places them: the 6 s slots [12 s, 18 s)
   // and [24 s, 30 s) hold no keyframe, so the segment list starts its segments in slots 0, 1, 3
@@ -153,6 +158,36 @@ class HlsCopySeekSmokeTest {
         exec ffmpeg "${paced[@]}"
       fi
       """;
+
+  // 854x480 noise at 24 fps with a keyframe every 2 s keeps the copy's bitrate above the 360p
+  // variant's, so Auto lists that variant beside the copy.
+  private static final List<String> NOISY_480P =
+      List.of(
+          "-f",
+          "lavfi",
+          "-i",
+          "testsrc2=size=854x480:duration=36:rate=24,noise=alls=40:allf=t",
+          "-f",
+          "lavfi",
+          "-i",
+          "sine=frequency=440:duration=36",
+          "-c:v",
+          "libx264",
+          "-pix_fmt",
+          "yuv420p",
+          "-crf",
+          "18",
+          "-g",
+          "48",
+          "-keyint_min",
+          "48",
+          "-sc_threshold",
+          "0",
+          "-c:a",
+          "aac",
+          "-shortest",
+          "-f",
+          "matroska");
 
   private FakeMediaFileRepository mediaFileRepository;
   private FakeMediaFileContainerInfoRepository probeRepository;
@@ -309,6 +344,40 @@ class HlsCopySeekSmokeTest {
         .isEqualTo(fromStart);
   }
 
+  @Test
+  @DisplayName(
+      "Should start a lower variant's encode at its segment's start when the player first requests"
+          + " the segment beside a running copy")
+  void shouldStartALowerVariantsEncodeAtItsSegmentsStartWhenThePlayerFirstRequestsItBesideACopy()
+      throws Exception {
+    var source =
+        workerFixture.worker().generateMedia(sourceRoot.resolve("noisy-480p.mkv"), NOISY_480P);
+    storeProbeWithKeyframes(source);
+    var session = createSession(source);
+    var sessionId = session.getSessionId();
+    var lowerSegment = "360p/" + SegmentNames.mediaSegmentName(1);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getVariants()).extracting(QualityVariant::label).contains("360p");
+    await()
+        .atMost(Duration.ofSeconds(60))
+        .until(() -> segmentStore.segmentExists(sessionId, SegmentNames.mediaSegmentName(0)));
+    assertThat(transcodeExecutor.isRunning(sessionId, StreamSession.defaultVariant())).isTrue();
+    assertThat(transcodeExecutor.isRunning(sessionId, "360p")).isFalse();
+
+    var delivery = coordinator.deliver(sessionId, "360p", lowerSegment);
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
+    var initialization = segmentStore.readSegment(sessionId, "360p/init.mp4");
+    assertThat(Fmp4Fixture.avcCodecString(initialization)).isEqualTo("avc1.64001E");
+    var media = new ByteArrayOutputStream();
+    media.writeBytes(initialization);
+    media.writeBytes(segmentStore.readSegment(sessionId, lowerSegment));
+    assertThat(Fmp4Fixture.firstVideoPresentationTime(media.toByteArray()))
+        .as("the encode forces a keyframe at the start of the copy's segment 1")
+        .isCloseTo(SEGMENT_SECONDS, within(0.05));
+  }
+
   static Stream<Arguments> irregularKeyframeSources() {
     return Stream.of(
         Arguments.of(
@@ -317,9 +386,9 @@ class HlsCopySeekSmokeTest {
             KeyframePositionSource.CONTAINER_INDEX,
             List.of(7.5, 5.5, 7.5, 5.5, 5.0, 5.0)),
         Arguments.of(
-            "boundary-keyframes.ts",
-            BOUNDARY_MPEG_TS,
-            KeyframePositionSource.PACKET_SCAN,
+            "boundary-keyframes.mkv",
+            BOUNDARY_B_FRAMES,
+            KeyframePositionSource.CONTAINER_INDEX,
             List.of(6.0, 6.0, 7.0, 6.0, 5.0, 6.0)));
   }
 
@@ -465,8 +534,8 @@ class HlsCopySeekSmokeTest {
     return List.copyOf(arguments);
   }
 
-  // An MPEG-TS source has no index, so the probe asks for a packet scan. The scan is a new attempt,
-  // so it carries a new attempt ID, as the worker contract requires.
+  // A source without an index makes the probe ask for a packet scan. The scan is a new attempt, so
+  // it carries a new attempt ID, as the worker contract requires.
   private KeyframePositions storeProbeWithKeyframes(Path source) {
     var requestBuilder =
         ProbeExecutionRequest.builder()

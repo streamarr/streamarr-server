@@ -118,7 +118,8 @@ class TranscodeDecisionTest {
                         OptionalInt.empty(),
                         Optional.empty(),
                         false,
-                        EncodeFormat.SDR_8_BIT)),
+                        EncodeFormat.SDR_8_BIT,
+                        Optional.empty())),
         Arguments.of(
             "audioStreamIndex",
             (ThrowingCallable)
@@ -137,7 +138,8 @@ class TranscodeDecisionTest {
                         null,
                         Optional.empty(),
                         false,
-                        EncodeFormat.SDR_8_BIT)),
+                        EncodeFormat.SDR_8_BIT,
+                        Optional.empty())),
         Arguments.of(
             "dynamicRangeChoice",
             (ThrowingCallable)
@@ -156,7 +158,28 @@ class TranscodeDecisionTest {
                         OptionalInt.empty(),
                         null,
                         false,
-                        EncodeFormat.SDR_8_BIT)));
+                        EncodeFormat.SDR_8_BIT,
+                        Optional.empty())),
+        Arguments.of(
+            "lowerVariantCodecProfile",
+            (ThrowingCallable)
+                () ->
+                    new TranscodeDecision(
+                        TranscodeMode.FULL_TRANSCODE,
+                        "h264",
+                        Optional.empty(),
+                        audio,
+                        subtitles,
+                        Optional.empty(),
+                        List.of(),
+                        Optional.empty(),
+                        List.of(),
+                        List.of(),
+                        OptionalInt.empty(),
+                        Optional.empty(),
+                        false,
+                        EncodeFormat.SDR_8_BIT,
+                        null)));
   }
 
   @Test

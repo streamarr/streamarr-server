@@ -11,6 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.fixtures.StreamSessionFixture;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -94,11 +96,32 @@ class StreamSessionTest {
   @Test
   @DisplayName("Should offer only the ladder's variants when the stream session has a ladder")
   void shouldOfferOnlyTheLaddersVariantsWhenTheStreamSessionHasALadder() {
-    var session = abrSessionBuilder().build();
+    var session =
+        abrSessionBuilder()
+            .transcodeDecision(StreamSessionFixture.fullTranscodeDecision("h264"))
+            .build();
 
     assertThat(session.offersVariant("720p")).isTrue();
     assertThat(session.offersVariant("2160p")).isFalse();
     assertThat(session.offersVariant(StreamSession.defaultVariant())).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should offer the copy and run each lower variant's encode when a copy sits beside lower"
+          + " variants")
+  void shouldOfferTheCopyAndRunEachLowerVariantsEncodeWhenACopySitsBesideLowerVariants() {
+    var copy =
+        StreamSessionFixture.remuxDecision().toBuilder()
+            .lowerVariantCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+            .build();
+    var session = abrSessionBuilder().transcodeDecision(copy).build();
+
+    assertThat(session.offersVariant(StreamSession.defaultVariant())).isTrue();
+    assertThat(session.offersVariant("720p")).isTrue();
+    assertThat(session.decisionOf(StreamSession.defaultVariant())).isEqualTo(copy);
+    assertThat(session.decisionOf("720p").encodeCodecProfile())
+        .contains(EncodeCodecProfile.H264_HIGH);
   }
 
   @Test

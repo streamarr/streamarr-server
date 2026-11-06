@@ -70,6 +70,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -83,6 +84,11 @@ class TranscodeDecisionServiceTest {
   // At the 6 s period, keyframes 10.01 s apart leave the slot [12 s, 18 s) without one.
   private static final KeyframeKnowledge KEYFRAMES_LEAVING_A_SLOT_EMPTY =
       ProbeFixture.keyframesEvery(Duration.ofMillis(10_010), Duration.ofMinutes(120));
+
+  // At the 6 s period, the keyframes open segments at 0, 11, 17 and 24 s; the one at 12.5 s
+  // presents less than 2 s after 11 s.
+  private static final List<Long> KEYFRAMES_SKIPPING_ONE_TOO_SOON_AFTER_A_START =
+      List.of(0L, 11_000L, 12_500L, 17_000L, 24_000L);
 
   private static final Set<String> EVERY_VIDEO_CODEC_FAMILY = Set.of("h264", "hevc", "av1");
   // A worker encodes AV1 in hardware, so AV1 comes before H.264 when both keep the frame rate.
@@ -181,6 +187,106 @@ class TranscodeDecisionServiceTest {
                 .build());
 
     assertThat(decision.map(TranscodeDecision::transcodeMode)).contains(TranscodeMode.REMUX);
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode the lower variants beside an Auto copy in a codec that a busy worker's"
+          + " verified encoder encodes")
+  void
+      shouldEncodeTheLowerVariantsBesideAnAutoCopyInACodecThatABusyWorkersVerifiedEncoderEncodes() {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("h264", "aac"))
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of())
+                    .verifiedVideoCodecFamilies(Set.of("h264"))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.lowerVariantCodecProfile()).contains(EncodeCodecProfile.H264_HIGH);
+    assertThat(decision.lowerVariantDecision().orElseThrow())
+        .satisfies(
+            lower -> {
+              assertThat(lower.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+              assertThat(lower.videoCodecFamily()).isEqualTo("h264");
+              assertThat(lower.audioDecision()).isEqualTo(decision.audioDecision());
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode the lower variants beside an Auto copy in the preferred codec family that is"
+          + " not excluded")
+  void shouldEncodeTheLowerVariantsBesideAnAutoCopyInThePreferredCodecFamilyThatIsNotExcluded() {
+    var request =
+        TranscodeDecisionRequest.builder()
+            .source(probe("h264", "aac"))
+            .capabilityDeclaration(declaring(AV1, H264))
+            .encodableVideoCodecFamilies(Set.of("h264", "av1"))
+            .hardwareEncodableVideoCodecFamilies(HARDWARE_AV1);
+
+    var preferred = service.decide(request.build()).orElseThrow();
+    var withoutAv1 =
+        service.decide(request.excludedEncodeCodecFamilies(Set.of("av1")).build()).orElseThrow();
+
+    assertThat(preferred.lowerVariantCodecProfile()).contains(EncodeCodecProfile.AV1_MAIN);
+    assertThat(withoutAv1.lowerVariantCodecProfile()).contains(EncodeCodecProfile.H264_HIGH);
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"ORIGINAL", "FULL_HD_1080P"})
+  @DisplayName(
+      "Should encode no lower variant beside a copy when the viewer picks Original or a fixed quality")
+  void shouldEncodeNoLowerVariantBesideACopyWhenTheViewerPicksOriginalOrAFixedQuality(
+      VideoQuality quality) {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("h264", "aac"))
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .viewerLimits(limitsIn(quality))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.lowerVariantCodecProfile()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should copy without lower variants when the source has no usable frame rate")
+  void shouldCopyWithoutLowerVariantsWhenTheSourceHasNoUsableFrameRate() {
+    var source =
+        probeBuilder("h264", "aac")
+            .framerate(OptionalDouble.empty())
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .codecString(Optional.of(SDR_CODEC_STRINGS.get("h264")))
+                        .frameRateRule(VideoPlaybackFactsFixture.refusedRule())
+                        .build()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.lowerVariantCodecProfile()).isEmpty();
   }
 
   @Test
@@ -407,6 +513,64 @@ class TranscodeDecisionServiceTest {
         .isEqualTo(expectedRefusals);
   }
 
+  // FFmpeg corrects the start time of a source whose demuxer allows timestamp discontinuities, so a
+  // copy places its keyframes at their stored ticks only with the probe's start time correction,
+  // which no stored probe outcome carries yet (ADR 0037, segment list). MP4, MOV, Matroska and AVI
+  // demuxers allow none.
+  @ParameterizedTest(name = "{0}")
+  @CsvSource({
+    "mpegts, VIDEO_TRANSCODE, 1",
+    "mpeg, VIDEO_TRANSCODE, 1",
+    "ogg, VIDEO_TRANSCODE, 1",
+    "'mov,mp4,m4a,3gp,3g2,mj2', REMUX, 0",
+    "'matroska,webm', REMUX, 0",
+    "avi, REMUX, 0"
+  })
+  @DisplayName(
+      "Should encode the video when the source's demuxer allows timestamp discontinuities and the"
+          + " probe stored no start time correction")
+  void shouldEncodeTheVideoWhenTheSourcesDemuxerAllowsTimestampDiscontinuities(
+      String containerFormat, TranscodeMode expectedMode, double expectedRefusals) {
+    var source = probeBuilder("h264", null).containerFormat(Optional.of(containerFormat)).build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(expectedMode);
+    assertThat(
+            meterRegistry
+                .counter(STREAM_COPY_REFUSALS, "reason", "no_start_time_correction")
+                .count())
+        .isEqualTo(expectedRefusals);
+  }
+
+  @Test
+  @DisplayName(
+      "Should give the missing start time correction as the reason when an MPEG-TS source's video"
+          + " is encoded")
+  void shouldGiveTheMissingStartTimeCorrectionAsTheReasonWhenAnMpegTsSourcesVideoIsEncoded() {
+    var source = probeBuilder("h264", null).containerFormat(Optional.of("mpegts")).build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.reasons()).containsExactly(DecisionReason.START_TIME_CORRECTION_UNKNOWN);
+  }
+
   // The copied AC-3 track's frames join each segment's video: segment 0's 200 audio frames add
   // 1,000,000 bytes, their framing and their heap cost to a video segment that fits alone.
   @Test
@@ -452,6 +616,72 @@ class TranscodeDecisionServiceTest {
             .duration(Duration.ofSeconds(12))
             .keyframeMillis(List.of(0L, 6_000L))
             .videoBytes(List.of(134_164_176L, 1_000L))
+            .build()
+            .probeFrom(probeBuilder("h264", "flac"));
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.FULL_TRANSCODE);
+    assertThat(meterRegistry.counter(STREAM_COPY_REFUSALS, "reason", "exceeds_segment_cap").count())
+        .isEqualTo(1.0);
+  }
+
+  // The keyframe at 12.5 s presents less than 2 s after segment 1's start at 11 s, so it opens no
+  // segment, and segment 1 runs from 11 s to 17 s across the slots that start at 6 s and at 12 s.
+  // The worker takes each segment's audio from its exact start to the next one's: segment 1 also
+  // holds the copied AC-3 interval from 12.5 s to 17 s, whose 1,000,000 bytes in 200 frames join a
+  // video segment that fits alone.
+  @Test
+  @DisplayName(
+      "Should count the copied audio up to the next segment's exact start when a keyframe that"
+          + " opens no segment lies past the next segment's slot start")
+  void shouldCountTheCopiedAudioUpToTheNextSegmentsExactStartWhenAKeyframeOpensNoSegment() {
+    var source =
+        StreamMeasurementFixture.CopySource.builder()
+            .duration(Duration.ofSeconds(30))
+            .keyframeMillis(KEYFRAMES_SKIPPING_ONE_TOO_SOON_AFTER_A_START)
+            .videoBytes(List.of(1_000L, 1_000L, 133_500_000L, 1_000L, 1_000L))
+            .audioBytes(List.of(1_000L, 1_000L, 1_000_000L, 1_000L, 1_000L))
+            .audioPackets(List.of(10L, 10L, 200L, 10L, 10L))
+            .build()
+            .probeFrom(probeBuilder("h264", "ac3"));
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaringAudio(audio(AAC, 6), audio(AC3, 6)))
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.reasons()).containsExactly(DecisionReason.SEGMENT_EXCEEDS_CAP);
+  }
+
+  // Segment 0 runs from zero to the keyframe at 11 s, so the FLAC track encoded to AAC fills 11 s
+  // of its interval, not the 6 s of its first slot. Its video, with framing and heap cost, leaves
+  // 200,000 bytes of the cap: more than 6 s of the encoded frames at 1.2 times their bitrate take,
+  // and less than 11 s take (ADR 0054).
+  @Test
+  @DisplayName(
+      "Should count the encoded audio up to the next segment's exact start when that start lies"
+          + " past the next slot")
+  void shouldCountTheEncodedAudioUpToTheNextSegmentsExactStartWhenThatStartLiesPastTheNextSlot() {
+    var source =
+        StreamMeasurementFixture.CopySource.builder()
+            .duration(Duration.ofSeconds(30))
+            .keyframeMillis(KEYFRAMES_SKIPPING_ONE_TOO_SOON_AFTER_A_START)
+            .videoBytes(List.of(134_014_176L, 1_000L, 1_000L, 1_000L, 1_000L))
             .build()
             .probeFrom(probeBuilder("h264", "flac"));
 
