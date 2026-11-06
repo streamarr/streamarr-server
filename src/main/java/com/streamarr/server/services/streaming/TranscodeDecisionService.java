@@ -322,14 +322,16 @@ public class TranscodeDecisionService {
     var source = request.source();
     var declaration = request.capabilityDeclaration();
     var limits = request.viewerLimits();
+    // A copy keeps the source's range, so SDR for an HDR source needs an encode, and without one
+    // the session finds no video format rather than playing HDR (ADR 0013).
+    if (!limits.allowsCopyRangeOf(source)) {
+      return new VideoCopyChoice.Refused(List.of(DecisionReason.VIEWER_CHOSE_SDR));
+    }
+
     var steps = AudioSteps.below(sessionAudio, AudioTrackChannels.of(source), declaration);
     var playlist = CopyMediaPlaylist.of(source, properties);
     var stepWithinMaximum = limits.audioStepBesideCopyOf(source, steps, playlist);
-    var limitRefusals =
-        viewerLimitRefusals(
-            limits.allowsCopyPictureOf(source),
-            stepWithinMaximum,
-            limits.allowsCopyRangeOf(source));
+    var limitRefusals = viewerLimitRefusals(limits.allowsCopyPictureOf(source), stepWithinMaximum);
     if (!limitRefusals.isEmpty() && hasVerifiedEncodeThatTheClientPlays(request)) {
       return new VideoCopyChoice.Refused(beforeViewerLimits(request, limitRefusals));
     }
@@ -371,9 +373,7 @@ public class TranscodeDecisionService {
   }
 
   private static List<DecisionReason> viewerLimitRefusals(
-      boolean pictureWithinLimits,
-      Optional<AudioDecision> stepWithinMaximum,
-      boolean rangeAllowed) {
+      boolean pictureWithinLimits, Optional<AudioDecision> stepWithinMaximum) {
     var refusals = new ArrayList<DecisionReason>();
     if (!pictureWithinLimits) {
       refusals.add(DecisionReason.PICTURE_ABOVE_VIEWER_LIMIT);
@@ -381,10 +381,6 @@ public class TranscodeDecisionService {
 
     if (stepWithinMaximum.isEmpty()) {
       refusals.add(DecisionReason.BITRATE_ABOVE_VIEWER_LIMIT);
-    }
-
-    if (!rangeAllowed) {
-      refusals.add(DecisionReason.VIEWER_CHOSE_SDR);
     }
 
     return refusals;

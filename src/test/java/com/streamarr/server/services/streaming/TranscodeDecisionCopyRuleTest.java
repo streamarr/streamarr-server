@@ -606,25 +606,22 @@ class TranscodeDecisionCopyRuleTest {
     assertThat(decision.reasons()).doesNotContain(DecisionReason.VIEWER_CHOSE_SDR);
   }
 
-  // A copy over the viewer's limits beats refusing playback when no encode can play the source
-  // (ADR 0050), and the SDR choice is one of those limits.
+  // ADR 0013: the server never replaces an explicit SDR choice with HDR, so without an SDR encode
+  // the session finds no video format.
   @Test
   @DisplayName(
-      "Should copy an HDR10 source when the viewer chooses SDR in a fixed quality but no encode"
-          + " can play it")
-  void shouldCopyAnHdr10SourceWhenTheViewerChoosesSdrInAFixedQualityButNoEncodeCanPlayIt() {
+      "Should find no video format for an HDR10 source when the viewer chooses SDR in a fixed"
+          + " quality and no encode can play it")
+  void shouldFindNoVideoFormatForAnHdr10SourceWhenTheViewerChoosesSdrAndNoEncodeCanPlayIt() {
     var decision =
-        service
-            .decide(
-                hdrRequestBuilder(hdrSource(CompatibleBase.PQ, new DolbyVision.Absent()))
-                    .encodableVideoCodecFamilies(Set.of())
-                    .capabilityDeclaration(hdrDeclaration())
-                    .viewerLimits(limits(VideoQuality.UHD_4K, DynamicRangeChoice.SDR))
-                    .build())
-            .orElseThrow();
+        service.decide(
+            hdrRequestBuilder(hdrSource(CompatibleBase.PQ, new DolbyVision.Absent()))
+                .encodableVideoCodecFamilies(Set.of())
+                .capabilityDeclaration(hdrDeclaration())
+                .viewerLimits(limits(VideoQuality.UHD_4K, DynamicRangeChoice.SDR))
+                .build());
 
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
-    assertThat(decision.videoRange()).isEqualTo(VideoRange.PQ);
+    assertThat(decision).isEmpty();
   }
 
   static Stream<Named<Source>> hdrSourcesThatACopyKeepsHdr() {
