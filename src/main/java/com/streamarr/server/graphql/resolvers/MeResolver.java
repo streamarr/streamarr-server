@@ -67,16 +67,13 @@ public class MeResolver {
         positionCursors.pageRequest(
             list, ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE));
     var page = identityQueryService.selectableProfiles(identity, request);
-    return relayConnectionAdapter.toConnection(page, list, MeResolver::toSelectable);
+    return relayConnectionAdapter.toConnection(page, list, SelectableProfile::from);
   }
 
   @DgsData(parentType = "Me", field = "selectedProfile")
   public SelectableProfile selectedProfile() {
     var identity = authorizationService.currentIdentity();
-    return identityQueryService
-        .selectedProfile(identity)
-        .map(MeResolver::toSelectable)
-        .orElse(null);
+    return identityQueryService.selectedProfile(identity).map(SelectableProfile::from).orElse(null);
   }
 
   private static HouseholdSummary toSummary(IdentityQueryService.HouseholdSummaryDetails details) {
@@ -85,19 +82,5 @@ public class MeResolver {
 
   private static UsableHousehold toUsable(IdentityQueryService.UsableHouseholdDetails details) {
     return new UsableHousehold(toSummary(details.household()), details.membership());
-  }
-
-  private static SelectableProfile toSelectable(
-      IdentityQueryService.SelectableProfileDetails details) {
-    return SelectableProfile.builder()
-        .id(details.id())
-        .name(details.name())
-        .picture(details.picture().orElse(null))
-        .kind(details.kind())
-        .personal(details.personal())
-        .pinConfigured(details.pinConfigured())
-        .locked(details.locked())
-        .selected(details.selected())
-        .build();
   }
 }
