@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.IntToDoubleFunction;
 import org.ojalgo.matrix.decomposition.Cholesky;
 import org.ojalgo.matrix.store.R064Store;
 import org.ojalgo.optimisation.convex.ConvexSolver;
@@ -33,14 +32,12 @@ final class ConstantFit {
   // measurement's own cost, not this guess, gives it its value.
   private static final double NEW_CONSTANT = 0.01;
   private static final double NEW_CONSTANT_WEIGHT = 1e-6;
-  // The measurements settle a new constant when, with every constant that has a value held, a
-  // prior keeps at most this share of its variance, for both of two priors: a vanishing probe on
-  // each new constant scaled to its own pixel rates, which keeps nearly all of its variance along
-  // any direction of the new constants that the measurements do not see, however unequal the pixel
-  // rates; and the nominal prior that the solve uses, which keeps much of it along a direction
-  // that the measurements barely see.
-  private static final double PRIOR_SHARE = 1e-3;
-  private static final double PROBE_PRECISION = 1e-9;
+  // The measurements settle a new constant when, with every constant that has a value held, the
+  // nominal value of every new constant could move it by at most this share of its value, or of the
+  // anchor floor for a smaller constant. Each nominal value may be off by up to the largest
+  // measured constant, in either direction.
+  private static final double SETTLED_SHARE = 1e-3;
+  private static final double NOMINAL_ERROR = 0.1;
   // A measurement whose weight has faded below this no longer counts.
   private static final double FADED = 1e-6;
 
@@ -115,7 +112,7 @@ final class ConstantFit {
         index.keySet().stream()
             .filter(constant -> !starting.containsKey(constant) && !current.containsKey(constant))
             .toList();
-    var settled = settledAmong(newConstants, index, normal);
+    var nominalPull = nominalPullOn(newConstants, index, normal);
     index.forEach(
         (constant, row) -> {
           var start = starting.get(constant);
@@ -138,7 +135,10 @@ final class ConstantFit {
               var solved = new HashMap<CostConstant, Double>();
               index.forEach(
                   (constant, row) -> {
-                    if (!newConstants.contains(constant) || settled.contains(constant)) {
+                    var position = newConstants.indexOf(constant);
+                    if (position < 0
+                        || nominalPull[position]
+                            <= SETTLED_SHARE * Math.max(values[row], ANCHOR_FLOOR)) {
                       solved.put(constant, values[row]);
                     }
                   });
@@ -147,55 +147,40 @@ final class ConstantFit {
   }
 
   /**
-   * The new constants that the measurements determine, with every other constant held, apart from
-   * one another and so firmly that their nominal prior barely moves them.
+   * For each new constant, the most that the nominal values of the new constants can move it, with
+   * every other constant held, when each nominal value is off by up to the nominal error. The
+   * nominal prior moves the new constants by (M + pI)^-1 p times the nominal values' errors, where
+   * M is the measurements' normal matrix of the new constants and p the nominal precision. Along a
+   * direction of the new constants that the measurements do not see, this move is at least the
+   * nominal error times the constant's part of that direction, however small that part is.
    */
-  private static Set<CostConstant> settledAmong(
+  private static double[] nominalPullOn(
       List<CostConstant> newConstants, Map<CostConstant, Integer> index, double[][] normal) {
     var size = newConstants.size();
-    var diagonal = new double[size];
-    var scaled = R064Store.FACTORY.make(size, size);
-    for (var row = 0; row < size; row++) {
-      diagonal[row] = normal[index.get(newConstants.get(row))][index.get(newConstants.get(row))];
-    }
-
+    var nominalPrecision = NEW_CONSTANT_WEIGHT / (NEW_CONSTANT * NEW_CONSTANT);
+    var posterior = R064Store.FACTORY.make(size, size);
     for (var row = 0; row < size; row++) {
       for (var column = 0; column < size; column++) {
-        var entry = normal[index.get(newConstants.get(row))][index.get(newConstants.get(column))];
-        scaled.set(row, column, entry / Math.sqrt(diagonal[row] * diagonal[column]));
+        posterior.set(
+            row,
+            column,
+            normal[index.get(newConstants.get(row))][index.get(newConstants.get(column))]);
       }
-    }
 
-    var nominalPrecision = NEW_CONSTANT_WEIGHT / (NEW_CONSTANT * NEW_CONSTANT);
-    var probeShares = priorShares(scaled, _ -> PROBE_PRECISION);
-    var nominalShares = priorShares(scaled, row -> nominalPrecision / diagonal[row]);
-    var settled = new HashSet<CostConstant>();
-    for (var row = 0; row < size; row++) {
-      if (probeShares[row] <= PRIOR_SHARE && nominalShares[row] <= PRIOR_SHARE) {
-        settled.add(newConstants.get(row));
-      }
-    }
-
-    return settled;
-  }
-
-  /** Each unknown's share of its posterior variance that comes from its prior precision. */
-  private static double[] priorShares(R064Store measured, IntToDoubleFunction priorPrecision) {
-    var size = (int) measured.countRows();
-    var posterior = measured.copy();
-    for (var row = 0; row < size; row++) {
-      posterior.add(row, row, priorPrecision.applyAsDouble(row));
+      posterior.add(row, row, nominalPrecision);
     }
 
     var cholesky = Cholesky.R064.make();
     cholesky.decompose(posterior);
     var inverse = cholesky.getInverse();
-    var shares = new double[size];
+    var pull = new double[size];
     for (var row = 0; row < size; row++) {
-      shares[row] = priorPrecision.applyAsDouble(row) * inverse.doubleValue(row, row);
+      for (var column = 0; column < size; column++) {
+        pull[row] += NOMINAL_ERROR * nominalPrecision * Math.abs(inverse.doubleValue(row, column));
+      }
     }
 
-    return shares;
+    return pull;
   }
 
   /**

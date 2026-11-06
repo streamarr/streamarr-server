@@ -1445,6 +1445,40 @@ class WorkerCalibrationTest {
     }
 
     @Test
+    @DisplayName(
+        "Should leave another preset unvalidated, also after a restart, when a third new constant takes only a small part of a cost split that the measurements cannot separate")
+    void
+        shouldLeaveAnotherPresetUnvalidatedAlsoAfterARestartWhenAThirdNewConstantTakesOnlyASmallPartOfACostSplitThatTheMeasurementsCannotSeparate() {
+      var calibration = validatedAtFasterWithMediumCoresAlone();
+
+      // Medium at 0.08, HEVC decode at 0.002 and VP9 decode at 0.004: 3.981 + 0.0995 CPU s per
+      // media s from HEVC and 0.442 + 0.796 from VP9. Two loads give two equations for three
+      // constants.
+      var mediumFromHevc =
+          libx264FasterLoad()
+              .encoderAndPreset(LIBX264_MEDIUM)
+              .outputPixelRate(PixelRate.of(1920, 1080, 24))
+              .sourceDecoder(new SourceDecoder("hevc", DecodeBackend.SOFTWARE))
+              .sourcePixelRate(PixelRate.of(1920, 1080, 24))
+              .build();
+      var mediumFromVp9 =
+          libx264FasterLoad()
+              .encoderAndPreset(LIBX264_MEDIUM)
+              .outputPixelRate(PixelRate.of(640, 360, 24))
+              .sourceDecoder(new SourceDecoder("vp9", DecodeBackend.SOFTWARE))
+              .sourcePixelRate(PixelRate.of(3840, 2160, 24))
+              .build();
+      for (var i = 0; i < 200; i++) {
+        calibration.fit(measuredAtCost(mediumFromHevc, 4.0808448, 2));
+      }
+
+      calibration.fit(measuredAtCost(mediumFromVp9, 1.2386304, 2));
+      calibration.fit(measuredAtCost(mediumFromHevc, 4.0808448, 2));
+
+      assertMediumUnvalidatedAlsoAfterARestart(calibration);
+    }
+
+    @Test
     @DisplayName("Should let another preset's own predictions decide once it has twenty of them")
     void shouldLetAnotherPresetsOwnPredictionsDecideOnceItHasTwentyOfThem() {
       var calibration = benchmarkedAtFasterAndVeryfast();
