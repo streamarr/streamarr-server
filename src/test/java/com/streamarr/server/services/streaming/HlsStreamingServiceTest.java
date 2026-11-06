@@ -7658,6 +7658,75 @@ class HlsStreamingServiceTest {
     assertThat(left.switched().get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
+  // #58: the client declares H.265 Main 10 in PQ and H.265 Main in SDR as separate entries, and
+  // its Main 10 entry stops below the source's level, so the source is encoded. Only the busy
+  // worker's libx265 writes PQ, so the stop tries 8-bit SDR in H.265 Main, not Main 10.
+  @Test
+  @DisplayName(
+      "Should encode 8-bit SDR HEVC Main after stopping a left variant on a worker without PQ when"
+          + " the only worker that writes PQ in Main 10 is busy")
+  void shouldEncode8BitSdrHevcMainAfterStoppingALeftVariantOnAWorkerWithoutPqWhenThePqWorkerIsBusy()
+      throws Exception {
+    var pqWorker = new ExecutionTargetId("pq-worker");
+    var sdrWorker = new ExecutionTargetId("sdr-worker");
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("hevc"));
+    transcodeExecutor.setExecutionTargets(List.of(sdrWorker, pqWorker));
+    transcodeExecutor.setTargetEncoders(sdrWorker, List.of(libx265()));
+    transcodeExecutor.setTargetEncoders(
+        pqWorker,
+        List.of(
+            WorkerVerifiedEncoder.builder()
+                .backend(libx265().backend())
+                .keyframeVerified(true)
+                .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                .build()));
+    transcodeExecutor.limitJobSlots(sdrWorker, 2);
+    transcodeExecutor.limitJobSlots(pqWorker, 1);
+    var switching = createSession(seedMediaFile().getId(), declarationBuilderFor(HEVC).build());
+    var switchingId = switching.getSessionId();
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
+    createSession(seedMediaFile().getId(), declarationBuilderFor(HEVC).build());
+    assertThat(transcodeExecutor.encodableVideoCodecFamilies()).isEmpty();
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+
+    var admitted =
+        accepted(
+            service.createSession(
+                createCommandDeclaring(
+                    declarationBuilderFor(HEVC)
+                        .video(
+                            List.of(
+                                hevcEntryBuilder()
+                                    .compatibleBases(List.of(CompatibleBase.PQ))
+                                    .codecProfiles(
+                                        List.of(
+                                            VideoCodecProfileCapability.builder()
+                                                .profile(VideoCodecProfile.HEVC_MAIN_10)
+                                                .maxLevel(41)
+                                                .maxTier(Optional.of(VideoCodecTier.MAIN))
+                                                .build()))
+                                    .build(),
+                                hevcEntryBuilder()
+                                    .maxBitDepth(8)
+                                    .codecProfiles(
+                                        List.of(
+                                            VideoCodecProfileCapability.builder()
+                                                .profile(VideoCodecProfile.HEVC_MAIN)
+                                                .maxLevel(51)
+                                                .maxTier(Optional.of(VideoCodecTier.MAIN))
+                                                .build()))
+                                    .build()))
+                        .build())));
+
+    assertThat(admitted.getTranscodeDecision().encodeCodecProfile())
+        .contains(EncodeCodecProfile.HEVC_MAIN);
+    assertThat(admitted.getTranscodeDecision().videoEncodeFormat())
+        .isEqualTo(EncodeFormat.SDR_8_BIT);
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
   // The client takes AV1 only in PQ, so an 8-bit SDR encode on the freed worker would not play
   // and stopping the left variant would only cost its player the switch back.
   @Test
