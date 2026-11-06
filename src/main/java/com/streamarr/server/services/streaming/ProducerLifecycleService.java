@@ -1965,8 +1965,7 @@ public class ProducerLifecycleService {
                 .orElseGet(OptionalDouble::empty))
         .transcodeDecision(session.getTranscodeDecision())
         .startSequenceNumber(startSequenceNumber)
-        .mediaSegmentCount(timeline.mediaSegmentCount())
-        .segmentStartSlots(timeline.segmentStartSlots());
+        .mediaSegmentCount(timeline.mediaSegmentCount());
   }
 
   private EncoderPreset pinEncoderPreset(StreamSession session, String variantLabel) {

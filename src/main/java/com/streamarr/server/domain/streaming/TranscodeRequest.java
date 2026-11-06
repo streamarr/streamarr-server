@@ -2,7 +2,6 @@ package com.streamarr.server.domain.streaming;
 
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
@@ -27,7 +26,6 @@ public record TranscodeRequest(
     String variantLabel,
     int startSequenceNumber,
     int mediaSegmentCount,
-    @NonNull List<Integer> segmentStartSlots,
     @NonNull EncoderPreset encoderPreset,
     @NonNull Optional<WorkerVerifiedEncoder> pinnedEncoder) {
 
@@ -39,14 +37,12 @@ public record TranscodeRequest(
    * that presents at least half a second before its first segment. Every other attempt carries
    * none. {@code outputFrameRate} is the exact rate at which an encode runs, the source's output
    * frame rate unless the variant names another; a stream copy keeps the source's timing and
-   * carries none. {@code segmentStartSlots} holds the stream session's segment list, each segment's
-   * start in slots of {@code targetSegmentDuration}, or nothing on the plain grid (ADR 0037). Every
-   * attempt of a stream copy session carries the copy's {@code exactSegmentStarts}, and every
-   * attempt on a plain grid that merges its final slot carries the grid's whole-second starts; an
-   * attempt on any other plain grid carries none.
+   * carries none. {@code exactSegmentStarts} holds the stream session's segment list (ADR 0037):
+   * every attempt of a stream copy session carries the copy's exact starts, and every attempt on a
+   * plain grid that merges its final slot carries the grid's whole-second starts; an attempt on any
+   * other plain grid carries none.
    */
   public TranscodeRequest {
-    segmentStartSlots = List.copyOf(segmentStartSlots);
     if (variantLabel == null) {
       variantLabel = StreamSession.defaultVariant();
     }
@@ -98,7 +94,6 @@ public record TranscodeRequest(
         .keyframeSeekPosition(Optional.empty())
         .exactSegmentStarts(Optional.empty())
         .outputFrameRate(Optional.empty())
-        .pinnedEncoder(Optional.empty())
-        .segmentStartSlots(List.of());
+        .pinnedEncoder(Optional.empty());
   }
 }

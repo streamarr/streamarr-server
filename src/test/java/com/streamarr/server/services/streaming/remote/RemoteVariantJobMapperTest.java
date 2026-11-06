@@ -255,24 +255,6 @@ class RemoteVariantJobMapperTest {
   }
 
   @Test
-  @DisplayName("Should send the stream session's segment list when a copy attempt carries one")
-  void shouldSendTheStreamSessionsSegmentListWhenACopyAttemptCarriesOne() {
-    var request = copyAttempt().mediaSegmentCount(4).segmentStartSlots(List.of(0, 1, 3, 5)).build();
-
-    var execution = mapper.map(request).getExecution();
-
-    assertThat(execution.getSegmentStartSlotsList()).containsExactly(0, 1, 3, 5);
-  }
-
-  @Test
-  @DisplayName("Should send no segment list when an attempt runs on the plain grid")
-  void shouldSendNoSegmentListWhenAnAttemptRunsOnThePlainGrid() {
-    var execution = mapper.map(copyAttempt().build()).getExecution();
-
-    assertThat(execution.getSegmentStartSlotsList()).isEmpty();
-  }
-
-  @Test
   @DisplayName(
       "Should write each segment's exact start and its time base when the attempt carries the copy's starts")
   void shouldWriteEachSegmentsExactStartAndItsTimeBaseWhenTheAttemptCarriesTheCopysStarts() {

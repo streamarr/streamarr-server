@@ -902,24 +902,6 @@ class TranscodeWorkerContractTest {
   }
 
   @Test
-  @DisplayName(
-      "Should carry each segment's start slot in order when a stream session merges slots without a source keyframe")
-  void shouldCarryEachSegmentStartSlotInOrderWhenStreamSessionMergesSlotsWithoutSourceKeyframe()
-      throws Exception {
-    var execution =
-        TranscodeExecution.newBuilder()
-            .setTargetSegmentDurationSeconds(3)
-            .setMediaSegmentCount(4)
-            .addAllSegmentStartSlots(List.of(0, 4, 7, 11))
-            .build();
-
-    var decoded = TranscodeExecution.parseFrom(execution.toByteArray());
-
-    assertThat(decoded.getSegmentStartSlotsList()).containsExactly(0, 4, 7, 11);
-    assertThat(decoded.getSegmentStartSlotsCount()).isEqualTo(decoded.getMediaSegmentCount());
-  }
-
-  @Test
   @DisplayName("Should leave the segment list empty when a job uses the plain grid")
   void shouldLeaveTheSegmentListEmptyWhenJobUsesThePlainGrid() throws Exception {
     var plainGrid =
@@ -930,7 +912,6 @@ class TranscodeWorkerContractTest {
 
     var decoded = TranscodeExecution.parseFrom(plainGrid.toByteArray());
 
-    assertThat(decoded.getSegmentStartSlotsList()).isEmpty();
     assertThat(decoded.getSegmentStartTicksList()).isEmpty();
     assertThat(decoded.hasSegmentStartTimeBase()).isFalse();
   }
@@ -979,14 +960,18 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
-      "Should keep the packed field number and type that workers build against when publishing the segment list")
-  void shouldKeepThePackedFieldNumberAndTypeThatWorkersBuildAgainstWhenPublishingTheSegmentList() {
-    var startSlots = TranscodeExecution.getDescriptor().findFieldByName("segment_start_slots");
+      "Should reserve the number and name of the slot list when exact segment starts replace it")
+  void shouldReserveTheNumberAndNameOfTheSlotListWhenExactSegmentStartsReplaceIt() {
+    var execution = TranscodeExecution.getDescriptor();
+    var declared = execution.toProto();
 
-    assertThat(startSlots.getNumber()).isEqualTo(9);
-    assertThat(startSlots.getType()).isEqualTo(Type.UINT32);
-    assertThat(startSlots.isRepeated()).isTrue();
-    assertThat(startSlots.isPacked()).isTrue();
+    assertThat(execution.findFieldByNumber(9)).isNull();
+    assertThat(execution.findFieldByName("segment_start_slots")).isNull();
+    assertThat(declared.getReservedRangeList())
+        .anySatisfy(
+            range ->
+                assertThat(9).isGreaterThanOrEqualTo(range.getStart()).isLessThan(range.getEnd()));
+    assertThat(declared.getReservedNameList()).contains("segment_start_slots");
   }
 
   @Test

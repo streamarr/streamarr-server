@@ -38,14 +38,6 @@ public sealed interface MediaSegmentTimeline {
     return index >= 0 && index < mediaSegmentCount();
   }
 
-  /**
-   * Each media segment's start slot, which every job attempt carries, or nothing on the plain grid
-   * (ADR 0037).
-   */
-  default List<Integer> segmentStartSlots() {
-    return List.of();
-  }
-
   /** The slot where the media segment's interval starts. */
   default int mediaSegmentStartSlot(int index) {
     return index;
@@ -102,8 +94,8 @@ public sealed interface MediaSegmentTimeline {
    * Segment {@code N} covers media time {@code [N × target, (N + 1) × target)}, and the last
    * segment ends at the media duration, counted in whole milliseconds. A final slot that the media
    * ends less than {@link #MINIMUM_LAST_SEGMENT_DURATION} into merges into the segment before it,
-   * and the grid then lists every segment's start slot so that each job attempt groups that slot
-   * into the last segment (ADR 0037, segment list).
+   * and every job attempt then carries the grid's {@link #exactStarts()} so that it groups that
+   * slot into the last segment (ADR 0037, segment list).
    */
   record PlainGrid(@NonNull Duration mediaDuration, @NonNull Duration targetSegmentDuration)
       implements MediaSegmentTimeline {
@@ -134,15 +126,6 @@ public sealed interface MediaSegmentTimeline {
       }
 
       return Duration.ofMillis(Math.min(targetSegmentMillis(), remainingMillis));
-    }
-
-    @Override
-    public List<Integer> segmentStartSlots() {
-      if (!mergesFinalSlot()) {
-        return List.of();
-      }
-
-      return IntStream.range(0, mediaSegmentCount()).boxed().toList();
     }
 
     /**
@@ -255,11 +238,6 @@ public sealed interface MediaSegmentTimeline {
       return grid.mediaSegmentDuration(index);
     }
 
-    @Override
-    public List<Integer> segmentStartSlots() {
-      return grid.segmentStartSlots();
-    }
-
     /**
      * The chosen keyframe's time that the container's demuxer seeks by. An attempt reads from the
      * source's start when no keyframe presents early enough or the keyframe decodes before zero.
@@ -342,14 +320,6 @@ public sealed interface MediaSegmentTimeline {
 
       var keyframeIndex = openingKeyframes.get(index).keyframeIndex();
       return positions.keyframes().get(keyframeIndex).presentationTime();
-    }
-
-    @Override
-    public List<Integer> segmentStartSlots() {
-      return IntStream.range(0, mediaSegmentCount())
-          .map(this::mediaSegmentStartSlot)
-          .boxed()
-          .toList();
     }
 
     @Override

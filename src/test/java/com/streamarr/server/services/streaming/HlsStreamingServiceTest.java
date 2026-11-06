@@ -2829,7 +2829,8 @@ class HlsStreamingServiceTest {
         .singleElement()
         .satisfies(
             request -> {
-              assertThat(request.segmentStartSlots()).containsExactly(0, 1, 3, 5);
+              assertThat(request.exactSegmentStarts().orElseThrow().ticks())
+                  .containsExactly(0L, 10_000L, 20_000L, 30_000L);
               assertThat(request.mediaSegmentCount()).isEqualTo(4);
             });
   }
@@ -2879,8 +2880,8 @@ class HlsStreamingServiceTest {
     assertThat(extinfDurations(mediaPlaylist(session))).containsExactly("6.000000", "7194.000000");
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
-        .extracting(TranscodeRequest::segmentStartSlots)
-        .isEqualTo(List.of(0, 1));
+        .extracting(request -> request.exactSegmentStarts().orElseThrow().ticks())
+        .isEqualTo(List.of(0L, 6_000L));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -3013,9 +3014,9 @@ class HlsStreamingServiceTest {
                     List.of(0L, 585_000L, 1_125_000L, 1_665_000L), new Fraction(1, 90_000))));
   }
 
-  // At the 6 s period, the keyframes at 0, 10, 20 and 30 s open segments in slots 0, 1, 3 and 5.
-  // The keyframes at 3 and 22 s lie in a slot that another keyframe already opens, and the slots
-  // [12 s, 18 s) and [24 s, 30 s) hold none, so each merges into the segment before it.
+  // At the 6 s period, the keyframes at 0, 10, 20 and 30 s open segments. The keyframes at 3 and
+  // 22 s lie in a slot that another keyframe already opens, and the slots [12 s, 18 s) and
+  // [24 s, 30 s) hold none, so each merges into the segment before it.
   @Test
   @DisplayName(
       "Should send one exact start for each merged segment when the copy's keyframes lie unevenly")
@@ -3032,14 +3033,11 @@ class HlsStreamingServiceTest {
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
-        .satisfies(
-            request -> {
-              assertThat(request.segmentStartSlots()).containsExactly(0, 1, 3, 5);
-              assertThat(request.exactSegmentStarts())
-                  .hasValue(
-                      new ExactSegmentStarts(
-                          List.of(0L, 10_000L, 20_000L, 30_000L), new Fraction(1, 1_000)));
-            });
+        .extracting(TranscodeRequest::exactSegmentStarts)
+        .isEqualTo(
+            Optional.of(
+                new ExactSegmentStarts(
+                    List.of(0L, 10_000L, 20_000L, 30_000L), new Fraction(1, 1_000))));
   }
 
   @Test
