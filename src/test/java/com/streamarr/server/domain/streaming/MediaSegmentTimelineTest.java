@@ -131,11 +131,11 @@ class MediaSegmentTimelineTest {
   @DisplayName("Should keep whole seconds of the target when it carries a fraction")
   void shouldKeepWholeSecondsOfTheTargetWhenItCarriesAFraction() {
     var timeline =
-        new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(13), Duration.ofMillis(6_500));
+        new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(14), Duration.ofMillis(6_500));
 
     assertThat(timeline.targetSegmentDurationSeconds()).isEqualTo(6);
     assertThat(timeline.mediaSegmentCount()).isEqualTo(3);
-    assertThat(timeline.mediaSegmentDuration(2)).isEqualTo(Duration.ofSeconds(1));
+    assertThat(timeline.mediaSegmentDuration(2)).isEqualTo(Duration.ofSeconds(2));
   }
 
   @Test
@@ -228,6 +228,63 @@ class MediaSegmentTimelineTest {
     var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(60), SIX_SECONDS);
 
     assertThat(timeline.segmentStartSlots()).isEmpty();
+  }
+
+  // A 23.976 fps video of 288 frames ends at 12.012 s, and no frame starts in its last 12 ms.
+  @ParameterizedTest
+  @CsvSource({
+    "PT12.012S, 2, PT6.012S",
+    "PT13.999S, 2, PT7.999S",
+    "PT14S, 3, PT2S",
+    "PT1.5S, 1, PT1.5S",
+    "PT6.5S, 1, PT6.5S"
+  })
+  @DisplayName(
+      "Should merge the final slot into the segment before it when the media ends less than 2 s"
+          + " into that slot")
+  void shouldMergeTheFinalSlotIntoTheSegmentBeforeItWhenTheMediaEndsLessThan2sIntoThatSlot(
+      Duration mediaDuration, int expectedCount, Duration expectedLastDuration) {
+    var timeline = new MediaSegmentTimeline.PlainGrid(mediaDuration, SIX_SECONDS);
+
+    assertThat(timeline.mediaSegmentCount()).isEqualTo(expectedCount);
+    assertThat(timeline.mediaSegmentDuration(expectedCount - 1)).isEqualTo(expectedLastDuration);
+    assertThat(timeline.mediaSegmentEnd(expectedCount - 1)).isEqualTo(mediaDuration);
+  }
+
+  @Test
+  @DisplayName(
+      "Should list each segment's own slot when the plain grid merges its final slot, so that"
+          + " every job attempt groups that slot into the last segment")
+  void shouldListEachSegmentsOwnSlotWhenThePlainGridMergesItsFinalSlot() {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.parse("PT18.012S"), SIX_SECONDS);
+
+    assertThat(timeline.segmentStartSlots()).containsExactly(0, 1, 2);
+    assertThat(timeline.mediaSegmentIndexAt(Duration.parse("PT18.005S"))).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should list the merging grid's segment starts when an encode seeks to the source's"
+          + " keyframes")
+  void shouldListTheMergingGridsSegmentStartsWhenAnEncodeSeeksToTheSourcesKeyframes() {
+    var timeline =
+        new MediaSegmentTimeline.KeyframeSeekingGrid(
+            new MediaSegmentTimeline.PlainGrid(Duration.parse("PT12.012S"), SIX_SECONDS),
+            millisecondPositions(0, 2_000, 4_000, 6_000, 8_000, 10_000, 12_000),
+            DemuxerSeekTime.PRESENTATION_TIME);
+
+    assertThat(timeline.segmentStartSlots()).containsExactly(0, 1);
+  }
+
+  // The 37.5 s media ends 1.5 s into slot 6. The copy's last segment opens in slot 5.
+  @Test
+  @DisplayName(
+      "Should span every slot up to the one that holds the media end when a stream copy's last"
+          + " segment opens before a final slot shorter than 2 s")
+  void shouldSpanEverySlotUpToTheMediaEndWhenACopysLastSegmentPrecedesAShortFinalSlot() {
+    var timeline = streamCopyOver(Duration.parse("PT37.5S"), 0, 10_000, 20_000, 30_000);
+
+    assertThat(timeline.slotSpan(3, 1)).isEqualTo(Duration.ofSeconds(12));
   }
 
   @Test

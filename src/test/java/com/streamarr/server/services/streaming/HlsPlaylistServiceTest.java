@@ -456,9 +456,11 @@ class HlsPlaylistServiceTest {
   }
 
   @Test
-  @DisplayName("Should include extra segment when duration has sub-second remainder")
-  void shouldIncludeExtraSegmentWhenDurationHasSubSecondRemainder() {
-    var session = createSessionWithDuration(TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
+  @DisplayName(
+      "Should include an extra segment when the duration runs at least 2 s past the last whole"
+          + " target duration")
+  void shouldIncludeAnExtraSegmentWhenTheDurationRunsAtLeast2sPastTheLastWholeTargetDuration() {
+    var session = createSessionWithDuration(TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(20000));
 
     var playlist =
         service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
@@ -471,20 +473,24 @@ class HlsPlaylistServiceTest {
     assertThat(segmentLines).hasSize(4);
   }
 
+  // No output frame of a 2 fps or faster encode, and no audio frame, may start in the final half
+  // second, so the last segment takes it in and runs past the target duration.
   @Test
-  @DisplayName("Should calculate last segment duration when duration has sub-second precision")
-  void shouldCalculateLastSegmentDurationWhenDurationHasSubSecondPrecision() {
+  @DisplayName(
+      "Should merge the final half second into the last segment and cover it in the target"
+          + " duration when the duration ends less than 2 s into a slot")
+  void shouldMergeTheFinalHalfSecondIntoTheLastSegmentWhenTheDurationEndsLessThan2sIntoASlot() {
     var session = createSessionWithDuration(TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
 
     var playlist =
         service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
 
     var extinfLines = playlist.lines().filter(l -> l.startsWith("#EXTINF:")).toList();
-    assertThat(extinfLines).hasSize(4);
-
+    assertThat(extinfLines).hasSize(3);
     var lastExtinf = extinfLines.getLast();
     var duration = Double.parseDouble(lastExtinf.replace("#EXTINF:", "").replace(",", ""));
-    assertThat(duration).isCloseTo(0.5, within(0.01));
+    assertThat(duration).isCloseTo(6.5, within(0.001));
+    assertThat(playlist).contains("#EXT-X-TARGETDURATION:7");
   }
 
   @Test

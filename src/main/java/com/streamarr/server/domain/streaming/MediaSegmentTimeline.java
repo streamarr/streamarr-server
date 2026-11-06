@@ -99,20 +99,57 @@ public sealed interface MediaSegmentTimeline {
 
   /**
    * Segment {@code N} covers media time {@code [N × target, (N + 1) × target)}, and the last
-   * segment ends at the media duration, counted in whole milliseconds.
+   * segment ends at the media duration, counted in whole milliseconds. A final slot that the media
+   * ends less than {@link #MINIMUM_LAST_SEGMENT_DURATION} into merges into the segment before it,
+   * and the grid then lists every segment's start slot so that each job attempt groups that slot
+   * into the last segment (ADR 0037, segment list).
    */
   record PlainGrid(@NonNull Duration mediaDuration, @NonNull Duration targetSegmentDuration)
       implements MediaSegmentTimeline {
 
+    /**
+     * The least time from the last segment's start to the media end: longer than a frame at the
+     * slowest output frame rate and than a frame of every audio codec, so the last segment holds a
+     * frame of every variant and rendition (ADR 0037, segment list).
+     */
+    public static final Duration MINIMUM_LAST_SEGMENT_DURATION = Duration.ofSeconds(2);
+
     @Override
     public int mediaSegmentCount() {
-      return Math.toIntExact(Math.ceilDiv(mediaDuration.toMillis(), targetSegmentMillis()));
+      if (mergesFinalSlot()) {
+        return slotCount() - 1;
+      }
+
+      return slotCount();
     }
 
     @Override
     public Duration mediaSegmentDuration(int index) {
       var remainingMillis = mediaDuration.toMillis() - index * targetSegmentMillis();
+      if (index == mediaSegmentCount() - 1) {
+        return Duration.ofMillis(remainingMillis);
+      }
+
       return Duration.ofMillis(Math.min(targetSegmentMillis(), remainingMillis));
+    }
+
+    @Override
+    public List<Integer> segmentStartSlots() {
+      if (!mergesFinalSlot()) {
+        return List.of();
+      }
+
+      return IntStream.range(0, mediaSegmentCount()).boxed().toList();
+    }
+
+    /** The slots that the media reaches into, counted in whole milliseconds. */
+    int slotCount() {
+      return Math.toIntExact(Math.ceilDiv(mediaDuration.toMillis(), targetSegmentMillis()));
+    }
+
+    private boolean mergesFinalSlot() {
+      var finalSlotMillis = mediaDuration.toMillis() - (slotCount() - 1L) * targetSegmentMillis();
+      return slotCount() > 1 && finalSlotMillis < MINIMUM_LAST_SEGMENT_DURATION.toMillis();
     }
 
     @Override
@@ -175,6 +212,11 @@ public sealed interface MediaSegmentTimeline {
     @Override
     public Duration mediaSegmentDuration(int index) {
       return grid.mediaSegmentDuration(index);
+    }
+
+    @Override
+    public List<Integer> segmentStartSlots() {
+      return grid.segmentStartSlots();
     }
 
     /**
@@ -282,7 +324,7 @@ public sealed interface MediaSegmentTimeline {
         return mediaSegmentStartSlot(index + 1);
       }
 
-      return new PlainGrid(mediaDuration, targetSegmentDuration).mediaSegmentCount();
+      return new PlainGrid(mediaDuration, targetSegmentDuration).slotCount();
     }
 
     private int slotAt(Duration time) {

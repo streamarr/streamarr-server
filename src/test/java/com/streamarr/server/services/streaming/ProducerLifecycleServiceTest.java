@@ -1054,6 +1054,34 @@ class ProducerLifecycleServiceTest {
     assertThat(request.mediaSegmentCount()).isEqualTo(10);
   }
 
+  // 1,439 frames at 23.976 fps end the video at 60.018 s, so no frame starts after 60 s.
+  @Test
+  @DisplayName(
+      "Should start no job attempt in the final slot when an encode's media ends less than 2 s into"
+          + " it, and list each segment's start in the job instead")
+  void shouldStartNoJobAttemptInTheFinalSlotWhenAnEncodesMediaEndsLessThan2sIntoIt() {
+    var session =
+        defaultSessionBuilder()
+            .mediaProbe(defaultProbeBuilder().duration(Duration.ofMillis(60_018)).build())
+            .transcodeDecision(fullTranscodeDecision("h264"))
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    var first = transcodeExecutor.getStartedRequests().getFirst();
+
+    var result =
+        lifecycle.recover(
+            earliestArrivingSegmentRequestBuilder()
+                .sessionId(session.getSessionId())
+                .segmentName("segment10.m4s")
+                .build());
+
+    assertThat(first.mediaSegmentCount()).isEqualTo(10);
+    assertThat(first.segmentStartSlots()).containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+    assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
+    assertThat(transcodeExecutor.getStartedRequests()).containsExactly(first);
+  }
+
   @Test
   @DisplayName(
       "Should leave the running producer in place when a request names a media segment past the advertised timeline")
