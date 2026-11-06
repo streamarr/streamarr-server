@@ -30,7 +30,9 @@ final class RemoteDynamicRangeMapper {
               var declared,
               var observedRpu,
               var firstRpuHeader,
-              var rpuPlacement) -> {
+              var rpuPlacement,
+              _,
+              _) -> {
         var present =
             DolbyVisionPresent.newBuilder()
                 .setObservedRpu(presence(observedRpu))

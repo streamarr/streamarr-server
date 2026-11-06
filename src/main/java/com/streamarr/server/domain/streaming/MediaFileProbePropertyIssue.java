@@ -58,7 +58,7 @@ public enum MediaFileProbePropertyIssue {
   public static Set<MediaFileProbePropertyIssue> foundIn(@NonNull VideoDynamicRange range) {
     var issues = EnumSet.noneOf(MediaFileProbePropertyIssue.class);
     if (!(range.dolbyVision()
-        instanceof DolbyVision.Present(var declared, _, _, var rpuPlacement))) {
+        instanceof DolbyVision.Present(var declared, _, _, var rpuPlacement, _, _))) {
       return issues;
     }
 

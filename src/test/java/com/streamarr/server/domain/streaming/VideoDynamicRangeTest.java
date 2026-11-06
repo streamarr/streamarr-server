@@ -143,6 +143,43 @@ class VideoDynamicRangeTest {
                     DolbyVisionRpuPlacement.AFTER_OWN_PICTURE)));
   }
 
+  // The worker's conversion drops the NLQ and keeps the RPUs' extension blocks as they were.
+  @Test
+  @DisplayName(
+      "Should describe no enhancement layer and keep the level 6 light levels when the rewrites"
+          + " convert profile 7")
+  void shouldDescribeNoEnhancementLayerAndKeepTheLevel6LightLevelsWhenTheRewritesConvertProfile7() {
+    var lightLevel = new ContentLightLevel(1_000, 400);
+    var source =
+        new VideoDynamicRange(
+            CompatibleBase.PQ,
+            Presence.ABSENT,
+            DolbyVision.Present.builder()
+                .declared(
+                    Optional.of(
+                        DolbyVisionConfiguration.builder()
+                            .profile(OptionalInt.of(7))
+                            .baseLayer(true)
+                            .enhancementLayer(true)
+                            .rpu(true)
+                            .build()))
+                .observedRpu(Presence.PRESENT)
+                .enhancementLayer(DolbyVisionEnhancementLayer.FEL)
+                .rpuContentLightLevel(Optional.of(lightLevel))
+                .build());
+
+    var rewritten =
+        source.afterRewrites(List.of(BitstreamRewrite.CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1));
+
+    assertThat(rewritten.dolbyVision())
+        .isInstanceOfSatisfying(
+            DolbyVision.Present.class,
+            present -> {
+              assertThat(present.enhancementLayer()).isEqualTo(DolbyVisionEnhancementLayer.NONE);
+              assertThat(present.rpuContentLightLevel()).contains(lightLevel);
+            });
+  }
+
   @ParameterizedTest
   @MethodSource("dolbyVisionNotPresent")
   @DisplayName(

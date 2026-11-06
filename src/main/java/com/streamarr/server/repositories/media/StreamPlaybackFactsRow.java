@@ -4,8 +4,10 @@ import com.streamarr.server.domain.streaming.AudioStreamProperties;
 import com.streamarr.server.domain.streaming.ContentLightLevel;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
+import com.streamarr.server.domain.streaming.DolbyVisionEnhancementLayer;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MasteringDisplayColorVolume;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.StreamInfo;
@@ -15,8 +17,8 @@ import com.streamarr.server.jooq.generated.tables.records.MediaFileStreamInfoRec
 import java.time.Duration;
 import java.util.OptionalInt;
 
-// Writes the stream facts that probe versions 4, 5 and 7 add into a stream row. An unspecified RPU
-// sample layout is stored as NULL.
+// Writes the stream facts that probe versions 4, 5, 7 and 8 add into a stream row. An unspecified
+// RPU sample layout and an unspecified enhancement layer are stored as NULL.
 final class StreamPlaybackFactsRow {
 
   private StreamPlaybackFactsRow() {}
@@ -52,6 +54,10 @@ final class StreamPlaybackFactsRow {
     row.setComment(stream.comment().orElse(null));
     stream.audioProperties().ifPresent(properties -> setAudioProperties(row, properties));
     row.setSampleEntry(stream.sampleEntry().orElse(null));
+    row.setMaximumFrameRateNumerator(
+        stream.maximumFrameRate().map(Fraction::numerator).orElse(null));
+    row.setMaximumFrameRateDenominator(
+        stream.maximumFrameRate().map(Fraction::denominator).orElse(null));
   }
 
   private static void setAudioProperties(
@@ -105,20 +111,31 @@ final class StreamPlaybackFactsRow {
     switch (range.dolbyVision()) {
       case DolbyVision.Unspecified _ -> row.setDolbyVision(Presence.UNSPECIFIED.name());
       case DolbyVision.Absent _ -> row.setDolbyVision(Presence.ABSENT.name());
-      case DolbyVision.Present(
-              var declared,
-              var observedRpu,
-              var firstRpuHeader,
-              var rpuPlacement) -> {
-        row.setDolbyVision(Presence.PRESENT.name());
-        row.setDolbyVisionObservedRpu(observedRpu.name());
-        declared.ifPresent(configuration -> setDolbyVisionRecord(row, configuration));
-        firstRpuHeader.ifPresent(header -> setFirstRpuHeader(row, header));
-        if (rpuPlacement != DolbyVisionRpuPlacement.UNSPECIFIED) {
-          row.setDolbyVisionRpuPlacement(rpuPlacement.name());
-        }
-      }
+      case DolbyVision.Present present -> setDolbyVisionPresent(row, present);
     }
+  }
+
+  private static void setDolbyVisionPresent(
+      MediaFileStreamInfoRecord row, DolbyVision.Present present) {
+    row.setDolbyVision(Presence.PRESENT.name());
+    row.setDolbyVisionObservedRpu(present.observedRpu().name());
+    present.declared().ifPresent(configuration -> setDolbyVisionRecord(row, configuration));
+    present.firstRpuHeader().ifPresent(header -> setFirstRpuHeader(row, header));
+    if (present.rpuPlacement() != DolbyVisionRpuPlacement.UNSPECIFIED) {
+      row.setDolbyVisionRpuPlacement(present.rpuPlacement().name());
+    }
+
+    if (present.enhancementLayer() != DolbyVisionEnhancementLayer.UNSPECIFIED) {
+      row.setRpuEnhancementLayer(present.enhancementLayer().name());
+    }
+
+    present
+        .rpuContentLightLevel()
+        .ifPresent(
+            level -> {
+              row.setRpuMaxContentLightLevel(level.maxContentLightLevel());
+              row.setRpuMaxFrameAverageLightLevel(level.maxFrameAverageLightLevel());
+            });
   }
 
   private static void setFirstRpuHeader(

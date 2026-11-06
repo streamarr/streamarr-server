@@ -474,6 +474,36 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
      */
     public final TableField<MediaFileStreamInfoRecord, String> SAMPLE_ENTRY = createField(DSL.name("sample_entry"), SQLDataType.CLOB, this, "");
 
+    /**
+     * The column
+     * <code>public.media_file_stream_info.maximum_frame_rate_numerator</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MAXIMUM_FRAME_RATE_NUMERATOR = createField(DSL.name("maximum_frame_rate_numerator"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.maximum_frame_rate_denominator</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> MAXIMUM_FRAME_RATE_DENOMINATOR = createField(DSL.name("maximum_frame_rate_denominator"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.rpu_enhancement_layer</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, String> RPU_ENHANCEMENT_LAYER = createField(DSL.name("rpu_enhancement_layer"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.rpu_max_content_light_level</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> RPU_MAX_CONTENT_LIGHT_LEVEL = createField(DSL.name("rpu_max_content_light_level"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_stream_info.rpu_max_frame_average_light_level</code>.
+     */
+    public final TableField<MediaFileStreamInfoRecord, Integer> RPU_MAX_FRAME_AVERAGE_LIGHT_LEVEL = createField(DSL.name("rpu_max_frame_average_light_level"), SQLDataType.INTEGER, this, "");
+
     private MediaFileStreamInfo(Name alias, Table<MediaFileStreamInfoRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -580,6 +610,8 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("complete_dynamic_range"), "((((dynamic_range_compatible_base IS NULL) = (hdr10_plus IS NULL)) AND ((dynamic_range_compatible_base IS NULL) = (dolby_vision IS NULL))))", true),
             Internal.createCheck(this, DSL.name("complete_first_rpu_header"), "((num_nonnulls(first_rpu_vdr_rpu_profile, first_rpu_base_layer_full_range, first_rpu_enhancement_layer_spatial_resampling_filter, first_rpu_disable_residual, first_rpu_vdr_bit_depth) = ANY (ARRAY[0, 5])))", true),
             Internal.createCheck(this, DSL.name("complete_mastering_display"), "((num_nonnulls(mastering_red_x, mastering_red_y, mastering_green_x, mastering_green_y, mastering_blue_x, mastering_blue_y, mastering_white_point_x, mastering_white_point_y, mastering_max_luminance, mastering_min_luminance) = ANY (ARRAY[0, 10])))", true),
+            Internal.createCheck(this, DSL.name("complete_maximum_frame_rate"), "(((maximum_frame_rate_numerator IS NULL) = (maximum_frame_rate_denominator IS NULL))) NOT VALID", true),
+            Internal.createCheck(this, DSL.name("complete_rpu_light_levels"), "(((rpu_max_content_light_level IS NULL) = (rpu_max_frame_average_light_level IS NULL))) NOT VALID", true),
             Internal.createCheck(this, DSL.name("complete_stream_end_time"), "(((end_time_seconds IS NULL) = (end_time_nanos IS NULL)))", true),
             Internal.createCheck(this, DSL.name("complete_video_stream_properties"), "((((first_frames_read IS NULL) = (mastering_display_omitted IS NULL)) AND ((first_frames_read IS NULL) = (content_light_level_omitted IS NULL)) AND ((first_frames_read IS NOT NULL) OR (num_nonnulls(codec_profile, codec_level, codec_tier, color_primaries, transfer_characteristics, matrix_coefficients, color_range) = 0))))", true),
             Internal.createCheck(this, DSL.name("copy_keeps_packet_bytes_requires_h264_or_hevc"), "(((copy_keeps_packet_bytes IS NULL) OR ((codec = ANY (ARRAY['h264'::text, 'hevc'::text])) IS TRUE))) NOT VALID", true),
@@ -588,6 +620,8 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("dolby_vision_record_requires_presence"), "(((dolby_vision_base_layer IS NULL) OR (dolby_vision = 'PRESENT'::text)))", true),
             Internal.createCheck(this, DSL.name("flac_minimum_block_size_fits_streaminfo"), "(((flac_minimum_block_size_samples >= 0) AND (flac_minimum_block_size_samples <= 65535))) NOT VALID", true),
             Internal.createCheck(this, DSL.name("flac_minimum_block_size_requires_flac"), "(((flac_minimum_block_size_samples IS NULL) OR ((codec = 'flac'::text) IS TRUE))) NOT VALID", true),
+            Internal.createCheck(this, DSL.name("maximum_frame_rate_has_positive_terms"), "(((maximum_frame_rate_numerator > 0) AND (maximum_frame_rate_denominator > 0))) NOT VALID", true),
+            Internal.createCheck(this, DSL.name("maximum_frame_rate_requires_video_stream"), "(((maximum_frame_rate_numerator IS NULL) OR ((codec_type = 'video'::text) IS TRUE))) NOT VALID", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_bit_depth_check"), "((bit_depth > 0))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_chroma_subsampling_check"), "((chroma_subsampling = ANY (ARRAY['CHROMA_420'::text, 'CHROMA_422'::text, 'CHROMA_444'::text, 'MONOCHROME'::text])))", true),
             Internal.createCheck(this, DSL.name("media_file_stream_info_codec_level_check"), "((codec_level > 0))", true),
@@ -634,6 +668,9 @@ public class MediaFileStreamInfo extends TableImpl<MediaFileStreamInfoRecord> {
             Internal.createCheck(this, DSL.name("omitted_mastering_display_is_not_listed"), "(((mastering_display_omitted IS NOT TRUE) OR (mastering_red_x IS NULL)))", true),
             Internal.createCheck(this, DSL.name("presentation_times_require_first_frames_read"), "(((first_packets_carry_presentation_times IS NULL) OR (first_frames_read IS TRUE)))", true),
             Internal.createCheck(this, DSL.name("rpu_details_require_observed_rpu"), "((((first_rpu_vdr_rpu_profile IS NULL) AND (dolby_vision_rpu_placement IS NULL)) OR (dolby_vision_observed_rpu = 'PRESENT'::text)))", true),
+            Internal.createCheck(this, DSL.name("rpu_enhancement_layer_is_classified"), "((rpu_enhancement_layer = ANY (ARRAY['NONE'::text, 'MEL'::text, 'FEL'::text]))) NOT VALID", true),
+            Internal.createCheck(this, DSL.name("rpu_facts_require_dolby_vision"), "(((num_nonnulls(rpu_enhancement_layer, rpu_max_content_light_level) = 0) OR ((dolby_vision = 'PRESENT'::text) IS TRUE))) NOT VALID", true),
+            Internal.createCheck(this, DSL.name("rpu_light_levels_in_range"), "((((rpu_max_content_light_level >= 0) AND (rpu_max_content_light_level <= 65535)) AND ((rpu_max_frame_average_light_level >= 0) AND (rpu_max_frame_average_light_level <= 65535)))) NOT VALID", true),
             Internal.createCheck(this, DSL.name("sample_entry_has_four_printable_characters"), "((sample_entry ~ '^[ -~]{4}$'::text)) NOT VALID", true),
             Internal.createCheck(this, DSL.name("sample_entry_requires_video_stream"), "(((sample_entry IS NULL) OR ((codec_type = 'video'::text) IS TRUE))) NOT VALID", true)
         );
