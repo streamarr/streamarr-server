@@ -69,8 +69,33 @@ public record ClientCapabilityDeclaration(
         .mapToObj(
             position ->
                 new VideoCapabilityEntryRefusal(
-                    position, video.get(position).hlsCopyRefusals(copy)))
+                    CapabilityEntryDelivery.HLS,
+                    position,
+                    video.get(position).hlsCopyRefusals(copy)))
         .toList();
+  }
+
+  /**
+   * What each video capability entry of the stream's codec family refuses of its direct play from
+   * the source container (#396), each named by its position among the declaration's video
+   * capability entries, whether or not the entry applies to HLS.
+   */
+  public List<VideoCapabilityEntryRefusal> directPlayRefusalsByEntry(
+      @NonNull VideoStreamCopy stream, @NonNull SourceContainer container) {
+    return IntStream.range(0, video.size())
+        .filter(position -> video.get(position).codecFamily() == stream.codecFamily())
+        .mapToObj(
+            position ->
+                new VideoCapabilityEntryRefusal(
+                    CapabilityEntryDelivery.DIRECT_PLAY,
+                    position,
+                    video.get(position).directPlayRefusals(stream, container)))
+        .toList();
+  }
+
+  /** Whether a video capability entry for HLS names the stream copy's codec family. */
+  public boolean namesHlsCodecFamilyOf(@NonNull VideoStreamCopy copy) {
+    return video.stream().anyMatch(entry -> entry.appliesToHlsCopyOf(copy));
   }
 
   /**

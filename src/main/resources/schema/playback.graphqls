@@ -61,24 +61,34 @@ type PlaybackDecision {
     """
     reasons: [DecisionReason!]!
     """
-    What each video capability entry for HLS of the source's codec family refused of the best copy that this
-    format attempt could plan, so a client can show why the server encoded the video or left part of it out. A
-    capability entry accepts an output only when it accepts every property of the output. Empty for direct
-    play, and when no video capability entry for HLS names the source's codec family, which reasons then name
-    as VIDEO_CODEC_NOT_DECLARED.
+    What each video capability entry of the source's codec family refused, so a client can show why the server
+    encoded the video or left part of it out. A capability entry accepts an output only when it accepts all of
+    it. When direct play was refused, the entries' direct-play refusals come first, then every entry for HLS
+    with what it refused of the best copy that this format attempt could plan. Empty for direct play, and for
+    HLS when no video capability entry for HLS names the source's codec family, which reasons then name as
+    VIDEO_CODEC_NOT_DECLARED.
     """
     videoCapabilityEntryRefusals: [VideoCapabilityEntryRefusal!]!
 }
 
-"What one video capability entry refused of the best copy that a format attempt could plan."
+"What one video capability entry refused of a delivery that a format attempt checked."
 type VideoCapabilityEntryRefusal {
+    delivery: CapabilityEntryDelivery!
     "The entry's position, from 0, among the video capability entries that the client declared."
     entryPosition: Int!
     """
-    Each property that the entry refused, in the order the entry checks them. Empty when the entry accepted
-    every property of that copy, so another rule, such as a property issue, ruled out the copy.
+    Each check that the entry refused, in the order the entry checks them. Empty when the entry accepted the
+    delivery, so another rule, such as a property issue, ruled it out.
     """
     reasons: [DecisionReason!]!
+}
+
+"The delivery for which the server checked a capability entry."
+enum CapabilityEntryDelivery {
+    "Direct play of the source file from its source container."
+    DIRECT_PLAY
+    "A stream copy over HLS."
+    HLS
 }
 
 "How a format attempt delivers one track."

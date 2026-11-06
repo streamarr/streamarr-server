@@ -11,6 +11,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
+import com.streamarr.server.domain.streaming.CapabilityEntryDelivery;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
@@ -27,6 +28,7 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
+import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -250,11 +252,11 @@ class TranscodeDecisionReasonTest {
                 h264EntryBuilder().codecProfiles(level31).build()),
             List.of(DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED),
             List.of(
-                refusal(
+                hls(
                     0,
                     DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED,
                     DecisionReason.VIDEO_PICTURE_SIZE_NOT_DECLARED),
-                refusal(1, DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED))),
+                hls(1, DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED))),
         Arguments.of(
             Named.of(
                 "an HEVC source whose codec profile the probe could not name",
@@ -272,7 +274,7 @@ class TranscodeDecisionReasonTest {
                     .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
                     .build()),
             List.of(DecisionReason.VIDEO_CODEC_PROFILE_UNKNOWN),
-            List.of(refusal(0, DecisionReason.VIDEO_CODEC_PROFILE_UNKNOWN))),
+            List.of(hls(0, DecisionReason.VIDEO_CODEC_PROFILE_UNKNOWN))),
         Arguments.of(
             Named.of(
                 "an HEVC source to a client whose entries name only H.264 and AV1",
@@ -286,7 +288,16 @@ class TranscodeDecisionReasonTest {
                 hevcMain10().dynamicRange(rpusStartingTheirSamples()).build().probe()),
             everyRangeClient(),
             List.of(DecisionReason.DOLBY_VISION_RPU_STARTS_SAMPLE),
-            List.of(refusal(0))),
+            List.of(hls(0))),
+        Arguments.of(
+            Named.of(
+                "Dolby Vision whose RPUs start their samples, to a client without an HEVC entry",
+                hevcMain10().dynamicRange(rpusStartingTheirSamples()).build().probe()),
+            client(h264EntryBuilder().build()),
+            List.of(
+                DecisionReason.DOLBY_VISION_RPU_STARTS_SAMPLE,
+                DecisionReason.VIDEO_CODEC_NOT_DECLARED),
+            List.of()),
         Arguments.of(
             Named.of(
                 "a 10-bit HEVC source beside an entry for direct play only",
@@ -301,7 +312,7 @@ class TranscodeDecisionReasonTest {
                     .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
                     .build()),
             List.of(DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED),
-            List.of(refusal(1, DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED))));
+            List.of(hls(1, DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED))));
   }
 
   // The best copy keeps Dolby Vision, so each entry's list says why the copy that plays strips it.
@@ -323,11 +334,60 @@ class TranscodeDecisionReasonTest {
     assertThat(decision.videoBitstreamRewrites())
         .containsExactly(BitstreamRewrite.STRIP_DOLBY_VISION);
     assertThat(decision.videoCapabilityEntryRefusals())
-        .containsExactly(refusal(0, DecisionReason.DOLBY_VISION_NOT_DECLARED));
+        .containsExactly(hls(0, DecisionReason.DOLBY_VISION_NOT_DECLARED));
   }
 
-  private static VideoCapabilityEntryRefusal refusal(int entryPosition, DecisionReason... reasons) {
-    return new VideoCapabilityEntryRefusal(entryPosition, List.of(reasons));
+  // #396: after direct play was refused, each entry of the source's codec family says what it
+  // refused of direct play, an entry for direct play only included, before the HLS copy's entries.
+  @Test
+  @DisplayName(
+      "Should list what each entry refused of direct play before the HLS entries when the file"
+          + " plays over HLS because direct play was refused")
+  void shouldListWhatEachEntryRefusedOfDirectPlayBeforeTheHlsEntriesWhenDirectPlayWasRefused() {
+    var matroska = Source.builder().containerFormat("matroska,webm").build().probe();
+    var client =
+        client(
+            h264EntryBuilder()
+                .hls(false)
+                .maxWidth(1280)
+                .maxHeight(720)
+                .directPlayContainers(List.of(SourceContainer.MATROSKA))
+                .build(),
+            h264EntryBuilder().build());
+    var request =
+        request(matroska, client)
+            .directPlayRefusals(List.of(DecisionReason.DIRECT_PLAY_VIDEO_NOT_DECLARED))
+            .build();
+
+    var decision = decide(request);
+
+    assertThat(decision.transcodeMode().copiesVideo()).isTrue();
+    assertThat(decision.videoCapabilityEntryRefusals())
+        .containsExactly(
+            directPlay(0, DecisionReason.VIDEO_PICTURE_SIZE_NOT_DECLARED),
+            directPlay(1, DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED),
+            hls(1));
+  }
+
+  @Test
+  @DisplayName("Should list no direct-play refusal when the format attempt never tried direct play")
+  void shouldListNoDirectPlayRefusalWhenTheFormatAttemptNeverTriedDirectPlay() {
+    var matroska = Source.builder().containerFormat("matroska,webm").build().probe();
+
+    var decision = decide(matroska, client(h264EntryBuilder().build()));
+
+    assertThat(decision.videoCapabilityEntryRefusals()).containsExactly(hls(0));
+  }
+
+  private static VideoCapabilityEntryRefusal hls(int entryPosition, DecisionReason... reasons) {
+    return new VideoCapabilityEntryRefusal(
+        CapabilityEntryDelivery.HLS, entryPosition, List.of(reasons));
+  }
+
+  private static VideoCapabilityEntryRefusal directPlay(
+      int entryPosition, DecisionReason... reasons) {
+    return new VideoCapabilityEntryRefusal(
+        CapabilityEntryDelivery.DIRECT_PLAY, entryPosition, List.of(reasons));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -980,7 +1040,8 @@ class TranscodeDecisionReasonTest {
       Integer audioChannels,
       boolean audioChannelsUnreported,
       Integer audioBitrate,
-      Long videoBitrate) {
+      Long videoBitrate,
+      String containerFormat) {
 
     private OptionalInt reportedAudioChannels() {
       if (audioChannelsUnreported) {
@@ -1036,6 +1097,7 @@ class TranscodeDecisionReasonTest {
               .framerate(OptionalDouble.of(23.976))
               .width(1920)
               .height(1080)
+              .containerFormat(Optional.ofNullable(containerFormat))
               .videoCodec(codecNameUnreported ? null : videoCodec)
               .audioCodec(audio)
               .bitrate(5_000_000)

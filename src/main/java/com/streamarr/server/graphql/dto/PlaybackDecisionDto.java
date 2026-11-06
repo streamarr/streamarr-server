@@ -21,7 +21,8 @@ public record PlaybackDecisionDto(
 
   public record TrackDeliveryDto<F>(String delivery, F source, F output) {}
 
-  public record VideoCapabilityEntryRefusalDto(int entryPosition, List<String> reasons) {}
+  public record VideoCapabilityEntryRefusalDto(
+      String delivery, int entryPosition, List<String> reasons) {}
 
   /** {@code frameRate} and {@code bitrate} are null when the probe found none. */
   @Builder
@@ -59,6 +60,7 @@ public record PlaybackDecisionDto(
                 .map(
                     refusal ->
                         new VideoCapabilityEntryRefusalDto(
+                            refusal.delivery().name(),
                             refusal.entryPosition(),
                             refusal.reasons().stream().map(Enum::name).toList()))
                 .toList())
