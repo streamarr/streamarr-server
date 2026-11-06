@@ -159,9 +159,12 @@ class PlannedVideoOutputTest {
         .hasMessageContaining(missingValue);
   }
 
+  // An encode left without a value reaches its constructor's check. The copy's builder defaults its
+  // bit depth and chroma subsampling, so only the canonical constructor can receive null for them.
   static Stream<Arguments> plannedOutputsMissingARequiredValue() {
     var range = VideoDynamicRange.SDR;
     var encodeProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
+    var chroma = ChromaSubsampling.CHROMA_420;
     return Stream.of(
         planWithoutValue(
             "a stream copy without a dynamic range",
@@ -186,23 +189,58 @@ class PlannedVideoOutputTest {
         planWithoutValue(
             "an encode without a codec profile",
             "codecProfile",
-            () -> encodeBuilder().codecProfile(null).dynamicRange(range).build()),
+            () ->
+                PlannedVideoOutput.Encode.builder()
+                    .dynamicRange(range)
+                    .bitDepth(8)
+                    .chromaSubsampling(chroma)
+                    .build()),
         planWithoutValue(
             "an encode without a dynamic range",
             "dynamicRange",
-            () -> encodeBuilder().codecProfile(encodeProfile).dynamicRange(null).build()),
+            () ->
+                PlannedVideoOutput.Encode.builder()
+                    .codecProfile(encodeProfile)
+                    .bitDepth(8)
+                    .chromaSubsampling(chroma)
+                    .build()),
         planWithoutValue(
             "an encode without a chroma subsampling",
             "chromaSubsampling",
-            () -> encodeBuilder().chromaSubsampling(null).build()),
+            () ->
+                PlannedVideoOutput.Encode.builder()
+                    .codecProfile(encodeProfile)
+                    .dynamicRange(range)
+                    .bitDepth(8)
+                    .build()),
         planWithoutValue(
             "a stream copy without a bit depth",
             "bitDepth",
-            () -> copyBuilder().bitDepth(null).build()),
+            () ->
+                new PlannedVideoOutput.StreamCopy(
+                    range,
+                    Optional.empty(),
+                    OptionalInt.empty(),
+                    null,
+                    Optional.empty(),
+                    List.of(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty())),
         planWithoutValue(
             "a stream copy without a chroma subsampling",
             "chromaSubsampling",
-            () -> copyBuilder().chromaSubsampling(null).build()),
+            () ->
+                new PlannedVideoOutput.StreamCopy(
+                    range,
+                    Optional.empty(),
+                    OptionalInt.empty(),
+                    OptionalInt.empty(),
+                    null,
+                    List.of(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty())),
         planWithoutValue(
             "an SDR encode without a codec profile",
             "codecProfile",
@@ -254,6 +292,12 @@ class PlannedVideoOutputTest {
   static Stream<Arguments> h264EncodesBeyond8BitSdr() {
     return Stream.of(
         Arguments.of("a 10-bit SDR H.264 encode", encodeBuilder().bitDepth(10)),
+        Arguments.of(
+            "an 8-bit PQ H.264 encode",
+            encodeBuilder()
+                .dynamicRange(
+                    new VideoDynamicRange(
+                        CompatibleBase.PQ, Presence.ABSENT, new DolbyVision.Absent()))),
         Arguments.of(
             "a 10-bit PQ H.264 encode",
             encodeBuilder()

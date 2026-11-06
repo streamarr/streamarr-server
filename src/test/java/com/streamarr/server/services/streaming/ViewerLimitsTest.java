@@ -331,6 +331,9 @@ class ViewerLimitsTest {
         .isThrownBy(() -> limits.allowsCopyPictureOf(null))
         .withMessageContaining("source");
     assertThatNullPointerException()
+        .isThrownBy(() -> limits.allowsCopyRangeOf(null))
+        .withMessageContaining("source");
+    assertThatNullPointerException()
         .isThrownBy(() -> limits.audioStepBesideCopyOf(null, COPIED_AAC_ONLY, playlist))
         .withMessageContaining("source");
     assertThatNullPointerException()

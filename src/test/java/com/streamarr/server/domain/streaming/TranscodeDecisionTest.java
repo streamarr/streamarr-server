@@ -84,32 +84,73 @@ class TranscodeDecisionTest {
         .hasMessageContaining("videoSource");
   }
 
-  // The builder defaults the entry refusals, so only the canonical constructor can receive null.
-  @Test
-  @DisplayName(
-      "Should refuse a decision when its constructor receives no video capability entry refusals")
-  void shouldRefuseADecisionWhenItsConstructorReceivesNoVideoCapabilityEntryRefusals() {
-    var audio = AudioDecision.stereoAac();
-    var subtitles = SubtitleDecision.exclude();
-    ThrowingCallable construct =
-        () ->
-            new TranscodeDecision(
-                TranscodeMode.FULL_TRANSCODE,
-                "h264",
-                Optional.empty(),
-                audio,
-                subtitles,
-                Optional.empty(),
-                List.of(),
-                Optional.empty(),
-                List.of(),
-                null,
-                OptionalInt.empty(),
-                Optional.empty());
-
+  // The builder defaults the entry refusals, the audio stream index and the HDR choice, so only the
+  // canonical constructor can receive null for them.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("decisionsConstructedWithoutAValue")
+  @DisplayName("Should refuse a decision when its constructor receives no value for a component")
+  void shouldRefuseADecisionWhenItsConstructorReceivesNoValueForAComponent(
+      String missing, ThrowingCallable construct) {
     assertThatThrownBy(construct)
         .isInstanceOf(NullPointerException.class)
-        .hasMessageContaining("videoCapabilityEntryRefusals");
+        .hasMessageContaining(missing);
+  }
+
+  static Stream<Arguments> decisionsConstructedWithoutAValue() {
+    var audio = AudioDecision.stereoAac();
+    var subtitles = SubtitleDecision.exclude();
+    return Stream.of(
+        Arguments.of(
+            "videoCapabilityEntryRefusals",
+            (ThrowingCallable)
+                () ->
+                    new TranscodeDecision(
+                        TranscodeMode.FULL_TRANSCODE,
+                        "h264",
+                        Optional.empty(),
+                        audio,
+                        subtitles,
+                        Optional.empty(),
+                        List.of(),
+                        Optional.empty(),
+                        List.of(),
+                        null,
+                        OptionalInt.empty(),
+                        Optional.empty())),
+        Arguments.of(
+            "audioStreamIndex",
+            (ThrowingCallable)
+                () ->
+                    new TranscodeDecision(
+                        TranscodeMode.FULL_TRANSCODE,
+                        "h264",
+                        Optional.empty(),
+                        audio,
+                        subtitles,
+                        Optional.empty(),
+                        List.of(),
+                        Optional.empty(),
+                        List.of(),
+                        List.of(),
+                        null,
+                        Optional.empty())),
+        Arguments.of(
+            "dynamicRangeChoice",
+            (ThrowingCallable)
+                () ->
+                    new TranscodeDecision(
+                        TranscodeMode.FULL_TRANSCODE,
+                        "h264",
+                        Optional.empty(),
+                        audio,
+                        subtitles,
+                        Optional.empty(),
+                        List.of(),
+                        Optional.empty(),
+                        List.of(),
+                        List.of(),
+                        OptionalInt.empty(),
+                        null)));
   }
 
   @Test
