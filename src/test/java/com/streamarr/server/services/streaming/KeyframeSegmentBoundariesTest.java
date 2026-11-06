@@ -14,6 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.DeserializationFeature;
@@ -99,6 +100,39 @@ class KeyframeSegmentBoundariesTest {
     var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 6);
 
     assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0, 2, 4)));
+  }
+
+  // At the 3 s period, the keyframe at 5.99 s opens slot 1. A keyframe in slot 2 opens the next
+  // segment only when it presents at least 2 s after 5.99 s; otherwise the slot's next keyframe, at
+  // 8.5 s, opens it (ADR 0037, segment list).
+  @ParameterizedTest(name = "{0} ms after the segment's start")
+  @CsvSource({"14, 3", "1999, 3", "2000, 2"})
+  @DisplayName(
+      "Should open the next segment at a slot's first keyframe that presents at least 2 s after the"
+          + " segment before it")
+  void shouldOpenTheNextSegmentAtASlotsFirstKeyframeThatPresentsTwoSecondsAfterTheSegmentBeforeIt(
+      long millisAfterTheStart, int openingKeyframe) {
+    var later = 5_990L + millisAfterTheStart;
+    var positions = positions(1_000, List.of(0L, 5_990L, later, 8_500L, 12_000L));
+
+    var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 3);
+
+    assertThat(later / 3_000).as("the keyframe lies in slot 2").isEqualTo(2);
+    assertThat(segments)
+        .isEqualTo(new StreamCopySegments.Starts(List.of(0, 1, openingKeyframe, 4)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should open the second segment only 2 s after zero when the first keyframe presents later")
+  void shouldOpenTheSecondSegmentOnlyTwoSecondsAfterZeroWhenTheFirstKeyframePresentsLater() {
+    // Segment 0 starts at zero whatever its keyframe's time, so the keyframe at 3.5 s opens slot 1
+    // although it presents only 0.6 s after the keyframe at 2.9 s.
+    var positions = positions(1_000, List.of(1_900L, 2_900L, 3_500L));
+
+    var segments = KeyframeSegmentBoundaries.forStreamCopy(positions, 3);
+
+    assertThat(segments).isEqualTo(new StreamCopySegments.Starts(List.of(0, 2)));
   }
 
   @Test

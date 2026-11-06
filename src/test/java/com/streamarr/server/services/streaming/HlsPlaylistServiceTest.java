@@ -1957,9 +1957,10 @@ class HlsPlaylistServiceTest {
     @Builder
     record SegmentLengthPeak(int segmentSeconds, String bandwidthAttributes) {}
 
-    // RFC 8216 §4.1: a run lasts 3 to 9 s under a 6 s target. The last segment lasts 1 s and holds
-    // 500,000 bytes, so it counts only with the 6 s segment before it: 302,400 + 500,480 bytes
-    // over 7 s, 917,577.1 b/s. Alone it would advertise 4,003,840 b/s.
+    // RFC 8216 §4.1: a run lasts 3 to 9 s under a 6 s target. The last segment lasts 2.5 s, as the
+    // last keyframe presents 2.5 s before the media end, and holds 500,000 bytes, so it counts only
+    // with the 6 s segment before it: 302,400 + 500,480 bytes over 8.5 s, 755,651.8 b/s. Alone it
+    // would advertise 1,601,536 b/s.
     @Test
     @DisplayName(
         "Should count a segment shorter than half the target duration only with its neighbour when"
@@ -1967,7 +1968,7 @@ class HlsPlaylistServiceTest {
     void shouldCountASegmentShorterThanHalfTheTargetOnlyWithItsNeighbourWhenItEndsThePlaylist() {
       var source =
           StreamMeasurementFixture.CopySource.builder()
-              .duration(Duration.ofSeconds(37))
+              .duration(Duration.ofMillis(38_500))
               .keyframeMillis(everySecond(37))
               .videoBytes(concat(repeat(36, 50_000L), repeat(1, 500_000L)))
               .build();
@@ -1975,7 +1976,7 @@ class HlsPlaylistServiceTest {
       var playlist =
           service.generateMultivariantPlaylist(copySession(source, AudioDecision.none()), "t");
 
-      assertThat(playlist).contains("BANDWIDTH=917578,AVERAGE-BANDWIDTH=500515,");
+      assertThat(playlist).contains("BANDWIDTH=755652,AVERAGE-BANDWIDTH=481015,");
     }
 
     // Keyframes 10 s apart leave the 6 s slots [12 s, 18 s) and [24 s, 30 s) without one, so the

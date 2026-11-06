@@ -159,7 +159,9 @@ public sealed interface MediaSegmentTimeline {
 
     /**
      * This grid's segments as a stream copy cuts them at the source keyframes that open each one. A
-     * keyframe that presents at or after the media end opens no segment.
+     * keyframe that presents at or after the media end opens no segment, and neither does a later
+     * segment's keyframe that presents less than {@link StreamCopy#MINIMUM_SEGMENT_DURATION} before
+     * it.
      */
     public StreamCopy openedAt(
         @NonNull KeyframePositions positions, StreamCopySegments.@NonNull Starts starts) {
@@ -168,7 +170,8 @@ public sealed interface MediaSegmentTimeline {
       for (var keyframeIndex : starts.openingKeyframeIndexes()) {
         var keyframe = positions.keyframes().get(keyframeIndex);
         var presentationTime = positions.timeOf(keyframe.presentationTime(), RoundingMode.FLOOR);
-        if (presentationTime.compareTo(mediaEnd) >= 0) {
+        if (presentationTime.compareTo(mediaEnd) >= 0
+            || opensTooLateSegment(openingKeyframes, positions, keyframe, mediaEnd)) {
           break;
         }
 
@@ -178,6 +181,23 @@ public sealed interface MediaSegmentTimeline {
       }
 
       return new StreamCopy(mediaEnd, targetSegmentDuration, openingKeyframes);
+    }
+
+    // Rounding up keeps out a keyframe that presents a fraction of a nanosecond too late.
+    private static boolean opensTooLateSegment(
+        List<OpeningKeyframe> openingKeyframes,
+        KeyframePositions positions,
+        KeyframePosition keyframe,
+        Duration mediaEnd) {
+      if (openingKeyframes.isEmpty()) {
+        return false;
+      }
+
+      var latestStart = mediaEnd.minus(StreamCopy.MINIMUM_SEGMENT_DURATION);
+      return positions
+              .timeOf(keyframe.presentationTime(), RoundingMode.CEILING)
+              .compareTo(latestStart)
+          > 0;
     }
 
     private long targetSegmentMillis() {
@@ -262,6 +282,14 @@ public sealed interface MediaSegmentTimeline {
       @NonNull Duration targetSegmentDuration,
       @NonNull List<OpeningKeyframe> openingKeyframes)
       implements MediaSegmentTimeline {
+
+    /**
+     * The least time between two consecutive segment starts, and between the last start and the
+     * media end: longer than a frame at the slowest output frame rate and than a frame of every
+     * audio codec a segment carries, so that every segment holds a frame of every variant and
+     * rendition (ADR 0037, segment list).
+     */
+    public static final Duration MINIMUM_SEGMENT_DURATION = Duration.ofSeconds(2);
 
     public StreamCopy {
       openingKeyframes = List.copyOf(openingKeyframes);
