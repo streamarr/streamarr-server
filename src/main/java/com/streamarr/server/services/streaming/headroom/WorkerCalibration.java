@@ -51,8 +51,7 @@ public final class WorkerCalibration {
   // The value each starting constant pulls toward: its starting value, or, for a preset that
   // follows the Automatic preset, its latest followed value.
   private final Map<CostConstant, Double> anchors;
-  private final ConstantFit fit =
-      new ConstantFit(FORGETTING, this::withUnmeasuredPresetsFollowingAutomatic);
+  private final ConstantFit fit = new ConstantFit(FORGETTING);
   private final Clock clock;
   private final Map<EncodeConfiguration, PredictionWindow> windows = new HashMap<>();
   private final Set<CostConstant> restoredMeasuredConstants;
@@ -116,7 +115,7 @@ public final class WorkerCalibration {
                           .measuredAt(clock.instant())
                           .build());
             });
-    fit.add(terms, share / measuredSpeed, constants.cpuSecondsPerMegapixel().keySet());
+    fit.add(terms, share / measuredSpeed);
     fit.solve(
             Map.copyOf(anchors),
             STARTING_WEIGHT,

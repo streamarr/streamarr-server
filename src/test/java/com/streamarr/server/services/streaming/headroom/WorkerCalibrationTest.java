@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -216,6 +217,36 @@ class WorkerCalibrationTest {
     }
 
     @Test
+    @DisplayName(
+        "Should predict every recorded production speed except each preset's first within the validation bound before fitting it")
+    void
+        shouldPredictEveryRecordedProductionSpeedExceptEachPresetsFirstWithinTheValidationBoundBeforeFittingIt() {
+      var calibration = recordedHostCalibrationWithoutCostConstants();
+      var errors = new ArrayList<Double>();
+      for (var run : RecordedCapacityRuns.load()) {
+        for (var variant : run.variants()) {
+          var attempt = UUID.randomUUID();
+          var running = new HashMap<UUID, JobAttemptLoad>();
+          running.put(attempt, variant.load());
+          run.loadsBeside(variant).forEach(other -> running.put(UUID.randomUUID(), other));
+          calibration
+              .predictProductionSpeeds(running)
+              .ifPresent(
+                  speeds ->
+                      errors.add(
+                          Math.abs(speeds.get(attempt) - variant.productionSpeed())
+                              / variant.productionSpeed()));
+          calibration.fit(recordedMeasurement(run, variant));
+        }
+      }
+
+      errors.sort(Comparator.naturalOrder());
+      // 180 measurements of five presets; only a preset's first finds its constant without a value.
+      assertThat(errors).hasSize(175);
+      assertThat(errors.get(errors.size() / 2)).as("median relative error").isLessThan(0.10);
+    }
+
+    @Test
     @DisplayName("Should keep the starting constants when no measurement has arrived")
     void shouldKeepTheStartingConstantsWhenNoMeasurementHasArrived() {
       var calibration = tenCoreCalibration().build();
@@ -391,6 +422,28 @@ class WorkerCalibrationTest {
   class DormantConstantTests {
 
     @Test
+    @DisplayName("Should keep a constant at its starting value when no measurement prices it")
+    void shouldKeepAConstantAtItsStartingValueWhenNoMeasurementPricesIt() {
+      var softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(
+                          Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01, softwareHevc, 0.013))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0))
+                      .build())
+              .build();
+
+      for (var i = 0; i < 300; i++) {
+        calibration.fit(rungMeasurement(i, 2, 2));
+      }
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel().get(softwareHevc))
+          .isCloseTo(0.013, within(1e-9));
+    }
+
+    @Test
     @DisplayName(
         "Should keep following the active constants when a constant that no starting value names stops appearing")
     void
@@ -454,10 +507,13 @@ class WorkerCalibrationTest {
   @DisplayName("New Constant Tests")
   class NewConstantTests {
 
+    private final SourceDecoder softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
+
     @Test
     @DisplayName(
-        "Should keep fitting the known constants when a new constant's first measurement implies a negative cost")
-    void shouldKeepFittingTheKnownConstantsWhenANewConstantsFirstMeasurementImpliesANegativeCost() {
+        "Should price a new constant close to zero and keep fitting the known constants when its first measurement implies a negative cost")
+    void
+        shouldPriceANewConstantCloseToZeroAndKeepFittingTheKnownConstantsWhenItsFirstMeasurementImpliesANegativeCost() {
       var calibration = tenCoreCalibration().build();
       // The known constants already price this load at 1.5, so PQ would cost less than nothing.
       calibration.fit(
@@ -470,7 +526,8 @@ class WorkerCalibrationTest {
       assertThat(predictedAloneSpeed(calibration, libx264FasterLoad().build()))
           .isCloseTo(6 / 3.0, within(0.1));
       assertThat(calibration.constants().cpuSecondsPerMegapixel())
-          .doesNotContainKey(ToneMapping.PQ);
+          .hasEntrySatisfying(
+              ToneMapping.PQ, constant -> assertThat(constant).isPositive().isLessThan(1e-4));
     }
 
     @Test
@@ -515,10 +572,24 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
+        "Should predict the measured speed and count both constants as measured when two new constants first appear together")
+    void
+        shouldPredictTheMeasuredSpeedAndCountBothConstantsAsMeasuredWhenTwoNewConstantsFirstAppearTogether() {
+      var calibration = tenCoreCalibration().build();
+      var hevcPq =
+          libx264FasterLoad().sourceDecoder(softwareHevc).toneMapping(ToneMapping.PQ).build();
+
+      calibration.fit(measuredAtCost(hevcPq, 3.0, 1));
+
+      assertThat(predictedAloneSpeed(calibration, hevcPq)).isCloseTo(6 / 3.0, within(0.01));
+      assertThat(calibration.measuredConstants()).contains(softwareHevc, ToneMapping.PQ);
+    }
+
+    @Test
+    @DisplayName(
         "Should keep fitting the known constants when two new constants have only appeared together")
     void shouldKeepFittingTheKnownConstantsWhenTwoNewConstantsHaveOnlyAppearedTogether() {
       var calibration = tenCoreCalibration().build();
-      var softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
       calibration.fit(
           measuredAtCost(
               libx264FasterLoad().sourceDecoder(softwareHevc).toneMapping(ToneMapping.PQ).build(),
@@ -531,80 +602,6 @@ class WorkerCalibrationTest {
 
       assertThat(predictedAloneSpeed(calibration, libx264FasterLoad().build()))
           .isCloseTo(6 / 3.0, within(0.1));
-      assertThat(calibration.constants().cpuSecondsPerMegapixel())
-          .doesNotContainKeys(softwareHevc, ToneMapping.PQ);
-    }
-  }
-
-  @Nested
-  @DisplayName("Ambiguous Measurement Tests")
-  class AmbiguousMeasurementTests {
-
-    @Test
-    @DisplayName(
-        "Should keep the known constants accurate when measurements that two new constants cannot separate keep arriving")
-    void
-        shouldKeepTheKnownConstantsAccurateWhenMeasurementsThatTwoNewConstantsCannotSeparateKeepArriving() {
-      var calibration = tenCoreCalibration().build();
-      var hevcPq =
-          libx264FasterLoad()
-              .sourceDecoder(new SourceDecoder("hevc", DecodeBackend.SOFTWARE))
-              .toneMapping(ToneMapping.PQ)
-              .build();
-
-      for (var i = 0; i < 200; i++) {
-        calibration.fit(measuredAtCost(hevcPq, 3.0, 2));
-        calibration.fit(rungMeasurement(i, 1, 2));
-      }
-
-      assertThat(calibration.constants().cpuSecondsPerMegapixel().get(LIBX264_FASTER))
-          .isCloseTo(0.04, withinPercentage(2));
-      assertThat(predictedAloneSpeed(calibration, libx264FasterLoad().build()))
-          .isCloseTo(6 / 1.5, within(0.1));
-    }
-  }
-
-  @Nested
-  @DisplayName("Waiting Measurement Tests")
-  class WaitingMeasurementTests {
-
-    private final SourceDecoder softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
-
-    @Test
-    @DisplayName(
-        "Should keep another preset following the Automatic preset when its only measurement also prices constants without values")
-    void
-        shouldKeepAnotherPresetFollowingTheAutomaticPresetWhenItsOnlyMeasurementAlsoPricesConstantsWithoutValues() {
-      var libx264Veryfast = new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
-      var calibration =
-          tenCoreCalibration()
-              .startingConstants(
-                  HeadroomConstants.builder()
-                      .cpuSecondsPerMegapixel(
-                          Map.of(LIBX264_FASTER, 0.04, libx264Veryfast, 0.02, SOFTWARE_H264, 0.01))
-                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Veryfast, 6.0))
-                      .build())
-              .build();
-      for (var i = 0; i < 200; i++) {
-        calibration.fit(rungMeasurement(i, 2, 2));
-      }
-
-      calibration.fit(
-          measuredAtCost(
-              libx264FasterLoad()
-                  .encoderAndPreset(libx264Veryfast)
-                  .sourceDecoder(softwareHevc)
-                  .toneMapping(ToneMapping.PQ)
-                  .build(),
-              3.0,
-              2));
-      for (var i = 0; i < 50; i++) {
-        calibration.fit(rungMeasurement(i, 2, 2));
-      }
-
-      var constants = calibration.constants().cpuSecondsPerMegapixel();
-      assertThat(constants.get(libx264Veryfast) / constants.get(LIBX264_FASTER))
-          .isCloseTo(0.5, within(1e-6));
     }
 
     @Test
@@ -648,34 +645,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should leave a new constant unknown when every measurement that prices it also prices a new constant that comes out negative")
+        "Should give a new constant its value when the measurements that share it also price two constants they cannot separate")
     void
-        shouldLeaveANewConstantUnknownWhenEveryMeasurementThatPricesItAlsoPricesANewConstantThatComesOutNegative() {
-      var libx264Medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
-      var calibration =
-          tenCoreCalibration()
-              .startingConstants(
-                  HeadroomConstants.builder()
-                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
-                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Medium, 6.0))
-                      .build())
-              .build();
-      var medium = libx264FasterLoad().encoderAndPreset(libx264Medium).sourceDecoder(softwareHevc);
-
-      // Doubling the output pixel rate triples the cost, so the HEVC decode constant would be
-      // negative.
-      calibration.fit(measuredAtCost(medium.outputPixelRate(SMALL_OUTPUT).build(), 1.0, 1));
-      calibration.fit(measuredAtCost(medium.outputPixelRate(LARGE_OUTPUT).build(), 3.0, 1));
-
-      assertThat(calibration.constants().cpuSecondsPerMegapixel())
-          .doesNotContainKeys(libx264Medium, softwareHevc);
-    }
-
-    @Test
-    @DisplayName(
-        "Should give a new constant its value when the waiting measurements that share it also price two constants they cannot separate")
-    void
-        shouldGiveANewConstantItsValueWhenTheWaitingMeasurementsThatShareItAlsoPriceTwoConstantsTheyCannotSeparate() {
+        shouldGiveANewConstantItsValueWhenTheMeasurementsThatShareItAlsoPriceTwoConstantsTheyCannotSeparate() {
       var libx264Medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
       var calibration =
           tenCoreCalibration()
@@ -700,52 +672,16 @@ class WorkerCalibrationTest {
       }
 
       assertThat(calibration.constants().cpuSecondsPerMegapixel())
-          .doesNotContainKeys(softwareHevc, ToneMapping.PQ)
           .hasEntrySatisfying(
               libx264Medium, constant -> assertThat(constant).isCloseTo(0.08, within(1e-3)));
+      assertThat(predictedAloneSpeed(calibration, mediumHdr)).isCloseTo(6 / 3.0, within(0.05));
     }
 
     @Test
     @DisplayName(
-        "Should keep a preset's constant that waiting measurements determined when a kept calibration restarts and the Automatic preset's constant changes")
+        "Should give a new constant its value when two other new constants that only appear together cannot be separated")
     void
-        shouldKeepAPresetsConstantThatWaitingMeasurementsDeterminedWhenAKeptCalibrationRestartsAndTheAutomaticPresetsConstantChanges() {
-      var libx264Veryfast = new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
-      var calibration =
-          tenCoreCalibration()
-              .startingConstants(
-                  HeadroomConstants.builder()
-                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
-                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Veryfast, 6.0))
-                      .build())
-              .build();
-      var veryfastHdr =
-          libx264FasterLoad()
-              .encoderAndPreset(libx264Veryfast)
-              .sourceDecoder(softwareHevc)
-              .toneMapping(ToneMapping.PQ);
-      // veryfast costs 0.02 CPU s per megapixel; HEVC decode and PQ together 0.02.
-      calibration.fit(measuredAtCost(veryfastHdr.outputPixelRate(SMALL_OUTPUT).build(), 1.5, 1));
-      calibration.fit(measuredAtCost(veryfastHdr.outputPixelRate(LARGE_OUTPUT).build(), 2.0, 1));
-
-      var restarted =
-          tenCoreCalibration()
-              .startingConstants(calibration.constants())
-              .measuredConstants(calibration.measuredConstants())
-              .build();
-      for (var i = 0; i < 300; i++) {
-        restarted.fit(rungMeasurement(i, 0.5, 2));
-      }
-
-      assertThat(restarted.constants().cpuSecondsPerMegapixel().get(libx264Veryfast))
-          .isCloseTo(0.02, withinPercentage(5));
-    }
-
-    @Test
-    @DisplayName(
-        "Should give a new constant its value when other waiting measurements cannot separate two other new constants")
-    void
-        shouldGiveANewConstantItsValueWhenOtherWaitingMeasurementsCannotSeparateTwoOtherNewConstants() {
+        shouldGiveANewConstantItsValueWhenTwoOtherNewConstantsThatOnlyAppearTogetherCannotBeSeparated() {
       var calibration = tenCoreCalibration().build();
       var softwareVp9 = new SourceDecoder("vp9", DecodeBackend.SOFTWARE);
       calibration.fit(
@@ -759,9 +695,71 @@ class WorkerCalibrationTest {
           measuredAtCost(libx264FasterLoad().sourceDecoder(softwareVp9).build(), 2.0, 1));
 
       assertThat(calibration.constants().cpuSecondsPerMegapixel())
-          .doesNotContainKeys(softwareHevc, ToneMapping.PQ)
           .hasEntrySatisfying(
               softwareVp9, constant -> assertThat(constant).isCloseTo(0.02, within(1e-3)));
+    }
+
+    @Test
+    @DisplayName(
+        "Should keep every constant positive and fit the shared constant between its measurements when two new constants that only appear together would need a negative total")
+    void
+        shouldKeepEveryConstantPositiveAndFitTheSharedConstantBetweenItsMeasurementsWhenTwoNewConstantsThatOnlyAppearTogetherWouldNeedANegativeTotal() {
+      var libx264Medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Medium, 6.0))
+                      .build())
+              .build();
+      // SDR prices medium at 0.08 (2.0 + 0.5); HDR at 1.5 would need medium at 0.06 or HEVC
+      // decode and PQ together at -0.01.
+      var mediumSdr = libx264FasterLoad().encoderAndPreset(libx264Medium).build();
+      var mediumHdr =
+          libx264FasterLoad()
+              .encoderAndPreset(libx264Medium)
+              .sourceDecoder(softwareHevc)
+              .toneMapping(ToneMapping.PQ)
+              .build();
+
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(measuredAtCost(mediumSdr, 2.5, 1));
+        calibration.fit(measuredAtCost(mediumHdr, 1.5, 1));
+      }
+
+      var constants = calibration.constants().cpuSecondsPerMegapixel();
+      assertThat(constants).containsKeys(softwareHevc, ToneMapping.PQ);
+      assertThat(constants.values()).allSatisfy(constant -> assertThat(constant).isPositive());
+      assertThat(constants.get(libx264Medium)).isStrictlyBetween(0.06, 0.08);
+    }
+  }
+
+  @Nested
+  @DisplayName("Ambiguous Measurement Tests")
+  class AmbiguousMeasurementTests {
+
+    @Test
+    @DisplayName(
+        "Should keep the known constants accurate when measurements that two new constants cannot separate keep arriving")
+    void
+        shouldKeepTheKnownConstantsAccurateWhenMeasurementsThatTwoNewConstantsCannotSeparateKeepArriving() {
+      var calibration = tenCoreCalibration().build();
+      var hevcPq =
+          libx264FasterLoad()
+              .sourceDecoder(new SourceDecoder("hevc", DecodeBackend.SOFTWARE))
+              .toneMapping(ToneMapping.PQ)
+              .build();
+
+      for (var i = 0; i < 200; i++) {
+        calibration.fit(measuredAtCost(hevcPq, 3.0, 2));
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel().get(LIBX264_FASTER))
+          .isCloseTo(0.04, withinPercentage(2));
+      assertThat(predictedAloneSpeed(calibration, libx264FasterLoad().build()))
+          .isCloseTo(6 / 1.5, within(0.1));
     }
   }
 
@@ -781,8 +779,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should predict no speeds when one load's measurements cannot separate its encode and decode constants")
-    void shouldPredictNoSpeedsWhenOneLoadsMeasurementsCannotSeparateItsEncodeAndDecodeConstants() {
+        "Should predict the measured speed when one load's measurements cannot separate its encode and decode constants")
+    void
+        shouldPredictTheMeasuredSpeedWhenOneLoadsMeasurementsCannotSeparateItsEncodeAndDecodeConstants() {
       var calibration = calibrationWithoutBenchmark();
       var load = libx264FasterLoad().build();
 
@@ -790,13 +789,13 @@ class WorkerCalibrationTest {
         calibration.fit(measuredAtCost(load, 1.5, 2));
       }
 
-      assertThat(calibration.predictProductionSpeeds(Map.of(UUID.randomUUID(), load))).isEmpty();
+      assertThat(predictedAloneSpeed(calibration, load)).isCloseTo(6 / 1.5, within(0.05));
     }
 
     @Test
     @DisplayName(
-        "Should leave the decode constant unknown when the measurements imply a negative decode constant")
-    void shouldLeaveTheDecodeConstantUnknownWhenTheMeasurementsImplyANegativeDecodeConstant() {
+        "Should price the decode constant close to zero when the measurements imply a negative decode constant")
+    void shouldPriceTheDecodeConstantCloseToZeroWhenTheMeasurementsImplyANegativeDecodeConstant() {
       var calibration = calibrationWithoutBenchmark();
       var small = libx264FasterLoad().build();
       var large = libx264FasterLoad().outputPixelRate(LARGE_OUTPUT).build();
@@ -807,8 +806,10 @@ class WorkerCalibrationTest {
         calibration.fit(measuredAtCost(large, 3.0, 2));
       }
 
-      assertThat(calibration.constants().cpuSecondsPerMegapixel()).doesNotContainKey(SOFTWARE_H264);
-      assertThat(calibration.predictProductionSpeeds(Map.of(UUID.randomUUID(), small))).isEmpty();
+      assertThat(calibration.constants().cpuSecondsPerMegapixel())
+          .hasEntrySatisfying(
+              SOFTWARE_H264, constant -> assertThat(constant).isPositive().isLessThan(1e-4));
+      assertThat(predictedAloneSpeed(calibration, small)).isPositive();
     }
   }
 

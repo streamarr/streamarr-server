@@ -45,6 +45,7 @@
         <apache-commons-lang.version>3.21.0</apache-commons-lang.version>
         <apache-commons-text.version>1.15.0</apache-commons-text.version>
         <apache-commons-io.version>2.22.0</apache-commons-io.version>
+        <ojalgo.version>57.5.0</ojalgo.version>
         <dgs-graphql.version>12.1.0</dgs-graphql.version>
         <!-- DGS 12 requires json-path 3.x (Jackson3JsonProvider); Spring Boot manages 2.10.0 -->
         <json-path.version>3.0.0</json-path.version>
@@ -230,6 +231,12 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-text</artifactId>
             <version>${apache-commons-text.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.ojalgo</groupId>
+            <artifactId>ojalgo</artifactId>
+            <version>${ojalgo.version}</version>
         </dependency>
 
         <dependency>
