@@ -35,7 +35,7 @@ public abstract class BaseCollectable<T extends BaseCollectable<T>> extends Base
 
   private String titleSort;
 
-  @ManyToOne
+  @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "libraryId")
   private Library library;
 

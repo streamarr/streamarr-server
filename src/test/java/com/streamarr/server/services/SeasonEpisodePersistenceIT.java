@@ -88,7 +88,7 @@ class SeasonEpisodePersistenceIT extends AbstractIntegrationTest {
     assertThat(found.get().getSeasonNumber()).isEqualTo(1);
     assertThat(found.get().getOverview()).isEqualTo("The first season");
     assertThat(found.get().getAirDate()).isEqualTo(LocalDate.of(2023, 1, 15));
-    assertThat(found.get().getLibrary()).isEqualTo(savedLibrary);
+    assertThat(found.get().getLibrary().getId()).isEqualTo(savedLibrary.getId());
     assertThat(found.get().getExternalIds()).hasSize(1);
   }
 

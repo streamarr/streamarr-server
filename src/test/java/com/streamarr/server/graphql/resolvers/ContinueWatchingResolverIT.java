@@ -198,6 +198,20 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should load no library when continue watching selects no library")
+  void shouldLoadNoLibraryWhenContinueWatchingSelectsNoLibrary() throws Exception {
+    identity = authTestSupport.createIdentity();
+    createEpisodeWithProgress();
+
+    var librariesLoaded =
+        countedWhileExecuting(
+            SEASONS_AND_SERIES_QUERY,
+            statistics -> statistics.getEntityStatistics(Library.class.getName()).getLoadCount());
+
+    assertThat(librariesLoaded).isZero();
+  }
+
+  @Test
   @DisplayName("Should return a bounded connection with a cursor and order key for each item")
   void shouldReturnABoundedConnectionWithCursorAndOrderKeyForEachItem() throws Exception {
     identity = authTestSupport.createIdentity();

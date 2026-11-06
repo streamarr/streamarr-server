@@ -111,6 +111,30 @@ class LibraryPlacementFieldsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should return each item's own library when items of different libraries are queried")
+  void shouldReturnEachItemsOwnLibraryWhenItemsOfDifferentLibrariesAreQueried() throws Exception {
+    var movieLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var seriesLibrary =
+        libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var movie = saveMovie(movieLibrary, Set.of());
+    var series = saveSeries(seriesLibrary, Set.of());
+
+    query(
+            """
+            {
+              movie(id: "%s") { library { id name } }
+              series(id: "%s") { library { id name } }
+            }
+            """
+                .formatted(movie.getId(), series.getId()))
+        .andExpect(jsonPath("$.data.movie.library.id").value(movieLibrary.getId().toString()))
+        .andExpect(jsonPath("$.data.movie.library.name").value(movieLibrary.getName()))
+        .andExpect(jsonPath("$.data.series.library.id").value(seriesLibrary.getId().toString()))
+        .andExpect(jsonPath("$.data.series.library.name").value(seriesLibrary.getName()));
+  }
+
+  @Test
   @DisplayName("Should agree with the unmatched filter when a library lists its movies")
   void shouldAgreeWithUnmatchedFilterWhenLibraryListsItsMovies() throws Exception {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
