@@ -92,7 +92,9 @@ type WatchStateChange {
     """
     The movies and episodes whose watch state changed, and the seasons and series that hold those
     episodes. Each item appears once. An item is null when one of its non-null fields failed to
-    resolve. A failed field under selectedProfileState makes only selectedProfileState null.
+    resolve. A failed non-null field under selectedProfileState makes selectedProfileState null,
+    and a failed nullable field under it is null at its own path. Either error's path runs through
+    selectedProfileState.
     """
     items: [WatchStateItem]!
     """
