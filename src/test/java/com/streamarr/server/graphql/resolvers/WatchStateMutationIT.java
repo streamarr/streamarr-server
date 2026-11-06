@@ -50,10 +50,10 @@ class WatchStateMutationIT extends AbstractIntegrationTest {
         %s(input: {itemId: "%s"}) {
           item {
             __typename
-            ... on Movie { id watchStatus }
-            ... on Episode { id watchStatus }
-            ... on Season { id watchStatus }
-            ... on Series { id watchStatus }
+            ... on Movie { id selectedProfileState { watchState { watchStatus } } }
+            ... on Episode { id selectedProfileState { watchState { watchStatus } } }
+            ... on Season { id selectedProfileState { watchState { watchStatus } } }
+            ... on Series { id selectedProfileState { watchState { watchStatus } } }
           }
           userErrors {
             __typename
@@ -94,7 +94,9 @@ class WatchStateMutationIT extends AbstractIntegrationTest {
     var itemId = createItem(kind);
 
     expectMarkedItem(mark(MARK_WATCHED, itemId), MARK_WATCHED, kind, itemId)
-        .andExpect(jsonPath("$.data.markWatched.item.watchStatus").value("WATCHED"));
+        .andExpect(
+            jsonPath("$.data.markWatched.item.selectedProfileState.watchState.watchStatus")
+                .value("WATCHED"));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -107,7 +109,9 @@ class WatchStateMutationIT extends AbstractIntegrationTest {
     mark(MARK_WATCHED, itemId).andExpect(jsonPath("$.data.markWatched.userErrors").isEmpty());
 
     expectMarkedItem(mark(MARK_UNWATCHED, itemId), MARK_UNWATCHED, kind, itemId)
-        .andExpect(jsonPath("$.data.markUnwatched.item.watchStatus").value("UNWATCHED"));
+        .andExpect(
+            jsonPath("$.data.markUnwatched.item.selectedProfileState.watchState.watchStatus")
+                .value("UNWATCHED"));
   }
 
   @Test
@@ -121,10 +125,10 @@ class WatchStateMutationIT extends AbstractIntegrationTest {
         """
         mutation {
           watched: markWatched(input: {itemId: "%1$s"}) {
-            item { ... on Movie { watchStatus } }
+            item { ... on Movie { selectedProfileState { watchState { watchStatus } } } }
           }
           unwatched: markUnwatched(input: {itemId: "%1$s"}) {
-            item { ... on Movie { watchStatus } }
+            item { ... on Movie { selectedProfileState { watchState { watchStatus } } } }
           }
         }
         """
@@ -134,8 +138,12 @@ class WatchStateMutationIT extends AbstractIntegrationTest {
         .perform(graphqlRequest(authTestSupport.profileBearer(identity), markBothQuery))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.watched.item.watchStatus").value("WATCHED"))
-        .andExpect(jsonPath("$.data.unwatched.item.watchStatus").value("UNWATCHED"));
+        .andExpect(
+            jsonPath("$.data.watched.item.selectedProfileState.watchState.watchStatus")
+                .value("WATCHED"))
+        .andExpect(
+            jsonPath("$.data.unwatched.item.selectedProfileState.watchState.watchStatus")
+                .value("UNWATCHED"));
   }
 
   @ParameterizedTest(name = "{0}")

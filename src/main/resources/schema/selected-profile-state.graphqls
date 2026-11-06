@@ -1,0 +1,29 @@
+"What one media title holds for the selected Profile (ADR 0056)."
+type SelectedProfileState {
+    "The selected Profile: the same object as Me.selectedProfile."
+    profile: SelectableProfile!
+    "The selected Profile's watch state of the media title."
+    watchState: WatchState!
+    "The language preferences of the selected Profile that apply here: the Profile's own, under its overrides (ADR 0043)."
+    languagePreference: LanguagePreference!
+}
+
+"One Profile's watch state of one media title."
+type WatchState {
+    "Whether the Profile watched the title. A season or a series takes its status from its episodes."
+    watchStatus: WatchStatus!
+    """
+    The resume position. A season or a series returns the most recently saved resume position among
+    its episodes. Null when no counted resume position applies.
+    """
+    watchProgress: WatchProgress
+    """
+    When the Profile last watched the title, as an ISO-8601 instant. For a movie or an episode it is
+    the later of the latest completion or manual mark that has not been dismissed and the latest
+    session progress with a position; progress older than that completion does not count. A season
+    or a series takes the latest value among its episodes. The LAST_WATCHED sort orders movies and
+    series by this value, and Continue Watching orders by it, newest first, then by id. Null when
+    the Profile has not watched the title.
+    """
+    lastWatchedAt: String
+}

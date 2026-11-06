@@ -614,7 +614,7 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
           "watch",
           """
           subscription { libraryItemUpdated(libraryId: "%s") {
-            itemId item { ... on Movie { watchStatus lastWatchedAt } }
+            itemId item { ... on Movie { selectedProfileState { watchState { watchStatus lastWatchedAt } } } }
           } }
           """
               .formatted(library.getId()));
@@ -640,8 +640,9 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
         subscribers.getLast().nextMessageFor("watch").at("/payload/data/libraryItemUpdated");
     assertThat(own.path("itemId").asString()).isEqualTo(movie.getId().toString());
     assertThat(other.path("itemId").asString()).isEqualTo(sentinel.getId().toString());
-    assertThat(own.at("/item/watchStatus").asString()).isEqualTo("WATCHED");
-    assertThat(own.at("/item/lastWatchedAt").isNull()).isFalse();
+    assertThat(own.at("/item/selectedProfileState/watchState/watchStatus").asString())
+        .isEqualTo("WATCHED");
+    assertThat(own.at("/item/selectedProfileState/watchState/lastWatchedAt").isNull()).isFalse();
   }
 
   @Test

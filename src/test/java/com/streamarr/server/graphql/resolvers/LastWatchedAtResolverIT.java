@@ -45,6 +45,10 @@ class LastWatchedAtResolverIT extends AbstractIntegrationTest {
 
   private static final Instant PAUSED_AT = Instant.parse("2026-05-01T20:00:00Z");
   private static final Instant FINISHED_AT = Instant.parse("2026-05-01T21:30:00Z");
+  private static final String LAST_WATCHED_AT =
+      "selectedProfileState { watchState { lastWatchedAt } }";
+  private static final String MOVIE_LAST_WATCHED_AT =
+      "$.data.movie.selectedProfileState.watchState.lastWatchedAt";
 
   @Autowired private MockMvc mockMvc;
   @Autowired private AuthTestSupport authTestSupport;
@@ -79,13 +83,13 @@ class LastWatchedAtResolverIT extends AbstractIntegrationTest {
     saveProgress(identity, movie, PAUSED_AT);
     saveCompletion(identity, movie, FINISHED_AT);
 
-    query(identity, "{ movie(id: \\\"" + movie.getId() + "\\\") { lastWatchedAt } }")
-        .andExpect(jsonPath("$.data.movie.lastWatchedAt").value(FINISHED_AT.toString()));
+    query(identity, "{ movie(id: \\\"" + movie.getId() + "\\\") { " + LAST_WATCHED_AT + " } }")
+        .andExpect(jsonPath(MOVIE_LAST_WATCHED_AT).value(FINISHED_AT.toString()));
   }
 
   @Test
-  @DisplayName("Should return the episode time for the episode and its series")
-  void shouldReturnTheEpisodeTimeForTheEpisodeAndItsSeries() throws Exception {
+  @DisplayName("Should return the episode time for the episode, its season and its series")
+  void shouldReturnTheEpisodeTimeForTheEpisodeItsSeasonAndItsSeries() throws Exception {
     identity = authTestSupport.createIdentity();
     var episode = createEpisode();
     saveProgress(identity, episode, PAUSED_AT);
@@ -94,10 +98,17 @@ class LastWatchedAtResolverIT extends AbstractIntegrationTest {
             identity,
             "{ series(id: \\\""
                 + episode.getSeason().getSeries().getId()
-                + "\\\") { lastWatchedAt seasons { episodes { lastWatchedAt } } } }")
-        .andExpect(jsonPath("$.data.series.lastWatchedAt").value(PAUSED_AT.toString()))
+                + "\\\") { %1$s seasons { %1$s episodes { %1$s } } } }".formatted(LAST_WATCHED_AT))
         .andExpect(
-            jsonPath("$.data.series.seasons[0].episodes[0].lastWatchedAt")
+            jsonPath("$.data.series.selectedProfileState.watchState.lastWatchedAt")
+                .value(PAUSED_AT.toString()))
+        .andExpect(
+            jsonPath("$.data.series.seasons[0].selectedProfileState.watchState.lastWatchedAt")
+                .value(PAUSED_AT.toString()))
+        .andExpect(
+            jsonPath(
+                    "$.data.series.seasons[0].episodes[0].selectedProfileState.watchState"
+                        + ".lastWatchedAt")
                 .value(PAUSED_AT.toString()));
   }
 
@@ -107,8 +118,8 @@ class LastWatchedAtResolverIT extends AbstractIntegrationTest {
     identity = authTestSupport.createIdentity();
     var movie = createMovie();
 
-    query(identity, "{ movie(id: \\\"" + movie.getId() + "\\\") { lastWatchedAt } }")
-        .andExpect(jsonPath("$.data.movie.lastWatchedAt").isEmpty());
+    query(identity, "{ movie(id: \\\"" + movie.getId() + "\\\") { " + LAST_WATCHED_AT + " } }")
+        .andExpect(jsonPath(MOVIE_LAST_WATCHED_AT).isEmpty());
   }
 
   @Test
@@ -119,8 +130,8 @@ class LastWatchedAtResolverIT extends AbstractIntegrationTest {
     var movie = createMovie();
     saveCompletion(otherIdentity, movie, FINISHED_AT);
 
-    query(identity, "{ movie(id: \\\"" + movie.getId() + "\\\") { lastWatchedAt } }")
-        .andExpect(jsonPath("$.data.movie.lastWatchedAt").isEmpty());
+    query(identity, "{ movie(id: \\\"" + movie.getId() + "\\\") { " + LAST_WATCHED_AT + " } }")
+        .andExpect(jsonPath(MOVIE_LAST_WATCHED_AT).isEmpty());
   }
 
   private ResultActions query(AuthTestSupport.TestIdentity caller, String query) throws Exception {

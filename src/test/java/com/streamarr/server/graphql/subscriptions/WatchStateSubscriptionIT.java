@@ -66,30 +66,17 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
           }
           items {
             __typename
-            ... on Movie {
-              id
-              watchStatus
-              lastWatchedAt
-              watchProgress { positionSeconds }
-              library { id }
-              unmatched
-            }
-            ... on Episode {
-              id watchStatus lastWatchedAt watchProgress { positionSeconds }
-            }
-            ... on Season { id watchStatus watchProgress { positionSeconds } }
-            ... on Series {
-              id
-              watchStatus
-              lastWatchedAt
-              watchProgress { positionSeconds }
-              library { id }
-              unmatched
-            }
+            ... on Movie { id %1$s library { id } unmatched }
+            ... on Episode { id %1$s }
+            ... on Season { id %1$s }
+            ... on Series { id %1$s library { id } unmatched }
           }
         }
       }
-      """;
+      """
+          .formatted(
+              "selectedProfileState { watchState { watchStatus lastWatchedAt"
+                  + " watchProgress { positionSeconds } } }");
   private static final int PAUSED_POSITION_SECONDS = 900;
   private static final int LATER_POSITION_SECONDS = 1_200;
   private static final int FINISHED_POSITION_SECONDS = 7_000;
@@ -164,7 +151,11 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
     markWatched(reporter, episode.getId());
 
     var removed = nextChange(subscriber);
-    assertThat(itemsById(removed).get(episode.getId().toString()).path("watchStatus").asString())
+    assertThat(
+            itemsById(removed)
+                .get(episode.getId().toString())
+                .at("/selectedProfileState/watchState/watchStatus")
+                .asString())
         .isEqualTo("WATCHED");
     assertThat(removed.at("/continueWatching/0/itemId").asString())
         .isEqualTo(episode.getId().toString());
@@ -196,16 +187,21 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
     assertThat(items).hasSize(3);
     var episodeItem = items.get(episode.getId().toString());
     assertThat(episodeItem.path("__typename").asString()).isEqualTo("Episode");
-    assertThat(episodeItem.path("watchStatus").asString()).isEqualTo("WATCHED");
-    assertThat(episodeItem.path("lastWatchedAt").isNull()).isFalse();
+    assertThat(episodeItem.at("/selectedProfileState/watchState/watchStatus").asString())
+        .isEqualTo("WATCHED");
+    assertThat(episodeItem.at("/selectedProfileState/watchState/lastWatchedAt").isNull()).isFalse();
     var seasonItem = items.get(episode.getSeason().getId().toString());
     assertThat(seasonItem.path("__typename").asString()).isEqualTo("Season");
-    assertThat(seasonItem.path("watchStatus").asString()).isEqualTo("WATCHED");
+    assertThat(seasonItem.at("/selectedProfileState/watchState/watchStatus").asString())
+        .isEqualTo("WATCHED");
+    assertThat(seasonItem.at("/selectedProfileState/watchState/lastWatchedAt").asString())
+        .isEqualTo(episodeItem.at("/selectedProfileState/watchState/lastWatchedAt").asString());
     var seriesItem = items.get(episode.getSeason().getSeries().getId().toString());
     assertThat(seriesItem.path("__typename").asString()).isEqualTo("Series");
-    assertThat(seriesItem.path("watchStatus").asString()).isEqualTo("WATCHED");
-    assertThat(seriesItem.path("lastWatchedAt").asString())
-        .isEqualTo(episodeItem.path("lastWatchedAt").asString());
+    assertThat(seriesItem.at("/selectedProfileState/watchState/watchStatus").asString())
+        .isEqualTo("WATCHED");
+    assertThat(seriesItem.at("/selectedProfileState/watchState/lastWatchedAt").asString())
+        .isEqualTo(episodeItem.at("/selectedProfileState/watchState/lastWatchedAt").asString());
     assertThat(seriesItem.path("library").path("id").asString())
         .isEqualTo(episode.getLibrary().getId().toString());
     assertThat(seriesItem.path("unmatched").asBoolean()).isTrue();
@@ -229,11 +225,20 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
         .hasSize(3)
         .allSatisfy(
             item -> {
-              assertThat(item.path("watchStatus").asString()).isEqualTo("IN_PROGRESS");
-              assertThat(item.path("watchProgress").path("positionSeconds").asInt())
+              assertThat(item.at("/selectedProfileState/watchState/watchStatus").asString())
+                  .isEqualTo("IN_PROGRESS");
+              assertThat(
+                      item.at("/selectedProfileState/watchState/watchProgress")
+                          .path("positionSeconds")
+                          .asInt())
                   .isEqualTo(PAUSED_POSITION_SECONDS);
             });
-    assertThat(items.get(episode.getId().toString()).path("lastWatchedAt").isNull()).isFalse();
+    assertThat(
+            items
+                .get(episode.getId().toString())
+                .at("/selectedProfileState/watchState/lastWatchedAt")
+                .isNull())
+        .isFalse();
   }
 
   @Test
@@ -328,7 +333,10 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
             secondSeason.getId().toString(),
             series.getId().toString());
     assertThat(items.values())
-        .allSatisfy(item -> assertThat(item.path("watchStatus").asString()).isEqualTo("WATCHED"));
+        .allSatisfy(
+            item ->
+                assertThat(item.at("/selectedProfileState/watchState/watchStatus").asString())
+                    .isEqualTo("WATCHED"));
   }
 
   @Test
@@ -361,7 +369,8 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
     var reporter = authTestSupport.profileBearer(identity);
     reportStopped(reporter, session, FINISHED_POSITION_SECONDS);
     var finished = itemsById(nextChange(subscriber)).get(episode.getId().toString());
-    assertThat(finished.path("watchStatus").asString()).isEqualTo("WATCHED");
+    assertThat(finished.at("/selectedProfileState/watchState/watchStatus").asString())
+        .isEqualTo("WATCHED");
 
     reportStopped(reporter, session, FINISHED_POSITION_SECONDS);
     markWatched(reporter, sentinel.getId());
@@ -429,7 +438,8 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
 
     var item = itemsById(nextChange(subscriber)).get(movie.getId().toString());
     assertThat(item.path("__typename").asString()).isEqualTo("Movie");
-    assertThat(item.path("watchStatus").asString()).isEqualTo("WATCHED");
+    assertThat(item.at("/selectedProfileState/watchState/watchStatus").asString())
+        .isEqualTo("WATCHED");
     assertThat(item.path("library").path("id").asString())
         .isEqualTo(movie.getLibrary().getId().toString());
     assertThat(item.path("unmatched").asBoolean()).isTrue();
@@ -514,7 +524,11 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
   }
 
   private static int positionOf(Map<String, JsonNode> items, UUID itemId) {
-    return items.get(itemId.toString()).path("watchProgress").path("positionSeconds").asInt();
+    return items
+        .get(itemId.toString())
+        .at("/selectedProfileState/watchState/watchProgress")
+        .path("positionSeconds")
+        .asInt();
   }
 
   private void markWatched(String bearer, UUID itemId) {

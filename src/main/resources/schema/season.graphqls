@@ -7,8 +7,6 @@ type Season {
     series: Series!
     episodes: [Episode]!
     images(type: ImageType): [Image]!
-    watchProgress: WatchProgress
-    watchStatus: WatchStatus!
-    "The language preferences of the selected Profile that apply here: the Profile's own, under its overrides (ADR 0043)."
-    languagePreference: LanguagePreference!
+    "The selected Profile's state of this season. Null when the request has no selected Profile."
+    selectedProfileState: SelectedProfileState
 }
