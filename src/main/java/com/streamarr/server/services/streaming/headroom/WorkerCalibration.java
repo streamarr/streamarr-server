@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.headroom;
 
+import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.headroom.CostConstant;
 import com.streamarr.server.domain.streaming.headroom.CpuLimit;
@@ -75,13 +76,17 @@ public final class WorkerCalibration {
 
   /**
    * Checks the current constants against the measurement, then fits the measurement. A measurement
-   * whose job attempts include one whose cores alone are unknown cannot give a share of the cores,
-   * so the fit skips it.
+   * whose job attempts include a hardware encode, or one whose cores alone are unknown, cannot give
+   * a share of the cores, so the fit skips it.
    */
   public synchronized void fit(@NonNull ProductionMeasurement measurement) {
     var running = new ArrayList<JobAttemptLoad>();
     running.add(measurement.load());
     running.addAll(measurement.otherEncodes());
+    if (running.stream().anyMatch(WorkerCalibration::isHardwareEncode)) {
+      return;
+    }
+
     var shares = sharesOfCores(running);
     if (shares.isEmpty()) {
       return;
@@ -178,12 +183,17 @@ public final class WorkerCalibration {
 
   /**
    * The production speed of each job attempt when exactly these job attempts encode on the worker,
-   * or empty while a constant that one of them needs is unknown.
+   * or empty while a constant that one of them needs is unknown or one of them is a hardware
+   * encode.
    */
   public synchronized Optional<Map<UUID, Double>> predictProductionSpeeds(
       @NonNull Map<UUID, JobAttemptLoad> running) {
     var attempts = List.copyOf(running.keySet());
     var loads = attempts.stream().map(running::get).toList();
+    if (loads.stream().anyMatch(WorkerCalibration::isHardwareEncode)) {
+      return Optional.empty();
+    }
+
     var shares = sharesOfCores(loads);
     if (shares.isEmpty()) {
       return Optional.empty();
@@ -312,6 +322,15 @@ public final class WorkerCalibration {
         });
 
     return adjusted;
+  }
+
+  /**
+   * A hardware encode's encode term runs on the GPU's encode engines, whose cost the fit takes from
+   * their busy time rather than from a share of the cores (ADR 0044); this model does not price it
+   * yet.
+   */
+  private static boolean isHardwareEncode(JobAttemptLoad load) {
+    return load.encoderAndPreset().backend().kind() == EncoderBackend.Kind.HARDWARE;
   }
 
   private static Optional<EncoderAndPreset> automaticPresetOf(EncoderAndPreset encoderAndPreset) {

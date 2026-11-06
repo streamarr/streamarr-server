@@ -267,6 +267,56 @@ class WorkerCalibrationTest {
   }
 
   @Nested
+  @DisplayName("Hardware Encode Tests")
+  class HardwareEncodeTests {
+
+    private final EncoderAndPreset nvencFaster =
+        new EncoderAndPreset(
+            EncoderBackend.builder()
+                .codecFamily("h264")
+                .encoder("h264_nvenc")
+                .kind(EncoderBackend.Kind.HARDWARE)
+                .build(),
+            EncoderPreset.FASTER);
+    private final JobAttemptLoad nvenc = libx264FasterLoad().encoderAndPreset(nvencFaster).build();
+
+    private WorkerCalibration calibrationWithNvenc() {
+      return tenCoreCalibration()
+          .startingConstants(
+              HeadroomConstants.builder()
+                  .cpuSecondsPerMegapixel(
+                      Map.of(LIBX264_FASTER, 0.04, nvencFaster, 0.01, SOFTWARE_H264, 0.01))
+                  .coresAlone(Map.of(LIBX264_FASTER, 6.0, nvencFaster, 2.0))
+                  .build())
+          .build();
+    }
+
+    @Test
+    @DisplayName(
+        "Should leave the constants unchanged when a hardware encode's production time arrives")
+    void shouldLeaveTheConstantsUnchangedWhenAHardwareEncodesProductionTimeArrives() {
+      var calibration = calibrationWithNvenc();
+      var before = calibration.constants();
+
+      calibration.fit(measuredAtCost(nvenc, 0.6, 1));
+
+      assertThat(calibration.constants()).isEqualTo(before);
+      assertThat(calibration.latestPredictions()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should predict no speeds when a hardware encode runs on the worker")
+    void shouldPredictNoSpeedsWhenAHardwareEncodeRunsOnTheWorker() {
+      var calibration = calibrationWithNvenc();
+
+      assertThat(
+              calibration.predictProductionSpeeds(
+                  Map.of(UUID.randomUUID(), nvenc, UUID.randomUUID(), libx264FasterLoad().build())))
+          .isEmpty();
+    }
+  }
+
+  @Nested
   @DisplayName("Unequal Ceiling Tests")
   class UnequalCeilingTests {
 
@@ -274,38 +324,32 @@ class WorkerCalibrationTest {
     @DisplayName(
         "Should give the other job attempt the cores that a job attempt with a lower ceiling leaves when both run")
     void shouldGiveTheOtherJobAttemptTheCoresThatAJobAttemptWithALowerCeilingLeavesWhenBothRun() {
-      var nvenc =
-          new EncoderAndPreset(
-              EncoderBackend.builder()
-                  .codecFamily("h264")
-                  .encoder("h264_nvenc")
-                  .kind(EncoderBackend.Kind.HARDWARE)
-                  .build(),
-              EncoderPreset.FASTER);
+      var veryfast = new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
       var calibration =
           tenCoreCalibration()
               .startingConstants(
                   HeadroomConstants.builder()
                       .cpuSecondsPerMegapixel(
-                          Map.of(LIBX264_FASTER, 0.04, nvenc, 0.002, SOFTWARE_H264, 0.01))
-                      .coresAlone(Map.of(LIBX264_FASTER, 8.0, nvenc, 2.0))
+                          Map.of(LIBX264_FASTER, 0.04, veryfast, 0.002, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 8.0, veryfast, 2.0))
                       .build())
               .build();
-      var software = UUID.randomUUID();
-      var hardware = UUID.randomUUID();
+      var fasterAttempt = UUID.randomUUID();
+      var veryfastAttempt = UUID.randomUUID();
 
       var speeds =
           calibration.predictProductionSpeeds(
               Map.of(
-                  software, libx264FasterLoad().build(),
-                  hardware, libx264FasterLoad().encoderAndPreset(nvenc).build()));
+                  fasterAttempt, libx264FasterLoad().build(),
+                  veryfastAttempt, libx264FasterLoad().encoderAndPreset(veryfast).build()));
 
-      // 10 cores: the NVENC attempt uses at most 2 alone, so libx264 gets the other 8, not 5.
+      // 10 cores: the veryfast attempt uses at most 2 alone, so faster gets the other 8, not 5.
       assertThat(speeds)
           .hasValueSatisfying(
               predicted -> {
-                assertThat(predicted.get(software)).isCloseTo(8 / 1.5, within(1e-9));
-                assertThat(predicted.get(hardware)).isCloseTo(2 / (0.002 * 25 + 0.5), within(1e-9));
+                assertThat(predicted.get(fasterAttempt)).isCloseTo(8 / 1.5, within(1e-9));
+                assertThat(predicted.get(veryfastAttempt))
+                    .isCloseTo(2 / (0.002 * 25 + 0.5), within(1e-9));
               });
     }
   }
