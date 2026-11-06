@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -34,20 +35,23 @@ import lombok.NonNull;
  * position comes from the viewer's latest timeline report while that report is fresh and follows
  * the stream session's latest seek, and otherwise from the highest media segment that the player
  * has requested since that seek. No job attempt that a player's segment request waits on yields.
+ * The same leads decide which job attempts {@link HoldBack} holds back because they run far ahead
+ * of their viewers.
  */
-@Builder
 public class SeekPriority {
 
   // Clients report their timeline every 10 s of playback; a report older than three intervals is
   // too sparse to place the viewer.
   private static final Duration FRESH_REPORT = Duration.ofSeconds(30);
 
-  @NonNull private final TranscodeExecutor transcodeExecutor;
-  @NonNull private final SegmentStore segmentStore;
-  @NonNull private final RuntimeStreamSessionRegistry runtimeRegistry;
-  @NonNull private final HeldSegmentRequests heldRequests;
-  @NonNull private final StreamingProperties properties;
-  @Builder.Default private final Clock clock = Clock.systemUTC();
+  private final TranscodeExecutor transcodeExecutor;
+  private final SegmentStore segmentStore;
+  private final RuntimeStreamSessionRegistry runtimeRegistry;
+  private final HeldSegmentRequests heldRequests;
+  private final StreamingProperties properties;
+  private final Clock clock;
+  // Guarded by this monitor.
+  private final HoldBack holdBack;
 
   // Guarded by this monitor.
   private final Map<VariantKey, PendingSeek> pendingSeeks = new HashMap<>();
@@ -58,25 +62,52 @@ public class SeekPriority {
   private final Map<ExecutionTargetId, Set<UUID>> yielding = new HashMap<>();
   private final Map<VariantKey, OwnOutput> ownOutputs = new HashMap<>();
 
+  @Builder
+  private SeekPriority(
+      @NonNull TranscodeExecutor transcodeExecutor,
+      @NonNull SegmentStore segmentStore,
+      @NonNull RuntimeStreamSessionRegistry runtimeRegistry,
+      @NonNull HeldSegmentRequests heldRequests,
+      @NonNull StreamingProperties properties,
+      Clock clock) {
+    this.transcodeExecutor = transcodeExecutor;
+    this.segmentStore = segmentStore;
+    this.runtimeRegistry = runtimeRegistry;
+    this.heldRequests = heldRequests;
+    this.properties = properties;
+    var chosenClock = clock;
+    if (chosenClock == null) {
+      chosenClock = Clock.systemUTC();
+    }
+
+    this.clock = chosenClock;
+    holdBack = new HoldBack(transcodeExecutor, properties, chosenClock);
+  }
+
   private record VariantKey(UUID sessionId, String variantLabel) {}
 
   // A job attempt's own output: the media segments that its uploads stored, in order from its start
   // through storedThrough, short of nextStored. From nextStored on lies media that it found stored
   // past a gap when it started, which it reaches only by reproducing that media too. An upload of
   // another job attempt, even one that a disconnected worker finishes late, credits this one
-  // nothing.
-  private record OwnOutput(UUID attemptId, int storedThrough, int nextStored) {
+  // nothing. The execution target is where its uploads came from, known once it stored a segment.
+  private record OwnOutput(
+      UUID attemptId, int storedThrough, int nextStored, Optional<ExecutionTargetId> uploadedFrom) {
 
     private boolean includes(int index) {
       return index <= storedThrough && index < nextStored;
     }
 
-    private OwnOutput storedBy(UUID uploader, int index) {
-      if (!uploader.equals(attemptId)) {
+    private OwnOutput storedBy(MediaSegmentPublishedEvent published) {
+      if (!published.jobAttemptId().equals(attemptId)) {
         return this;
       }
 
-      return new OwnOutput(attemptId, Math.max(storedThrough, index), nextStored);
+      return new OwnOutput(
+          attemptId,
+          Math.max(storedThrough, published.segmentIndex()),
+          nextStored,
+          Optional.of(published.executionTarget()));
     }
   }
 
@@ -132,6 +163,7 @@ public class SeekPriority {
    */
   public synchronized void segmentRequestWaits(
       @NonNull StreamSession session, @NonNull String variantLabel) {
+    reconsiderHoldBacks(session.getSessionId());
     var attempt = session.getVariantHandle(variantLabel).map(TranscodeHandle::attemptId);
     var target = transcodeExecutor.runningExecutionTarget(session.getSessionId(), variantLabel);
     if (attempt.isEmpty()
@@ -167,6 +199,7 @@ public class SeekPriority {
         .map(Map.Entry::getKey)
         .toList()
         .forEach(this::sendYields);
+    reconsiderHoldBacks(sessionId);
   }
 
   /**
@@ -196,6 +229,7 @@ public class SeekPriority {
    */
   public synchronized void variantChanged(
       @NonNull StreamSession session, @NonNull String variantLabel) {
+    reconsiderHoldBacks(session.getSessionId());
     var key = new VariantKey(session.getSessionId(), variantLabel);
     var pending = pendingSeeks.get(key);
     if (pending == null) {
@@ -265,7 +299,55 @@ public class SeekPriority {
   public synchronized void mediaSegmentPublished(@NonNull MediaSegmentPublishedEvent published) {
     ownOutputs.computeIfPresent(
         new VariantKey(published.streamSessionId(), published.variantLabel()),
-        (_, output) -> output.storedBy(published.jobAttemptId(), published.segmentIndex()));
+        (_, output) -> output.storedBy(published));
+    reconsiderHoldBacks(published.streamSessionId());
+  }
+
+  // Guarded by this monitor. A job attempt's lead changes when its viewer moves, when it stores
+  // media and when a player starts to wait on it.
+  private void reconsiderHoldBacks(UUID sessionId) {
+    var session =
+        runtimeRegistry
+            .findById(sessionId)
+            .filter(found -> found.getDelivery() == StreamDelivery.HLS);
+    if (session.isEmpty()) {
+      holdBack.forget(sessionId);
+      return;
+    }
+
+    holdBack.reconsider(sessionId, leadsOf(session.get()));
+  }
+
+  private List<HoldBack.AttemptLead> leadsOf(StreamSession session) {
+    var viewerSegment = viewerSegment(session);
+    if (viewerSegment.isEmpty()) {
+      return List.of();
+    }
+
+    var sessionId = session.getSessionId();
+    return session.getVariantHandles().entrySet().stream()
+        .filter(entry -> !heldRequests.holdsRequestsOn(sessionId, entry.getKey()))
+        .flatMap(
+            entry ->
+                attemptLead(session, entry.getKey(), entry.getValue(), viewerSegment.getAsInt())
+                    .stream())
+        .toList();
+  }
+
+  // The target comes from the job attempt's own uploads rather than from the executor, so that no
+  // segment request waits for a worker connection that is busy publishing a segment.
+  private Optional<HoldBack.AttemptLead> attemptLead(
+      StreamSession session, String variantLabel, TranscodeHandle handle, int viewerSegment) {
+    var target =
+        Optional.ofNullable(ownOutputs.get(new VariantKey(session.getSessionId(), variantLabel)))
+            .filter(output -> output.attemptId().equals(handle.attemptId()))
+            .flatMap(OwnOutput::uploadedFrom);
+    if (target.isEmpty() || !isActive(session, variantLabel)) {
+      return Optional.empty();
+    }
+
+    return ownLead(session, variantLabel, handle, viewerSegment)
+        .map(lead -> new HoldBack.AttemptLead(handle.attemptId(), target.get(), lead.stored()));
   }
 
   private OwnOutput ownOutputAtStart(
@@ -285,11 +367,13 @@ public class SeekPriority {
       nextStored = Integer.MAX_VALUE;
     }
 
-    return new OwnOutput(handle.attemptId(), handle.startSequenceNumber() - 1, nextStored);
+    return new OwnOutput(
+        handle.attemptId(), handle.startSequenceNumber() - 1, nextStored, Optional.empty());
   }
 
   /** The stream session ended, so its seeks wait for nothing. */
   public synchronized void forgetSession(@NonNull UUID sessionId) {
+    holdBack.forget(sessionId);
     highestRequestedSegments.remove(sessionId);
     newestRequestedSegments.remove(sessionId);
     ownOutputs.keySet().removeIf(key -> key.sessionId().equals(sessionId));

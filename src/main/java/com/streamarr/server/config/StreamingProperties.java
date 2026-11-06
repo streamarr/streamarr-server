@@ -25,7 +25,13 @@ public record StreamingProperties(
     // this margin, which covers errors in the viewer's position (ADR 0044, seek priority).
     Duration seekPriorityPositionMargin,
     // The longest the worker keeps such a job attempt paused without a later yield command.
-    Duration seekPriorityHoldLimit) {
+    Duration seekPriorityHoldLimit,
+    // A job attempt whose own media stored ahead of its viewer outlasts this high-water mark is
+    // held
+    // back until that media falls to the low-water mark, which leaves the viewer that much media
+    // while the job attempt resumes (ADR 0044, hold-back).
+    Duration holdBackHighWater,
+    Duration holdBackLowWater) {
 
   public StreamingProperties {
     if (maxConcurrentTranscodes == null) {
@@ -87,6 +93,23 @@ public record StreamingProperties(
     }
 
     requirePositive("streaming.seek-priority-hold-limit", seekPriorityHoldLimit);
+
+    if (holdBackHighWater == null) {
+      holdBackHighWater = Duration.ofSeconds(60);
+    }
+
+    if (holdBackLowWater == null) {
+      holdBackLowWater = Duration.ofSeconds(30);
+    }
+
+    requirePositive("streaming.hold-back-low-water", holdBackLowWater);
+    if (holdBackHighWater.compareTo(holdBackLowWater) <= 0) {
+      throw new IllegalArgumentException(
+          "streaming.hold-back-high-water must exceed streaming.hold-back-low-water, got "
+              + holdBackHighWater
+              + " and "
+              + holdBackLowWater);
+    }
 
     if (segmentBasePath == null || segmentBasePath.isBlank()) {
       segmentBasePath =

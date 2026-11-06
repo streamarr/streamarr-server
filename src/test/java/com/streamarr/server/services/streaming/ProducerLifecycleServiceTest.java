@@ -80,6 +80,9 @@ import org.junit.jupiter.params.provider.EnumSource;
 @DisplayName("Producer Lifecycle Service Tests")
 class ProducerLifecycleServiceTest {
 
+  // Where the job attempts' uploads come from; seek priority sends no hold-back in these tests.
+  private static final ExecutionTargetId UPLOADING_TARGET = new ExecutionTargetId("worker");
+
   private static final ExecutionTargetId LIBX264_WORKER = new ExecutionTargetId("libx264-worker");
   private static final ExecutionTargetId NVENC_WORKER = new ExecutionTargetId("nvenc-worker");
   private static final ExecutionTargetId UNVERIFIED_LIBX264_WORKER =
@@ -213,6 +216,7 @@ class ProducerLifecycleServiceTest {
         .jobAttemptId(attemptId)
         .variantLabel(StreamSession.defaultVariant())
         .segmentIndex(index)
+        .executionTarget(UPLOADING_TARGET)
         .build();
   }
 

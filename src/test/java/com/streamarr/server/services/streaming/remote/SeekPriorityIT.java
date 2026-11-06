@@ -890,9 +890,11 @@ class SeekPriorityIT {
   // the segment to that job attempt.
   private void storeAsUpload(UUID sessionId, String variantLabel, int index) {
     storedSegments.addSegment(sessionId, segmentName(variantLabel, index), SEGMENT_BYTES);
+    var target = transcodeExecutor.runningExecutionTarget(sessionId, variantLabel);
     registry
         .findById(sessionId)
         .flatMap(session -> session.getVariantHandle(variantLabel))
+        .filter(_ -> target.isPresent())
         .ifPresent(
             handle ->
                 publications.onMediaSegmentPublished(
@@ -901,6 +903,7 @@ class SeekPriorityIT {
                         .jobAttemptId(handle.attemptId())
                         .variantLabel(variantLabel)
                         .segmentIndex(index)
+                        .executionTarget(target.get())
                         .build()));
   }
 

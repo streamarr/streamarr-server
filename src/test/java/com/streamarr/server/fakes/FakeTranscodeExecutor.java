@@ -55,6 +55,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       Collections.synchronizedList(new ArrayList<>());
   private final List<String> stoppedVariants = Collections.synchronizedList(new ArrayList<>());
   private final List<Yield> yields = Collections.synchronizedList(new ArrayList<>());
+  private final List<HeldBack> holdBacks = Collections.synchronizedList(new ArrayList<>());
   private final Set<ExecutionTargetId> refusingTargets = ConcurrentHashMap.newKeySet();
   private Set<ExecutionTargetId> executionTargets =
       new LinkedHashSet<>(Set.of(ExecutionTargetId.LOCAL));
@@ -228,6 +229,21 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   public record Yield(ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit) {}
+
+  /** Records each hold-back, in the order the executor received them. */
+  @Override
+  public void holdBack(ExecutionTargetId target, Map<UUID, Duration> releaseAfterByJobAttempt) {
+    holdBacks.add(new HeldBack(target, Map.copyOf(releaseAfterByJobAttempt)));
+  }
+
+  /** Every hold-back that this executor received, oldest first. */
+  public List<HeldBack> holdBacks() {
+    synchronized (holdBacks) {
+      return List.copyOf(holdBacks);
+    }
+  }
+
+  public record HeldBack(ExecutionTargetId target, Map<UUID, Duration> releaseAfterByJobAttempt) {}
 
   /**
    * The requests held until this executor's job attempts store their segments. Like the worker

@@ -152,6 +152,42 @@ class StreamingPropertiesTest {
   }
 
   @Test
+  @DisplayName(
+      "Should default the hold-back marks to 60 seconds high and 30 seconds low when unset")
+  void shouldDefaultTheHoldBackMarksTo60SecondsHighAnd30SecondsLowWhenUnset() {
+    var properties = StreamingProperties.builder().build();
+
+    assertThat(properties.holdBackHighWater()).isEqualTo(Duration.ofSeconds(60));
+    assertThat(properties.holdBackLowWater()).isEqualTo(Duration.ofSeconds(30));
+  }
+
+  @ParameterizedTest
+  @ValueSource(longs = {0, -1})
+  @DisplayName("Should reject the hold-back low-water mark when not positive")
+  void shouldRejectTheHoldBackLowWaterMarkWhenNotPositive(long seconds) {
+    var builder = StreamingProperties.builder().holdBackLowWater(Duration.ofSeconds(seconds));
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("streaming.hold-back-low-water");
+  }
+
+  @ParameterizedTest
+  @ValueSource(longs = {30, 20})
+  @DisplayName(
+      "Should reject the hold-back high-water mark when it does not exceed the low-water mark")
+  void shouldRejectTheHoldBackHighWaterMarkWhenItDoesNotExceedTheLowWaterMark(long seconds) {
+    var builder =
+        StreamingProperties.builder()
+            .holdBackHighWater(Duration.ofSeconds(seconds))
+            .holdBackLowWater(Duration.ofSeconds(30));
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("streaming.hold-back-high-water");
+  }
+
+  @Test
   @DisplayName("Should default probe wait limit to 15 seconds when null")
   void shouldDefaultProbeWaitLimitToFifteenSecondsWhenNull() {
     assertThat(StreamingProperties.builder().build().probeWaitLimit())

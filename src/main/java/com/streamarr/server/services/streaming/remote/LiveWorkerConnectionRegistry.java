@@ -29,6 +29,7 @@ import com.streamarr.server.services.streaming.remote.protocol.ProtoUuid;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.HoldBackCommand;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptProgress;
@@ -506,6 +507,12 @@ final class LiveWorkerConnectionRegistry {
         .forEach(connection -> connection.yieldToSeek(jobAttemptIds, holdLimit));
   }
 
+  void holdBack(ExecutionTargetId target, Map<UUID, Duration> releaseAfterByJobAttempt) {
+    connections.values().stream()
+        .filter(connection -> connection.executionTargetId().equals(target))
+        .forEach(connection -> connection.holdBack(releaseAfterByJobAttempt));
+  }
+
   synchronized void destroyStreamSession(UUID streamSessionId) {
     try {
       stopStreamSession(streamSessionId);
@@ -842,7 +849,7 @@ final class LiveWorkerConnectionRegistry {
     heldRequests.wakeVariant(fromProto(streamSessionId), variantLabel);
   }
 
-  private void publishMediaSegment(SegmentUploadMetadata metadata) {
+  private void publishMediaSegment(WorkerConnection connection, SegmentUploadMetadata metadata) {
     var index = SegmentNames.indexOf(metadata.getSegmentName());
     if (index.isEmpty()) {
       return;
@@ -854,6 +861,7 @@ final class LiveWorkerConnectionRegistry {
             .jobAttemptId(fromProto(metadata.getJobAttemptId()))
             .variantLabel(metadata.getVariantLabel())
             .segmentIndex(index.getAsInt())
+            .executionTarget(connection.executionTargetId())
             .build());
   }
 
@@ -926,7 +934,7 @@ final class LiveWorkerConnectionRegistry {
     // attempt's output.
     outcome
         .filter(SegmentPublication.PUBLISHED::equals)
-        .ifPresent(_ -> publishMediaSegment(metadata));
+        .ifPresent(_ -> publishMediaSegment(connection, metadata));
     outcome.ifPresent(
         _ ->
             heldRequests.wakeVariant(
@@ -1696,6 +1704,19 @@ final class LiveWorkerConnectionRegistry {
           .setSeconds(holdLimit.getSeconds())
           .setNanos(holdLimit.getNano());
       trySend(EstablishWorkerSessionResponse.newBuilder().setYieldToSeek(command).build());
+    }
+
+    private synchronized void holdBack(Map<UUID, Duration> releaseAfterByJobAttempt) {
+      var command = HoldBackCommand.newBuilder().setTarget(worker);
+      releaseAfterByJobAttempt.forEach(
+          (jobAttemptId, releaseAfter) ->
+              command
+                  .addJobAttemptsBuilder()
+                  .setJobAttemptId(ProtoUuid.toProto(jobAttemptId))
+                  .getReleaseAfterBuilder()
+                  .setSeconds(releaseAfter.getSeconds())
+                  .setNanos(releaseAfter.getNano()));
+      trySend(EstablishWorkerSessionResponse.newBuilder().setHoldBack(command).build());
     }
 
     private synchronized void stopStreamSession(UUID streamSessionId) {

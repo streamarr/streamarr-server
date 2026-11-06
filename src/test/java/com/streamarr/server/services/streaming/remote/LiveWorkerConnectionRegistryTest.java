@@ -1646,6 +1646,11 @@ class LiveWorkerConnectionRegistryTest {
                 .jobAttemptId(fromProto(job.getJobAttemptId()))
                 .variantLabel(job.getVariant().getVariantLabel())
                 .segmentIndex(7)
+                .executionTarget(
+                    registry
+                        .runningExecutionTarget(
+                            fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel())
+                        .orElseThrow())
                 .build());
   }
 

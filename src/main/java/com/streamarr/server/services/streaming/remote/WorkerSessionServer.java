@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -185,6 +186,12 @@ public final class WorkerSessionServer
       ExecutionTargetId target, Set<UUID> jobAttemptIds, Duration holdLimit) {
     requireStarted();
     workerConnections.yieldToSeek(target, jobAttemptIds, holdLimit);
+  }
+
+  public synchronized void holdBack(
+      ExecutionTargetId target, Map<UUID, Duration> releaseAfterByJobAttempt) {
+    requireStarted();
+    workerConnections.holdBack(target, releaseAfterByJobAttempt);
   }
 
   public synchronized void stopStreamSession(UUID streamSessionId) {
