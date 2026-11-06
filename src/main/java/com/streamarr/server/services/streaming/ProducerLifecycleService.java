@@ -1186,7 +1186,8 @@ public class ProducerLifecycleService {
       return false;
     }
 
-    var segmentName = variantLabel + "/" + SegmentNames.mediaSegmentName(segmentIndex);
+    var segmentName =
+        SegmentNames.storedSegmentName(variantLabel, SegmentNames.mediaSegmentName(segmentIndex));
     return !requiresRelocation(session, variantLabel, segmentName);
   }
 

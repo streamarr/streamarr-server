@@ -8397,6 +8397,33 @@ class HlsStreamingServiceTest {
     assertThat(producerLifecycle.freeConfiguredTranscodeSlots()).isEqualTo(2);
   }
 
+  // The copy stores its segments at the stream session's root, not under its label. Its segment 0
+  // shows that its attempt reaches segment 4 without a relocation, so it keeps running beside the
+  // lower variant that the player requests, even when that encode finds no transcode place.
+  @Test
+  @DisplayName(
+      "Should keep the copy running when the player requests a lower variant's segment that the"
+          + " copy reaches without a relocation")
+  void shouldKeepTheCopyRunningWhenThePlayerRequestsALowerVariantsSegmentTheCopyReaches() {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var sessionId = session.getSessionId();
+    upload(sessionId, StreamSession.defaultVariant(), "segment0.m4s");
+    producerLifecycle.completeVariantSwitch(
+        producerLifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment0.m4s"));
+    for (int i = 0; i < streamingProperties().maxConcurrentTranscodes(); i++) {
+      var encode =
+          createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+              .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+              .build();
+      assertThat(service.createSession(encode)).isInstanceOf(Outcome.Accepted.class);
+    }
+
+    producerLifecycle.prepareRequestedVariant(sessionId, "720p", "720p/segment4.m4s");
+
+    assertThat(transcodeExecutor.isRunning(sessionId, StreamSession.defaultVariant())).isTrue();
+  }
+
   // The upload budget can start a lower variant beside a copy that it leaves out. That start must
   // take its own place under the transcode limit, not the copy's, which needs none.
   @Test
