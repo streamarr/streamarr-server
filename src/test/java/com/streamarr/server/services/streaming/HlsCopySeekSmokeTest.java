@@ -14,7 +14,6 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
-import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
@@ -278,8 +277,8 @@ class HlsCopySeekSmokeTest {
     var sessionId = session.getSessionId();
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
-    assertThat(gridIntervalCount(session))
-        .as("the AAC tail forms a grid interval past the last keyframe")
+    assertThat(gridSlotCount(session))
+        .as("the AAC tail reaches a grid slot past the last keyframe")
         .isEqualTo(copySegmentSeconds.size() + 1);
     assertThat(
             extinfSeconds(
@@ -525,10 +524,9 @@ class HlsCopySeekSmokeTest {
     return workerFixture.worker().packetTimestamps(media);
   }
 
-  private static int gridIntervalCount(StreamSession session) {
-    return new MediaSegmentTimeline.PlainGrid(
-            session.getMediaProbe().duration(), Duration.ofSeconds(SEGMENT_SECONDS))
-        .mediaSegmentCount();
+  // The slots that the media reaches into, counted in whole milliseconds as the plain grid counts.
+  private static long gridSlotCount(StreamSession session) {
+    return Math.ceilDiv(session.getMediaProbe().duration().toMillis(), SEGMENT_SECONDS * 1000L);
   }
 
   private static List<Double> extinfSeconds(String playlist) {
