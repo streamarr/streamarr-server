@@ -29,6 +29,7 @@ import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.SourceEndedEarly;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -52,6 +53,7 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
@@ -416,6 +418,91 @@ class ProducerLifecycleServiceTest {
     assertThat(session.getVariantHandles()).containsOnlyKeys("480p");
     assertThat(session.getVariantHandle("480p").orElseThrow().status())
         .isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the job attempt at the last segment with source media when a request lies past"
+          + " where a completed attempt reported that the source ended")
+  void shouldStartTheJobAttemptAtTheLastSegmentWithSourceMediaWhenARequestLiesPastTheReportedEnd() {
+    var session = startedLadderSession();
+    lifecycle.settleCompletedJobAttempt(completionEndingEarly(session, "480p", 40));
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "480p", "480p/segment100.m4s");
+
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            relocated -> {
+              assertThat(relocated.startSequenceNumber()).isEqualTo(40);
+              assertThat(relocated.seekPosition()).isEqualTo(240);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the job attempt that started at the last segment with source media when a later"
+          + " request lies past the source's reported end")
+  void shouldKeepTheJobAttemptAtTheLastSegmentWithSourceMediaWhenALaterRequestLiesPastTheEnd() {
+    var session = startedLadderSession();
+    lifecycle.settleCompletedJobAttempt(completionEndingEarly(session, "480p", 40));
+    lifecycle.ensurePositioned(session.getSessionId(), "480p", "480p/segment100.m4s");
+    var paddingAttempt = session.getVariantHandle("480p").orElseThrow().attemptId();
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "480p", "480p/segment110.m4s");
+
+    assertThat(startedSince(startedBefore)).isEmpty();
+    assertThat(session.getVariantHandle("480p").orElseThrow().attemptId())
+        .isEqualTo(paddingAttempt);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the job attempt at the requested segment when it holds source media before"
+          + " the source's reported end")
+  void shouldStartTheJobAttemptAtTheRequestedSegmentWhenItHoldsSourceMediaBeforeTheReportedEnd() {
+    var session = startedLadderSession();
+    lifecycle.settleCompletedJobAttempt(completionEndingEarly(session, "480p", 40));
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "480p", "480p/segment30.m4s");
+
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .isEqualTo(30);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start another variant on demand at the last segment with source media when its first"
+          + " request lies past the source's reported end")
+  void shouldStartAnotherVariantOnDemandAtTheLastSegmentWithSourceMediaWhenRequestedPastTheEnd() {
+    var session = startedLadderSession();
+    lifecycle.settleCompletedJobAttempt(completionEndingEarly(session, "480p", 40));
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.prepareRequestedVariant(session.getSessionId(), "720p", "720p/segment100.m4s");
+
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            started -> {
+              assertThat(started.variantLabel()).isEqualTo("720p");
+              assertThat(started.startSequenceNumber()).isEqualTo(40);
+            });
+  }
+
+  private static JobAttemptCompletedEvent completionEndingEarly(
+      StreamSession session, String variantLabel, int lastSegmentWithSourceMedia) {
+    return JobAttemptCompletedEvent.builder()
+        .streamSessionId(session.getSessionId())
+        .jobAttemptId(session.getVariantHandle(variantLabel).orElseThrow().attemptId())
+        .variantLabel(variantLabel)
+        .sourceEndedEarly(Optional.of(new SourceEndedEarly(lastSegmentWithSourceMedia, List.of())))
+        .build();
   }
 
   @Test

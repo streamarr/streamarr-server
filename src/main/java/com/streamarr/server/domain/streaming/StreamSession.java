@@ -87,6 +87,11 @@ public class StreamSession {
   @Builder.Default
   private final AtomicBoolean playbackMovedFromTheStartPosition = new AtomicBoolean();
 
+  // Integer.MAX_VALUE until a completed job attempt reports where the source ended.
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
+  private final AtomicInteger lastSegmentWithSourceMedia = new AtomicInteger(Integer.MAX_VALUE);
+
   public Optional<SourceContainer> getSourceContainer() {
     return Optional.ofNullable(sourceContainer);
   }
@@ -255,6 +260,27 @@ public class StreamSession {
    */
   public Optional<Duration> getNormalEnd() {
     return getShortCopy().filter(ShortCopy::everySourceStreamEnded).map(ShortCopy::mediaEnd);
+  }
+
+  /**
+   * The last media segment that holds a source sample, once a completed job attempt reports that
+   * the source ended before the last advertised segment (ADR 0037, early ends).
+   */
+  public OptionalInt getLastSegmentWithSourceMedia() {
+    var last = lastSegmentWithSourceMedia.get();
+    if (last == Integer.MAX_VALUE) {
+      return OptionalInt.empty();
+    }
+
+    return OptionalInt.of(last);
+  }
+
+  /**
+   * Keeps the earliest last segment with source media that any job attempt reports, because every
+   * job attempt reads the same source.
+   */
+  public void markLastSegmentWithSourceMedia(int segmentIndex) {
+    lastSegmentWithSourceMedia.accumulateAndGet(segmentIndex, Math::min);
   }
 
   public static String defaultVariant() {

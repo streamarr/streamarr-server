@@ -1661,9 +1661,9 @@ public class ProducerLifecycleService {
   }
 
   private TranscodeRequest jobAttemptRequest(
-      StreamSession session, String variantLabel, int startSequenceNumber) {
+      StreamSession session, String variantLabel, int requestedStart) {
     var request =
-        baseRequest(session, variantLabel, startSequenceNumber)
+        baseRequest(session, variantLabel, startWithSourceMedia(session, requestedStart))
             .encoderPreset(pinEncoderPreset(session, variantLabel));
 
     var variant =
@@ -1693,7 +1693,9 @@ public class ProducerLifecycleService {
    * A running encoder produces segments sequentially from its start segment. A requested media
    * segment needs the variant's encoder relocated when it lies behind that start (it will never be
    * produced) or so far ahead of produced output that waiting would stall the player longer than
-   * restarting. An initialization segment and a variant without a job attempt never relocate.
+   * restarting. A request past the last segment with source media counts as one for that segment,
+   * where a job attempt starts. An initialization segment and a variant without a job attempt never
+   * relocate.
    */
   private boolean requiresRelocation(
       StreamSession session, String variantLabel, String segmentName) {
@@ -1704,13 +1706,13 @@ public class ProducerLifecycleService {
     }
 
     var startSequenceNumber = handle.get().startSequenceNumber();
-    if (requestedIndex.getAsInt() < startSequenceNumber) {
+    var neededStart = startWithSourceMedia(session, requestedIndex.getAsInt());
+    if (neededStart < startSequenceNumber) {
       return true;
     }
 
     var probeIndex =
-        timelineOf(session)
-            .mediaSegmentIndexBefore(requestedIndex.getAsInt(), FORWARD_RELOCATION_GAP);
+        timelineOf(session).mediaSegmentIndexBefore(neededStart, FORWARD_RELOCATION_GAP);
     if (probeIndex < startSequenceNumber) {
       return false;
     }
@@ -1752,7 +1754,8 @@ public class ProducerLifecycleService {
    * worker reports the completion only after the server accepted the attempt's last segment, so a
    * copy whose stored media segments from the attempt's first one stop before the playlist's last
    * ran short there. The stream session keeps the first short copy that a completion shows. Answers
-   * the short copy when this completion showed it.
+   * the short copy when this completion showed it. In every stream session, a completion that
+   * reports that the source ended early sets the last segment at which a job attempt may start.
    */
   public Optional<ShortCopy> settleCompletedJobAttempt(@NonNull CompletedJobAttempt completion) {
     return withSessionLock(
@@ -1760,8 +1763,30 @@ public class ProducerLifecycleService {
         () ->
             runtimeRegistry
                 .findById(completion.streamSessionId())
+                .map(session -> rememberWhereTheSourceEnded(session, completion))
                 .filter(session -> session.getTranscodeDecision().transcodeMode().copiesVideo())
                 .flatMap(session -> shortCopyShownBy(session, completion)));
+  }
+
+  private static StreamSession rememberWhereTheSourceEnded(
+      StreamSession session, CompletedJobAttempt completion) {
+    completion
+        .sourceEndedEarly()
+        .ifPresent(
+            report -> session.markLastSegmentWithSourceMedia(report.lastSegmentWithSourceMedia()));
+    return session;
+  }
+
+  // A job attempt never starts past the last segment that holds a source sample: one started there
+  // fills every later advertised segment of an encode with the last frame and silence (ADR 0037,
+  // early ends).
+  private static int startWithSourceMedia(StreamSession session, int requestedStart) {
+    var last = session.getLastSegmentWithSourceMedia();
+    if (last.isEmpty()) {
+      return requestedStart;
+    }
+
+    return Math.min(requestedStart, last.getAsInt());
   }
 
   private Optional<ShortCopy> shortCopyShownBy(
