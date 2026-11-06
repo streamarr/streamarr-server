@@ -95,7 +95,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
   private final List<MediaFile> createdFiles = new ArrayList<>();
   private final CountDownLatch firstExecutionFinished = new CountDownLatch(1);
   private final LinkedBlockingQueue<String> completedInstances = new LinkedBlockingQueue<>();
-  private ProbeExecution execution;
+  private ProbeExecution probeExecution;
   private Task<ProbeTaskRequest> task;
   private SchedulerClient client;
   private Scheduler scheduler;
@@ -105,7 +105,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
     // The completion latch counts any execution, so a due execution left by an earlier class
     // would release it before the test's own probe runs.
     dsl.deleteFrom(DSL.table("scheduled_tasks")).execute();
-    execution =
+    probeExecution =
         ProbeExecution.builder()
             .mediaFiles(mediaFileRepository)
             .reader(reader)
@@ -118,7 +118,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
             .playbackProbeClaims(
                 new PlaybackProbeClaims(System::nanoTime, new SimpleMeterRegistry()))
             .build();
-    task = MediaProbeTask.create(execution, completion);
+    task = MediaProbeTask.create(probeExecution, completion);
     client =
         SchedulerClient.Builder.create(dataSource, task).serializer(probeTaskSerializer).build();
   }
@@ -478,7 +478,7 @@ class SchedulerProbeTaskRequestsIT extends AbstractIntegrationTest {
             .pollingInterval(Duration.ofHours(1))
             .build()
             .start(
-                execution,
+                probeExecution,
                 new AbstractSchedulerListener() {
                   @Override
                   public void onExecutionComplete(ExecutionComplete executionComplete) {
