@@ -101,6 +101,11 @@ message WorkerCapabilities {
   // This field lists the copy features that the worker supports. The server
   // sends a copy that needs a feature only to a worker that lists it.
   repeated VideoCopyFeature video_copy_features = 6;
+  // This field lists the software encoder of each codec family that passed the
+  // test encode, also where video_encoders lists a hardware backend for the
+  // family. A job whose VideoDecision.software_encoder is true runs one of them
+  // (ADR 0044, hardware failure).
+  repeated WorkerVerifiedVideoEncoder software_video_encoders = 7;
 }
 
 // The worker sends this message first on its session. Each capacity counts the
@@ -539,6 +544,10 @@ message VideoDecision {
   // else a P3 D65 display of 1000 and 0.0001 cd/m^2 and a content light level
   // of 0, which means unknown. Other encodes set neither.
   ContentLightLevel content_light_level = 18;
+  // When true, the worker encodes with its software encoder of codec_family
+  // from WorkerCapabilities.software_video_encoders, even where it lists a
+  // hardware backend for the family (ADR 0044, hardware failure).
+  bool software_encoder = 19;
   // An encode sets this field to 8 or 10, and the encoder writes that bit
   // depth. An H.264 encode sets 8, and a PQ or HLG encode sets 10. A copy
   // leaves it out. An older server leaves it out of an SDR encode, and the
@@ -700,6 +709,10 @@ enum JobAttemptFailure {
   // refuses every copy this way. The worker refuses before FFmpeg starts, and
   // another worker may start the job (ADR 0037, memory).
   JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED = 8;
+  // The attempt's hardware encoder backend failed or refused to start, such as
+  // at the driver's session limit. The worker reports it only for an attempt
+  // on a hardware backend (ADR 0044, hardware failure).
+  JOB_ATTEMPT_FAILURE_HARDWARE_ENCODER_FAILED = 9;
 }
 
 message JobAttemptFailed {
@@ -775,6 +788,14 @@ message JobAttemptProgress {
   uint64 keyframe_search_bytes_read = 3;
 }
 
+// The worker sends this message whenever the encoders that it offers change,
+// such as when a hardware encoder backend fails and when it passes its check
+// again (ADR 0044, hardware failure). The list replaces
+// WorkerCapabilities.video_encoders and follows its rules.
+message VideoEncodersChanged {
+  repeated WorkerVerifiedVideoEncoder video_encoders = 1;
+}
+
 // The worker sends this message whenever its background probe capacity or its
 // keyframe packet scan capacity changes. The values replace the earlier ones
 // (ADR 0032).
@@ -798,6 +819,7 @@ message EstablishWorkerSessionRequest {
     ProbeCapacityChanged probe_capacity_changed = 8;
     ProbeStreamMeasurementPart probe_stream_measurement_part = 9;
     JobAttemptProgress job_attempt_progress = 10;
+    VideoEncodersChanged video_encoders_changed = 11;
   }
 }
 

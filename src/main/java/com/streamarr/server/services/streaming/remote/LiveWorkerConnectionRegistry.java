@@ -1278,6 +1278,7 @@ final class LiveWorkerConnectionRegistry {
             JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED,
             JOB_ATTEMPT_FAILURE_STREAM_WITHOUT_SAMPLES,
             JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED,
+            JOB_ATTEMPT_FAILURE_HARDWARE_ENCODER_FAILED,
             UNRECOGNIZED ->
             Optional.empty();
       };
