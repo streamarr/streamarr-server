@@ -30,7 +30,11 @@ spring:
         # Bounds every lock wait on every connection. A statement still waiting at the bound fails
         # and its connection returns to the pool, so a lock held without end cannot keep the pool's
         # connections. A transaction that needs a shorter wait sets its own lock_timeout.
-        options: -c lock_timeout=${DATABASE_LOCK_TIMEOUT:30s}
+        # PostgreSQL ends a session whose transaction issues no statement within
+        # idle_in_transaction_session_timeout, which releases the locks that transaction held.
+        options: >-
+          -c lock_timeout=${DATABASE_LOCK_TIMEOUT:30s}
+          -c idle_in_transaction_session_timeout=${DATABASE_IDLE_IN_TRANSACTION_TIMEOUT:60s}
 
   threads:
     virtual:
