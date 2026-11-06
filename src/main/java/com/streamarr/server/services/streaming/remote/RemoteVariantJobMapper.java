@@ -95,7 +95,8 @@ final class RemoteVariantJobMapper {
                             com.streamarr.server.domain.streaming.VideoDynamicRange.UNSPECIFIED)))
             .setOutputDynamicRange(RemoteDynamicRangeMapper.toProto(planned.dynamicRange()))
             .setOutputBitDepth(planned.bitDepth())
-            .setOutputChromaSubsampling(chromaSubsampling(planned.chromaSubsampling()));
+            // A planned encode refuses every chroma subsampling but 4:2:0 (#397).
+            .setOutputChromaSubsampling(ChromaSubsampling.CHROMA_SUBSAMPLING_420);
     source.ifPresent(
         facts ->
             video
@@ -110,17 +111,6 @@ final class RemoteVariantJobMapper {
         .map(RemoteVariantJobMapper::deinterlace)
         .ifPresent(video::setDeinterlace);
     return video.build();
-  }
-
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static ChromaSubsampling chromaSubsampling(
-      com.streamarr.server.domain.streaming.ChromaSubsampling chroma) {
-    return switch (chroma) {
-      case CHROMA_420 -> ChromaSubsampling.CHROMA_SUBSAMPLING_420;
-      case CHROMA_422 -> ChromaSubsampling.CHROMA_SUBSAMPLING_422;
-      case CHROMA_444 -> ChromaSubsampling.CHROMA_SUBSAMPLING_444;
-      case MONOCHROME -> ChromaSubsampling.CHROMA_SUBSAMPLING_MONOCHROME;
-    };
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
