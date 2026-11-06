@@ -101,16 +101,16 @@ public class JooqLearnedStreamEndRepository implements LearnedStreamEndRepositor
         .and(LEARNED.SOURCE_SIZE.eq(snapshot.size()))
         .and(LEARNED.SOURCE_MODIFIED_EPOCH_SECOND.eq(snapshot.modifiedAt().getEpochSecond()))
         .and(LEARNED.SOURCE_MODIFIED_NANOS.eq(snapshot.modifiedAt().getNano()))
-        .fetch(record -> learnedEnd(record, snapshot));
+        .fetch(row -> learnedEnd(row, snapshot));
   }
 
   private static LearnedStreamEnd learnedEnd(
-      MediaFileLearnedStreamEndRecord record, SourceFileSnapshot snapshot) {
+      MediaFileLearnedStreamEndRecord row, SourceFileSnapshot snapshot) {
     return LearnedStreamEnd.builder()
-        .mediaFileId(record.getMediaFileId())
+        .mediaFileId(row.getMediaFileId())
         .snapshot(snapshot)
-        .streamIndex(record.getStreamIndex())
-        .endTime(Duration.ofSeconds(record.getEndSeconds(), record.getEndNanos()))
+        .streamIndex(row.getStreamIndex())
+        .endTime(Duration.ofSeconds(row.getEndSeconds(), row.getEndNanos()))
         .build();
   }
 }
