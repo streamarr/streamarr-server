@@ -9,6 +9,7 @@ import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuild
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+import com.jayway.jsonpath.JsonPath;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.AuditFieldSetter;
@@ -17,6 +18,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -27,6 +29,7 @@ import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
+import com.streamarr.server.graphql.dataloaders.LastWatchedAtDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -36,8 +39,11 @@ import com.streamarr.server.services.authorization.SecurityContextAuthorizationS
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import com.streamarr.server.support.security.TestIdentityConstants;
 import com.streamarr.server.support.security.WithProfileContext;
+import graphql.GraphQLError;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,6 +66,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       SelectedProfileStateResolver.class,
       WatchProgressDataLoader.class,
       WatchStatusDataLoader.class,
+      LastWatchedAtDataLoader.class,
       MovieResolver.class,
       SeriesResolver.class,
       SeriesFieldResolver.class,
@@ -73,6 +80,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 class WatchProgressFieldResolverTest {
 
   private static final UUID PROFILE_ID = TestIdentityConstants.PROFILE_ID;
+  private static final UUID OTHER_PROFILE_ID = UUID.randomUUID();
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
   @Autowired private FakeSessionProgressRepository sessionProgressRepository;
@@ -113,8 +121,14 @@ class WatchProgressFieldResolverTest {
     }
 
     @Bean
-    FakeWatchHistoryRepository fakeWatchHistoryRepository() {
-      return new FakeWatchHistoryRepository();
+    FakeWatchHistoryRepository watchHistoryWithUnreadableLastWatchedTimes() {
+      return new FakeWatchHistoryRepository() {
+        @Override
+        public Map<UUID, Instant> findLastWatchedByItemIds(
+            UUID profileId, CollectableScope scope, Collection<UUID> itemIds) {
+          throw new IllegalStateException("Last-watched times are unreadable");
+        }
+      };
     }
 
     @Bean
@@ -253,16 +267,14 @@ class WatchProgressFieldResolverTest {
   }
 
   @Nested
-  @DisplayName("Batched Watch State")
-  class BatchedWatchState {
+  @DisplayName("Selected Profile Watch State")
+  class SelectedProfileWatchState {
 
-    // DGS may split one level's loads into more than one batch, so only the per-file reads are
-    // fixed.
     @Test
     @DisplayName(
-        "Should read each movie's progress once for the selected Profile when several movies"
-            + " select their watched status")
-    void shouldReadEachMoviesProgressOnceForTheSelectedProfileWhenSeveralMoviesSelectTheirStatus() {
+        "Should show only the selected Profile's progress when another Profile has progress on the"
+            + " same movies")
+    void shouldShowOnlyTheSelectedProfilesProgressWhenAnotherProfileHasProgressOnTheSameMovies() {
       var movies = List.of(setupMovie(), setupMovie(), setupMovie());
       var fileIds =
           movies.stream()
@@ -270,28 +282,72 @@ class WatchProgressFieldResolverTest {
                   movie -> {
                     var mediaFile = buildMediaFile();
                     mediaFile.setMediaId(movie.getId());
-                    return mediaFileRepository.save(mediaFile).getId();
+                    var fileId = mediaFileRepository.save(mediaFile).getId();
+                    sessionProgressRepository.save(
+                        progressBuilder(OTHER_PROFILE_ID, fileId).positionSeconds(1200).build());
+                    return fileId;
                   })
               .toList();
+      sessionProgressRepository.save(
+          progressBuilder(PROFILE_ID, fileIds.getFirst()).positionSeconds(300).build());
 
       var result =
           dgsQueryExecutor.execute(
               """
               {
-                first: movie(id: "%s") { selectedProfileState { watchState { watchStatus } } }
-                second: movie(id: "%s") { selectedProfileState { watchState { watchStatus } } }
-                third: movie(id: "%s") { selectedProfileState { watchState { watchStatus } } }
+                started: movie(id: "%s") { ...state }
+                second: movie(id: "%s") { ...state }
+                third: movie(id: "%s") { ...state }
+              }
+              fragment state on Movie {
+                selectedProfileState { watchState { watchStatus watchProgress { positionSeconds } } }
               }
               """
                   .formatted(movies.get(0).getId(), movies.get(1).getId(), movies.get(2).getId()));
 
       assertThat(result.getErrors()).isEmpty();
-      assertThat(sessionProgressRepository.progressReads())
-          .allSatisfy(read -> assertThat(read.profileId()).isEqualTo(PROFILE_ID));
-      assertThat(
-              sessionProgressRepository.progressReads().stream()
-                  .flatMap(read -> read.mediaFileIds().stream()))
-          .containsExactlyInAnyOrderElementsOf(fileIds);
+      var data = JsonPath.parse(result.<Map<String, Object>>getData());
+      assertThat(data.<Map<String, Object>>read("started.selectedProfileState.watchState"))
+          .isEqualTo(
+              Map.of(
+                  "watchStatus", "IN_PROGRESS", "watchProgress", Map.of("positionSeconds", 300)));
+      assertThat(List.of("second", "third"))
+          .allSatisfy(
+              alias ->
+                  assertThat(
+                          data.<Map<String, Object>>read(
+                              alias + ".selectedProfileState.watchState"))
+                      .containsEntry("watchStatus", "UNWATCHED")
+                      .containsEntry("watchProgress", null));
+    }
+
+    @Test
+    @DisplayName(
+        "Should keep the selected Profile state and null only the failed field when a nullable"
+            + " field under it fails")
+    void shouldKeepTheSelectedProfileStateAndNullOnlyTheFailedFieldWhenANullableFieldFails() {
+      var movie = setupMovie();
+      var mediaFile = buildMediaFile();
+      mediaFile.setMediaId(movie.getId());
+      mediaFileRepository.save(mediaFile);
+      sessionProgressRepository.save(
+          progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(300).build());
+
+      var result =
+          dgsQueryExecutor.execute(
+              String.format(
+                  "{ movie(id: \"%s\") { selectedProfileState { watchState { watchStatus watchProgress { positionSeconds } lastWatchedAt } } } }",
+                  movie.getId()));
+
+      var data = JsonPath.parse(result.<Map<String, Object>>getData());
+      assertThat(data.<Map<String, Object>>read("movie.selectedProfileState.watchState"))
+          .containsEntry("watchStatus", "IN_PROGRESS")
+          .containsEntry("watchProgress", Map.of("positionSeconds", 300))
+          .containsEntry("lastWatchedAt", null);
+      assertThat(result.getErrors())
+          .singleElement()
+          .extracting(GraphQLError::getPath)
+          .isEqualTo(List.of("movie", "selectedProfileState", "watchState", "lastWatchedAt"));
     }
   }
 

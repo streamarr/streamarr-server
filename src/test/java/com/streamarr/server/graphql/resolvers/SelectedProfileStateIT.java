@@ -43,9 +43,9 @@ class SelectedProfileStateIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should return the same Profile as Me.selectedProfile when a ServerAdmin reads a movie with a"
-          + " selected Profile")
-  void shouldReturnTheSameProfileAsMeSelectedProfileWhenAServerAdminReadsAMovieWithAProfile()
+      "Should return the same Profile as Me.selectedProfile when a ServerAdmin with a selected"
+          + " Profile reads a movie")
+  void shouldReturnTheSameProfileAsMeSelectedProfileWhenAServerAdminWithASelectedProfileReadsAMovie()
       throws Exception {
     identity = authTestSupport.createAdminIdentity();
     var movie = createMovie();

@@ -45,6 +45,9 @@ class LastWatchedAtResolverIT extends AbstractIntegrationTest {
 
   private static final Instant PAUSED_AT = Instant.parse("2026-05-01T20:00:00Z");
   private static final Instant FINISHED_AT = Instant.parse("2026-05-01T21:30:00Z");
+  private static final Instant FIRST_SEASON_STARTED_AT = Instant.parse("2026-04-01T20:00:00Z");
+  private static final Instant FIRST_SEASON_LATEST_AT = Instant.parse("2026-04-02T20:00:00Z");
+  private static final Instant SECOND_SEASON_LATEST_AT = Instant.parse("2026-04-09T20:00:00Z");
   private static final String LAST_WATCHED_AT =
       "selectedProfileState { watchState { lastWatchedAt } }";
   private static final String MOVIE_LAST_WATCHED_AT =
@@ -110,6 +113,39 @@ class LastWatchedAtResolverIT extends AbstractIntegrationTest {
                     "$.data.series.seasons[0].episodes[0].selectedProfileState.watchState"
                         + ".lastWatchedAt")
                 .value(PAUSED_AT.toString()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should return each season's latest episode time and the series' overall latest time when"
+          + " the seasons were watched at different times")
+  void shouldReturnEachSeasonsLatestTimeAndTheSeriesLatestTimeWhenSeasonsWereWatchedApart()
+      throws Exception {
+    identity = authTestSupport.createIdentity();
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var series = createSeries(library);
+    var seasonOne = createSeason(series, 1);
+    var seasonTwo = createSeason(series, 2);
+    saveProgress(identity, createEpisode(seasonOne, 1), FIRST_SEASON_STARTED_AT);
+    saveCompletion(identity, createEpisode(seasonOne, 2), FIRST_SEASON_LATEST_AT);
+    saveProgress(identity, createEpisode(seasonTwo, 1), SECOND_SEASON_LATEST_AT);
+
+    query(
+            identity,
+            "{ series(id: \\\""
+                + series.getId()
+                + "\\\") { %1$s seasons { seasonNumber %1$s } } }".formatted(LAST_WATCHED_AT))
+        .andExpect(
+            jsonPath("$.data.series.selectedProfileState.watchState.lastWatchedAt")
+                .value(SECOND_SEASON_LATEST_AT.toString()))
+        .andExpect(jsonPath("$.data.series.seasons[0].seasonNumber").value(1))
+        .andExpect(
+            jsonPath("$.data.series.seasons[0].selectedProfileState.watchState.lastWatchedAt")
+                .value(FIRST_SEASON_LATEST_AT.toString()))
+        .andExpect(jsonPath("$.data.series.seasons[1].seasonNumber").value(2))
+        .andExpect(
+            jsonPath("$.data.series.seasons[1].selectedProfileState.watchState.lastWatchedAt")
+                .value(SECOND_SEASON_LATEST_AT.toString()));
   }
 
   @Test
@@ -185,23 +221,35 @@ class LastWatchedAtResolverIT extends AbstractIntegrationTest {
 
   private Episode createEpisode() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
-    var series =
-        seriesRepository.saveAndFlush(
-            Series.builder()
-                .title("Last Watched Series")
-                .titleSort("Last Watched Series")
-                .library(library)
-                .build());
-    var season =
-        seasonRepository.saveAndFlush(
-            Season.builder().seasonNumber(1).series(series).library(library).build());
+    return createEpisode(createSeason(createSeries(library), 1), 1);
+  }
+
+  private Series createSeries(Library library) {
+    return seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Last Watched Series")
+            .titleSort("Last Watched Series")
+            .library(library)
+            .build());
+  }
+
+  private Season createSeason(Series series, int seasonNumber) {
+    return seasonRepository.saveAndFlush(
+        Season.builder()
+            .seasonNumber(seasonNumber)
+            .series(series)
+            .library(series.getLibrary())
+            .build());
+  }
+
+  private Episode createEpisode(Season season, int episodeNumber) {
     return episodeRepository.saveAndFlush(
         Episode.builder()
-            .episodeNumber(1)
-            .title("Pilot")
+            .episodeNumber(episodeNumber)
+            .title("Episode " + episodeNumber)
             .season(season)
-            .library(library)
-            .files(Set.of(buildFile(library)))
+            .library(season.getLibrary())
+            .files(Set.of(buildFile(season.getLibrary())))
             .build());
   }
 
