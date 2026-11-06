@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.stream.IntStream;
 import lombok.Builder;
@@ -137,6 +138,28 @@ public final class WorkerCalibration {
   }
 
   /**
+   * The margin by which a decision keeps these job attempts' predicted speeds above the speed
+   * floor, or empty while one of their encode configurations is not validated. An encode
+   * configuration's margin is the largest overprediction among its live predictions and, while it
+   * shares the validation of the configuration with its encoder's Automatic preset, that
+   * configuration's live predictions (ADR 0044).
+   */
+  public synchronized OptionalDouble overpredictionMarginFor(
+      @NonNull Collection<JobAttemptLoad> loads) {
+    var now = clock.instant();
+    var configurations = loads.stream().map(JobAttemptLoad::configuration).distinct().toList();
+    if (!configurations.stream().allMatch(configuration -> isValidated(configuration, now))) {
+      return OptionalDouble.empty();
+    }
+
+    return OptionalDouble.of(
+        configurations.stream()
+            .mapToDouble(configuration -> marginOf(configuration, now))
+            .max()
+            .orElse(0));
+  }
+
+  /**
    * The production speed of each job attempt when exactly these job attempts encode on the worker,
    * or empty while a constant that one of them needs is unknown.
    */
@@ -177,6 +200,29 @@ public final class WorkerCalibration {
               .map(automatic -> verdictOf(automatic, now) == PredictionWindow.Verdict.VALIDATED)
               .orElse(false);
     };
+  }
+
+  private double marginOf(EncodeConfiguration configuration, Instant now) {
+    var own = largestOverprediction(configuration, now);
+    if (verdictOf(configuration, now) == PredictionWindow.Verdict.VALIDATED) {
+      return own;
+    }
+
+    return automaticPresetOf(configuration.encoderAndPreset())
+        .map(configuration::withEncoderAndPreset)
+        .map(automatic -> Math.max(own, largestOverprediction(automatic, now)))
+        .orElse(own);
+  }
+
+  private double largestOverprediction(EncodeConfiguration configuration, Instant now) {
+    var window = windows.get(configuration);
+    if (window == null) {
+      return 0;
+    }
+
+    var largest =
+        window.live(now).stream().mapToDouble(PredictionCheck::relativeError).max().orElse(0);
+    return Math.max(0, largest);
   }
 
   private PredictionWindow.Verdict verdictOf(EncodeConfiguration configuration, Instant now) {

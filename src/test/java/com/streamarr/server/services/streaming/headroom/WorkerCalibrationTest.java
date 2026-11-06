@@ -889,4 +889,117 @@ class WorkerCalibrationTest {
       assertThat(calibration.isValidatedFor(List.of(veryfast))).isFalse();
     }
   }
+
+  @Nested
+  @DisplayName("Overprediction Margin Tests")
+  class OverpredictionMarginTests {
+
+    private static final EncoderAndPreset LIBX264_VERYFAST =
+        new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
+
+    private final MutableClock clock = new MutableClock();
+    private final JobAttemptLoad faster = libx264FasterLoad().build();
+    private final JobAttemptLoad veryfast =
+        libx264FasterLoad().encoderAndPreset(LIBX264_VERYFAST).build();
+
+    /** Twenty concurrent predictions at ratios 0.5 and 1 whose errors cycle through these. */
+    private List<PredictionCheck> twentyPredictionsMissingBy(double... relativeErrors) {
+      var checks = new ArrayList<PredictionCheck>();
+      for (var i = 0; i < 20; i++) {
+        checks.add(
+            predictionMissingBy(relativeErrors[i % relativeErrors.length], 0.5 + i % 2 * 0.5));
+      }
+
+      return checks;
+    }
+
+    private PredictionCheck predictionMissingBy(double relativeError, double outputToSourceRatio) {
+      return PredictionCheck.builder()
+          .relativeError(relativeError)
+          .besideOtherEncodes(true)
+          .outputToSourceRatio(outputToSourceRatio)
+          .measuredAt(clock.instant())
+          .build();
+    }
+
+    @Test
+    @DisplayName(
+        "Should give the largest overprediction among the live predictions as the margin when the encode configuration is validated")
+    void
+        shouldGiveTheLargestOverpredictionAmongTheLivePredictionsAsTheMarginWhenTheEncodeConfigurationIsValidated() {
+      var calibration =
+          tenCoreCalibration()
+              .clock(clock)
+              .latestPrediction(
+                  faster.configuration(), twentyPredictionsMissingBy(0.02, -0.04, 0.08, -0.01))
+              .build();
+
+      assertThat(calibration.overpredictionMarginFor(List.of(faster)))
+          .hasValueCloseTo(0.08, within(1e-12));
+    }
+
+    @Test
+    @DisplayName("Should give a margin of zero when no live prediction overpredicted")
+    void shouldGiveAMarginOfZeroWhenNoLivePredictionOverpredicted() {
+      var calibration =
+          tenCoreCalibration()
+              .clock(clock)
+              .latestPrediction(faster.configuration(), twentyPredictionsMissingBy(-0.02, -0.06))
+              .build();
+
+      assertThat(calibration.overpredictionMarginFor(List.of(faster)))
+          .hasValueCloseTo(0.0, within(1e-12));
+    }
+
+    @Test
+    @DisplayName("Should give no margin when an encode configuration is not validated")
+    void shouldGiveNoMarginWhenAnEncodeConfigurationIsNotValidated() {
+      var calibration =
+          tenCoreCalibration()
+              .clock(clock)
+              .latestPrediction(faster.configuration(), twentyPredictionsMissingBy(0.02, -0.04))
+              .build();
+      var otherSource =
+          libx264FasterLoad()
+              .sourceDecoder(new SourceDecoder("hevc", DecodeBackend.SOFTWARE))
+              .build();
+
+      assertThat(calibration.overpredictionMarginFor(List.of(faster, otherSource))).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should take the Automatic preset's predictions into the margin when another preset shares its validation")
+    void
+        shouldTakeTheAutomaticPresetsPredictionsIntoTheMarginWhenAnotherPresetSharesItsValidation() {
+      var calibration =
+          tenCoreCalibration()
+              .clock(clock)
+              .latestPrediction(faster.configuration(), twentyPredictionsMissingBy(0.09, -0.03))
+              .latestPrediction(
+                  veryfast.configuration(),
+                  List.of(predictionMissingBy(0.02, 0.5), predictionMissingBy(-0.01, 0.5)))
+              .build();
+
+      assertThat(calibration.overpredictionMarginFor(List.of(veryfast)))
+          .hasValueCloseTo(0.09, within(1e-12));
+    }
+
+    @Test
+    @DisplayName(
+        "Should give the largest margin among the encode configurations when several variants run")
+    void shouldGiveTheLargestMarginAmongTheEncodeConfigurationsWhenSeveralVariantsRun() {
+      var softwareHevc = new SourceDecoder("hevc", DecodeBackend.SOFTWARE);
+      var fromHevc = libx264FasterLoad().sourceDecoder(softwareHevc).build();
+      var calibration =
+          tenCoreCalibration()
+              .clock(clock)
+              .latestPrediction(faster.configuration(), twentyPredictionsMissingBy(0.03, -0.03))
+              .latestPrediction(fromHevc.configuration(), twentyPredictionsMissingBy(0.07, -0.02))
+              .build();
+
+      assertThat(calibration.overpredictionMarginFor(List.of(faster, fromHevc)))
+          .hasValueCloseTo(0.07, within(1e-12));
+    }
+  }
 }
