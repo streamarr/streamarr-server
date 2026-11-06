@@ -1514,8 +1514,8 @@ final class LiveWorkerConnectionRegistry {
 
     // The worker contract says that a replacement attempt with the same decision repeats an output
     // mismatch on the same encoder backend, an invalid specification on every worker, and a Dolby
-    // Vision conversion failure on the same picture. Every attempt on the same segment list cuts
-    // the same segments, so it repeats a segment over the cap too (ADR 0037).
+    // Vision conversion failure on the same picture. Every attempt of a copy cuts the same
+    // keyframe-merged segments, so it repeats a segment over the cap too (ADR 0037).
     private static Optional<TranscodeFailure> terminalFailure(
         VariantJob job, JobAttemptFailed failed) {
       return switch (failed.getFailure()) {
@@ -1537,9 +1537,11 @@ final class LiveWorkerConnectionRegistry {
       };
     }
 
-    // A job on the plain grid keeps ordinary recovery for a segment over the cap.
+    // Only a stream session that copies the video cuts keyframe-merged segments. An encode runs on
+    // the plain grid, which keeps ordinary recovery for a segment over the cap even when its final
+    // slot merges into the last segment and the job lists every segment's start (ADR 0037).
     private static Optional<TranscodeFailure> segmentCapFailure(VariantJob job) {
-      if (job.getExecution().getSegmentStartSlotsCount() == 0) {
+      if (!copiesVideo(job)) {
         return Optional.empty();
       }
 
