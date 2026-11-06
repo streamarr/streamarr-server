@@ -12,6 +12,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.PageRequest;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,6 +37,11 @@ public class LibraryQueryService {
   public Optional<Library> findById(AuthenticatedIdentity identity, UUID libraryId) {
     authorization.requireProfile(identity);
     return libraries.findById(libraryId);
+  }
+
+  /** Returns the libraries with the given ids; an id without a library is left out. */
+  public List<Library> findByIds(Collection<UUID> libraryIds) {
+    return libraries.findAllById(libraryIds);
   }
 
   /**
