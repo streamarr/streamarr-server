@@ -14,10 +14,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.IntStream;
 import lombok.Builder;
@@ -46,6 +48,7 @@ public final class WorkerCalibration {
   private final ConstantFit fit = new ConstantFit(FORGETTING);
   private final Clock clock;
   private final Map<EncodeConfiguration, PredictionWindow> windows = new HashMap<>();
+  private final Set<CostConstant> restoredMeasuredConstants;
   private HeadroomConstants constants;
 
   /**
@@ -57,11 +60,13 @@ public final class WorkerCalibration {
       @NonNull CpuLimit cpuLimit,
       @NonNull HeadroomConstants startingConstants,
       @NonNull Clock clock,
-      @Singular Map<EncodeConfiguration, List<PredictionCheck>> latestPredictions) {
+      @Singular Map<EncodeConfiguration, List<PredictionCheck>> latestPredictions,
+      @Singular Set<CostConstant> measuredConstants) {
     this.cpuLimit = cpuLimit;
     this.startingConstants = startingConstants;
     this.constants = startingConstants;
     this.clock = clock;
+    this.restoredMeasuredConstants = Set.copyOf(measuredConstants);
     latestPredictions.forEach(
         (configuration, checks) -> checks.forEach(check -> windowOf(configuration).keep(check)));
   }
@@ -99,7 +104,7 @@ public final class WorkerCalibration {
                           .measuredAt(clock.instant())
                           .build());
             });
-    fit.add(terms, share / measuredSpeed);
+    fit.add(terms, share / measuredSpeed, constants.cpuSecondsPerMegapixel().keySet());
     fit.solve(
             startingConstants.cpuSecondsPerMegapixel(),
             STARTING_WEIGHT,
@@ -116,6 +121,16 @@ public final class WorkerCalibration {
 
   public synchronized HeadroomConstants constants() {
     return constants;
+  }
+
+  /**
+   * The constants that a measurement has priced, in this calibration or in the kept calibration it
+   * started from, as a kept calibration stores them.
+   */
+  public synchronized Set<CostConstant> measuredConstants() {
+    var all = new HashSet<>(restoredMeasuredConstants);
+    all.addAll(fit.measuredConstants());
+    return Set.copyOf(all);
   }
 
   /**
@@ -247,7 +262,8 @@ public final class WorkerCalibration {
     var starting = startingConstants.cpuSecondsPerMegapixel();
     var adjusted = new HashMap<>(solved);
     for (var constant : starting.keySet()) {
-      if (fit.isMeasured(constant)) {
+      if (restoredMeasuredConstants.contains(constant)
+          || fit.measuredConstants().contains(constant)) {
         continue;
       }
 

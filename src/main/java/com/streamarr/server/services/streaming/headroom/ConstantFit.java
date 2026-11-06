@@ -5,16 +5,19 @@ import com.streamarr.server.domain.streaming.headroom.CostTerm;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.IntStream;
 
 /**
  * A weighted least-squares fit of the headroom model's constants to measured costs. Each residual
  * counts relative to its measured cost, so a cheap 360p encode weighs as much as a costly 1080p
  * encode. Older measurements fade, and so does the pull of the starting constants, as if the
- * starting constants were measurements taken before the first one.
+ * starting constants were measurements taken before the first one. A measurement that prices a
+ * constant without a value waits apart until every constant it prices has one.
  */
 final class ConstantFit {
 
@@ -26,14 +29,17 @@ final class ConstantFit {
   private final Map<CostConstant, Integer> indexes = new HashMap<>();
   private double[][] normal = new double[0][0];
   private double[] moments = new double[0];
+  private final PendingMeasurements pending;
+  private final Set<CostConstant> measured = new HashSet<>();
   private double startingFade = 1;
 
   ConstantFit(double forgetting) {
     this.forgetting = forgetting;
+    this.pending = new PendingMeasurements(forgetting);
   }
 
-  void add(List<CostTerm> terms, double measuredCost) {
-    terms.forEach(term -> indexOf(term.constant()));
+  /** Adds a measured cost. Valued names the constants that have a value now. */
+  void add(List<CostTerm> terms, double measuredCost, Set<CostConstant> valued) {
     startingFade *= forgetting;
     for (var row = 0; row < moments.length; row++) {
       moments[row] *= forgetting;
@@ -42,7 +48,24 @@ final class ConstantFit {
       }
     }
 
-    var weight = 1 / (measuredCost * measuredCost);
+    pending.fade();
+    terms.forEach(term -> measured.add(term.constant()));
+    if (terms.stream().allMatch(term -> valued.contains(term.constant()))) {
+      accumulate(terms, measuredCost, 1);
+      return;
+    }
+
+    pending.add(terms, measuredCost);
+  }
+
+  /** The constants that a measurement has priced. */
+  Set<CostConstant> measuredConstants() {
+    return Set.copyOf(measured);
+  }
+
+  private void accumulate(List<CostTerm> terms, double measuredCost, double fade) {
+    terms.forEach(term -> indexOf(term.constant()));
+    var weight = fade / (measuredCost * measuredCost);
     for (var term : terms) {
       var row = indexes.get(term.constant());
       moments[row] += weight * term.megapixelsPerSecond() * measuredCost;
@@ -61,12 +84,29 @@ final class ConstantFit {
    * it.
    *
    * <p>A constant that comes out not positive keeps its current value while the others are solved
-   * again. A constant without a current value then stays unknown, and so does every constant
-   * without a value when the measurements cannot separate the constants, so that a new constant
-   * never stops the fit of the known ones. Empty when the measurements cannot separate the known
-   * constants.
+   * again. The waiting measurements then give a value to each new constant that they determine,
+   * with the known constants held, and join the fit once every constant they price has a value.
+   * Empty when the measurements cannot separate the known constants.
    */
   Optional<Map<CostConstant, Double>> solve(
+      Map<CostConstant, Double> starting,
+      double startingWeight,
+      Map<CostConstant, Double> current,
+      double currentWeight) {
+    var known = solveKnown(starting, startingWeight, current, currentWeight);
+    if (known.isEmpty()) {
+      return Optional.empty();
+    }
+
+    var solved = new HashMap<>(known.get());
+    solved.putAll(pending.solve(solved));
+    pending.release(
+        solved.keySet(),
+        waiting -> accumulate(waiting.terms(), waiting.measuredCost(), waiting.fade()));
+    return Optional.of(solved);
+  }
+
+  private Optional<Map<CostConstant, Double>> solveKnown(
       Map<CostConstant, Double> starting,
       double startingWeight,
       Map<CostConstant, Double> current,
@@ -95,20 +135,17 @@ final class ConstantFit {
     while (true) {
       var free = held.free();
       var values = LinearSystem.solve(held.withoutHeld(matrix, free));
-      if (values.isEmpty() && !held.holdValueless(free)) {
+      if (values.isEmpty()) {
         return Optional.empty();
       }
 
-      if (values.isPresent() && !held.holdNotPositive(free, values.get())) {
+      if (!held.holdNotPositive(free, values.get())) {
         return Optional.of(held.solved(free, values.get()));
       }
     }
   }
 
-  /**
-   * The constants that a solve holds at a fixed value while it solves the others again: a known
-   * constant at its current value, and a constant without one at zero, which leaves it unknown.
-   */
+  /** The constants that a solve holds at their current values while it solves the others again. */
   private static final class HeldConstants {
 
     private final List<CostConstant> unknowns;
@@ -124,14 +161,6 @@ final class ConstantFit {
       return IntStream.range(0, unknowns.size())
           .filter(index -> !held.containsKey(index))
           .toArray();
-    }
-
-    /** Holds every free constant without a current value; false when there is none to hold. */
-    private boolean holdValueless(int[] free) {
-      var valueless =
-          Arrays.stream(free).filter(index -> !current.containsKey(unknowns.get(index))).toArray();
-      Arrays.stream(valueless).forEach(index -> held.put(index, UNKNOWN));
-      return valueless.length > 0;
     }
 
     /** Holds every free constant that came out not positive; false when there is none. */
@@ -201,11 +230,6 @@ final class ConstantFit {
     }
 
     matrix[row][unknowns.size()] = moments[fittedRow];
-  }
-
-  /** True once a measurement has priced the constant. */
-  boolean isMeasured(CostConstant constant) {
-    return indexes.containsKey(constant);
   }
 
   private int indexOf(CostConstant constant) {

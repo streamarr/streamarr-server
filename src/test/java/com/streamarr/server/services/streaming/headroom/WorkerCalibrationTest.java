@@ -421,6 +421,34 @@ class WorkerCalibrationTest {
   }
 
   @Nested
+  @DisplayName("Ambiguous Measurement Tests")
+  class AmbiguousMeasurementTests {
+
+    @Test
+    @DisplayName(
+        "Should keep the known constants accurate when measurements that two new constants cannot separate keep arriving")
+    void
+        shouldKeepTheKnownConstantsAccurateWhenMeasurementsThatTwoNewConstantsCannotSeparateKeepArriving() {
+      var calibration = tenCoreCalibration().build();
+      var hevcPq =
+          libx264FasterLoad()
+              .sourceDecoder(new SourceDecoder("hevc", DecodeBackend.SOFTWARE))
+              .toneMapping(ToneMapping.PQ)
+              .build();
+
+      for (var i = 0; i < 200; i++) {
+        calibration.fit(measuredAtCost(hevcPq, 3.0, 2));
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel().get(LIBX264_FASTER))
+          .isCloseTo(0.04, withinPercentage(2));
+      assertThat(predictedAloneSpeed(calibration, libx264FasterLoad().build()))
+          .isCloseTo(6 / 1.5, within(0.1));
+    }
+  }
+
+  @Nested
   @DisplayName("Unseparated Constant Tests")
   class UnseparatedConstantTests {
 
@@ -872,6 +900,31 @@ class WorkerCalibrationTest {
       }
 
       assertThat(calibration.isValidatedFor(List.of(veryfast))).as("seven days later").isTrue();
+    }
+
+    @Test
+    @DisplayName(
+        "Should keep a measured preset's constant when a kept calibration restarts and only the Automatic preset's measurements follow")
+    void
+        shouldKeepAMeasuredPresetsConstantWhenAKeptCalibrationRestartsAndOnlyTheAutomaticPresetsMeasurementsFollow() {
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(
+                          Map.of(LIBX264_FASTER, 0.04, LIBX264_VERYFAST, 0.06, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, LIBX264_VERYFAST, 6.0))
+                      .build())
+              .measuredConstant(LIBX264_VERYFAST)
+              .build();
+
+      for (var i = 0; i < 300; i++) {
+        calibration.fit(rungMeasurement(i, 0.5, 2));
+      }
+
+      assertThat(calibration.constants().cpuSecondsPerMegapixel().get(LIBX264_VERYFAST))
+          .isCloseTo(0.06, withinPercentage(5));
+      assertThat(calibration.measuredConstants()).contains(LIBX264_VERYFAST, LIBX264_FASTER);
     }
 
     @Test
