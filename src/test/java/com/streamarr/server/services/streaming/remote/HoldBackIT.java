@@ -15,6 +15,10 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -50,6 +54,7 @@ import java.util.List;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -287,6 +292,28 @@ class HoldBackIT {
 
   @Test
   @DisplayName(
+      "Should hold back no stream copy whose lead does not cover a long merged segment beyond the"
+          + " one that it produces next")
+  void shouldHoldBackNoStreamCopyWhoseLeadDoesNotCoverALongMergedSegmentBeyondItsNextOne()
+      throws Exception {
+    var worker = registerWorker();
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().keyframes(keyframesWithAMergedSegmentFrom78Seconds()).build());
+    var copying = startPlayingTheFirstVariant(worker);
+    registry.updatePlaybackState(copying.sessionId(), 0, PlaybackState.PAUSED);
+
+    // Segments 1 to 11 hold 66 s; segment 12 lasts 6 s, and segment 13 runs from 78 s to 240 s.
+    upload(copying, 1, 11);
+    lifecycle.suspend(copying.sessionId());
+    var sent = worker.responsesThrough(EstablishWorkerSessionResponse::hasStopVariant);
+
+    assertThat(sent)
+        .noneMatch(
+            response -> response.hasHoldBack() && response.getHoldBack().getJobAttemptsCount() > 0);
+  }
+
+  @Test
+  @DisplayName(
       "Should end the hold of a job attempt when its idle stream session is suspended, as the"
           + " session reaper does")
   void shouldEndTheHoldOfAJobAttemptWhenItsIdleStreamSessionIsSuspended() throws Exception {
@@ -345,6 +372,48 @@ class HoldBackIT {
     upload(playing, 0, 0);
     assertThat(first.await(REQUEST_LIMIT)).isInstanceOf(SegmentDelivery.Ready.class);
     return playing;
+  }
+
+  // A stream session whose first variant copies the video, and whose player has received that
+  // variant's first media segment.
+  private Playing startPlayingTheFirstVariant(LoopbackWorker worker) throws Exception {
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
+    var session =
+        accepted(
+            streamingService.createSession(
+                createStreamSessionCommand(mediaFile.getId(), UUID.randomUUID(), options)));
+    var job = worker.nextJobs(1).getFirst();
+    worker.reportStarted(job);
+    var playing = new Playing(session.getSessionId(), job, worker);
+    var label = job.getVariant().getVariantLabel();
+    var first =
+        BoundedTask.start(
+            () ->
+                coordinator.deliver(
+                    playing.sessionId(),
+                    label,
+                    SegmentNames.storedSegmentName(label, SegmentNames.mediaSegmentName(0))));
+    requests.add(first);
+    upload(playing, 0, 0);
+    assertThat(first.await(REQUEST_LIMIT)).isInstanceOf(SegmentDelivery.Ready.class);
+    return playing;
+  }
+
+  // Keyframes every 6 s up to 78 s, then none until 240 s and every 6 s after it, so that a stream
+  // copy's segment from 78 s merges the slots up to 240 s.
+  private static KeyframeKnowledge keyframesWithAMergedSegmentFrom78Seconds() {
+    var seconds =
+        LongStream.concat(
+            LongStream.rangeClosed(0, 13).map(slot -> slot * 6),
+            LongStream.iterate(240, second -> second <= 7200, second -> second + 6));
+    return new KeyframeKnowledge.Known(
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(seconds.mapToObj(second -> new KeyframePosition(second, second)).toList())
+            .build());
   }
 
   private Uuid attemptOf(Playing playing) {

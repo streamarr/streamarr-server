@@ -102,7 +102,19 @@ public record StreamingProperties(
       holdBackLowWater = Duration.ofSeconds(30);
     }
 
-    requirePositive("streaming.hold-back-low-water", holdBackLowWater);
+    // A held job attempt's viewer must have the next segment, a seek's pause and the position
+    // margin left when it resumes, or a hold could stall its own viewer.
+    var resumeNeeds =
+        targetSegmentDuration.plus(seekPriorityHoldLimit).plus(seekPriorityPositionMargin);
+    if (holdBackLowWater.compareTo(resumeNeeds) < 0) {
+      throw new IllegalArgumentException(
+          "streaming.hold-back-low-water must cover the target segment duration, the seek priority"
+              + " hold limit and position margin, "
+              + resumeNeeds
+              + ", got "
+              + holdBackLowWater);
+    }
+
     if (holdBackHighWater.compareTo(holdBackLowWater) <= 0) {
       throw new IllegalArgumentException(
           "streaming.hold-back-high-water must exceed streaming.hold-back-low-water, got "

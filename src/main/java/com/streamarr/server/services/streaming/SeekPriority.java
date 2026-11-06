@@ -353,8 +353,23 @@ public class SeekPriority {
                     .attemptId(handle.attemptId())
                     .target(target.get())
                     .lead(lead.stored())
-                    .nextSegment(lead.nextSegment())
+                    .longestSegmentAhead(longestSegmentFrom(session, lead.nextIndex()))
                     .build());
+  }
+
+  // A hold delays every segment that the job attempt makes after it, and a long merged segment
+  // well past the next one can then reach the viewer too late.
+  private Duration longestSegmentFrom(StreamSession session, int firstIndex) {
+    var timeline = MediaSegmentTimelines.of(session, properties);
+    var longest = Duration.ZERO;
+    for (var index = firstIndex; timeline.advertises(index); index++) {
+      var duration = timeline.mediaSegmentDuration(index);
+      if (duration.compareTo(longest) > 0) {
+        longest = duration;
+      }
+    }
+
+    return longest;
   }
 
   private OwnOutput ownOutputAtStart(
@@ -504,10 +519,10 @@ public class SeekPriority {
 
     var nextSegment =
         timeline.advertises(next) ? timeline.mediaSegmentDuration(next) : Duration.ZERO;
-    return Optional.of(new OwnLead(stored, nextSegment));
+    return Optional.of(new OwnLead(stored, next, nextSegment));
   }
 
-  private record OwnLead(Duration stored, Duration nextSegment) {}
+  private record OwnLead(Duration stored, int nextIndex, Duration nextSegment) {}
 
   // Stored media that the job attempt's own uploads stored. Media that it found stored, or that
   // another job attempt's upload stored, counts once its own upload stores that segment again.

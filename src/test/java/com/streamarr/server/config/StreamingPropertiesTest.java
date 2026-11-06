@@ -153,6 +153,21 @@ class StreamingPropertiesTest {
 
   @Test
   @DisplayName(
+      "Should reject the hold-back low-water mark when it does not cover a target segment, the seek"
+          + " priority hold limit and the position margin")
+  void shouldRejectTheHoldBackLowWaterMarkWhenItDoesNotCoverATargetSegmentAndTheSeekMargins() {
+    var builder =
+        StreamingProperties.builder()
+            .targetSegmentDuration(Duration.ofSeconds(60))
+            .holdBackHighWater(Duration.ofSeconds(90));
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("streaming.hold-back-low-water");
+  }
+
+  @Test
+  @DisplayName(
       "Should default the hold-back marks to 60 seconds high and 30 seconds low when unset")
   void shouldDefaultTheHoldBackMarksTo60SecondsHighAnd30SecondsLowWhenUnset() {
     var properties = StreamingProperties.builder().build();

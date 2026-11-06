@@ -45,15 +45,15 @@ final class HoldBack {
   }
 
   /**
-   * The own media that a running job attempt has stored ahead of its viewer, and the duration of
-   * the media segment that it produces next.
+   * The own media that a running job attempt has stored ahead of its viewer, and the longest media
+   * segment from the one that it produces next to the end of the media.
    */
   @Builder
   record AttemptLead(
       @NonNull UUID attemptId,
       @NonNull ExecutionTargetId target,
       @NonNull Duration lead,
-      @NonNull Duration nextSegment) {}
+      @NonNull Duration longestSegmentAhead) {}
 
   private record Hold(UUID sessionId, Instant releaseAt) {}
 
@@ -157,11 +157,11 @@ final class HoldBack {
     return Optional.of(releaseAt);
   }
 
-  // A next segment longer than the target takes longer to produce at real time, so both marks rise
-  // by the difference. That keeps the slack beyond what a resume needs, which absorbs a command's
-  // delivery delay while a worker still holds the job attempt, the same for every segment length.
+  // A segment ahead that outlasts the target takes longer to produce at real time, so both marks
+  // rise by the difference. That keeps the slack beyond what a resume needs, which absorbs a
+  // command's delivery delay while a worker still holds the job attempt, for every segment length.
   private Duration lowWater(AttemptLead lead) {
-    var longerThanTarget = lead.nextSegment().minus(properties.targetSegmentDuration());
+    var longerThanTarget = lead.longestSegmentAhead().minus(properties.targetSegmentDuration());
     if (longerThanTarget.isPositive()) {
       return properties.holdBackLowWater().plus(longerThanTarget);
     }
