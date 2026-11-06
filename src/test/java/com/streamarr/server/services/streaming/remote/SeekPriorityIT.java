@@ -16,6 +16,11 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
@@ -31,6 +36,7 @@ import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
+import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.VariantJob;
@@ -46,6 +52,7 @@ import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -65,8 +72,9 @@ class SeekPriorityIT {
   private static final byte[] SEGMENT_BYTES = {1};
   private static final UUID OTHER_WORKER_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
-  // 6 s segments; a job attempt yields once it runs more than three segments ahead.
-  private static final int LEAD_SEGMENTS = 3;
+  // 6 s segments; a job attempt yields once the media stored ahead of its viewer outlasts the hold
+  // limit, its next segment and the margin, which takes more than three segments.
+  private static final Duration POSITION_MARGIN = Duration.ofSeconds(9);
   private static final Duration HOLD_LIMIT = Duration.ofSeconds(3);
   private static final int SEEK_SEGMENT = 100;
 
@@ -97,7 +105,7 @@ class SeekPriorityIT {
         StreamingProperties.builder()
             .maxConcurrentTranscodes(8)
             .targetSegmentDuration(Duration.ofSeconds(6))
-            .seekPriorityLeadSegments(LEAD_SEGMENTS)
+            .seekPriorityPositionMargin(POSITION_MARGIN)
             .seekPriorityHoldLimit(HOLD_LIMIT)
             .build();
     var transcodeExecutor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, SOURCE_ROOT);
@@ -121,12 +129,7 @@ class SeekPriorityIT {
                 .status(MediaFileStatus.MATCHED)
                 .size(1_000_000L)
                 .build());
-    probeResults.setDefaultProbe(
-        defaultProbeBuilder()
-            .videoCodec("hevc")
-            .framerate(OptionalDouble.of(23.976))
-            .bitrate(8_000_000L)
-            .build());
+    probeResults.setDefaultProbe(encodedProbe());
     streamingService =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())
@@ -188,9 +191,9 @@ class SeekPriorityIT {
 
   @Test
   @DisplayName(
-      "Should never name a job attempt that runs at most the lead limit ahead of its reported"
+      "Should never name a job attempt that runs at most three segments ahead of its reported"
           + " position")
-  void shouldNeverNameAJobAttemptThatRunsAtMostTheLeadLimitAheadOfItsReportedPosition()
+  void shouldNeverNameAJobAttemptThatRunsAtMostThreeSegmentsAheadOfItsReportedPosition()
       throws Exception {
     var worker = registerWorker(WORKER_ID, 8);
     var steady = startPlaying(worker);
@@ -421,7 +424,7 @@ class SeekPriorityIT {
     var worker = registerWorker(WORKER_ID, 8);
     var steady = startPlaying(worker);
     deliverAhead(steady, 8);
-    // Extrapolated, the report would place the viewer in segment 5, within the lead limit.
+    // Extrapolated, the report would place the viewer in segment 5, three segments behind.
     registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
     clock.advance(Duration.ofSeconds(31));
     var seeking = startPlaying(worker);
@@ -432,6 +435,28 @@ class SeekPriorityIT {
         .containsExactly(steady.job().getJobAttemptId());
   }
 
+  @Test
+  @DisplayName(
+      "Should never name a job attempt whose next segment outlasts the media stored ahead of its"
+          + " viewer less the hold limit")
+  void shouldNeverNameAJobAttemptWhoseNextSegmentOutlastsTheMediaStoredAheadOfItsViewer()
+      throws Exception {
+    var worker = registerWorker(WORKER_ID, 8);
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder().keyframes(keyframesWithAMergedSegment()).build());
+    var steady = startPlayingTheFirstVariant(worker);
+    // Segments 1 to 4 hold 24 s, and the next one, segment 5, runs on to the keyframe at 120 s.
+    deliverAhead(steady, 4);
+    registry.updatePlaybackState(steady.sessionId(), 0, PlaybackState.PLAYING);
+    probeResults.setDefaultProbe(encodedProbe());
+    var seeking = startPlaying(worker);
+
+    var seek = seek(worker, seeking);
+    assertThat(storeAndAwait(seek)).isInstanceOf(SegmentDelivery.Ready.class);
+
+    assertThat(yieldsUntilTheSteadyAttemptStops(worker, steady)).isEmpty();
+  }
+
   private LoopbackWorker registerWorker(UUID workerId, int availableSlots)
       throws InterruptedException {
     var channel = plaintextChannelBuilder(server.port(), workerId).build();
@@ -440,6 +465,47 @@ class SeekPriorityIT {
     workers.add(worker);
     assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
     return worker;
+  }
+
+  // An HEVC source that every variant encodes.
+  private static MediaProbe encodedProbe() {
+    return defaultProbeBuilder()
+        .videoCodec("hevc")
+        .framerate(OptionalDouble.of(23.976))
+        .bitrate(8_000_000L)
+        .build();
+  }
+
+  // Keyframes every 6 s up to 30 s, then none until 120 s and every 6 s after it, so that a stream
+  // copy's segment from 30 s merges the slots up to 120 s.
+  private static KeyframeKnowledge keyframesWithAMergedSegment() {
+    var seconds =
+        LongStream.concat(
+            LongStream.rangeClosed(0, 5).map(slot -> slot * 6),
+            LongStream.iterate(120, second -> second <= 7200, second -> second + 6));
+    return new KeyframeKnowledge.Known(
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(seconds.mapToObj(second -> new KeyframePosition(second, second)).toList())
+            .build());
+  }
+
+  // A stream session whose player has received the first media segment of its first variant.
+  private Playing startPlayingTheFirstVariant(LoopbackWorker worker) throws Exception {
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
+    var session =
+        accepted(
+            streamingService.createSession(
+                createStreamSessionCommand(mediaFile.getId(), UUID.randomUUID(), options)));
+    var job = worker.nextJobs(1).getFirst();
+    var playing = new Playing(session.getSessionId(), job);
+    var label = job.getVariant().getVariantLabel();
+    assertThat(storeAndAwait(request(playing.sessionId(), label, segmentName(label, 0))))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    return playing;
   }
 
   // A stream session that starts at 480p, whose player has received its first media segment.
@@ -466,8 +532,9 @@ class SeekPriorityIT {
   }
 
   private void deliverAhead(Playing playing, int lastSegment) {
+    var label = playing.job().getVariant().getVariantLabel();
     for (var index = 0; index <= lastSegment; index++) {
-      segmentStore.addSegment(playing.sessionId(), segmentName(index), SEGMENT_BYTES);
+      segmentStore.addSegment(playing.sessionId(), segmentName(label, index), SEGMENT_BYTES);
     }
   }
 
@@ -505,7 +572,11 @@ class SeekPriorityIT {
   }
 
   private static String segmentName(int index) {
-    return "480p/segment" + index + ".m4s";
+    return segmentName("480p", index);
+  }
+
+  private static String segmentName(String variantLabel, int index) {
+    return SegmentNames.storedSegmentName(variantLabel, SegmentNames.mediaSegmentName(index));
   }
 
   private PendingRequest request(UUID sessionId, String segmentName) {

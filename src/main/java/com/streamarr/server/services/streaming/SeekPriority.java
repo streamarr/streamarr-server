@@ -26,12 +26,12 @@ import lombok.NonNull;
  * Names the job attempts that give up CPU to a seek (ADR 0044, seek priority). A seek's first
  * segment is pending from the relocation that starts the seek's job attempt until the server
  * delivers that segment. Meanwhile the worker that runs the seek's job attempt pauses every other
- * job attempt on it, of any stream session, whose viewer has more than {@code
- * streaming.seek-priority-lead-segments} media segments stored past the media segment at its
- * position, and that started within those segments. The position comes from the viewer's latest
- * timeline report while that report is fresh and follows the stream session's latest seek, and
- * otherwise from the highest media segment that the player has requested since that seek. No job
- * attempt that a player's segment request waits on yields.
+ * job attempt on it, of any stream session, when the media that its variant has stored after its
+ * viewer's media segment outlasts the hold limit, the job attempt's next segment and {@code
+ * streaming.seek-priority-position-margin}, and the job attempt started within that media. The
+ * position comes from the viewer's latest timeline report while that report is fresh and follows
+ * the stream session's latest seek, and otherwise from the highest media segment that the player
+ * has requested since that seek. No job attempt that a player's segment request waits on yields.
  */
 @Builder
 public class SeekPriority {
@@ -206,27 +206,38 @@ public class SeekPriority {
         .isPresent();
   }
 
-  // The variant has stored every media segment from the one after the viewer's through the lead
-  // limit and one more, and the job attempt started within them, so the viewer plays more than the
-  // lead limit without the job attempt's next segment.
+  // The media that the variant has stored without a gap after the viewer's segment outlasts the
+  // hold limit, the time to produce the job attempt's next segment at real time and the position
+  // margin, and the job attempt started within that media, so its viewer plays through the longest
+  // pause and the next segment.
   private boolean leadsItsViewer(
       StreamSession session, String variantLabel, TranscodeHandle handle, int viewerSegment) {
-    var lastNeeded = viewerSegment + properties.seekPriorityLeadSegments() + 1;
-    if (handle.startSequenceNumber() > lastNeeded) {
+    var timeline = MediaSegmentTimelines.of(session, properties);
+    var stored = Duration.ZERO;
+    var next = viewerSegment + 1;
+    while (timeline.advertises(next) && isStored(session, variantLabel, next)) {
+      stored = stored.plus(timeline.mediaSegmentDuration(next));
+      next++;
+    }
+
+    if (handle.startSequenceNumber() >= next) {
       return false;
     }
 
-    var timeline = MediaSegmentTimelines.of(session, properties);
-    for (var index = viewerSegment + 1; index <= lastNeeded; index++) {
-      if (!timeline.advertises(index)
-          || !segmentStore.segmentExists(
-              session.getSessionId(),
-              SegmentNames.storedSegmentName(variantLabel, SegmentNames.mediaSegmentName(index)))) {
-        return false;
-      }
-    }
+    var nextSegment =
+        timeline.advertises(next) ? timeline.mediaSegmentDuration(next) : Duration.ZERO;
+    var needed =
+        properties
+            .seekPriorityHoldLimit()
+            .plus(nextSegment)
+            .plus(properties.seekPriorityPositionMargin());
+    return stored.compareTo(needed) > 0;
+  }
 
-    return true;
+  private boolean isStored(StreamSession session, String variantLabel, int index) {
+    return segmentStore.segmentExists(
+        session.getSessionId(),
+        SegmentNames.storedSegmentName(variantLabel, SegmentNames.mediaSegmentName(index)));
   }
 
   private OptionalInt viewerSegment(StreamSession session) {
