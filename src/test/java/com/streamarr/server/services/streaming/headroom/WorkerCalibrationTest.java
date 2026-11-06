@@ -492,9 +492,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should count the constants as validated when they predict twenty measured speeds of two rungs that include concurrent encodes")
+        "Should count the encode configuration as validated when its constants predict twenty measured speeds of two rungs that include concurrent encodes")
     void
-        shouldCountTheConstantsAsValidatedWhenTheyPredictTwentyMeasuredSpeedsOfTwoRungsThatIncludeConcurrentEncodes() {
+        shouldCountTheEncodeConfigurationAsValidatedWhenItsConstantsPredictTwentyMeasuredSpeedsOfTwoRungsThatIncludeConcurrentEncodes() {
       var calibration = tenCoreCalibration().build();
       for (var i = 0; i < 19; i++) {
         calibration.fit(rungMeasurement(i, 1, 1 + i % 3));
@@ -509,8 +509,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should leave the constants unvalidated when no measured job attempt ran beside another encode")
-    void shouldLeaveTheConstantsUnvalidatedWhenNoMeasuredJobAttemptRanBesideAnotherEncode() {
+        "Should leave the encode configuration unvalidated when no measured job attempt ran beside another encode")
+    void
+        shouldLeaveTheEncodeConfigurationUnvalidatedWhenNoMeasuredJobAttemptRanBesideAnotherEncode() {
       var calibration = tenCoreCalibration().build();
 
       for (var i = 0; i < 40; i++) {
@@ -522,9 +523,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should leave the constants unvalidated when every measurement priced the same ratio of output to source")
+        "Should leave the encode configuration unvalidated when every measurement priced the same ratio of output to source")
     void
-        shouldLeaveTheConstantsUnvalidatedWhenEveryMeasurementPricedTheSameRatioOfOutputToSource() {
+        shouldLeaveTheEncodeConfigurationUnvalidatedWhenEveryMeasurementPricedTheSameRatioOfOutputToSource() {
       var calibration = tenCoreCalibration().build();
 
       for (var i = 0; i < 40; i++) {
@@ -536,9 +537,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should leave the constants unvalidated when the measured speeds of one load scatter beyond any prediction")
+        "Should leave the encode configuration unvalidated when the measured speeds of one load scatter beyond any prediction")
     void
-        shouldLeaveTheConstantsUnvalidatedWhenTheMeasuredSpeedsOfOneLoadScatterBeyondAnyPrediction() {
+        shouldLeaveTheEncodeConfigurationUnvalidatedWhenTheMeasuredSpeedsOfOneLoadScatterBeyondAnyPrediction() {
       var calibration = tenCoreCalibration().build();
 
       for (var i = 0; i < 100; i++) {
@@ -550,8 +551,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should validate the constants when the continuous fit has learned the cost that the benchmark missed")
-    void shouldValidateTheConstantsWhenTheContinuousFitHasLearnedTheCostThatTheBenchmarkMissed() {
+        "Should validate the encode configuration when the continuous fit has learned the cost that the benchmark missed")
+    void
+        shouldValidateTheEncodeConfigurationWhenTheContinuousFitHasLearnedTheCostThatTheBenchmarkMissed() {
       var calibration = tenCoreCalibration().build();
 
       for (var i = 0; i < 200; i++) {
@@ -650,8 +652,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should leave another encoder's constant unvalidated when only libx264 measurements arrived")
-    void shouldLeaveAnotherEncodersConstantUnvalidatedWhenOnlyLibx264MeasurementsArrived() {
+        "Should leave another encoder's encode configuration unvalidated when only libx264 measurements arrived")
+    void
+        shouldLeaveAnotherEncodersEncodeConfigurationUnvalidatedWhenOnlyLibx264MeasurementsArrived() {
       var libx265 =
           EncoderBackend.builder()
               .codecFamily("hevc")
@@ -784,9 +787,9 @@ class WorkerCalibrationTest {
 
     @Test
     @DisplayName(
-        "Should count another preset's constant as validated while the Automatic preset's constant is validated and the other preset has no predictions of its own")
+        "Should count another preset as validated while the Automatic preset is validated and the other preset has no predictions of its own")
     void
-        shouldCountAnotherPresetsConstantAsValidatedWhileTheAutomaticPresetsConstantIsValidatedAndTheOtherPresetHasNoPredictionsOfItsOwn() {
+        shouldCountAnotherPresetAsValidatedWhileTheAutomaticPresetIsValidatedAndTheOtherPresetHasNoPredictionsOfItsOwn() {
       var calibration = benchmarkedAtFasterAndVeryfast();
 
       for (var i = 0; i < 20; i++) {
