@@ -131,6 +131,21 @@ sealed interface CopiedDolbyVision {
     return new ConvertibleToProfile81(level.getAsInt());
   }
 
+  /**
+   * Whether the copy's configuration record names a level in Dolby's table. Direct play sends that
+   * record unchanged, so only such a record vouches for the level; a level that the table derives
+   * needs the record that an HLS copy writes.
+   */
+  static boolean isLevelNamedByRecord(VideoStreamCopy copy) {
+    return copy.dynamicRange().dolbyVision() instanceof DolbyVision.Present present
+        && present
+            .declared()
+            .map(DolbyVisionConfiguration::level)
+            .orElse(OptionalInt.empty())
+            .stream()
+            .anyMatch(DolbyVisionLevelTable::isTableLevel);
+  }
+
   // The level never comes from the RPU's vdr_rpu_level. A record level outside the table names no
   // level. A size or maximum frame rate that the probe does not store gives no level.
   private static OptionalInt levelFromRecordOrTable(

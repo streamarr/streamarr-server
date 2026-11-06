@@ -14,6 +14,7 @@ import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DolbyVisionProfileCapability;
+import com.streamarr.server.domain.streaming.DolbyVisionRpuHeader;
 import com.streamarr.server.domain.streaming.DolbyVisionRpuPlacement;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
@@ -199,6 +200,56 @@ class TranscodeDecisionDirectPlayTest {
         Arguments.of("profile 8.2 under dvh1", profile82Mp4File("dvh1"), videoRefused),
         Arguments.of("profile 9 under avc1", profile9Mp4File("avc1"), mp4),
         Arguments.of("profile 9 under dvav", profile9Mp4File("dvav"), videoRefused));
+  }
+
+  // Direct play sends the file's own configuration record, so only a record that names the level
+  // vouches for it. A level that the table derives from the maximum frame rate needs the record
+  // that
+  // an HLS copy writes (ADR 0013).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("dolbyVisionMp4Files")
+  @DisplayName(
+      "Should direct-play a Dolby Vision MP4 file only when its configuration record names its"
+          + " level")
+  void shouldDirectPlayADolbyVisionMp4FileOnlyWhenItsConfigurationRecordNamesItsLevel(
+      String scenario, VideoDynamicRange range, DirectPlayChoice expected) {
+    var facts =
+        hevcFacts(range)
+            .sampleEntry(Optional.of("dvh1"))
+            .maximumFrameRate(Optional.of(new Fraction(24, 1)));
+    var source =
+        isoSource(Optional.of("isom"))
+            .videoCodec("hevc")
+            .videoPlaybackFacts(Optional.of(facts.build()))
+            .build();
+    var request =
+        request().capabilityDeclaration(dolbyVisionDeclarationListingMp4()).source(source).build();
+
+    assertThat(service.decideDirectPlay(request)).isEqualTo(expected);
+  }
+
+  static Stream<Arguments> dolbyVisionMp4Files() {
+    return Stream.of(
+        Arguments.of(
+            "profile 5 with a record at level 6",
+            profile5(
+                Optional.of(
+                    DolbyVisionConfiguration.builder()
+                        .profile(OptionalInt.of(5))
+                        .level(OptionalInt.of(6))
+                        .baseLayerCompatibilityId(OptionalInt.of(0))
+                        .baseLayer(true)
+                        .rpu(true)
+                        .build())),
+            new DirectPlayChoice.Accepted(SourceContainer.MP4, OptionalInt.of(0))),
+        Arguments.of(
+            "profile 5 without a record, with a maximum frame rate that gives a level",
+            profile5(Optional.empty()),
+            refused(DecisionReason.DIRECT_PLAY_VIDEO_NOT_DECLARED)),
+        Arguments.of(
+            "profile 8.1 without a record, with a maximum frame rate that gives a level",
+            profile81FromItsRpuHeader(),
+            refused(DecisionReason.DIRECT_PLAY_VIDEO_NOT_DECLARED)));
   }
 
   @Test
@@ -692,6 +743,69 @@ class TranscodeDecisionDirectPlayTest {
 
   private static StreamInfo.StreamInfoBuilder aacBuilder(String language) {
     return audioStreamBuilder("aac").channels(OptionalInt.of(2)).language(Optional.of(language));
+  }
+
+  // An HEVC entry that lists profiles 5 and 8.1 up to level 13, the PQ base, and MP4 with every
+  // sample entry.
+  private static ClientCapabilityDeclaration dolbyVisionDeclarationListingMp4() {
+    var mp4 = List.of(SourceContainer.MP4);
+    return ClientCapabilityDeclaration.builder()
+        .video(
+            List.of(
+                hevcEntryBuilder()
+                    .compatibleBases(List.of(CompatibleBase.PQ))
+                    .dolbyVisionProfiles(
+                        List.of(
+                            DolbyVisionProfileCapability.builder()
+                                .profile(DolbyVisionProfile.PROFILE_5)
+                                .maxLevel(13)
+                                .build(),
+                            DolbyVisionProfileCapability.builder()
+                                .profile(DolbyVisionProfile.PROFILE_8_1)
+                                .maxLevel(13)
+                                .build()))
+                    .directPlayContainers(mp4)
+                    .directPlaySampleEntries(List.of(VideoSampleEntry.values()))
+                    .build()))
+        .audio(List.of(aacEntryBuilder().directPlayContainers(mp4).build()))
+        .build();
+  }
+
+  // Profile 5, which the record names or, without a record, the first RPU's header names. It has no
+  // compatible base.
+  private static VideoDynamicRange profile5(Optional<DolbyVisionConfiguration> record) {
+    return new VideoDynamicRange(
+        CompatibleBase.NONE,
+        Presence.ABSENT,
+        new DolbyVision.Present(
+            record,
+            Presence.PRESENT,
+            Optional.of(
+                DolbyVisionRpuHeader.builder()
+                    .vdrRpuProfile(0)
+                    .baseLayerFullRange(true)
+                    .disableResidual(true)
+                    .vdrBitDepth(12)
+                    .build()),
+            DolbyVisionRpuPlacement.AFTER_OWN_PICTURE));
+  }
+
+  // Without a record, the RPU header of a single-layer stream at 12 bits on a PQ base names
+  // profile 8.1.
+  private static VideoDynamicRange profile81FromItsRpuHeader() {
+    return new VideoDynamicRange(
+        CompatibleBase.PQ,
+        Presence.ABSENT,
+        new DolbyVision.Present(
+            Optional.empty(),
+            Presence.PRESENT,
+            Optional.of(
+                DolbyVisionRpuHeader.builder()
+                    .vdrRpuProfile(1)
+                    .disableResidual(true)
+                    .vdrBitDepth(12)
+                    .build()),
+            DolbyVisionRpuPlacement.AFTER_OWN_PICTURE));
   }
 
   // Profile 8.1 at Dolby Vision level 6, with its RPUs placed as given.
