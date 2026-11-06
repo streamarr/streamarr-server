@@ -120,6 +120,35 @@ class WorkerCalibrationRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should find no calibration when the worker returns with a CPU limit that differs by less than a thousandth of a core")
+  void
+      shouldFindNoCalibrationWhenTheWorkerReturnsWithACpuLimitThatDiffersByLessThanAThousandthOfACore() {
+    repository.keep(
+        fasterAt(0.04).key(tenCoreWorker().cpuLimit(new CpuLimit(6.5001)).build()).build());
+
+    assertThat(repository.findByKey(tenCoreWorker().cpuLimit(new CpuLimit(6.5004)).build()))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the newer calibration when an older one whose kept time falls in the same microsecond arrives late")
+  void
+      shouldKeepTheNewerCalibrationWhenAnOlderOneWhoseKeptTimeFallsInTheSameMicrosecondArrivesLate() {
+    var newer = fasterAt(0.05).keptAt(KEPT_AT.plusNanos(400)).build();
+    repository.keep(newer);
+
+    repository.keep(fasterAt(0.04).keptAt(KEPT_AT.plusNanos(100)).build());
+
+    assertThat(repository.findByKey(tenCoreWorker().build()))
+        .hasValueSatisfying(
+            kept ->
+                assertThat(kept.constants().cpuSecondsPerMegapixel().get(LIBX264_FASTER))
+                    .isEqualTo(0.05));
+  }
+
+  @Test
   @DisplayName("Should find the kept calibration when the worker reports its GPUs in another order")
   void shouldFindTheKeptCalibrationWhenTheWorkerReportsItsGpusInAnotherOrder() {
     var kept = fasterAt(0.04).build();

@@ -4,9 +4,8 @@ import static com.streamarr.server.jooq.generated.tables.WorkerCalibration.WORKE
 import static org.jooq.impl.DSL.excluded;
 
 import com.streamarr.server.domain.streaming.headroom.CalibrationKey;
-import com.streamarr.server.domain.streaming.headroom.CpuLimit;
 import com.streamarr.server.domain.streaming.headroom.KeptCalibration;
-import java.time.ZoneOffset;
+import java.time.Instant;
 import java.util.Optional;
 import lombok.NonNull;
 import org.jooq.Condition;
@@ -19,7 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 @Repository
 public class JooqWorkerCalibrationRepository implements WorkerCalibrationRepository {
 
-  private static final double MILLICORES_PER_CORE = 1_000;
+  private static final long NANOS_PER_SECOND = 1_000_000_000L;
 
   private final DSLContext dsl;
   private final CalibrationDocumentCodec codec;
@@ -40,20 +39,24 @@ public class JooqWorkerCalibrationRepository implements WorkerCalibrationReposit
             .set(WORKER_CALIBRATION.CPU_MODEL, hardware.cpuModel())
             .set(WORKER_CALIBRATION.LOGICAL_CPUS, hardware.logicalCpus())
             .set(WORKER_CALIBRATION.GPU_MODELS, hardware.gpuModels().toArray(String[]::new))
-            .set(WORKER_CALIBRATION.CPU_LIMIT_MILLICORES, millicores(key.cpuLimit()))
+            .set(WORKER_CALIBRATION.CPU_LIMIT_CORES, key.cpuLimit().cores())
             .set(WORKER_CALIBRATION.FFMPEG_BUILD, key.ffmpegBuild())
-            .set(WORKER_CALIBRATION.KEPT_AT, calibration.keptAt().atOffset(ZoneOffset.UTC))
+            .set(WORKER_CALIBRATION.KEPT_AT_EPOCH_NANOS, epochNanos(calibration.keptAt()))
             .set(WORKER_CALIBRATION.CALIBRATION, JSONB.jsonb(codec.encode(calibration)))
             .onConflict(
                 WORKER_CALIBRATION.CPU_MODEL,
                 WORKER_CALIBRATION.LOGICAL_CPUS,
                 WORKER_CALIBRATION.GPU_MODELS,
-                WORKER_CALIBRATION.CPU_LIMIT_MILLICORES,
+                WORKER_CALIBRATION.CPU_LIMIT_CORES,
                 WORKER_CALIBRATION.FFMPEG_BUILD)
             .doUpdate()
-            .set(WORKER_CALIBRATION.KEPT_AT, excluded(WORKER_CALIBRATION.KEPT_AT))
+            .set(
+                WORKER_CALIBRATION.KEPT_AT_EPOCH_NANOS,
+                excluded(WORKER_CALIBRATION.KEPT_AT_EPOCH_NANOS))
             .set(WORKER_CALIBRATION.CALIBRATION, excluded(WORKER_CALIBRATION.CALIBRATION))
-            .where(WORKER_CALIBRATION.KEPT_AT.le(excluded(WORKER_CALIBRATION.KEPT_AT)))
+            .where(
+                WORKER_CALIBRATION.KEPT_AT_EPOCH_NANOS.le(
+                    excluded(WORKER_CALIBRATION.KEPT_AT_EPOCH_NANOS)))
             .execute();
     return updated == 1;
   }
@@ -61,16 +64,12 @@ public class JooqWorkerCalibrationRepository implements WorkerCalibrationReposit
   @Override
   @Transactional(readOnly = true)
   public Optional<KeptCalibration> findByKey(@NonNull CalibrationKey key) {
-    return dsl.select(WORKER_CALIBRATION.CALIBRATION, WORKER_CALIBRATION.KEPT_AT)
+    return dsl.select(WORKER_CALIBRATION.CALIBRATION, WORKER_CALIBRATION.KEPT_AT_EPOCH_NANOS)
         .from(WORKER_CALIBRATION)
         .where(matches(key))
         .fetchOptional(
             row ->
-                codec
-                    .decode(row.value1().data())
-                    .key(key)
-                    .keptAt(row.value2().toInstant())
-                    .build());
+                codec.decode(row.value1().data()).key(key).keptAt(instantOf(row.value2())).build());
   }
 
   private static Condition matches(CalibrationKey key) {
@@ -80,11 +79,17 @@ public class JooqWorkerCalibrationRepository implements WorkerCalibrationReposit
         .eq(hardware.cpuModel())
         .and(WORKER_CALIBRATION.LOGICAL_CPUS.eq(hardware.logicalCpus()))
         .and(WORKER_CALIBRATION.GPU_MODELS.eq(hardware.gpuModels().toArray(String[]::new)))
-        .and(WORKER_CALIBRATION.CPU_LIMIT_MILLICORES.eq(millicores(key.cpuLimit())))
+        .and(WORKER_CALIBRATION.CPU_LIMIT_CORES.eq(key.cpuLimit().cores()))
         .and(WORKER_CALIBRATION.FFMPEG_BUILD.eq(key.ffmpegBuild()));
   }
 
-  private static int millicores(CpuLimit cpuLimit) {
-    return Math.toIntExact(Math.round(cpuLimit.cores() * MILLICORES_PER_CORE));
+  private static long epochNanos(Instant instant) {
+    return Math.addExact(
+        Math.multiplyExact(instant.getEpochSecond(), NANOS_PER_SECOND), instant.getNano());
+  }
+
+  private static Instant instantOf(long epochNanos) {
+    return Instant.ofEpochSecond(
+        Math.floorDiv(epochNanos, NANOS_PER_SECOND), Math.floorMod(epochNanos, NANOS_PER_SECOND));
   }
 }

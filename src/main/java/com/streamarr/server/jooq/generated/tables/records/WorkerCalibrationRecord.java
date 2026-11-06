@@ -79,17 +79,17 @@ public class WorkerCalibrationRecord extends UpdatableRecordImpl<WorkerCalibrati
     }
 
     /**
-     * Setter for <code>public.worker_calibration.cpu_limit_millicores</code>.
+     * Setter for <code>public.worker_calibration.cpu_limit_cores</code>.
      */
-    public void setCpuLimitMillicores(Integer value) {
+    public void setCpuLimitCores(Double value) {
         set(4, value);
     }
 
     /**
-     * Getter for <code>public.worker_calibration.cpu_limit_millicores</code>.
+     * Getter for <code>public.worker_calibration.cpu_limit_cores</code>.
      */
-    public Integer getCpuLimitMillicores() {
-        return (Integer) get(4);
+    public Double getCpuLimitCores() {
+        return (Double) get(4);
     }
 
     /**
@@ -107,17 +107,17 @@ public class WorkerCalibrationRecord extends UpdatableRecordImpl<WorkerCalibrati
     }
 
     /**
-     * Setter for <code>public.worker_calibration.kept_at</code>.
+     * Setter for <code>public.worker_calibration.kept_at_epoch_nanos</code>.
      */
-    public void setKeptAt(OffsetDateTime value) {
+    public void setKeptAtEpochNanos(Long value) {
         set(6, value);
     }
 
     /**
-     * Getter for <code>public.worker_calibration.kept_at</code>.
+     * Getter for <code>public.worker_calibration.kept_at_epoch_nanos</code>.
      */
-    public OffsetDateTime getKeptAt() {
-        return (OffsetDateTime) get(6);
+    public Long getKeptAtEpochNanos() {
+        return (Long) get(6);
     }
 
     /**
@@ -213,16 +213,16 @@ public class WorkerCalibrationRecord extends UpdatableRecordImpl<WorkerCalibrati
     /**
      * Create a detached, initialised WorkerCalibrationRecord
      */
-    public WorkerCalibrationRecord(UUID id, String cpuModel, Integer logicalCpus, String[] gpuModels, Integer cpuLimitMillicores, String ffmpegBuild, OffsetDateTime keptAt, JSONB calibration, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy) {
+    public WorkerCalibrationRecord(UUID id, String cpuModel, Integer logicalCpus, String[] gpuModels, Double cpuLimitCores, String ffmpegBuild, Long keptAtEpochNanos, JSONB calibration, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy) {
         super(WorkerCalibration.WORKER_CALIBRATION);
 
         setId(id);
         setCpuModel(cpuModel);
         setLogicalCpus(logicalCpus);
         setGpuModels(gpuModels);
-        setCpuLimitMillicores(cpuLimitMillicores);
+        setCpuLimitCores(cpuLimitCores);
         setFfmpegBuild(ffmpegBuild);
-        setKeptAt(keptAt);
+        setKeptAtEpochNanos(keptAtEpochNanos);
         setCalibration(calibration);
         setCreatedOn(createdOn);
         setCreatedBy(createdBy);

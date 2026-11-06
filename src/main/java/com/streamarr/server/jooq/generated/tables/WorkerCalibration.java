@@ -77,9 +77,9 @@ public class WorkerCalibration extends TableImpl<WorkerCalibrationRecord> {
     public final TableField<WorkerCalibrationRecord, String[]> GPU_MODELS = createField(DSL.name("gpu_models"), SQLDataType.CLOB.array().nullable(false), this, "");
 
     /**
-     * The column <code>public.worker_calibration.cpu_limit_millicores</code>.
+     * The column <code>public.worker_calibration.cpu_limit_cores</code>.
      */
-    public final TableField<WorkerCalibrationRecord, Integer> CPU_LIMIT_MILLICORES = createField(DSL.name("cpu_limit_millicores"), SQLDataType.INTEGER.nullable(false), this, "");
+    public final TableField<WorkerCalibrationRecord, Double> CPU_LIMIT_CORES = createField(DSL.name("cpu_limit_cores"), SQLDataType.DOUBLE.nullable(false), this, "");
 
     /**
      * The column <code>public.worker_calibration.ffmpeg_build</code>.
@@ -87,9 +87,9 @@ public class WorkerCalibration extends TableImpl<WorkerCalibrationRecord> {
     public final TableField<WorkerCalibrationRecord, String> FFMPEG_BUILD = createField(DSL.name("ffmpeg_build"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
-     * The column <code>public.worker_calibration.kept_at</code>.
+     * The column <code>public.worker_calibration.kept_at_epoch_nanos</code>.
      */
-    public final TableField<WorkerCalibrationRecord, OffsetDateTime> KEPT_AT = createField(DSL.name("kept_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false), this, "");
+    public final TableField<WorkerCalibrationRecord, Long> KEPT_AT_EPOCH_NANOS = createField(DSL.name("kept_at_epoch_nanos"), SQLDataType.BIGINT.nullable(false), this, "");
 
     /**
      * The column <code>public.worker_calibration.calibration</code>.
@@ -163,7 +163,7 @@ public class WorkerCalibration extends TableImpl<WorkerCalibrationRecord> {
     @Override
     public List<Check<WorkerCalibrationRecord>> getChecks() {
         return Arrays.asList(
-            Internal.createCheck(this, DSL.name("chk_worker_calibration_cpu_limit_millicores"), "((cpu_limit_millicores > 0))", true),
+            Internal.createCheck(this, DSL.name("chk_worker_calibration_cpu_limit_cores"), "((cpu_limit_cores > (0)::double precision))", true),
             Internal.createCheck(this, DSL.name("chk_worker_calibration_logical_cpus"), "((logical_cpus > 0))", true)
         );
     }
