@@ -52,6 +52,7 @@ public class SeekPriority {
   private final Map<VariantKey, PendingSeek> pendingSeeks = new HashMap<>();
   private final Map<UUID, Integer> highestRequestedSegments = new HashMap<>();
   private final Map<UUID, Long> newestArrivals = new HashMap<>();
+  private final Map<UUID, Integer> newestRequestedSegments = new HashMap<>();
   private final Map<UUID, Instant> latestSeeks = new HashMap<>();
   private final Map<ExecutionTargetId, Set<UUID>> yielding = new HashMap<>();
   private final Map<VariantKey, StoredAtStart> storedAtStarts = new HashMap<>();
@@ -97,8 +98,11 @@ public class SeekPriority {
   public synchronized void seekStarted(
       @NonNull StreamSession session, @NonNull String variantLabel, int segmentIndex) {
     var sessionId = session.getSessionId();
-    // The seek's own request, noted before the relocation, places the viewer until the next one.
-    highestRequestedSegments.put(sessionId, segmentIndex);
+    // The seek's own request, noted before the relocation, places the viewer until the next one. An
+    // older request can relocate after a newer one, whose position stays.
+    highestRequestedSegments.put(
+        sessionId,
+        Math.max(segmentIndex, newestRequestedSegments.getOrDefault(sessionId, segmentIndex)));
     latestSeeks.put(sessionId, clock.instant());
     var key = new VariantKey(sessionId, variantLabel);
     var earlierWorker = Optional.ofNullable(pendingSeeks.get(key)).flatMap(PendingSeek::target);
@@ -136,7 +140,12 @@ public class SeekPriority {
   public synchronized void mediaSegmentRequested(
       @NonNull UUID sessionId, int segmentIndex, long arrival) {
     highestRequestedSegments.merge(sessionId, segmentIndex, Math::max);
-    newestArrivals.merge(sessionId, arrival, Math::max);
+    var newest = newestArrivals.get(sessionId);
+    if (newest == null || arrival > newest) {
+      newestArrivals.put(sessionId, arrival);
+      newestRequestedSegments.put(sessionId, segmentIndex);
+    }
+
     var attempts =
         runtimeRegistry.findById(sessionId).stream()
             .flatMap(session -> session.getVariantHandles().values().stream())
@@ -264,6 +273,7 @@ public class SeekPriority {
   /** The stream session ended, so its seeks wait for nothing. */
   public synchronized void forgetSession(@NonNull UUID sessionId) {
     highestRequestedSegments.remove(sessionId);
+    newestRequestedSegments.remove(sessionId);
     storedAtStarts.keySet().removeIf(key -> key.sessionId().equals(sessionId));
     newestArrivals.remove(sessionId);
     latestSeeks.remove(sessionId);

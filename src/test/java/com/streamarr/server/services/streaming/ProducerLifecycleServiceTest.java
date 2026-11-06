@@ -189,6 +189,12 @@ class ProducerLifecycleServiceTest {
     return session;
   }
 
+  private void storeDefaultSegments(StreamSession session, int firstSegment, int lastSegment) {
+    for (var index = firstSegment; index <= lastSegment; index++) {
+      segmentStore.addSegment(session.getSessionId(), "segment" + index + ".m4s", new byte[] {1});
+    }
+  }
+
   private StreamSession startedLadderSession() {
     var session = defaultLadderSessionBuilder().build();
     runtimeRegistry.save(session);
@@ -788,6 +794,35 @@ class ProducerLifecycleServiceTest {
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.seekPosition()).isEqualTo(600);
     assertThat(lastRequest.startSequenceNumber()).isEqualTo(100);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a newer request's position when an older request relocates the variant, so"
+          + " seek priority credits no media the viewer passed")
+  void shouldKeepANewerRequestsPositionWhenAnOlderRequestRelocatesTheVariant() {
+    var steady = startedSession();
+    storeDefaultSegments(steady, 1, 9);
+    lifecycle.prepareRequestedVariant(
+        steady.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+    var relocated = startedSession();
+    var sessionId = relocated.getSessionId();
+    storeDefaultSegments(relocated, 21, 31);
+    var older =
+        lifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment20.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, StreamSession.defaultVariant(), "segment30.m4s");
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment20.m4s");
+    storeDefaultSegments(relocated, 20, 20);
+    lifecycle.segmentDelivered(older);
+    storeDefaultSegments(relocated, 32, 32);
+    var seeking = startedSession();
+
+    lifecycle.ensurePositioned(
+        seeking.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
+
+    assertThat(transcodeExecutor.yields().getLast().jobAttemptIds())
+        .containsExactly(steady.getHandle().orElseThrow().attemptId());
   }
 
   @Test
