@@ -30,6 +30,7 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
+import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -60,6 +61,7 @@ class SegmentDeliveryCoordinatorTest {
   private static final ExecutionTargetId TARGET_B = new ExecutionTargetId("worker-b");
   private static final ExecutionTargetId TARGET_C = new ExecutionTargetId("worker-c");
 
+  private final CapturingEventPublisher events = new CapturingEventPublisher();
   private FakeTranscodeExecutor transcodeExecutor;
   private FakeSegmentStore segmentStore;
   private FakeRuntimeStreamSessionRegistry runtimeRegistry;
@@ -105,7 +107,8 @@ class SegmentDeliveryCoordinatorTest {
         .runtimeRegistry(runtimeRegistry)
         .clock(clock)
         .sessionMutex(sessionMutex)
-        .heldRequests(executor.heldSegmentRequests());
+        .heldRequests(executor.heldSegmentRequests())
+        .eventPublisher(events);
   }
 
   // Stores the segment, then wakes the requests held on its variant, as a worker's upload does.
@@ -1550,6 +1553,75 @@ class SegmentDeliveryCoordinatorTest {
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
     assertThat(session.getVariantHandle("720p")).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer a held request as unrecoverable and continue in software without replacing"
+          + " its variant when the variant's hardware encoder fails")
+  void shouldContinueInSoftwareWithoutReplacingTheVariantWhenItsHardwareEncoderFails()
+      throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    var held = heldDelivery(sessionId, "480p", "480p/segment1.m4s");
+
+    transcodeExecutor.failHardwareEncoder(sessionId, "480p");
+
+    assertThat(held.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::variantLabel)
+        .containsExactly("480p");
+    assertThat(events.getEventsOfType(RequestedVariantHardwareEncoderFailedEvent.class))
+        .containsExactly(softwareContinuationOf(sessionId, "480p"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should continue in software without starting the left variant again when the player"
+          + " returns to it after its hardware encoder failed")
+  void shouldContinueInSoftwareWithoutStartingTheLeftVariantWhenThePlayerReturnsToIt()
+      throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    var switched = deliverAsync(sessionId, "720p", "720p/segment1.m4s");
+    transcodeExecutor.awaitStartedRequestCount(2);
+    upload(sessionId, "720p/segment1.m4s", new byte[] {1});
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    transcodeExecutor.failHardwareEncoder(sessionId, "480p");
+
+    var returned = deliverAsync(sessionId, "480p", "480p/segment2.m4s");
+
+    assertThat(returned.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::variantLabel)
+        .containsExactly("480p", "720p");
+    assertThat(events.getEventsOfType(RequestedVariantHardwareEncoderFailedEvent.class))
+        .containsExactly(softwareContinuationOf(sessionId, "480p"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer a held request as unrecoverable without a software continuation when the"
+          + " player has left its variant before the variant's hardware encoder fails")
+  void shouldNotContinueInSoftwareWhenThePlayerLeftTheVariantBeforeItsHardwareEncoderFails()
+      throws Exception {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    var held = heldDelivery(sessionId, "480p", "480p/segment1.m4s");
+    lifecycle.prepareRequestedVariant(sessionId, "720p", "720p/segment1.m4s");
+
+    transcodeExecutor.failHardwareEncoder(sessionId, "480p");
+
+    assertThat(held.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(events.getEventsOfType(RequestedVariantHardwareEncoderFailedEvent.class)).isEmpty();
+  }
+
+  private static RequestedVariantHardwareEncoderFailedEvent softwareContinuationOf(
+      UUID sessionId, String variantLabel) {
+    return RequestedVariantHardwareEncoderFailedEvent.builder()
+        .streamSessionId(sessionId)
+        .variantLabel(variantLabel)
+        .build();
   }
 
   @Test

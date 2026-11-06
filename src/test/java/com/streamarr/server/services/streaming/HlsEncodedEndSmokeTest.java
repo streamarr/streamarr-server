@@ -91,6 +91,7 @@ class HlsEncodedEndSmokeTest {
             .segmentStore(segmentStore)
             .producerLifecycle(lifecycle)
             .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
+            .eventPublisher(new CapturingEventPublisher())
             .build();
     playlistService = new HlsPlaylistService(properties);
   }

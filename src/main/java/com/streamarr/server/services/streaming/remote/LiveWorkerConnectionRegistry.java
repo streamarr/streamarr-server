@@ -17,6 +17,7 @@ import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
+import com.streamarr.server.services.streaming.events.HardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
@@ -46,9 +47,11 @@ import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VideoCopyFeature;
 import com.streamarr.transcode.v1.VideoDecision;
+import com.streamarr.transcode.v1.VideoEncodersChanged;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
+import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.Counter;
@@ -150,6 +153,8 @@ final class LiveWorkerConnectionRegistry {
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
   private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
+  // The labels of each stream session's variants whose hardware encoder failed (ADR 0044).
+  private final Map<UUID, Set<String>> hardwareEncoderFailures = new ConcurrentHashMap<>();
   private final Map<UUID, CompletableFuture<ProbeAttemptReport>> pendingProbes =
       new ConcurrentHashMap<>();
 
@@ -267,21 +272,24 @@ final class LiveWorkerConnectionRegistry {
   }
 
   Optional<VariantDispatch> dispatch(VariantJob job) {
-    return dispatchToFirst(job, _ -> true);
+    return dispatchToFirst(job, Optional.empty());
   }
 
   // Every later job attempt of a pinned variant runs only where its encoder backend runs.
   Optional<VariantDispatch> dispatch(VariantJob job, WorkerVerifiedEncoder pinnedEncoder) {
-    return dispatchToFirst(job, connection -> connection.advertises(pinnedEncoder));
+    return dispatchToFirst(job, Optional.of(pinnedEncoder));
   }
 
   private Optional<VariantDispatch> dispatchToFirst(
-      VariantJob job, Predicate<WorkerConnection> eligible) {
+      VariantJob job, Optional<WorkerVerifiedEncoder> pinnedEncoder) {
     var candidates =
-        hardwareEncodersFirst(connections.values().stream().filter(eligible), job.getDecision())
+        preferredWorkersFirst(
+                connections.values().stream()
+                    .filter(connection -> connection.runsPinnedEncoder(pinnedEncoder)),
+                job.getDecision())
             .toList();
     for (var connection : candidates) {
-      var dispatched = tryDispatchUnlessDisconnected(connection, job);
+      var dispatched = tryDispatchUnlessDisconnected(connection, job, pinnedEncoder);
       if (dispatched.isPresent()) {
         return dispatched;
       }
@@ -396,22 +404,22 @@ final class LiveWorkerConnectionRegistry {
   }
 
   Optional<VariantDispatch> dispatchTo(ExecutionTargetId target, VariantJob job) {
-    return dispatchTo(target, job, _ -> true);
+    return dispatchTo(target, job, Optional.empty());
   }
 
   // The named target must advertise the pin too, whoever chose it.
   Optional<VariantDispatch> dispatchTo(
       ExecutionTargetId target, VariantJob job, WorkerVerifiedEncoder pinnedEncoder) {
-    return dispatchTo(target, job, connection -> connection.advertises(pinnedEncoder));
+    return dispatchTo(target, job, Optional.of(pinnedEncoder));
   }
 
   private Optional<VariantDispatch> dispatchTo(
-      ExecutionTargetId target, VariantJob job, Predicate<WorkerConnection> eligible) {
+      ExecutionTargetId target, VariantJob job, Optional<WorkerVerifiedEncoder> pinnedEncoder) {
     return connections.values().stream()
         .filter(connection -> connection.executionTargetId().equals(target))
-        .filter(eligible)
+        .filter(connection -> connection.runsPinnedEncoder(pinnedEncoder))
         .findFirst()
-        .flatMap(connection -> tryDispatchUnlessDisconnected(connection, job));
+        .flatMap(connection -> tryDispatchUnlessDisconnected(connection, job, pinnedEncoder));
   }
 
   /**
@@ -420,20 +428,21 @@ final class LiveWorkerConnectionRegistry {
    * orphaned: held by a dropped connection, never logged as abandoned.
    */
   private Optional<VariantDispatch> tryDispatchUnlessDisconnected(
-      WorkerConnection connection, VariantJob job) {
-    if (!connection.tryDispatch(job)) {
+      WorkerConnection connection, VariantJob job, Optional<WorkerVerifiedEncoder> pinnedEncoder) {
+    var dispatched = connection.tryDispatch(job, pinnedEncoder);
+    if (dispatched.isEmpty()) {
       return Optional.empty();
     }
     if (!connections.containsValue(connection)) {
       connection.releaseJobAttempt(fromProto(job.getJobAttemptId()));
       return Optional.empty();
     }
-    return Optional.of(new VariantDispatch(connection.encoderFor(job)));
+    return dispatched;
   }
 
   Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId, TranscodeDecision decision) {
     return executionTargets(
-        hardwareEncodersFirst(
+        preferredWorkersFirst(
             connectionsFor(sourceNamespaceId).filter(connection -> connection.canEncode(decision)),
             decision));
   }
@@ -443,7 +452,7 @@ final class LiveWorkerConnectionRegistry {
       UUID sourceNamespaceId, TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
     return executionTargets(
         connectionsFor(sourceNamespaceId)
-            .filter(connection -> connection.advertises(pinnedEncoder))
+            .filter(connection -> connection.runsEncoder(pinnedEncoder))
             .filter(connection -> connection.canEncodeAudioLayout(decision)));
   }
 
@@ -464,12 +473,14 @@ final class LiveWorkerConnectionRegistry {
   // a software encoder takes it only when no such worker has a free slot (ADR 0009). Each worker's
   // encoder is read once: a start report that names another backend can withdraw it concurrently,
   // and a sort whose keys change mid-sort may throw instead of ordering the workers.
-  private static Stream<WorkerConnection> hardwareEncodersFirst(
+  // A software encode after a hardware encoder failure goes first to the worker whose hardware
+  // encoder failed, which leaves the other workers' room to their own stream sessions (ADR 0044).
+  private static Stream<WorkerConnection> preferredWorkersFirst(
       Stream<WorkerConnection> connections, TranscodeDecision decision) {
-    var byHardware =
+    var byPreference =
         connections.collect(
-            Collectors.partitioningBy(connection -> connection.encodesInHardware(decision)));
-    return Stream.concat(byHardware.get(true).stream(), byHardware.get(false).stream());
+            Collectors.partitioningBy(connection -> connection.comesFirstFor(decision)));
+    return Stream.concat(byPreference.get(true).stream(), byPreference.get(false).stream());
   }
 
   boolean stopVariant(UUID streamSessionId, String variantLabel) {
@@ -490,6 +501,7 @@ final class LiveWorkerConnectionRegistry {
       stopStreamSession(streamSessionId);
     } finally {
       terminalFailures.remove(streamSessionId);
+      hardwareEncoderFailures.remove(streamSessionId);
     }
   }
 
@@ -593,7 +605,7 @@ final class LiveWorkerConnectionRegistry {
   int availableSlots(
       UUID sourceNamespaceId, TranscodeDecision decision, WorkerVerifiedEncoder pinnedEncoder) {
     return connectionsFor(sourceNamespaceId)
-        .filter(connection -> connection.advertises(pinnedEncoder))
+        .filter(connection -> connection.runsEncoder(pinnedEncoder))
         .filter(connection -> connection.canEncodeAudioLayout(decision))
         .mapToInt(WorkerConnection::availableSlots)
         .sum();
@@ -601,6 +613,10 @@ final class LiveWorkerConnectionRegistry {
 
   Optional<TranscodeFailure> terminalFailure(UUID streamSessionId) {
     return Optional.ofNullable(terminalFailures.get(streamSessionId));
+  }
+
+  boolean hasHardwareEncoderFailed(UUID streamSessionId, String variantLabel) {
+    return hardwareEncoderFailures.getOrDefault(streamSessionId, Set.of()).contains(variantLabel);
   }
 
   /** From this call on, a probe cancelled before its timeout tells its worker of the shutdown. */
@@ -613,6 +629,7 @@ final class LiveWorkerConnectionRegistry {
     connections.clear();
     closed.forEach(WorkerConnection::abandonAllJobsWithoutWaiting);
     terminalFailures.clear();
+    hardwareEncoderFailures.clear();
   }
 
   ReportedJobAttemptEnd failJobAttempt(
@@ -621,9 +638,55 @@ final class LiveWorkerConnectionRegistry {
     countIfUnknown(end);
     if (end instanceof ReportedJobAttemptEnd.Released(var job)) {
       publishTerminalFailure(job, failed);
+      publishHardwareEncoderFailure(job, failed);
     }
 
     return end;
+  }
+
+  private void publishHardwareEncoderFailure(VariantJob job, JobAttemptFailed failed) {
+    if (!isHardwareEncoderFailure(job, failed)) {
+      return;
+    }
+
+    eventPublisher.publishEvent(
+        HardwareEncoderFailedEvent.builder()
+            .streamSessionId(fromProto(job.getStreamSessionId()))
+            .jobAttemptId(fromProto(job.getJobAttemptId()))
+            .variantLabel(job.getVariant().getVariantLabel())
+            .build());
+  }
+
+  // The worker reports the failure only for an attempt on a hardware backend, and a software encode
+  // never runs on one.
+  private static boolean isHardwareEncoderFailure(VariantJob job, JobAttemptFailed failed) {
+    return failed.getFailure() == JobAttemptFailure.JOB_ATTEMPT_FAILURE_HARDWARE_ENCODER_FAILED
+        && encodesVideo(job.getDecision())
+        && !job.getDecision().getVideo().getSoftwareEncoder();
+  }
+
+  /**
+   * Replaces the encoders that a worker offers, as the worker reports when a hardware encoder fails
+   * or passes its check again. A change that lists one codec family twice, or that names an ended
+   * worker session, changes nothing.
+   */
+  boolean changeVideoEncoders(UUID workerId, UUID workerSessionId, VideoEncodersChanged changed) {
+    var encoders = changed.getVideoEncodersList();
+    if (listsOneCodecFamilyTwice(encoders)) {
+      return false;
+    }
+
+    return currentConnection(workerId, workerSessionId)
+        .map(connection -> connection.replaceVideoEncoders(encoders))
+        .isPresent();
+  }
+
+  static boolean listsOneCodecFamilyTwice(List<WorkerVerifiedVideoEncoder> encoders) {
+    return encoders.stream()
+            .map(encoder -> encoder.getBackend().getCodecFamilyValue())
+            .distinct()
+            .count()
+        < encoders.size();
   }
 
   private void publishTerminalFailure(VariantJob job, JobAttemptFailed failed) {
@@ -816,6 +879,12 @@ final class LiveWorkerConnectionRegistry {
     // The worker-verified encoder that counts for each codec family, keyed by family name. A start
     // report that names another backend withdraws the family's entry for this worker session.
     private final Map<String, WorkerVerifiedEncoder> countedEncoders;
+    // The software encoder of each codec family, which a software encode after a hardware encoder
+    // failure runs, keyed by family name (ADR 0044).
+    private final Map<String, WorkerVerifiedEncoder> softwareEncoders;
+    // The codec families whose hardware encoder failed on this worker session and that the worker
+    // has not offered in hardware again since.
+    private final Set<String> hardwareFailedFamilies = ConcurrentHashMap.newKeySet();
     private final int maximumActiveVariants;
     // A worker may report new background and keyframe packet scan capacities at any time during
     // its session.
@@ -845,13 +914,13 @@ final class LiveWorkerConnectionRegistry {
           Set.copyOf(registration.getCapabilities().getVideoCopyFeaturesValueList());
       countedEncoders =
           new ConcurrentHashMap<>(
-              registration.getCapabilities().getVideoEncodersList().stream()
-                  .map(RemoteEncoderBackendMapper::workerVerifiedEncoder)
-                  .flatMap(Optional::stream)
-                  .filter(LiveWorkerConnectionRegistry::isCountedForEncodes)
-                  .collect(
-                      Collectors.toUnmodifiableMap(
-                          encoder -> encoder.backend().codecFamily(), Function.identity())));
+              byCodecFamily(
+                  registration.getCapabilities().getVideoEncodersList(),
+                  LiveWorkerConnectionRegistry::isCountedForEncodes));
+      softwareEncoders =
+          byCodecFamily(
+              registration.getCapabilities().getSoftwareVideoEncodersList(),
+              encoder -> encoder.backend().kind() == EncoderBackend.Kind.SOFTWARE);
       maximumActiveVariants = registration.getAvailableSlots();
       grantedProbeCapacities = new AtomicReference<>(GrantedProbeCapacities.of(registration));
       this.responseObserver = responseObserver;
@@ -859,6 +928,30 @@ final class LiveWorkerConnectionRegistry {
 
     private UUID workerSessionId() {
       return workerSessionId;
+    }
+
+    private static Map<String, WorkerVerifiedEncoder> byCodecFamily(
+        List<WorkerVerifiedVideoEncoder> encoders, Predicate<WorkerVerifiedEncoder> kept) {
+      return encoders.stream()
+          .map(RemoteEncoderBackendMapper::workerVerifiedEncoder)
+          .flatMap(Optional::stream)
+          .filter(kept)
+          .collect(
+              Collectors.toUnmodifiableMap(
+                  encoder -> encoder.backend().codecFamily(), Function.identity()));
+    }
+
+    private synchronized boolean replaceVideoEncoders(List<WorkerVerifiedVideoEncoder> encoders) {
+      var replacement = byCodecFamily(encoders, LiveWorkerConnectionRegistry::isCountedForEncodes);
+      // Readers outside this lock see each family's entry replaced in place, never an empty map.
+      countedEncoders.keySet().retainAll(replacement.keySet());
+      countedEncoders.putAll(replacement);
+      hardwareFailedFamilies.removeIf(
+          family ->
+              Optional.ofNullable(replacement.get(family))
+                  .filter(encoder -> encoder.backend().kind() == EncoderBackend.Kind.HARDWARE)
+                  .isPresent());
+      return true;
     }
 
     private ExecutionTargetId executionTargetId() {
@@ -874,26 +967,64 @@ final class LiveWorkerConnectionRegistry {
           EstablishWorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
     }
 
-    private synchronized boolean tryDispatch(VariantJob job) {
-      if (terminalFailures.containsKey(fromProto(job.getStreamSessionId()))
+    // The encoder is chosen under this monitor, so an encoder change cannot come between the
+    // choice and the start command.
+    private synchronized Optional<VariantDispatch> tryDispatch(
+        VariantJob job, Optional<WorkerVerifiedEncoder> pinnedEncoder) {
+      var dispatch = dispatchFor(job.getDecision(), pinnedEncoder);
+      if (dispatch.isEmpty()
+          || terminalFailures.containsKey(fromProto(job.getStreamSessionId()))
           || !canAccessSource(job)
-          || !canEncode(job.getDecision())
+          || !canEncodeAudioLayout(job.getDecision())
+          || !canDeliverVideoAsPlanned(job.getDecision().getVideo())
           || availableSlots() == 0) {
-        return false;
+        return Optional.empty();
       }
 
-      var command = StartVariantCommand.newBuilder().setTarget(worker).setJob(job).build();
+      var sent = withSoftwareEncoderFlag(job, dispatch.get().encoder());
+      var command = StartVariantCommand.newBuilder().setTarget(worker).setJob(sent).build();
       if (!trySend(EstablishWorkerSessionResponse.newBuilder().setStartVariant(command).build())) {
-        return false;
+        return Optional.empty();
       }
-      var jobAttemptId = fromProto(job.getJobAttemptId());
-      activeVariants.put(jobAttemptId, job);
-      encoderFor(job)
+      var jobAttemptId = fromProto(sent.getJobAttemptId());
+      activeVariants.put(jobAttemptId, sent);
+      dispatch
+          .get()
+          .encoder()
           .ifPresent(
               encoder ->
                   encodeAttempts.put(
                       jobAttemptId, new EncodeAttempt(encoder, new CompletableFuture<>())));
-      return true;
+      return dispatch;
+    }
+
+    // Empty when the job encodes video on an encoder that this worker does not run.
+    private Optional<VariantDispatch> dispatchFor(
+        TranscodeDecision decision, Optional<WorkerVerifiedEncoder> pinnedEncoder) {
+      if (!encodesVideo(decision)) {
+        return Optional.of(new VariantDispatch(Optional.empty()));
+      }
+
+      var encoder =
+          pinnedEncoder.isPresent()
+              ? pinnedEncoder.filter(this::runsEncoder)
+              : encoderFor(decision);
+      return encoder.map(chosen -> new VariantDispatch(Optional.of(chosen)));
+    }
+
+    // A job on a software encoder asks for it even where the worker counts it: the worker may offer
+    // its hardware encoder again before it reads the job, and would then run that instead.
+    private static VariantJob withSoftwareEncoderFlag(
+        VariantJob job, Optional<WorkerVerifiedEncoder> encoder) {
+      var software =
+          encoder.filter(chosen -> chosen.backend().kind() == EncoderBackend.Kind.SOFTWARE);
+      if (software.isEmpty() || job.getDecision().getVideo().getSoftwareEncoder()) {
+        return job;
+      }
+
+      var flagged = job.toBuilder();
+      flagged.getDecisionBuilder().getVideoBuilder().setSoftwareEncoder(true);
+      return flagged.build();
     }
 
     private synchronized ProbeDispatch tryDispatchProbe(ProbeRequest request) {
@@ -1174,17 +1305,20 @@ final class LiveWorkerConnectionRegistry {
           || probeVersions.contains(ProbeVersion.FIRST_TO_ENCODE_NAMED_LAYOUTS);
     }
 
-    private Optional<WorkerVerifiedEncoder> encoderFor(VariantJob job) {
-      if (!encodesVideo(job.getDecision())) {
-        return Optional.empty();
-      }
-
-      return encoderFor(job.getDecision());
+    private Optional<WorkerVerifiedEncoder> encoderFor(TranscodeDecision decision) {
+      var encoders = decision.getVideo().getSoftwareEncoder() ? softwareEncoders : countedEncoders;
+      return RemoteEncoderBackendMapper.videoCodecFamilyName(decision.getVideo().getCodecFamily())
+          .map(encoders::get);
     }
 
-    private Optional<WorkerVerifiedEncoder> encoderFor(TranscodeDecision decision) {
+    private boolean comesFirstFor(TranscodeDecision decision) {
+      if (!decision.getVideo().getSoftwareEncoder()) {
+        return encodesInHardware(decision);
+      }
+
       return RemoteEncoderBackendMapper.videoCodecFamilyName(decision.getVideo().getCodecFamily())
-          .map(countedEncoders::get);
+          .filter(hardwareFailedFamilies::contains)
+          .isPresent();
     }
 
     private boolean encodesInHardware(TranscodeDecision decision) {
@@ -1194,10 +1328,19 @@ final class LiveWorkerConnectionRegistry {
               .isPresent();
     }
 
+    private boolean runsPinnedEncoder(Optional<WorkerVerifiedEncoder> pinnedEncoder) {
+      return pinnedEncoder.map(this::runsEncoder).orElse(true);
+    }
+
     // The keyframe-verified flag must match too: a playlist that carries
-    // EXT-X-INDEPENDENT-SEGMENTS for the pin needs closed GOPs from every attempt.
-    private boolean advertises(WorkerVerifiedEncoder pinnedEncoder) {
-      return pinnedEncoder.equals(countedEncoders.get(pinnedEncoder.backend().codecFamily()));
+    // EXT-X-INDEPENDENT-SEGMENTS for the pin needs closed GOPs from every attempt. A worker runs
+    // its
+    // software encoder whichever encoder it prefers, so a variant pinned to the software encoder
+    // keeps it once a hardware encoder is offered again (ADR 0044).
+    private boolean runsEncoder(WorkerVerifiedEncoder pinnedEncoder) {
+      var family = pinnedEncoder.backend().codecFamily();
+      return pinnedEncoder.equals(countedEncoders.get(family))
+          || pinnedEncoder.equals(softwareEncoders.get(family));
     }
 
     private boolean canAccessSourceNamespace(Uuid sourceNamespaceId) {
@@ -1256,6 +1399,16 @@ final class LiveWorkerConnectionRegistry {
         terminalFailure(job, failed)
             .ifPresent(
                 failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
+      }
+
+      if (job != null && isHardwareEncoderFailure(job, failed)) {
+        RemoteEncoderBackendMapper.videoCodecFamilyName(
+                job.getDecision().getVideo().getCodecFamily())
+            .ifPresent(hardwareFailedFamilies::add);
+        hardwareEncoderFailures
+            .computeIfAbsent(
+                fromProto(job.getStreamSessionId()), _ -> ConcurrentHashMap.newKeySet())
+            .add(job.getVariant().getVariantLabel());
       }
 
       return endReportedJobAttempt(attemptId);
@@ -1471,7 +1624,7 @@ final class LiveWorkerConnectionRegistry {
       var stopped = tryStop(jobAttemptId);
       // The worker runs another encoder than it advertised, so no later attempt may rely on the
       // advertisement, including a replacement attempt of this variant.
-      var withdrawn = countedEncoders.remove(pinned.codecFamily()) != null;
+      var withdrawn = countedEncoders.remove(pinned.codecFamily(), attempt.encoder());
       encoderBackendMismatches.increment();
       log.warn(
           "Stopped job attempt {} for stream session {} variant {} because the worker reported"

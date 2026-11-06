@@ -52,6 +52,13 @@ public interface TranscodeExecutor {
    */
   Optional<TranscodeFailure> terminalFailure(UUID sessionId);
 
+  /**
+   * Whether the hardware encoder of one of the variant's job attempts failed (ADR 0044). Remains
+   * true until the stream session is destroyed, and is true before the failure wakes the variant's
+   * held segment requests.
+   */
+  boolean hasHardwareEncoderFailed(UUID sessionId, String variantLabel);
+
   boolean isHealthy();
 
   int availableSlots();

@@ -220,6 +220,7 @@ class SegmentRecoveryConcurrencyTest {
             .segmentStore(store)
             .producerLifecycle(lifecycle)
             .heldRequests(race.executor.heldSegmentRequests())
+            .eventPublisher(new CapturingEventPublisher())
             .build();
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();

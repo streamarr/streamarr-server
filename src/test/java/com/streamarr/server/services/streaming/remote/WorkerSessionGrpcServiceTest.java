@@ -55,6 +55,7 @@ import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoDecision;
 import com.streamarr.transcode.v1.VideoEncoderBackend;
+import com.streamarr.transcode.v1.VideoEncodersChanged;
 import com.streamarr.transcode.v1.VideoMode;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
@@ -180,6 +181,45 @@ class WorkerSessionGrpcServiceTest {
             .build());
 
     assertThat(registry.probeCapacity(sourceNamespaceId, 1).backgroundProbeCapacity()).isEqualTo(3);
+  }
+
+  // ADR 0044: a worker stops offering a failed hardware encoder and offers it again once it passes
+  // its check.
+  @Test
+  @DisplayName(
+      "Should encode in software on new stream sessions when the worker session stops offering its"
+          + " hardware encoder, and keep the encoders when a change lists a family twice")
+  void shouldEncodeInSoftwareWhenTheWorkerSessionStopsOfferingItsHardwareEncoder()
+      throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    var nvenc =
+        keyframeVerifiedHardwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "h264_nvenc");
+    var libx264 = softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264");
+    var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
+    registration.getCapabilitiesBuilder().addVideoEncoders(nvenc);
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setVideoEncodersChanged(
+                VideoEncodersChanged.newBuilder().addVideoEncoders(nvenc).addVideoEncoders(libx264))
+            .build());
+
+    assertThat(registry.hardwareEncodableVideoCodecFamilies(sourceNamespaceId))
+        .containsExactly("h264");
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setVideoEncodersChanged(VideoEncodersChanged.newBuilder().addVideoEncoders(libx264))
+            .build());
+
+    assertThat(registry.hardwareEncodableVideoCodecFamilies(sourceNamespaceId)).isEmpty();
+    assertThat(registry.encodableVideoCodecFamilies(sourceNamespaceId)).containsExactly("h264");
   }
 
   @Test
@@ -984,6 +1024,31 @@ class WorkerSessionGrpcServiceTest {
         EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
 
     assertThat(responses.error).isNotNull();
+    assertThat(Status.fromThrowable(responses.error).getCode())
+        .isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThat(registry.hasConnectedWorker(sourceNamespaceId)).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a registration when it lists two software encoders for one codec family")
+  void shouldRejectRegistrationWhenItListsTwoSoftwareEncodersForOneCodecFamily() throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var responses = new TerminalErrorObserver();
+    var session = workerSession(service, workerId, responses);
+    var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
+    registration
+        .getCapabilitiesBuilder()
+        .addSoftwareVideoEncoders(LIBX264)
+        .addSoftwareVideoEncoders(
+            softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "x264"));
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
+
     assertThat(Status.fromThrowable(responses.error).getCode())
         .isEqualTo(Status.Code.INVALID_ARGUMENT);
     assertThat(registry.hasConnectedWorker(sourceNamespaceId)).isFalse();

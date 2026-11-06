@@ -840,6 +840,62 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoCodecFamily()).isEqualTo(expectedCodecFamily);
   }
 
+  // ADR 0044: the software continuation keeps the codec that the client already plays.
+  @Test
+  @DisplayName(
+      "Should encode the named codec family with the software encoder when a hardware encoder"
+          + " failed, even where a worker encodes another family in hardware")
+  void shouldEncodeTheNamedFamilyInSoftwareWhenAHardwareEncoderFailed() {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("hevc", "aac"))
+                    .capabilityDeclaration(declaring(AV1, H264))
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
+                    .softwareEncodeCodecFamily(Optional.of("h264"))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.softwareEncoder()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should decide nothing when no worker encodes the software continuation's family")
+  void shouldDecideNothingWhenNoWorkerEncodesTheSoftwareContinuationsFamily() {
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe("hevc", "aac"))
+                .capabilityDeclaration(declaring(AV1, H264))
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .encodableVideoCodecFamilies(Set.of("av1"))
+                .softwareEncodeCodecFamily(Optional.of("h264"))
+                .build());
+
+    assertThat(decision).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should encode with the offered encoder when no hardware encoder failed")
+  void shouldEncodeWithTheOfferedEncoderWhenNoHardwareEncoderFailed() {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("hevc", "aac"))
+                    .capabilityDeclaration(declaring(AV1, H264))
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.softwareEncoder()).isFalse();
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("entryFrameRatesHardwareEncodedFamiliesAndExpectedEncode")
   @DisplayName(

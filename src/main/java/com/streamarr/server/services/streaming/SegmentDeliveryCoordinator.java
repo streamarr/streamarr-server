@@ -1,10 +1,13 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 
 /** Waits for advertised segment bytes while the lifecycle owner coordinates producer recovery. */
 @Slf4j
@@ -14,6 +17,7 @@ public class SegmentDeliveryCoordinator {
   private final SegmentStore segmentStore;
   private final ProducerLifecycleService producerLifecycle;
   private final HeldSegmentRequests heldRequests;
+  @NonNull private final ApplicationEventPublisher eventPublisher;
 
   /**
    * Answers one segment request. Before the wait, the request applies the on-demand rules of ADR
@@ -23,7 +27,9 @@ public class SegmentDeliveryCoordinator {
    * ends instead of restarting it. A held request also ends instead of relocating or resuming its
    * variant once a newer request has positioned the variant. A delivered media segment of the
    * newest media-segment request's variant stops the variant that the player left. A request past a
-   * short copy's normal end waits until the stream session ends (ADR 0052).
+   * short copy's normal end waits until the stream session ends (ADR 0052). A request for a variant
+   * whose hardware encoder failed ends as unrecoverable and continues the playback session on the
+   * software encoder instead of starting or replacing the variant (ADR 0044).
    */
   public SegmentDelivery deliver(UUID sessionId, String variantLabel, String segmentName) {
     var refusal = refusal(sessionId, segmentName);
@@ -87,9 +93,26 @@ public class SegmentDeliveryCoordinator {
     return switch (producerLifecycle.recover(request)) {
       case EXHAUSTED, VARIANT_NOT_RUNNING, SUPERSEDED, PAST_A_FAILED_COPY ->
           unrecoverableDelivery(request.sessionId(), request.segmentName());
+      case HARDWARE_ENCODER_FAILED -> continueInSoftware(request);
       case SESSION_GONE, SEGMENT_NOT_ADVERTISED -> new SegmentDelivery.SessionEnded();
       case WAITING, PAST_THE_NORMAL_END -> null;
     };
+  }
+
+  // Only the variant that the player requests continues on the software encoder; the player reads
+  // the new format attempt once its segment request ends as unrecoverable. A held request for a
+  // variant that the player has left just ends (ADR 0044).
+  private SegmentDelivery continueInSoftware(SegmentRequest request) {
+    if (!producerLifecycle.isRequestedVariant(request.sessionId(), request.variantLabel())) {
+      return unrecoverableDelivery(request.sessionId(), request.segmentName());
+    }
+
+    eventPublisher.publishEvent(
+        RequestedVariantHardwareEncoderFailedEvent.builder()
+            .streamSessionId(request.sessionId())
+            .variantLabel(request.variantLabel())
+            .build());
+    return unrecoverableDelivery(request.sessionId(), request.segmentName());
   }
 
   private SegmentDelivery unrecoverableDelivery(UUID sessionId, String segmentName) {

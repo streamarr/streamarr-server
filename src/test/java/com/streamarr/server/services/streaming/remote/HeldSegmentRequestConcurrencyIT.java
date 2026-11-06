@@ -498,6 +498,11 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     @Override
+    public boolean hasHardwareEncoderFailed(UUID sessionId, String variantLabel) {
+      return delegate.hasHardwareEncoderFailed(sessionId, variantLabel);
+    }
+
+    @Override
     public boolean isHealthy() {
       return delegate.isHealthy();
     }

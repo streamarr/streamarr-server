@@ -53,6 +53,7 @@ public final class StreamingRigFixture {
                 heldRequests == null
                     ? new HeldSegmentRequests(new SimpleMeterRegistry())
                     : heldRequests)
+            .eventPublisher(eventPublisher == null ? new CapturingEventPublisher() : eventPublisher)
             .build();
     return new StreamingRig(lifecycle, coordinator);
   }

@@ -45,6 +45,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<ProcessKey> started = ConcurrentHashMap.newKeySet();
   private final Set<UUID> stopped = ConcurrentHashMap.newKeySet();
   private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
+  private final Set<ProcessKey> hardwareEncoderFailures = ConcurrentHashMap.newKeySet();
   private final Set<UUID> failingOnStop = ConcurrentHashMap.newKeySet();
   private final List<TranscodeRequest> startedRequests =
       Collections.synchronizedList(new ArrayList<>());
@@ -193,6 +194,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       stop(sessionId);
     } finally {
       terminalFailures.remove(sessionId);
+      hardwareEncoderFailures.removeIf(key -> key.sessionId().equals(sessionId));
     }
   }
 
@@ -352,6 +354,18 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   public void failTerminally(UUID sessionId, TranscodeFailure failure) {
     terminalFailures.put(sessionId, failure);
     endAll(sessionId);
+  }
+
+  @Override
+  public boolean hasHardwareEncoderFailed(UUID sessionId, String variantLabel) {
+    return hardwareEncoderFailures.contains(new ProcessKey(sessionId, variantLabel));
+  }
+
+  /** Ends the variant's job attempt as a worker whose hardware encoder failed does. */
+  public void failHardwareEncoder(UUID sessionId, String variantLabel) {
+    var key = new ProcessKey(sessionId, variantLabel);
+    hardwareEncoderFailures.add(key);
+    end(key);
   }
 
   @Override

@@ -18,6 +18,7 @@ import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.PlaybackSessionChangedEvent;
 import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
+import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Clock;
@@ -104,7 +105,8 @@ public class PlaybackSessionService implements AutoCloseable {
     @Builder.Default private Optional<PendingAudioTrackSwitch> audioTrackSwitch = Optional.empty();
     @Builder.Default private List<VideoQuality> offeredChoices = List.of();
     // The format attempts that count against the budget. An audio switch's format attempt does
-    // not (ADR 0043), so it differs from startedFormatAttempts, which numbers each decision.
+    // not (ADR 0043), nor does a software continuation after a hardware encoder failure (ADR 0044),
+    // so it differs from startedFormatAttempts, which numbers each decision.
     @Builder.Default private int formatAttemptCount = 1;
     @Builder.Default private int startedFormatAttempts = 1;
     private final Set<String> excludedEncodeCodecFamilies = new HashSet<>();
@@ -124,14 +126,23 @@ public class PlaybackSessionService implements AutoCloseable {
   /**
    * The format attempt that a reservation starts: its stream session and the video operations it
    * may use. It plays {@code choice}, or {@code choiceWhenEncoding} once it turns out to encode the
-   * video.
+   * video. {@code softwareEncodeCodecFamily} names the codec family that it encodes in software
+   * after a hardware encoder failure.
    */
   @Builder
   private record ReservedFormatAttempt(
       @NonNull UUID streamId,
       @NonNull VideoFormatConstraint videoFormatConstraint,
       @NonNull PlayingChoice choice,
-      @NonNull PlayingChoice choiceWhenEncoding) {}
+      @NonNull PlayingChoice choiceWhenEncoding,
+      @NonNull Optional<String> softwareEncodeCodecFamily) {
+
+    // Lombok builder defaults — its generated setters assign them
+    @SuppressWarnings("java:S9438")
+    private static class ReservedFormatAttemptBuilder {
+      private Optional<String> softwareEncodeCodecFamily = Optional.empty();
+    }
+  }
 
   /**
    * Starts a playback session and its first format attempt. A capability declaration that the API
@@ -738,6 +749,39 @@ public class PlaybackSessionService implements AutoCloseable {
     };
   }
 
+  /**
+   * Continues the requested variant's encode on the software encoder of the same codec family in a
+   * new format attempt, which the client reopens at the same position (ADR 0044). It spends no
+   * format attempt, and no worker with room for it ends the playback session.
+   */
+  @EventListener
+  public void onRequestedVariantHardwareEncoderFailed(
+      @NonNull RequestedVariantHardwareEncoderFailedEvent event) {
+    var failedId = event.streamSessionId();
+    handleJobFailure(failedId, playback -> reserveSoftwareContinuation(playback, failedId));
+  }
+
+  private Optional<FormatAttemptReservation> reserveSoftwareContinuation(
+      PlaybackSession playback, UUID failedId) {
+    if (!isCurrentAttempt(playback, failedId)
+        || endedNormally(playback)
+        || !(playback.current instanceof PlaybackFormatAttempt.Ready(var session))
+        || !(outputOf(session) instanceof FailedFormatAttempt.Encode(var codecFamily))) {
+      return Optional.empty();
+    }
+
+    playback.pendingAttemptCause = Optional.of(DecisionReason.HARDWARE_ENCODER_FAILED);
+    return Optional.of(
+        reserveNextFormatAttempt(
+            playback,
+            failedId,
+            ReservedFormatAttempt.builder()
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .choice(playback.choice)
+                .choiceWhenEncoding(playback.choice)
+                .softwareEncodeCodecFamily(Optional.of(codecFamily))));
+  }
+
   private static DecisionReason causeOf(FailedFormatAttempt failed) {
     return switch (failed.output()) {
       case FailedFormatAttempt.DirectPlay _ -> DecisionReason.DIRECT_PLAY_FAILED;
@@ -802,7 +846,10 @@ public class PlaybackSessionService implements AutoCloseable {
     playback.choice = next.choice();
     playback.lastAccessedAt = clock.instant();
     playback.current = new PlaybackFormatAttempt.Pending(childId);
-    playback.formatAttemptCount++;
+    if (next.softwareEncodeCodecFamily().isEmpty()) {
+      playback.formatAttemptCount++;
+    }
+
     playback.startedFormatAttempts++;
     playback.streamIds.add(childId);
     streamOwners.remove(failedId, playback);
@@ -873,6 +920,7 @@ public class PlaybackSessionService implements AutoCloseable {
           streamingService.createSession(
               childCommand(work.playback(), streamId)
                   .videoFormatConstraint(next.videoFormatConstraint())
+                  .softwareEncodeCodecFamily(next.softwareEncodeCodecFamily())
                   .build());
       switch (outcome) {
         case Outcome.Accepted(var session) ->
