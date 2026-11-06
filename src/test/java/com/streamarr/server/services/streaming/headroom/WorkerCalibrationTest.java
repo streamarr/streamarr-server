@@ -1359,6 +1359,48 @@ class WorkerCalibrationTest {
     }
 
     @Test
+    @DisplayName(
+        "Should leave another preset unvalidated, also after a restart, when repeated measurements of one load cannot separate its constant from a new decode constant")
+    void
+        shouldLeaveAnotherPresetUnvalidatedAlsoAfterARestartWhenRepeatedMeasurementsOfOneLoadCannotSeparateItsConstantFromANewDecodeConstant() {
+      var libx264Medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
+      var calibration =
+          tenCoreCalibration()
+              .startingConstants(
+                  HeadroomConstants.builder()
+                      .cpuSecondsPerMegapixel(Map.of(LIBX264_FASTER, 0.04, SOFTWARE_H264, 0.01))
+                      .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx264Medium, 6.0))
+                      .build())
+              .build();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      // 16 megapixels per second of output and 50 of source: medium at 0.02 with HEVC decode at
+      // 0.0016 costs 0.4, as does any other split.
+      var mediumFromHevc =
+          libx264FasterLoad()
+              .encoderAndPreset(libx264Medium)
+              .outputPixelRate(PixelRate.of(640, 1000, 25))
+              .sourceDecoder(new SourceDecoder("hevc", DecodeBackend.SOFTWARE))
+              .build();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(measuredAtCost(mediumFromHevc, 0.4, 2));
+      }
+
+      var restarted =
+          tenCoreCalibration()
+              .startingConstants(calibration.constants())
+              .measuredConstants(calibration.measuredConstants())
+              .latestPredictions(calibration.latestPredictions())
+              .build();
+
+      var medium = List.of(libx264FasterLoad().encoderAndPreset(libx264Medium).build());
+      assertThat(calibration.isValidatedFor(medium)).as("before the restart").isFalse();
+      assertThat(restarted.isValidatedFor(medium)).as("after the restart").isFalse();
+    }
+
+    @Test
     @DisplayName("Should let another preset's own predictions decide once it has twenty of them")
     void shouldLetAnotherPresetsOwnPredictionsDecideOnceItHasTwentyOfThem() {
       var calibration = benchmarkedAtFasterAndVeryfast();

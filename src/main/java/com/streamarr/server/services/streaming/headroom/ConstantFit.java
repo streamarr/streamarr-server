@@ -13,7 +13,6 @@ import java.util.Set;
 import org.ojalgo.matrix.decomposition.Cholesky;
 import org.ojalgo.matrix.store.R064Store;
 import org.ojalgo.optimisation.convex.ConvexSolver;
-import org.ojalgo.structure.Access2D;
 
 /**
  * A weighted least-squares fit of the headroom model's constants to measured costs, with a prior on
@@ -33,10 +32,11 @@ final class ConstantFit {
   // measurement's own cost, not this guess, gives it its value.
   private static final double NEW_CONSTANT = 0.01;
   private static final double NEW_CONSTANT_WEIGHT = 1e-4;
-  // A new constant gets a value once the measurements, not its nominal prior, give at least 90 %
-  // of its precision: its posterior variance is at most a tenth of its prior variance.
-  private static final double SETTLED_BY_PRIOR = 0.1;
-  private static final double NEW_CONSTANT_PRECISION = precision(NEW_CONSTANT, NEW_CONSTANT_WEIGHT);
+  // The measurements settle a new constant when, with every constant that has a value held, a
+  // vanishing probe prior keeps at most this share of its variance: the measurements leave no
+  // direction of the new constants unseen that moves it by more than about 3 %.
+  private static final double PROBE_PRECISION = 1e-9;
+  private static final double UNSEEN_SHARE = 1e-3;
   // A measurement whose weight has faded below this no longer counts.
   private static final double FADED = 1e-6;
 
@@ -107,7 +107,11 @@ final class ConstantFit {
       }
     }
 
-    var newConstants = new HashSet<CostConstant>();
+    var newConstants =
+        index.keySet().stream()
+            .filter(constant -> !starting.containsKey(constant) && !current.containsKey(constant))
+            .toList();
+    var settled = settledAmong(newConstants, index, normal);
     index.forEach(
         (constant, row) -> {
           var start = starting.get(constant);
@@ -118,24 +122,19 @@ final class ConstantFit {
           var now = current.get(constant);
           if (now != null) {
             anchor(normal, moments, row, now, currentWeight);
-            return;
-          }
-
-          if (start == null) {
-            anchor(normal, moments, row, NEW_CONSTANT, NEW_CONSTANT_WEIGHT);
-            newConstants.add(constant);
           }
         });
+    newConstants.forEach(
+        constant ->
+            anchor(normal, moments, index.get(constant), NEW_CONSTANT, NEW_CONSTANT_WEIGHT));
 
-    var variances = posteriorVariances(normal);
     return smallestPositiveSolution(normal, moments)
         .map(
             values -> {
               var solved = new HashMap<CostConstant, Double>();
               index.forEach(
                   (constant, row) -> {
-                    if (!newConstants.contains(constant)
-                        || variances[row] * NEW_CONSTANT_PRECISION <= SETTLED_BY_PRIOR) {
+                    if (!newConstants.contains(constant) || settled.contains(constant)) {
                       solved.put(constant, values[row]);
                     }
                   });
@@ -143,17 +142,41 @@ final class ConstantFit {
             });
   }
 
-  /** The diagonal of the inverse of the positive-definite normal matrix. */
-  private static double[] posteriorVariances(double[][] normal) {
-    var cholesky = Cholesky.R064.make();
-    cholesky.decompose(R064Store.FACTORY.copy(Access2D.wrap(normal)));
-    var inverse = cholesky.getInverse();
-    var variances = new double[normal.length];
-    for (var row = 0; row < normal.length; row++) {
-      variances[row] = inverse.doubleValue(row, row);
+  /**
+   * The new constants that the measurements alone determine once every other constant is held.
+   * Scaling the measurements' normal matrix to a unit diagonal makes the test independent of pixel
+   * rates and weights; a direction that the measurements do not see then keeps nearly all of a
+   * vanishing probe prior's variance.
+   */
+  private static Set<CostConstant> settledAmong(
+      List<CostConstant> newConstants, Map<CostConstant, Integer> index, double[][] normal) {
+    var size = newConstants.size();
+    var scaled = R064Store.FACTORY.make(size, size);
+    for (var row = 0; row < size; row++) {
+      var rowIndex = index.get(newConstants.get(row));
+      for (var column = 0; column < size; column++) {
+        var columnIndex = index.get(newConstants.get(column));
+        scaled.set(
+            row,
+            column,
+            normal[rowIndex][columnIndex]
+                / Math.sqrt(normal[rowIndex][rowIndex] * normal[columnIndex][columnIndex]));
+      }
+
+      scaled.add(row, row, PROBE_PRECISION);
     }
 
-    return variances;
+    var cholesky = Cholesky.R064.make();
+    cholesky.decompose(scaled);
+    var inverse = cholesky.getInverse();
+    var settled = new HashSet<CostConstant>();
+    for (var row = 0; row < size; row++) {
+      if (PROBE_PRECISION * inverse.doubleValue(row, row) <= UNSEEN_SHARE) {
+        settled.add(newConstants.get(row));
+      }
+    }
+
+    return settled;
   }
 
   /**
@@ -162,14 +185,9 @@ final class ConstantFit {
    */
   private static void anchor(
       double[][] normal, double[] moments, int row, double value, double weight) {
-    var precision = precision(value, weight);
-    normal[row][row] += precision;
-    moments[row] += precision * value;
-  }
-
-  private static double precision(double value, double weight) {
     var scale = Math.max(value, ANCHOR_FLOOR);
-    return weight / (scale * scale);
+    normal[row][row] += weight / (scale * scale);
+    moments[row] += weight * value / (scale * scale);
   }
 
   /**
