@@ -344,7 +344,7 @@ Version 8 adds the maximum frame rate of the chosen video stream: the highest ra
 For a Dolby Vision stream, version 8 also adds the enhancement layer that the RPUs' NLQ parameters describe, none, MEL or FEL, and MaxCLL and MaxFALL from the first RPU's level 6 block.
 The server reads none of the version 8 facts yet.
 Version 2 is unused.
-The server requests version 7.
+The server requests version 8.
 After the version rises, the server scans each library that holds a result of an earlier version at startup.
 Playback keeps using a file's earlier result until the scan stores the file's new result.
 

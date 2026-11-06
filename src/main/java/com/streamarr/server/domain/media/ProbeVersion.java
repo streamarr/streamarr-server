@@ -11,10 +11,11 @@ public final class ProbeVersion {
   // Version 5 adds the frame facts below. Version 6 adds the video and audio bitrates that the
   // worker reads from a Matroska file's trusted statistics tags, and whether a copy of an H.264 or
   // HEVC video stream keeps every packet's bytes. Version 7 adds the audio facts and the source
-  // facts below. Each version includes the facts of every earlier version. Version 2 is unused.
-  // V097 deleted every result before version 4; an earlier result stays playable until the re-scan
-  // stores the file's current result.
-  public static final int CURRENT = 7;
+  // facts below. Version 8 adds the maximum frame rate and the RPU facts below. Each version
+  // includes the facts of every earlier version. Version 2 is unused. V097 deleted every result
+  // before version 4; an earlier result stays playable until the re-scan stores the file's current
+  // result.
+  public static final int CURRENT = 8;
 
   public static final int FIRST_TO_REPORT_CHAPTERS = 4;
 
