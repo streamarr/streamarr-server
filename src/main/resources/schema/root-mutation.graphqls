@@ -22,6 +22,10 @@ type Mutation {
     """
     switchPlaybackAudioTrack(input: SwitchPlaybackAudioTrackInput!): SwitchPlaybackAudioTrackPayload
     destroyPlaybackSession(input: DestroyPlaybackSessionInput!): DestroyPlaybackSessionPayload
+    "Shares a report about the selected Profile's playback session with the Server Admin."
+    sharePlaybackReport(input: SharePlaybackReportInput!): SharePlaybackReportPayload
+    "Marks a shared playback report read. A report keeps the time a ServerAdmin first marked it read."
+    markPlaybackReportRead(input: MarkPlaybackReportReadInput!): MarkPlaybackReportReadPayload
     reportStreamSessionTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!
     "Marks an item watched for the selected Profile. A season or a series marks each of its episodes."
     markWatched(input: MarkWatchedInput!): MarkWatchedPayload
