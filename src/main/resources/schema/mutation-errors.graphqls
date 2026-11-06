@@ -444,6 +444,11 @@ type IdleSegmentRetentionOutOfRangeError implements InputMutationError & Mutatio
     inputPath: [String!]!
 }
 
+type UploadBudgetOutOfRangeError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 "No video copy or encode satisfies the playback request."
 type NoEligibleVideoFormatError implements MutationError {
     message: String!

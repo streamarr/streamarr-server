@@ -13,7 +13,6 @@ import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
@@ -55,6 +54,7 @@ public class HlsStreamingService implements StreamingService {
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final ProducerLifecycleService producerLifecycle;
   private final SegmentDeliveryCoordinator deliveryCoordinator;
+  private final UploadBudget uploadBudget;
   private final MeterRegistry meterRegistry;
   private final PlaybackLanguagePreferences languagePreferences;
 
@@ -214,12 +214,16 @@ public class HlsStreamingService implements StreamingService {
             .variants(variants)
             .startPosition(command.startPosition().orElse(null))
             .createdAt(now)
+            .networkRoute(command.networkRoute())
             .build();
     startAtTheStartSegment(session);
 
     try {
       runtimeRegistry.save(session);
-      session = producerLifecycle.startFirstListedVariant(session);
+      // When the upload budget leaves out the first-listed variant, the top variant that it keeps
+      // starts instead, so the stream session holds the transcode place that admission found
+      // until the player reads its playlist (ADR 0050).
+      session = producerLifecycle.startListedVariant(session, uploadBudget.topKeptVariant(session));
     } catch (TranscodeLimitReachedException _) {
       // Another start took the last place under the transcode limit after this admission, so no
       // job attempt of this stream session was dispatched.
@@ -264,6 +268,7 @@ public class HlsStreamingService implements StreamingService {
         .mediaProbe(probe)
         .options(command.options())
         .startPosition(command.startPosition().orElse(null))
+        .networkRoute(command.networkRoute())
         .createdAt(Instant.now())
         .delivery(StreamDelivery.DIRECT_PLAY);
   }
@@ -584,7 +589,7 @@ public class HlsStreamingService implements StreamingService {
     var request =
         QualityLadderRequest.builder()
             .probe(decisionRequest.source())
-            .viewerLimits(ladderLimits(decisionRequest))
+            .viewerLimits(decisionRequest.viewerLimits().forEncodedLadder())
             .capabilityDeclaration(declaration)
             .codecProfile(codecProfile)
             .encodeFormat(decision.videoEncodeFormat())
@@ -600,15 +605,6 @@ public class HlsStreamingService implements StreamingService {
     var ladder = qualityLadderService.generateVariants(request);
     return new QualityLadder(
         MultivariantPlaylistOrder.of(ladder.variants(), ladder.audio().bitrate()), ladder.audio());
-  }
-
-  // An encode that Original reaches plays Auto's ladder (ADR 0052).
-  private static ViewerLimits ladderLimits(TranscodeDecisionRequest request) {
-    if (request.viewerLimits().quality() == VideoQuality.ORIGINAL) {
-      return request.viewerLimits().inAuto();
-    }
-
-    return request.viewerLimits();
   }
 
   // Creating a stream session starts one job attempt, so a session needs one free slot whatever

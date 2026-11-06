@@ -337,6 +337,28 @@ input CreatePlaybackSessionInput {
     starts playback at the beginning of the media.
     """
     startPositionSeconds: Float
+    "How the client reached the server. Every format attempt of the playback session keeps it."
+    networkRoute: NetworkRoute!
+}
+
+"""
+How the client says it reached the server. The server never classifies a viewer by IP address; it takes the
+client's word. The route decides only whether the playback session's stream sessions count against the upload
+budget. A false claim keeps a stream session out of the budget and grants no access.
+"""
+enum NetworkRoute {
+    """
+    The client reached the server through a private address (RFC 1918, IPv4 or IPv6 link-local, or IPv6 unique
+    local fd00::/8 outside Tailscale's fd7a:115c:a1e0::/48), a .local or .home.arpa name (RFC 8375), or local
+    discovery. The stream sessions never count against the upload budget.
+    """
+    LOCAL_NETWORK
+    """
+    Every other route, including loopback (a tunnel can forward a loopback port), a public hostname, a tunnel,
+    carrier-grade NAT (100.64.0.0/10, which includes Tailscale), Tailscale's IPv6 prefix fd7a:115c:a1e0::/48,
+    and hairpin NAT through a public name. The stream sessions count against the upload budget.
+    """
+    INTERNET
 }
 
 type CreatePlaybackSessionPayload {

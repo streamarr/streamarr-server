@@ -30,6 +30,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.events.DolbyVisionConversionFailedEvent;
@@ -150,6 +151,7 @@ class RemoteFormatFailureIT {
       var service =
           HlsStreamingService.builder()
               .languagePreferences(noLanguagePreferences())
+              .uploadBudget(UploadBudgetFixture.OFF)
               .meterRegistry(new SimpleMeterRegistry())
               .runtimeRegistry(rig.registry)
               .producerLifecycle(rig.streaming.lifecycle())
@@ -417,7 +419,7 @@ class RemoteFormatFailureIT {
     try (var rig = new FailureRig(events, mergedPlainGridEncodeSession());
         var worker = new TestWorker(rig.server);
         var tasks = Executors.newVirtualThreadPerTaskExecutor()) {
-      rig.streaming.lifecycle().startFirstListedVariant(rig.session);
+      rig.streaming.lifecycle().startListedVariant(rig.session, rig.session.firstListedVariant());
       var failed = worker.nextJob();
       worker.fail(failed, JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED);
       rig.awaitStopped();

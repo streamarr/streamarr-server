@@ -10,6 +10,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Duration;
+import java.util.Optional;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -88,6 +89,43 @@ public class ServerSettingsService {
   private static IdleSegmentRetentionSetting idleSegmentRetentionOf(ServerSettings settings) {
     return new IdleSegmentRetentionSetting(
         settings.getId(), settings.getIdleSegmentRetentionMinutes());
+  }
+
+  public UploadBudgetSetting readUploadBudgetSetting(@NonNull AuthenticatedIdentity identity) {
+    authorizationService.requireAllowed(identity, new Intent.ViewUploadBudget());
+    return storedUploadBudget();
+  }
+
+  /**
+   * Turns the budget off when {@code internetUploadMegabitsPerSecond} is empty. Last write wins;
+   * the audit columns record the ServerAdmin who made the change.
+   */
+  @Transactional
+  public Outcome<UploadBudgetSetting, ChangeUploadBudgetRejection> changeUploadBudget(
+      @NonNull AuthenticatedIdentity identity,
+      @NonNull Optional<Integer> internetUploadMegabitsPerSecond) {
+    authorizationService.requireAllowed(identity, new Intent.ChangeUploadBudget());
+    if (!UploadBudgetSetting.allows(internetUploadMegabitsPerSecond)) {
+      return Outcome.rejected(new ChangeUploadBudgetRejection.OutOfRange());
+    }
+
+    var settings = storedSettings();
+    settings.setInternetUploadMegabitsPerSecond(internetUploadMegabitsPerSecond.orElse(null));
+    serverSettingsRepository.save(settings);
+    return Outcome.accepted(new UploadBudgetSetting(internetUploadMegabitsPerSecond));
+  }
+
+  /**
+   * The upload budget as playlists and metrics read it for the system, not for a caller, so this
+   * read is not authorized.
+   */
+  public UploadBudgetSetting uploadBudget() {
+    return storedUploadBudget();
+  }
+
+  private UploadBudgetSetting storedUploadBudget() {
+    return new UploadBudgetSetting(
+        Optional.ofNullable(storedSettings().getInternetUploadMegabitsPerSecond()));
   }
 
   private ServerSettings storedSettings() {

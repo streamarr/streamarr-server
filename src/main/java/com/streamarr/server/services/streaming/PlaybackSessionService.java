@@ -1015,6 +1015,7 @@ public class PlaybackSessionService implements AutoCloseable {
                       .quality(playback.choice.playbackChoice())
                       .build())
               .capabilityDeclaration(playback.command.capabilityDeclaration())
+              .networkRoute(playback.command.networkRoute())
               .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
               .startPosition(playback.startPosition)
               .audioTrackPosition(playback.audioTrackPosition);
