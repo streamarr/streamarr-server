@@ -12,6 +12,17 @@ public class ProfileManagerRepositoryCustomImpl implements ProfileManagerReposit
   private final DSLContext dsl;
 
   @Override
+  public boolean lockDirectManagement(UUID accountId, UUID profileId) {
+    return dsl.selectOne()
+        .from(PROFILE_MANAGER)
+        .where(PROFILE_MANAGER.ACCOUNT_ID.eq(accountId))
+        .and(PROFILE_MANAGER.PROFILE_ID.eq(profileId))
+        .forShare()
+        .fetchOptional()
+        .isPresent();
+  }
+
+  @Override
   public boolean tryGrantDirectManagement(UUID accountId, UUID profileId) {
     return dsl.insertInto(PROFILE_MANAGER)
             .set(PROFILE_MANAGER.ACCOUNT_ID, accountId)

@@ -52,9 +52,7 @@ class ProfileManagementContributor implements FactContributor {
                 .map(account -> profileId.equals(account.getPersonalProfileId()))
                 .orElse(false);
     var directManager =
-        profileManagerRepository
-            .findByAccountIdAndProfileId(identity.accountId(), profileId)
-            .isPresent();
+        profileManagerRepository.lockDirectManagement(identity.accountId(), profileId);
     slice.resourceAttribute(MANAGED_BY_PRINCIPAL, new PrimBool(selfManaged || directManager));
     // Relinquishing needs a stored grant to give up; self-management has no row to relinquish.
     slice.resourceAttribute(DIRECTLY_MANAGED_BY_PRINCIPAL, new PrimBool(directManager));

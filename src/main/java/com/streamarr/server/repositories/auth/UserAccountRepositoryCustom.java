@@ -35,7 +35,7 @@ public interface UserAccountRepositoryCustom {
    * The Account relationships that can authorize a Share transition, held stable with a shared row
    * lock until the surrounding transaction ends.
    */
-  Optional<AccountShareFacts> findShareFacts(UUID accountId);
+  Optional<AccountShareFacts> lockShareFacts(UUID accountId);
 
   /**
    * ADR 0024 "may use a Household": the Account is a member, or its Personal Profile is actively

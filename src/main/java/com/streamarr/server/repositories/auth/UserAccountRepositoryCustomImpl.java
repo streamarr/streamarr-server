@@ -79,7 +79,7 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
-  public Optional<AccountShareFacts> findShareFacts(UUID accountId) {
+  public Optional<AccountShareFacts> lockShareFacts(UUID accountId) {
     return dsl.select(
             USER_ACCOUNT.HOUSEHOLD_ID,
             USER_ACCOUNT.HOUSEHOLD_ROLE,

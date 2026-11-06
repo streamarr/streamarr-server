@@ -50,12 +50,10 @@ class ShareFactsContributor implements FactContributor {
 
     var found = share.get();
     var unrestrictedProfile = profileRepository.lockIfUnrestricted(found.getProfileId());
-    var principal = userAccountRepository.findShareFacts(identity.accountId());
+    var principal = userAccountRepository.lockShareFacts(identity.accountId());
     var sovereign = sovereignOverProfile(principal, found, unrestrictedProfile);
     var directlyManaged =
-        profileManagerRepository
-            .findByAccountIdAndProfileId(identity.accountId(), found.getProfileId())
-            .isPresent();
+        profileManagerRepository.lockDirectManagement(identity.accountId(), found.getProfileId());
     slice.resourceAttribute(STRUCTURAL, new PrimBool(found.isStructural()));
     slice.resourceAttribute(
         OFFERED_BY_PRINCIPAL,

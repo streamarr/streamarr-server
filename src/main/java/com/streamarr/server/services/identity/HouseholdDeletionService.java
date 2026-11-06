@@ -225,7 +225,7 @@ public class HouseholdDeletionService {
 
     var replacement =
         userAccountRepository
-            .findShareFacts(disposition.replacementManagerAccountId())
+            .lockShareFacts(disposition.replacementManagerAccountId())
             .orElseThrow(
                 () ->
                     new MutationRejection(

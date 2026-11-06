@@ -68,7 +68,7 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
-  public Optional<AccountShareFacts> findShareFacts(UUID accountId) {
+  public Optional<AccountShareFacts> lockShareFacts(UUID accountId) {
     return findById(accountId)
         .map(
             account ->
