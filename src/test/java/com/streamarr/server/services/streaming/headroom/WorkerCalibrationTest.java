@@ -1,19 +1,19 @@
 package com.streamarr.server.services.streaming.headroom;
 
-import com.streamarr.server.domain.streaming.headroom.CpuLimit;
-import com.streamarr.server.domain.streaming.headroom.PixelRate;
-import com.streamarr.server.domain.streaming.headroom.DecodeBackend;
-import com.streamarr.server.domain.streaming.headroom.SourceDecoder;
-import com.streamarr.server.domain.streaming.headroom.EncoderAndPreset;
-import com.streamarr.server.domain.streaming.headroom.ToneMapping;
-import com.streamarr.server.domain.streaming.headroom.JobAttemptLoad;
-import com.streamarr.server.domain.streaming.headroom.HeadroomConstants;
-import com.streamarr.server.domain.streaming.headroom.PredictionCheck;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.headroom.CpuLimit;
+import com.streamarr.server.domain.streaming.headroom.DecodeBackend;
+import com.streamarr.server.domain.streaming.headroom.EncoderAndPreset;
+import com.streamarr.server.domain.streaming.headroom.HeadroomConstants;
+import com.streamarr.server.domain.streaming.headroom.JobAttemptLoad;
+import com.streamarr.server.domain.streaming.headroom.PixelRate;
+import com.streamarr.server.domain.streaming.headroom.PredictionCheck;
+import com.streamarr.server.domain.streaming.headroom.SourceDecoder;
+import com.streamarr.server.domain.streaming.headroom.ToneMapping;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -65,9 +65,7 @@ class WorkerCalibrationTest {
   }
 
   private static WorkerCalibration.WorkerCalibrationBuilder tenCoreCalibration() {
-    return WorkerCalibration.builder()
-        .cpuLimit(new CpuLimit(10))
-        .startingConstants(ACCURATE);
+    return WorkerCalibration.builder().cpuLimit(new CpuLimit(10)).startingConstants(ACCURATE);
   }
 
   private static Duration productionTimeAtSpeed(double productionSpeed) {
@@ -154,7 +152,8 @@ class WorkerCalibrationTest {
     @Test
     @DisplayName(
         "Should predict the recorded production speeds when the constants are fitted from the recorded production times")
-    void shouldPredictTheRecordedProductionSpeedsWhenTheConstantsAreFittedFromTheRecordedProductionTimes() {
+    void
+        shouldPredictTheRecordedProductionSpeedsWhenTheConstantsAreFittedFromTheRecordedProductionTimes() {
       var runs = RecordedCapacityRuns.load();
       var calibration =
           WorkerCalibration.builder()
@@ -186,8 +185,7 @@ class WorkerCalibrationTest {
                 .predictProductionSpeeds(
                     loads.entrySet().stream()
                         .collect(
-                            Collectors.toMap(
-                                Map.Entry::getKey, entry -> entry.getValue().load())))
+                            Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().load())))
                 .orElseThrow();
         loads.forEach(
             (attempt, variant) ->
@@ -215,7 +213,8 @@ class WorkerCalibrationTest {
     @Test
     @DisplayName(
         "Should predict between the benchmark and the measurement when one measurement disagrees with the benchmark")
-    void shouldPredictBetweenTheBenchmarkAndTheMeasurementWhenOneMeasurementDisagreesWithTheBenchmark() {
+    void
+        shouldPredictBetweenTheBenchmarkAndTheMeasurementWhenOneMeasurementDisagreesWithTheBenchmark() {
       var calibration = tenCoreCalibration().build();
       var load = libx264FasterLoad().build();
 
@@ -312,7 +311,8 @@ class WorkerCalibrationTest {
     @Test
     @DisplayName(
         "Should keep following the active constants when a constant that no starting value names stops appearing")
-    void shouldKeepFollowingTheActiveConstantsWhenAConstantThatNoStartingValueNamesStopsAppearing() {
+    void
+        shouldKeepFollowingTheActiveConstantsWhenAConstantThatNoStartingValueNamesStopsAppearing() {
       var libx264Medium = new EncoderAndPreset(LIBX264, EncoderPreset.MEDIUM);
       // The benchmark measured medium's cores alone but gave it no cost constant.
       var calibration =
@@ -383,23 +383,42 @@ class WorkerCalibrationTest {
     }
   }
 
+  /**
+   * The index-th of measurements that alternate between the small rung (output half the source's
+   * pixel rate, true cost 1.5 x costFactor) and the large rung (output equal to it, 2.5 x
+   * costFactor).
+   */
+  private static ProductionMeasurement rungMeasurement(
+      int index, double costFactor, int encodesRunning) {
+    if (index % 2 == 0) {
+      return measuredAtCost(libx264FasterLoad().build(), 1.5 * costFactor, encodesRunning);
+    }
+
+    return measuredAtCost(
+        libx264FasterLoad().outputPixelRate(LARGE_OUTPUT).build(),
+        2.5 * costFactor,
+        encodesRunning);
+  }
+
   @Nested
   @DisplayName("Validation Tests")
   class ValidationTests {
 
+    private final JobAttemptLoad load = libx264FasterLoad().build();
+
     @Test
     @DisplayName(
-        "Should count the constants as validated when they predict twenty measured speeds that include concurrent encodes")
-    void shouldCountTheConstantsAsValidatedWhenTheyPredictTwentyMeasuredSpeedsThatIncludeConcurrentEncodes() {
+        "Should count the constants as validated when they predict twenty measured speeds of two rungs that include concurrent encodes")
+    void
+        shouldCountTheConstantsAsValidatedWhenTheyPredictTwentyMeasuredSpeedsOfTwoRungsThatIncludeConcurrentEncodes() {
       var calibration = tenCoreCalibration().build();
-      var load = libx264FasterLoad().build();
       for (var i = 0; i < 19; i++) {
-        calibration.fit(measuredAtCost(load, 1.5, 1 + i % 3));
+        calibration.fit(rungMeasurement(i, 1, 1 + i % 3));
       }
 
       assertThat(calibration.isValidatedFor(List.of(load))).as("after 19 measurements").isFalse();
 
-      calibration.fit(measuredAtCost(load, 1.5, 2));
+      calibration.fit(rungMeasurement(19, 1, 2));
 
       assertThat(calibration.isValidatedFor(List.of(load))).as("after 20 measurements").isTrue();
     }
@@ -409,10 +428,23 @@ class WorkerCalibrationTest {
         "Should leave the constants unvalidated when no measured job attempt ran beside another encode")
     void shouldLeaveTheConstantsUnvalidatedWhenNoMeasuredJobAttemptRanBesideAnotherEncode() {
       var calibration = tenCoreCalibration().build();
-      var load = libx264FasterLoad().build();
 
       for (var i = 0; i < 40; i++) {
-        calibration.fit(measuredAtCost(load, 1.5, 1));
+        calibration.fit(rungMeasurement(i, 1, 1));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(load))).isFalse();
+    }
+
+    @Test
+    @DisplayName(
+        "Should leave the constants unvalidated when every measurement priced the same ratio of output to source")
+    void
+        shouldLeaveTheConstantsUnvalidatedWhenEveryMeasurementPricedTheSameRatioOfOutputToSource() {
+      var calibration = tenCoreCalibration().build();
+
+      for (var i = 0; i < 40; i++) {
+        calibration.fit(measuredAtCost(load, 1.5, 2));
       }
 
       assertThat(calibration.isValidatedFor(List.of(load))).isFalse();
@@ -421,12 +453,12 @@ class WorkerCalibrationTest {
     @Test
     @DisplayName(
         "Should leave the constants unvalidated when the measured speeds of one load scatter beyond any prediction")
-    void shouldLeaveTheConstantsUnvalidatedWhenTheMeasuredSpeedsOfOneLoadScatterBeyondAnyPrediction() {
+    void
+        shouldLeaveTheConstantsUnvalidatedWhenTheMeasuredSpeedsOfOneLoadScatterBeyondAnyPrediction() {
       var calibration = tenCoreCalibration().build();
-      var load = libx264FasterLoad().build();
 
       for (var i = 0; i < 100; i++) {
-        calibration.fit(measuredAtCost(load, i % 2 == 0 ? 1.5 : 3.0, 2));
+        calibration.fit(rungMeasurement(i, i % 4 < 2 ? 1 : 2, 2));
       }
 
       assertThat(calibration.isValidatedFor(List.of(load))).isFalse();
@@ -437,32 +469,33 @@ class WorkerCalibrationTest {
         "Should validate the constants when the continuous fit has learned the cost that the benchmark missed")
     void shouldValidateTheConstantsWhenTheContinuousFitHasLearnedTheCostThatTheBenchmarkMissed() {
       var calibration = tenCoreCalibration().build();
-      var load = libx264FasterLoad().build();
 
       for (var i = 0; i < 200; i++) {
-        calibration.fit(measuredAtCost(load, 3.0, 2));
+        calibration.fit(rungMeasurement(i, 2, 2));
       }
 
       assertThat(calibration.isValidatedFor(List.of(load))).isTrue();
     }
 
     @Test
-    @DisplayName(
-        "Should lose the validation when the constants start missing the measured speeds")
+    @DisplayName("Should lose the validation when the constants start missing the measured speeds")
     void shouldLoseTheValidationWhenTheConstantsStartMissingTheMeasuredSpeeds() {
       var calibration = tenCoreCalibration().build();
-      var load = libx264FasterLoad().build();
       for (var i = 0; i < 20; i++) {
-        calibration.fit(measuredAtCost(load, 1.5, 2));
+        calibration.fit(rungMeasurement(i, 1, 2));
       }
 
-      assertThat(calibration.isValidatedFor(List.of(load))).as("while the constants predict").isTrue();
+      assertThat(calibration.isValidatedFor(List.of(load)))
+          .as("while the constants predict")
+          .isTrue();
 
       for (var i = 0; i < 20; i++) {
-        calibration.fit(measuredAtCost(load, 3.0, 2));
+        calibration.fit(rungMeasurement(i, 2, 2));
       }
 
-      assertThat(calibration.isValidatedFor(List.of(load))).as("after the content turned costlier").isFalse();
+      assertThat(calibration.isValidatedFor(List.of(load)))
+          .as("after the content turned costlier")
+          .isFalse();
     }
 
     @Test
@@ -470,9 +503,8 @@ class WorkerCalibrationTest {
         "Should keep the validation when a calibration starts from a kept calibration's latest predictions")
     void shouldKeepTheValidationWhenACalibrationStartsFromAKeptCalibrationsLatestPredictions() {
       var kept = tenCoreCalibration().build();
-      var load = libx264FasterLoad().build();
       for (var i = 0; i < 20; i++) {
-        kept.fit(measuredAtCost(load, 1.5, 2));
+        kept.fit(rungMeasurement(i, 1, 2));
       }
 
       var restarted =
@@ -490,7 +522,7 @@ class WorkerCalibrationTest {
     void shouldCheckEachPredictionAgainstConstantsThatHadNotYetFittedThatMeasurement() {
       var calibration = tenCoreCalibration().build();
 
-      calibration.fit(measuredAtCost(libx264FasterLoad().build(), 3.0, 1));
+      calibration.fit(measuredAtCost(load, 3.0, 1));
 
       // The benchmark predicted 6 / 1.5 = 4.0, and the worker measured 6 / 3.0 = 2.0.
       assertThat(calibration.latestPredictions().get(LIBX264_FASTER))
@@ -499,6 +531,7 @@ class WorkerCalibrationTest {
               check -> {
                 assertThat(check.relativeError()).isCloseTo(1.0, within(1e-6));
                 assertThat(check.besideOtherEncodes()).isFalse();
+                assertThat(check.outputToSourceRatio()).isCloseTo(0.5, within(1e-12));
               });
     }
 
@@ -508,7 +541,12 @@ class WorkerCalibrationTest {
     void shouldKeepOnlyAConstantsLatest20PredictionsWhenAKeptCalibrationBringsMore() {
       var kept = new ArrayList<PredictionCheck>();
       for (var i = 0; i < 25; i++) {
-        kept.add(new PredictionCheck(i / 100.0, true));
+        kept.add(
+            PredictionCheck.builder()
+                .relativeError(i / 100.0)
+                .besideOtherEncodes(true)
+                .outputToSourceRatio(0.5)
+                .build());
       }
 
       var predictions =
@@ -543,16 +581,15 @@ class WorkerCalibrationTest {
                       .coresAlone(Map.of(LIBX264_FASTER, 6.0, libx265Veryfast, 6.0))
                       .build())
               .build();
-      var libx264Load = libx264FasterLoad().build();
       var libx265Load = libx264FasterLoad().encoderAndPreset(libx265Veryfast).build();
 
       for (var i = 0; i < 20; i++) {
-        calibration.fit(measuredAtCost(libx264Load, 1.5, 2));
+        calibration.fit(rungMeasurement(i, 1, 2));
       }
 
-      assertThat(calibration.isValidatedFor(List.of(libx264Load))).as("libx264").isTrue();
+      assertThat(calibration.isValidatedFor(List.of(load))).as("libx264").isTrue();
       assertThat(calibration.isValidatedFor(List.of(libx265Load))).as("libx265").isFalse();
-      assertThat(calibration.isValidatedFor(List.of(libx264Load, libx265Load)))
+      assertThat(calibration.isValidatedFor(List.of(load, libx265Load)))
           .as("both running")
           .isFalse();
     }
@@ -560,8 +597,74 @@ class WorkerCalibrationTest {
     @Test
     @DisplayName("Should start without validation when the calibration starts from a benchmark")
     void shouldStartWithoutValidationWhenTheCalibrationStartsFromABenchmark() {
-      assertThat(tenCoreCalibration().build().isValidatedFor(List.of(libx264FasterLoad().build())))
-          .isFalse();
+      assertThat(tenCoreCalibration().build().isValidatedFor(List.of(load))).isFalse();
+    }
+  }
+
+  @Nested
+  @DisplayName("Unmeasured Preset Tests")
+  class UnmeasuredPresetTests {
+
+    private static final EncoderAndPreset LIBX264_VERYFAST =
+        new EncoderAndPreset(LIBX264, EncoderPreset.VERYFAST);
+
+    private final JobAttemptLoad veryfast =
+        libx264FasterLoad().encoderAndPreset(LIBX264_VERYFAST).build();
+
+    private WorkerCalibration benchmarkedAtFasterAndVeryfast() {
+      return tenCoreCalibration()
+          .startingConstants(
+              HeadroomConstants.builder()
+                  .cpuSecondsPerMegapixel(
+                      Map.of(LIBX264_FASTER, 0.04, LIBX264_VERYFAST, 0.02, SOFTWARE_H264, 0.01))
+                  .coresAlone(Map.of(LIBX264_FASTER, 6.0, LIBX264_VERYFAST, 6.0))
+                  .build())
+          .build();
+    }
+
+    @Test
+    @DisplayName(
+        "Should count another preset's constant as validated while the Automatic preset's constant is validated and the other preset has no predictions of its own")
+    void
+        shouldCountAnotherPresetsConstantAsValidatedWhileTheAutomaticPresetsConstantIsValidatedAndTheOtherPresetHasNoPredictionsOfItsOwn() {
+      var calibration = benchmarkedAtFasterAndVeryfast();
+
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(veryfast))).isTrue();
+    }
+
+    @Test
+    @DisplayName(
+        "Should move another preset's constant with the Automatic preset's constant at the benchmark's ratio when no measurement priced the other preset")
+    void
+        shouldMoveAnotherPresetsConstantWithTheAutomaticPresetsConstantAtTheBenchmarksRatioWhenNoMeasurementPricedTheOtherPreset() {
+      var calibration = benchmarkedAtFasterAndVeryfast();
+
+      for (var i = 0; i < 300; i++) {
+        calibration.fit(rungMeasurement(i, 2, 2));
+      }
+
+      var constants = calibration.constants().cpuSecondsPerMegapixel();
+      assertThat(constants.get(LIBX264_VERYFAST) / constants.get(LIBX264_FASTER))
+          .isCloseTo(0.02 / 0.04, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("Should let another preset's own predictions decide once it has twenty of them")
+    void shouldLetAnotherPresetsOwnPredictionsDecideOnceItHasTwentyOfThem() {
+      var calibration = benchmarkedAtFasterAndVeryfast();
+      for (var i = 0; i < 20; i++) {
+        calibration.fit(rungMeasurement(i, 1, 2));
+      }
+
+      for (var i = 0; i < 40; i++) {
+        calibration.fit(measuredAtCost(veryfast, i % 2 == 0 ? 1.0 : 2.0, 2));
+      }
+
+      assertThat(calibration.isValidatedFor(List.of(veryfast))).isFalse();
     }
   }
 }

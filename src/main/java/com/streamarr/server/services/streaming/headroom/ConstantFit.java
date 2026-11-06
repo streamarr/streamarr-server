@@ -107,6 +107,11 @@ final class ConstantFit {
     matrix[row][unknowns.size()] = moments[fittedRow];
   }
 
+  /** True once a measurement has priced the constant. */
+  boolean isMeasured(CostConstant constant) {
+    return indexes.containsKey(constant);
+  }
+
   private int indexOf(CostConstant constant) {
     var index = indexes.get(constant);
     if (index != null) {

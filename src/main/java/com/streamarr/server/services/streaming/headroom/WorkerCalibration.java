@@ -1,15 +1,18 @@
 package com.streamarr.server.services.streaming.headroom;
 
+import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.headroom.CostConstant;
 import com.streamarr.server.domain.streaming.headroom.CostTerm;
 import com.streamarr.server.domain.streaming.headroom.CpuLimit;
+import com.streamarr.server.domain.streaming.headroom.EncoderAndPreset;
 import com.streamarr.server.domain.streaming.headroom.HeadroomConstants;
 import com.streamarr.server.domain.streaming.headroom.JobAttemptLoad;
 import com.streamarr.server.domain.streaming.headroom.PredictionCheck;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +34,8 @@ public final class WorkerCalibration {
   static final int VALIDATION_PREDICTIONS = 20;
   private static final int CONCURRENT_PREDICTIONS_REQUIRED = 5;
   private static final double VALIDATED_MEDIAN_ERROR = 0.10;
+  // Two rungs this far apart separate the encode term from the decode term.
+  private static final double REQUIRED_RATIO_SPREAD = 2;
   // A measurement's weight halves after about 70 later measurements.
   private static final double FORGETTING = 0.99;
   // A constant's relative change from its starting value costs the fit as much as a tenth of a
@@ -83,9 +88,15 @@ public final class WorkerCalibration {
         .cpuSecondsPerMediaSecond(measurement.load())
         .ifPresent(
             cost -> {
+              var load = measurement.load();
               var check =
-                  new PredictionCheck(
-                      share / cost / measuredSpeed - 1, !measurement.otherEncodes().isEmpty());
+                  PredictionCheck.builder()
+                      .relativeError(share / cost / measuredSpeed - 1)
+                      .besideOtherEncodes(!measurement.otherEncodes().isEmpty())
+                      .outputToSourceRatio(
+                          load.outputPixelRate().pixelsPerSecond()
+                              / load.sourcePixelRate().pixelsPerSecond())
+                      .build();
               terms.forEach(term -> keepPrediction(term.constant(), check));
             });
     fit.add(terms, share / measuredSpeed);
@@ -98,7 +109,7 @@ public final class WorkerCalibration {
             solved ->
                 constants =
                     HeadroomConstants.builder()
-                        .cpuSecondsPerMegapixel(solved)
+                        .cpuSecondsPerMegapixel(withUnmeasuredPresetsFollowingAutomatic(solved))
                         .coresAlone(startingConstants.coresAlone())
                         .build());
   }
@@ -152,14 +163,36 @@ public final class WorkerCalibration {
     return Optional.of(Map.copyOf(speeds));
   }
 
+  /**
+   * A constant of a preset that has fewer than 20 predictions of its own shares the validation of
+   * its encoder's Automatic preset (ADR 0044).
+   */
   private boolean isValidated(CostConstant constant) {
+    if (latestPredictionCount(constant) >= VALIDATION_PREDICTIONS) {
+      return arePredictionsValidating(latestPredictions.get(constant));
+    }
+
+    return automaticPresetOf(constant)
+        .filter(automatic -> latestPredictionCount(automatic) >= VALIDATION_PREDICTIONS)
+        .map(automatic -> arePredictionsValidating(latestPredictions.get(automatic)))
+        .orElse(false);
+  }
+
+  private int latestPredictionCount(CostConstant constant) {
     var checks = latestPredictions.get(constant);
-    if (checks == null || checks.size() < VALIDATION_PREDICTIONS) {
+    return checks == null ? 0 : checks.size();
+  }
+
+  private static boolean arePredictionsValidating(Collection<PredictionCheck> checks) {
+    var concurrent = checks.stream().filter(PredictionCheck::besideOtherEncodes).count();
+    if (concurrent < CONCURRENT_PREDICTIONS_REQUIRED) {
       return false;
     }
 
-    var concurrent = checks.stream().filter(PredictionCheck::besideOtherEncodes).count();
-    if (concurrent < CONCURRENT_PREDICTIONS_REQUIRED) {
+    var ratios = checks.stream().mapToDouble(PredictionCheck::outputToSourceRatio).toArray();
+    var spread =
+        Arrays.stream(ratios).max().orElseThrow() / Arrays.stream(ratios).min().orElseThrow();
+    if (spread < REQUIRED_RATIO_SPREAD) {
       return false;
     }
 
@@ -167,6 +200,43 @@ public final class WorkerCalibration {
         checks.stream().mapToDouble(check -> Math.abs(check.relativeError())).sorted().toArray();
     var median = (errors[errors.length / 2 - 1] + errors[errors.length / 2]) / 2;
     return median <= VALIDATED_MEDIAN_ERROR;
+  }
+
+  /**
+   * A preset's constant that no measurement has priced keeps the benchmark's ratio to the constant
+   * of its encoder's Automatic preset.
+   */
+  private Map<CostConstant, Double> withUnmeasuredPresetsFollowingAutomatic(
+      Map<CostConstant, Double> solved) {
+    var starting = startingConstants.cpuSecondsPerMegapixel();
+    var adjusted = new HashMap<>(solved);
+    for (var constant : starting.keySet()) {
+      if (fit.isMeasured(constant)) {
+        continue;
+      }
+
+      automaticPresetOf(constant)
+          .filter(automatic -> starting.containsKey(automatic) && solved.containsKey(automatic))
+          .ifPresent(
+              automatic ->
+                  adjusted.put(
+                      constant,
+                      starting.get(constant) * solved.get(automatic) / starting.get(automatic)));
+    }
+
+    return adjusted;
+  }
+
+  private static Optional<CostConstant> automaticPresetOf(CostConstant constant) {
+    if (!(constant instanceof EncoderAndPreset encoderAndPreset)) {
+      return Optional.empty();
+    }
+
+    var automatic =
+        new EncoderAndPreset(
+            encoderAndPreset.backend(),
+            EncoderPreset.automaticFor(encoderAndPreset.backend().codecFamily()));
+    return automatic.equals(constant) ? Optional.empty() : Optional.of(automatic);
   }
 
   /**

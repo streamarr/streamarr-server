@@ -1,18 +1,18 @@
 package com.streamarr.server.services.streaming.headroom;
 
-import com.streamarr.server.domain.streaming.headroom.CpuLimit;
-import com.streamarr.server.domain.streaming.headroom.PixelRate;
-import com.streamarr.server.domain.streaming.headroom.DecodeBackend;
-import com.streamarr.server.domain.streaming.headroom.SourceDecoder;
-import com.streamarr.server.domain.streaming.headroom.EncoderAndPreset;
-import com.streamarr.server.domain.streaming.headroom.ToneMapping;
-import com.streamarr.server.domain.streaming.headroom.JobAttemptLoad;
-import com.streamarr.server.domain.streaming.headroom.HeadroomConstants;
-import com.streamarr.server.domain.streaming.headroom.PredictionCheck;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.headroom.CpuLimit;
+import com.streamarr.server.domain.streaming.headroom.DecodeBackend;
+import com.streamarr.server.domain.streaming.headroom.EncoderAndPreset;
+import com.streamarr.server.domain.streaming.headroom.HeadroomConstants;
+import com.streamarr.server.domain.streaming.headroom.JobAttemptLoad;
+import com.streamarr.server.domain.streaming.headroom.PixelRate;
+import com.streamarr.server.domain.streaming.headroom.PredictionCheck;
+import com.streamarr.server.domain.streaming.headroom.SourceDecoder;
+import com.streamarr.server.domain.streaming.headroom.ToneMapping;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -102,7 +102,24 @@ class HeadroomInputsTest {
   @Test
   @DisplayName("Should reject the prediction check when its error is not a finite number")
   void shouldRejectThePredictionCheckWhenItsErrorIsNotAFiniteNumber() {
-    assertThatThrownBy(() -> new PredictionCheck(Double.NaN, false))
-        .isInstanceOf(IllegalArgumentException.class);
+    var check =
+        PredictionCheck.builder()
+            .relativeError(Double.NaN)
+            .besideOtherEncodes(false)
+            .outputToSourceRatio(0.5);
+
+    assertThatThrownBy(check::build).isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject the prediction check when its ratio of output to source is zero")
+  void shouldRejectThePredictionCheckWhenItsRatioOfOutputToSourceIsZero() {
+    var check =
+        PredictionCheck.builder()
+            .relativeError(0.1)
+            .besideOtherEncodes(true)
+            .outputToSourceRatio(0);
+
+    assertThatThrownBy(check::build).isInstanceOf(IllegalArgumentException.class);
   }
 }
