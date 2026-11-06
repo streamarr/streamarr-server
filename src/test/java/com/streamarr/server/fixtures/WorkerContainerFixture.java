@@ -231,6 +231,27 @@ public final class WorkerContainerFixture implements AutoCloseable {
     return packetHashes(media, "a");
   }
 
+  /**
+   * The pixel format, matrix, transfer and colour primaries of the media's first video stream, as
+   * ffprobe names them, comma-separated in the order that ffprobe prints them.
+   */
+  public String videoColorSignaling(Path media) throws Exception {
+    return String.join(
+        ",",
+        probePackets(
+            media,
+            "v:0",
+            List.of("-show_entries", "stream=pix_fmt,color_space,color_transfer,color_primaries")));
+  }
+
+  /** The side data types that the decoder attaches to the media's first video frame. */
+  public List<String> firstVideoFrameSideDataTypes(Path media) throws Exception {
+    return probePackets(
+        media,
+        "v:0",
+        List.of("-read_intervals", "%+#1", "-show_entries", "frame_side_data=side_data_type"));
+  }
+
   private List<String> packetHashes(Path media, String streamSelector) throws Exception {
     return probePackets(
         media,

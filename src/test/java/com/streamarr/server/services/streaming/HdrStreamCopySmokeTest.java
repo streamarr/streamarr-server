@@ -29,8 +29,10 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
+import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.DolbyVisionConfigurationBox;
@@ -45,12 +47,14 @@ import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -329,6 +333,118 @@ class HdrStreamCopySmokeTest {
     assertWithoutDolbyVisionUnits(session, REPLACED_SEGMENT);
   }
 
+  // #396, #401: after a rejected HDR copy, Auto's next format attempt encodes, and every encode is
+  // 8-bit SDR (ADR 0036), so the worker tone-maps (ADR 0013). The decision, the playlist and the
+  // bytes the worker delivers must all describe that SDR output.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("hdrBasesToToneMap")
+  @DisplayName(
+      "Should describe the encode as SDR in the decision, the playlist and the delivered output"
+          + " when an HDR format attempt is replaced by an encode")
+  void shouldDescribeTheEncodeAsSdrInTheDecisionPlaylistAndOutputWhenAnHdrCopyIsReplaced(
+      CompatibleBase base) throws Exception {
+    var source =
+        SyntheticHdrSource.hevcSourceBuilder()
+            .name("tone-mapped-" + base.name().toLowerCase(Locale.ROOT))
+            .compatibleBase(base)
+            .staticHdrMetadata(base == CompatibleBase.PQ)
+            .build()
+            .writtenBy(workerFixture.worker(), sourceRoot);
+    assertThat(workerFixture.worker().videoColorSignaling(source))
+        .as("the source's own signaling, which the encode must not keep")
+        .isEqualTo("yuv420p10le,bt2020nc,%s,bt2020".formatted(transferOf(base)));
+
+    var session =
+        sessionFor(
+            source,
+            hevcEntryBuilder().compatibleBases(hdrBases()).build(),
+            VideoFormatConstraint.ENCODE_ONLY);
+
+    var decision = session.getTranscodeDecision();
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.videoRange()).isEqualTo(VideoRange.SDR);
+    assertThat(decision.plannedVideoOutput())
+        .isInstanceOfSatisfying(
+            PlannedVideoOutput.Encode.class,
+            encode ->
+                assertThat(encode.dynamicRange().compatibleBase()).isEqualTo(CompatibleBase.SDR));
+    var streamInfs = streamInfs(session);
+    assertThat(streamInfs)
+        .isNotEmpty()
+        .allSatisfy(
+            streamInf -> {
+              assertThat(attribute(streamInf, "VIDEO-RANGE")).isEmpty();
+              assertThat(attribute(streamInf, "SUPPLEMENTAL-CODECS")).isEmpty();
+            });
+    var delivered = firstEncodedSegment(session);
+    assertThat(attribute(streamInfs.getFirst(), "CODECS"))
+        .hasValueSatisfying(
+            codecs -> assertThat(codecs).startsWith(codecStringOf(delivered.initialization())));
+    var media = sourceRoot.resolve("delivered-" + session.getSessionId() + ".mp4");
+    Files.write(media, delivered.playable());
+    assertThat(workerFixture.worker().videoColorSignaling(media))
+        .isEqualTo("yuv420p,bt709,bt709,bt709");
+    assertThat(workerFixture.worker().firstVideoFrameSideDataTypes(media))
+        .noneMatch(type -> type.contains("Mastering display") || type.contains("light level"));
+  }
+
+  static Stream<CompatibleBase> hdrBasesToToneMap() {
+    return Stream.of(CompatibleBase.PQ, CompatibleBase.HLG);
+  }
+
+  // ffprobe's names for the PQ and HLG transfers (ITU-T H.273 values 16 and 18).
+  private static String transferOf(CompatibleBase base) {
+    return switch (base) {
+      case PQ -> "smpte2084";
+      case HLG -> "arib-std-b67";
+      case SDR, NONE, UNSPECIFIED -> throw new AssertionError("Not an HDR base: " + base);
+    };
+  }
+
+  /** The first-listed variant's initialization segment, and it followed by its first segment. */
+  private record EncodedSegment(byte[] initialization, byte[] playable) {}
+
+  // Only the first-listed variant starts, so the test waits for whichever variant delivers.
+  private EncodedSegment firstEncodedSegment(StreamSession session) {
+    var sessionId = session.getSessionId();
+    var labels = session.getVariants().stream().map(QualityVariant::label).toList();
+    var first = SegmentNames.mediaSegmentName(0);
+    await("the encode's first media segment")
+        .atMost(DELIVERY_LIMIT)
+        .until(
+            () ->
+                labels.stream()
+                    .anyMatch(
+                        label ->
+                            segmentStore.segmentExists(
+                                sessionId, SegmentNames.storedSegmentName(label, first))));
+    var label =
+        labels.stream()
+            .filter(
+                candidate ->
+                    segmentStore.segmentExists(
+                        sessionId, SegmentNames.storedSegmentName(candidate, first)))
+            .findFirst()
+            .orElseThrow();
+    var initialization =
+        segmentStore.readSegment(
+            sessionId,
+            SegmentNames.storedSegmentName(label, SegmentNames.INITIALIZATION_SEGMENT_NAME));
+    var playable = new ByteArrayOutputStream();
+    playable.writeBytes(initialization);
+    playable.writeBytes(
+        segmentStore.readSegment(sessionId, SegmentNames.storedSegmentName(label, first)));
+    return new EncodedSegment(initialization, playable.toByteArray());
+  }
+
+  private static String codecStringOf(byte[] initialization) {
+    return switch (Fmp4Fixture.videoSampleEntryType(initialization)) {
+      case "avc1", "avc3" -> Fmp4Fixture.avcCodecString(initialization);
+      case "hvc1", "hev1" -> Fmp4Fixture.hevcCodecString(initialization);
+      default -> throw new AssertionError("An encode writes H.264 or HEVC");
+    };
+  }
+
   /** A Dolby Vision copy case: the source's record and the record that the copy must deliver. */
   @Builder
   record DolbyVisionCopy(
@@ -368,6 +484,12 @@ class HdrStreamCopySmokeTest {
   }
 
   private StreamSession sessionFor(Path source, VideoCapabilityEntry hevcEntry) throws Exception {
+    return sessionFor(source, hevcEntry, VideoFormatConstraint.COPY_OR_ENCODE);
+  }
+
+  private StreamSession sessionFor(
+      Path source, VideoCapabilityEntry hevcEntry, VideoFormatConstraint constraint)
+      throws Exception {
     storeProbe(source);
     var file =
         mediaFileRepository.save(
@@ -381,6 +503,7 @@ class HdrStreamCopySmokeTest {
         streamingService.createSession(
             createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
                 .capabilityDeclaration(declaring(hevcEntry))
+                .videoFormatConstraint(constraint)
                 .build()));
   }
 
@@ -486,14 +609,17 @@ class HdrStreamCopySmokeTest {
   }
 
   private String streamInf(StreamSession session) {
-    var streamInfs =
-        playlistService
-            .generateMultivariantPlaylist(session, "smoke-token")
-            .lines()
-            .filter(line -> line.startsWith("#EXT-X-STREAM-INF:"))
-            .toList();
+    var streamInfs = streamInfs(session);
     assertThat(streamInfs).as("the copy's one variant").hasSize(1);
     return streamInfs.getFirst();
+  }
+
+  private List<String> streamInfs(StreamSession session) {
+    return playlistService
+        .generateMultivariantPlaylist(session, "smoke-token")
+        .lines()
+        .filter(line -> line.startsWith("#EXT-X-STREAM-INF:"))
+        .toList();
   }
 
   private static Optional<String> attribute(String streamInf, String name) {
