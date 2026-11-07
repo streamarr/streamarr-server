@@ -41,9 +41,9 @@ public record TranscodeRequest(
    * carries none. {@code exactSegmentStarts} holds the stream session's segment list (ADR 0037):
    * every attempt of a stream copy session carries the copy's exact starts, and every attempt on a
    * plain grid that merges its final slot carries the grid's whole-second starts; an attempt on any
-   * other plain grid carries none. {@code advertisedEnd} is the end of the variant's last advertised
-   * media segment, up to which an encoded stream holds its last frame or pads with silence (ADR
-   * 0037, early ends).
+   * other plain grid carries none. {@code advertisedEnd} is the end of the variant's last
+   * advertised media segment, up to which an encoded stream holds its last frame or pads with
+   * silence (ADR 0037, early ends).
    */
   public TranscodeRequest {
     if (variantLabel == null) {
