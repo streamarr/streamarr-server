@@ -405,6 +405,7 @@ public class PlaybackReportRepositoryImpl implements PlaybackReportRepository {
         .video(video)
         .audio(Optional.ofNullable(row.getAudioDelivery()).map(delivery -> audio(row, delivery)))
         .reasons(Arrays.stream(row.getReasons()).map(DecisionReason::valueOf).toList())
+        .videoCapabilityEntryRefusals(List.of())
         .build();
   }
 

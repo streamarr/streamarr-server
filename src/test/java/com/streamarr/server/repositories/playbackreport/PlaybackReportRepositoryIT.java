@@ -426,6 +426,7 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
                     new AudioFormat("truehd", OptionalInt.of(8), OptionalLong.empty()),
                     new AudioFormat("eac3", OptionalInt.of(6), OptionalLong.of(640_000)))))
         .reasons(List.of(DecisionReason.AUDIO_CODEC_NOT_DECLARED))
+        .videoCapabilityEntryRefusals(List.of())
         .build();
   }
 
@@ -439,6 +440,7 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
         .video(new TrackDelivery<>(PlaybackDelivery.COPY, video, video))
         .audio(Optional.of(new TrackDelivery<>(PlaybackDelivery.COPY, audio, audio)))
         .reasons(List.of())
+        .videoCapabilityEntryRefusals(List.of())
         .build();
   }
 
@@ -459,6 +461,7 @@ class PlaybackReportRepositoryIT extends AbstractIntegrationTest {
                     .build()))
         .audio(Optional.empty())
         .reasons(List.of(DecisionReason.COPY_FAILED, DecisionReason.DOLBY_VISION_NOT_DECLARED))
+        .videoCapabilityEntryRefusals(List.of())
         .build();
   }
 
