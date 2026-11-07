@@ -1,5 +1,8 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.domain.streaming.StreamMeasurements.CURRENT_VERSION;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
+import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.jooq.generated.tables.MediaFileBitrateScanChunk.MEDIA_FILE_BITRATE_SCAN_CHUNK;
 import static com.streamarr.server.jooq.generated.tables.MediaFileStreamMeasurement.MEDIA_FILE_STREAM_MEASUREMENT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,8 +16,12 @@ import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.config.ProbeSchedulingConfiguration;
 import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.BitrateScanChunkOutcome;
 import com.streamarr.server.domain.streaming.BitrateScanChunkRequest;
+import com.streamarr.server.domain.streaming.ChosenVideoStream;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
@@ -36,12 +43,26 @@ import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.LoopbackProbeWorker;
+import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.repositories.media.BitrateScanRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.BitrateScanner;
+import com.streamarr.server.services.streaming.HlsPlaylistService;
+import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
+import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import com.streamarr.transcode.v1.BitrateScanChunkResult;
+import com.streamarr.transcode.v1.BitrateScanChunkStream;
+import com.streamarr.transcode.v1.BitrateScanChunkStreams;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -53,9 +74,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -101,6 +124,7 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
   @Autowired private ProbeSchedulingProperties probeScheduling;
   @Autowired private DSLContext dsl;
   @Autowired private Serializer taskDataSerializer;
+  @Autowired private HlsPlaylistService playlists;
 
   private final BlockingQueue<ExecutionComplete> chunkCompletions = new LinkedBlockingQueue<>();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
@@ -196,6 +220,49 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
     assertThat(
             meterRegistry.get(FINISHED_SCANS_METRIC).tag("outcome", "measured").counter().count())
         .isOne();
+  }
+
+  @Test
+  @DisplayName(
+      "Should replace the unmeasured copy cost when the final Matroska scan chunk publishes")
+  void shouldReplaceTheUnmeasuredCopyCostWhenTheFinalMatroskaScanChunkPublishes() throws Exception {
+    var request = requestUnchangedFiles(1).getFirst();
+    var source = copyableOutcome(OptionalLong.of(8_000_000));
+    var outcome =
+        ProbeOutcome.Success.builder()
+            .container(source.container())
+            .streams(source.streams())
+            .keyframes(source.keyframes())
+            .chosenVideoStream(
+                Optional.of(
+                    new ChosenVideoStream(
+                        VIDEO, VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))))
+            .build();
+    probe(outcome).execute(request, ProbePriority.BACKGROUND);
+    assertThat(copyPlaylist(request)).contains("AVERAGE-BANDWIDTH=8000000,");
+
+    startScanScheduler(SchedulerBitrateScanIT::measured, Clock.systemUTC());
+    awaitChunkCompletions(2);
+
+    // 4,100,000 payload bytes, 4,100 sample entries and 684 fragment headers over 4,100 s.
+    assertThat(copyPlaylist(request)).contains("AVERAGE-BANDWIDTH=8257,");
+  }
+
+  private String copyPlaylist(ProbeTaskRequest request) {
+    var persisted = reader.find(request.mediaFileId()).orElseThrow();
+    assertThat(persisted.outcome()).isInstanceOf(ProbeOutcome.Success.class);
+    var probe = ((ProbeOutcome.Success) persisted.outcome()).mediaProbe();
+    var session =
+        StreamSessionFixture.defaultSessionBuilder()
+            .mediaFileId(request.mediaFileId())
+            .mediaProbe(probe)
+            .transcodeDecision(
+                StreamSessionFixture.remuxDecisionBuilder()
+                    .videoSource(probe.videoPlaybackFacts())
+                    .audioDecision(AudioDecision.none())
+                    .build())
+            .build();
+    return playlists.generateMultivariantPlaylist(session, "test-token");
   }
 
   @Test
@@ -424,6 +491,110 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
 
     assertThat(outcomes.findStreamMeasurements(request.mediaFileId())).isPresent();
     assertThat(meterRegistry.find(CHUNK_FAILURES_METRIC).counters()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should retry only the unfinished chunk on another worker when its worker disconnects")
+  void shouldRetryOnlyTheUnfinishedChunkOnAnotherWorkerWhenItsWorkerDisconnects() throws Exception {
+    var request = probedCopyableFile();
+    try (var server =
+        WorkerSessionServer.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(serverConfigurationBuilder().build())
+            .segmentStore(new FakeSegmentStore())
+            .meterRegistry(meterRegistry)
+            .build()) {
+      server.start();
+      try (var firstWorker = scanWorker(server.port())) {
+        var scanner = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, tempDir);
+        startScanScheduler(scanner::scanBitrateScanChunk, Clock.systemUTC());
+        try {
+          replyWithMeasurement(
+              firstWorker, firstWorker.nextResponse().getStartProbe().getRequest());
+          awaitChunkCompletions(1);
+          assertThat(storedChunks(request)).isOne();
+          var unfinished = firstWorker.nextResponse().getStartProbe().getRequest();
+
+          firstWorker.disconnect();
+
+          var failed = chunkCompletions.poll(30, TimeUnit.SECONDS);
+          assertThat(failed).isNotNull();
+          assertThat(failed.getResult()).isEqualTo(ExecutionComplete.Result.FAILED);
+          assertThat(storedChunks(request)).isOne();
+          assertThat(pendingScan().failedAttempts()).isZero();
+          try (var replacement = scanWorker(server.port())) {
+            retryPendingScansNow();
+            var retried = replacement.nextResponse().getStartProbe().getRequest();
+            assertThat(retried.getBitrateScanChunk()).isEqualTo(unfinished.getBitrateScanChunk());
+            assertThat(retried.getBitrateScanChunk().getPresentationTimeDeltasCount()).isEqualTo(4);
+            assertThat(retried.getProbeAttemptId()).isNotEqualTo(unfinished.getProbeAttemptId());
+
+            replyWithMeasurement(replacement, retried);
+            awaitChunkCompletions(1);
+
+            assertThat(outcomes.findStreamMeasurements(request.mediaFileId()))
+                .hasValueSatisfying(
+                    measurements ->
+                        assertThat(measurements.streams())
+                            .containsExactly(
+                                expectedStream(VIDEO, VIDEO_BYTES_PER_INTERVAL),
+                                expectedStream(AUDIO, AUDIO_BYTES_PER_INTERVAL)));
+            assertThat(scheduledScanPriorities()).isEmpty();
+            assertThat(storedChunks(request)).isZero();
+          }
+        } finally {
+          scanScheduler.stop();
+        }
+      }
+    }
+  }
+
+  private static LoopbackProbeWorker scanWorker(int port) throws Exception {
+    return LoopbackProbeWorker.builder()
+        .port(port)
+        .workerId(UUID.randomUUID())
+        .probeVersion(ProbeVersion.CURRENT)
+        .measurementVersion(CURRENT_VERSION)
+        .availableSlots(1)
+        .backgroundProbeCapacity(1)
+        .build();
+  }
+
+  private static void replyWithMeasurement(LoopbackProbeWorker worker, ProbeRequest request) {
+    var chunk = request.getBitrateScanChunk();
+    var intervals = chunk.getPresentationTimeDeltasCount();
+    var first = chunk.getPresentationTimeDeltas(0);
+    var end =
+        chunk.getPresentationTimeDeltasList().stream().mapToLong(Long::longValue).sum()
+            + TICKS_PER_KEYFRAME;
+    var streams = BitrateScanChunkStreams.newBuilder();
+    for (var index : chunk.getMeasuredStreamIndexesList()) {
+      var bytes = bytesPerInterval(index);
+      worker.sendStreamMeasurementPart(
+          ProbeStreamMeasurementPart.newBuilder()
+              .setProbeAttemptId(request.getProbeAttemptId())
+              .setStreamIndex(index)
+              .addAllKeyframeIntervalBytes(Collections.nCopies(intervals, (int) bytes))
+              .addAllKeyframeIntervalPacketCounts(Collections.nCopies(intervals, 1))
+              .build());
+      streams.addStreams(
+          BitrateScanChunkStream.newBuilder()
+              .setStreamIndex(index)
+              .setMeasuredBytes(bytes * intervals)
+              .setPacketCount(intervals)
+              .setTimeBaseNumerator(1)
+              .setTimeBaseDenominator(90_000)
+              .setFirstPresentationTime(first)
+              .setEndTime(end));
+    }
+
+    worker.reply(
+        ProbeAttemptResult.newBuilder()
+            .setProbeAttemptId(request.getProbeAttemptId())
+            .setProbeVersion(request.getProbeVersion())
+            .setBitrateScanChunk(BitrateScanChunkResult.newBuilder().setMeasured(streams))
+            .build());
   }
 
   @ParameterizedTest(name = "{0}")
@@ -716,6 +887,7 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
         .index(VIDEO)
         .codecType("video")
         .codec(Optional.of("h264"))
+        .codecString(Optional.of("avc1.640028"))
         .bitrate(bitrate)
         .build();
   }
