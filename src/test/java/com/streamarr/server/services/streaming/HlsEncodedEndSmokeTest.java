@@ -45,6 +45,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -145,22 +146,53 @@ class HlsEncodedEndSmokeTest {
     assertEveryAdvertisedSegmentIsServed(session);
   }
 
-  // Generating the 29-minute source takes about 90 s in CI; each delivery still has its own bound.
   @Test
-  @Timeout(value = 5, unit = TimeUnit.MINUTES)
   @DisplayName(
       "Should deliver one interval of audio within the startup threshold when six-channel audio"
           + " outlasts a 64-second video in a 1764-second source")
   void shouldDeliverOneIntervalOfAudioWithinTheStartupThresholdWhenSixChannelAudioOutlastsVideo()
       throws Exception {
-    var source = generateSource("video-ends-at-64-of-1764.mp4", "24", 64, 1_764, "-ac", "6");
-    var probe = probe(source);
-    assertThat(probe.audioChannels()).hasValue(6);
-    var session = startedEncode(source, probe, encodedAudioEncode());
+    var session = startedSixChannelEncode(1_764);
     var segments = advertisedSegmentNames(session);
     assertThat(segments).hasSize(294);
 
-    for (var segment : segments.subList(11, segments.size())) {
+    // The first two full tail intervals expose waiting for the remaining 28 minutes of audio.
+    assertAudioIntervalsAreDelivered(session, segments.subList(11, 13));
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver only each interval's audio through EOF when six-channel audio outlasts a"
+          + " 64-second video in a 96-second source")
+  void shouldDeliverOnlyEachIntervalsAudioThroughEofWhenSixChannelAudioOutlastsVideo()
+      throws Exception {
+    var session = startedSixChannelEncode(96);
+    var segments = advertisedSegmentNames(session);
+    assertThat(segments).hasSize(16);
+
+    assertAudioIntervalsAreDelivered(session, segments.subList(11, segments.size()));
+    awaitFirstAttemptEnd(session);
+  }
+
+  @Test
+  @EnabledIfSystemProperty(named = "streamarr.smoke.exhaustiveAudioTail", matches = "true")
+  @Timeout(value = 5, unit = TimeUnit.MINUTES)
+  @DisplayName(
+      "Should deliver every long-tail interval through EOF when exhaustive audio acceptance is"
+          + " requested")
+  void shouldDeliverEveryLongTailIntervalThroughEofWhenExhaustiveAudioAcceptanceIsRequested()
+      throws Exception {
+    var session = startedSixChannelEncode(1_764);
+    var segments = advertisedSegmentNames(session);
+    assertThat(segments).hasSize(294);
+
+    assertAudioIntervalsAreDelivered(session, segments.subList(11, segments.size()));
+    awaitFirstAttemptEnd(session);
+  }
+
+  private void assertAudioIntervalsAreDelivered(StreamSession session, List<String> segments)
+      throws Exception {
+    for (var segment : segments) {
       assertThat(deliveryOf(session, segment))
           .as("delivery of %s after the video's end", segment)
           .succeedsWithin(Duration.ofSeconds(10))
@@ -173,7 +205,7 @@ class HlsEncodedEndSmokeTest {
           .isCloseTo(6.0, within(1_024.0 / 48_000));
     }
 
-    assertThat(audioPacketCount(session, segments.get(11))).isBetween(281, 282);
+    assertThat(audioPacketCount(session, segments.getFirst())).isBetween(281, 282);
     assertThat(audioPacketCount(session, segments.getLast())).isBetween(281, 282);
   }
 
@@ -385,6 +417,60 @@ class HlsEncodedEndSmokeTest {
                 "aac"));
     arguments.addAll(List.of(outputArguments));
     return workerFixture.worker().generateMedia(sourceRoot.resolve(fileName), arguments);
+  }
+
+  private StreamSession startedSixChannelEncode(int audioSeconds) throws Exception {
+    var source = generateSixChannelSource(audioSeconds);
+    var probe = probe(source);
+    assertThat(probe.audioChannels()).hasValue(6);
+    return startedEncode(source, probe, encodedAudioEncode());
+  }
+
+  private Path generateSixChannelSource(int audioSeconds) throws Exception {
+    workerFixture
+        .worker()
+        .generateMedia(
+            sourceRoot.resolve("six-channel-tone.m4a"),
+            List.of(
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=2.048",
+                "-ac",
+                "6",
+                "-c:a",
+                "aac",
+                "-use_editlist",
+                "0"));
+    // Omit the seed's priming edit list so repeated packets form one continuous timeline.
+    // Stream-copying them preserves a long decode/downmix workload without a long fixture encode.
+    return workerFixture
+        .worker()
+        .generateMedia(
+            sourceRoot.resolve("video-ends-at-64-of-" + audioSeconds + ".mp4"),
+            List.of(
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=64x36:rate=24:duration=64",
+                "-stream_loop",
+                "-1",
+                "-i",
+                "/media/six-channel-tone.m4a",
+                "-map",
+                "0:v",
+                "-map",
+                "1:a",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-g",
+                "48",
+                "-c:a",
+                "copy",
+                "-t",
+                String.valueOf(audioSeconds)));
   }
 
   private static void truncateToHalf(Path source) throws Exception {
