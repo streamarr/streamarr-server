@@ -640,8 +640,8 @@ class HdrFormatRecoveryTest {
             .source(tenBitSdr())
             .quality(auto)
             .attempt(autoCopy(Output.COPY, VideoRange.SDR).build())
-            .attempt(autoEncode().build())
             .attempt(autoEncode().video("av1", 10).build())
+            .attempt(autoEncode().build())
             .attempt(autoEncode().codec("av1").build())
             .end(exhausted)
             .build(),
