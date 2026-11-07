@@ -36,6 +36,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoEncodeFeature;
@@ -618,6 +619,45 @@ class TenBitAndHdrEncodeTest {
     assertThat(multivariantPlaylist(encode))
         .containsPattern(
             "CODECS=\"av01\\.0\\.\\d\\dM\\.%02d,".formatted(tenBitCase.expectedBitDepth));
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = CompatibleBase.class,
+      names = {"SDR", "PQ", "HLG"})
+  @DisplayName(
+      "Should encode only 8-bit SDR in HEVC Main when the worker and client entry allow 10 bits")
+  void shouldEncodeOnly8BitSdrInHevcMainWhenTheWorkerAndClientEntryAllow10Bits(
+      CompatibleBase sourceRange) {
+    workers.setEncodableVideoCodecFamilies(Set.of("hevc"));
+    workers.setVerifiedVideoCodecFamiliesByWorker(
+        List.of(
+            WorkerVerifiedCodecFamilies.builder()
+                .workerId(UUID.randomUUID())
+                .codecFamilies(Set.of("hevc"))
+                .build()));
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL, List.of(encoder("hevc", "libx265", EVERY_ENCODE_FEATURE)));
+    probes.setDefaultProbe(hdrSource(rangeOf(sourceRange), Optional.empty(), Optional.empty()));
+    var entry =
+        hevcEntryBuilder()
+            .maxBitDepth(10)
+            .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+            .codecProfiles(
+                List.of(
+                    VideoCodecProfileCapability.builder()
+                        .profile(VideoCodecProfile.HEVC_MAIN)
+                        .maxLevel(51)
+                        .maxTier(Optional.of(VideoCodecTier.MAIN))
+                        .build()))
+            .build();
+
+    var encode =
+        accepted(playback.start(start(options(VideoQuality.AUTO, null), clientWith(entry))));
+
+    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.HEVC_MAIN);
+    assertThatAn8BitSdrEncodePlays(encode);
+    assertThat(multivariantPlaylist(encode)).containsPattern("CODECS=\"hvc1\\.1\\.6\\.L\\d+\\.90,");
   }
 
   enum TenBitSdrCase {

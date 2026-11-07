@@ -22,6 +22,7 @@ import com.streamarr.server.domain.streaming.ColorRange;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -83,7 +84,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
-/** The checks that need a pinned worker image that answers probe version 7. */
+/** The checks that need a pinned worker image that answers probe version 8. */
 @Tag("IntegrationTest")
 @EnableDgsTest
 @WithProfileContext
@@ -322,6 +323,37 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should store the video stream's maximum frame rate when the probe job probes a constant frame rate MP4 file")
+  void shouldStoreTheVideoStreamsMaximumFrameRateWhenTheProbeJobProbesAConstantFrameRateMp4File()
+      throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+
+    try (var server = server(new LocalSegmentStore(tempDir.resolve("server-segments")));
+        var worker = workerBuilder(server, mediaRoot).build()) {
+      server.start();
+      worker.start();
+      var source = worker.generateMedia(mediaRoot.resolve("constant-rate.mp4"), constantRateMp4());
+      var file = createMediaFile(source);
+
+      var result =
+          runProbeJob(
+              new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot), file, source);
+
+      assertThat(result).isEqualTo(new ProbeExecutionResult.Completed());
+      var stored = reader.find(file.getId()).orElseThrow();
+      assertThat(stored.probeVersion()).isEqualTo(ProbeVersion.CURRENT);
+      assertThat(stored.outcome())
+          .isInstanceOfSatisfying(
+              ProbeOutcome.Success.class,
+              success ->
+                  assertThat(success.streams())
+                      .extracting(StreamInfo::codecType, StreamInfo::maximumFrameRate)
+                      .containsExactly(tuple("video", Optional.of(new Fraction(24, 1)))));
+    }
+  }
+
   private record Playback(RemoteTranscodeExecutor executor, LocalSegmentStore segmentStore) {}
 
   // Each seek encodes from the media segment that holds the chapter's start. The chapters start on
@@ -486,6 +518,19 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
         "libx264",
         "-c:a",
         "aac");
+  }
+
+  // Two seconds of H.264 video at a constant 24 fps in an MP4 file.
+  private static List<String> constantRateMp4() {
+    return List.of(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=320x180:rate=24:duration=2",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p");
   }
 
   // Thirty minutes, so the job attempt still runs after the oversized probe ends.

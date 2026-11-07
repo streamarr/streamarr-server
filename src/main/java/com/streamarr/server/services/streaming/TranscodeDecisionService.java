@@ -680,7 +680,7 @@ public class TranscodeDecisionService {
   // viewer's SDR choice keeps no HDR range (ADR 0013).
   private static List<EncodeFormat> permittedEncodeFormats(
       EncodeFitting fitting, EncodeCodecProfile profile) {
-    if (profile == EncodeCodecProfile.H264_HIGH) {
+    if (profile == EncodeCodecProfile.H264_HIGH || profile == EncodeCodecProfile.HEVC_MAIN) {
       return List.of(EncodeFormat.SDR_8_BIT);
     }
 
