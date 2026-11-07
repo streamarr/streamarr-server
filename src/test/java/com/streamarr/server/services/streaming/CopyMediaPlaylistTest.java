@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
@@ -46,10 +47,10 @@ class CopyMediaPlaylistTest {
   // The 8 s first segment lifts the EXT-X-TARGETDURATION above the 6 s grid slot.
   @Test
   @DisplayName(
-      "Should list each segment's opening keyframe, the written target duration and the grid slot"
-          + " when keyframes open every segment")
+      "Should list each segment's opening keyframe, its exact start and the written target"
+          + " duration when keyframes open every segment")
   void
-      shouldListEachSegmentsOpeningKeyframeTargetDurationAndGridSlotWhenKeyframesOpenEverySegment() {
+      shouldListEachSegmentsOpeningKeyframeExactStartAndTargetDurationWhenKeyframesOpenEverySegment() {
     var source =
         StreamSessionFixture.defaultProbeBuilder()
             .duration(Duration.ofSeconds(14))
@@ -62,19 +63,20 @@ class CopyMediaPlaylistTest {
         .containsExactly(
             CopyMediaPlaylist.Segment.builder()
                 .openingKeyframeIndex(0)
-                .slotStartSeconds(0)
+                .startTicks(0)
                 .extinfSeconds(new BigDecimal("8.000000"))
                 .build(),
             CopyMediaPlaylist.Segment.builder()
                 .openingKeyframeIndex(2)
-                .slotStartSeconds(6)
+                .startTicks(8_000)
                 .extinfSeconds(new BigDecimal("4.000000"))
                 .build(),
             CopyMediaPlaylist.Segment.builder()
                 .openingKeyframeIndex(3)
-                .slotStartSeconds(12)
+                .startTicks(12_000)
                 .extinfSeconds(new BigDecimal("2.000000"))
                 .build());
+    assertThat(playlist.startTimeBase()).isEqualTo(new Fraction(1, 1_000));
     assertThat(playlist.targetDurationSeconds()).isEqualTo(8);
   }
 
@@ -122,10 +124,12 @@ class CopyMediaPlaylistTest {
   }
 
   // At the 6 s period, keyframes 10 s apart leave the slots [12 s, 18 s) and [24 s, 30 s) without
-  // one, so each joins the segment before it and takes its audio.
+  // one, so each joins the segment before it, and every segment starts at its keyframe.
   @Test
-  @DisplayName("Should list each merged segment from its listed slot when a slot holds no keyframe")
-  void shouldListEachMergedSegmentFromItsListedSlotWhenASlotHoldsNoKeyframe() {
+  @DisplayName(
+      "Should list each merged segment from its keyframe's exact start when a slot holds no"
+          + " keyframe")
+  void shouldListEachMergedSegmentFromItsKeyframesExactStartWhenASlotHoldsNoKeyframe() {
     var source =
         StreamSessionFixture.defaultProbeBuilder()
             .duration(Duration.ofSeconds(36))
@@ -135,8 +139,8 @@ class CopyMediaPlaylistTest {
     var playlist = CopyMediaPlaylist.of(source, PROPERTIES);
 
     assertThat(playlist.segments())
-        .extracting(CopyMediaPlaylist.Segment::slotStartSeconds)
-        .containsExactly(0, 6, 18, 30);
+        .extracting(CopyMediaPlaylist.Segment::startTicks)
+        .containsExactly(0L, 10_000L, 20_000L, 30_000L);
     assertThat(playlist.segments())
         .extracting(segment -> segment.extinfSeconds().toPlainString())
         .containsExactly("10.000000", "10.000000", "10.000000", "6.000000");
@@ -149,6 +153,8 @@ class CopyMediaPlaylistTest {
           + " missing")
   void shouldRefuseToListMediaPlaylistWhenSourcePropertiesOrTimelineIsMissing() {
     var source = StreamSessionFixture.defaultProbeBuilder().build();
+    var positions = ((KeyframeKnowledge.Known) source.keyframes()).positions();
+    var timeline = MediaSegmentTimelines.streamCopyOf(source, PROPERTIES).orElseThrow();
 
     assertThatNullPointerException()
         .isThrownBy(() -> CopyMediaPlaylist.of(null, PROPERTIES))
@@ -157,16 +163,24 @@ class CopyMediaPlaylistTest {
         .isThrownBy(() -> CopyMediaPlaylist.of(source, null))
         .withMessageContaining("properties");
     assertThatNullPointerException()
-        .isThrownBy(() -> CopyMediaPlaylist.of((MediaSegmentTimeline.StreamCopy) null))
+        .isThrownBy(() -> CopyMediaPlaylist.of((MediaSegmentTimeline.StreamCopy) null, positions))
         .withMessageContaining("timeline");
+    assertThatNullPointerException()
+        .isThrownBy(() -> CopyMediaPlaylist.of(timeline, null))
+        .withMessageContaining("positions");
   }
 
   @Test
-  @DisplayName("Should refuse a media playlist without segments or a segment without a duration")
-  void shouldRefuseMediaPlaylistWithoutSegmentsOrSegmentWithoutDuration() {
+  @DisplayName(
+      "Should refuse a media playlist without segments or a start time base, or a segment without a"
+          + " duration")
+  void shouldRefuseMediaPlaylistWithoutSegmentsOrStartTimeBaseOrSegmentWithoutDuration() {
     assertThatNullPointerException()
-        .isThrownBy(() -> new CopyMediaPlaylist(null, 6))
+        .isThrownBy(() -> new CopyMediaPlaylist(null, 6, new Fraction(1, 1)))
         .withMessageContaining("segments");
+    assertThatNullPointerException()
+        .isThrownBy(() -> new CopyMediaPlaylist(List.of(), 6, null))
+        .withMessageContaining("startTimeBase");
     assertThatNullPointerException()
         .isThrownBy(() -> CopyMediaPlaylist.Segment.builder().build())
         .withMessageContaining("extinfSeconds");

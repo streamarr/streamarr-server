@@ -25,6 +25,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.Presence;
+import com.streamarr.server.domain.streaming.StartTimeCorrections;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -63,7 +64,10 @@ public class TranscodeDecisionService {
   // An encode forces one codec profile for each codec family (ADR 0013). These codec families
   // compress better than H.264, best first (ADR 0009).
   private static final List<EncodeCodecProfile> COMPRESSING_BETTER_THAN_H264 =
-      List.of(EncodeCodecProfile.AV1_MAIN, EncodeCodecProfile.HEVC_MAIN);
+      List.of(
+          EncodeCodecProfile.AV1_MAIN,
+          EncodeCodecProfile.HEVC_MAIN_10,
+          EncodeCodecProfile.HEVC_MAIN);
   private static final List<BitstreamRewrite> STRIP_HDR10_PLUS =
       List.of(BitstreamRewrite.STRIP_HDR10_PLUS);
   private static final List<BitstreamRewrite> NORMALIZE_DOLBY_VISION_RECORD =
@@ -453,6 +457,12 @@ public class TranscodeDecisionService {
       return choice;
     }
 
+    // A copy's last segment cannot take in the audio after the video's end, while an encode holds
+    // the last frame up to the advertised end (ADR 0037, early ends).
+    if (source.videoEndsEarly(properties.targetSegmentDuration())) {
+      return new PlanChoice.Refused(List.of(DecisionReason.VIDEO_ENDS_EARLY));
+    }
+
     var refusal = streamCopyRefusal(source);
     if (refusal.isEmpty()) {
       return choice;
@@ -670,14 +680,11 @@ public class TranscodeDecisionService {
   // The formats that an encode of the source may write in the codec profile, best first: the
   // source's PQ or HLG range, then 10-bit SDR for a 10-bit SDR source, then 8-bit SDR. PQ also
   // stands for Dolby Vision without a compatible base, which the worker reshapes with its RPUs.
-  // H.264 output stays 8-bit SDR, because almost no device decodes 10-bit H.264 (#397). The
-  // viewer's SDR choice keeps no HDR range (ADR 0013).
+  // Each format has a bit depth that the profile holds, so H.264 High and H.265 Main stay 8-bit
+  // SDR and H.265 Main 10 never writes 8 bits (#397, #58). The viewer's SDR choice keeps no HDR
+  // range (ADR 0013).
   private static List<EncodeFormat> permittedEncodeFormats(
       EncodeFitting fitting, EncodeCodecProfile profile) {
-    if (profile == EncodeCodecProfile.H264_HIGH) {
-      return List.of(EncodeFormat.SDR_8_BIT);
-    }
-
     var source = fitting.source();
     var hdr =
         switch (sourceBase(source)) {
@@ -693,6 +700,7 @@ public class TranscodeDecisionService {
         isTenBitSdr(source) ? Optional.of(EncodeFormat.SDR_10_BIT) : Optional.<EncodeFormat>empty();
     return Stream.of(hdr, tenBitSdr, Optional.of(EncodeFormat.SDR_8_BIT))
         .flatMap(Optional::stream)
+        .filter(format -> profile.holdsBitDepth(format.bitDepth()))
         .toList();
   }
 
@@ -757,9 +765,13 @@ public class TranscodeDecisionService {
 
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
   // only when the known keyframes open its segment list. A slot without a keyframe merges into the
-  // segment before it.
+  // segment before it. Each segment starts at its keyframe's stored tick, which a copy keeps only
+  // when FFmpeg makes no start time correction, as no stored probe outcome carries one yet.
   private Optional<StreamCopyRefusal> streamCopyRefusal(MediaProbe source) {
     return switch (source.keyframes()) {
+      case KeyframeKnowledge.Known _
+          when StartTimeCorrections.isCorrectedBy(source.containerFormat()) ->
+          Optional.of(StreamCopyRefusal.NO_START_TIME_CORRECTION);
       case KeyframeKnowledge.Known(var positions) ->
           streamCopyRefusal(positions, MediaSegmentTimelines.of(source, properties));
       case KeyframeKnowledge.PacketScanRequired _ ->
@@ -790,8 +802,8 @@ public class TranscodeDecisionService {
     Counter.builder(STREAM_COPY_REFUSALS_METRIC)
         .description(
             "Stream copies of a video codec the client plays, refused because the source's"
-                + " keyframes are not known or open no segment list, or a measured segment would"
-                + " exceed the segment cap")
+                + " keyframes are not known or open no segment list, a measured segment would"
+                + " exceed the segment cap, or the copy could not keep the keyframes' stored times")
         .tag("reason", refusal.name().toLowerCase(Locale.ROOT))
         .register(meterRegistry)
         .increment();
@@ -806,6 +818,8 @@ public class TranscodeDecisionService {
     PRESENTATION_TIME_REGRESSED(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
     PRESENTATION_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
     DECODE_TIME_OUT_OF_RANGE(DecisionReason.KEYFRAME_TIMESTAMPS_INVALID),
+    // FFmpeg corrects the source's start time, and the probe stored no correction to cancel it.
+    NO_START_TIME_CORRECTION(DecisionReason.START_TIME_CORRECTION_UNKNOWN),
     // A measured segment of the copy, with its audio, would exceed the segment cap (ADR 0037).
     EXCEEDS_SEGMENT_CAP(DecisionReason.SEGMENT_EXCEEDS_CAP);
 
@@ -844,7 +858,8 @@ public class TranscodeDecisionService {
             .or(
                 () ->
                     sourceStream.flatMap(
-                        stream -> audioBlockSizeRefusal(declaration, stream, sourceChannels)));
+                        stream -> audioBlockSizeRefusal(declaration, stream, sourceChannels)))
+            .or(() -> audioEndRefusal(source));
     if (encodeReason.isPresent()) {
       return new SessionAudio(HlsAudioEncodes.forTrack(declaration, track), encodeReason);
     }
@@ -861,6 +876,16 @@ public class TranscodeDecisionService {
             .sourceCodecString(sourceCodecString)
             .build();
     return new SessionAudio(copy, Optional.empty());
+  }
+
+  // Only an encode can pad audio that ends early with silence up to the advertised end, so that
+  // every segment after the audio's end carries audio (ADR 0037, early ends).
+  private Optional<DecisionReason> audioEndRefusal(MediaProbe source) {
+    if (!source.sessionAudioEndsEarly(properties.targetSegmentDuration())) {
+      return Optional.empty();
+    }
+
+    return Optional.of(DecisionReason.AUDIO_ENDS_EARLY);
   }
 
   private static Optional<DecisionReason> audioEncodeReason(
@@ -920,8 +945,10 @@ public class TranscodeDecisionService {
   }
 
   // The encode at the fastest frame rate wins, then an HDR encode, so an HDR source keeps its range
-  // for a client that declares it even in a codec family after H.264, then the codec preference
-  // and, within a codec family, 10-bit SDR before 8-bit SDR.
+  // for a client that declares it even in a codec family after H.264. A 10-bit encode then wins
+  // over 8-bit H.264, so a 10-bit SDR source keeps its 10 bits (decision 179), while a codec family
+  // that a worker encodes in hardware keeps its place before it. Then the codec preference and,
+  // within a codec family, 10-bit SDR before 8-bit SDR.
   private static Optional<EncodeChoice> selectEncode(TranscodeDecisionRequest request) {
     return codecPreference(request).stream()
         .filter(
@@ -948,6 +975,11 @@ public class TranscodeDecisionService {
       return next;
     }
 
+    if (next.format().bitDepth() > preferred.format().bitDepth()
+        && preferred.codecProfile() == EncodeCodecProfile.H264_HIGH) {
+      return next;
+    }
+
     return preferred;
   }
 
@@ -971,12 +1003,13 @@ public class TranscodeDecisionService {
   }
 
   // Any format beyond 8-bit SDR needs one encoder of the codec family that lists every feature the
-  // format needs.
+  // format needs. A format that failed earlier in the playback session stays out.
   private static List<EncodeFormat> encodeFormats(
       TranscodeDecisionRequest request,
       EncodeCodecProfile profile,
       List<WorkerVerifiedEncoder> encoders) {
     return permittedEncodeFormats(encodeFitting(request), profile).stream()
+        .filter(format -> !request.excludedEncodeFormats().contains(format))
         .filter(
             format ->
                 isWrittenByAnEncoder(

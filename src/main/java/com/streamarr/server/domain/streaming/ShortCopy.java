@@ -29,4 +29,14 @@ public record ShortCopy(
             .allMatch(end -> end.compareTo(latestStreamEnd) <= 0);
     return new ShortCopy(lastMediaSegmentIndex, mediaEnd, everySourceStreamEnded);
   }
+
+  /**
+   * This short copy as the worker's report settles it. Every source stream has ended only when both
+   * the probe's end times and the worker, which read the source past the copy's end, show it, so a
+   * stream that either one shows with media after the copy keeps it from ending normally.
+   */
+  public ShortCopy settledBy(@NonNull SourceEndedEarly report) {
+    return new ShortCopy(
+        lastMediaSegmentIndex, mediaEnd, everySourceStreamEnded && report.everyStreamEnded());
+  }
 }

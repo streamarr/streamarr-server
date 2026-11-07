@@ -36,6 +36,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoEncodeFeature;
@@ -62,6 +63,8 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
+import lombok.Builder;
+import lombok.NonNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Named;
@@ -71,6 +74,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * 10-bit and HDR encodes through the real transcode decision and playlist (#397). An HEVC or AV1
@@ -617,6 +621,45 @@ class TenBitAndHdrEncodeTest {
             "CODECS=\"av01\\.0\\.\\d\\dM\\.%02d,".formatted(tenBitCase.expectedBitDepth));
   }
 
+  @ParameterizedTest
+  @EnumSource(
+      value = CompatibleBase.class,
+      names = {"SDR", "PQ", "HLG"})
+  @DisplayName(
+      "Should encode only 8-bit SDR in HEVC Main when the worker and client entry allow 10 bits")
+  void shouldEncodeOnly8BitSdrInHevcMainWhenTheWorkerAndClientEntryAllow10Bits(
+      CompatibleBase sourceRange) {
+    workers.setEncodableVideoCodecFamilies(Set.of("hevc"));
+    workers.setVerifiedVideoCodecFamiliesByWorker(
+        List.of(
+            WorkerVerifiedCodecFamilies.builder()
+                .workerId(UUID.randomUUID())
+                .codecFamilies(Set.of("hevc"))
+                .build()));
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL, List.of(encoder("hevc", "libx265", EVERY_ENCODE_FEATURE)));
+    probes.setDefaultProbe(hdrSource(rangeOf(sourceRange), Optional.empty(), Optional.empty()));
+    var entry =
+        hevcEntryBuilder()
+            .maxBitDepth(10)
+            .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+            .codecProfiles(
+                List.of(
+                    VideoCodecProfileCapability.builder()
+                        .profile(VideoCodecProfile.HEVC_MAIN)
+                        .maxLevel(51)
+                        .maxTier(Optional.of(VideoCodecTier.MAIN))
+                        .build()))
+            .build();
+
+    var encode =
+        accepted(playback.start(start(options(VideoQuality.AUTO, null), clientWith(entry))));
+
+    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.HEVC_MAIN);
+    assertThatAn8BitSdrEncodePlays(encode);
+    assertThat(multivariantPlaylist(encode)).containsPattern("CODECS=\"hvc1\\.1\\.6\\.L\\d+\\.90,");
+  }
+
   enum TenBitSdrCase {
     CLIENT_AND_ENCODER_ACCEPT_10_BITS(10, Set.of(VideoEncodeFeature.TEN_BIT), 10),
     ENCODER_WRITES_ONLY_8_BITS(10, Set.of(), 8),
@@ -680,6 +723,308 @@ class TenBitAndHdrEncodeTest {
             Named.of("software encoders that write HDR10", EVERY_ENCODE_FEATURE),
             rangeOf(CompatibleBase.PQ),
             10));
+  }
+
+  // Decision 179 and #397: at the same frame rate, a 10-bit SDR source keeps 10 bits in AV1 rather
+  // than 8-bit H.264, when the client declares 10-bit AV1 and a worker's AV1 encoder writes 10
+  // bits.
+  // Otherwise H.264 keeps its place in ADR 0009's codec preference.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("tenBitSdrSourcesBesideH264")
+  @DisplayName(
+      "Should encode a 10-bit SDR source to 10-bit AV1 rather than 8-bit H.264 when the client and"
+          + " a worker's AV1 encoder accept 10 bits")
+  void
+      shouldEncodeA10BitSdrSourceTo10BitAv1RatherThan8BitH264WhenTheClientAndTheEncoderAccept10Bits(
+          TenBitSdrBesideH264Case tenBitCase) {
+    var quality = tenBitCase.quality();
+    var clientAv1BitDepth = tenBitCase.clientAv1BitDepth();
+    var av1Features = tenBitCase.av1Features();
+    var expectedProfile = tenBitCase.expectedProfile();
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL, List.of(svtAv1(av1Features), libx264(Set.of())));
+    probes.setDefaultProbe(
+        hdrSource(rangeOf(CompatibleBase.SDR), Optional.empty(), Optional.empty()));
+
+    var encode =
+        accepted(
+            playback.start(
+                start(
+                    options(quality, null),
+                    client(av1EntryBuilder().maxBitDepth(clientAv1BitDepth).build()))));
+
+    var expectedBitDepth = expectedProfile == EncodeCodecProfile.AV1_MAIN ? 10 : 8;
+    assertThat(encode.playbackChoice()).isEqualTo(quality);
+    assertThat(plannedEncode().codecProfile()).contains(expectedProfile);
+    assertThat(plannedEncode().bitDepth()).isEqualTo(expectedBitDepth);
+    assertThat(plannedEncode().dynamicRange()).isEqualTo(rangeOf(CompatibleBase.SDR));
+    assertThat(multivariantPlaylist(encode))
+        .contains(
+            expectedProfile == EncodeCodecProfile.AV1_MAIN ? "CODECS=\"av01." : "CODECS=\"avc1.")
+        .doesNotContain("VIDEO-RANGE=");
+  }
+
+  static Stream<TenBitSdrBesideH264Case> tenBitSdrSourcesBesideH264() {
+    var tenBit = Set.of(VideoEncodeFeature.TEN_BIT);
+    return Stream.of(
+        TenBitSdrBesideH264Case.builder()
+            .name("Auto, a client and an encoder that accept 10-bit AV1")
+            .av1Features(tenBit)
+            .expectedProfile(EncodeCodecProfile.AV1_MAIN)
+            .build(),
+        TenBitSdrBesideH264Case.builder()
+            .name("1080p, a client and an encoder that accept 10-bit AV1")
+            .quality(VideoQuality.FULL_HD_1080P)
+            .av1Features(tenBit)
+            .expectedProfile(EncodeCodecProfile.AV1_MAIN)
+            .build(),
+        TenBitSdrBesideH264Case.builder()
+            .name("Auto, a client that declares only 8-bit AV1")
+            .clientAv1BitDepth(8)
+            .av1Features(tenBit)
+            .expectedProfile(EncodeCodecProfile.H264_HIGH)
+            .build(),
+        TenBitSdrBesideH264Case.builder()
+            .name("Auto, an AV1 encoder that writes only 8 bits")
+            .av1Features(Set.of())
+            .expectedProfile(EncodeCodecProfile.H264_HIGH)
+            .build());
+  }
+
+  @Builder
+  private record TenBitSdrBesideH264Case(
+      @NonNull String name,
+      @NonNull VideoQuality quality,
+      int clientAv1BitDepth,
+      @NonNull Set<VideoEncodeFeature> av1Features,
+      @NonNull EncodeCodecProfile expectedProfile) {
+
+    // Lombok builder defaults — its generated setters assign them
+    @SuppressWarnings({"java:S1068", "java:S9438"})
+    private static class TenBitSdrBesideH264CaseBuilder {
+      private VideoQuality quality = VideoQuality.AUTO;
+      private int clientAv1BitDepth = 10;
+    }
+
+    @Override
+    public String toString() {
+      return name;
+    }
+  }
+
+  // ADR 0009 and decision 179: frame rate comes first, so a 10-bit AV1 entry that plays the source
+  // only at half its rate loses to 8-bit H.264 at the full rate.
+  @Test
+  @DisplayName(
+      "Should encode a 60 fps 10-bit SDR source to 8-bit H.264 at 60 fps when the client plays"
+          + " 10-bit AV1 only at 30 fps")
+  void shouldEncodeA60Fps10BitSdrSourceTo8BitH264At60FpsWhenTheClientPlays10BitAv1OnlyAt30Fps() {
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL,
+        List.of(svtAv1(Set.of(VideoEncodeFeature.TEN_BIT)), libx264(Set.of())));
+    probes.setDefaultProbe(sixtyFpsSource(CompatibleBase.SDR));
+
+    var encode =
+        accepted(
+            playback.start(
+                start(
+                    options(VideoQuality.AUTO, null),
+                    client(av1EntryBuilder().maxBitDepth(10).maxFrameRate(30).build()))));
+
+    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.H264_HIGH);
+    assertThat(plannedEncode().bitDepth()).isEqualTo(8);
+    assertThat(multivariantPlaylist(encode)).contains(",FRAME-RATE=60.000");
+  }
+
+  // ADR 0009 and decision 179: a codec family that a worker encodes in hardware still comes before
+  // H.264 and before any software family, so a hardware AV1 encoder that writes only 8 bits
+  // encodes the 10-bit SDR source in 8-bit AV1, and a client that declares only 8-bit AV1 gets
+  // hardware AV1 too.
+  @ParameterizedTest(name = "a client that declares {0}-bit AV1")
+  @ValueSource(ints = {8, 10})
+  @DisplayName(
+      "Should encode a 10-bit SDR source to 8-bit AV1 when a worker encodes AV1 in hardware in 8"
+          + " bits only")
+  void shouldEncodeA10BitSdrSourceTo8BitAv1WhenAWorkerEncodesAv1InHardwareIn8BitsOnly(
+      int clientAv1BitDepth) {
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL, List.of(hardwareAv1WithoutFeatures(), libx264(Set.of())));
+    probes.setDefaultProbe(
+        hdrSource(rangeOf(CompatibleBase.SDR), Optional.empty(), Optional.empty()));
+
+    accepted(
+        playback.start(
+            start(
+                options(VideoQuality.AUTO, null),
+                client(av1EntryBuilder().maxBitDepth(clientAv1BitDepth).build()))));
+
+    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.AV1_MAIN);
+    assertThat(plannedEncode().bitDepth()).isEqualTo(8);
+  }
+
+  // #58: an HEVC encode that keeps an HDR range or 10 bits forces H.265 Main 10. The client here
+  // declares HEVC alone, so the AV1 source cannot be copied.
+  @Test
+  @DisplayName(
+      "Should encode an HDR10 source to HEVC Main 10 HDR10 with the source's static metadata when"
+          + " the client declares HEVC with PQ and libx265 writes PQ")
+  void
+      shouldEncodeAnHdr10SourceToHevcMain10Hdr10WhenTheClientDeclaresHevcWithPqAndLibx265WritesPq() {
+    encodeWithLibx265(EVERY_ENCODE_FEATURE);
+    probes.setDefaultProbe(
+        av1Source(
+            rangeOf(CompatibleBase.PQ),
+            Optional.of(SOURCE_DISPLAY),
+            Optional.of(SOURCE_LIGHT_LEVEL)));
+
+    var encode = accepted(playback.start(start(options(VideoQuality.AUTO, null), hdrHevcClient())));
+
+    assertThat(plannedEncode())
+        .isEqualTo(
+            PlannedVideoOutput.Encode.builder()
+                .codecProfile(Optional.of(EncodeCodecProfile.HEVC_MAIN_10))
+                .dynamicRange(rangeOf(CompatibleBase.PQ))
+                .bitDepth(10)
+                .chromaSubsampling(ChromaSubsampling.CHROMA_420)
+                .masteringDisplay(Optional.of(SOURCE_DISPLAY))
+                .contentLightLevel(Optional.of(SOURCE_LIGHT_LEVEL))
+                .build());
+    assertThat(multivariantPlaylist(encode))
+        .containsPattern("CODECS=\"hvc1\\.2\\.4\\.L\\d+\\.90,mp4a\\.40\\.2\"")
+        .contains(",VIDEO-RANGE=PQ");
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode an HLG source to HEVC Main 10 HLG without static metadata when the client"
+          + " declares HEVC with HLG")
+  void
+      shouldEncodeAnHlgSourceToHevcMain10HlgWithoutStaticMetadataWhenTheClientDeclaresHevcWithHlg() {
+    encodeWithLibx265(EVERY_ENCODE_FEATURE);
+    probes.setDefaultProbe(
+        av1Source(rangeOf(CompatibleBase.HLG), Optional.empty(), Optional.empty()));
+
+    var encode = accepted(playback.start(start(options(VideoQuality.AUTO, null), hdrHevcClient())));
+
+    assertThat(plannedEncode())
+        .satisfies(
+            planned -> {
+              assertThat(planned.codecProfile()).contains(EncodeCodecProfile.HEVC_MAIN_10);
+              assertThat(planned.dynamicRange()).isEqualTo(rangeOf(CompatibleBase.HLG));
+              assertThat(planned.bitDepth()).isEqualTo(10);
+              assertThat(planned.masteringDisplay()).isEmpty();
+              assertThat(planned.contentLightLevel()).isEmpty();
+            });
+    assertThat(multivariantPlaylist(encode))
+        .containsPattern("CODECS=\"hvc1\\.2\\.4\\.L\\d+\\.90,")
+        .contains(",VIDEO-RANGE=HLG");
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode Dolby Vision profile 5 to HEVC Main 10 HDR10 when the client declares HEVC"
+          + " with PQ and libx265 reshapes Dolby Vision into PQ")
+  void shouldEncodeDolbyVisionProfile5ToHevcMain10Hdr10WhenLibx265ReshapesDolbyVisionIntoPq() {
+    encodeWithLibx265(EVERY_ENCODE_FEATURE);
+    probes.setDefaultProbe(baselessSource(DolbyVisionProfile.PROFILE_5));
+
+    var encode = accepted(playback.start(start(options(VideoQuality.AUTO, null), hdrHevcClient())));
+
+    assertThat(plannedEncode())
+        .satisfies(
+            planned -> {
+              assertThat(planned.codecProfile()).contains(EncodeCodecProfile.HEVC_MAIN_10);
+              assertThat(planned.dynamicRange()).isEqualTo(rangeOf(CompatibleBase.PQ));
+              assertThat(planned.masteringDisplay()).contains(FALLBACK_DISPLAY);
+            });
+    assertThat(multivariantPlaylist(encode)).contains(",VIDEO-RANGE=PQ").doesNotContain("dvh1");
+  }
+
+  // The same feature check as AV1's: without PQ, libx265 writes 8-bit SDR in H.265 Main. The
+  // client declares HEVC alone, because H.264 ranks before software HEVC for an SDR encode.
+  @Test
+  @DisplayName(
+      "Should encode an HDR10 source to 8-bit SDR in HEVC Main when libx265 does not list PQ")
+  void shouldEncodeAnHdr10SourceTo8BitSdrInHevcMainWhenLibx265DoesNotListPq() {
+    encodeWithLibx265(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.HLG));
+    probes.setDefaultProbe(
+        av1Source(
+            rangeOf(CompatibleBase.PQ),
+            Optional.of(SOURCE_DISPLAY),
+            Optional.of(SOURCE_LIGHT_LEVEL)));
+
+    var encode =
+        accepted(
+            playback.start(start(options(VideoQuality.AUTO, null), clientWith(hdrHevcEntry()))));
+
+    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.HEVC_MAIN);
+    assertThatAn8BitSdrEncodePlays(encode);
+    assertThat(multivariantPlaylist(encode)).containsPattern("CODECS=\"hvc1\\.1\\.6\\.L\\d+\\.90,");
+  }
+
+  // An SDR encode keeps the codec preference, so the client declares HEVC alone.
+  @ParameterizedTest
+  @EnumSource(value = TenBitHevcCase.class)
+  @DisplayName(
+      "Should encode a 10-bit SDR source to HEVC Main 10 only when the client declares Main 10 and"
+          + " libx265 lists 10 bits")
+  void shouldEncodeA10BitSdrSourceToHevcMain10OnlyWhenTheClientDeclaresMain10AndLibx265Lists10Bits(
+      TenBitHevcCase hevcCase) {
+    encodeWithLibx265(hevcCase.features);
+    probes.setDefaultProbe(
+        av1Source(rangeOf(CompatibleBase.SDR), Optional.empty(), Optional.empty()));
+
+    var encode =
+        accepted(
+            playback.start(start(options(VideoQuality.AUTO, null), clientWith(hevcCase.entry()))));
+
+    assertThat(plannedEncode().codecProfile()).contains(hevcCase.expectedProfile);
+    assertThat(plannedEncode().bitDepth()).isEqualTo(hevcCase.expectedBitDepth);
+    assertThat(multivariantPlaylist(encode)).containsPattern(hevcCase.codecStringPattern);
+  }
+
+  enum TenBitHevcCase {
+    CLIENT_DECLARES_MAIN_10_AND_LIBX265_WRITES_10_BITS(
+        true, Set.of(VideoEncodeFeature.TEN_BIT), EncodeCodecProfile.HEVC_MAIN_10, 10),
+    LIBX265_WRITES_ONLY_8_BITS(true, Set.of(), EncodeCodecProfile.HEVC_MAIN, 8),
+    CLIENT_DECLARES_ONLY_MAIN(
+        false, Set.of(VideoEncodeFeature.TEN_BIT), EncodeCodecProfile.HEVC_MAIN, 8);
+
+    private final boolean declaresMain10;
+    private final Set<VideoEncodeFeature> features;
+    private final EncodeCodecProfile expectedProfile;
+    private final int expectedBitDepth;
+    private final String codecStringPattern;
+
+    TenBitHevcCase(
+        boolean declaresMain10,
+        Set<VideoEncodeFeature> features,
+        EncodeCodecProfile expectedProfile,
+        int expectedBitDepth) {
+      this.declaresMain10 = declaresMain10;
+      this.features = features;
+      this.expectedProfile = expectedProfile;
+      this.expectedBitDepth = expectedBitDepth;
+      this.codecStringPattern =
+          expectedBitDepth == 10 ? "CODECS=\"hvc1\\.2\\.4\\." : "CODECS=\"hvc1\\.1\\.6\\.";
+    }
+
+    VideoCapabilityEntry entry() {
+      if (declaresMain10) {
+        return hevcEntryBuilder().build();
+      }
+
+      return hevcEntryBuilder()
+          .maxBitDepth(8)
+          .codecProfiles(
+              List.of(
+                  VideoCodecProfileCapability.builder()
+                      .profile(VideoCodecProfile.HEVC_MAIN)
+                      .maxLevel(51)
+                      .maxTier(Optional.of(VideoCodecTier.MAIN))
+                      .build()))
+          .build();
+    }
   }
 
   private void assertThatAn8BitSdrEncodePlays(PlaybackSessionSnapshot snapshot) {
@@ -773,8 +1118,41 @@ class TenBitAndHdrEncodeTest {
         .build();
   }
 
+  // Workers encode H.264, HEVC and AV1, and libx265 lists the encode features.
+  private void encodeWithLibx265(Set<VideoEncodeFeature> features) {
+    var families = Set.of("h264", "hevc", "av1");
+    workers.setEncodableVideoCodecFamilies(families);
+    workers.setVerifiedVideoCodecFamiliesByWorker(
+        List.of(
+            WorkerVerifiedCodecFamilies.builder()
+                .workerId(UUID.randomUUID())
+                .codecFamilies(families)
+                .build()));
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL,
+        List.of(encoder("hevc", "libx265", features), svtAv1(Set.of()), libx264(Set.of())));
+  }
+
+  // The HDR HEVC entry beside H.264 SDR and stereo AAC. It declares no AV1, so an AV1 source
+  // cannot be copied.
+  private static ClientCapabilityDeclaration hdrHevcClient() {
+    return client(hdrHevcEntry());
+  }
+
+  // An HEVC entry with H.265 Main and Main 10 that declares SDR, PQ and HLG at 10 bits.
+  private static VideoCapabilityEntry hdrHevcEntry() {
+    return hevcEntryBuilder()
+        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+        .build();
+  }
+
   private static WorkerVerifiedEncoder svtAv1(Set<VideoEncodeFeature> features) {
     return encoder("av1", "libsvtav1", features);
+  }
+
+  // NVENC AV1, which lists no encode feature, so it writes 8-bit SDR alone.
+  private static WorkerVerifiedEncoder hardwareAv1WithoutFeatures() {
+    return av1Nvenc(Set.of());
   }
 
   private static WorkerVerifiedEncoder av1Nvenc(Set<VideoEncodeFeature> features) {
@@ -838,6 +1216,23 @@ class TenBitAndHdrEncodeTest {
             .contentLightLevel(lightLevel)
             .build(),
         "hevc");
+  }
+
+  // The default 1080p 10-bit source at 24 fps in AV1 Main.
+  private static MediaProbe av1Source(
+      VideoDynamicRange range,
+      Optional<MasteringDisplayColorVolume> display,
+      Optional<ContentLightLevel> lightLevel) {
+    return source(
+        hevcFacts()
+            .codecFamily(Optional.of(ProbedCodecFamily.AV1))
+            .codecString(Optional.of("av01.0.08M.10"))
+            .videoProperties(Optional.of(properties(VideoCodecProfile.AV1_MAIN)))
+            .dynamicRange(range)
+            .masteringDisplay(display)
+            .contentLightLevel(lightLevel)
+            .build(),
+        "av1");
   }
 
   // Profile 5 in HEVC or profile 10.0 in AV1, with its record at level 6 and no compatible base.

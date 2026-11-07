@@ -254,22 +254,65 @@ class RemoteVariantJobMapperTest {
     assertThat(execution.getSeekPosition().getNanos()).isEqualTo(558_000_000);
   }
 
-  @Test
-  @DisplayName("Should send the stream session's segment list when a copy attempt carries one")
-  void shouldSendTheStreamSessionsSegmentListWhenACopyAttemptCarriesOne() {
-    var request = copyAttempt().mediaSegmentCount(4).segmentStartSlots(List.of(0, 1, 3, 5)).build();
+  // A copied stream keeps the source's bytes, so only an encoded stream holds or pads (ADR 0037).
+  @ParameterizedTest(name = "{0}")
+  @CsvSource({
+    "FULL_TRANSCODE, true, true",
+    "VIDEO_TRANSCODE, true, false",
+    "AUDIO_TRANSCODE, false, true",
+    "REMUX, false, false"
+  })
+  @DisplayName(
+      "Should hold the encoded video's last frame and pad the encoded audio up to the advertised"
+          + " end when an attempt carries one")
+  void shouldHoldTheEncodedVideosLastFrameAndPadTheEncodedAudioUpToTheAdvertisedEnd(
+      TranscodeMode mode, boolean holdsLastFrame, boolean padsWithSilence) {
+    var request = attemptIn(mode).advertisedEnd(Optional.of(Duration.ofMillis(60_018))).build();
 
-    var execution = mapper.map(request).getExecution();
+    var job = mapper.map(request);
 
-    assertThat(execution.getSegmentStartSlotsList()).containsExactly(0, 1, 3, 5);
+    assertThat(job.getDecision().getVideo().getHoldLastFrameToAdvertisedEnd())
+        .isEqualTo(holdsLastFrame);
+    assertThat(job.getDecision().getAudio().getPadWithSilenceToAdvertisedEnd())
+        .isEqualTo(padsWithSilence);
+    var carriesEnd = holdsLastFrame || padsWithSilence;
+    var execution = job.getExecution();
+    assertThat(execution.hasAdvertisedEnd()).isEqualTo(carriesEnd);
+    assertThat(execution.getAdvertisedEnd().getSeconds()).isEqualTo(carriesEnd ? 60 : 0);
+    assertThat(execution.getAdvertisedEnd().getNanos()).isEqualTo(carriesEnd ? 18_000_000 : 0);
   }
 
   @Test
-  @DisplayName("Should send no segment list when an attempt runs on the plain grid")
-  void shouldSendNoSegmentListWhenAnAttemptRunsOnThePlainGrid() {
-    var execution = mapper.map(copyAttempt().build()).getExecution();
+  @DisplayName("Should neither hold nor pad when an encode attempt carries no advertised end")
+  void shouldNeitherHoldNorPadWhenAnEncodeAttemptCarriesNoAdvertisedEnd() {
+    var job = mapper.map(encodeAttempt("h264").build());
 
-    assertThat(execution.getSegmentStartSlotsList()).isEmpty();
+    assertThat(job.getDecision().getVideo().getHoldLastFrameToAdvertisedEnd()).isFalse();
+    assertThat(job.getDecision().getAudio().getPadWithSilenceToAdvertisedEnd()).isFalse();
+    assertThat(job.getExecution().hasAdvertisedEnd()).isFalse();
+  }
+
+  private static TranscodeRequest.TranscodeRequestBuilder attemptIn(TranscodeMode mode) {
+    var encodedAudio = AudioDecision.stereoAac();
+    var copiedAudio = copyDecisionBuilder().build().audioDecision();
+    return switch (mode) {
+      case FULL_TRANSCODE -> encodeAttempt("h264");
+      case VIDEO_TRANSCODE ->
+          encodeAttempt("h264")
+              .transcodeDecision(
+                  encodeAttempt("h264").build().transcodeDecision().toBuilder()
+                      .transcodeMode(TranscodeMode.VIDEO_TRANSCODE)
+                      .audioDecision(copiedAudio)
+                      .build());
+      case AUDIO_TRANSCODE ->
+          copyAttempt()
+              .transcodeDecision(
+                  copyDecisionBuilder()
+                      .transcodeMode(TranscodeMode.AUDIO_TRANSCODE)
+                      .audioDecision(encodedAudio)
+                      .build());
+      case REMUX -> copyAttempt();
+    };
   }
 
   @Test
@@ -460,6 +503,39 @@ class RemoteVariantJobMapperTest {
     assertThat(video.hasOutputBitDepth()).isFalse();
     assertThat(video.getOutputChromaSubsampling())
         .isEqualTo(ChromaSubsampling.CHROMA_SUBSAMPLING_UNSPECIFIED);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoRange.class,
+      names = {"PQ", "HLG"})
+  @DisplayName(
+      "Should send H.265 Main 10, 10 bits and the codec string of Main 10 when the job encodes"
+          + " HEVC with an HDR range")
+  void shouldSendH265Main1010BitsAndTheCodecStringOfMain10WhenTheJobEncodesHevcWithAnHdrRange(
+      VideoRange range) {
+    var attempt =
+        hdrEncodeAttempt(
+            range == VideoRange.PQ
+                ? com.streamarr.server.domain.streaming.CompatibleBase.PQ
+                : com.streamarr.server.domain.streaming.CompatibleBase.HLG,
+            com.streamarr.server.domain.streaming.EncodeFormat.hdr(range));
+    var hevc =
+        attempt.build().transcodeDecision().toBuilder()
+            .videoCodecFamily("hevc")
+            .encodeCodecProfile(Optional.of(EncodeCodecProfile.HEVC_MAIN_10))
+            .build();
+
+    var video = mapper.map(attempt.transcodeDecision(hevc).build()).getDecision().getVideo();
+
+    assertThat(video.getCodecFamily()).isEqualTo(VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC);
+    assertThat(video.getCodecProfile())
+        .isEqualTo(VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN_10);
+    assertThat(video.getTier()).isEqualTo(VideoCodecTier.VIDEO_CODEC_TIER_MAIN);
+    assertThat(video.getLevel()).isEqualTo(41);
+    assertThat(video.getOutputBitDepth()).isEqualTo(10);
+    assertThat(video.getCodecString()).isEqualTo("hvc1.2.4.L123.90");
   }
 
   @ParameterizedTest

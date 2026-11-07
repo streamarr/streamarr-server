@@ -20,7 +20,7 @@ import lombok.NonNull;
  * presentation times show over 1 to 24 consecutive frame intervals, comes from probe version 8 and
  * later, for the chosen progressive video stream when the probe measured it; empty means unknown.
  */
-@Builder
+@Builder(toBuilder = true)
 public record StreamInfo(
     int index,
     String codecType,

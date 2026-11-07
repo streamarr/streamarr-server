@@ -14,7 +14,10 @@ import java.util.UUID;
 
 public interface TranscodeExecutor {
 
-  /** Sentinel returned by {@link #availableSlots()} when the executor imposes no slot limit. */
+  /**
+   * Sentinel returned by {@link #availableSlots()} when the executor imposes no slot limit, and by
+   * {@link #availableSlots(TranscodeDecision)} for a copy, which takes no slot.
+   */
   int UNBOUNDED_SLOTS = Integer.MAX_VALUE;
 
   /**
@@ -75,13 +78,20 @@ public interface TranscodeExecutor {
    */
   boolean hasHardwareEncoderFailed(UUID sessionId, String variantLabel);
 
+  /**
+   * The execution target whose worker refused this job attempt of a copy because its copy cap was
+   * full. Empty for any other job attempt, and once the stream session is destroyed.
+   */
+  Optional<ExecutionTargetId> refusedCopyStart(UUID jobAttemptId);
+
   boolean isHealthy();
 
   int availableSlots();
 
   /**
-   * Free slots on the workers that can run a producer with this decision: any worker for a copy,
-   * and for an encode only a worker that can encode the decision's video codec family.
+   * Free slots on the workers that can run a producer with this decision. A copy takes no slot, so
+   * a copy has {@link #UNBOUNDED_SLOTS} while any worker can run it, and none otherwise. An encode
+   * has the free slots of the workers that can encode the decision's video codec family.
    */
   int availableSlots(TranscodeDecision decision);
 

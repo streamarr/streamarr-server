@@ -120,6 +120,11 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
+  public Optional<ExecutionTargetId> refusedCopyStart(UUID jobAttemptId) {
+    return workerServer.refusedCopyStart(jobAttemptId);
+  }
+
+  @Override
   public boolean isHealthy() {
     return workerServer.hasConnectedWorker(sourceNamespaceId);
   }

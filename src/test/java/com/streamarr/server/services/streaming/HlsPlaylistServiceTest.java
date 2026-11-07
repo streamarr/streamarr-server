@@ -1982,9 +1982,40 @@ class HlsPlaylistServiceTest {
     @Builder
     record SegmentLengthPeak(int segmentSeconds, String bandwidthAttributes) {}
 
-    // RFC 8216 §4.1: a run lasts 3 to 9 s under a 6 s target. The last segment lasts 1 s and holds
-    // 500,000 bytes, so it counts only with the 6 s segment before it: 302,400 + 500,480 bytes
-    // over 7 s, 917,577.1 b/s. Alone it would advertise 4,003,840 b/s.
+    // With four-second keyframe intervals, the 6 s grid merges to 8/4/8/4/8/4 s and the
+    // 3 s grid merges to nine 4 s segments. Each synthetic interval holds 24 samples. At 6 s
+    // the dense interval shares its segment with a sparse one: 700,000 payload bytes plus
+    // 96 + 48 * 16 framing bytes over 8 s. At 3 s it stands alone: 600,480 bytes over 4 s.
+    @ParameterizedTest(name = "{0} second slots")
+    @CsvSource({"6, 700864", "3, 1200960"})
+    @DisplayName(
+        "Should recompute the peak for both merged segment lists when one measurement serves"
+            + " six and three second slots")
+    void shouldRecomputePeakForBothMergedSegmentListsWhenOneMeasurementServesSixAndThreeSecondSlots(
+        int slotSeconds, long expectedBandwidth) {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(36))
+              .keyframeMillis(
+                  List.of(0L, 4_000L, 8_000L, 12_000L, 16_000L, 20_000L, 24_000L, 28_000L, 32_000L))
+              .videoBytes(concat(repeat(3, 100_000L), repeat(1, 600_000L), repeat(5, 100_000L)))
+              .build();
+      var segmentService =
+          new HlsPlaylistService(
+              StreamingProperties.builder()
+                  .targetSegmentDuration(Duration.ofSeconds(slotSeconds))
+                  .build());
+
+      assertThat(
+              segmentService.generateMultivariantPlaylist(
+                  copySession(source, AudioDecision.none()), "t"))
+          .contains("BANDWIDTH=" + expectedBandwidth + ",");
+    }
+
+    // RFC 8216 §4.1: a run lasts 3 to 9 s under a 6 s target. The last segment lasts 2.5 s, as the
+    // last keyframe presents 2.5 s before the media end, and holds 500,000 bytes, so it counts only
+    // with the 6 s segment before it: 302,400 + 500,480 bytes over 8.5 s, 755,651.8 b/s. Alone it
+    // would advertise 1,601,536 b/s.
     @Test
     @DisplayName(
         "Should count a segment shorter than half the target duration only with its neighbour when"
@@ -1992,7 +2023,7 @@ class HlsPlaylistServiceTest {
     void shouldCountASegmentShorterThanHalfTheTargetOnlyWithItsNeighbourWhenItEndsThePlaylist() {
       var source =
           StreamMeasurementFixture.CopySource.builder()
-              .duration(Duration.ofSeconds(37))
+              .duration(Duration.ofMillis(38_500))
               .keyframeMillis(everySecond(37))
               .videoBytes(concat(repeat(36, 50_000L), repeat(1, 500_000L)))
               .build();
@@ -2000,7 +2031,7 @@ class HlsPlaylistServiceTest {
       var playlist =
           service.generateMultivariantPlaylist(copySession(source, AudioDecision.none()), "t");
 
-      assertThat(playlist).contains("BANDWIDTH=917578,AVERAGE-BANDWIDTH=500515,");
+      assertThat(playlist).contains("BANDWIDTH=755652,AVERAGE-BANDWIDTH=481015,");
     }
 
     // Keyframes 10 s apart leave the 6 s slots [12 s, 18 s) and [24 s, 30 s) without one, so the
@@ -2089,17 +2120,16 @@ class HlsPlaylistServiceTest {
       assertThat(playlist).contains("BANDWIDTH=1079329,AVERAGE-BANDWIDTH=362795,");
     }
 
-    // ADR 0037: the worker puts an audio sample in the segment whose 6 s grid slot holds its start,
-    // not in the segment whose video spans it. Segment 1 opens at 8 s, late in slot 1, so its audio
-    // spans intervals 0 and 1, which overlap slot 1 widened by one 32 ms frame, and not interval 2
-    // from 14 s: 1,120,000 bytes, 7,008 bytes for 438 frames and 64. The last segment lasts 4 s
-    // and holds slot 2 onwards, intervals 1 and 2: 805,072 bytes over 4 s, 1,610,144 b/s, the
-    // audio peak. The video's last segment adds 2,960 b/s.
+    // ADR 0037: the worker puts an audio sample in the last segment that starts at or before the
+    // sample's start, so segment 1, which opens at 8 s, late in slot 1, holds the audio up to
+    // segment 2's start at 14 s. Widened by one 32 ms frame on each side, that span overlaps all
+    // three intervals: 1,440,000 bytes, 9,008 bytes for 563 frames and 64, over 6 s, 1,932,096
+    // b/s, the audio peak. The video's last segment adds 2,960 b/s.
     @Test
     @DisplayName(
-        "Should bound a segment's copied audio by its grid slot when its keyframe opens late in the"
-            + " slot")
-    void shouldBoundSegmentsCopiedAudioByItsGridSlotWhenItsKeyframeOpensLateInTheSlot() {
+        "Should bound a segment's copied audio by its exact start and the next segment's when its"
+            + " keyframe opens late in its slot")
+    void shouldBoundSegmentsCopiedAudioByTheExactStartsWhenItsKeyframeOpensLateInItsSlot() {
       var source =
           StreamMeasurementFixture.CopySource.builder()
               .duration(Duration.ofSeconds(18))
@@ -2111,7 +2141,7 @@ class HlsPlaylistServiceTest {
 
       var playlist = service.generateMultivariantPlaylist(copySession(source, AC3_COPY), "t");
 
-      assertThat(playlist).contains("BANDWIDTH=1613104,AVERAGE-BANDWIDTH=646063,");
+      assertThat(playlist).contains("BANDWIDTH=1935056,AVERAGE-BANDWIDTH=646063,");
     }
 
     // ADR 0054 charges a copied audio track's 64 bytes in every segment, even one without an audio
@@ -2161,15 +2191,15 @@ class HlsPlaylistServiceTest {
       assertThat(playlist).contains("BANDWIDTH=1369622,AVERAGE-BANDWIDTH=676623,");
     }
 
-    // ADR 0037: encoded audio, like copied audio, fills each segment from its grid slot. Segments
-    // open at 0, 8 and 14 s, so the last segment lasts 4 s but carries slot 2's 6 s of audio: 564
-    // frames of 204.8 bytes and 16 bytes of framing each, and 64 bytes, 124,595.2 bytes over 4 s,
-    // 249,190.4 b/s. The video's last segment adds 2,960 b/s.
+    // ADR 0037: encoded audio, like copied audio, fills each segment from its exact start to the
+    // next one's. Segments open at 0, 8 and 14 s, so the last segment carries its own 4 s of audio:
+    // 376 frames of 204.8 bytes and 16 bytes of framing each, and 64 bytes, 83,084.8 bytes over
+    // 4 s, 166,169.6 b/s, the audio peak. The video's last segment adds 2,960 b/s.
     @Test
     @DisplayName(
-        "Should size each segment's encoded audio by its grid slot when keyframes open segments"
-            + " late in their slots")
-    void shouldSizeEachSegmentsEncodedAudioByItsGridSlotWhenKeyframesOpenSegmentsLate() {
+        "Should size each segment's encoded audio by its exact start and the next segment's when"
+            + " keyframes open segments late in their slots")
+    void shouldSizeEachSegmentsEncodedAudioByTheExactStartsWhenKeyframesOpenSegmentsLate() {
       var source =
           StreamMeasurementFixture.CopySource.builder()
               .duration(Duration.ofSeconds(18))
@@ -2180,7 +2210,7 @@ class HlsPlaylistServiceTest {
       var playlist =
           service.generateMultivariantPlaylist(copySession(source, AudioDecision.stereoAac()), "t");
 
-      assertThat(playlist).contains("BANDWIDTH=252151,AVERAGE-BANDWIDTH=142070,");
+      assertThat(playlist).contains("BANDWIDTH=169130,AVERAGE-BANDWIDTH=142070,");
     }
 
     // RFC 8216 §4.1 counts no run that holds the 2.6 s segment of 10,000,000 bytes: alone it lasts

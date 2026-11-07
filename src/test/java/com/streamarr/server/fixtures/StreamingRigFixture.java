@@ -11,6 +11,7 @@ import com.streamarr.server.services.streaming.SeekPriority;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.util.UUID;
@@ -32,9 +33,10 @@ public final class StreamingRigFixture {
       HeldSegmentRequests heldRequests,
       ServerSettingsService serverSettings,
       MutexFactory<UUID> sessionMutex,
-      ApplicationEventPublisher eventPublisher) {
-    var held =
-        heldRequests == null ? new HeldSegmentRequests(new SimpleMeterRegistry()) : heldRequests;
+      ApplicationEventPublisher eventPublisher,
+      MeterRegistry meterRegistry) {
+    var meters = meterRegistry == null ? new SimpleMeterRegistry() : meterRegistry;
+    var held = heldRequests == null ? new HeldSegmentRequests(meters) : heldRequests;
     var lifecycle =
         ProducerLifecycleService.builder()
             .transcodeExecutor(transcodeExecutor)
@@ -55,6 +57,7 @@ public final class StreamingRigFixture {
                     .runtimeRegistry(runtimeRegistry)
                     .properties(properties)
                     .heldRequests(held)
+                    .meterRegistry(meters)
                     .clock(seekPriorityClock == null ? Clock.systemUTC() : seekPriorityClock)
                     .build())
             .build();

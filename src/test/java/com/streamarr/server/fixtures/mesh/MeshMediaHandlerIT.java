@@ -144,7 +144,9 @@ class MeshMediaHandlerIT {
           .as(
               "the 10.005 s fixture clip spans five 2 s media segments, the last taking in its 5 ms")
           .isEqualTo(5);
-      assertThat(execution.getSegmentStartSlotsList()).containsExactly(0, 1, 2, 3, 4);
+      assertThat(execution.getSegmentStartTicksList()).containsExactly(0L, 2L, 4L, 6L, 8L);
+      assertThat(execution.getSegmentStartTimeBase().getNumerator()).isEqualTo(1);
+      assertThat(execution.getSegmentStartTimeBase().getDenominator()).isEqualTo(1);
     }
   }
 

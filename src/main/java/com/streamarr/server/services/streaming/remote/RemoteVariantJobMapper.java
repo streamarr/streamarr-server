@@ -73,7 +73,23 @@ final class RemoteVariantJobMapper {
           case PlannedVideoOutput.StreamCopy _ ->
               copy(transcodeDecision, transcodeDecision.videoSource().orElseThrow());
         };
-    return decision(transcodeDecision).toBuilder().setVideo(video).build();
+    var projection = decision(transcodeDecision);
+    var audio =
+        projection.getAudio().toBuilder()
+            .setPadWithSilenceToAdvertisedEnd(padsWithSilence(request));
+    return projection.toBuilder().setVideo(video).setAudio(audio).build();
+  }
+
+  // Only an encoded stream can hold its last frame or pad with silence; a copied stream keeps the
+  // source's bytes (ADR 0037, early ends).
+  private static boolean holdsLastFrame(TranscodeRequest request) {
+    return request.advertisedEnd().isPresent()
+        && !request.transcodeDecision().transcodeMode().copiesVideo();
+  }
+
+  private static boolean padsWithSilence(TranscodeRequest request) {
+    return request.advertisedEnd().isPresent()
+        && request.transcodeDecision().audioDecision().mode() == AudioMode.TRANSCODE;
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -98,7 +114,8 @@ final class RemoteVariantJobMapper {
             .setOutputBitDepth(planned.bitDepth())
             // A planned encode refuses every chroma subsampling but 4:2:0 (#397).
             .setOutputChromaSubsampling(ChromaSubsampling.CHROMA_SUBSAMPLING_420)
-            .setSoftwareEncoder(request.transcodeDecision().softwareEncoder());
+            .setSoftwareEncoder(request.transcodeDecision().softwareEncoder())
+            .setHoldLastFrameToAdvertisedEnd(holdsLastFrame(request));
     plannedStaticMetadata(video, planned);
     source.ifPresent(
         facts ->
@@ -341,8 +358,7 @@ final class RemoteVariantJobMapper {
             .setSeekPositionSeconds(request.seekPosition())
             .setTargetSegmentDurationSeconds(request.targetSegmentDuration())
             .setStartSequenceNumber(request.startSequenceNumber())
-            .setMediaSegmentCount(request.mediaSegmentCount())
-            .addAllSegmentStartSlots(request.segmentStartSlots());
+            .setMediaSegmentCount(request.mediaSegmentCount());
     request.framerate().ifPresent(execution::setFramerate);
     outputFrameRate(request).ifPresent(execution::setOutputFrameRate);
     request
@@ -355,6 +371,10 @@ final class RemoteVariantJobMapper {
                 execution
                     .addAllSegmentStartTicks(starts.ticks())
                     .setSegmentStartTimeBase(fraction(starts.timeBase())));
+    if (holdsLastFrame(request) || padsWithSilence(request)) {
+      execution.setAdvertisedEnd(protobufDuration(request.advertisedEnd().orElseThrow()));
+    }
+
     return execution.build();
   }
 
@@ -374,8 +394,8 @@ final class RemoteVariantJobMapper {
         .build();
   }
 
-  // The keyframe seek position is never negative, so its seconds and nanoseconds share a sign as
-  // protobuf's Duration requires.
+  // A keyframe seek position and an advertised end are never negative, so their seconds and
+  // nanoseconds share a sign as protobuf's Duration requires.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.google.protobuf.Duration protobufDuration(Duration duration) {
     return com.google.protobuf.Duration.newBuilder()
@@ -457,7 +477,7 @@ final class RemoteVariantJobMapper {
   private static VideoCodecFamily codecFamily(EncodeCodecProfile profile) {
     return switch (profile) {
       case H264_HIGH -> VideoCodecFamily.VIDEO_CODEC_FAMILY_H264;
-      case HEVC_MAIN -> VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC;
+      case HEVC_MAIN, HEVC_MAIN_10 -> VideoCodecFamily.VIDEO_CODEC_FAMILY_HEVC;
       case AV1_MAIN -> VideoCodecFamily.VIDEO_CODEC_FAMILY_AV1;
     };
   }
@@ -466,6 +486,7 @@ final class RemoteVariantJobMapper {
     return switch (profile) {
       case H264_HIGH -> VideoCodecProfile.VIDEO_CODEC_PROFILE_H264_HIGH;
       case HEVC_MAIN -> VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN;
+      case HEVC_MAIN_10 -> VideoCodecProfile.VIDEO_CODEC_PROFILE_HEVC_MAIN_10;
       case AV1_MAIN -> VideoCodecProfile.VIDEO_CODEC_PROFILE_AV1_MAIN;
     };
   }

@@ -85,13 +85,13 @@ final class WorkerCapacityMeters {
 
     meters.add(
         Gauge.builder(PLAYBACK_SLOTS_METRIC, session, Session::playbackSlots)
-            .description("The job attempts that the worker runs at once")
+            .description("The job attempts that encode the video that the worker runs at once")
             .tag(WORKER_TAG, workerId.toString())
             .strongReference(true)
             .register(meterRegistry));
     meters.add(
         Gauge.builder(PLAYBACK_SLOTS_IN_USE_METRIC, session, Session::playbackSlotsInUse)
-            .description("The job attempts that run on the worker")
+            .description("The job attempts that encode the video on the worker")
             .tag(WORKER_TAG, workerId.toString())
             .strongReference(true)
             .register(meterRegistry));

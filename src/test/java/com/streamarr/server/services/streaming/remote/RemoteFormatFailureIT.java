@@ -20,6 +20,8 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.ExactSegmentStarts;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
@@ -54,6 +56,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -282,6 +285,7 @@ class RemoteFormatFailureIT {
       names = {
         "JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED",
         "JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE",
+        "JOB_ATTEMPT_FAILURE_STARTUP_FAILED",
         "JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED"
       })
   @DisplayName("Should retain ordinary recovery when the worker reports an ordinary job failure")
@@ -389,7 +393,9 @@ class RemoteFormatFailureIT {
           rig.requestBuilder()
               .transcodeDecision(rig.decision(mode))
               .mediaSegmentCount(3)
-              .segmentStartSlots(List.of(0, 1, 3))
+              .exactSegmentStarts(
+                  Optional.of(
+                      new ExactSegmentStarts(List.of(0L, 6_000L, 18_000L), new Fraction(1, 1_000))))
               .build();
       rig.session.setHandle(rig.executor.start(request));
       var job = worker.nextJob();

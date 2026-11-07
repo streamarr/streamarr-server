@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -113,6 +114,7 @@ public class PlaybackSessionService implements AutoCloseable {
     @Builder.Default private int formatAttemptCount = 1;
     @Builder.Default private int startedFormatAttempts = 1;
     private final Set<String> excludedEncodeCodecFamilies = new HashSet<>();
+    private final Set<EncodeFormat> excludedEncodeFormats = new HashSet<>();
     private final Set<UUID> streamIds = new HashSet<>();
     // A retired format attempt can still take a timeline report until its stream session ends.
     private final List<StreamSession> readyAttempts = new ArrayList<>();
@@ -718,9 +720,8 @@ public class PlaybackSessionService implements AutoCloseable {
     }
 
     var failed = failedAttempt(playback, fixedFailure);
-    // A failed encode keeps its codec family out of every later format attempt.
-    if (failed.output() instanceof FailedFormatAttempt.Encode(var codecFamily)) {
-      playback.excludedEncodeCodecFamilies.add(codecFamily);
+    if (failed.output() instanceof FailedFormatAttempt.Encode(var codecFamily, var format)) {
+      excludeFailedEncode(playback, codecFamily, format);
     }
 
     return switch (recoveryPolicy.after(playback.choice, failed, playback.formatAttemptCount)) {
@@ -782,7 +783,7 @@ public class PlaybackSessionService implements AutoCloseable {
     if (!isCurrentAttempt(playback, failedId)
         || endedNormally(playback)
         || !(playback.current instanceof PlaybackFormatAttempt.Ready(var session))
-        || !(outputOf(session) instanceof FailedFormatAttempt.Encode(var codecFamily))) {
+        || !(outputOf(session) instanceof FailedFormatAttempt.Encode(var codecFamily, var _))) {
       return Optional.empty();
     }
 
@@ -796,6 +797,19 @@ public class PlaybackSessionService implements AutoCloseable {
                 .choice(playback.choice)
                 .choiceWhenEncoding(playback.choice)
                 .softwareEncodeCodecFamily(Optional.of(codecFamily))));
+  }
+
+  // A failed HDR or 10-bit encode keeps its format out of every later format attempt, in every
+  // codec family, so Auto gives HDR up for SDR (#397) and can still try the codec family in 8-bit
+  // SDR. A failed 8-bit SDR encode keeps its codec family out.
+  private static void excludeFailedEncode(
+      PlaybackSession playback, String codecFamily, EncodeFormat format) {
+    if (format.equals(EncodeFormat.SDR_8_BIT)) {
+      playback.excludedEncodeCodecFamilies.add(codecFamily);
+      return;
+    }
+
+    playback.excludedEncodeFormats.add(format);
   }
 
   private static DecisionReason causeOf(FailedFormatAttempt failed) {
@@ -844,7 +858,8 @@ public class PlaybackSessionService implements AutoCloseable {
 
     var decision = session.getTranscodeDecision();
     if (!decision.transcodeMode().copiesVideo()) {
-      return new FailedFormatAttempt.Encode(decision.videoCodecFamily());
+      return new FailedFormatAttempt.Encode(
+          decision.videoCodecFamily(), decision.videoEncodeFormat());
     }
 
     if (keepsDolbyVisionOnAnHdrBase(decision)) {
@@ -1019,6 +1034,7 @@ public class PlaybackSessionService implements AutoCloseable {
                       .build())
               .capabilityDeclaration(playback.command.capabilityDeclaration())
               .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
+              .excludedEncodeFormats(Set.copyOf(playback.excludedEncodeFormats))
               .startPosition(playback.startPosition)
               .audioTrackPosition(playback.audioTrackPosition);
         });

@@ -8,15 +8,21 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.streamCopyDecis
 import static com.streamarr.server.services.streaming.remote.SegmentUploadRefusals.statusDetails;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
+import static com.streamarr.transcode.v1.JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED;
+import static com.streamarr.transcode.v1.JobAttemptFailure.JOB_ATTEMPT_FAILURE_STARTUP_FAILED;
+import static com.streamarr.transcode.v1.JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.google.protobuf.ByteString;
+import com.streamarr.server.domain.streaming.SourceEndedEarly;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
@@ -807,6 +813,114 @@ class WorkerSessionGrpcServiceTest {
 
   @Test
   @DisplayName(
+      "Should publish where the source ended early when a worker reports it with the completion")
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  void shouldPublishWhereTheSourceEndedEarlyWhenAWorkerReportsItWithTheCompletion()
+      throws Exception {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(events)
+            .build();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isPresent();
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptCompleted(
+                JobAttemptCompleted.newBuilder()
+                    .setJobAttemptId(job.getJobAttemptId())
+                    .setSourceEndedEarly(
+                        com.streamarr.transcode.v1.SourceEndedEarly.newBuilder()
+                            .setLastSegmentWithSourceMedia(10)
+                            .addStreamIndexesWithMediaAfterLastSegment(1)))
+            .build());
+
+    assertThat(events.getEventsOfType(JobAttemptCompletedEvent.class))
+        .singleElement()
+        .extracting(JobAttemptCompletedEvent::sourceEndedEarly)
+        .isEqualTo(Optional.of(new SourceEndedEarly(10, List.of(1))));
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish each well-formed stream end when a worker reports the ends with the"
+          + " completion")
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  void shouldPublishEachWellFormedStreamEndWhenAWorkerReportsTheEndsWithTheCompletion()
+      throws Exception {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(events)
+            .build();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isPresent();
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptCompleted(
+                JobAttemptCompleted.newBuilder()
+                    .setJobAttemptId(job.getJobAttemptId())
+                    .addStreamEnds(streamEnd(0, Duration.ofSeconds(64, 1)))
+                    .addStreamEnds(streamEnd(1, Duration.ofMillis(84_021)))
+                    .addStreamEnds(streamEnd(2, Duration.ofSeconds(-1)))
+                    .addStreamEnds(
+                        streamEnd(3, Duration.ofSeconds(5)).toBuilder()
+                            .setEndTime(
+                                com.google.protobuf.Duration.newBuilder()
+                                    .setSeconds(5)
+                                    .setNanos(1_000_000_000)))
+                    .addStreamEnds(
+                        com.streamarr.transcode.v1.SourceStreamEnd.newBuilder().setStreamIndex(4))
+                    .addStreamEnds(
+                        streamEnd(5, Duration.ofSeconds(5)).toBuilder().clearStreamIndex()))
+            .build());
+
+    assertThat(events.getEventsOfType(JobAttemptCompletedEvent.class))
+        .singleElement()
+        .extracting(JobAttemptCompletedEvent::streamEnds)
+        .isEqualTo(
+            List.of(
+                new SourceStreamEnd(0, Duration.ofSeconds(64, 1)),
+                new SourceStreamEnd(1, Duration.ofMillis(84_021))));
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.SourceStreamEnd streamEnd(int index, Duration end) {
+    return com.streamarr.transcode.v1.SourceStreamEnd.newBuilder()
+        .setStreamIndex(index)
+        .setEndTime(
+            com.google.protobuf.Duration.newBuilder()
+                .setSeconds(end.getSeconds())
+                .setNanos(end.getNano()))
+        .build();
+  }
+
+  @Test
+  @DisplayName(
       "Should publish no completion when a worker reports the completion of a job attempt that"
           + " the server stopped")
   void shouldPublishNoCompletionWhenAWorkerReportsTheCompletionOfAJobAttemptThatTheServerStopped()
@@ -975,6 +1089,70 @@ class WorkerSessionGrpcServiceTest {
 
     assertThat(started.isRunning()).isTrue();
     assertThat(started.registry().terminalFailure(streamSessionId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the worker that refused a copy when the worker reports that its copy cap is"
+          + " reached")
+  void shouldNameTheWorkerThatRefusedACopyWhenTheWorkerReportsThatItsCopyCapIsReached()
+      throws Exception {
+    var started = startedJob(streamCopyDecision());
+    var attemptId = started.job().getJobAttemptId();
+
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED));
+
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId)))
+        .contains(new ExecutionTargetId(started.workerSessionId().toString()));
+  }
+
+  @Test
+  @DisplayName("Should name no refusing worker when a copy fails to start below the copy cap")
+  void shouldNameNoRefusingWorkerWhenACopyFailsToStartBelowTheCopyCap() throws Exception {
+    var started = startedJob(streamCopyDecision());
+    var attemptId = started.job().getJobAttemptId();
+
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_STARTUP_FAILED));
+
+    assertThat(started.isRunning()).isFalse();
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should name no refusing worker when a worker reports a full copy cap for an encode")
+  void shouldNameNoRefusingWorkerWhenAWorkerReportsAFullCopyCapForAnEncode() throws Exception {
+    var started = startedEncode(new SimpleMeterRegistry());
+    var attemptId = started.job().getJobAttemptId();
+
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED));
+
+    assertThat(started.isRunning()).isFalse();
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should name no refusing worker when a copy fails after it started")
+  void shouldNameNoRefusingWorkerWhenACopyFailsAfterItStarted() throws Exception {
+    var started = startedJob(streamCopyDecision());
+    var attemptId = started.job().getJobAttemptId();
+
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED));
+
+    assertThat(started.isRunning()).isFalse();
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should forget the worker that refused a copy when its stream session is destroyed")
+  void shouldForgetTheWorkerThatRefusedACopyWhenItsStreamSessionIsDestroyed() throws Exception {
+    var started = startedJob(streamCopyDecision());
+    var attemptId = started.job().getJobAttemptId();
+    started.session().onNext(failureReport(attemptId, JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED));
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isPresent();
+
+    started.registry().destroyStreamSession(fromProto(started.job().getStreamSessionId()));
+
+    assertThat(started.registry().refusedCopyStart(fromProto(attemptId))).isEmpty();
   }
 
   @Test
@@ -1593,12 +1771,35 @@ class WorkerSessionGrpcServiceTest {
     }
   }
 
-  private static StartedEncode startedEncode(SimpleMeterRegistry meterRegistry) throws Exception {
+  private static StartedJob startedEncode(SimpleMeterRegistry meterRegistry) throws Exception {
     return startedEncode(WorkerSessionServerConfiguration.builder().build(), meterRegistry);
   }
 
-  private static StartedEncode startedEncode(
+  private static StartedJob startedEncode(
       WorkerSessionServerConfiguration configuration, SimpleMeterRegistry meterRegistry)
+      throws Exception {
+    return startedJob(
+        configuration,
+        meterRegistry,
+        TranscodeDecision.newBuilder()
+            .setMode(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE)
+            .setVideo(
+                VideoDecision.newBuilder()
+                    .setMode(VideoMode.VIDEO_MODE_ENCODE)
+                    .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264))
+            .build());
+  }
+
+  private static StartedJob startedJob(TranscodeDecision decision) throws Exception {
+    return startedJob(
+        WorkerSessionServerConfiguration.builder().build(), new SimpleMeterRegistry(), decision);
+  }
+
+  // Starts a job with the decision on a worker that encodes H.264 in software with one slot.
+  private static StartedJob startedJob(
+      WorkerSessionServerConfiguration configuration,
+      SimpleMeterRegistry meterRegistry,
+      TranscodeDecision decision)
       throws Exception {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
@@ -1617,18 +1818,9 @@ class WorkerSessionGrpcServiceTest {
     registration.getCapabilitiesBuilder().addVideoEncoders(LIBX264);
     session.onNext(
         EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
-    var job =
-        variantJob(sourceNamespaceId).toBuilder()
-            .setDecision(
-                TranscodeDecision.newBuilder()
-                    .setMode(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE)
-                    .setVideo(
-                        VideoDecision.newBuilder()
-                            .setMode(VideoMode.VIDEO_MODE_ENCODE)
-                            .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264)))
-            .build();
+    var job = variantJob(sourceNamespaceId).toBuilder().setDecision(decision).build();
     assertThat(registry.dispatch(job)).isPresent();
-    return StartedEncode.builder()
+    return StartedJob.builder()
         .registry(registry)
         .service(service)
         .segmentStore(segmentStore)
@@ -1642,7 +1834,7 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Builder
-  private record StartedEncode(
+  private record StartedJob(
       LiveWorkerConnectionRegistry registry,
       WorkerSessionGrpcService service,
       FakeSegmentStore segmentStore,
@@ -1904,11 +2096,14 @@ class WorkerSessionGrpcServiceTest {
   }
 
   private static EstablishWorkerSessionRequest failureReport(Uuid jobAttemptId) {
+    return failureReport(jobAttemptId, JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+  }
+
+  private static EstablishWorkerSessionRequest failureReport(
+      Uuid jobAttemptId, JobAttemptFailure failure) {
     return EstablishWorkerSessionRequest.newBuilder()
         .setJobAttemptFailed(
-            JobAttemptFailed.newBuilder()
-                .setJobAttemptId(jobAttemptId)
-                .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
+            JobAttemptFailed.newBuilder().setJobAttemptId(jobAttemptId).setFailure(failure))
         .build();
   }
 

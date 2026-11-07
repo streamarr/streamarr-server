@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.CompletedJobAttempt;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.MediaTimeRange;
@@ -9,7 +10,6 @@ import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.SessionNotFoundException;
@@ -85,6 +85,10 @@ public class ProducerLifecycleService {
   // The stream sessions whose left variant runs beside the newest media-segment request's variant.
   // A start or a replacement in any stream session that finds no free slot may stop one of them.
   private final Set<UUID> sessionsKeepingLeftVariant = ConcurrentHashMap.newKeySet();
+  // The job attempt of each variant whose refused copy waits while one request stops a left copy
+  // for it. Other requests leave that job attempt alone until the stop settles, so none of them
+  // exhausts the variant or stops a second left copy.
+  private final ConcurrentHashMap<VariantKey, UUID> copyReclaims = new ConcurrentHashMap<>();
   private final TranscodeLimit transcodeLimit = new TranscodeLimit();
 
   public enum RecoveryResult {
@@ -116,24 +120,70 @@ public class ProducerLifecycleService {
   private record PendingSegment(
       SegmentRequest request, int requestedIndex, LeftVariantReclaim reclaim) {}
 
-  // Whether a replacement that found no free worker job slot asks its caller to stop another
-  // stream session's left variant and try once more. The caller stops it only after it has
-  // released its own session mutex.
+  // Whether a replacement that found no free worker job slot, or whose copy a worker refused,
+  // asks its caller to stop another stream session's left variant and try once more. The caller
+  // stops it only after it has released its own session mutex.
   private static final class LeftVariantReclaim {
 
     private final boolean allowed;
+    // The job attempt of a refused copy whose reclaim this pass settles.
+    private final UUID settledCopyAttempt;
+    private ExecutionTargetId retryTarget;
     private SlotShortage requestedFor;
+    private UUID refusedCopyAttempt;
 
-    private LeftVariantReclaim(boolean allowed) {
+    private LeftVariantReclaim(
+        boolean allowed, UUID settledCopyAttempt, ExecutionTargetId retryTarget) {
       this.allowed = allowed;
+      this.settledCopyAttempt = settledCopyAttempt;
+      this.retryTarget = retryTarget;
     }
 
     private static LeftVariantReclaim allowed() {
-      return new LeftVariantReclaim(true);
+      return new LeftVariantReclaim(true, null, null);
     }
 
     private static LeftVariantReclaim spent() {
-      return new LeftVariantReclaim(false);
+      return new LeftVariantReclaim(false, null, null);
+    }
+
+    // After a left copy stopped on the worker that refused a copy, the next replacement tries that
+    // worker once more, even when recovery has already tried it. A copy place shortage names only
+    // the refusing worker.
+    private LeftVariantReclaim afterStop(boolean stopped) {
+      if (refusedCopyAttempt == null) {
+        return spent();
+      }
+
+      ExecutionTargetId target = null;
+      if (stopped) {
+        target = requestedFor.usableTargets().iterator().next();
+      }
+
+      return new LeftVariantReclaim(false, refusedCopyAttempt, target);
+    }
+
+    private boolean settles(UUID jobAttemptId) {
+      return jobAttemptId.equals(settledCopyAttempt);
+    }
+
+    private Optional<ExecutionTargetId> takeRetryTarget() {
+      var target = Optional.ofNullable(retryTarget);
+      retryTarget = null;
+      return target;
+    }
+
+    private boolean tryRequestForRefusedCopy(ExecutionTargetId refusingWorker, UUID jobAttemptId) {
+      if (!tryRequest(SlotShortage.copyPlaceOn(refusingWorker))) {
+        return false;
+      }
+
+      refusedCopyAttempt = jobAttemptId;
+      return true;
+    }
+
+    private Optional<UUID> refusedCopyAttempt() {
+      return Optional.ofNullable(refusedCopyAttempt);
     }
 
     private boolean tryRequest(SlotShortage shortage) {
@@ -150,15 +200,28 @@ public class ProducerLifecycleService {
   }
 
   // The slots that a start found taken, and the execution targets that can run the start. Stopping
-  // a left variant helps the start only when it frees each taken slot.
+  // a left variant helps the start only when it frees each taken slot. A worker that refused a copy
+  // lacks a copy place, which only a copy frees.
   @Builder(toBuilder = true)
   private record SlotShortage(
       boolean configuredTranscodeSlot,
       boolean workerJobSlot,
+      boolean workerCopyPlace,
       Set<ExecutionTargetId> usableTargets) {
 
     private boolean any() {
-      return configuredTranscodeSlot || workerJobSlot;
+      return configuredTranscodeSlot || workerJobSlot || workerCopyPlace;
+    }
+
+    private boolean onWorker() {
+      return workerJobSlot || workerCopyPlace;
+    }
+
+    private static SlotShortage copyPlaceOn(ExecutionTargetId refusingWorker) {
+      return SlotShortage.builder()
+          .workerCopyPlace(true)
+          .usableTargets(Set.of(refusingWorker))
+          .build();
     }
   }
 
@@ -170,7 +233,9 @@ public class ProducerLifecycleService {
    * dead or stalled job attempt. When a media-segment request's replacement of the requested
    * variant finds no free worker job slot, it stops the stream session's own other video variants
    * that run on the replacement's worker and tries once more, then looks for another stream
-   * session's left variant to stop and tries once more.
+   * session's left variant to stop and tries once more. When a worker refused the variant's copy at
+   * startup, it looks for another stream session's left copy on that worker; once it stops one, it
+   * starts the copy on that worker once more.
    */
   public RecoveryResult recover(SegmentRequest request) {
     var reclaim = LeftVariantReclaim.allowed();
@@ -180,9 +245,15 @@ public class ProducerLifecycleService {
       return result;
     }
 
-    stopLeftVariantOfAnotherStreamSession(request.sessionId(), shortage.get());
-    return withSessionLock(
-        request.sessionId(), () -> doRecover(request, LeftVariantReclaim.spent()));
+    try {
+      var stopped = stopLeftVariantOfAnotherStreamSession(request.sessionId(), shortage.get());
+      var afterStop = reclaim.afterStop(stopped);
+      return withSessionLock(request.sessionId(), () -> doRecover(request, afterStop));
+    } finally {
+      reclaim
+          .refusedCopyAttempt()
+          .ifPresent(attemptId -> copyReclaims.remove(variantKeyOf(request), attemptId));
+    }
   }
 
   // Also remembered when the relocation or resume fails, so the replacement starts at this
@@ -267,6 +338,7 @@ public class ProducerLifecycleService {
           newestVariantArrivals.remove(sessionId);
           playingVariants.remove(sessionId);
           sessionsKeepingLeftVariant.remove(sessionId);
+          copyReclaims.keySet().removeIf(key -> key.sessionId().equals(sessionId));
         });
     seekPriority.forgetSession(sessionId);
   }
@@ -401,7 +473,7 @@ public class ProducerLifecycleService {
       var handle = session.getVariantHandle(request.variantLabel()).orElseThrow();
       syncProgress(state, handle, pending);
       var running = transcodeExecutor.isRunning(request.sessionId(), request.variantLabel());
-      if (running && !hasStalled(state, session)) {
+      if (runsWithoutStall(running, state, session)) {
         return RecoveryResult.WAITING;
       }
 
@@ -413,11 +485,20 @@ public class ProducerLifecycleService {
       var eligibleTargets = eligibleTargets(session, request.variantLabel());
       // Segment publication is external to the session mutex and may advance during discovery.
       syncProgress(state, handle, pending);
-      if (noLongerNeedsRecovery(pending, running && !hasStalled(state, session))) {
+      if (noLongerNeedsRecovery(pending, runsWithoutStall(running, state, session))) {
         return RecoveryResult.WAITING;
       }
 
-      var target = state.nextTarget(eligibleTargets);
+      if (waitsForRoomForRefusedCopy(session, handle, pending)) {
+        return RecoveryResult.WAITING;
+      }
+
+      var target =
+          pending
+              .reclaim()
+              .takeRetryTarget()
+              .filter(eligibleTargets::contains)
+              .or(() -> state.nextTarget(eligibleTargets));
       if (target.isEmpty()) {
         return exhaust(state, pending, handle.attemptId());
       }
@@ -439,6 +520,52 @@ public class ProducerLifecycleService {
         return outcome.get();
       }
     }
+  }
+
+  private boolean runsWithoutStall(
+      boolean running, VariantDeliveryState state, StreamSession session) {
+    return running && !hasStalled(state, session);
+  }
+
+  private boolean waitsForRoomForRefusedCopy(
+      StreamSession session, TranscodeHandle handle, PendingSegment pending) {
+    return awaitsAnotherRequestsCopyReclaim(handle, pending)
+        || requestsRoomForRefusedCopy(session, handle, pending);
+  }
+
+  // A worker that refused the variant's copy because its copy cap was full may run another stream
+  // session's left copy, whose stop frees the place that the copy lacks (ADR 0019).
+  private boolean requestsRoomForRefusedCopy(
+      StreamSession session, TranscodeHandle handle, PendingSegment pending) {
+    if (!makesRoomForRefusedCopy(session, pending.request())) {
+      return false;
+    }
+
+    var refusingWorker = transcodeExecutor.refusedCopyStart(handle.attemptId());
+    if (refusingWorker.isEmpty()
+        || !pending.reclaim().tryRequestForRefusedCopy(refusingWorker.get(), handle.attemptId())) {
+      return false;
+    }
+
+    copyReclaims.put(variantKeyOf(pending.request()), handle.attemptId());
+    return true;
+  }
+
+  private boolean awaitsAnotherRequestsCopyReclaim(TranscodeHandle handle, PendingSegment pending) {
+    return handle.attemptId().equals(copyReclaims.get(variantKeyOf(pending.request())))
+        && !pending.reclaim().settles(handle.attemptId());
+  }
+
+  // Before the player's first media-segment request, a request of the first-listed variant also
+  // makes room: the player requests its initialization segment first, and the creation of the
+  // stream session, which started that variant, may stop another stream session's left variant.
+  private boolean makesRoomForRefusedCopy(StreamSession session, SegmentRequest request) {
+    if (isMediaSegmentRequestOfRequestedVariant(request)) {
+      return true;
+    }
+
+    return !newestMediaSegmentRequests.containsKey(request.sessionId())
+        && request.variantLabel().equals(firstListedVariant(session));
   }
 
   // Once a request for a media segment has positioned the variant, a replacement never starts past
@@ -495,12 +622,16 @@ public class ProducerLifecycleService {
 
   private Optional<RecoveryResult> replaceAndTrack(
       VariantDeliveryState state, StreamSession session, ReplaceProducerCommand command) {
+    // Read before the replacement starts, so that none of its own output counts as stored before
+    // it.
+    var firstUnstored = firstUnstoredSegmentFromTheStart(session, command);
     return switch (doReplace(command)) {
       case ReplaceResult.Replaced(UUID newAttemptId) -> {
         state.trackReplacement(
             command.target(),
             session.getVariantHandle(command.variantLabel()).orElseThrow(),
             clock.instant());
+        state.skipSegmentsStoredBefore(firstUnstored);
         log.info(
             "Replaced producer for session {} variant {} on target {} at segment {} (attempt {})",
             command.sessionId(),
@@ -530,6 +661,17 @@ public class ProducerLifecycleService {
       case ReplaceResult.Superseded() -> Optional.of(RecoveryResult.WAITING);
       case ReplaceResult.SessionGone() -> Optional.of(RecoveryResult.SESSION_GONE);
     };
+  }
+
+  private int firstUnstoredSegmentFromTheStart(
+      StreamSession session, ReplaceProducerCommand command) {
+    var index = startWithSourceMedia(session, command.segmentIndex());
+    while (segmentStore.segmentExists(
+        command.sessionId(), SegmentNames.siblingName(command.segmentName(), index))) {
+      index++;
+    }
+
+    return index;
   }
 
   private void syncProgress(
@@ -616,7 +758,7 @@ public class ProducerLifecycleService {
    * segment. No other variant starts until the player requests one of its segments (ADR 0019). When
    * no slot is free, another stream session's left variant stops first. Throws {@link
    * TranscodeLimitReachedException} and starts nothing when the transcode limit still leaves no
-   * place for a stream session that transcodes.
+   * place for a stream session that encodes the video.
    */
   public StreamSession startFirstListedVariant(StreamSession session) {
     var sessionId = session.getSessionId();
@@ -758,8 +900,7 @@ public class ProducerLifecycleService {
         sessionId,
         SlotShortage.builder()
             .configuredTranscodeSlot(
-                decision.transcodeMode() != TranscodeMode.REMUX
-                    && freeConfiguredTranscodeSlots() <= 0)
+                countsAgainstTranscodeLimit(decision) && freeConfiguredTranscodeSlots() <= 0)
             .workerJobSlot(transcodeExecutor.availableSlots(decision) <= 0)
             .usableTargets(transcodeExecutor.executionTargets(decision))
             .build());
@@ -846,8 +987,8 @@ public class ProducerLifecycleService {
   }
 
   // A variant frees a configured transcode slot exactly when the limit counts it, whether or not
-  // its job attempt still runs. It frees a worker job slot only while its job attempt runs on a
-  // worker that can run the start.
+  // its job attempt still runs. An encode frees a worker job slot, and a copy a copy place, only
+  // while its job attempt runs on a worker that can run the start.
   private boolean freesTakenSlots(
       StreamSession session, String variantLabel, SlotShortage shortage) {
     if (shortage.configuredTranscodeSlot()
@@ -855,7 +996,15 @@ public class ProducerLifecycleService {
       return false;
     }
 
-    return !shortage.workerJobSlot()
+    if (shortage.workerJobSlot() && copiesVideo(session)) {
+      return false;
+    }
+
+    if (shortage.workerCopyPlace() && !copiesVideo(session)) {
+      return false;
+    }
+
+    return !shortage.onWorker()
         || transcodeExecutor
             .runningExecutionTarget(session.getSessionId(), variantLabel)
             .filter(shortage.usableTargets()::contains)
@@ -863,7 +1012,7 @@ public class ProducerLifecycleService {
   }
 
   private static boolean takesConfiguredTranscodeSlot(StreamSession session, String variantLabel) {
-    return requiresTranscode(session)
+    return countsAgainstTranscodeLimit(session)
         && session
             .getVariantHandle(variantLabel)
             .filter(ProducerLifecycleService::takesConfiguredTranscodeSlot)
@@ -1239,21 +1388,21 @@ public class ProducerLifecycleService {
   }
 
   private boolean hasConfiguredTranscodeSlotFor(StreamSession session) {
-    return !requiresTranscode(session) || freeConfiguredTranscodeSlots() > 0;
+    return !countsAgainstTranscodeLimit(session) || freeConfiguredTranscodeSlots() > 0;
   }
 
   /**
-   * The configured transcode limit minus the running job attempts of every transcoding stream
-   * session and the places that starts hold while their job attempts dispatch. A suspended or
-   * stopped variant has no running job attempt.
+   * The configured transcode limit minus the running job attempts of every stream session that
+   * encodes the video and the places that starts hold while their job attempts dispatch. A
+   * suspended or stopped variant has no running job attempt.
    */
   public long freeConfiguredTranscodeSlots() {
     return transcodeLimit.freePlaces();
   }
 
   /**
-   * The configured transcode limit across every stream session that transcodes (ADR 0019). A start
-   * reserves a place before it dispatches its job attempt, and gives the place back once the
+   * The configured transcode limit across every stream session that encodes the video (ADR 0019). A
+   * start reserves a place before it dispatches its job attempt, and gives the place back once the
    * started job attempt's handle is saved, where the limit counts the job attempt, or once the
    * dispatch fails. Two starts therefore never take the same last place. The monitor guards only
    * these counts, so no start waits on another start's dispatch.
@@ -1265,15 +1414,15 @@ public class ProducerLifecycleService {
     private synchronized long freePlaces() {
       var runningJobAttempts =
           runtimeRegistry.findAll().stream()
-              .filter(ProducerLifecycleService::requiresTranscode)
+              .filter(ProducerLifecycleService::countsAgainstTranscodeLimit)
               .mapToLong(ProducerLifecycleService::countRunningJobAttempts)
               .sum();
       return properties.maxConcurrentTranscodes() - runningJobAttempts - reservedPlaces;
     }
 
-    // Empty when no place is free. A stream session that only remuxes needs no place.
+    // Empty when no place is free. A stream session that copies the video needs no place.
     private synchronized Optional<TranscodeLimitPlace> tryReserve(StreamSession session) {
-      if (!requiresTranscode(session)) {
+      if (!countsAgainstTranscodeLimit(session)) {
         return Optional.of(() -> {});
       }
 
@@ -1298,9 +1447,18 @@ public class ProducerLifecycleService {
   }
 
   // A direct-play stream session starts no job attempt and holds no transcode decision.
-  private static boolean requiresTranscode(StreamSession session) {
+  private static boolean countsAgainstTranscodeLimit(StreamSession session) {
     return session.getDelivery() == StreamDelivery.HLS
-        && session.getTranscodeDecision().transcodeMode() != TranscodeMode.REMUX;
+        && countsAgainstTranscodeLimit(session.getTranscodeDecision());
+  }
+
+  private static boolean copiesVideo(StreamSession session) {
+    return session.getTranscodeDecision().transcodeMode().copiesVideo();
+  }
+
+  // A stream session that copies the video, with or without an audio encode, takes no place.
+  private static boolean countsAgainstTranscodeLimit(TranscodeDecision decision) {
+    return !decision.transcodeMode().copiesVideo();
   }
 
   private static long countRunningJobAttempts(StreamSession session) {
@@ -1518,9 +1676,9 @@ public class ProducerLifecycleService {
   }
 
   private TranscodeRequest jobAttemptRequest(
-      StreamSession session, String variantLabel, int startSequenceNumber) {
+      StreamSession session, String variantLabel, int requestedStart) {
     var request =
-        baseRequest(session, variantLabel, startSequenceNumber)
+        baseRequest(session, variantLabel, startWithSourceMedia(session, requestedStart))
             .encoderPreset(pinEncoderPreset(session, variantLabel));
 
     var variant =
@@ -1550,7 +1708,9 @@ public class ProducerLifecycleService {
    * A running encoder produces segments sequentially from its start segment. A requested media
    * segment needs the variant's encoder relocated when it lies behind that start (it will never be
    * produced) or so far ahead of produced output that waiting would stall the player longer than
-   * restarting. An initialization segment and a variant without a job attempt never relocate.
+   * restarting. A request past the last segment with source media counts as one for that segment,
+   * where a job attempt starts. An initialization segment and a variant without a job attempt never
+   * relocate.
    */
   private boolean requiresRelocation(
       StreamSession session, String variantLabel, String segmentName) {
@@ -1561,13 +1721,13 @@ public class ProducerLifecycleService {
     }
 
     var startSequenceNumber = handle.get().startSequenceNumber();
-    if (requestedIndex.getAsInt() < startSequenceNumber) {
+    var neededStart = startWithSourceMedia(session, requestedIndex.getAsInt());
+    if (neededStart < startSequenceNumber) {
       return true;
     }
 
     var probeIndex =
-        timelineOf(session)
-            .mediaSegmentIndexBefore(requestedIndex.getAsInt(), FORWARD_RELOCATION_GAP);
+        timelineOf(session).mediaSegmentIndexBefore(neededStart, FORWARD_RELOCATION_GAP);
     if (probeIndex < startSequenceNumber) {
       return false;
     }
@@ -1609,25 +1769,48 @@ public class ProducerLifecycleService {
    * worker reports the completion only after the server accepted the attempt's last segment, so a
    * copy whose stored media segments from the attempt's first one stop before the playlist's last
    * ran short there. The stream session keeps the first short copy that a completion shows. Answers
-   * the short copy when this completion showed it.
+   * the short copy when this completion showed it. In every stream session, a completion that
+   * reports that the source ended early sets the last segment at which a job attempt may start.
    */
-  public Optional<ShortCopy> settleCompletedJobAttempt(
-      UUID sessionId, String variantLabel, UUID attemptId) {
+  public Optional<ShortCopy> settleCompletedJobAttempt(@NonNull CompletedJobAttempt completion) {
     return withSessionLock(
-        sessionId,
+        completion.streamSessionId(),
         () ->
             runtimeRegistry
-                .findById(sessionId)
+                .findById(completion.streamSessionId())
+                .map(session -> rememberWhereTheSourceEnded(session, completion))
                 .filter(session -> session.getTranscodeDecision().transcodeMode().copiesVideo())
-                .flatMap(session -> shortCopyShownBy(session, variantLabel, attemptId)));
+                .flatMap(session -> shortCopyShownBy(session, completion)));
+  }
+
+  private static StreamSession rememberWhereTheSourceEnded(
+      StreamSession session, CompletedJobAttempt completion) {
+    completion
+        .sourceEndedEarly()
+        .ifPresent(
+            report -> session.markLastSegmentWithSourceMedia(report.lastSegmentWithSourceMedia()));
+    return session;
+  }
+
+  // A job attempt never starts past the last segment that holds a source sample: one started there
+  // fills every later advertised segment of an encode with the last frame and silence (ADR 0037,
+  // early ends).
+  private static int startWithSourceMedia(StreamSession session, int requestedStart) {
+    var last = session.getLastSegmentWithSourceMedia();
+    if (last.isEmpty()) {
+      return requestedStart;
+    }
+
+    return Math.min(requestedStart, last.getAsInt());
   }
 
   private Optional<ShortCopy> shortCopyShownBy(
-      StreamSession session, String variantLabel, UUID attemptId) {
+      StreamSession session, CompletedJobAttempt completion) {
+    var variantLabel = completion.variantLabel();
     var handle =
         session
             .getVariantHandle(variantLabel)
-            .filter(current -> current.attemptId().equals(attemptId));
+            .filter(current -> current.attemptId().equals(completion.jobAttemptId()));
     if (handle.isEmpty()) {
       return Optional.empty();
     }
@@ -1647,7 +1830,8 @@ public class ProducerLifecycleService {
       return Optional.empty();
     }
 
-    var shortCopy = ShortCopy.endingWith(firstMissing - 1, timeline, session.getMediaProbe());
+    var probed = ShortCopy.endingWith(firstMissing - 1, timeline, session.getMediaProbe());
+    var shortCopy = completion.sourceEndedEarly().map(probed::settledBy).orElse(probed);
     if (!session.tryMarkShortCopy(shortCopy)) {
       return Optional.empty();
     }
@@ -1812,7 +1996,7 @@ public class ProducerLifecycleService {
         .pinnedEncoder(session.getPinnedEncoder(variantLabel))
         .sourcePath(session.getSourcePath())
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
-        .keyframeSeekPosition(timeline.keyframeSeekPosition(startSequenceNumber))
+        .keyframeSeekPosition(seekPosition(session, timeline, startSequenceNumber))
         .exactSegmentStarts(MediaSegmentTimelines.exactSegmentStartsOf(session, timeline))
         .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
         .framerate(
@@ -1822,7 +2006,42 @@ public class ProducerLifecycleService {
         .transcodeDecision(session.getTranscodeDecision())
         .startSequenceNumber(startSequenceNumber)
         .mediaSegmentCount(timeline.mediaSegmentCount())
-        .segmentStartSlots(timeline.segmentStartSlots());
+        .advertisedEnd(advertisedEnd(timeline));
+  }
+
+  // An encode holds the last picture that it decodes. Without the source's keyframes the worker
+  // reads from one period before the attempt's first segment, so an attempt whose read would start
+  // at or after the chosen video's probed end reads from one period before that end instead (ADR
+  // 0037, early ends).
+  private static Optional<Duration> seekPosition(
+      StreamSession session, MediaSegmentTimeline timeline, int startSequenceNumber) {
+    var keyframeSeek = timeline.keyframeSeekPosition(startSequenceNumber);
+    if (keyframeSeek.isPresent()) {
+      return keyframeSeek;
+    }
+
+    var period = timeline.targetSegmentDuration();
+    var defaultRead =
+        Duration.ofSeconds(timeline.mediaSegmentStartSeconds(startSequenceNumber)).minus(period);
+    return session
+        .getMediaProbe()
+        .videoEndTime()
+        .filter(end -> defaultRead.compareTo(end) >= 0)
+        .map(end -> latestOf(end.minus(period), Duration.ZERO));
+  }
+
+  private static Duration latestOf(Duration first, Duration second) {
+    return first.compareTo(second) >= 0 ? first : second;
+  }
+
+  // Every encoded stream may hold its last frame or pad with silence up to the last advertised
+  // segment's end, so a source that ends early still fills every advertised segment (ADR 0037).
+  private static Optional<Duration> advertisedEnd(MediaSegmentTimeline timeline) {
+    if (timeline.mediaSegmentCount() == 0) {
+      return Optional.empty();
+    }
+
+    return Optional.of(timeline.mediaSegmentEnd(timeline.mediaSegmentCount() - 1));
   }
 
   private EncoderPreset pinEncoderPreset(StreamSession session, String variantLabel) {

@@ -4,10 +4,11 @@ import java.util.List;
 import lombok.NonNull;
 
 /**
- * Where each media segment of a stream copy's segment list starts on the zero-based timeline, in
- * ticks of {@code timeBase}, the time base of the source video stream's stored keyframe positions.
- * Segment 0 starts at zero, and every later segment at the stored presentation tick of the keyframe
- * that opens it, so no start is rounded (ADR 0037, segment list).
+ * Where each media segment of a segment list starts on the zero-based timeline, in ticks of {@code
+ * timeBase}. Segment 0 starts at zero. In a stream copy's list, the time base is that of the source
+ * video stream's stored keyframe positions, and every later segment starts at the stored
+ * presentation tick of the keyframe that opens it, so no start is rounded. A plain grid that merges
+ * its final slot counts its starts in whole seconds, in the time base 1/1 (ADR 0037, segment list).
  */
 public record ExactSegmentStarts(@NonNull List<Long> ticks, @NonNull Fraction timeBase) {
 

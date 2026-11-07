@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
+import java.util.stream.LongStream;
 import lombok.NonNull;
 
 /**
@@ -35,14 +36,6 @@ public sealed interface MediaSegmentTimeline {
 
   default boolean advertises(int index) {
     return index >= 0 && index < mediaSegmentCount();
-  }
-
-  /**
-   * Each media segment's start slot, which every job attempt carries, or nothing on the plain grid
-   * (ADR 0037).
-   */
-  default List<Integer> segmentStartSlots() {
-    return List.of();
   }
 
   /** The slot where the media segment's interval starts. */
@@ -101,8 +94,8 @@ public sealed interface MediaSegmentTimeline {
    * Segment {@code N} covers media time {@code [N × target, (N + 1) × target)}, and the last
    * segment ends at the media duration, counted in whole milliseconds. A final slot that the media
    * ends less than {@link #MINIMUM_LAST_SEGMENT_DURATION} into merges into the segment before it,
-   * and the grid then lists every segment's start slot so that each job attempt groups that slot
-   * into the last segment (ADR 0037, segment list).
+   * and every job attempt then carries the grid's {@link #exactStarts()} so that it groups that
+   * slot into the last segment (ADR 0037, segment list).
    */
   record PlainGrid(@NonNull Duration mediaDuration, @NonNull Duration targetSegmentDuration)
       implements MediaSegmentTimeline {
@@ -113,6 +106,8 @@ public sealed interface MediaSegmentTimeline {
      * frame of every variant and rendition (ADR 0037, segment list).
      */
     public static final Duration MINIMUM_LAST_SEGMENT_DURATION = Duration.ofSeconds(2);
+
+    private static final Fraction WHOLE_SECONDS = new Fraction(1, 1);
 
     @Override
     public int mediaSegmentCount() {
@@ -133,13 +128,22 @@ public sealed interface MediaSegmentTimeline {
       return Duration.ofMillis(Math.min(targetSegmentMillis(), remainingMillis));
     }
 
-    @Override
-    public List<Integer> segmentStartSlots() {
+    /**
+     * Each segment's start in whole seconds, in the time base 1/1, when the grid merges its final
+     * slot, so that every job attempt groups that slot into the last segment; otherwise empty. The
+     * plain grid has no stored keyframe time base to count its starts in (ADR 0037, segment list).
+     */
+    public Optional<ExactSegmentStarts> exactStarts() {
       if (!mergesFinalSlot()) {
-        return List.of();
+        return Optional.empty();
       }
 
-      return IntStream.range(0, mediaSegmentCount()).boxed().toList();
+      var ticks =
+          LongStream.range(0, mediaSegmentCount())
+              .map(index -> index * targetSegmentDurationSeconds())
+              .boxed()
+              .toList();
+      return Optional.of(new ExactSegmentStarts(ticks, WHOLE_SECONDS));
     }
 
     /** The slots that the media reaches into, counted in whole milliseconds. */
@@ -159,7 +163,9 @@ public sealed interface MediaSegmentTimeline {
 
     /**
      * This grid's segments as a stream copy cuts them at the source keyframes that open each one. A
-     * keyframe that presents at or after the media end opens no segment.
+     * keyframe that presents at or after the media end opens no segment, and neither does a later
+     * segment's keyframe that presents less than {@link StreamCopy#MINIMUM_SEGMENT_DURATION} before
+     * it.
      */
     public StreamCopy openedAt(
         @NonNull KeyframePositions positions, StreamCopySegments.@NonNull Starts starts) {
@@ -168,7 +174,8 @@ public sealed interface MediaSegmentTimeline {
       for (var keyframeIndex : starts.openingKeyframeIndexes()) {
         var keyframe = positions.keyframes().get(keyframeIndex);
         var presentationTime = positions.timeOf(keyframe.presentationTime(), RoundingMode.FLOOR);
-        if (presentationTime.compareTo(mediaEnd) >= 0) {
+        if (presentationTime.compareTo(mediaEnd) >= 0
+            || opensTooLateSegment(openingKeyframes, positions, keyframe, mediaEnd)) {
           break;
         }
 
@@ -178,6 +185,23 @@ public sealed interface MediaSegmentTimeline {
       }
 
       return new StreamCopy(mediaEnd, targetSegmentDuration, openingKeyframes);
+    }
+
+    // Rounding up keeps out a keyframe that presents a fraction of a nanosecond too late.
+    private static boolean opensTooLateSegment(
+        List<OpeningKeyframe> openingKeyframes,
+        KeyframePositions positions,
+        KeyframePosition keyframe,
+        Duration mediaEnd) {
+      if (openingKeyframes.isEmpty()) {
+        return false;
+      }
+
+      var latestStart = mediaEnd.minus(StreamCopy.MINIMUM_SEGMENT_DURATION);
+      return positions
+              .timeOf(keyframe.presentationTime(), RoundingMode.CEILING)
+              .compareTo(latestStart)
+          > 0;
     }
 
     private long targetSegmentMillis() {
@@ -212,11 +236,6 @@ public sealed interface MediaSegmentTimeline {
     @Override
     public Duration mediaSegmentDuration(int index) {
       return grid.mediaSegmentDuration(index);
-    }
-
-    @Override
-    public List<Integer> segmentStartSlots() {
-      return grid.segmentStartSlots();
     }
 
     /**
@@ -263,6 +282,14 @@ public sealed interface MediaSegmentTimeline {
       @NonNull List<OpeningKeyframe> openingKeyframes)
       implements MediaSegmentTimeline {
 
+    /**
+     * The least time between two consecutive segment starts, and between the last start and the
+     * media end: longer than a frame at the slowest output frame rate and than a frame of every
+     * audio codec a segment carries, so that every segment holds a frame of every variant and
+     * rendition (ADR 0037, segment list).
+     */
+    public static final Duration MINIMUM_SEGMENT_DURATION = Duration.ofSeconds(2);
+
     public StreamCopy {
       openingKeyframes = List.copyOf(openingKeyframes);
     }
@@ -293,14 +320,6 @@ public sealed interface MediaSegmentTimeline {
 
       var keyframeIndex = openingKeyframes.get(index).keyframeIndex();
       return positions.keyframes().get(keyframeIndex).presentationTime();
-    }
-
-    @Override
-    public List<Integer> segmentStartSlots() {
-      return IntStream.range(0, mediaSegmentCount())
-          .map(this::mediaSegmentStartSlot)
-          .boxed()
-          .toList();
     }
 
     @Override

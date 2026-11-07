@@ -36,8 +36,7 @@ import lombok.NonNull;
  * <p>With numbered keyframe messages, a prefix SEI message of the user data unregistered type sits
  * in front of each keyframe's slice and carries the keyframe's number, so a record that a muxer
  * built from the first sample of a job attempt would differ between attempts that start at
- * different keyframes. The source goes into MPEG-TS instead of MP4 when its parameter sets and SEI
- * messages must stay in its samples, as every HEVC stream in MPEG-TS keeps them.
+ * different keyframes.
  */
 @Builder(builderMethodName = "hevcSourceBuilder")
 public record SyntheticHdrSource(
@@ -46,8 +45,7 @@ public record SyntheticHdrSource(
     boolean staticHdrMetadata,
     @NonNull Optional<DolbyVisionConfigurationBox> dolbyVisionRecord,
     boolean enhancementLayerUnits,
-    boolean numberedKeyframeMessages,
-    boolean mpegTsContainer) {
+    boolean numberedKeyframeMessages) {
 
   public static final int SOURCE_SECONDS = 12;
   public static final int KEYFRAME_SECONDS = 2;
@@ -107,16 +105,12 @@ public record SyntheticHdrSource(
                 "/media/" + sourceRoot.relativize(elementary),
                 "-c",
                 "copy"));
-    muxing.addAll(
-        mpegTsContainer ? List.of("-f", "mpegts") : List.of("-tag:v", "hvc1", "-f", "mp4"));
-    var muxed =
-        worker.generateMedia(
-            sourceRoot.resolve(name + (mpegTsContainer ? ".ts" : "-muxed.mp4")), muxing);
+    muxing.addAll(List.of("-tag:v", "hvc1", "-f", "mp4"));
+    var muxed = worker.generateMedia(sourceRoot.resolve(name + "-muxed.mp4"), muxing);
     if (dolbyVisionRecord.isEmpty()) {
       return muxed;
     }
 
-    assertThat(mpegTsContainer).as("a Dolby Vision record goes into an MP4 sample entry").isFalse();
     return Files.write(
         sourceRoot.resolve(name + ".mp4"),
         withRecord(Files.readAllBytes(muxed), dolbyVisionRecord.get().box()));

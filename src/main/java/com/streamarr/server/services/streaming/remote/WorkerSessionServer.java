@@ -229,6 +229,11 @@ public final class WorkerSessionServer
     return workerConnections.hasHardwareEncoderFailed(streamSessionId, variantLabel);
   }
 
+  public synchronized Optional<ExecutionTargetId> refusedCopyStart(UUID jobAttemptId) {
+    requireStarted();
+    return workerConnections.refusedCopyStart(jobAttemptId);
+  }
+
   public synchronized boolean hasConnectedWorker(UUID sourceNamespaceId) {
     requireStarted();
     return workerConnections.hasConnectedWorker(sourceNamespaceId);

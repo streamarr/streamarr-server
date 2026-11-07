@@ -237,6 +237,8 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
         .doesNotContain(FilepathCodec.decode(savedMediaFile.getFilepathUri()));
   }
 
+  // The stored 73 s duration lists the playlist: the keyframe at 72 s presents less than 2 s
+  // before the media end, so it opens no segment and segment 11 runs to the end.
   @Test
   @DisplayName("Should keep serving persisted values when a compatible refresh is pending")
   void shouldKeepServingPersistedValuesWhenACompatibleRefreshIsPending() {
@@ -261,7 +263,10 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getMediaProbe())
-        .isEqualTo(ProbeFixture.completeProbe(storedProbe).mediaProbe());
+        .isEqualTo(
+            ProbeFixture.completeProbe(storedProbe).mediaProbe().toBuilder()
+                .sourceSnapshot(Optional.of(sourceSnapshot))
+                .build());
     assertThat(playlistService.generateMultivariantPlaylist(session, "token"))
         .contains("BANDWIDTH=2400000,AVERAGE-BANDWIDTH=2000000,RESOLUTION=1280x720");
     assertThat(
@@ -269,10 +274,10 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
         .contains(
             "#EXT-X-VERSION:6",
             "#EXT-X-MAP:URI=\"init.mp4?t=token\"",
-            "#EXTINF:1.000000,",
-            "segment12.m4s?t=token",
+            "#EXTINF:7.000000,",
+            "segment11.m4s?t=token",
             "#EXT-X-ENDLIST")
-        .doesNotContain("segment13.m4s", ".ts?");
+        .doesNotContain("segment12.m4s", ".ts?");
     assertThat(scheduledRequest()).contains(refresh);
   }
 

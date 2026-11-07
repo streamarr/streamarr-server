@@ -1,10 +1,13 @@
 package com.streamarr.server.domain.streaming;
 
 import com.streamarr.server.domain.language.Language;
+import com.streamarr.server.domain.media.LearnedStreamEnd;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
@@ -20,7 +23,9 @@ import lombok.NonNull;
  * streamMeasurements} is empty when the server holds no usable measurement of the file's streams.
  * {@code majorBrand} is empty unless the file is an MP4 or MOV file whose probe version 7 outcome
  * names one. {@code audioChannelLayout} is the first audio stream's channel layout as ffprobe names
- * it, and is empty when the probe stored none, which every version before 7 does.
+ * it, and is empty when the probe stored none, which every version before 7 does. {@code
+ * sourceSnapshot} names the source file that the stored outcome describes, and is empty for a probe
+ * that playback did not read from a stored outcome.
  */
 @Builder(toBuilder = true)
 public record MediaProbe(
@@ -39,7 +44,8 @@ public record MediaProbe(
     List<StreamInfo> streams,
     @NonNull KeyframeKnowledge keyframes,
     @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts,
-    @NonNull Optional<StreamMeasurements> streamMeasurements) {
+    @NonNull Optional<StreamMeasurements> streamMeasurements,
+    @NonNull Optional<SourceFileSnapshot> sourceSnapshot) {
 
   // ffprobe's names for PGS, VobSub and DVB subtitles.
   private static final Set<String> IMAGE_SUBTITLE_CODECS =
@@ -66,6 +72,7 @@ public record MediaProbe(
     private OptionalDouble framerate = OptionalDouble.empty();
     private Optional<VideoPlaybackFacts> videoPlaybackFacts = Optional.empty();
     private Optional<StreamMeasurements> streamMeasurements = Optional.empty();
+    private Optional<SourceFileSnapshot> sourceSnapshot = Optional.empty();
   }
 
   /**
@@ -276,5 +283,71 @@ public record MediaProbe(
 
   public List<StreamInfo> subtitleStreams() {
     return streams.stream().filter(s -> "subtitle".equals(s.codecType())).toList();
+  }
+
+  /** The chosen video stream's probed end time, or empty when the probe states none. */
+  public Optional<Duration> videoEndTime() {
+    return chosenVideoStream().flatMap(StreamInfo::endTime);
+  }
+
+  /**
+   * Whether the chosen video stream ends at least {@code margin} before another stream of the
+   * source ends, by their probed end times (ADR 0037, early ends). The probe states end times for
+   * audio and video streams only. A stream whose end time the probe does not state never ends
+   * early, and never makes another stream end early.
+   */
+  public boolean videoEndsEarly(@NonNull Duration margin) {
+    return endsEarly(chosenVideoStream(), margin);
+  }
+
+  /** Whether the session's audio stream ends early, by the rule of {@link #videoEndsEarly}. */
+  public boolean sessionAudioEndsEarly(@NonNull Duration margin) {
+    return endsEarly(audioStreams().stream().findFirst(), margin);
+  }
+
+  private Optional<StreamInfo> chosenVideoStream() {
+    return videoPlaybackFacts.flatMap(
+        facts -> streams.stream().filter(s -> s.index() == facts.streamIndex()).findFirst());
+  }
+
+  private boolean endsEarly(Optional<StreamInfo> stream, Duration margin) {
+    if (stream.isEmpty() || stream.get().endTime().isEmpty()) {
+      return false;
+    }
+
+    var earliestLaterEnd = stream.get().endTime().get().plus(margin);
+    return streams.stream()
+        .filter(other -> other.index() != stream.get().index())
+        .flatMap(other -> other.endTime().stream())
+        .anyMatch(end -> end.compareTo(earliestLaterEnd) >= 0);
+  }
+
+  /**
+   * This probe with each learned end time in place of the end time that a stream's container header
+   * does not state (ADR 0037, early ends). A stated end time stays.
+   */
+  public MediaProbe withLearnedEndTimes(@NonNull List<LearnedStreamEnd> learned) {
+    var learnedByIndex =
+        learned.stream()
+            .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, LearnedStreamEnd::endTime));
+    var withLearned =
+        streams.stream().map(stream -> withLearnedEndTime(stream, learnedByIndex)).toList();
+    return toBuilder().streams(withLearned).build();
+  }
+
+  private static StreamInfo withLearnedEndTime(
+      StreamInfo stream, Map<Integer, Duration> learnedByIndex) {
+    var learned = learnedByIndex.get(stream.index());
+    if (stream.endTime().isPresent() || learned == null) {
+      return stream;
+    }
+
+    return stream.toBuilder().endTime(Optional.of(learned)).build();
+  }
+
+  /** Whether the probe lists the stream and its container header states no end time for it. */
+  public boolean statesNoEndTimeFor(int streamIndex) {
+    return streams.stream()
+        .anyMatch(stream -> stream.index() == streamIndex && stream.endTime().isEmpty());
   }
 }

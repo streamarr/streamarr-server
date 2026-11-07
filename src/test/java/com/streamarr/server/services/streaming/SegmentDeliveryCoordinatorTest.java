@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSe
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
+import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDurationBuilder;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.h264Nvenc;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
@@ -211,10 +212,7 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   private StreamSession startedSession() {
-    var session = defaultSessionBuilder().build();
-    runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
-    return session;
+    return started(defaultSessionBuilder().build());
   }
 
   private CompletableFuture<SegmentDelivery> deliverAsync(UUID sessionId, String segmentName) {
@@ -1294,7 +1292,10 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   private StreamSession startedLadderSession() {
-    var session = defaultLadderSessionBuilder().build();
+    return started(defaultLadderSessionBuilder().build());
+  }
+
+  private StreamSession started(StreamSession session) {
     runtimeRegistry.save(session);
     lifecycle.startFirstListedVariant(session);
     return session;
@@ -1682,7 +1683,10 @@ class SegmentDeliveryCoordinatorTest {
 
   // Plays the first-listed variant through the given number of media segments.
   private StreamSession ladderSessionPlayingFirstListedVariant(int deliveredSegments) {
-    var session = startedLadderSession();
+    return playingFirstListedVariant(startedLadderSession(), deliveredSegments);
+  }
+
+  private StreamSession playingFirstListedVariant(StreamSession session, int deliveredSegments) {
     for (var index = 0; index < deliveredSegments; index++) {
       var segmentName = "480p/" + SegmentNames.mediaSegmentName(index);
       upload(session.getSessionId(), segmentName, new byte[] {1});
@@ -2177,6 +2181,269 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left copy and start a refused copy when the worker that refused it runs that left copy")
+  void
+      shouldStopAnotherStreamSessionsLeftCopyAndStartARefusedCopyWhenTheWorkerThatRefusedItRunsThatLeftCopy()
+          throws Exception {
+    transcodeExecutor.limitCopies(ExecutionTargetId.LOCAL, 2);
+    var switching = switchingTo1080p(startedCopyLadderSession());
+    var refused = startedRefusedCopy(ExecutionTargetId.LOCAL);
+    var refusedId = refused.getSessionId();
+
+    var delivery = deliverAsync(refusedId, "segment0.m4s");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningCopyTarget(refused)).contains(ExecutionTargetId.LOCAL);
+    upload(refusedId, "segment0.m4s", new byte[] {0});
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left copy and start a refused copy when the player first requests the copy's initialization segment")
+  void
+      shouldStopAnotherStreamSessionsLeftCopyAndStartARefusedCopyWhenThePlayerFirstRequestsTheCopysInitializationSegment()
+          throws Exception {
+    transcodeExecutor.limitCopies(ExecutionTargetId.LOCAL, 2);
+    var switching = switchingTo1080p(startedCopyLadderSession());
+    var refused = startedRefusedCopy(ExecutionTargetId.LOCAL);
+    var refusedId = refused.getSessionId();
+
+    var delivery = deliverAsync(refusedId, "init.mp4");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    upload(refusedId, "init.mp4", new byte[] {0x66});
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left copy and start a refused copy on the worker that refused it when recovery has already tried that worker")
+  void
+      shouldStopAnotherStreamSessionsLeftCopyAndStartARefusedCopyOnTheWorkerThatRefusedItWhenRecoveryHasAlreadyTriedThatWorker()
+          throws Exception {
+    transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
+    transcodeExecutor.limitCopies(TARGET_A, 2);
+    var switching = switchingTo1080p(startedCopyLadderSession());
+    // The refused copy starts on TARGET_B, which runs no left copy, so recovery tries TARGET_B and
+    // then TARGET_A, whose refusal finds the left copy.
+    transcodeExecutor.setExecutionTargets(List.of(TARGET_B, TARGET_A));
+    transcodeExecutor.limitCopies(TARGET_B, 1);
+    startedSession();
+    var refused = startedRefusedCopy(TARGET_B);
+    var refusedId = refused.getSessionId();
+
+    var delivery = deliverAsync(refusedId, "segment0.m4s");
+    transcodeExecutor.awaitStartedTarget(TARGET_A);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningCopyTarget(refused)).contains(TARGET_A);
+    upload(refusedId, "segment0.m4s", new byte[] {0});
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the other stream sessions' copies and fail the request when the worker that refused a copy runs no left copy")
+  void
+      shouldKeepTheOtherStreamSessionsCopiesAndFailTheRequestWhenTheWorkerThatRefusedACopyRunsNoLeftCopy()
+          throws Exception {
+    transcodeExecutor.limitCopies(ExecutionTargetId.LOCAL, 1);
+    var running = startedSession();
+    var refused = startedRefusedCopy(ExecutionTargetId.LOCAL);
+
+    var delivery = deliverAsync(refused.getSessionId(), "segment0.m4s");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(runningCopyTarget(running)).contains(ExecutionTargetId.LOCAL);
+    assertThat(runningCopyTarget(refused)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left encode when the worker that runs it refuses a copy")
+  void shouldKeepAnotherStreamSessionsLeftEncodeWhenTheWorkerThatRunsItRefusesACopy()
+      throws Exception {
+    transcodeExecutor.limitCopies(ExecutionTargetId.LOCAL, 1);
+    var switching = switchingLadderSession();
+    startedSession();
+    var refused = startedRefusedCopy(ExecutionTargetId.LOCAL);
+
+    var delivery = deliverAsync(refused.getSessionId(), "segment0.m4s");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("480p", "1080p");
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left copy on another worker and start a refused copy there when the worker that refused it runs no left copy")
+  void
+      shouldKeepAnotherStreamSessionsLeftCopyOnAnotherWorkerAndStartARefusedCopyThereWhenTheWorkerThatRefusedItRunsNoLeftCopy()
+          throws Exception {
+    transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
+    var switching = switchingTo1080p(startedCopyLadderSession());
+    assertThat(transcodeExecutor.runningExecutionTarget(switching.sessionId(), "480p"))
+        .contains(TARGET_A);
+    transcodeExecutor.setExecutionTargets(List.of(TARGET_B, TARGET_A));
+    transcodeExecutor.limitCopies(TARGET_B, 1);
+    startedSession();
+    var refused = startedRefusedCopy(TARGET_B);
+    var refusedId = refused.getSessionId();
+
+    var delivery = deliverAsync(refusedId, "segment0.m4s");
+    transcodeExecutor.awaitStartedTarget(TARGET_A);
+
+    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("480p", "1080p");
+    assertThat(runningCopyTarget(refused)).contains(TARGET_A);
+    upload(refusedId, "segment0.m4s", new byte[] {0});
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail a refused copy's request without waiting when the only other stream session that keeps a left copy is busy")
+  void
+      shouldFailARefusedCopysRequestWithoutWaitingWhenTheOnlyOtherStreamSessionThatKeepsALeftCopyIsBusy()
+          throws Exception {
+    transcodeExecutor.limitCopies(ExecutionTargetId.LOCAL, 2);
+    var busy = switchingTo1080p(startedCopyLadderSession());
+    var refused = startedRefusedCopy(ExecutionTargetId.LOCAL);
+    var busyMutex = sessionMutex.getMutex(busy.sessionId());
+
+    busyMutex.lock();
+    try {
+      var delivery = deliverAsync(refused.getSessionId(), "segment0.m4s");
+
+      assertThat(delivery.get(2, TimeUnit.SECONDS))
+          .isInstanceOf(SegmentDelivery.Unrecoverable.class);
+      assertThat(runningVariants(busy.session())).containsExactlyInAnyOrder("480p", "1080p");
+    } finally {
+      busyMutex.unlock();
+    }
+
+    deliverSwitch(busy);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop the left copy of a stream session that is not busy when another stream session that keeps a left copy is busy")
+  void
+      shouldStopTheLeftCopyOfAStreamSessionThatIsNotBusyWhenAnotherStreamSessionThatKeepsALeftCopyIsBusy()
+          throws Exception {
+    transcodeExecutor.limitCopies(ExecutionTargetId.LOCAL, 4);
+    var busy = switchingTo1080p(startedCopyLadderSession());
+    var idle = switchingTo1080p(startedCopyLadderSession());
+    var refused = startedRefusedCopy(ExecutionTargetId.LOCAL);
+    var refusedId = refused.getSessionId();
+    var busyMutex = sessionMutex.getMutex(busy.sessionId());
+
+    busyMutex.lock();
+    try {
+      var delivery = deliverAsync(refusedId, "segment0.m4s");
+      transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+      assertThat(runningVariants(busy.session())).containsExactlyInAnyOrder("480p", "1080p");
+      assertThat(runningVariants(idle.session())).containsExactly("1080p");
+      upload(refusedId, "segment0.m4s", new byte[] {0});
+      assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    } finally {
+      busyMutex.unlock();
+    }
+
+    deliverSwitch(busy);
+    deliverSwitch(idle);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left copy when a variant finds no free worker job slot")
+  void shouldKeepAnotherStreamSessionsLeftCopyWhenAVariantFindsNoFreeWorkerJobSlot()
+      throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    var requesting = suspendedLadderSession();
+    var switching = switchingTo1080p(startedCopyLadderSession());
+    startedLadderSession();
+    transcodeExecutor.limitJobSlots(1);
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var delivery = deliverAsync(requesting.getSessionId(), "1080p", "1080p/segment0.m4s");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("480p", "1080p");
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a refused copy once one request has stopped a left copy for it when another request of the copy arrives during that stop")
+  void
+      shouldStartARefusedCopyOnceOneRequestHasStoppedALeftCopyForItWhenAnotherRequestOfTheCopyArrivesDuringThatStop()
+          throws Exception {
+    var holding = new StopHoldingExecutor();
+    transcodeExecutor = holding;
+    var rig = rigWith(holding);
+    lifecycle = rig.lifecycle();
+    coordinator = rig.coordinator();
+    holding.limitCopies(ExecutionTargetId.LOCAL, 2);
+    var switching = switchingTo1080p(startedCopyLadderSession());
+    var refused = startedRefusedCopy(ExecutionTargetId.LOCAL);
+    var refusedId = refused.getSessionId();
+    var copy = StreamSession.defaultVariant();
+    holding.holdStopOf(switching.sessionId());
+
+    try (var reclaiming =
+        BoundedTask.start(() -> coordinator.deliver(refusedId, copy, "segment0.m4s"))) {
+      holding.awaitHeldStop();
+      try (var arriving =
+          BoundedTask.start(() -> coordinator.deliver(refusedId, copy, "init.mp4"))) {
+        await()
+            .pollInterval(Duration.ofMillis(1))
+            .atMost(Duration.ofSeconds(5))
+            .until(arriving::isAwaitingALatchWithDeadline);
+        holding.releaseHeldStop();
+        holding.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+        upload(refusedId, "init.mp4", new byte[] {0x66});
+        upload(refusedId, "segment0.m4s", new byte[] {0});
+        assertThat(arriving.await(Duration.ofSeconds(2))).isInstanceOf(SegmentDelivery.Ready.class);
+        assertThat(reclaiming.await(Duration.ofSeconds(2)))
+            .isInstanceOf(SegmentDelivery.Ready.class);
+      }
+    }
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    deliverSwitch(switching);
+  }
+
+  // A stream session whose every variant copies the video, so the variant that its player leaves
+  // is a copy.
+  private StreamSession startedCopyLadderSession() {
+    return started(defaultLadderSessionBuilder().transcodeDecision(remuxDecision()).build());
+  }
+
+  // A stream session that copies the video, whose first job attempt the target refused.
+  private StreamSession startedRefusedCopy(ExecutionTargetId target) {
+    var session = startedSession();
+    assertThat(transcodeExecutor.refusedCopyStart(session.getHandle().orElseThrow().attemptId()))
+        .contains(target);
+    return session;
+  }
+
+  private Optional<ExecutionTargetId> runningCopyTarget(StreamSession copy) {
+    return transcodeExecutor.runningExecutionTarget(
+        copy.getSessionId(), StreamSession.defaultVariant());
+  }
+
   private record SwitchingSession(
       StreamSession session, CompletableFuture<SegmentDelivery> switched) {
 
@@ -2188,7 +2455,11 @@ class SegmentDeliveryCoordinatorTest {
   // Plays the first-listed variant, then holds a request for 1080p, so the stream session keeps
   // 480p as its left variant beside the running switched variant.
   private SwitchingSession switchingLadderSession() {
-    var session = ladderSessionPlayingFirstListedVariant(3);
+    return switchingTo1080p(startedLadderSession());
+  }
+
+  private SwitchingSession switchingTo1080p(StreamSession started) {
+    var session = playingFirstListedVariant(started, 3);
     var switched = heldDelivery(session.getSessionId(), "1080p", "1080p/segment3.m4s");
     return new SwitchingSession(session, switched);
   }
@@ -2669,6 +2940,48 @@ class SegmentDeliveryCoordinatorTest {
       try {
         if (!releaseTrap.await(5, TimeUnit.SECONDS)) {
           throw new AssertionError("Timed out waiting to release the trapped segment read");
+        }
+      } catch (InterruptedException _) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  /** Holds the stop of one stream session's variant until the test releases it. */
+  private static final class StopHoldingExecutor extends FakeTranscodeExecutor {
+
+    private final CountDownLatch reachedStop = new CountDownLatch(1);
+    private final CountDownLatch releaseStop = new CountDownLatch(1);
+    private volatile UUID heldSessionId;
+
+    private void holdStopOf(UUID sessionId) {
+      heldSessionId = sessionId;
+    }
+
+    private void awaitHeldStop() throws InterruptedException {
+      assertThat(reachedStop.await(5, TimeUnit.SECONDS))
+          .as("a request must stop the held stream session's variant")
+          .isTrue();
+    }
+
+    private void releaseHeldStop() {
+      releaseStop.countDown();
+    }
+
+    @Override
+    public void stopVariant(UUID sessionId, String variantLabel) {
+      if (sessionId.equals(heldSessionId)) {
+        reachedStop.countDown();
+        awaitRelease();
+      }
+
+      super.stopVariant(sessionId, variantLabel);
+    }
+
+    private void awaitRelease() {
+      try {
+        if (!releaseStop.await(5, TimeUnit.SECONDS)) {
+          throw new AssertionError("Timed out waiting to release the held stop");
         }
       } catch (InterruptedException _) {
         Thread.currentThread().interrupt();

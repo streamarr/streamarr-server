@@ -32,6 +32,7 @@ import com.streamarr.server.jooq.generated.tables.MediaFileBitrateScanChunkStrea
 import com.streamarr.server.jooq.generated.tables.MediaFileChapter;
 import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo;
 import com.streamarr.server.jooq.generated.tables.MediaFileKeyframePositions;
+import com.streamarr.server.jooq.generated.tables.MediaFileLearnedStreamEnd;
 import com.streamarr.server.jooq.generated.tables.MediaFileMeasuredStream;
 import com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest;
 import com.streamarr.server.jooq.generated.tables.MediaFileStreamInfo;
@@ -141,6 +142,7 @@ public class Public extends SchemaImpl {
             MediaFileChapter.MEDIA_FILE_CHAPTER,
             MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO,
             MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS,
+            MediaFileLearnedStreamEnd.MEDIA_FILE_LEARNED_STREAM_END,
             MediaFileMeasuredStream.MEDIA_FILE_MEASURED_STREAM,
             MediaFileProbeTaskRequest.MEDIA_FILE_PROBE_TASK_REQUEST,
             MediaFileStreamInfo.MEDIA_FILE_STREAM_INFO,

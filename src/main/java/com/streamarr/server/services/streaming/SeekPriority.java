@@ -8,6 +8,8 @@ import com.streamarr.server.domain.streaming.TimelineReport;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -24,6 +26,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Names the job attempts that give up CPU to a seek (ADR 0044, seek priority). A seek's first
@@ -38,11 +41,14 @@ import lombok.NonNull;
  * The same leads decide which job attempts {@link HoldBack} holds back because they run far ahead
  * of their viewers.
  */
+@Slf4j
 public class SeekPriority {
 
   // Clients report their timeline every 10 s of playback; a report older than three intervals is
   // too sparse to place the viewer.
   private static final Duration FRESH_REPORT = Duration.ofSeconds(30);
+  private static final String YIELDED_ATTEMPTS_METRIC =
+      "streamarr.streaming.seek_yielded_job_attempts";
 
   private final TranscodeExecutor transcodeExecutor;
   private final SegmentStore segmentStore;
@@ -50,6 +56,7 @@ public class SeekPriority {
   private final HeldSegmentRequests heldRequests;
   private final StreamingProperties properties;
   private final Clock clock;
+  private final Counter yieldedAttempts;
   // Guarded by this monitor.
   private final HoldBack holdBack;
 
@@ -69,6 +76,7 @@ public class SeekPriority {
       @NonNull RuntimeStreamSessionRegistry runtimeRegistry,
       @NonNull HeldSegmentRequests heldRequests,
       @NonNull StreamingProperties properties,
+      @NonNull MeterRegistry meterRegistry,
       Clock clock) {
     this.transcodeExecutor = transcodeExecutor;
     this.segmentStore = segmentStore;
@@ -81,7 +89,11 @@ public class SeekPriority {
     }
 
     this.clock = chosenClock;
-    holdBack = new HoldBack(transcodeExecutor, properties, chosenClock);
+    yieldedAttempts =
+        Counter.builder(YIELDED_ATTEMPTS_METRIC)
+            .description("Job attempts that a yield-to-seek command names and the last one did not")
+            .register(meterRegistry);
+    holdBack = new HoldBack(transcodeExecutor, properties, chosenClock, meterRegistry);
   }
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
@@ -434,6 +446,8 @@ public class SeekPriority {
 
   // Guarded by this monitor. Each new seek restarts the hold limit of the job attempts it names.
   private void send(ExecutionTargetId target, Set<UUID> named) {
+    var previous = yielding.getOrDefault(target, Set.of());
+    var newlyNamed = named.stream().filter(attemptId -> !previous.contains(attemptId)).count();
     if (named.isEmpty()) {
       yielding.remove(target);
     } else {
@@ -441,6 +455,12 @@ public class SeekPriority {
     }
 
     transcodeExecutor.yieldToSeek(target, named, properties.seekPriorityHoldLimit());
+    yieldedAttempts.increment((double) newlyNamed);
+    log.debug(
+        "Sent a yield to seek to {} naming {} job attempts, {} newly",
+        target,
+        named.size(),
+        newlyNamed);
   }
 
   // Guarded by this monitor.

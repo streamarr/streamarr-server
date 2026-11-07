@@ -6,6 +6,8 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.EncoderBackend;
+import com.streamarr.server.domain.streaming.SourceEndedEarly;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
@@ -15,6 +17,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.server.services.streaming.events.DolbyVisionConversionFailedEvent;
@@ -30,6 +33,7 @@ import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.HoldBackCommand;
+import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptProgress;
@@ -97,6 +101,8 @@ final class LiveWorkerConnectionRegistry {
   private static final String DEFERRED_PROBES_METRIC = "streamarr.probes.deferred";
   private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
       "streamarr.streaming.unknown_job_attempt_reports";
+  private static final String YIELD_COMMANDS_METRIC = "streamarr.streaming.seek_yield_commands";
+  private static final String HOLD_BACK_COMMANDS_METRIC = "streamarr.streaming.hold_back_commands";
   // A probe refused for one of these reasons runs again later, when a worker can take it.
   private static final Set<ProbeRefusal> WAITING_FOR_WORKER =
       EnumSet.of(
@@ -114,6 +120,8 @@ final class LiveWorkerConnectionRegistry {
   private final Counter initializationSegmentMismatches;
   private final Counter encoderBackendMismatches;
   private final Counter unknownJobAttemptReports;
+  private final Counter yieldCommands;
+  private final Counter holdBackCommands;
   private final HeldSegmentRequests heldRequests;
   private final ApplicationEventPublisher eventPublisher;
   private final MeterRegistry meterRegistry;
@@ -154,6 +162,14 @@ final class LiveWorkerConnectionRegistry {
                 "Reports that a job attempt completed, stopped or failed, for a job attempt that"
                     + " the worker's current session neither runs nor was told to stop")
             .register(meterRegistry);
+    yieldCommands =
+        Counter.builder(YIELD_COMMANDS_METRIC)
+            .description("Yield-to-seek commands that reached a worker's session stream")
+            .register(meterRegistry);
+    holdBackCommands =
+        Counter.builder(HOLD_BACK_COMMANDS_METRIC)
+            .description("Hold-back commands that reached a worker's session stream")
+            .register(meterRegistry);
     capacityMeters = new WorkerCapacityMeters(meterRegistry);
   }
 
@@ -161,6 +177,8 @@ final class LiveWorkerConnectionRegistry {
   private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
   // The labels of each stream session's variants whose hardware encoder failed (ADR 0044).
   private final Map<UUID, Set<String>> hardwareEncoderFailures = new ConcurrentHashMap<>();
+  // Keyed by job attempt. Each entry lasts until its stream session is destroyed.
+  private final Map<UUID, RefusedCopyStart> refusedCopyStarts = new ConcurrentHashMap<>();
   private final Map<UUID, CompletableFuture<ProbeAttemptReport>> pendingProbes =
       new ConcurrentHashMap<>();
 
@@ -519,6 +537,9 @@ final class LiveWorkerConnectionRegistry {
     } finally {
       terminalFailures.remove(streamSessionId);
       hardwareEncoderFailures.remove(streamSessionId);
+      refusedCopyStarts
+          .values()
+          .removeIf(refusal -> refusal.streamSessionId().equals(streamSessionId));
     }
   }
 
@@ -627,15 +648,30 @@ final class LiveWorkerConnectionRegistry {
         || decision.getMode() == TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE;
   }
 
+  // A job attempt that copies the video, with or without an audio encode, takes no slot, as on the
+  // worker. Any other job attempt takes one.
+  private static boolean copiesVideo(TranscodeDecision decision) {
+    return decision.getMode() == TranscodeMode.TRANSCODE_MODE_REMUX
+        || decision.getMode() == TranscodeMode.TRANSCODE_MODE_AUDIO_TRANSCODE;
+  }
+
   int availableSlots(UUID sourceNamespaceId) {
     return connectionsFor(sourceNamespaceId).mapToInt(WorkerConnection::availableSlots).sum();
   }
 
+  // A copy needs no free slot, only a worker that can run it.
   int availableSlots(UUID sourceNamespaceId, TranscodeDecision decision) {
-    return connectionsFor(sourceNamespaceId)
-        .filter(connection -> connection.canEncode(decision))
-        .mapToInt(WorkerConnection::availableSlots)
-        .sum();
+    var eligible =
+        connectionsFor(sourceNamespaceId).filter(connection -> connection.canEncode(decision));
+    if (!copiesVideo(decision)) {
+      return eligible.mapToInt(WorkerConnection::availableSlots).sum();
+    }
+
+    if (eligible.findAny().isEmpty()) {
+      return 0;
+    }
+
+    return TranscodeExecutor.UNBOUNDED_SLOTS;
   }
 
   int availableSlots(
@@ -654,6 +690,12 @@ final class LiveWorkerConnectionRegistry {
     return hardwareEncoderFailures.getOrDefault(streamSessionId, Set.of()).contains(variantLabel);
   }
 
+  Optional<ExecutionTargetId> refusedCopyStart(UUID jobAttemptId) {
+    return Optional.ofNullable(refusedCopyStarts.get(jobAttemptId)).map(RefusedCopyStart::target);
+  }
+
+  private record RefusedCopyStart(UUID streamSessionId, ExecutionTargetId target) {}
+
   /** From this call on, a probe cancelled before its timeout tells its worker of the shutdown. */
   void beginShutdown() {
     shuttingDown = true;
@@ -665,6 +707,7 @@ final class LiveWorkerConnectionRegistry {
     closed.forEach(WorkerConnection::abandonAllJobsWithoutWaiting);
     terminalFailures.clear();
     hardwareEncoderFailures.clear();
+    refusedCopyStarts.clear();
   }
 
   ReportedJobAttemptEnd failJobAttempt(
@@ -804,10 +847,11 @@ final class LiveWorkerConnectionRegistry {
    * short (ADR 0052).
    */
   ReportedJobAttemptEnd completeReportedJobAttempt(
-      UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
+      UUID workerId, UUID workerSessionId, JobAttemptCompleted completed) {
+    var jobAttemptId = fromProto(completed.getJobAttemptId());
     currentConnection(workerId, workerSessionId)
         .flatMap(connection -> connection.activeJob(jobAttemptId))
-        .ifPresent(this::publishCompletion);
+        .ifPresent(job -> publishCompletion(job, completed));
     return endReportedJobAttempt(workerId, workerSessionId, jobAttemptId);
   }
 
@@ -865,13 +909,43 @@ final class LiveWorkerConnectionRegistry {
             .build());
   }
 
-  private void publishCompletion(VariantJob job) {
+  private void publishCompletion(VariantJob job, JobAttemptCompleted completed) {
     eventPublisher.publishEvent(
         JobAttemptCompletedEvent.builder()
             .streamSessionId(fromProto(job.getStreamSessionId()))
             .jobAttemptId(fromProto(job.getJobAttemptId()))
             .variantLabel(job.getVariant().getVariantLabel())
+            .sourceEndedEarly(sourceEndedEarly(completed))
+            .streamEnds(streamEnds(completed))
             .build());
+  }
+
+  // A stream end is a well-formed, non-negative protobuf duration; the server ignores any other.
+  private static List<SourceStreamEnd> streamEnds(JobAttemptCompleted completed) {
+    return completed.getStreamEndsList().stream()
+        .filter(end -> end.hasStreamIndex() && end.hasEndTime())
+        .filter(end -> end.getEndTime().getSeconds() >= 0)
+        .filter(
+            end -> end.getEndTime().getNanos() >= 0 && end.getEndTime().getNanos() < 1_000_000_000)
+        .map(
+            end ->
+                new SourceStreamEnd(
+                    end.getStreamIndex(),
+                    Duration.ofSeconds(end.getEndTime().getSeconds(), end.getEndTime().getNanos())))
+        .toList();
+  }
+
+  // The worker always names the last segment with source media in its report.
+  private static Optional<SourceEndedEarly> sourceEndedEarly(JobAttemptCompleted completed) {
+    if (!completed.hasSourceEndedEarly()) {
+      return Optional.empty();
+    }
+
+    var report = completed.getSourceEndedEarly();
+    return Optional.of(
+        new SourceEndedEarly(
+            report.getLastSegmentWithSourceMedia(),
+            report.getStreamIndexesWithMediaAfterLastSegmentList()));
   }
 
   private void countIfUnknown(ReportedJobAttemptEnd end) {
@@ -1069,7 +1143,7 @@ final class LiveWorkerConnectionRegistry {
           || !canAccessSource(job)
           || !canEncodeAudioLayout(job.getDecision())
           || !canDeliverVideoAsPlanned(job.getDecision().getVideo())
-          || availableSlots() == 0) {
+          || (!copiesVideo(job) && availableSlots() == 0)) {
         return Optional.empty();
       }
 
@@ -1419,7 +1493,11 @@ final class LiveWorkerConnectionRegistry {
     private boolean canEncodeAudioLayout(TranscodeDecision decision) {
       return !RemoteAudioChannelLayouts.needsLayoutEncodingWorker(
               decision.getAudio().getChannelLayout())
-          || probeVersions.contains(ProbeVersion.FIRST_TO_ENCODE_NAMED_LAYOUTS);
+          || probeVersions.stream()
+              .anyMatch(
+                  version ->
+                      Integer.compareUnsigned(version, ProbeVersion.FIRST_TO_ENCODE_NAMED_LAYOUTS)
+                          >= 0);
     }
 
     private Optional<WorkerVerifiedEncoder> encoderFor(TranscodeDecision decision) {
@@ -1540,6 +1618,7 @@ final class LiveWorkerConnectionRegistry {
         terminalFailure(job, failed)
             .ifPresent(
                 failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
+        rememberRefusedCopyStart(attemptId, job, failed);
       }
 
       if (job != null && isHardwareEncoderFailure(job, failed)) {
@@ -1557,6 +1636,18 @@ final class LiveWorkerConnectionRegistry {
       hardwareEncoderFailures
           .computeIfAbsent(fromProto(job.getStreamSessionId()), _ -> ConcurrentHashMap.newKeySet())
           .add(job.getVariant().getVariantLabel());
+    }
+
+    // Recorded before the attempt's end wakes the held requests, so a woken request finds it.
+    private void rememberRefusedCopyStart(UUID attemptId, VariantJob job, JobAttemptFailed failed) {
+      if (failed.getFailure() != JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED
+          || !copiesVideo(job)) {
+        return;
+      }
+
+      refusedCopyStarts.put(
+          attemptId,
+          new RefusedCopyStart(fromProto(job.getStreamSessionId()), executionTargetId()));
     }
 
     // The worker contract says that a replacement attempt with the same decision repeats an output
@@ -1608,10 +1699,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private static boolean copiesVideo(VariantJob job) {
-      return switch (job.getDecision().getMode()) {
-        case TRANSCODE_MODE_REMUX, TRANSCODE_MODE_AUDIO_TRANSCODE -> true;
-        default -> false;
-      };
+      return LiveWorkerConnectionRegistry.copiesVideo(job.getDecision());
     }
 
     private Optional<VariantJob> activeJob(UUID jobAttemptId) {
@@ -1646,7 +1734,11 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized int availableSlots() {
-      return Math.max(0, maximumActiveVariants - activeVariants.size());
+      return Math.max(0, maximumActiveVariants - slotsInUse());
+    }
+
+    private int slotsInUse() {
+      return (int) activeVariants.values().stream().filter(job -> !copiesVideo(job)).count();
     }
 
     private boolean canRunProbes(Uuid sourceNamespaceId, int probeVersion) {
@@ -1669,7 +1761,7 @@ final class LiveWorkerConnectionRegistry {
 
     @Override
     public int playbackSlotsInUse() {
-      return activeVariants.size();
+      return slotsInUse();
     }
 
     @Override
@@ -1713,7 +1805,9 @@ final class LiveWorkerConnectionRegistry {
           .getHoldLimitBuilder()
           .setSeconds(holdLimit.getSeconds())
           .setNanos(holdLimit.getNano());
-      trySend(EstablishWorkerSessionResponse.newBuilder().setYieldToSeek(command).build());
+      if (trySend(EstablishWorkerSessionResponse.newBuilder().setYieldToSeek(command).build())) {
+        yieldCommands.increment();
+      }
     }
 
     private void holdBack(Map<UUID, Duration> releaseAfterByJobAttempt) {
@@ -1726,7 +1820,9 @@ final class LiveWorkerConnectionRegistry {
                   .getReleaseAfterBuilder()
                   .setSeconds(releaseAfter.getSeconds())
                   .setNanos(releaseAfter.getNano()));
-      trySend(EstablishWorkerSessionResponse.newBuilder().setHoldBack(command).build());
+      if (trySend(EstablishWorkerSessionResponse.newBuilder().setHoldBack(command).build())) {
+        holdBackCommands.increment();
+      }
     }
 
     private synchronized void stopStreamSession(UUID streamSessionId) {

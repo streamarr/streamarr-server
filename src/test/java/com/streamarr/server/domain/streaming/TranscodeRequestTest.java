@@ -210,9 +210,9 @@ class TranscodeRequestTest {
         request.variantLabel(),
         request.startSequenceNumber(),
         request.mediaSegmentCount(),
-        request.segmentStartSlots(),
         request.encoderPreset(),
-        null);
+        null,
+        request.advertisedEnd());
   }
 
   private static TranscodeRequest.TranscodeRequestBuilder requestWithoutEncoderPreset() {

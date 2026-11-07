@@ -46,20 +46,14 @@ class SegmentCapFailureRegistryTest {
   private static final TranscodeExecution EXACT_STARTS =
       TranscodeExecution.newBuilder()
           .setMediaSegmentCount(3)
-          .addAllSegmentStartSlots(List.of(0, 1, 3))
           .addAllSegmentStartTicks(List.of(0L, 6_006L, 18_018L))
           .setSegmentStartTimeBase(Fraction.newBuilder().setNumerator(1).setDenominator(1_000))
-          .build();
-  private static final TranscodeExecution MERGED_PLAIN_GRID_SLOTS =
-      TranscodeExecution.newBuilder()
-          .setMediaSegmentCount(2)
-          .addAllSegmentStartSlots(List.of(0, 1))
           .build();
   private static final TranscodeExecution MERGED_PLAIN_GRID_TICKS =
       TranscodeExecution.newBuilder()
           .setMediaSegmentCount(2)
-          .addAllSegmentStartTicks(List.of(0L, 6_000L))
-          .setSegmentStartTimeBase(Fraction.newBuilder().setNumerator(1).setDenominator(1_000))
+          .addAllSegmentStartTicks(List.of(0L, 6L))
+          .setSegmentStartTimeBase(Fraction.newBuilder().setNumerator(1).setDenominator(1))
           .build();
 
   private final LiveWorkerConnectionRegistry registry =
@@ -73,8 +67,6 @@ class SegmentCapFailureRegistryTest {
 
   static Stream<Arguments> encodesOnAMergedPlainGrid() {
     return Stream.of(
-        Arguments.of(TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE, MERGED_PLAIN_GRID_SLOTS),
-        Arguments.of(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE, MERGED_PLAIN_GRID_SLOTS),
         Arguments.of(TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE, MERGED_PLAIN_GRID_TICKS),
         Arguments.of(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE, MERGED_PLAIN_GRID_TICKS));
   }

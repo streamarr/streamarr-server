@@ -41,7 +41,7 @@ Each worker grants four separate capacities when it connects, as https://github.
 |Capacity |Work |Value
 
 |Playback slots
-|Job attempts
+|Job attempts that encode the video
 |`TRANSCODE_WORKER_SLOTS` on the worker. The default is `1`.
 
 |Playback probe capacity
@@ -58,6 +58,12 @@ Each worker grants four separate capacities when it connects, as https://github.
 |===
 
 A probe never takes a playback slot, and a job attempt never takes a probe unit.
+A job attempt that copies the video, with or without an audio encode, takes no playback slot, and the server sends one to a worker whose slots are all in use.
+The worker runs as many copies as its heap holds, at up to 256 MiB of output each after its slots' memory and a 512 MiB reserve, and refuses a copy beyond them with `COPY_CAP_REACHED`.
+The server treats that refusal as any failed start: recovery starts a replacement on an eligible worker, and the variant fails once recovery has tried every eligible worker.
+When the refusing worker runs another stream session's left variant that copies the video, the server first stops that left variant and starts the refused copy on that worker once more, since a left variant never keeps another stream session from playing.
+Only `COPY_CAP_REACHED` stops a left variant: a copy that fails to start for another reason, such as `STARTUP_FAILED`, leaves every left variant running (https://github.com/streamarr/streamarr-adr/blob/main/adr/0019-recoverable-jit-hls-segment-delivery.adoc[ADR 0019]).
+The worker's `streamarr.worker.copy_fullness` metric tells an autoscaler how full of copies it is.
 A stream session can therefore start on a worker while a library scan probes many files on the same worker.
 A playback probe can also use a free background unit, but a background probe never uses a playback probe unit.
 A playback probe therefore starts even while a scan uses every background unit.
@@ -114,7 +120,7 @@ These metrics report the same facts:
 * `streamarr.playback.probe_queue_latency` records queue latency for a claimed probe, from its earliest still-waiting playback request until execution starts. It includes scheduler polling, any remaining quiet period or retry backoff, and capacity waits, so a nonzero value alone does not establish capacity exhaustion. Requests that stop waiting before execution starts contribute no sample.
 * `streamarr.playback.probe_wait` times how long a playback request waited for its file's probe outcome. Its `outcome` tag is `ready`, `probe_failed`, or `not_ready`.
 * `streamarr.playback.probe_waits` reports the playback requests that wait for a probe now.
-* `streamarr.streaming.playback_slots` and `streamarr.streaming.playback_slots_in_use` report each worker's playback slots and the job attempts that use them. They carry the `worker` tag.
+* `streamarr.streaming.playback_slots` and `streamarr.streaming.playback_slots_in_use` report each worker's playback slots and the job attempts that encode the video in them. They carry the `worker` tag.
 * `streamarr.streaming.production_speed` reports the media seconds that a worker produced per second of production time, for each media segment it uploads. It carries the `worker` tag.
 * `streamarr.streaming.capacity_refusals` counts the stream sessions refused for lack of capacity. Its `cause` tag is `no_connected_worker`, `no_free_worker_slot`, `no_free_configured_transcode_slot`, or `no_encoder_with_free_slot`.
 * `streamarr.streaming.missing_encoder` is `1` while a connected worker has no worker-verified encoder for a codec family that the server encodes, and `0` otherwise. It carries the `worker` tag and a `codec_family` tag of `h264` or `av1`. A worker's series leave when it disconnects. See <<_workers_missing_an_encoder>>.
@@ -142,7 +148,7 @@ A refusal at the per-worker limit carries a `SegmentUploadLimitReached` detail i
 The server frees a worker's place only after it stores the segment, so a worker that frees its own place when it cancels an upload can still meet that refusal.
 Any other refusal fails the job attempt, and the server's recovery handles that failure.
 A worker that reads neither the limit nor the detail fails the job attempt on every refusal.
-Workers budget 256 MiB of buffered output per execution slot, plus a 64 KiB read buffer per FFmpeg process. FFmpeg, pipe buffers, and gRPC use additional memory.
+Workers budget 256 MiB of buffered output per execution slot and per running copy, and run only the copies that their heap holds, plus a 64 KiB read buffer per FFmpeg process. FFmpeg, pipe buffers, and gRPC use additional memory.
 Deploy the server with the larger cap before deploying workers that produce larger segments.
 
 Set `TRANSCODE_WORKER_FFPROBE_PATH` to the worker's ffprobe binary. It defaults to `ffprobe` on `PATH`.

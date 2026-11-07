@@ -20,7 +20,9 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.CompletedJobAttempt;
 import com.streamarr.server.domain.streaming.EncoderPreset;
+import com.streamarr.server.domain.streaming.ExactSegmentStarts;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
@@ -28,6 +30,7 @@ import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.SourceEndedEarly;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -45,6 +48,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -53,6 +57,7 @@ import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -99,6 +104,7 @@ class ProducerLifecycleServiceTest {
   private final CapturingEventPublisher events = new CapturingEventPublisher();
   private final AuthenticatedIdentity serverAdmin = accountScopedBuilder().build();
   private ServerSettingsService serverSettings;
+  private SimpleMeterRegistry meters;
 
   @BeforeEach
   void setUp() {
@@ -109,8 +115,10 @@ class ProducerLifecycleServiceTest {
     transcodeExecutor = new FakeTranscodeExecutor();
     segmentStore = new FakeSegmentStore();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+    meters = new SimpleMeterRegistry();
     lifecycle =
         StreamingRigFixture.streamingRigBuilder()
+            .meterRegistry(meters)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)
             .properties(
@@ -410,6 +418,123 @@ class ProducerLifecycleServiceTest {
     assertThat(session.getVariantHandles()).containsOnlyKeys("480p");
     assertThat(session.getVariantHandle("480p").orElseThrow().status())
         .isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the job attempt at the last segment with source media when a request lies past"
+          + " where a completed attempt reported that the source ended")
+  void shouldStartTheJobAttemptAtTheLastSegmentWithSourceMediaWhenARequestLiesPastTheReportedEnd() {
+    var session = startedLadderSession();
+    lifecycle.settleCompletedJobAttempt(completionEndingEarly(session, "480p", 40));
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "480p", "480p/segment100.m4s");
+
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            relocated -> {
+              assertThat(relocated.startSequenceNumber()).isEqualTo(40);
+              assertThat(relocated.seekPosition()).isEqualTo(240);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the job attempt that started at the last segment with source media when a later"
+          + " request lies past the source's reported end")
+  void shouldKeepTheJobAttemptAtTheLastSegmentWithSourceMediaWhenALaterRequestLiesPastTheEnd() {
+    var session = startedLadderSession();
+    lifecycle.settleCompletedJobAttempt(completionEndingEarly(session, "480p", 40));
+    lifecycle.ensurePositioned(session.getSessionId(), "480p", "480p/segment100.m4s");
+    var paddingAttempt = session.getVariantHandle("480p").orElseThrow().attemptId();
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "480p", "480p/segment110.m4s");
+
+    assertThat(startedSince(startedBefore)).isEmpty();
+    assertThat(session.getVariantHandle("480p").orElseThrow().attemptId())
+        .isEqualTo(paddingAttempt);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the job attempt at the requested segment when it holds source media before"
+          + " the source's reported end")
+  void shouldStartTheJobAttemptAtTheRequestedSegmentWhenItHoldsSourceMediaBeforeTheReportedEnd() {
+    var session = startedLadderSession();
+    lifecycle.settleCompletedJobAttempt(completionEndingEarly(session, "480p", 40));
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "480p", "480p/segment30.m4s");
+
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .isEqualTo(30);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start another variant on demand at the last segment with source media when its first"
+          + " request lies past the source's reported end")
+  void shouldStartAnotherVariantOnDemandAtTheLastSegmentWithSourceMediaWhenRequestedPastTheEnd() {
+    var session = startedLadderSession();
+    lifecycle.settleCompletedJobAttempt(completionEndingEarly(session, "480p", 40));
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.prepareRequestedVariant(session.getSessionId(), "720p", "720p/segment100.m4s");
+
+    assertThat(startedSince(startedBefore))
+        .singleElement()
+        .satisfies(
+            started -> {
+              assertThat(started.variantLabel()).isEqualTo("720p");
+              assertThat(started.startSequenceNumber()).isEqualTo(40);
+            });
+  }
+
+  // Segments 40 to 99 are stored, so a replacement that starts at segment 40 makes progress only
+  // when it stores segment 100.
+  @Test
+  @DisplayName(
+      "Should exhaust recovery when replacements at the last segment with source media store"
+          + " nothing past the segments already stored")
+  void shouldExhaustRecoveryWhenReplacementsAtTheLastSegmentWithSourceMediaStoreNothingNew() {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    lifecycle.settleCompletedJobAttempt(
+        completionEndingEarly(session, StreamSession.defaultVariant(), 40));
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment100.m4s");
+    for (var index = 40; index < 100; index++) {
+      segmentStore.addSegment(sessionId, SegmentNames.mediaSegmentName(index), new byte[] {1});
+    }
+
+    var request =
+        earliestArrivingSegmentRequestBuilder()
+            .sessionId(sessionId)
+            .segmentName("segment100.m4s")
+            .build();
+    lifecycle.recover(request);
+    clock.advance(Duration.ofSeconds(16));
+    lifecycle.recover(request);
+    clock.advance(Duration.ofSeconds(60));
+
+    assertThat(lifecycle.recover(request))
+        .isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+    assertThat(transcodeExecutor.getStartedRequests().getLast().startSequenceNumber())
+        .isEqualTo(40);
+  }
+
+  private static CompletedJobAttempt completionEndingEarly(
+      StreamSession session, String variantLabel, int lastSegmentWithSourceMedia) {
+    return CompletedJobAttempt.builder()
+        .streamSessionId(session.getSessionId())
+        .jobAttemptId(session.getVariantHandle(variantLabel).orElseThrow().attemptId())
+        .variantLabel(variantLabel)
+        .sourceEndedEarly(Optional.of(new SourceEndedEarly(lastSegmentWithSourceMedia, List.of())))
+        .build();
   }
 
   @Test
@@ -856,6 +981,34 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
+      "Should count each job attempt that a yield to a seek newly names, not one that a later"
+          + " yield names again")
+  void shouldCountEachJobAttemptThatAYieldNewlyNamesWhenALaterYieldNamesItAgain() {
+    var steady = startedSession();
+    publishDefaultSegments(steady, 1, 9);
+    lifecycle.prepareRequestedVariant(
+        steady.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+    lifecycle.ensurePositioned(
+        startedSession().getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
+    var secondSteady = startedSession();
+    publishDefaultSegments(secondSteady, 1, 9);
+    lifecycle.prepareRequestedVariant(
+        secondSteady.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+
+    lifecycle.ensurePositioned(
+        startedSession().getSessionId(), StreamSession.defaultVariant(), "segment200.m4s");
+
+    assertThat(transcodeExecutor.yields().getLast().jobAttemptIds())
+        .containsExactlyInAnyOrder(
+            steady.getHandle().orElseThrow().attemptId(),
+            secondSteady.getHandle().orElseThrow().attemptId());
+    assertThat(transcodeExecutor.yields()).hasSize(2);
+    assertThat(meters.counter("streamarr.streaming.seek_yielded_job_attempts").count())
+        .isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the farthest of the newer requests' positions when an older request relocates"
           + " the variant")
   void shouldKeepTheFarthestOfTheNewerRequestsPositionsWhenAnOlderRequestRelocatesTheVariant() {
@@ -1202,9 +1355,73 @@ class ProducerLifecycleServiceTest {
                 .build());
 
     assertThat(first.mediaSegmentCount()).isEqualTo(10);
-    assertThat(first.segmentStartSlots()).containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+    assertThat(first.exactSegmentStarts())
+        .hasValue(
+            new ExactSegmentStarts(
+                List.of(0L, 6L, 12L, 18L, 24L, 30L, 36L, 42L, 48L, 54L), new Fraction(1, 1)));
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
     assertThat(transcodeExecutor.getStartedRequests()).containsExactly(first);
+  }
+
+  // Without the source's keyframes, the worker reads from one period before the attempt's first
+  // segment: from 36 s for segment 7, which lies past a video that ends earlier, so it would decode
+  // no picture to hold.
+  @ParameterizedTest(name = "video ends at {0} s")
+  @CsvSource({"12, PT6S", "3, PT0S", "36, PT30S", "37,"})
+  @DisplayName(
+      "Should seek an encode that would read from after the video's probed end to one period before"
+          + " that end when the source's keyframes are not known")
+  void shouldSeekAnEncodeThatWouldReadFromAfterTheVideosProbedEndToOnePeriodBeforeIt(
+      int videoEndSeconds, String expectedSeek) {
+    var probe =
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(48))
+            .keyframes(new KeyframeKnowledge.NotReported())
+            .build();
+    var session =
+        defaultSessionBuilder()
+            .mediaProbe(
+                probe.toBuilder()
+                    .streams(
+                        List.of(
+                            ProbeFixture.videoStreamBuilder(probe)
+                                .endTime(Optional.of(Duration.ofSeconds(videoEndSeconds)))
+                                .build()))
+                    .build())
+            .transcodeDecision(fullTranscodeDecision("h264"))
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    transcodeExecutor.markDead(session.getSessionId());
+
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment7.m4s");
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(7);
+    assertThat(request.keyframeSeekPosition())
+        .isEqualTo(Optional.ofNullable(expectedSeek).map(Duration::parse));
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the last advertised segment's end in every job attempt, first and replacement")
+  void shouldCarryTheLastAdvertisedSegmentsEndInEveryJobAttemptFirstAndReplacement() {
+    var session =
+        defaultSessionBuilder()
+            .mediaProbe(defaultProbeBuilder().duration(Duration.ofMillis(60_018)).build())
+            .transcodeDecision(fullTranscodeDecision("h264"))
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    transcodeExecutor.markDead(session.getSessionId());
+
+    recover(session);
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .hasSize(2)
+        .extracting(TranscodeRequest::advertisedEnd)
+        .containsOnly(Optional.of(Duration.ofMillis(60_018)));
   }
 
   @Test
@@ -2167,9 +2384,9 @@ class ProducerLifecycleServiceTest {
 
   @Test
   @DisplayName(
-      "Should start a relocated copy attempt at its merged segment's listed slot with the session's"
+      "Should start a relocated copy attempt at its merged segment's keyframe with the session's"
           + " segment list")
-  void shouldStartARelocatedCopyAttemptAtItsMergedSegmentsListedSlotWithTheSessionsSegmentList() {
+  void shouldStartARelocatedCopyAttemptAtItsMergedSegmentsKeyframeWithTheSessionsSegmentList() {
     var session = startedMergedCopySession();
 
     lifecycle.ensurePositioned(
@@ -2177,11 +2394,11 @@ class ProducerLifecycleServiceTest {
 
     var first = transcodeExecutor.getStartedRequests().getFirst();
     var relocated = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(first.segmentStartSlots()).startsWith(0, 1, 3, 5).hasSize(720);
+    assertThat(first.exactSegmentStarts().orElseThrow().ticks()).hasSize(720);
     assertThat(relocated.startSequenceNumber()).isEqualTo(3);
     assertThat(relocated.seekPosition()).isEqualTo(30);
     assertThat(relocated.keyframeSeekPosition()).hasValue(Duration.ofSeconds(30));
-    assertThat(relocated.segmentStartSlots()).isEqualTo(first.segmentStartSlots());
+    assertThat(relocated.exactSegmentStarts()).isEqualTo(first.exactSegmentStarts());
   }
 
   // Keyframes 30 s apart over 2 h open segments in the 6 s slots 0, 5, 10 and so on. Segment 0

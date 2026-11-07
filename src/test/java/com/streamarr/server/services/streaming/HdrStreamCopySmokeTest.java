@@ -201,9 +201,11 @@ class HdrStreamCopySmokeTest {
                     CONTENT_LIGHT_LEVEL_PAYLOAD, contentLightLevelPayload(CONTENT_LIGHT_LEVEL))));
   }
 
-  // ADR 0037: every job attempt of a variant writes the same initialization segment. The MPEG-TS
-  // source keeps its parameter sets and SEI messages in its samples, and each keyframe carries its
-  // own number, so a record built from an attempt's first sample would differ between attempts.
+  // ADR 0037: every job attempt of a variant writes the same initialization segment. Each keyframe
+  // carries its own number in an SEI message in its sample, so a record built from an attempt's
+  // first sample would differ between attempts. An MPEG-TS source, which also keeps its parameter
+  // sets in its samples, copies only once the probe stores its start time correction (ADR 0037,
+  // segment list), so the source is an MP4 file.
   @Test
   @DisplayName(
       "Should deliver the same initialization segment from a replacement attempt that starts at a"
@@ -216,7 +218,6 @@ class HdrStreamCopySmokeTest {
             .compatibleBase(CompatibleBase.PQ)
             .staticHdrMetadata(true)
             .numberedKeyframeMessages(true)
-            .mpegTsContainer(true)
             .build()
             .writtenBy(workerFixture.worker(), sourceRoot);
     var session = sessionFor(source, hevcEntryBuilder().compatibleBases(hdrBases()).build());
@@ -333,10 +334,6 @@ class HdrStreamCopySmokeTest {
     assertWithoutDolbyVisionUnits(session, REPLACED_SEGMENT);
   }
 
-  // #396, #401: after a rejected HDR copy, Auto's next format attempt encodes. The pinned worker's
-  // encoders list no PQ or HLG encode feature, so the encode is 8-bit SDR (#397) and the worker
-  // tone-maps (ADR 0013). The decision, the playlist and the bytes the worker delivers must all
-  // describe that SDR output.
   @ParameterizedTest(name = "{0}")
   @MethodSource("hdrBasesToToneMap")
   @DisplayName(
@@ -359,7 +356,7 @@ class HdrStreamCopySmokeTest {
     var session =
         sessionFor(
             source,
-            hevcEntryBuilder().compatibleBases(hdrBases()).build(),
+            hevcEntryBuilder().maxBitDepth(8).compatibleBases(hdrBases()).build(),
             VideoFormatConstraint.ENCODE_ONLY);
 
     var decision = session.getTranscodeDecision();

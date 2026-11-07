@@ -41,6 +41,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
@@ -79,12 +80,14 @@ class HlsCopySeekSmokeTest {
 
   // 4 fps with two B-frames: each keyframe decodes 0.5 s before it presents. The keyframe that
   // opens segment 2 presents at 12 s, on the boundary, and decodes at 11.5 s. A seek to 12 s
-  // reads past it.
-  private static final List<String> BOUNDARY_MPEG_TS =
+  // reads past it. An MPEG-TS source would copy only once the probe stores its start time
+  // correction (ADR 0037, segment list), so the stream goes into Matroska, whose demuxer also
+  // seeks by decode time.
+  private static final List<String> BOUNDARY_B_FRAMES =
       source(
           "rate=4",
           List.of("-bf", "2", "-force_key_frames", "0,6,12,19,25,30"),
-          List.of("-f", "mpegts"));
+          List.of("-f", "matroska"));
 
   // 24 fps with a keyframe every 10 s, as a long-GOP encode places them: the 6 s slots [12 s, 18 s)
   // and [24 s, 30 s) hold no keyframe, so the segment list starts its segments in slots 0, 1, 3
@@ -323,9 +326,9 @@ class HlsCopySeekSmokeTest {
             KeyframePositionSource.CONTAINER_INDEX,
             List.of(7.5, 5.5, 7.5, 5.5, 5.0, 5.0)),
         Arguments.of(
-            "boundary-keyframes.ts",
-            BOUNDARY_MPEG_TS,
-            KeyframePositionSource.PACKET_SCAN,
+            "boundary-keyframes.mkv",
+            BOUNDARY_B_FRAMES,
+            KeyframePositionSource.CONTAINER_INDEX,
             List.of(6.0, 6.0, 7.0, 6.0, 5.0, 6.0)));
   }
 
@@ -392,7 +395,7 @@ class HlsCopySeekSmokeTest {
             .worker()
             .generateMedia(
                 sourceRoot.resolve("paced-audio-tail.mkv"), VIDEO_ENDS_LONG_BEFORE_AUDIO_MATROSKA);
-    storeProbeWithKeyframes(source);
+    storeProbeWithoutStreamEndTimes(probeWithKeyframes(source));
     var session = createSession(source);
     var sessionId = session.getSessionId();
     var firstAttempt = session.getHandle().orElseThrow().attemptId();
@@ -471,9 +474,15 @@ class HlsCopySeekSmokeTest {
     return List.copyOf(arguments);
   }
 
-  // An MPEG-TS source has no index, so the probe asks for a packet scan. The scan is a new attempt,
-  // so it carries a new attempt ID, as the worker contract requires.
   private KeyframePositions storeProbeWithKeyframes(Path source) {
+    var success = probeWithKeyframes(source);
+    probeRepository.setDefaultOutcome(success);
+    return ((KeyframeKnowledge.Known) success.keyframes()).positions();
+  }
+
+  // A source without an index makes the probe ask for a packet scan. The scan is a new attempt,
+  // so it carries a new attempt ID, as the worker contract requires.
+  private ProbeOutcome.Success probeWithKeyframes(Path source) {
     var requestBuilder =
         ProbeExecutionRequest.builder()
             .sourcePath(source)
@@ -488,8 +497,25 @@ class HlsCopySeekSmokeTest {
     assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
     var success = (ProbeOutcome.Success) outcome;
     assertThat(success.keyframes()).isInstanceOf(KeyframeKnowledge.Known.class);
-    probeRepository.setDefaultOutcome(success);
-    return ((KeyframeKnowledge.Known) success.keyframes()).positions();
+    return success;
+  }
+
+  // A copy runs past its video's end only when the probe states no stream end times, as for a
+  // container header that states none: a stated video end before the audio's makes the session
+  // encode the video and hold its last frame (ADR 0037, early ends).
+  private void storeProbeWithoutStreamEndTimes(ProbeOutcome.Success stored) {
+    var streams =
+        stored.streams().stream()
+            .map(stream -> stream.toBuilder().endTime(Optional.empty()).build())
+            .toList();
+    probeRepository.setDefaultOutcome(
+        new ProbeOutcome.Success(
+            stored.container(),
+            streams,
+            stored.keyframes(),
+            stored.chosenVideoStream(),
+            stored.streamTitlesOmitted(),
+            stored.streamMeasurements()));
   }
 
   private StreamSession createSession(Path source) throws Exception {
