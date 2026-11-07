@@ -97,6 +97,8 @@ final class LiveWorkerConnectionRegistry {
   private static final String DEFERRED_PROBES_METRIC = "streamarr.probes.deferred";
   private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
       "streamarr.streaming.unknown_job_attempt_reports";
+  private static final String YIELD_COMMANDS_METRIC = "streamarr.streaming.seek_yield_commands";
+  private static final String HOLD_BACK_COMMANDS_METRIC = "streamarr.streaming.hold_back_commands";
   // A probe refused for one of these reasons runs again later, when a worker can take it.
   private static final Set<ProbeRefusal> WAITING_FOR_WORKER =
       EnumSet.of(
@@ -114,6 +116,8 @@ final class LiveWorkerConnectionRegistry {
   private final Counter initializationSegmentMismatches;
   private final Counter encoderBackendMismatches;
   private final Counter unknownJobAttemptReports;
+  private final Counter yieldCommands;
+  private final Counter holdBackCommands;
   private final HeldSegmentRequests heldRequests;
   private final ApplicationEventPublisher eventPublisher;
   private final MeterRegistry meterRegistry;
@@ -153,6 +157,14 @@ final class LiveWorkerConnectionRegistry {
             .description(
                 "Reports that a job attempt completed, stopped or failed, for a job attempt that"
                     + " the worker's current session neither runs nor was told to stop")
+            .register(meterRegistry);
+    yieldCommands =
+        Counter.builder(YIELD_COMMANDS_METRIC)
+            .description("Yield-to-seek commands that reached a worker's session stream")
+            .register(meterRegistry);
+    holdBackCommands =
+        Counter.builder(HOLD_BACK_COMMANDS_METRIC)
+            .description("Hold-back commands that reached a worker's session stream")
             .register(meterRegistry);
     capacityMeters = new WorkerCapacityMeters(meterRegistry);
   }
@@ -1713,7 +1725,9 @@ final class LiveWorkerConnectionRegistry {
           .getHoldLimitBuilder()
           .setSeconds(holdLimit.getSeconds())
           .setNanos(holdLimit.getNano());
-      trySend(EstablishWorkerSessionResponse.newBuilder().setYieldToSeek(command).build());
+      if (trySend(EstablishWorkerSessionResponse.newBuilder().setYieldToSeek(command).build())) {
+        yieldCommands.increment();
+      }
     }
 
     private void holdBack(Map<UUID, Duration> releaseAfterByJobAttempt) {
@@ -1726,7 +1740,9 @@ final class LiveWorkerConnectionRegistry {
                   .getReleaseAfterBuilder()
                   .setSeconds(releaseAfter.getSeconds())
                   .setNanos(releaseAfter.getNano()));
-      trySend(EstablishWorkerSessionResponse.newBuilder().setHoldBack(command).build());
+      if (trySend(EstablishWorkerSessionResponse.newBuilder().setHoldBack(command).build())) {
+        holdBackCommands.increment();
+      }
     }
 
     private synchronized void stopStreamSession(UUID streamSessionId) {

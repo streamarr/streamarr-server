@@ -53,6 +53,7 @@ import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -99,6 +100,7 @@ class ProducerLifecycleServiceTest {
   private final CapturingEventPublisher events = new CapturingEventPublisher();
   private final AuthenticatedIdentity serverAdmin = accountScopedBuilder().build();
   private ServerSettingsService serverSettings;
+  private SimpleMeterRegistry meters;
 
   @BeforeEach
   void setUp() {
@@ -109,8 +111,10 @@ class ProducerLifecycleServiceTest {
     transcodeExecutor = new FakeTranscodeExecutor();
     segmentStore = new FakeSegmentStore();
     runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+    meters = new SimpleMeterRegistry();
     lifecycle =
         StreamingRigFixture.streamingRigBuilder()
+            .meterRegistry(meters)
             .transcodeExecutor(transcodeExecutor)
             .segmentStore(segmentStore)
             .properties(
@@ -852,6 +856,34 @@ class ProducerLifecycleServiceTest {
 
     assertThat(transcodeExecutor.yields().getLast().jobAttemptIds())
         .containsExactly(steady.getHandle().orElseThrow().attemptId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should count each job attempt that a yield to a seek newly names, not one that a later"
+          + " yield names again")
+  void shouldCountEachJobAttemptThatAYieldNewlyNamesWhenALaterYieldNamesItAgain() {
+    var steady = startedSession();
+    publishDefaultSegments(steady, 1, 9);
+    lifecycle.prepareRequestedVariant(
+        steady.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+    lifecycle.ensurePositioned(
+        startedSession().getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
+    var secondSteady = startedSession();
+    publishDefaultSegments(secondSteady, 1, 9);
+    lifecycle.prepareRequestedVariant(
+        secondSteady.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
+
+    lifecycle.ensurePositioned(
+        startedSession().getSessionId(), StreamSession.defaultVariant(), "segment200.m4s");
+
+    assertThat(transcodeExecutor.yields().getLast().jobAttemptIds())
+        .containsExactlyInAnyOrder(
+            steady.getHandle().orElseThrow().attemptId(),
+            secondSteady.getHandle().orElseThrow().attemptId());
+    assertThat(transcodeExecutor.yields()).hasSize(2);
+    assertThat(meters.counter("streamarr.streaming.seek_yielded_job_attempts").count())
+        .isEqualTo(2);
   }
 
   @Test
