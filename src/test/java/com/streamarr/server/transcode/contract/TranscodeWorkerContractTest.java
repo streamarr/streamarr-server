@@ -977,6 +977,23 @@ class TranscodeWorkerContractTest {
   }
 
   @Test
+  @DisplayName("Should distinguish short copied audio from failed video when an attempt fails")
+  void shouldDistinguishShortCopiedAudioFromFailedVideoWhenAnAttemptFails() throws Exception {
+    var failure =
+        JobAttemptFailed.newBuilder()
+            .setJobAttemptId(uuid(UUID.randomUUID()))
+            .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPIED_AUDIO_RAN_SHORT)
+            .build();
+
+    var parsed = JobAttemptFailed.parseFrom(failure.toByteArray());
+
+    assertThat(parsed.getFailure())
+        .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPIED_AUDIO_RAN_SHORT)
+        .isNotEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH);
+    assertThat(parsed.getFailureValue()).isEqualTo(11);
+  }
+
+  @Test
   @DisplayName(
       "Should tell a segment over the segment cap apart from a generic transcode failure when an attempt fails")
   void shouldTellASegmentOverTheSegmentCapApartFromAGenericTranscodeFailureWhenAttemptFails()

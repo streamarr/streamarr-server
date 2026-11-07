@@ -728,6 +728,12 @@ enum JobAttemptFailure {
   // attempt with the same decision meets the same picture, so the server moves
   // to the copy with Dolby Vision stripped (ADR 0036, ADR 0052).
   JOB_ATTEMPT_FAILURE_DOLBY_VISION_CONVERSION_FAILED = 10;
+  // A media segment has video beyond its required copied audio. Encoded video
+  // allows one audio or video frame of end-time rounding; an incomplete final
+  // interval of copied video still follows normal short-copy completion. The
+  // worker refuses the segment before upload. Playback needs a new stream
+  // session that encodes audio, without excluding the valid video format.
+  JOB_ATTEMPT_FAILURE_COPIED_AUDIO_RAN_SHORT = 11;
 }
 
 message JobAttemptFailed {
