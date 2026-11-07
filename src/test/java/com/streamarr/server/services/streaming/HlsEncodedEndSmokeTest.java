@@ -44,6 +44,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -144,7 +145,9 @@ class HlsEncodedEndSmokeTest {
     assertEveryAdvertisedSegmentIsServed(session);
   }
 
+  // Generating the 29-minute source takes about 90 s in CI; each delivery still has its own bound.
   @Test
+  @Timeout(value = 5, unit = TimeUnit.MINUTES)
   @DisplayName(
       "Should deliver one interval of audio within the startup threshold when six-channel audio"
           + " outlasts a 64-second video in a 1764-second source")
