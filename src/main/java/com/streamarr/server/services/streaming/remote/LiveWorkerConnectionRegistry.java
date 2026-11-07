@@ -1109,7 +1109,7 @@ final class LiveWorkerConnectionRegistry {
           || !canAccessSource(job)
           || !canEncodeAudioLayout(job.getDecision())
           || !canDeliverVideoAsPlanned(job.getDecision().getVideo())
-          || (!copiesVideo(job.getDecision()) && availableSlots() == 0)) {
+          || (!copiesVideo(job) && availableSlots() == 0)) {
         return Optional.empty();
       }
 
@@ -1607,7 +1607,7 @@ final class LiveWorkerConnectionRegistry {
     // Recorded before the attempt's end wakes the held requests, so a woken request finds it.
     private void rememberRefusedCopyStart(UUID attemptId, VariantJob job, JobAttemptFailed failed) {
       if (failed.getFailure() != JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPY_CAP_REACHED
-          || !copiesVideo(job.getDecision())) {
+          || !copiesVideo(job)) {
         return;
       }
 
@@ -1665,10 +1665,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private static boolean copiesVideo(VariantJob job) {
-      return switch (job.getDecision().getMode()) {
-        case TRANSCODE_MODE_REMUX, TRANSCODE_MODE_AUDIO_TRANSCODE -> true;
-        default -> false;
-      };
+      return LiveWorkerConnectionRegistry.copiesVideo(job.getDecision());
     }
 
     private Optional<VariantJob> activeJob(UUID jobAttemptId) {
@@ -1707,8 +1704,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private int slotsInUse() {
-      return (int)
-          activeVariants.values().stream().filter(job -> !copiesVideo(job.getDecision())).count();
+      return (int) activeVariants.values().stream().filter(job -> !copiesVideo(job)).count();
     }
 
     private boolean canRunProbes(Uuid sourceNamespaceId, int probeVersion) {
