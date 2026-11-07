@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuil
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecisionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
@@ -141,6 +142,31 @@ class HlsEncodedEndSmokeTest {
     awaitFirstAttemptEnd(session);
 
     assertEveryAdvertisedSegmentIsServed(session);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver one interval of audio within the startup threshold when six-channel audio"
+          + " outlasts a 64-second video in a 1764-second source")
+  void shouldDeliverOneIntervalOfAudioWithinTheStartupThresholdWhenSixChannelAudioOutlastsVideo()
+      throws Exception {
+    var source = generateSource("video-ends-at-64-of-1764.mp4", "24", 64, 1_764, "-ac", "6");
+    var probe = probe(source);
+    assertThat(probe.audioChannels()).hasValue(6);
+    var session = startedEncode(source, probe, encodedAudioEncode());
+    var segments = advertisedSegmentNames(session);
+    assertThat(segments).hasSize(294);
+
+    for (var segment : segments.subList(11, segments.size())) {
+      assertThat(deliveryOf(session, segment))
+          .as("delivery of %s after the video's end", segment)
+          .succeedsWithin(Duration.ofSeconds(10))
+          .isInstanceOf(SegmentDelivery.Ready.class);
+      // AAC carries 1,024 samples per packet; interval boundaries can split one packet.
+      assertThat(audioPacketCount(session, segment) * 1_024.0 / 48_000)
+          .as("seconds of audio in %s", segment)
+          .isCloseTo(6.0, within(1_024.0 / 48_000));
+    }
   }
 
   @Test
