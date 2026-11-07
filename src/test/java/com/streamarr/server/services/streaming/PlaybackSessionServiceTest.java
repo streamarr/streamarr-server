@@ -1059,6 +1059,119 @@ class PlaybackSessionServiceTest {
     assertThat(current.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
   }
 
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "HIGH_720P"})
+  @DisplayName("Should encode the audio without excluding video when copied audio runs short")
+  void shouldEncodeTheAudioWithoutExcludingVideoWhenCopiedAudioRunsShort(VideoQuality quality) {
+    streams.copiesTheSource = false;
+    var command = startCommand().options(qualityOptions(quality)).build();
+    var initial = accepted(service.start(command));
+
+    service.onTerminalTranscodeFailure(
+        terminalFailure(
+            initial.currentFormatAttempt().streamSessionId(),
+            TranscodeFailure.COPIED_AUDIO_RAN_SHORT));
+
+    var recovered = service.access(request(initial, command)).orElseThrow();
+    assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.playbackChoice()).isEqualTo(quality);
+    assertThat(streams.createdCommands.getLast())
+        .satisfies(
+            next -> {
+              assertThat(next.audioFormatConstraint()).isEqualTo(AudioFormatConstraint.ENCODE_ONLY);
+              assertThat(next.videoFormatConstraint()).isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+              assertThat(next.excludedEncodeCodecFamilies()).isEmpty();
+              assertThat(next.excludedEncodeFormats()).isEmpty();
+            });
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should change Original only if video must encode when copied audio runs short")
+  void shouldChangeOriginalOnlyIfVideoMustEncodeWhenCopiedAudioRunsShort(boolean videoMustEncode) {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var initial = accepted(service.start(command));
+    streams.copiesTheSource = !videoMustEncode;
+
+    service.onTerminalTranscodeFailure(
+        terminalFailure(
+            initial.currentFormatAttempt().streamSessionId(),
+            TranscodeFailure.COPIED_AUDIO_RAN_SHORT));
+
+    var recovered = service.access(request(initial, command)).orElseThrow();
+    assertThat(recovered.playbackChoice())
+        .isEqualTo(videoMustEncode ? VideoQuality.AUTO : VideoQuality.ORIGINAL);
+    assertThat(streams.createdCommands.getLast().videoFormatConstraint())
+        .isEqualTo(VideoFormatConstraint.COPY_OR_ENCODE);
+    assertThat(streams.createdCommands.getLast().audioFormatConstraint())
+        .isEqualTo(AudioFormatConstraint.ENCODE_ONLY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the pending video's encode constraint when copied audio fails before creation returns")
+  void shouldKeepThePendingVideosEncodeConstraintWhenCopiedAudioFailsBeforeCreationReturns() {
+    var work = new ConcurrentLinkedQueue<Runnable>();
+    var playback = serviceRunning(work::add).maximumFormatAttempts(3).build();
+    var command = startCommand().build();
+    var initial = accepted(playback.start(command));
+    streams.duringNextCreation =
+        child ->
+            playback.onTerminalTranscodeFailure(
+                terminalFailure(child.streamSessionId(), TranscodeFailure.COPIED_AUDIO_RAN_SHORT));
+
+    playback.onVideoCopyOutputMismatch(
+        new VideoCopyOutputMismatchEvent(
+            initial.currentFormatAttempt().streamSessionId(), UUID.randomUUID(), "default"));
+    drain(work);
+
+    assertThat(streams.createdCommands.getLast().videoFormatConstraint())
+        .isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+    assertThat(streams.createdCommands.getLast().audioFormatConstraint())
+        .isEqualTo(AudioFormatConstraint.ENCODE_ONLY);
+    assertThat(playback.access(request(initial, command)).orElseThrow().formatAttemptCount())
+        .isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("Should ignore duplicate reports when a short audio copy already recovered")
+  void shouldIgnoreDuplicateReportsWhenAShortAudioCopyAlreadyRecovered() {
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+    var failure =
+        terminalFailure(
+            initial.currentFormatAttempt().streamSessionId(),
+            TranscodeFailure.COPIED_AUDIO_RAN_SHORT);
+
+    service.onTerminalTranscodeFailure(failure);
+    service.onTerminalTranscodeFailure(failure);
+
+    assertThat(service.access(request(initial, command)).orElseThrow().currentFormatAttempt())
+        .isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(streams.createdCommands).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should stop at the format budget when copied audio runs short")
+  void shouldStopAtTheFormatBudgetWhenCopiedAudioRunsShort() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(1).build();
+    var command = startCommand().build();
+    var initial = accepted(playback.start(command));
+
+    playback.onTerminalTranscodeFailure(
+        terminalFailure(
+            initial.currentFormatAttempt().streamSessionId(),
+            TranscodeFailure.COPIED_AUDIO_RAN_SHORT));
+
+    var failed = playback.access(request(initial, command)).orElseThrow();
+    assertThat(failed.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Failed.class);
+    assertThat(failed.formatAttemptCount()).isOne();
+    assertThat(streams.createdCommands).hasSize(1);
+  }
+
   // ADR 0044: the requested variant whose hardware encoder fails continues on the software encoder
   // of the same codec, and the client reopens it through format recovery (worker#56).
   @ParameterizedTest
@@ -1188,6 +1301,7 @@ class PlaybackSessionServiceTest {
       case OUTPUT_MISMATCH -> new PlaybackSessionFailure.OutputMismatch();
       case INVALID_SPECIFICATION -> new PlaybackSessionFailure.InvalidSpecification();
       case SEGMENT_CAP_EXCEEDED -> new PlaybackSessionFailure.OutputMismatch();
+      case COPIED_AUDIO_RAN_SHORT -> throw new AssertionError("A short audio copy is recoverable");
       case DOLBY_VISION_CONVERSION_FAILED ->
           new PlaybackSessionFailure.DolbyVisionConversionFailed();
     };

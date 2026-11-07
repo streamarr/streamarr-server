@@ -31,6 +31,7 @@ public record TranscodeDecisionRequest(
     @NonNull Set<String> hardwareEncodableVideoCodecFamilies,
     @NonNull Set<String> verifiedVideoCodecFamilies,
     @NonNull VideoFormatConstraint videoFormatConstraint,
+    @NonNull AudioFormatConstraint audioFormatConstraint,
     @NonNull Set<String> excludedEncodeCodecFamilies,
     @NonNull Set<EncodeFormat> excludedEncodeFormats,
     @NonNull ViewerLimits viewerLimits,
@@ -62,6 +63,7 @@ public record TranscodeDecisionRequest(
     private Set<String> hardwareEncodableVideoCodecFamilies = Set.of();
     private Set<String> verifiedVideoCodecFamilies = Set.of();
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
+    private AudioFormatConstraint audioFormatConstraint = AudioFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();
     private Set<EncodeFormat> excludedEncodeFormats = Set.of();
     private ViewerLimits viewerLimits = ViewerLimits.none();
@@ -79,6 +81,7 @@ public record TranscodeDecisionRequest(
           hardwareEncodableVideoCodecFamilies,
           verifiedVideoCodecFamilies,
           videoFormatConstraint,
+          audioFormatConstraint,
           excludedEncodeCodecFamilies,
           excludedEncodeFormats,
           viewerLimits,
