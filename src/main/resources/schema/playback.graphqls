@@ -124,6 +124,58 @@ type VideoFormat {
     videoRange: VideoRange!
     "Whether the track carries Dolby Vision."
     dolbyVision: Boolean!
+    "Probe facts for the source, or planned output facts after rewrites and encoding. Null when unavailable."
+    details: VideoFormatDetails
+}
+
+"These describe the stream, not the HDR mode the player's display actually uses."
+type VideoFormatDetails {
+    codecProfile: VideoCodecProfile
+    "Major times ten plus minor. Null when not known; an encode does not reuse the source's level."
+    codecLevel: Int
+    bitDepth: Int
+    chromaSubsampling: ChromaSubsampling
+    compatibleBase: CompatibleBase!
+    hdr10Plus: MetadataPresence!
+    dolbyVision: DolbyVisionDetails!
+    masteringDisplay: VideoMasteringDisplay
+    contentLightLevel: VideoContentLightLevel
+    "Changes to a copied bitstream. Empty for the source, direct play and encodes."
+    bitstreamRewrites: [BitstreamRewrite!]!
+}
+
+enum ChromaSubsampling { CHROMA_420 CHROMA_422 CHROMA_444 MONOCHROME }
+
+"PQ is the SMPTE ST 2084 Perceptual Quantizer transfer function; it alone does not prove HDR10."
+enum CompatibleBase { UNSPECIFIED SDR PQ HLG NONE }
+
+enum MetadataPresence { UNSPECIFIED ABSENT PRESENT }
+
+type DolbyVisionDetails {
+    presence: MetadataPresence!
+    "Profile from the configuration record. Null when the record does not name one."
+    profile: Int
+    level: Int
+    "For example, profile 8 with compatibility identifier 1 is profile 8.1."
+    baseLayerCompatibilityId: Int
+    enhancementLayer: DolbyVisionEnhancementLayer
+    observedRpu: MetadataPresence
+}
+
+enum DolbyVisionEnhancementLayer { UNSPECIFIED NONE MEL FEL }
+
+"Mastering display luminance in cd/m² (nits). Null means no stored or planned metadata."
+type VideoMasteringDisplay { minLuminance: Float! maxLuminance: Float! }
+
+"Content light levels in cd/m² (nits). A declared zero means unknown, as CTA-861.3 specifies."
+type VideoContentLightLevel { maxContentLightLevel: Int! maxFrameAverageLightLevel: Int! }
+
+enum BitstreamRewrite {
+    STRIP_DOLBY_VISION
+    STRIP_HDR10_PLUS
+    NORMALIZE_DOLBY_VISION_RECORD
+    "Removes the enhancement layer and rewrites RPUs without the FEL residual."
+    CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1
 }
 
 type AudioDelivery {
