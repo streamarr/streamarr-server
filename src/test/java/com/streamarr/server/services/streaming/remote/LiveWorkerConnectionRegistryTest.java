@@ -628,7 +628,8 @@ class LiveWorkerConnectionRegistryTest {
         WORKER_ID, registrationListingProbeVersion(WORKER_ID, 8), new CancellableObserver());
     var job = audioEncodeJob(AudioChannelLayout.AUDIO_CHANNEL_LAYOUT_QUAD);
 
-    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, job.getDecision())).isOne();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID, job.getDecision()))
+        .isEqualTo(TranscodeExecutor.UNBOUNDED_SLOTS);
     assertThat(registry.eligibleWorkers(SOURCE_NAMESPACE_ID, job.getDecision())).hasSize(1);
     assertThat(registry.dispatch(job)).isPresent();
   }
