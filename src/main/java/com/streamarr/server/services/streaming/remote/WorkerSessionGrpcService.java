@@ -6,6 +6,7 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.remote.LiveWorkerConnectionRegistry.ReportedJobAttemptEnd;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -203,8 +204,7 @@ final class WorkerSessionGrpcService
       switch (request.getEventCase()) {
         case JOB_ATTEMPT_STARTED -> startJobAttempt(request.getJobAttemptStarted());
         case JOB_ATTEMPT_FAILED -> reportFailedJobAttempt(request.getJobAttemptFailed());
-        case JOB_ATTEMPT_COMPLETED ->
-            completeOrWarn(request.getJobAttemptCompleted().getJobAttemptId());
+        case JOB_ATTEMPT_COMPLETED -> completeOrWarn(request.getJobAttemptCompleted());
         case JOB_ATTEMPT_STOPPED ->
             finishOrWarn(request.getJobAttemptStopped().getJobAttemptId(), "stopped");
         case PROBE_RESULT -> completeProbe(request.getProbeResult());
@@ -332,12 +332,11 @@ final class WorkerSessionGrpcService
           detail);
     }
 
-    private void completeOrWarn(Uuid jobAttemptId) {
-      var attemptId = fromProto(jobAttemptId);
+    private void completeOrWarn(JobAttemptCompleted completed) {
       logReportedEnd(
           workerConnections.completeReportedJobAttempt(
-              authenticatedWorkerId, workerSessionId, attemptId),
-          attemptId,
+              authenticatedWorkerId, workerSessionId, completed),
+          fromProto(completed.getJobAttemptId()),
           "completed");
     }
 

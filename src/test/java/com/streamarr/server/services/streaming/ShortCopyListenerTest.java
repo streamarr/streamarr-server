@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ShortCopy;
+import com.streamarr.server.domain.streaming.SourceEndedEarly;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -88,6 +89,43 @@ class ShortCopyListenerTest {
                 .jobAttemptId(completion.jobAttemptId())
                 .variantLabel(completion.variantLabel())
                 .build());
+  }
+
+  // A stream whose header states no end time counts as ended by the probe alone, but the worker
+  // read the source past the copy's end (ADR 0037, early ends).
+  @Test
+  @DisplayName(
+      "Should publish the failed copy when the copy's report names a stream with media after its"
+          + " last segment, although the probe stored no end time")
+  void shouldPublishTheFailedCopyWhenTheCopysReportNamesAStreamWithMediaAfterItsLastSegment() {
+    var copy = started(defaultSessionBuilder().mediaProbe(probeWithoutStreamEndTimes()).build());
+    storeSegments(copy, 4);
+
+    listener.onJobAttemptCompleted(
+        completionBuilderOf(copy)
+            .sourceEndedEarly(Optional.of(new SourceEndedEarly(3, List.of(1))))
+            .build());
+
+    assertThat(copy.getShortCopy()).contains(new ShortCopy(3, Duration.ofSeconds(24), false));
+    assertThat(copy.getNormalEnd()).isEmpty();
+    assertThat(events.getEventsOfType(CopiedVariantRanShortEvent.class)).hasSize(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should end playback normally when the copy's report names no stream with media after its"
+          + " last segment and the probe stored no end time")
+  void shouldEndPlaybackNormallyWhenTheCopysReportNamesNoStreamWithMediaAfterItsLastSegment() {
+    var copy = started(defaultSessionBuilder().mediaProbe(probeWithoutStreamEndTimes()).build());
+    storeSegments(copy, 4);
+
+    listener.onJobAttemptCompleted(
+        completionBuilderOf(copy)
+            .sourceEndedEarly(Optional.of(new SourceEndedEarly(3, List.of())))
+            .build());
+
+    assertThat(copy.getNormalEnd()).contains(Duration.ofSeconds(24));
+    assertThat(events.getEventsOfType(CopiedVariantRanShortEvent.class)).isEmpty();
   }
 
   @Test
@@ -180,6 +218,12 @@ class ShortCopyListenerTest {
         .streams(
             List.of(
                 audioStreamBuilder("aac").endTime(Optional.of(Duration.ofMillis(30_001))).build()))
+        .build();
+  }
+
+  private static MediaProbe probeWithoutStreamEndTimes() {
+    return defaultProbeBuilder()
+        .streams(List.of(audioStreamBuilder("aac").endTime(Optional.empty()).build()))
         .build();
   }
 

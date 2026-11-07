@@ -6,6 +6,7 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.EncoderBackend;
+import com.streamarr.server.domain.streaming.SourceEndedEarly;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
@@ -31,6 +32,7 @@ import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.HoldBackCommand;
+import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptProgress;
@@ -844,10 +846,11 @@ final class LiveWorkerConnectionRegistry {
    * short (ADR 0052).
    */
   ReportedJobAttemptEnd completeReportedJobAttempt(
-      UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
+      UUID workerId, UUID workerSessionId, JobAttemptCompleted completed) {
+    var jobAttemptId = fromProto(completed.getJobAttemptId());
     currentConnection(workerId, workerSessionId)
         .flatMap(connection -> connection.activeJob(jobAttemptId))
-        .ifPresent(this::publishCompletion);
+        .ifPresent(job -> publishCompletion(job, completed));
     return endReportedJobAttempt(workerId, workerSessionId, jobAttemptId);
   }
 
@@ -905,13 +908,27 @@ final class LiveWorkerConnectionRegistry {
             .build());
   }
 
-  private void publishCompletion(VariantJob job) {
+  private void publishCompletion(VariantJob job, JobAttemptCompleted completed) {
     eventPublisher.publishEvent(
         JobAttemptCompletedEvent.builder()
             .streamSessionId(fromProto(job.getStreamSessionId()))
             .jobAttemptId(fromProto(job.getJobAttemptId()))
             .variantLabel(job.getVariant().getVariantLabel())
+            .sourceEndedEarly(sourceEndedEarly(completed))
             .build());
+  }
+
+  // The worker always names the last segment with source media in its report.
+  private static Optional<SourceEndedEarly> sourceEndedEarly(JobAttemptCompleted completed) {
+    if (!completed.hasSourceEndedEarly()) {
+      return Optional.empty();
+    }
+
+    var report = completed.getSourceEndedEarly();
+    return Optional.of(
+        new SourceEndedEarly(
+            report.getLastSegmentWithSourceMedia(),
+            report.getStreamIndexesWithMediaAfterLastSegmentList()));
   }
 
   private void countIfUnknown(ReportedJobAttemptEnd end) {

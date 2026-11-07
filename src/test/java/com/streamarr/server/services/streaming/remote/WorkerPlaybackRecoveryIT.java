@@ -223,6 +223,35 @@ class WorkerPlaybackRecoveryIT {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should fall back to an encode when the copy's report says that the audio still has media"
+          + " after the copy's end, although the stored probe says that every stream ended there")
+  void shouldFallBackToAnEncodeWhenTheCopysReportSaysTheAudioOutlastsTheCopyAgainstTheProbe()
+      throws Exception {
+    var source =
+        worker.generateMedia(sourceRoot.resolve("movie.mp4"), soundedSourceArguments(24, 24));
+    var containerProbe = probe(source);
+    worker.generateMedia(source, soundedSourceArguments(4, 4));
+    // The container and its keyframe index describe 24 s, and the stored streams end at 4 s.
+    var storedProbe = withStreamsOf(containerProbe, probe(source));
+    // The file now holds 24 s of audio beside its 4 s of video, which the probe never saw.
+    worker.generateMedia(source, soundedSourceArguments(4, 24));
+    try (var playback = new PlaybackRig(autoPlayback(source, storedProbe))) {
+      var started = accepted(playback.sessions.start(playback.command));
+      var copy = ((PlaybackFormatAttempt.Ready) started.currentFormatAttempt()).session();
+      assertThat(copy.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+
+      assertThat(playback.deliverDefault(copy, "segment0.m4s"))
+          .isInstanceOf(SegmentDelivery.Ready.class);
+      var encode = playback.awaitReplacement(started);
+
+      assertThat(encode.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+      assertThat(copy.getNormalEnd()).isEmpty();
+      assertThat(playback.streams.getAllSessions()).containsExactly(encode);
+    }
+  }
+
   private ProbeOutcome.Success probe(Path source) {
     var outcome =
         new RemoteFfprobeService(server, SOURCE_NAMESPACE, source.getParent())
@@ -283,6 +312,35 @@ class WorkerPlaybackRecoveryIT {
         "-color_range",
         "tv",
         "-an");
+  }
+
+  // H.264 that the default declaration copies, beside AAC that it copies, each of its own length.
+  private static List<String> soundedSourceArguments(int videoSeconds, int audioSeconds) {
+    return List.of(
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=320x180:rate=24:duration=" + videoSeconds,
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:sample_rate=48000:duration=" + audioSeconds,
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-c:v",
+        "libx264",
+        "-profile:v",
+        "high",
+        "-level:v",
+        "3.1",
+        "-pix_fmt",
+        "yuv420p",
+        "-g",
+        "24",
+        "-c:a",
+        "aac");
   }
 
   private static byte[] combine(byte[] initialization, byte[] media) {

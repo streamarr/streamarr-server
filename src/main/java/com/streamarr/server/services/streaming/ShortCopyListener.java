@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.CompletedJobAttempt;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import lombok.NonNull;
@@ -23,7 +24,12 @@ public class ShortCopyListener {
   public void onJobAttemptCompleted(@NonNull JobAttemptCompletedEvent event) {
     producerLifecycle
         .settleCompletedJobAttempt(
-            event.streamSessionId(), event.variantLabel(), event.jobAttemptId())
+            CompletedJobAttempt.builder()
+                .streamSessionId(event.streamSessionId())
+                .jobAttemptId(event.jobAttemptId())
+                .variantLabel(event.variantLabel())
+                .sourceEndedEarly(event.sourceEndedEarly())
+                .build())
         .filter(shortCopy -> !shortCopy.everySourceStreamEnded())
         .ifPresent(
             _ ->

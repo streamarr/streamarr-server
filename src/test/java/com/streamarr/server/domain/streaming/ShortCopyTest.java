@@ -57,6 +57,48 @@ class ShortCopyTest {
   }
 
   @Test
+  @DisplayName(
+      "Should leave media after the copy when the worker's report names a stream with samples"
+          + " after the copy's last segment")
+  void shouldLeaveMediaAfterTheCopyWhenTheWorkersReportNamesAStreamWithSamplesAfterIt() {
+    var probe =
+        defaultProbeBuilder()
+            .streams(List.of(audioStreamBuilder("aac").endTime(Optional.empty()).build()))
+            .build();
+
+    var shortCopy =
+        ShortCopy.endingWith(3, GRID, probe).settledBy(new SourceEndedEarly(3, List.of(1)));
+
+    assertThat(shortCopy).isEqualTo(new ShortCopy(3, Duration.ofSeconds(24), false));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the probe's media after the copy when the worker's report names no stream with"
+          + " samples after the copy's last segment")
+  void shouldKeepTheProbesMediaAfterTheCopyWhenTheWorkersReportNamesNoStreamWithSamplesAfterIt() {
+    var probe = probeWithStreamsEndingAt(Duration.ofSeconds(50));
+
+    var shortCopy =
+        ShortCopy.endingWith(3, GRID, probe).settledBy(new SourceEndedEarly(3, List.of()));
+
+    assertThat(shortCopy.everySourceStreamEnded()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should end normally when neither the probe nor the worker's report shows a stream with media"
+          + " after the copy's last segment")
+  void shouldEndNormallyWhenNeitherTheProbeNorTheWorkersReportShowsMediaAfterTheCopy() {
+    var probe = probeWithStreamsEndingAt(Duration.ofSeconds(24));
+
+    var shortCopy =
+        ShortCopy.endingWith(3, GRID, probe).settledBy(new SourceEndedEarly(3, List.of()));
+
+    assertThat(shortCopy.everySourceStreamEnded()).isTrue();
+  }
+
+  @Test
   @DisplayName("Should end the copy where the keyframe that opens the next segment presents")
   void shouldEndTheCopyWhereTheKeyframeThatOpensTheNextSegmentPresents() {
     var streamCopy =

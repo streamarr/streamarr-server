@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.google.protobuf.ByteString;
+import com.streamarr.server.domain.streaming.SourceEndedEarly;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -807,6 +808,48 @@ class WorkerSessionGrpcServiceTest {
             registry.isRunning(
                 fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()))
         .isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish where the source ended early when a worker reports it with the completion")
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  void shouldPublishWhereTheSourceEndedEarlyWhenAWorkerReportsItWithTheCompletion()
+      throws Exception {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(events)
+            .build();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isPresent();
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptCompleted(
+                JobAttemptCompleted.newBuilder()
+                    .setJobAttemptId(job.getJobAttemptId())
+                    .setSourceEndedEarly(
+                        com.streamarr.transcode.v1.SourceEndedEarly.newBuilder()
+                            .setLastSegmentWithSourceMedia(10)
+                            .addStreamIndexesWithMediaAfterLastSegment(1)))
+            .build());
+
+    assertThat(events.getEventsOfType(JobAttemptCompletedEvent.class))
+        .singleElement()
+        .extracting(JobAttemptCompletedEvent::sourceEndedEarly)
+        .isEqualTo(Optional.of(new SourceEndedEarly(10, List.of(1))));
   }
 
   @Test
