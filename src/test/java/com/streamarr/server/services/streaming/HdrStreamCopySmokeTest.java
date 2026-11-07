@@ -355,7 +355,7 @@ class HdrStreamCopySmokeTest {
     var session =
         sessionFor(
             source,
-            hevcEntryBuilder().compatibleBases(hdrBases()).build(),
+            hevcEntryBuilder().maxBitDepth(8).compatibleBases(hdrBases()).build(),
             VideoFormatConstraint.ENCODE_ONLY);
 
     var decision = session.getTranscodeDecision();
