@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.CompletedJobAttempt;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.MediaTimeRange;
@@ -16,7 +17,6 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
-import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import java.time.Clock;
@@ -1754,8 +1754,7 @@ public class ProducerLifecycleService {
    * ran short there. The stream session keeps the first short copy that a completion shows. Answers
    * the short copy when this completion showed it.
    */
-  public Optional<ShortCopy> settleCompletedJobAttempt(
-      @NonNull JobAttemptCompletedEvent completion) {
+  public Optional<ShortCopy> settleCompletedJobAttempt(@NonNull CompletedJobAttempt completion) {
     return withSessionLock(
         completion.streamSessionId(),
         () ->
@@ -1766,7 +1765,7 @@ public class ProducerLifecycleService {
   }
 
   private Optional<ShortCopy> shortCopyShownBy(
-      StreamSession session, JobAttemptCompletedEvent completion) {
+      StreamSession session, CompletedJobAttempt completion) {
     var variantLabel = completion.variantLabel();
     var handle =
         session
