@@ -920,8 +920,10 @@ public class TranscodeDecisionService {
   }
 
   // The encode at the fastest frame rate wins, then an HDR encode, so an HDR source keeps its range
-  // for a client that declares it even in a codec family after H.264, then the codec preference
-  // and, within a codec family, 10-bit SDR before 8-bit SDR.
+  // for a client that declares it even in a codec family after H.264. A 10-bit encode then wins
+  // over 8-bit H.264, so a 10-bit SDR source keeps its 10 bits (decision 179), while a codec family
+  // that a worker encodes in hardware keeps its place before it. Then the codec preference and,
+  // within a codec family, 10-bit SDR before 8-bit SDR.
   private static Optional<EncodeChoice> selectEncode(TranscodeDecisionRequest request) {
     return codecPreference(request).stream()
         .filter(
@@ -945,6 +947,11 @@ public class TranscodeDecisionService {
     }
 
     if (next.format().isHdr() && !preferred.format().isHdr()) {
+      return next;
+    }
+
+    if (next.format().bitDepth() > preferred.format().bitDepth()
+        && preferred.codecProfile() == EncodeCodecProfile.H264_HIGH) {
       return next;
     }
 
