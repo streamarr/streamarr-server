@@ -2805,7 +2805,8 @@ class HlsStreamingServiceTest {
         .singleElement()
         .satisfies(
             request -> {
-              assertThat(request.segmentStartSlots()).containsExactly(0, 1, 3, 5);
+              assertThat(request.exactSegmentStarts().orElseThrow().ticks())
+                  .containsExactly(0L, 10_000L, 20_000L, 30_000L);
               assertThat(request.mediaSegmentCount()).isEqualTo(4);
             });
   }
@@ -2855,8 +2856,8 @@ class HlsStreamingServiceTest {
     assertThat(extinfDurations(mediaPlaylist(session))).containsExactly("6.000000", "7194.000000");
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
-        .extracting(TranscodeRequest::segmentStartSlots)
-        .isEqualTo(List.of(0, 1));
+        .extracting(request -> request.exactSegmentStarts().orElseThrow().ticks())
+        .isEqualTo(List.of(0L, 6_000L));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -2989,9 +2990,9 @@ class HlsStreamingServiceTest {
                     List.of(0L, 585_000L, 1_125_000L, 1_665_000L), new Fraction(1, 90_000))));
   }
 
-  // At the 6 s period, the keyframes at 0, 10, 20 and 30 s open segments in slots 0, 1, 3 and 5.
-  // The keyframes at 3 and 22 s lie in a slot that another keyframe already opens, and the slots
-  // [12 s, 18 s) and [24 s, 30 s) hold none, so each merges into the segment before it.
+  // At the 6 s period, the keyframes at 0, 10, 20 and 30 s open segments. The keyframes at 3 and
+  // 22 s lie in a slot that another keyframe already opens, and the slots [12 s, 18 s) and
+  // [24 s, 30 s) hold none, so each merges into the segment before it.
   @Test
   @DisplayName(
       "Should send one exact start for each merged segment when the copy's keyframes lie unevenly")
@@ -3008,14 +3009,11 @@ class HlsStreamingServiceTest {
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(transcodeExecutor.getStartedRequests())
         .singleElement()
-        .satisfies(
-            request -> {
-              assertThat(request.segmentStartSlots()).containsExactly(0, 1, 3, 5);
-              assertThat(request.exactSegmentStarts())
-                  .hasValue(
-                      new ExactSegmentStarts(
-                          List.of(0L, 10_000L, 20_000L, 30_000L), new Fraction(1, 1_000)));
-            });
+        .extracting(TranscodeRequest::exactSegmentStarts)
+        .isEqualTo(
+            Optional.of(
+                new ExactSegmentStarts(
+                    List.of(0L, 10_000L, 20_000L, 30_000L), new Fraction(1, 1_000))));
   }
 
   @Test
@@ -3037,6 +3035,89 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests())
         .isNotEmpty()
         .allSatisfy(request -> assertThat(request.exactSegmentStarts()).isEmpty());
+  }
+
+  // At the 6 s period, the 24.5 s media ends 0.5 s into slot 4, so that slot merges into segment 3.
+  // An encode has no stored keyframe time base for its starts, so they count whole seconds (ADR
+  // 0037, segment list).
+  @Test
+  @DisplayName(
+      "Should send each segment's whole-second start in time base 1/1 when an encode's plain grid"
+          + " merges its final slot")
+  void shouldSendEachSegmentsWholeSecondStartWhenAnEncodesPlainGridMergesItsFinalSlot() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofMillis(24_500))
+            .videoCodec("hevc")
+            .keyframes(keyframesAtMillis(0, 6_000, 12_000, 18_000, 24_000))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .isNotEmpty()
+        .allSatisfy(
+            request ->
+                assertThat(request.exactSegmentStarts())
+                    .hasValue(
+                        new ExactSegmentStarts(List.of(0L, 6L, 12L, 18L), new Fraction(1, 1))));
+  }
+
+  // At the 6 s period, the keyframe at 12 s opens slot 2 only 14 ms after the segment that the
+  // keyframe at 11.986 s opens, so it stays in that segment. A 24 fps encode would have no frame
+  // between the two starts (ADR 0037, segment list).
+  @Test
+  @DisplayName(
+      "Should keep a keyframe that presents less than 2 s after a segment's start inside that"
+          + " segment when the video is copied")
+  void shouldKeepAKeyframeLessThanTwoSecondsAfterASegmentsStartInsideThatSegmentWhenCopied() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(30))
+            .keyframes(keyframesAtMillis(0, 11_986, 12_000, 18_000))
+            .build());
+    var file = seedMediaFile();
+
+    createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::exactSegmentStarts)
+        .isEqualTo(
+            Optional.of(
+                new ExactSegmentStarts(List.of(0L, 11_986L, 18_000L), new Fraction(1, 1_000))));
+  }
+
+  // The keyframe at 19 s opens slot 3 only when it presents at least 2 s before the media's end, so
+  // that the last segment lasts at least 2 s too.
+  @ParameterizedTest(name = "media ends at {0} ms")
+  @CsvSource({"20000, 3", "21000, 4"})
+  @DisplayName(
+      "Should open a segment at a keyframe only when it presents at least 2 s before the media's"
+          + " end when the video is copied")
+  void shouldOpenASegmentAtAKeyframeOnlyWhenItPresentsTwoSecondsBeforeTheMediasEnd(
+      long durationMillis, int segmentCount) {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofMillis(durationMillis))
+            .keyframes(keyframesAtMillis(0, 6_000, 12_000, 19_000))
+            .build());
+    var file = seedMediaFile();
+
+    createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.mediaSegmentCount()).isEqualTo(segmentCount);
+              assertThat(request.exactSegmentStarts().orElseThrow().ticks())
+                  .containsExactlyElementsOf(
+                      List.of(0L, 6_000L, 12_000L, 19_000L).subList(0, segmentCount));
+            });
   }
 
   private static KeyframeKnowledge keyframesAtMillis(long... presentationTimes) {
@@ -6074,7 +6155,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should name no reason when the format attempt may not direct-play")
   void shouldNameNoReasonWhenTheFormatAttemptMayNotDirectPlay() {
     probeResults.setDefaultProbe(
-        directPlayableProbeBuilder().containerFormat(Optional.of("mpegts")).build());
+        directPlayableProbeBuilder().containerFormat(Optional.of("avi")).build());
     var file = seedMediaFile();
 
     var session =

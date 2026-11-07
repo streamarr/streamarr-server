@@ -37,7 +37,7 @@ import lombok.extern.slf4j.Slf4j;
 final class MeshMediaHandler implements HttpHandler {
 
   // The mesh fixture is the committed 10.005 s clip, advertised on a 2 s grid.
-  private static final MediaSegmentTimeline FIXTURE_TIMELINE =
+  private static final MediaSegmentTimeline.PlainGrid FIXTURE_TIMELINE =
       new MediaSegmentTimeline.PlainGrid(Duration.ofMillis(10_005), Duration.ofSeconds(2));
   private static final Path FIXTURE_SOURCE_ROOT = Path.of("/media");
 
@@ -118,7 +118,7 @@ final class MeshMediaHandler implements HttpHandler {
             .encoderPreset(EncoderPreset.VERYFAST)
             .targetSegmentDuration(FIXTURE_TIMELINE.targetSegmentDurationSeconds())
             .mediaSegmentCount(FIXTURE_TIMELINE.mediaSegmentCount())
-            .segmentStartSlots(FIXTURE_TIMELINE.segmentStartSlots())
+            .exactSegmentStarts(FIXTURE_TIMELINE.exactStarts())
             .framerate(OptionalDouble.of(24))
             .build());
     try {

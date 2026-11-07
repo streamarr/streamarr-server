@@ -254,24 +254,6 @@ class RemoteVariantJobMapperTest {
     assertThat(execution.getSeekPosition().getNanos()).isEqualTo(558_000_000);
   }
 
-  @Test
-  @DisplayName("Should send the stream session's segment list when a copy attempt carries one")
-  void shouldSendTheStreamSessionsSegmentListWhenACopyAttemptCarriesOne() {
-    var request = copyAttempt().mediaSegmentCount(4).segmentStartSlots(List.of(0, 1, 3, 5)).build();
-
-    var execution = mapper.map(request).getExecution();
-
-    assertThat(execution.getSegmentStartSlotsList()).containsExactly(0, 1, 3, 5);
-  }
-
-  @Test
-  @DisplayName("Should send no segment list when an attempt runs on the plain grid")
-  void shouldSendNoSegmentListWhenAnAttemptRunsOnThePlainGrid() {
-    var execution = mapper.map(copyAttempt().build()).getExecution();
-
-    assertThat(execution.getSegmentStartSlotsList()).isEmpty();
-  }
-
   // A copied stream keeps the source's bytes, so only an encoded stream holds or pads (ADR 0037).
   @ParameterizedTest(name = "{0}")
   @CsvSource({

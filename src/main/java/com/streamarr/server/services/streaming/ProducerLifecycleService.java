@@ -1822,7 +1822,6 @@ public class ProducerLifecycleService {
         .transcodeDecision(session.getTranscodeDecision())
         .startSequenceNumber(startSequenceNumber)
         .mediaSegmentCount(timeline.mediaSegmentCount())
-        .segmentStartSlots(timeline.segmentStartSlots())
         .advertisedEnd(advertisedEnd(timeline));
   }
 

@@ -80,12 +80,14 @@ class HlsCopySeekSmokeTest {
 
   // 4 fps with two B-frames: each keyframe decodes 0.5 s before it presents. The keyframe that
   // opens segment 2 presents at 12 s, on the boundary, and decodes at 11.5 s. A seek to 12 s
-  // reads past it.
-  private static final List<String> BOUNDARY_MPEG_TS =
+  // reads past it. An MPEG-TS source would copy only once the probe stores its start time
+  // correction (ADR 0037, segment list), so the stream goes into Matroska, whose demuxer also
+  // seeks by decode time.
+  private static final List<String> BOUNDARY_B_FRAMES =
       source(
           "rate=4",
           List.of("-bf", "2", "-force_key_frames", "0,6,12,19,25,30"),
-          List.of("-f", "mpegts"));
+          List.of("-f", "matroska"));
 
   // 24 fps with a keyframe every 10 s, as a long-GOP encode places them: the 6 s slots [12 s, 18 s)
   // and [24 s, 30 s) hold no keyframe, so the segment list starts its segments in slots 0, 1, 3
@@ -324,9 +326,9 @@ class HlsCopySeekSmokeTest {
             KeyframePositionSource.CONTAINER_INDEX,
             List.of(7.5, 5.5, 7.5, 5.5, 5.0, 5.0)),
         Arguments.of(
-            "boundary-keyframes.ts",
-            BOUNDARY_MPEG_TS,
-            KeyframePositionSource.PACKET_SCAN,
+            "boundary-keyframes.mkv",
+            BOUNDARY_B_FRAMES,
+            KeyframePositionSource.CONTAINER_INDEX,
             List.of(6.0, 6.0, 7.0, 6.0, 5.0, 6.0)));
   }
 
@@ -478,7 +480,7 @@ class HlsCopySeekSmokeTest {
     return ((KeyframeKnowledge.Known) success.keyframes()).positions();
   }
 
-  // An MPEG-TS source has no index, so the probe asks for a packet scan. The scan is a new attempt,
+  // A source without an index makes the probe ask for a packet scan. The scan is a new attempt,
   // so it carries a new attempt ID, as the worker contract requires.
   private ProbeOutcome.Success probeWithKeyframes(Path source) {
     var requestBuilder =
