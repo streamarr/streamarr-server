@@ -65,6 +65,7 @@ import com.streamarr.server.jooq.generated.tables.SessionProgress;
 import com.streamarr.server.jooq.generated.tables.SkippedFile;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
+import com.streamarr.server.jooq.generated.tables.WorkerCalibration;
 
 import java.util.Arrays;
 import java.util.List;
@@ -172,7 +173,8 @@ public class Public extends SchemaImpl {
             SessionProgress.SESSION_PROGRESS,
             SkippedFile.SKIPPED_FILE,
             UserAccount.USER_ACCOUNT,
-            WatchHistory.WATCH_HISTORY
+            WatchHistory.WATCH_HISTORY,
+            WorkerCalibration.WORKER_CALIBRATION
         );
     }
 }
