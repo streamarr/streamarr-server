@@ -163,10 +163,15 @@ class HlsEncodedEndSmokeTest {
           .succeedsWithin(Duration.ofSeconds(10))
           .isInstanceOf(SegmentDelivery.Ready.class);
       // AAC carries 1,024 samples per packet; interval boundaries can split one packet.
-      assertThat(audioPacketCount(session, segment) * 1_024.0 / 48_000)
+      var media =
+          Fmp4Fixture.withInitializationSegment(segmentStore, session.getSessionId(), segment);
+      assertThat(Fmp4Fixture.audioSampleCount(media) * 1_024.0 / 48_000)
           .as("seconds of audio in %s", segment)
           .isCloseTo(6.0, within(1_024.0 / 48_000));
     }
+
+    assertThat(audioPacketCount(session, segments.get(11))).isBetween(281, 282);
+    assertThat(audioPacketCount(session, segments.getLast())).isBetween(281, 282);
   }
 
   @Test
