@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.MediaTimeRange;
 import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.StreamDelivery;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -1812,7 +1813,7 @@ public class ProducerLifecycleService {
         .pinnedEncoder(session.getPinnedEncoder(variantLabel))
         .sourcePath(session.getSourcePath())
         .seekPosition(timeline.mediaSegmentStartSeconds(startSequenceNumber))
-        .keyframeSeekPosition(timeline.keyframeSeekPosition(startSequenceNumber))
+        .keyframeSeekPosition(seekPosition(session, timeline, startSequenceNumber))
         .exactSegmentStarts(MediaSegmentTimelines.exactSegmentStartsOf(session, timeline))
         .targetSegmentDuration(timeline.targetSegmentDurationSeconds())
         .framerate(
@@ -1822,7 +1823,53 @@ public class ProducerLifecycleService {
         .transcodeDecision(session.getTranscodeDecision())
         .startSequenceNumber(startSequenceNumber)
         .mediaSegmentCount(timeline.mediaSegmentCount())
-        .segmentStartSlots(timeline.segmentStartSlots());
+        .segmentStartSlots(timeline.segmentStartSlots())
+        .advertisedEnd(advertisedEnd(timeline));
+  }
+
+  // An encode holds the last picture that it decodes. Without the source's keyframes the worker
+  // reads from one period before the attempt's first segment, so an attempt whose read would start
+  // at or after the chosen video's probed end reads from one period before that end instead (ADR
+  // 0037, early ends).
+  private static Optional<Duration> seekPosition(
+      StreamSession session, MediaSegmentTimeline timeline, int startSequenceNumber) {
+    var keyframeSeek = timeline.keyframeSeekPosition(startSequenceNumber);
+    if (keyframeSeek.isPresent()) {
+      return keyframeSeek;
+    }
+
+    var period = timeline.targetSegmentDuration();
+    var defaultRead =
+        Duration.ofSeconds(timeline.mediaSegmentStartSeconds(startSequenceNumber)).minus(period);
+    return videoEnd(session)
+        .filter(end -> defaultRead.compareTo(end) >= 0)
+        .map(end -> latestOf(end.minus(period), Duration.ZERO));
+  }
+
+  private static Duration latestOf(Duration first, Duration second) {
+    return first.compareTo(second) >= 0 ? first : second;
+  }
+
+  private static Optional<Duration> videoEnd(StreamSession session) {
+    var probe = session.getMediaProbe();
+    return probe
+        .videoPlaybackFacts()
+        .flatMap(
+            facts ->
+                probe.streams().stream()
+                    .filter(stream -> stream.index() == facts.streamIndex())
+                    .findFirst())
+        .flatMap(StreamInfo::endTime);
+  }
+
+  // Every encoded stream may hold its last frame or pad with silence up to the last advertised
+  // segment's end, so a source that ends early still fills every advertised segment (ADR 0037).
+  private static Optional<Duration> advertisedEnd(MediaSegmentTimeline timeline) {
+    if (timeline.mediaSegmentCount() == 0) {
+      return Optional.empty();
+    }
+
+    return Optional.of(timeline.mediaSegmentEnd(timeline.mediaSegmentCount() - 1));
   }
 
   private EncoderPreset pinEncoderPreset(StreamSession session, String variantLabel) {

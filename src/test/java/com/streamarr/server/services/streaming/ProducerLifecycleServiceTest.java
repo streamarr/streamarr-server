@@ -45,6 +45,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -1237,6 +1238,67 @@ class ProducerLifecycleServiceTest {
     assertThat(first.segmentStartSlots()).containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
     assertThat(result).isEqualTo(ProducerLifecycleService.RecoveryResult.SEGMENT_NOT_ADVERTISED);
     assertThat(transcodeExecutor.getStartedRequests()).containsExactly(first);
+  }
+
+  // Without the source's keyframes, the worker reads from one period before the attempt's first
+  // segment: from 36 s for segment 7, which lies past a video that ends earlier, so it would decode
+  // no picture to hold.
+  @ParameterizedTest(name = "video ends at {0} s")
+  @CsvSource({"12, PT6S", "3, PT0S", "36, PT30S", "37,"})
+  @DisplayName(
+      "Should seek an encode that would read from after the video's probed end to one period before"
+          + " that end when the source's keyframes are not known")
+  void shouldSeekAnEncodeThatWouldReadFromAfterTheVideosProbedEndToOnePeriodBeforeIt(
+      int videoEndSeconds, String expectedSeek) {
+    var probe =
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(48))
+            .keyframes(new KeyframeKnowledge.NotReported())
+            .build();
+    var session =
+        defaultSessionBuilder()
+            .mediaProbe(
+                probe.toBuilder()
+                    .streams(
+                        List.of(
+                            ProbeFixture.videoStreamBuilder(probe)
+                                .endTime(Optional.of(Duration.ofSeconds(videoEndSeconds)))
+                                .build()))
+                    .build())
+            .transcodeDecision(fullTranscodeDecision("h264"))
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    transcodeExecutor.markDead(session.getSessionId());
+
+    lifecycle.ensurePositioned(
+        session.getSessionId(), StreamSession.defaultVariant(), "segment7.m4s");
+
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.startSequenceNumber()).isEqualTo(7);
+    assertThat(request.keyframeSeekPosition())
+        .isEqualTo(Optional.ofNullable(expectedSeek).map(Duration::parse));
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry the last advertised segment's end in every job attempt, first and replacement")
+  void shouldCarryTheLastAdvertisedSegmentsEndInEveryJobAttemptFirstAndReplacement() {
+    var session =
+        defaultSessionBuilder()
+            .mediaProbe(defaultProbeBuilder().duration(Duration.ofMillis(60_018)).build())
+            .transcodeDecision(fullTranscodeDecision("h264"))
+            .build();
+    runtimeRegistry.save(session);
+    lifecycle.startFirstListedVariant(session);
+    transcodeExecutor.markDead(session.getSessionId());
+
+    recover(session);
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .hasSize(2)
+        .extracting(TranscodeRequest::advertisedEnd)
+        .containsOnly(Optional.of(Duration.ofMillis(60_018)));
   }
 
   @Test

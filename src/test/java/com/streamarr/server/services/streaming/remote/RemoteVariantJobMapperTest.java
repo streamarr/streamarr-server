@@ -272,6 +272,67 @@ class RemoteVariantJobMapperTest {
     assertThat(execution.getSegmentStartSlotsList()).isEmpty();
   }
 
+  // A copied stream keeps the source's bytes, so only an encoded stream holds or pads (ADR 0037).
+  @ParameterizedTest(name = "{0}")
+  @CsvSource({
+    "FULL_TRANSCODE, true, true",
+    "VIDEO_TRANSCODE, true, false",
+    "AUDIO_TRANSCODE, false, true",
+    "REMUX, false, false"
+  })
+  @DisplayName(
+      "Should hold the encoded video's last frame and pad the encoded audio up to the advertised"
+          + " end when an attempt carries one")
+  void shouldHoldTheEncodedVideosLastFrameAndPadTheEncodedAudioUpToTheAdvertisedEnd(
+      TranscodeMode mode, boolean holdsLastFrame, boolean padsWithSilence) {
+    var request = attemptIn(mode).advertisedEnd(Optional.of(Duration.ofMillis(60_018))).build();
+
+    var job = mapper.map(request);
+
+    assertThat(job.getDecision().getVideo().getHoldLastFrameToAdvertisedEnd())
+        .isEqualTo(holdsLastFrame);
+    assertThat(job.getDecision().getAudio().getPadWithSilenceToAdvertisedEnd())
+        .isEqualTo(padsWithSilence);
+    var carriesEnd = holdsLastFrame || padsWithSilence;
+    var execution = job.getExecution();
+    assertThat(execution.hasAdvertisedEnd()).isEqualTo(carriesEnd);
+    assertThat(execution.getAdvertisedEnd().getSeconds()).isEqualTo(carriesEnd ? 60 : 0);
+    assertThat(execution.getAdvertisedEnd().getNanos()).isEqualTo(carriesEnd ? 18_000_000 : 0);
+  }
+
+  @Test
+  @DisplayName("Should neither hold nor pad when an encode attempt carries no advertised end")
+  void shouldNeitherHoldNorPadWhenAnEncodeAttemptCarriesNoAdvertisedEnd() {
+    var job = mapper.map(encodeAttempt("h264").build());
+
+    assertThat(job.getDecision().getVideo().getHoldLastFrameToAdvertisedEnd()).isFalse();
+    assertThat(job.getDecision().getAudio().getPadWithSilenceToAdvertisedEnd()).isFalse();
+    assertThat(job.getExecution().hasAdvertisedEnd()).isFalse();
+  }
+
+  private static TranscodeRequest.TranscodeRequestBuilder attemptIn(TranscodeMode mode) {
+    var encodedAudio = AudioDecision.stereoAac();
+    var copiedAudio = copyDecisionBuilder().build().audioDecision();
+    return switch (mode) {
+      case FULL_TRANSCODE -> encodeAttempt("h264");
+      case VIDEO_TRANSCODE ->
+          encodeAttempt("h264")
+              .transcodeDecision(
+                  encodeAttempt("h264").build().transcodeDecision().toBuilder()
+                      .transcodeMode(TranscodeMode.VIDEO_TRANSCODE)
+                      .audioDecision(copiedAudio)
+                      .build());
+      case AUDIO_TRANSCODE ->
+          copyAttempt()
+              .transcodeDecision(
+                  copyDecisionBuilder()
+                      .transcodeMode(TranscodeMode.AUDIO_TRANSCODE)
+                      .audioDecision(encodedAudio)
+                      .build());
+      case REMUX -> copyAttempt();
+    };
+  }
+
   @Test
   @DisplayName(
       "Should write each segment's exact start and its time base when the attempt carries the copy's starts")
