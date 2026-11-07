@@ -26,6 +26,26 @@ class Fmp4FixtureTest {
   // Main 10 (profile 2) with compatibility flag 2 and the progressive and frame-only constraints.
   private static final byte[] MAIN_10_FIELDS = HexFormat.of().parseHex("0220000000900000000000");
 
+  @ParameterizedTest
+  @CsvSource({"0, 0, 0", "141, 141, 282", "140, 141, 281"})
+  @DisplayName("Should count only audio samples when a segment contains multiple track runs")
+  void shouldCountOnlyAudioSamplesWhenASegmentContainsMultipleTrackRuns(
+      int firstRun, int secondRun, int expected) {
+    var media = new ByteArrayOutputStream();
+    media.writeBytes(box("moov", track("vide", 2, 128), track("soun", 7, 48_000)));
+    media.writeBytes(
+        box(
+            "moof",
+            box("traf", box("tfhd", words(0, 2)), box("trun", words(0, 144))),
+            box(
+                "traf",
+                box("tfhd", words(0, 7)),
+                box("trun", words(0, firstRun)),
+                box("trun", words(0, secondRun)))));
+
+    assertThat(Fmp4Fixture.audioSampleCount(media.toByteArray())).isEqualTo(expected);
+  }
+
   @Test
   @DisplayName(
       "Should read the unshifted presentation time when CMAF contains negative composition offsets")

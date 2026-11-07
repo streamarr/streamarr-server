@@ -22,8 +22,28 @@ public final class Fmp4Fixture {
   private static final int VISUAL_SAMPLE_ENTRY_FIELDS = 78;
   private static final int HVCC_ARRAY_COUNT_OFFSET = 22;
   private static final int PREFIX_SEI = 39;
+  private static final int AUDIO_HANDLER_TYPE = 0x736F756E; // soun
 
   private Fmp4Fixture() {}
+
+  /** The number of samples in the first audio track across every fragment of the media. */
+  public static long audioSampleCount(byte[] media) {
+    var topLevel = boxes(ByteBuffer.wrap(media));
+    var track =
+        requiredBox(topLevel, "moov").children("trak").stream()
+            .filter(
+                box -> box.child("mdia").child("hdlr").payload().getInt(8) == AUDIO_HANDLER_TYPE)
+            .findFirst()
+            .orElseThrow();
+    var trackId = headerField(track.child("tkhd"));
+    return topLevel.stream()
+        .filter(box -> box.type().equals("moof"))
+        .flatMap(box -> box.children("traf").stream())
+        .filter(box -> Integer.toUnsignedLong(box.child("tfhd").payload().getInt(4)) == trackId)
+        .flatMap(box -> box.children("trun").stream())
+        .mapToLong(box -> Integer.toUnsignedLong(box.payload().getInt(4)))
+        .sum();
+  }
 
   /** The type of the first ISOBMFF box: {@code ftyp} opens an initialization segment. */
   public static String firstBoxType(byte[] media) {
