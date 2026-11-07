@@ -44,6 +44,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,9 +55,6 @@ import org.junit.jupiter.api.io.TempDir;
 @Tag("SmokeTest")
 @DisplayName("HLS Streaming Smoke Tests")
 class HlsStreamingSmokeTest {
-
-  private static final Path TEST_VIDEO =
-      Path.of("src/test/resources/BigBuckBunny_320x180_10s.mp4").toAbsolutePath();
 
   private FakeMediaFileRepository mediaFileRepository;
   private FakeMediaFileContainerInfoRepository probeRepository;
@@ -70,9 +68,8 @@ class HlsStreamingSmokeTest {
 
   @BeforeEach
   void setUp() throws Exception {
-    assertThat(TEST_VIDEO).isRegularFile();
     var sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
-    testVideo = Files.copy(TEST_VIDEO, sourceRoot.resolve(TEST_VIDEO.getFileName()));
+    testVideo = sourceRoot.resolve("synthetic-h264-aac.mp4");
     segmentBaseDir = Files.createDirectory(temporaryDirectory.resolve("segments"));
     segmentStore = new LocalSegmentStore(segmentBaseDir);
 
@@ -102,6 +99,36 @@ class HlsStreamingSmokeTest {
             workerFixture.sourceNamespaceId(),
             testVideo.getParent());
     workerFixture.start();
+    workerFixture
+        .worker()
+        .generateMedia(
+            testVideo,
+            List.of(
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x180:rate=24:duration=10",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=10",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p",
+                "-g",
+                "48",
+                "-keyint_min",
+                "48",
+                "-sc_threshold",
+                "0",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-shortest"));
     probeRepository = new FakeMediaFileContainerInfoRepository();
     probeRepository.setDefaultOutcome(probe(testVideo));
 
@@ -306,6 +333,112 @@ class HlsStreamingSmokeTest {
         .contains("RESOLUTION=320x180")
         .contains("CODECS=")
         .contains("stream.m3u8");
+  }
+
+  @Test
+  @DisplayName(
+      "Should bound every delivered segment by the advertised bandwidth when a measured copy has"
+          + " uneven video complexity")
+  void shouldBoundEveryDeliveredSegmentByAdvertisedBandwidthWhenAMeasuredCopyHasUnevenVideo()
+      throws Exception {
+    var source = generateUnevenVideo();
+    probeRepository.setDefaultOutcome(probe(source));
+    var file = seedMediaFile(source);
+    var session =
+        createSession(
+            file.getId(),
+            UUID.randomUUID(),
+            StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build());
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getMediaProbe().streamMeasurements()).isPresent();
+    var master = playlistService.generateMultivariantPlaylist(session, "smoke-token");
+    var bandwidth = bandwidthAttribute(master, "BANDWIDTH");
+    var average = bandwidthAttribute(master, "AVERAGE-BANDWIDTH");
+    var media =
+        playlistService.generateMediaPlaylist(
+            session, StreamSession.defaultVariant(), "smoke-token");
+    var durations =
+        media
+            .lines()
+            .filter(line -> line.startsWith("#EXTINF:"))
+            .map(line -> Double.parseDouble(line.substring(8, line.indexOf(','))))
+            .toList();
+    var segments =
+        media
+            .lines()
+            .filter(line -> line.startsWith("segment"))
+            .map(line -> line.substring(0, line.indexOf('?')))
+            .toList();
+    assertThat(segments).hasSize(durations.size()).hasSizeGreaterThan(1);
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .until(() -> segmentStore.segmentExists(session.getSessionId(), segments.getLast()));
+
+    long highestDeliveredBitrate = 0;
+    for (var index = 0; index < segments.size(); index++) {
+      var bytes = segmentStore.readSegment(session.getSessionId(), segments.get(index));
+      var bitrate = (long) Math.ceil(bytes.length * 8.0 / durations.get(index));
+      assertThat(bitrate).as(segments.get(index)).isLessThanOrEqualTo(bandwidth);
+      highestDeliveredBitrate = Math.max(highestDeliveredBitrate, bitrate);
+    }
+
+    assertThat(highestDeliveredBitrate)
+        .as("the dense scene exceeds the old average-times-1.2 estimate")
+        .isGreaterThan((long) Math.ceil(average * 1.2));
+  }
+
+  private static long bandwidthAttribute(String playlist, String attribute) {
+    var matcher = Pattern.compile("[:,]" + attribute + "=(\\d+)").matcher(playlist);
+    assertThat(matcher.find()).as(attribute).isTrue();
+    return Long.parseLong(matcher.group(1));
+  }
+
+  private Path generateUnevenVideo() throws Exception {
+    return workerFixture
+        .worker()
+        .generateMedia(
+            testVideo.getParent().resolve("uneven-video.mp4"),
+            List.of(
+                "-f",
+                "lavfi",
+                "-i",
+                "color=black:size=320x180:rate=24:duration=12",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x180:rate=24:duration=12",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=black:size=320x180:rate=24:duration=12",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=36",
+                "-filter_complex",
+                "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]",
+                "-map",
+                "[v]",
+                "-map",
+                "3:a",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p",
+                "-g",
+                "96",
+                "-keyint_min",
+                "96",
+                "-sc_threshold",
+                "0",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-shortest"));
   }
 
   @Test
