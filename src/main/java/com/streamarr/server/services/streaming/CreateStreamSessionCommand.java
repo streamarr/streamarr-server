@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.time.Duration;
@@ -28,11 +29,13 @@ public record CreateStreamSessionCommand(
     @NonNull ClientCapabilityDeclaration capabilityDeclaration,
     @NonNull VideoFormatConstraint videoFormatConstraint,
     @NonNull Set<String> excludedEncodeCodecFamilies,
+    @NonNull Set<EncodeFormat> excludedEncodeFormats,
     @NonNull Optional<Duration> startPosition,
     @NonNull OptionalInt audioTrackPosition,
     @NonNull Optional<String> softwareEncodeCodecFamily) {
   public CreateStreamSessionCommand {
     excludedEncodeCodecFamilies = Set.copyOf(excludedEncodeCodecFamilies);
+    excludedEncodeFormats = Set.copyOf(excludedEncodeFormats);
   }
 
   // Lombok builder defaults — its generated setters assign them
@@ -40,6 +43,7 @@ public record CreateStreamSessionCommand(
   public static class CreateStreamSessionCommandBuilder {
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();
+    private Set<EncodeFormat> excludedEncodeFormats = Set.of();
     private Optional<Duration> startPosition = Optional.empty();
     private OptionalInt audioTrackPosition = OptionalInt.empty();
     private Optional<String> softwareEncodeCodecFamily = Optional.empty();
@@ -53,6 +57,7 @@ public record CreateStreamSessionCommand(
           capabilityDeclaration,
           videoFormatConstraint,
           excludedEncodeCodecFamilies,
+          excludedEncodeFormats,
           startPosition,
           audioTrackPosition,
           softwareEncodeCodecFamily);

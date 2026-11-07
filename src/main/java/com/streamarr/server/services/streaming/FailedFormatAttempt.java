@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import lombok.NonNull;
 
 /** Why a playback session's current format attempt failed, and which output it played. */
@@ -23,6 +24,6 @@ record FailedFormatAttempt(@NonNull PlaybackSessionFailure reason, @NonNull Outp
    */
   record DolbyVisionCopyOnAnHdrBase() implements Output {}
 
-  /** The format attempt encoded the video in this codec family. */
-  record Encode(@NonNull String codecFamily) implements Output {}
+  /** The format attempt encoded the video in this codec family and format. */
+  record Encode(@NonNull String codecFamily, @NonNull EncodeFormat format) implements Output {}
 }

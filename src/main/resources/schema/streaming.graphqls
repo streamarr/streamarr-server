@@ -111,7 +111,8 @@ input StreamingOptionsInput {
     The viewer's HDR choice (ADR 0013). Only a fixed quality takes it: SDR plays an HDR source as an SDR encode,
     and HDR keeps the source's HDR range when the client declares it. Auto and Original ignore it. Null for no
     choice, which keeps the source's HDR range when the client declares it. The stream session's videoRange
-    names the range that plays.
+    names the range that plays. When the viewer switches from Auto to a fixed quality, the client sends the
+    range that plays, HDR or SDR, so the switch keeps the picture: SDR after Auto gave HDR up for SDR.
     """
     dynamicRange: DynamicRangeChoice
 }
