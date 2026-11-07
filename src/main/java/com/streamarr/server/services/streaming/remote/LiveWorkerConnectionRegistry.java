@@ -7,6 +7,7 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.SourceEndedEarly;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
@@ -915,7 +916,23 @@ final class LiveWorkerConnectionRegistry {
             .jobAttemptId(fromProto(job.getJobAttemptId()))
             .variantLabel(job.getVariant().getVariantLabel())
             .sourceEndedEarly(sourceEndedEarly(completed))
+            .streamEnds(streamEnds(completed))
             .build());
+  }
+
+  // A stream end is a well-formed, non-negative protobuf duration; the server ignores any other.
+  private static List<SourceStreamEnd> streamEnds(JobAttemptCompleted completed) {
+    return completed.getStreamEndsList().stream()
+        .filter(end -> end.hasStreamIndex() && end.hasEndTime())
+        .filter(end -> end.getEndTime().getSeconds() >= 0)
+        .filter(
+            end -> end.getEndTime().getNanos() >= 0 && end.getEndTime().getNanos() < 1_000_000_000)
+        .map(
+            end ->
+                new SourceStreamEnd(
+                    end.getStreamIndex(),
+                    Duration.ofSeconds(end.getEndTime().getSeconds(), end.getEndTime().getNanos())))
+        .toList();
   }
 
   // The worker always names the last segment with source media in its report.

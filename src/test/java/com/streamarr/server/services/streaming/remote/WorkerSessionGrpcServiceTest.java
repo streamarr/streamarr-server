@@ -17,6 +17,7 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.domain.streaming.SourceEndedEarly;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -850,6 +851,72 @@ class WorkerSessionGrpcServiceTest {
         .singleElement()
         .extracting(JobAttemptCompletedEvent::sourceEndedEarly)
         .isEqualTo(Optional.of(new SourceEndedEarly(10, List.of(1))));
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish each well-formed stream end when a worker reports the ends with the"
+          + " completion")
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  void shouldPublishEachWellFormedStreamEndWhenAWorkerReportsTheEndsWithTheCompletion()
+      throws Exception {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(events)
+            .build();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isPresent();
+
+    session.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setJobAttemptCompleted(
+                JobAttemptCompleted.newBuilder()
+                    .setJobAttemptId(job.getJobAttemptId())
+                    .addStreamEnds(streamEnd(0, Duration.ofSeconds(64, 1)))
+                    .addStreamEnds(streamEnd(1, Duration.ofMillis(84_021)))
+                    .addStreamEnds(streamEnd(2, Duration.ofSeconds(-1)))
+                    .addStreamEnds(
+                        streamEnd(3, Duration.ofSeconds(5)).toBuilder()
+                            .setEndTime(
+                                com.google.protobuf.Duration.newBuilder()
+                                    .setSeconds(5)
+                                    .setNanos(1_000_000_000)))
+                    .addStreamEnds(
+                        com.streamarr.transcode.v1.SourceStreamEnd.newBuilder().setStreamIndex(4))
+                    .addStreamEnds(
+                        streamEnd(5, Duration.ofSeconds(5)).toBuilder().clearStreamIndex()))
+            .build());
+
+    assertThat(events.getEventsOfType(JobAttemptCompletedEvent.class))
+        .singleElement()
+        .extracting(JobAttemptCompletedEvent::streamEnds)
+        .isEqualTo(
+            List.of(
+                new SourceStreamEnd(0, Duration.ofSeconds(64, 1)),
+                new SourceStreamEnd(1, Duration.ofMillis(84_021))));
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.transcode.v1.SourceStreamEnd streamEnd(int index, Duration end) {
+    return com.streamarr.transcode.v1.SourceStreamEnd.newBuilder()
+        .setStreamIndex(index)
+        .setEndTime(
+            com.google.protobuf.Duration.newBuilder()
+                .setSeconds(end.getSeconds())
+                .setNanos(end.getNano()))
+        .build();
   }
 
   @Test

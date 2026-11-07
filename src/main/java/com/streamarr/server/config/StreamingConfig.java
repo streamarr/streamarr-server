@@ -1,5 +1,6 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.concurrency.NanoClock;
@@ -8,6 +9,7 @@ import com.streamarr.server.services.streaming.HardwareEncoderFailureListener;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.JobAttemptProgressListener;
+import com.streamarr.server.services.streaming.LearnedStreamEndListener;
 import com.streamarr.server.services.streaming.MediaSegmentPublicationListener;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.PlaybackLanguagePreferences;
@@ -146,6 +148,14 @@ public class StreamingConfig {
   public HardwareEncoderFailureListener hardwareEncoderFailureListener(
       ProducerLifecycleService producerLifecycleService, ApplicationEventPublisher eventPublisher) {
     return new HardwareEncoderFailureListener(producerLifecycleService, eventPublisher);
+  }
+
+  @Bean
+  public LearnedStreamEndListener learnedStreamEndListener(
+      RuntimeStreamSessionRegistry runtimeRegistry,
+      LearnedStreamEndRepository learnedStreamEnds,
+      MeterRegistry meterRegistry) {
+    return new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, meterRegistry);
   }
 
   @Bean

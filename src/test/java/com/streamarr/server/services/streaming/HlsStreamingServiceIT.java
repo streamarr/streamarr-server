@@ -263,7 +263,10 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getMediaProbe())
-        .isEqualTo(ProbeFixture.completeProbe(storedProbe).mediaProbe());
+        .isEqualTo(
+            ProbeFixture.completeProbe(storedProbe).mediaProbe().toBuilder()
+                .sourceSnapshot(Optional.of(sourceSnapshot))
+                .build());
     assertThat(playlistService.generateMultivariantPlaylist(session, "token"))
         .contains("BANDWIDTH=2400000,AVERAGE-BANDWIDTH=2000000,RESOLUTION=1280x720");
     assertThat(
