@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.CompletedJobAttempt;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.ExactSegmentStarts;
 import com.streamarr.server.domain.streaming.Fraction;
@@ -53,7 +54,6 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
-import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
@@ -527,9 +527,9 @@ class ProducerLifecycleServiceTest {
         .isEqualTo(40);
   }
 
-  private static JobAttemptCompletedEvent completionEndingEarly(
+  private static CompletedJobAttempt completionEndingEarly(
       StreamSession session, String variantLabel, int lastSegmentWithSourceMedia) {
-    return JobAttemptCompletedEvent.builder()
+    return CompletedJobAttempt.builder()
         .streamSessionId(session.getSessionId())
         .jobAttemptId(session.getVariantHandle(variantLabel).orElseThrow().attemptId())
         .variantLabel(variantLabel)
