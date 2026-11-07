@@ -1982,6 +1982,36 @@ class HlsPlaylistServiceTest {
     @Builder
     record SegmentLengthPeak(int segmentSeconds, String bandwidthAttributes) {}
 
+    // With four-second keyframe intervals, the 6 s grid merges to 8/4/8/4/8/4 s and the
+    // 3 s grid merges to nine 4 s segments. Each synthetic interval holds 24 samples. At 6 s
+    // the dense interval shares its segment with a sparse one: 700,000 payload bytes plus
+    // 96 + 48 * 16 framing bytes over 8 s. At 3 s it stands alone: 600,480 bytes over 4 s.
+    @ParameterizedTest(name = "{0} second slots")
+    @CsvSource({"6, 700864", "3, 1200960"})
+    @DisplayName(
+        "Should recompute the peak for both merged segment lists when one measurement serves"
+            + " six and three second slots")
+    void shouldRecomputePeakForBothMergedSegmentListsWhenOneMeasurementServesSixAndThreeSecondSlots(
+        int slotSeconds, long expectedBandwidth) {
+      var source =
+          StreamMeasurementFixture.CopySource.builder()
+              .duration(Duration.ofSeconds(36))
+              .keyframeMillis(
+                  List.of(0L, 4_000L, 8_000L, 12_000L, 16_000L, 20_000L, 24_000L, 28_000L, 32_000L))
+              .videoBytes(concat(repeat(3, 100_000L), repeat(1, 600_000L), repeat(5, 100_000L)))
+              .build();
+      var segmentService =
+          new HlsPlaylistService(
+              StreamingProperties.builder()
+                  .targetSegmentDuration(Duration.ofSeconds(slotSeconds))
+                  .build());
+
+      assertThat(
+              segmentService.generateMultivariantPlaylist(
+                  copySession(source, AudioDecision.none()), "t"))
+          .contains("BANDWIDTH=" + expectedBandwidth + ",");
+    }
+
     // RFC 8216 §4.1: a run lasts 3 to 9 s under a 6 s target. The last segment lasts 2.5 s, as the
     // last keyframe presents 2.5 s before the media end, and holds 500,000 bytes, so it counts only
     // with the 6 s segment before it: 302,400 + 500,480 bytes over 8.5 s, 755,651.8 b/s. Alone it
