@@ -333,10 +333,6 @@ class HdrStreamCopySmokeTest {
     assertWithoutDolbyVisionUnits(session, REPLACED_SEGMENT);
   }
 
-  // #396, #401: after a rejected HDR copy, Auto's next format attempt encodes. The pinned worker's
-  // encoders list no PQ or HLG encode feature, so the encode is 8-bit SDR (#397) and the worker
-  // tone-maps (ADR 0013). The decision, the playlist and the bytes the worker delivers must all
-  // describe that SDR output.
   @ParameterizedTest(name = "{0}")
   @MethodSource("hdrBasesToToneMap")
   @DisplayName(

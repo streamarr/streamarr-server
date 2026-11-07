@@ -11,10 +11,11 @@ public final class ProbeVersion {
   // Version 5 adds the frame facts below. Version 6 adds the video and audio bitrates that the
   // worker reads from a Matroska file's trusted statistics tags, and whether a copy of an H.264 or
   // HEVC video stream keeps every packet's bytes. Version 7 adds the audio facts and the source
-  // facts below. Each version includes the facts of every earlier version. Version 2 is unused.
-  // V097 deleted every result before version 4; an earlier result stays playable until the re-scan
-  // stores the file's current result.
-  public static final int CURRENT = 7;
+  // facts below. Version 8 adds the maximum frame rate and the RPU facts below. Each version
+  // includes the facts of every earlier version. Version 2 is unused. V097 deleted every result
+  // before version 4; an earlier result stays playable until the re-scan stores the file's current
+  // result.
+  public static final int CURRENT = 8;
 
   public static final int FIRST_TO_REPORT_CHAPTERS = 4;
 
@@ -41,7 +42,8 @@ public final class ProbeVersion {
   // the MaxCLL and MaxFALL of its RPUs' level 6 block.
   public static final int FIRST_TO_REPORT_MAXIMUM_FRAME_RATE_AND_RPU_FACTS = 8;
 
-  // A worker that lists this version encodes each audio track in the layout that the job names. The
-  // server sends a job that names a layout of 3, 4, 7 or 8 channels only to such a worker.
+  // A worker that lists this version or a later one encodes each audio track in the layout that the
+  // job names. The server sends a job that names a layout of 3, 4, 7 or 8 channels only to such a
+  // worker.
   public static final int FIRST_TO_ENCODE_NAMED_LAYOUTS = 7;
 }

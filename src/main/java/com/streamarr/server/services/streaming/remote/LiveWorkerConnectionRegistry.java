@@ -1431,7 +1431,11 @@ final class LiveWorkerConnectionRegistry {
     private boolean canEncodeAudioLayout(TranscodeDecision decision) {
       return !RemoteAudioChannelLayouts.needsLayoutEncodingWorker(
               decision.getAudio().getChannelLayout())
-          || probeVersions.contains(ProbeVersion.FIRST_TO_ENCODE_NAMED_LAYOUTS);
+          || probeVersions.stream()
+              .anyMatch(
+                  version ->
+                      Integer.compareUnsigned(version, ProbeVersion.FIRST_TO_ENCODE_NAMED_LAYOUTS)
+                          >= 0);
     }
 
     private Optional<WorkerVerifiedEncoder> encoderFor(TranscodeDecision decision) {

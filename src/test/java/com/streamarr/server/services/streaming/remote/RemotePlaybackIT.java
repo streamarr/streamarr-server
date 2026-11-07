@@ -832,6 +832,16 @@ class RemotePlaybackIT {
         .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()));
   }
 
+  // A copy that encodes its audio reads from one 4 s period earlier, so that its audio encoder has
+  // its lead before the first segment's start.
+  private static double copySeekOf(TranscodeDecision decision) {
+    if (decision.transcodeMode() == TranscodeMode.AUDIO_TRANSCODE) {
+      return 8;
+    }
+
+    return 12;
+  }
+
   private void assertCommandPreservesDecision(List<String> command, TranscodeDecision decision) {
     var streamCopiesVideo =
         switch (decision.transcodeMode()) {
@@ -854,7 +864,7 @@ class RemotePlaybackIT {
     var seek = Double.parseDouble(argument(command, "-ss"));
     if (streamCopiesVideo) {
       assertThat(argument(command, "-c:v")).as("video codec for %s", decision).isEqualTo("copy");
-      assertThat(seek).as("stream copy seek for %s", decision).isEqualTo(12);
+      assertThat(seek).as("stream copy seek for %s", decision).isEqualTo(copySeekOf(decision));
       return;
     }
 
