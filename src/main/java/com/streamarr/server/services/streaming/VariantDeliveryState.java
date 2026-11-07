@@ -15,6 +15,7 @@ final class VariantDeliveryState {
   private UUID trackedAttemptId;
   private int runStart;
   private int frontier;
+  private int frontierAtRunStart;
   private Instant lastProgressAt = Instant.EPOCH;
   private boolean reportedProgress;
   private final Set<ExecutionTargetId> attemptedSinceProgress = new LinkedHashSet<>();
@@ -57,7 +58,8 @@ final class VariantDeliveryState {
   /** The moment the tracked job attempt counts as stalled unless it publishes again first. */
   Instant stallDeadline(Duration stallThreshold, Duration startupThreshold) {
     // A job attempt that reports progress has started, even before it stores a segment.
-    var budget = frontier > runStart || reportedProgress ? stallThreshold : startupThreshold;
+    var budget =
+        frontier > frontierAtRunStart || reportedProgress ? stallThreshold : startupThreshold;
     return lastProgressAt.plus(budget);
   }
 
@@ -86,6 +88,16 @@ final class VariantDeliveryState {
     trackAttempt(handle, now);
   }
 
+  /**
+   * Starts the tracked job attempt's frontier at the first segment from its start that no job
+   * attempt stored before it started, so those segments never count as its progress. A replacement
+   * can start in front of them, at the last segment with source media (ADR 0037, early ends).
+   */
+  void skipSegmentsStoredBefore(int firstUnstoredSegment) {
+    frontier = Math.max(frontier, firstUnstoredSegment);
+    frontierAtRunStart = frontier;
+  }
+
   void markRefused(ExecutionTargetId target) {
     attemptedSinceProgress.add(target);
   }
@@ -105,6 +117,7 @@ final class VariantDeliveryState {
     trackedAttemptId = handle.attemptId();
     runStart = handle.startSequenceNumber();
     frontier = runStart;
+    frontierAtRunStart = runStart;
     lastProgressAt = now;
     reportedProgress = false;
   }

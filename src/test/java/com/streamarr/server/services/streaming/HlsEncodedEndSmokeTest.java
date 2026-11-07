@@ -22,6 +22,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
@@ -77,6 +78,7 @@ class HlsEncodedEndSmokeTest {
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)
             .segmentStore(segmentStore)
+            .eventPublisher(this::settleCompletions)
             .build();
     workerFixture.start();
     transcodeExecutor =
@@ -249,6 +251,37 @@ class HlsEncodedEndSmokeTest {
                 .build())
         .orElseThrow()
         .toBuilder();
+  }
+
+  @Test
+  @DisplayName(
+      "Should serve a segment past an encoded source's real end from a job attempt at the last"
+          + " segment with source media when the segment is requested again")
+  void shouldServeASegmentPastTheRealEndFromAnAttemptAtTheLastSegmentWithSourceMedia()
+      throws Exception {
+    var source = generateSource("truncated-again.mp4", "24", 30, 30, "-movflags", "+faststart");
+    var probe = probe(source);
+    truncateToHalf(source);
+    var session = startedEncode(source, probe, encodedAudioEncode());
+    awaitFirstAttemptEnd(session);
+    await()
+        .atMost(10, TimeUnit.SECONDS)
+        .until(() -> session.getLastSegmentWithSourceMedia().isPresent());
+    Files.delete(segmentStore.getOutputDirectory(session.getSessionId()).resolve("segment4.m4s"));
+
+    assertThat(deliveryOf(session, "segment4.m4s"))
+        .succeedsWithin(DELIVERY_BOUND)
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(session.getHandle().orElseThrow().startSequenceNumber())
+        .isEqualTo(session.getLastSegmentWithSourceMedia().getAsInt());
+    assertThat(decodedVideoFrames(session, "segment4.m4s"))
+        .isEqualTo(FRAMES_IN_A_SEGMENT_AT_24_FPS);
+  }
+
+  private void settleCompletions(Object event) {
+    if (event instanceof JobAttemptCompletedEvent completed && lifecycle != null) {
+      new ShortCopyListener(lifecycle, _ -> {}).onJobAttemptCompleted(completed);
+    }
   }
 
   private void awaitFirstAttemptEnd(StreamSession session) {
