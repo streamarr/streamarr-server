@@ -31,7 +31,8 @@ public final class Fmp4Fixture {
     var topLevel = boxes(ByteBuffer.wrap(media));
     var track =
         requiredBox(topLevel, "moov").children("trak").stream()
-            .filter(box -> box.child("mdia").child("hdlr").payload().getInt(8) == AUDIO_HANDLER_TYPE)
+            .filter(
+                box -> box.child("mdia").child("hdlr").payload().getInt(8) == AUDIO_HANDLER_TYPE)
             .findFirst()
             .orElseThrow();
     var trackId = headerField(track.child("tkhd"));
