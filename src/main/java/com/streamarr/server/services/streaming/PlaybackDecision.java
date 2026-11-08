@@ -126,6 +126,7 @@ public record PlaybackDecision(
           sourceFormat.toBuilder()
               .videoRange(decision.videoRange())
               .dolbyVision(hasDolbyVision(decision.plannedVideoOutput().dynamicRange()))
+              .details(Optional.of(VideoFormatDetails.from(decision.plannedVideoOutput())))
               .build();
       return new TrackDelivery<>(PlaybackDelivery.COPY, sourceFormat, output);
     }
@@ -137,6 +138,7 @@ public record PlaybackDecision(
             .toBuilder()
             .videoRange(decision.videoRange())
             .dolbyVision(false)
+            .details(Optional.of(VideoFormatDetails.from(decision.plannedVideoOutput())))
             .build();
     return new TrackDelivery<>(PlaybackDelivery.ENCODE, sourceFormat, output);
   }
@@ -153,6 +155,7 @@ public record PlaybackDecision(
         .bitrate(videoStreamBitrate(source, facts))
         .videoRange(range.map(it -> rangeOf(it.compatibleBase())).orElse(VideoRange.SDR))
         .dolbyVision(range.filter(PlaybackDecision::hasDolbyVision).isPresent())
+        .details(facts.map(VideoFormatDetails::from))
         .build();
   }
 

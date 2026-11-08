@@ -1134,7 +1134,10 @@ class StreamingResolverTest {
                   formatAttempt streamSessionId reasons
                   video {
                     delivery
-                    source { codec width height frameRate bitrate videoRange dolbyVision }
+                    source {
+                      codec width height frameRate bitrate videoRange dolbyVision
+                      details { bitDepth compatibleBase hdr10Plus dolbyVision { presence profile } }
+                    }
                     output { codec width height videoRange dolbyVision }
                   }
                   audio { delivery source { codec channels bitrate } output { codec channels bitrate } }
@@ -1150,6 +1153,10 @@ class StreamingResolverTest {
     assertThat(result.read(decision + ".reasons", List.class))
         .containsExactly("AUDIO_CODEC_NOT_DECLARED");
     assertThat(result.read(decision + ".video.delivery", String.class)).isEqualTo("COPY");
+    assertThat(result.read(decision + ".video.source.details.bitDepth", Integer.class))
+        .isEqualTo(8);
+    assertThat(result.read(decision + ".video.source.details.hdr10Plus", String.class))
+        .isEqualTo("UNSPECIFIED");
     assertThat(result.read(decision + ".video.source", Map.class))
         .containsEntry("codec", "h264")
         .containsEntry("width", 1920)

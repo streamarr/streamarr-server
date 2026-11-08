@@ -33,7 +33,8 @@ public record PlaybackDecisionDto(
       Double frameRate,
       Integer bitrate,
       String videoRange,
-      boolean dolbyVision) {}
+      boolean dolbyVision,
+      VideoFormatDetailsDto details) {}
 
   /** {@code channels} and {@code bitrate} are null when the probe found none. */
   public record AudioFormatDto(String codec, Integer channels, Integer bitrate) {}
@@ -76,6 +77,7 @@ public record PlaybackDecisionDto(
         .bitrate(graphqlInt(format.bitrate()))
         .videoRange(format.videoRange().name())
         .dolbyVision(format.dolbyVision())
+        .details(format.details().map(VideoFormatDetailsDto::from).orElse(null))
         .build();
   }
 

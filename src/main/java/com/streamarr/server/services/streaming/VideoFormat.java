@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.VideoRange;
+import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import lombok.Builder;
@@ -19,7 +20,13 @@ public record VideoFormat(
     @NonNull OptionalDouble frameRate,
     @NonNull OptionalLong bitrate,
     @NonNull VideoRange videoRange,
-    boolean dolbyVision) {
+    boolean dolbyVision,
+    @NonNull Optional<VideoFormatDetails> details) {
 
   public static final String UNKNOWN_CODEC = "unknown";
+
+  @SuppressWarnings({"java:S1068", "java:S9438"})
+  public static class VideoFormatBuilder {
+    private Optional<VideoFormatDetails> details = Optional.empty();
+  }
 }
