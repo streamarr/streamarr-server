@@ -70,6 +70,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -240,7 +241,9 @@ class PlaybackSessionServiceTest {
                 PlaybackDelivery.ENCODE,
                 List.of(DecisionReason.COPY_FAILED, DecisionReason.AUDIO_CODEC_NOT_DECLARED)));
     assertThat(recovered.decisions().getFirst().video().output())
-        .isEqualTo(recovered.decisions().getFirst().video().source());
+        .extracting(
+            VideoFormat::codec, VideoFormat::width, VideoFormat::height, VideoFormat::frameRate)
+        .containsExactly("h264", 1920, 1080, OptionalDouble.of(24));
   }
 
   @Test
