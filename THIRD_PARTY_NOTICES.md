@@ -99,3 +99,17 @@ Source: <https://github.com/spring-projects/spring-framework/blob/e8729d043887bf
 License: Apache License 2.0. The complete license text is packaged at `META-INF/LICENSE-APACHE-2.0.txt` from `src/main/resources/META-INF/LICENSE-APACHE-2.0.txt`; the canonical license URI is <https://www.apache.org/licenses/LICENSE-2.0>.
 
 Modifications by Streamarr contributors: selected and deduplicated inputs; renamed cases; represented inputs as filepath URI suffixes; and supplied assertions for Streamarr's strict-rejection contract rather than Spring Framework's behavior.
+
+## Big Buck Bunny test fixtures
+
+The following media fixtures are excerpts of *Big Buck Bunny*:
+
+- `src/test/resources/BigBuckBunny_320x180_10s.mp4`
+- `src/test/resources/recorded-fmp4/start-0s.fmp4`
+- `src/test/resources/recorded-fmp4/replacement-differing-initialization.fmp4`
+
+(c) copyright 2008, Blender Foundation / [www.bigbuckbunny.org](https://www.bigbuckbunny.org/)
+
+The film is licensed under [Creative Commons Attribution 3.0 Unported](https://creativecommons.org/licenses/by/3.0/). See the [original project's licensing and attribution instructions](https://peach.blender.org/about/).
+
+Modifications by Streamarr contributors: shortened the film to a ten-second excerpt at 320×180, encoded as H.264/AAC in MP4. The two fMP4 fixtures re-encode that excerpt at a lower resolution and bitrate, with mono AAC audio, end at eight seconds, and use fragmented MP4. The replacement fixture uses a different H.264 reference-frame setting to produce a different initialization segment. Their generation commands are in [record.sh](https://github.com/streamarr/streamarr-server/blob/be5c6ce977b02a08764ac5d725ad5d8f7b2f073b/src/test/resources/recorded-fmp4/record.sh).
