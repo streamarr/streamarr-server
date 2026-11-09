@@ -65,7 +65,7 @@ class SeasonFieldResolverTest {
     episode.setId(UUID.randomUUID());
 
     when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-    when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+    when(seriesService.findSeasonsWithFiles(seriesId)).thenReturn(List.of(season));
     when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
 
     String title =
@@ -102,7 +102,7 @@ class SeasonFieldResolverTest {
     mediaFile.setId(UUID.randomUUID());
 
     when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-    when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+    when(seriesService.findSeasonsWithFiles(seriesId)).thenReturn(List.of(season));
     when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
     when(seriesService.findMediaFiles(episodeId)).thenReturn(List.of(mediaFile));
 

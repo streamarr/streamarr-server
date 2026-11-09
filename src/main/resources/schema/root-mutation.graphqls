@@ -23,9 +23,9 @@ type Mutation {
     switchPlaybackAudioTrack(input: SwitchPlaybackAudioTrackInput!): SwitchPlaybackAudioTrackPayload
     destroyPlaybackSession(input: DestroyPlaybackSessionInput!): DestroyPlaybackSessionPayload
     reportStreamSessionTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!
-    "Marks an item watched for the selected Profile. A season or a series marks each of its episodes."
+    "Marks an item watched for the selected Profile. A season or a series marks only its episodes with files."
     markWatched(input: MarkWatchedInput!): MarkWatchedPayload
-    "Marks an item unwatched for the selected Profile and clears its resume position. A season or a series marks each of its episodes."
+    "Marks an item unwatched for the selected Profile and clears its resume position. A season or a series marks only its episodes with files."
     markUnwatched(input: MarkUnwatchedInput!): MarkUnwatchedPayload
     "Replaces the selected Profile's own language preferences."
     setLanguagePreferences(input: SetLanguagePreferencesInput!): SetLanguagePreferencesPayload

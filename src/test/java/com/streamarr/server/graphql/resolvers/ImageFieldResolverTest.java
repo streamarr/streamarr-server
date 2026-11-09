@@ -302,7 +302,7 @@ class ImageFieldResolverTest {
       var season = buildSeason("Season 1", 1);
 
       when(seriesService.findById(series.getId())).thenReturn(Optional.of(series));
-      when(seriesService.findSeasons(series.getId())).thenReturn(List.of(season));
+      when(seriesService.findSeasonsWithFiles(series.getId())).thenReturn(List.of(season));
 
       var posterImage = buildImage(season.getId(), ImageEntityType.SEASON, ImageType.POSTER);
       var backdropImage = buildImage(season.getId(), ImageEntityType.SEASON, ImageType.BACKDROP);
@@ -333,7 +333,7 @@ class ImageFieldResolverTest {
       var episode = buildEpisode("Pilot", 1);
 
       when(seriesService.findById(series.getId())).thenReturn(Optional.of(series));
-      when(seriesService.findSeasons(series.getId())).thenReturn(List.of(season));
+      when(seriesService.findSeasonsWithFiles(series.getId())).thenReturn(List.of(season));
       when(seriesService.findEpisodes(season.getId())).thenReturn(List.of(episode));
 
       var stillImage = buildImage(episode.getId(), ImageEntityType.EPISODE, ImageType.STILL);

@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -22,6 +23,7 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
@@ -74,6 +76,7 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
   @Autowired private MovieRepository movies;
   @Autowired private SeriesRepository seriesRepository;
   @Autowired private SeasonRepository seasons;
+  @Autowired private EpisodeRepository episodes;
   @Autowired private MovieService movieService;
   @Autowired private SeriesService seriesService;
   @Autowired private ArtworkRequestService artwork;
@@ -528,11 +531,11 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
       var updated = socket.nextMessageFor("libraryItemUpdated");
       assertThat(updated.at("/payload/data/libraryItemUpdated/itemId").asString())
           .isEqualTo(series.getId().toString());
-      assertThat(
-              updated
-                  .at("/payload/data/libraryItemUpdated/item/seasons/0/episodes/0/title")
-                  .asString())
-          .isEqualTo("Pilot");
+      assertThat(updated.at("/payload/data/libraryItemUpdated/item/seasons")).isEmpty();
+      var storedSeason = seasons.findBySeriesIdOrderBySeasonNumber(series.getId()).getFirst();
+      assertThat(episodes.findBySeasonIdOrderByEpisodeNumber(storedSeason.getId()))
+          .extracting(Episode::getTitle)
+          .containsExactly("Pilot");
     }
 
     seriesService.deleteSeriesById(series.getId());
@@ -716,8 +719,7 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
     var removed = socket.nextMessageFor("episodes");
     assertThat(removed.at("/payload/data/libraryItemUpdated/itemId").asString())
         .isEqualTo(series.getId().toString());
-    assertThat(removed.at("/payload/data/libraryItemUpdated/item/seasons/0/episodes/0/files"))
-        .isEmpty();
+    assertThat(removed.at("/payload/data/libraryItemUpdated/item/seasons")).isEmpty();
   }
 
   @Test
@@ -727,6 +729,24 @@ class LibraryContentsSubscriptionIT extends AbstractScanningIntegrationTest {
     var series =
         seriesRepository.saveAndFlush(
             Series.builder().title("Before").titleSort("Before").library(library).build());
+    var season =
+        seasons.saveAndFlush(
+            Season.builder().series(series).library(library).seasonNumber(1).build());
+    episodes.saveAndFlush(
+        Episode.builder()
+            .season(season)
+            .library(library)
+            .episodeNumber(1)
+            .title("Before pilot")
+            .files(
+                Set.of(
+                    MediaFile.builder()
+                        .libraryId(library.getId())
+                        .status(MediaFileStatus.MATCHED)
+                        .filename("pilot.mkv")
+                        .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
+                        .build()))
+            .build());
     var identity = auth.createIdentity();
     identities.add(identity);
     var socket = GraphQlTransportWsTestClient.connectWithBearer(port, auth.profileBearer(identity));

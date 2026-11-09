@@ -17,6 +17,7 @@ import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.domain.media.ImageSource;
 import com.streamarr.server.domain.media.ImageSource.TmdbImageSource;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
@@ -123,6 +124,22 @@ class SeriesServiceTest {
   class Lookups {
 
     @Test
+    @DisplayName("Should omit an episode without files when listing a season")
+    void shouldOmitAnEpisodeWithoutFilesWhenListingASeason() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var available =
+          episodeRepository.save(
+              Episode.builder()
+                  .episodeNumber(1)
+                  .season(season)
+                  .files(Set.of(MediaFile.builder().filepathUri("file:///episode.mkv").build()))
+                  .build());
+      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+
+      assertThat(seriesService.findEpisodes(season.getId())).containsExactly(available);
+    }
+
+    @Test
     @DisplayName("Should return season by ID")
     void shouldReturnSeasonById() {
       var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
@@ -159,8 +176,18 @@ class SeriesServiceTest {
     @DisplayName("Should return episodes ordered by episode number when saved out of order")
     void shouldReturnEpisodesOrderedByEpisodeNumberWhenSavedOutOfOrder() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
-      episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      episodeRepository.save(
+          Episode.builder()
+              .episodeNumber(2)
+              .season(season)
+              .files(Set.of(MediaFile.builder().filepathUri("file:///episode.mkv").build()))
+              .build());
+      episodeRepository.save(
+          Episode.builder()
+              .episodeNumber(1)
+              .season(season)
+              .files(Set.of(MediaFile.builder().filepathUri("file:///episode.mkv").build()))
+              .build());
 
       var result = seriesService.findEpisodes(season.getId());
 

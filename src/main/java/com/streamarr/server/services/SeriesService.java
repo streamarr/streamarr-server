@@ -336,6 +336,12 @@ public class SeriesService {
   }
 
   @Transactional(readOnly = true)
+  public List<Season> findSeasonsWithFiles(UUID seriesId) {
+    return seasonRepository.findDistinctBySeriesIdAndEpisodesFilesIsNotEmptyOrderBySeasonNumber(
+        seriesId);
+  }
+
+  @Transactional(readOnly = true)
   public Optional<Season> findSeasonById(UUID seasonId) {
     return seasonRepository.findById(seasonId);
   }
@@ -353,7 +359,7 @@ public class SeriesService {
 
   @Transactional(readOnly = true)
   public List<Episode> findEpisodes(UUID seasonId) {
-    return episodeRepository.findBySeasonIdOrderByEpisodeNumber(seasonId);
+    return episodeRepository.findBySeasonIdAndFilesIsNotEmptyOrderByEpisodeNumber(seasonId);
   }
 
   @Transactional(readOnly = true)

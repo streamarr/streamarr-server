@@ -216,8 +216,7 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
   }
 
   private Episode createEpisode(Season season, int episodeNumber) {
-    return episodeRepository.saveAndFlush(
-        Episode.builder().episodeNumber(episodeNumber).season(season).library(library).build());
+    return createEpisodeWithFile(season, episodeNumber);
   }
 
   private Episode createEpisodeWithFile(Season season, int episodeNumber) {
