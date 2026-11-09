@@ -86,7 +86,7 @@
         <native.access.args>--enable-native-access=ALL-UNNAMED</native.access.args>
         <grpc.version>1.85.1</grpc.version>
         <db-scheduler.version>16.12.0</db-scheduler.version>
-        <protobuf-maven-plugin.version>5.1.11</protobuf-maven-plugin.version>
+        <protobuf-maven-plugin.version>5.1.12</protobuf-maven-plugin.version>
     </properties>
 
     <dependencies>
