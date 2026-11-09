@@ -12,6 +12,10 @@
 <img alt="GPL 3.0 License" src="https://img.shields.io/badge/license-GPL--3.0-orange.svg"/>
 </a>
 
+<a href="https://github.com/streamarr/streamarr-server/commit/0d33b22cf3dbb7efef179d48c1d9163698a5062e">
+<img alt="Streamarr since 2022" src="https://img.shields.io/badge/since-2022-blue"/>
+</a>
+
 <a href="https://sonarcloud.io/summary/new_code?id=streamarr_streamarr-server">
 <img alt="Code Coverage" src="https://sonarcloud.io/api/project_badges/measure?project=streamarr_streamarr-server&metric=coverage"/>
 </a>
