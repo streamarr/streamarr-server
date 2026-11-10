@@ -18,6 +18,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.persistence.EntityManagerFactory;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.hibernate.SessionFactory;
@@ -44,6 +45,7 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
       """
       edges { node { id status householdId
         profile { id name picture kind personalProfile restricted }
+        visitor
         offeredByDisplayName
         household { id name } } }
       """;
@@ -113,6 +115,33 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
 
     assertThat(profile.path("kind").asString()).isEqualTo("KID");
     assertThat(profile.path("restricted").asBoolean()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a visitor from the Household's own Profile when anyone who sees the Profile"
+          + " lists its shares")
+  void shouldTellVisitorFromHouseholdsOwnProfileWhenAnyoneWhoSeesProfileListsItsShares()
+      throws Exception {
+    var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
+    var visitId = offer(owner, orphan, host);
+    var hostsOwnId = activeShareId(host.profile(), host);
+    var orphansOwnId = activeShareId(orphan, owner);
+    var serverAdmin = adminIdentity();
+
+    var forHost = householdShares(host, host, "[]");
+    var forServerAdmin = householdShares(serverAdmin, host, "[]");
+    var forOwner = profileShares(owner, orphan, "[]");
+
+    var intoHost = Map.of(visitId, "true", hostsOwnId, "false");
+    assertThat(visitorById(forHost)).containsExactlyInAnyOrderEntriesOf(intoHost);
+    assertThat(visitorById(forServerAdmin)).containsExactlyInAnyOrderEntriesOf(intoHost);
+    assertThat(visitorById(forOwner))
+        .containsExactlyInAnyOrderEntriesOf(Map.of(visitId, "true", orphansOwnId, "false"));
+    // The visitor mark is part of the share's Profile: whoever sees one sees the other.
+    assertThat(List.of(forHost, forServerAdmin, forOwner))
+        .flatMap(ProfileSharePartiesIT::edges)
+        .allSatisfy(node -> assertThat(node.path("profile").isObject()).isTrue());
   }
 
   @Test
@@ -344,6 +373,23 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     var nodes = new ArrayList<JsonNode>();
     connection.path("edges").forEach(edge -> nodes.add(edge.path("node")));
     return nodes;
+  }
+
+  // Each share's visitor mark as the response reads it: true, false or null.
+  private static Map<String, String> visitorById(JsonNode connection) {
+    var visitors = new HashMap<String, String>();
+    edges(connection)
+        .forEach(node -> visitors.put(node.path("id").asString(), node.path("visitor").toString()));
+    return visitors;
+  }
+
+  private String activeShareId(Profile profile, AuthTestSupport.TestIdentity into) {
+    return shareRepository
+        .findByProfileIdAndHouseholdIdAndStatus(
+            profile.getId(), into.household().getId(), ProfileShareStatus.ACTIVE)
+        .orElseThrow()
+        .getId()
+        .toString();
   }
 
   private static JsonNode onlyShare(JsonNode connection) {

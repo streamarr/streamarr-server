@@ -34,6 +34,12 @@ type ProfileShare {
     """
     profile: ProfileSummary
     """
+    Whether the Profile is a visitor in the Household: it belongs to another Household. False for
+    the Household's own Profiles. It follows where the Profile belongs now, so it can change when
+    the Profile moves. Shown to the same readers as profile, and null for everyone else.
+    """
+    visitor: Boolean
+    """
     The display name of the Account that offered the Profile. Shown to the target Household's
     HouseholdAdmins and to ServerAdmins. Null for everyone else, for a share the system made, and
     once that Account is deleted.

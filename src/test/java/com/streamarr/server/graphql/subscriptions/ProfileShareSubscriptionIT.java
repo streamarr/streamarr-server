@@ -57,7 +57,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
           shareId
           share {
             id status profileId householdId invalidationReason
-            profile { id name } offeredByDisplayName household { id name }
+            profile { id name } visitor offeredByDisplayName household { id name }
           }
         }
       }
@@ -136,6 +136,29 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
         .isEqualTo(host.household().getName());
     // The offerer's name belongs to the target side, as in the share queries.
     assertThat(offeredToOwner.path("offeredByDisplayName").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a visitor from the Household's own Profile when a change reaches those who see"
+          + " the Profile")
+  void shouldTellVisitorFromHouseholdsOwnProfileWhenChangeReachesThoseWhoSeeProfile() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
+
+    var visitId = offer(managedProfile());
+    var visitForHost = nextShare(hostSocket, visitId);
+    var visitForOwner = nextShare(ownerSocket, visitId);
+    var ownId = createProfileAtHome(host);
+    var ownForHost = nextShare(hostSocket, ownId);
+
+    assertThat(List.of(visitForHost, visitForOwner, ownForHost))
+        .allSatisfy(share -> assertThat(share.path("profile").isObject()).isTrue());
+    assertThat(visitForHost.path("visitor").isBoolean()).isTrue();
+    assertThat(visitForHost.path("visitor").asBoolean()).isTrue();
+    assertThat(visitForOwner.path("visitor").asBoolean()).isTrue();
+    assertThat(ownForHost.path("visitor").isBoolean()).isTrue();
+    assertThat(ownForHost.path("visitor").asBoolean()).isFalse();
   }
 
   @Test
@@ -482,6 +505,26 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     assertThat(response.at("/data/cancelProfileShare/userErrors").isEmpty())
         .as("cancel in %s", response)
         .isTrue();
+  }
+
+  /** A Profile the HouseholdAdmin creates in their Household; answers its share there. */
+  private String createProfileAtHome(AuthTestSupport.TestIdentity admin) {
+    var response =
+        http.execute(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { createProfile(input: {householdId: "%s", name: "Pebble", kind: ADULT}) {
+              profile { id } userErrors { __typename } } }
+            """
+                .formatted(admin.household().getId()));
+    var profileId = response.at("/data/createProfile/profile/id").asString();
+    assertThat(profileId).as("creation in %s", response).isNotEmpty();
+    return shareRepository
+        .findByProfileIdAndHouseholdIdAndStatus(
+            UUID.fromString(profileId), admin.household().getId(), ProfileShareStatus.ACTIVE)
+        .orElseThrow()
+        .getId()
+        .toString();
   }
 
   private Profile managedProfile() {
