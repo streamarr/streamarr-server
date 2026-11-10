@@ -110,6 +110,12 @@ public class SeekPriority {
       return index <= storedThrough && index < nextStored;
     }
 
+    // A job attempt produces its media segments in order, so it has produced every segment from
+    // its start up to the last one that it stored.
+    private boolean hasProduced(int index) {
+      return index <= storedThrough;
+    }
+
     private OwnOutput storedBy(MediaSegmentPublishedEvent published) {
       if (!published.jobAttemptId().equals(attemptId)) {
         return this;
@@ -329,6 +335,23 @@ public class SeekPriority {
         new VariantKey(published.streamSessionId(), published.variantLabel()),
         (_, output) -> output.storedBy(published));
     reconsiderHoldBacks(published.streamSessionId());
+  }
+
+  /**
+   * Whether the variant's current job attempt has itself produced the stored media segment. A
+   * segment that only another job attempt stored does not count, because it says nothing of how far
+   * this one is.
+   */
+  public synchronized boolean hasProduced(
+      @NonNull StreamSession session, @NonNull String variantLabel, int segmentIndex) {
+    var output = ownOutputs.get(new VariantKey(session.getSessionId(), variantLabel));
+    return output != null
+        && session
+            .getVariantHandle(variantLabel)
+            .filter(handle -> handle.attemptId().equals(output.attemptId()))
+            .isPresent()
+        && output.hasProduced(segmentIndex)
+        && isStored(session, variantLabel, segmentIndex);
   }
 
   // Guarded by this monitor. A job attempt's lead changes when its viewer moves, when it stores

@@ -14,6 +14,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -149,6 +150,18 @@ class ProducerLifecyclePositioningRaceTest {
       try {
         raceGate.awaitBlocked();
         segmentStore.addSegment(session.getSessionId(), "segment96.m4s", new byte[] {0x47});
+        lifecycle.mediaSegmentPublished(
+            MediaSegmentPublishedEvent.builder()
+                .streamSessionId(session.getSessionId())
+                .jobAttemptId(attemptBefore)
+                .variantLabel(StreamSession.defaultVariant())
+                .segmentIndex(96)
+                .executionTarget(
+                    transcodeExecutor
+                        .runningExecutionTarget(
+                            session.getSessionId(), StreamSession.defaultVariant())
+                        .orElseThrow())
+                .build());
       } finally {
         raceGate.release();
       }

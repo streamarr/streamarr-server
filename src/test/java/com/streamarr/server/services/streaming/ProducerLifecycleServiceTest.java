@@ -1087,14 +1087,14 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should wait when the encoder is within the forward gap of the request")
   void shouldWaitWhenTheEncoderIsWithinTheForwardGapOfTheRequest() {
     var session = startedSession();
-    segmentStore.addSegment(session.getSessionId(), "segment96.m4s", new byte[] {1});
+    publishDefaultSegments(session, 96, 96);
     var attemptBefore = session.getHandle().orElseThrow().attemptId();
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
     lifecycle.ensurePositioned(
         session.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
 
-    // segment96 exists, so the encoder is close behind the request.
+    // The running job attempt stored segment96, so the encoder is close behind the request.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
     assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptBefore);
   }
@@ -1725,9 +1725,7 @@ class ProducerLifecycleServiceTest {
       shouldRelocateTheVariantToAnOlderHeldRequestsSegmentWhenTheNewerOfTwoHeldRequestsReplacedTheirStalledJobAttemptAtItsOwnSegment() {
     var session = startedSession();
     var sessionId = session.getSessionId();
-    for (var produced = 0; produced < 5; produced++) {
-      segmentStore.addSegment(sessionId, "segment" + produced + ".m4s", new byte[] {1});
-    }
+    publishDefaultSegments(session, 0, 4);
     var older =
         lifecycle.prepareRequestedVariant(
             sessionId, StreamSession.defaultVariant(), "segment5.m4s");

@@ -31,6 +31,7 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -112,10 +113,32 @@ class SegmentDeliveryCoordinatorTest {
         .eventPublisher(events);
   }
 
-  // Stores the segment, then wakes the requests held on its variant, as a worker's upload does.
+  // Stores the segment, credits a media segment to the variant's running job attempt, then wakes
+  // the requests held on its variant, as a worker's upload does.
   private void upload(UUID sessionId, String segmentName, byte[] data) {
     segmentStore.addSegment(sessionId, segmentName, data);
+    creditToRunningJobAttempt(sessionId, segmentName);
     heldRequests().wakeVariant(sessionId, variantOf(segmentName));
+  }
+
+  private void creditToRunningJobAttempt(UUID sessionId, String segmentName) {
+    var variantLabel = variantOf(segmentName);
+    var index = SegmentNames.indexOf(segmentName);
+    var attempt =
+        runtimeRegistry.findById(sessionId).flatMap(found -> found.getVariantHandle(variantLabel));
+    var worker = transcodeExecutor.runningExecutionTarget(sessionId, variantLabel);
+    if (index.isEmpty() || attempt.isEmpty() || worker.isEmpty()) {
+      return;
+    }
+
+    lifecycle.mediaSegmentPublished(
+        MediaSegmentPublishedEvent.builder()
+            .streamSessionId(sessionId)
+            .jobAttemptId(attempt.get().attemptId())
+            .variantLabel(variantLabel)
+            .segmentIndex(index.getAsInt())
+            .executionTarget(worker.get())
+            .build());
   }
 
   private static String variantOf(String segmentName) {

@@ -12,6 +12,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -118,8 +119,24 @@ class SupersededSegmentRequestTest {
     return delivery;
   }
 
+  // Stores the media segment, credits it to the variant's running job attempt, then wakes the
+  // requests held on the variant, as a worker's upload does.
   private void upload(UUID sessionId, int segmentIndex) {
     segmentStore.addSegment(sessionId, segmentName(segmentIndex), new byte[] {1});
+    var attempt =
+        runtimeRegistry.findById(sessionId).flatMap(found -> found.getVariantHandle(VARIANT));
+    var worker = transcodeExecutor.runningExecutionTarget(sessionId, VARIANT);
+    if (attempt.isPresent() && worker.isPresent()) {
+      lifecycle.mediaSegmentPublished(
+          MediaSegmentPublishedEvent.builder()
+              .streamSessionId(sessionId)
+              .jobAttemptId(attempt.get().attemptId())
+              .variantLabel(VARIANT)
+              .segmentIndex(segmentIndex)
+              .executionTarget(worker.get())
+              .build());
+    }
+
     transcodeExecutor.heldSegmentRequests().wakeVariant(sessionId, VARIANT);
   }
 
