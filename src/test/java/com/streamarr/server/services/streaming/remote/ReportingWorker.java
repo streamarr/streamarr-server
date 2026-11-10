@@ -27,7 +27,7 @@ import java.util.concurrent.Future;
 
 /**
  * A worker whose session and report calls a test drives against the service without a socket. The
- * worker runs probes of version 1 and grants 4 playback probes, 4 background probes and 4 keyframe
+ * worker runs probes of version 1 and grants 8 playback probes, 8 background probes and 8 keyframe
  * packet scans unless the test registers other capacities.
  */
 final class ReportingWorker {
@@ -85,9 +85,9 @@ final class ReportingWorker {
 
   static WorkerRegistration.Builder capacities() {
     return WorkerRegistration.newBuilder()
-        .setPlaybackProbeCapacity(4)
-        .setBackgroundProbeCapacity(4)
-        .setKeyframePacketScanCapacity(4);
+        .setPlaybackProbeCapacity(8)
+        .setBackgroundProbeCapacity(8)
+        .setKeyframePacketScanCapacity(8);
   }
 
   private void register(WorkerRegistration.Builder registration) throws Exception {

@@ -209,6 +209,9 @@ A worker leaves a larger measurement out of a probe.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT` bounds how long the server waits for a message that it asked for on a report call. It defaults to `30s`.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_MEMORY_BUDGET` bounds the bytes of probe reports that the server reads at once. It defaults to `64MB` and must be at least the length limit.
 This budget is separate from the 512 MiB of declared segment payload.
+The server reserves the length that the first message states before it reads any byte of the probe report, and releases it when the report call ends.
+While a probe report does not fit the budget, the server reads no message of its report call, and the waiting report calls get room in the order in which they asked.
+The server never refuses a report call for lack of room.
 The server refuses to start when a limit or the idle timeout is not positive, when the length limit is below `128KB`, or when the memory budget is below the length limit.
 
 The first message of a report call names the worker session, the worker and the probe attempt, and states the length of the probe report.

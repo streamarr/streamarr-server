@@ -20,8 +20,9 @@ import lombok.extern.slf4j.Slf4j;
  * probe report, one message at a time. At the half-close it checks the report, completes the probe
  * attempt and answers once.
  *
- * <p>The monitor orders gRPC's callbacks with the end of the worker session, which arrives on
- * another thread. A method that holds the monitor never takes a monitor of the worker connections.
+ * <p>The monitor orders gRPC's callbacks with the end of the worker session and with the grant of
+ * room in the memory budget, which arrive on other threads. A method that holds the monitor never
+ * takes a monitor of the worker connections.
  */
 @Slf4j
 final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequest> {
@@ -29,6 +30,7 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
   private final UUID authenticatedWorkerId;
   private final LiveWorkerConnectionRegistry workerConnections;
   private final ProbeReportLimits limits;
+  private final ProbeReportMemoryBudget memoryBudget;
   private final ServerCallStreamObserver<ReportProbeAttemptResponse> call;
   private final Runnable whenClosed;
 
@@ -36,6 +38,8 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
   private ReportedProbeAttempt attempt;
   private long reportLengthBytes;
   private ByteString received = ByteString.EMPTY;
+  // Unset until the metadata states a length that the server may read.
+  private ProbeReportMemoryBudget.Reservation room;
   private boolean closed;
 
   @Builder
@@ -43,11 +47,13 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
       @NonNull UUID authenticatedWorkerId,
       @NonNull LiveWorkerConnectionRegistry workerConnections,
       @NonNull ProbeReportLimits limits,
+      @NonNull ProbeReportMemoryBudget memoryBudget,
       @NonNull ServerCallStreamObserver<ReportProbeAttemptResponse> call,
       @NonNull Runnable whenClosed) {
     this.authenticatedWorkerId = authenticatedWorkerId;
     this.workerConnections = workerConnections;
     this.limits = limits;
+    this.memoryBudget = memoryBudget;
     this.call = call;
     this.whenClosed = whenClosed;
   }
@@ -107,6 +113,18 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
     }
 
     reportLengthBytes = statedLength;
+    // The server reads no byte of the report before the whole report has room.
+    room = memoryBudget.reserve(statedLength, this::readOnceRoomIsFree);
+    if (room.isGrantedAtOnce()) {
+      call.request(1);
+    }
+  }
+
+  private synchronized void readOnceRoomIsFree() {
+    if (closed) {
+      return;
+    }
+
     call.request(1);
   }
 
@@ -231,6 +249,10 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
   private void close() {
     closed = true;
     received = ByteString.EMPTY;
+    if (room != null) {
+      room.close();
+    }
+
     whenClosed.run();
   }
 }

@@ -44,6 +44,10 @@ class ProbeReportCallTest {
       ProbeReportLimits.builder().keyframeLimit(4).measuredKeyframeIntervalLimit(6).build();
   // The server's limit of report calls that one worker holds open.
   private static final int REPORT_CALLS_PER_WORKER = 24;
+  // Room for one large report, and for no second report of more than 60,000 bytes beside it.
+  private static final ProbeReportLimits TIGHT_MEMORY =
+      ProbeReportLimits.builder().lengthLimitBytes(150_000).memoryBudgetBytes(200_000).build();
+  private static final int KEYFRAMES_OF_LARGE_REPORT = 7_000;
 
   @Test
   @DisplayName(
@@ -716,6 +720,145 @@ class ProbeReportCallTest {
         .isInstanceOf(CancellationException.class);
     assertThat(worker.tryDispatch()).isInstanceOf(ProbeDispatch.Dispatched.class);
     assertThat(worker.isConnected()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should read no message of a report call, and keep the call open, while its probe report"
+          + " does not fit the memory budget")
+  void shouldReadNoMessageOfReportCallAndKeepCallOpenWhileItsProbeReportDoesNotFitMemoryBudget()
+      throws Exception {
+    var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
+    var reading = holdRoomForLargeReport(worker);
+    var probe = worker.dispatch();
+    var waiting = worker.openReportCall();
+
+    waiting.sendMetadata(worker.metadata(probe.request()).setReportLengthBytes(100_000));
+
+    assertThat(reading.unreadDemand()).isEqualTo(1);
+    assertThat(waiting.unreadDemand()).isZero();
+    assertThat(waiting.isOpen()).isTrue();
+    assertThat(probe.outcome()).isNotDone();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(RoomHolderEnd.class)
+  @DisplayName(
+      "Should read on a report call that waits for the memory budget when the report call that"
+          + " holds the room ends")
+  void shouldReadOnReportCallThatWaitsForMemoryBudgetWhenReportCallThatHoldsRoomEnds(
+      RoomHolderEnd end) throws Exception {
+    var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
+    var held = worker.dispatch();
+    var holder = worker.openReportCall();
+    var largeReport = largeReport(held.request());
+    holder.sendMetadata(
+        worker.metadata(held.request()).setReportLengthBytes(largeReport.getSerializedSize()));
+    var waiting = waitForRoom(worker, 100_000);
+    var demandWhileWaiting = waiting.unreadDemand();
+
+    end.end(holder, largeReport);
+
+    assertThat(demandWhileWaiting).isZero();
+    assertThat(waiting.unreadDemand()).isEqualTo(1);
+    assertThat(waiting.isOpen()).isTrue();
+  }
+
+  private enum RoomHolderEnd {
+    ANSWERED {
+      @Override
+      void end(ReportCall holder, ProbeAttemptReport report) throws Exception {
+        var bytes = report.toByteString();
+        holder.sendData(bytes.substring(0, bytes.size() / 2));
+        holder.sendData(bytes.substring(bytes.size() / 2));
+        holder.halfClose();
+        assertThat(holder.answer()).isCompleted();
+      }
+    },
+    BROKE_THE_CONTRACT {
+      @Override
+      void end(ReportCall holder, ProbeAttemptReport report) throws Exception {
+        holder.sendData(ByteString.EMPTY);
+        assertThat(holder.refusal()).isEqualTo(Status.Code.INVALID_ARGUMENT);
+      }
+    },
+    CANCELLED {
+      @Override
+      void end(ReportCall holder, ProbeAttemptReport report) {
+        holder.cancel();
+      }
+    };
+
+    abstract void end(ReportCall holder, ProbeAttemptReport report) throws Exception;
+  }
+
+  @Test
+  @DisplayName(
+      "Should give room to the waiting report calls in the order in which they asked when a"
+          + " later probe report would fit before an earlier one")
+  void shouldGiveRoomToWaitingReportCallsInOrderInWhichTheyAskedWhenLaterReportWouldFitFirst()
+      throws Exception {
+    var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
+    var holder = holdRoomForLargeReport(worker);
+    var earlier = waitForRoom(worker, 100_000);
+    var later = waitForRoom(worker, 50_000);
+    var last = waitForRoom(worker, 150_000);
+    var demandOfLaterBehindEarlier = later.unreadDemand();
+
+    holder.cancel();
+    var demandOfLastBehindBoth = last.unreadDemand();
+    earlier.cancel();
+
+    assertThat(demandOfLaterBehindEarlier).isZero();
+    assertThat(earlier.requestedMessages()).isEqualTo(2);
+    assertThat(later.unreadDemand()).isEqualTo(1);
+    assertThat(demandOfLastBehindBoth).isZero();
+    assertThat(last.unreadDemand()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should give room to the next waiting report call when a report call ends while it waits"
+          + " for the memory budget")
+  void shouldGiveRoomToNextWaitingReportCallWhenReportCallEndsWhileItWaitsForMemoryBudget()
+      throws Exception {
+    var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
+    holdRoomForLargeReport(worker);
+    var earlier = waitForRoom(worker, 100_000);
+    var later = waitForRoom(worker, 50_000);
+
+    earlier.cancel();
+
+    assertThat(later.unreadDemand()).isEqualTo(1);
+  }
+
+  /** A report call that the server reads and that holds the room of a large report. */
+  private static ReportCall holdRoomForLargeReport(ReportingWorker worker) throws Exception {
+    var probe = worker.dispatch();
+    var call = worker.openReportCall();
+    call.sendMetadata(
+        worker
+            .metadata(probe.request())
+            .setReportLengthBytes(largeReport(probe.request()).getSerializedSize()));
+    return call;
+  }
+
+  /** A report call whose metadata states a probe report of this length. */
+  private static ReportCall waitForRoom(ReportingWorker worker, long reportLengthBytes)
+      throws Exception {
+    var call = worker.openReportCall();
+    call.sendMetadata(
+        worker.metadata(worker.dispatch().request()).setReportLengthBytes(reportLengthBytes));
+    return call;
+  }
+
+  /** A report of about 140,000 bytes: each keyframe takes the widest encoding twice. */
+  private static ProbeAttemptReport largeReport(ProbeRequest request) {
+    var widestDeltas = Collections.nCopies(KEYFRAMES_OF_LARGE_REPORT, Long.MIN_VALUE);
+    return invalidMedia(request)
+        .addAllKeyframePresentationTimeDeltas(widestDeltas)
+        .addAllKeyframeDecodeTimeDeltas(widestDeltas)
+        .build();
   }
 
   /** A report with as many keyframes and measured keyframe intervals as the limits allow. */

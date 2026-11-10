@@ -38,11 +38,13 @@ final class ProbeReportCalls {
 
   private final LiveWorkerConnectionRegistry workerConnections;
   private final ProbeReportLimits limits;
+  private final ProbeReportMemoryBudget memoryBudget;
   private final Map<UUID, Integer> openCallsByWorker = new HashMap<>();
 
   ProbeReportCalls(LiveWorkerConnectionRegistry workerConnections) {
     this.workerConnections = workerConnections;
     limits = workerConnections.probeReportLimits();
+    memoryBudget = new ProbeReportMemoryBudget(limits.memoryBudgetBytes());
   }
 
   /** Opens the worker's report call, or refuses it with a status. */
@@ -75,6 +77,7 @@ final class ProbeReportCalls {
             .authenticatedWorkerId(authenticatedWorkerId)
             .workerConnections(workerConnections)
             .limits(limits)
+            .memoryBudget(memoryBudget)
             // gRPC hands a service the response observer of a server call.
             .call((ServerCallStreamObserver<ReportProbeAttemptResponse>) responseObserver)
             .whenClosed(() -> freePlace(authenticatedWorkerId))
