@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.MediaSegmentUploadFixture.publishedByRunningJobAttempt;
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
@@ -115,9 +116,14 @@ class SegmentDeliveryCoordinatorTest {
         .eventPublisher(events);
   }
 
-  // Stores the segment, then wakes the requests held on its variant, as a worker's upload does.
+  // Stores the segment, credits a media segment to the job attempt that runs its variant, then
+  // wakes the requests held on the variant, as a worker's upload does.
   private void upload(UUID sessionId, String segmentName, byte[] data) {
     segmentStore.addSegment(sessionId, segmentName, data);
+    runtimeRegistry
+        .findById(sessionId)
+        .flatMap(session -> publishedByRunningJobAttempt(session, segmentName, transcodeExecutor))
+        .ifPresent(lifecycle::mediaSegmentPublished);
     heldRequests().wakeVariant(sessionId, variantOf(segmentName));
   }
 
@@ -1502,6 +1508,37 @@ class SegmentDeliveryCoordinatorTest {
               assertThat(request.startSequenceNumber()).isEqualTo(100);
             });
     assertThat(runningVariants(session)).containsExactly("480p");
+  }
+
+  // The player seeks forward to segment 96, back to segment 10 and forward again to segment 101.
+  // The job attempt at segment 10 is 91 media segments behind the last request. Segment 97, one
+  // relocation gap before that request, is a segment of the earlier job attempt at segment 96.
+  @Test
+  @DisplayName(
+      "Should relocate the variant to the requested media segment when only an earlier job attempt"
+          + " stored the media segment one relocation gap before it")
+  void
+      shouldRelocateTheVariantToTheRequestedMediaSegmentWhenOnlyAnEarlierJobAttemptStoredTheMediaSegmentOneRelocationGapBeforeIt()
+          throws Exception {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    var forward = heldDelivery(sessionId, "segment96.m4s");
+    for (var index = 96; index <= 100; index++) {
+      upload(sessionId, "segment" + index + ".m4s", new byte[] {1});
+    }
+
+    assertThat(forward.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    var back = heldDelivery(sessionId, "segment10.m4s");
+    upload(sessionId, "segment10.m4s", new byte[] {1});
+    assertThat(back.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+
+    var forwardAgain = heldDelivery(sessionId, "segment101.m4s");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 96, 10, 101);
+    upload(sessionId, "segment101.m4s", new byte[] {1});
+    assertThat(forwardAgain.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
   @Test

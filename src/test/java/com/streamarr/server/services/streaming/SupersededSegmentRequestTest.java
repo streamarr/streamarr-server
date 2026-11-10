@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.MediaSegmentUploadFixture.publishedByRunningJobAttempt;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -118,8 +119,15 @@ class SupersededSegmentRequestTest {
     return delivery;
   }
 
+  // Stores the media segment, credits it to the job attempt that runs the variant, then wakes the
+  // requests held on the variant, as a worker's upload does.
   private void upload(UUID sessionId, int segmentIndex) {
-    segmentStore.addSegment(sessionId, segmentName(segmentIndex), new byte[] {1});
+    var segmentName = segmentName(segmentIndex);
+    segmentStore.addSegment(sessionId, segmentName, new byte[] {1});
+    runtimeRegistry
+        .findById(sessionId)
+        .flatMap(session -> publishedByRunningJobAttempt(session, segmentName, transcodeExecutor))
+        .ifPresent(lifecycle::mediaSegmentPublished);
     transcodeExecutor.heldSegmentRequests().wakeVariant(sessionId, VARIANT);
   }
 

@@ -331,6 +331,24 @@ public class SeekPriority {
     reconsiderHoldBacks(published.streamSessionId());
   }
 
+  /**
+   * Whether the uploads of the variant's running job attempt have stored the media segment. A job
+   * attempt stores its media segments in order, so its own output is the stored media from its
+   * first segment through the last one that it uploaded. A segment that only another job attempt
+   * stored does not count, because it says nothing of how far the running one is (ADR 0019,
+   * relocation gap).
+   */
+  public synchronized boolean runningJobAttemptHasStored(
+      @NonNull StreamSession session, @NonNull String variantLabel, int segmentIndex) {
+    return session
+        .getVariantHandle(variantLabel)
+        .filter(handle -> handle.startSequenceNumber() <= segmentIndex)
+        .flatMap(handle -> ownOutput(session, variantLabel, handle))
+        .filter(output -> segmentIndex <= output.storedThrough())
+        .filter(_ -> isStored(session, variantLabel, segmentIndex))
+        .isPresent();
+  }
+
   // Guarded by this monitor. A job attempt's lead changes when its viewer moves, when it stores
   // media and when a player starts to wait on it.
   private void reconsiderHoldBacks(UUID sessionId) {

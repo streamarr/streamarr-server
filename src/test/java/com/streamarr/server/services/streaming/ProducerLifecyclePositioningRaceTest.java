@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.MediaSegmentUploadFixture.publishedByRunningJobAttempt;
 import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
@@ -150,6 +151,8 @@ class ProducerLifecyclePositioningRaceTest {
       try {
         raceGate.awaitBlocked();
         segmentStore.addSegment(session.getSessionId(), "segment96.m4s", new byte[] {0x47});
+        publishedByRunningJobAttempt(session, "segment96.m4s", transcodeExecutor)
+            .ifPresent(lifecycle::mediaSegmentPublished);
       } finally {
         raceGate.release();
       }
