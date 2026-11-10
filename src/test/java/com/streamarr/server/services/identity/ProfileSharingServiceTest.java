@@ -629,6 +629,30 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName("Should decide a change by its Household alone when its Profile no longer exists")
+  void shouldDecideAChangeByItsHouseholdAloneWhenItsProfileNoLongerExists() {
+    var removed = new ChangedShare(UUID.randomUUID(), UUID.randomUUID(), household.getId());
+    authorization.decideUnitWith(
+        intent ->
+            switch (intent) {
+              case Intent.ViewProfileShareChanges _ -> allowed();
+              case Intent.ViewProfileAdministration _ ->
+                  new Decision.Failed<>(Decision.FailureCause.INVALID_SLICE);
+              default -> denied();
+            });
+
+    assertThat(service.shareChange(identity(), removed)).isEmpty();
+
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.ViewProfileAdministration
+                ? new Decision.Failed<>(Decision.FailureCause.INVALID_SLICE)
+                : allowed());
+    assertThat(service.shareChange(identity(), removed))
+        .hasValueSatisfying(change -> assertThat(change.share()).isEmpty());
+  }
+
+  @Test
   @DisplayName("Should give the change without a share when the share no longer exists")
   void shouldGiveTheChangeWithoutAShareWhenTheShareNoLongerExists() {
     var share = pendingShare();
