@@ -9,6 +9,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.HouseholdShareFilter;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
@@ -467,8 +468,8 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
       AuthTestSupport.TestIdentity host, Instant now, ProfileShareStatus... statuses) {
     return ids(
         shareRepository.rowsIntoHousehold(
-            host.household().getId(),
-            new ShareStatusFilter(Set.of(statuses), now),
+            new HouseholdShareFilter(
+                host.household().getId(), new ShareStatusFilter(Set.of(statuses), now)),
             firstSeek(NEWEST_FIRST, 20)));
   }
 

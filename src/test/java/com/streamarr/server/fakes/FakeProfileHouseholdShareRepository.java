@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.ChangedShare;
+import com.streamarr.server.domain.auth.HouseholdShareFilter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.ShareStatusFilter;
@@ -69,11 +70,11 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
 
   @Override
   public List<Row<ProfileHouseholdShare>> rowsIntoHousehold(
-      UUID householdId, ShareStatusFilter filter, Seek seek) {
+      HouseholdShareFilter filter, Seek seek) {
     return InMemoryKeyset.byCreationTime(
         database.values().stream()
-            .filter(share -> share.getHouseholdId().equals(householdId))
-            .filter(share -> keeps(filter, share))
+            .filter(share -> share.getHouseholdId().equals(filter.householdId()))
+            .filter(share -> keeps(filter.statuses(), share))
             .toList(),
         seek);
   }
