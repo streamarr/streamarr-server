@@ -3,15 +3,12 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.SourceEndedEarly;
 import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
-import com.streamarr.server.exceptions.ProbeContractViolationException;
-import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ContainedFailureMetrics;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
@@ -1215,13 +1212,7 @@ final class LiveWorkerConnectionRegistry {
       }
 
       var attemptId = fromProto(request.getProbeAttemptId());
-      var pending =
-          new PendingProbe(
-              request,
-              new CompletableFuture<>(),
-              new CompletableFuture<>(),
-              new ReceivedKeyframePositionsParts(),
-              new ReceivedStreamMeasurementParts());
+      var pending = new PendingProbe(request);
       if (pendingProbes.putIfAbsent(attemptId, pending.result()) != null) {
         return new ProbeDispatch.Refused(ProbeRefusal.ATTEMPT_IN_PROGRESS);
       }
@@ -1340,71 +1331,11 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
-      pending.terminated().complete(null);
       try {
-        return finishProbe(pending, result);
+        return pending.tryComplete(result);
       } finally {
         pendingProbes.remove(attemptId, pending.result());
       }
-    }
-
-    private boolean finishProbe(PendingProbe pending, ProbeAttemptResult result) {
-      // Not a contract violation: a wrongly versioned worker deployment fails every probe at once,
-      // and fixing the deployment changes neither a source nor its probe version.
-      if (result.getProbeVersion() != pending.request().getProbeVersion()) {
-        pending
-            .result()
-            .completeExceptionally(
-                new ProbeExecutionException(
-                    ItemFailureReason.MISCONFIGURED,
-                    "Worker probe reply version mismatch: expected %s, received %s"
-                        .formatted(
-                            Integer.toUnsignedString(pending.request().getProbeVersion()),
-                            Integer.toUnsignedString(result.getProbeVersion()))));
-        return false;
-      }
-
-      if (pending.keyframePositionsParts().violatesContract()) {
-        pending
-            .result()
-            .completeExceptionally(
-                new ProbeContractViolationException(
-                    "Worker probe sent keyframe positions parts that break the contract"));
-        return false;
-      }
-
-      // The contract discards the parts of an attempt whose result reports no measurement.
-      if (reportsMeasurement(result) && pending.streamMeasurementParts().violatesContract()) {
-        pending
-            .result()
-            .completeExceptionally(
-                new ProbeContractViolationException(
-                    "Worker probe sent stream measurement parts that break the contract"));
-        return false;
-      }
-
-      pending
-          .result()
-          .complete(
-              new ProbeAttemptReport(
-                  result,
-                  pending.keyframePositionsParts().parts(),
-                  measurementParts(result, pending.streamMeasurementParts())));
-      return true;
-    }
-
-    private static List<ProbeStreamMeasurementPart> measurementParts(
-        ProbeAttemptResult result, ReceivedStreamMeasurementParts received) {
-      if (!reportsMeasurement(result)) {
-        return List.of();
-      }
-
-      return received.parts();
-    }
-
-    private static boolean reportsMeasurement(ProbeAttemptResult result) {
-      return result.getMedia().hasStreamMeasurements()
-          || result.getBitrateScanChunk().hasMeasured();
     }
 
     private boolean acceptStreamMeasurementPart(ProbeStreamMeasurementPart part) {
@@ -1413,7 +1344,7 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
-      pending.streamMeasurementParts().add(part);
+      pending.add(part);
       return true;
     }
 
@@ -1423,7 +1354,7 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
-      pending.keyframePositionsParts().add(part);
+      pending.add(part);
       return true;
     }
 
@@ -1437,10 +1368,7 @@ final class LiveWorkerConnectionRegistry {
         return;
       }
 
-      pending.terminated().complete(null);
-      pending
-          .result()
-          .completeExceptionally(new ProbeExecutionException(ItemFailureReason.TEMPORARY, reason));
+      pending.failForRetry(reason);
       pendingProbes.remove(attemptId, pending.result());
     }
 
@@ -2022,12 +1950,5 @@ final class LiveWorkerConnectionRegistry {
 
     private record EncodeAttempt(
         WorkerVerifiedEncoder encoder, CompletableFuture<Boolean> backendConfirmed) {}
-
-    private record PendingProbe(
-        ProbeRequest request,
-        CompletableFuture<ProbeAttemptReport> result,
-        CompletableFuture<Void> terminated,
-        ReceivedKeyframePositionsParts keyframePositionsParts,
-        ReceivedStreamMeasurementParts streamMeasurementParts) {}
   }
 }
