@@ -14,6 +14,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -112,6 +113,13 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     return database.values().stream()
         .filter(account -> profileId.equals(account.getPersonalProfileId()))
         .findFirst();
+  }
+
+  @Override
+  public List<UserAccount> findByPersonalProfileIdIn(Collection<UUID> profileIds) {
+    return database.values().stream()
+        .filter(account -> profileIds.contains(account.getPersonalProfileId()))
+        .toList();
   }
 
   @Override
