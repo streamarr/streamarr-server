@@ -1,5 +1,6 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;

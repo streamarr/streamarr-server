@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
-import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.ItemFailureReason;
@@ -22,6 +21,7 @@ import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.AdvanceableSystemClock;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.properties.ProbeSchedulingProperties;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;

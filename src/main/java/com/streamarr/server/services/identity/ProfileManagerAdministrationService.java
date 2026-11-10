@@ -1,6 +1,5 @@
 package com.streamarr.server.services.identity;
 
-import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
@@ -8,6 +7,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
+import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;

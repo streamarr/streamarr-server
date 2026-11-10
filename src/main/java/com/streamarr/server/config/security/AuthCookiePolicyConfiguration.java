@@ -1,5 +1,7 @@
 package com.streamarr.server.config.security;
 
+import com.streamarr.server.properties.AuthCookieProperties;
+import com.streamarr.server.web.AuthCookiePolicy;
 import java.util.Arrays;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;

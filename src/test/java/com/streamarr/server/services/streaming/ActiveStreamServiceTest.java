@@ -12,7 +12,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
@@ -40,6 +39,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import java.time.Duration;
 import java.util.List;

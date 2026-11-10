@@ -5,7 +5,6 @@ import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivi
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -19,6 +18,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.util.Set;
 import java.util.UUID;

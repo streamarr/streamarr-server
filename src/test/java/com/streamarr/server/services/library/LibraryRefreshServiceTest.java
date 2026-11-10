@@ -16,7 +16,6 @@ import static org.mockito.Mockito.when;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
-import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
@@ -57,6 +56,7 @@ import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.LibraryOperationFixture;
 import com.streamarr.server.fixtures.MetadataFixture;
+import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.services.LibraryMoviesList;
 import com.streamarr.server.services.LibrarySeriesList;
 import com.streamarr.server.services.MovieService;

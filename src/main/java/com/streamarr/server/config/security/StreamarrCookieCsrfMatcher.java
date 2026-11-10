@@ -1,5 +1,8 @@
 package com.streamarr.server.config.security;
 
+import com.streamarr.server.web.AuthCookiePolicy;
+import com.streamarr.server.web.AuthCookies;
+import com.streamarr.server.web.StreamarrBearerTokenResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.Set;

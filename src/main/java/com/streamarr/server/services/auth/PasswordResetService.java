@@ -1,11 +1,11 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.PasswordResetCode;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
+import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;

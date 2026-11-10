@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.properties.AuthTokenProperties;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;

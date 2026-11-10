@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
-import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.properties.LibraryWatcherProperties;
 import com.streamarr.server.services.concurrency.Sleeper;
 import java.io.IOException;
 import java.nio.file.FileSystem;

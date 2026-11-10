@@ -4,7 +4,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.AudioSteps;
@@ -17,6 +16,7 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
+import com.streamarr.server.properties.StreamingProperties;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;

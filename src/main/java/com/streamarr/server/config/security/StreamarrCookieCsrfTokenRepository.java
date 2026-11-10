@@ -1,5 +1,7 @@
 package com.streamarr.server.config.security;
 
+import com.streamarr.server.web.AuthCookiePolicy;
+import com.streamarr.server.web.AuthCookies;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Duration;

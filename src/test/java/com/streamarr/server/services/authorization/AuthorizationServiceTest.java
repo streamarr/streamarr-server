@@ -3,7 +3,6 @@ package com.streamarr.server.services.authorization;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
@@ -12,6 +11,7 @@ import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.StreamarrAuthenticationToken;
 import com.streamarr.server.services.auth.TokenScope;
 import java.time.Instant;
 import java.util.List;

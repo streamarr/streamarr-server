@@ -5,12 +5,12 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.StreamarrAuthenticationToken;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.util.List;

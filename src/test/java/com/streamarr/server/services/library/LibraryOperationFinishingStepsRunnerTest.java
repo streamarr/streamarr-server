@@ -5,7 +5,6 @@ import static org.mockito.Mockito.mock;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
-import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryOperation;
 import com.streamarr.server.domain.LibraryOperationConclusion;
@@ -23,6 +22,7 @@ import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.properties.RemoteTranscodeProperties;
 import com.streamarr.server.repositories.LibraryOperationRepository.StoreOutcome;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;

@@ -11,8 +11,6 @@ import static org.awaitility.Awaitility.await;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
-import com.streamarr.server.config.LibraryScanProperties;
-import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
@@ -62,6 +60,8 @@ import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
+import com.streamarr.server.properties.LibraryScanProperties;
+import com.streamarr.server.properties.RemoteTranscodeProperties;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;

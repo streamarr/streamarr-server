@@ -1,10 +1,10 @@
 package com.streamarr.server.services.artwork;
 
-import com.streamarr.server.config.ArtworkRunProperties;
 import com.streamarr.server.domain.media.ArtworkCompletionEvidence;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.PendingArtworkRequest;
+import com.streamarr.server.properties.ArtworkRunProperties;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.services.concurrency.Sleeper;

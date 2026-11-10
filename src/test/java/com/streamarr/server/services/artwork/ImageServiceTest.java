@@ -11,7 +11,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
-import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
@@ -20,6 +19,7 @@ import com.streamarr.server.exceptions.ImageStorageException;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fixtures.AmbientArtworkFixture;
+import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import java.io.IOException;
 import java.nio.file.FileSystem;

@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ColorPrimaries;
@@ -27,6 +26,7 @@ import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.properties.StreamingProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
