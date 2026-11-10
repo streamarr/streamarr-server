@@ -8,19 +8,23 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlHttpTestClient;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.URI;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -65,6 +69,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private ProfileShareExpirySweeper expirySweeper;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
@@ -163,6 +168,23 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     assertThat(disabled.path("errors").isMissingNode()).as("errors in %s", disabled).isTrue();
     assertThat(invalidated.path("status").asString()).isEqualTo("INVALIDATED");
     assertThat(invalidated.path("invalidationReason").asString()).isEqualTo("issuer disabled");
+  }
+
+  @Test
+  @DisplayName("Should deliver EXPIRED when an offer's time runs out before anyone decides")
+  void shouldDeliverExpiredWhenAnOffersTimeRunsOutBeforeAnyoneDecides() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var shareId = offer(managedProfile());
+    nextShare(hostSocket, shareId);
+    var offer = shareRepository.findById(UUID.fromString(shareId)).orElseThrow();
+    offer.setExpiresAt(Instant.now().minusSeconds(1));
+    shareRepository.saveAndFlush(offer);
+
+    expirySweeper.sweep();
+
+    assertThat(nextShare(hostSocket, shareId).path("status").asString()).isEqualTo("EXPIRED");
+    assertThat(shareRepository.findById(offer.getId()).orElseThrow().getLastModifiedBy())
+        .isEqualTo(SystemActor.ID);
   }
 
   @Test

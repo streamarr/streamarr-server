@@ -71,6 +71,9 @@ public interface ProfileHouseholdShareRepositoryCustom {
    */
   List<ChangedShare> ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now);
 
+  /** Stores EXPIRED on every PENDING share whose offer time has run out. */
+  List<ChangedShare> materializeExpiredPending(Instant now);
+
   /** Every PENDING share of the Profile becomes INVALIDATED (linked, transferred, or deleted). */
   List<ChangedShare> invalidatePendingByProfileId(UUID profileId, String reason, Instant now);
 

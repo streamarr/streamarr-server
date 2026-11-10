@@ -62,8 +62,10 @@ type ProfileSummary {
 extend type Subscription {
     """
     A Profile share changed. A change arrives when a share is created or offered, accepted,
-    declined, canceled, invalidated or ended, and when a share starts or stops being required by
-    Account membership. A change that rolls back never arrives.
+    declined, canceled, invalidated or ended, when an offer expires, and when a share starts or
+    stops being required by Account membership. An offer whose time runs out arrives as EXPIRED
+    about a minute after its expiresAt; the share queries show it as EXPIRED from expiresAt on. A
+    change that rolls back never arrives.
 
     Any signed-in session may subscribe, with or without a selected Profile. A device-bound session
     gets FORBIDDEN, and so does a disabled Account. A change reaches a subscriber only when the

@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<ProfileHouseholdShare>
@@ -274,10 +275,20 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     return changed(Stream.concat(expired.stream(), pending.stream()).toList());
   }
 
+  @Override
+  public List<ChangedShare> materializeExpiredPending(Instant now) {
+    return changed(materializeExpiredPending(share -> true, now));
+  }
+
   private List<ProfileHouseholdShare> materializeExpiredPending(UUID profileId, Instant now) {
+    return materializeExpiredPending(share -> share.getProfileId().equals(profileId), now);
+  }
+
+  private List<ProfileHouseholdShare> materializeExpiredPending(
+      Predicate<ProfileHouseholdShare> scope, Instant now) {
     var expired =
         database.values().stream()
-            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(scope)
             .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
             .filter(share -> share.statusAt(now) == ProfileShareStatus.EXPIRED)
             .toList();

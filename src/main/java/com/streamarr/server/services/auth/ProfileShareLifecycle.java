@@ -50,6 +50,13 @@ public class ProfileShareLifecycle {
     return withdrawn.size();
   }
 
+  /** Stores EXPIRED on every offer whose time ran out; answers how many. */
+  public int expireLapsedOffers(Instant now) {
+    var expired = shareRepository.materializeExpiredPending(now);
+    announce(expired);
+    return expired.size();
+  }
+
   /** Accepts a pending, unexpired offer; false when another decision won. */
   public boolean tryActivatePending(UUID shareId, Instant now) {
     return announced(shareRepository.tryActivatePending(shareId, now));

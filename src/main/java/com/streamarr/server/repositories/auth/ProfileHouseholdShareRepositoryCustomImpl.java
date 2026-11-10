@@ -244,6 +244,11 @@ public class ProfileHouseholdShareRepositoryCustomImpl
     return List.copyOf(changed);
   }
 
+  @Override
+  public List<ChangedShare> materializeExpiredPending(Instant now) {
+    return materializeExpiredPending(DSL.noCondition(), now);
+  }
+
   private List<ChangedShare> materializeExpiredPending(
       UUID profileId, UUID householdId, Instant now) {
     return materializeExpiredPending(
