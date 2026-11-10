@@ -24,7 +24,7 @@ public class LocalSegmentStore implements SegmentStore {
 
   private final Path baseDir;
   private final ConcurrentHashMap<UUID, Path> sessionDirs = new ConcurrentHashMap<>();
-  private final MutexFactory<Path> initializationSegmentLocks = new MutexFactory<>();
+  private final MutexFactory<Path> publicationLocks = new MutexFactory<>();
 
   public LocalSegmentStore(Path baseDir) {
     this.baseDir = baseDir;
@@ -90,12 +90,7 @@ public class LocalSegmentStore implements SegmentStore {
       var segmentPath = resolveSegmentPath();
       try {
         Files.createDirectories(segmentPath.getParent());
-        if (SegmentNames.isInitSegment(segmentName)) {
-          return publishInitialization(segmentPath);
-        }
-
-        temporary.publishTo(segmentPath);
-        return SegmentPublication.PUBLISHED;
+        return publishOnce(segmentPath);
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
       }
@@ -107,16 +102,25 @@ public class LocalSegmentStore implements SegmentStore {
               () -> new TranscodeException("No output directory for session: " + sessionId));
     }
 
-    private SegmentPublication publishInitialization(Path segmentPath) throws IOException {
+    private SegmentPublication publishOnce(Path segmentPath) throws IOException {
       // Only this store writes a session's directory, so serializing publications per path makes
       // the first one create-if-absent on any volume that can rename.
-      var lock = initializationSegmentLocks.getMutex(segmentPath);
+      var lock = publicationLocks.getMutex(segmentPath);
       lock.lock();
       try {
-        return temporary.publishUnlessStored(segmentPath);
+        return publishUnlessStored(segmentPath);
       } finally {
         lock.unlock();
       }
+    }
+
+    private SegmentPublication publishUnlessStored(Path segmentPath) throws IOException {
+      if (SegmentNames.isInitSegment(segmentName)) {
+        return temporary.publishUnlessStored(segmentPath);
+      }
+
+      temporary.publishWhenNothingIsStored(segmentPath);
+      return SegmentPublication.PUBLISHED;
     }
 
     @Override

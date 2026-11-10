@@ -116,6 +116,17 @@ final class PreparedSegmentFile implements AutoCloseable {
 
   /**
    * Publishes when nothing is stored at {@code target} yet; otherwise leaves the stored file
+   * untouched. Callers serialize publications to one target.
+   */
+  void publishWhenNothingIsStored(Path target) throws IOException {
+    content.close();
+    if (files.notExists(target)) {
+      publishTo(target);
+    }
+  }
+
+  /**
+   * Publishes when nothing is stored at {@code target} yet; otherwise leaves the stored file
    * untouched and reports whether it holds the same bytes. Callers serialize publications to one
    * target.
    */

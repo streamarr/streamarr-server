@@ -561,8 +561,8 @@ public class SeekPriority {
 
   private record OwnLead(Duration stored, int nextIndex) {}
 
-  // Stored media that the job attempt's own uploads stored. Media that it found stored, or that
-  // another job attempt's upload stored, counts once its own upload stores that segment again.
+  // Stored media that the job attempt's own uploads published. Media that it found stored, or that
+  // another job attempt's upload stored, counts once its own upload publishes that segment again.
   private IntPredicate ownOutputOf(
       StreamSession session, String variantLabel, TranscodeHandle handle) {
     var output =

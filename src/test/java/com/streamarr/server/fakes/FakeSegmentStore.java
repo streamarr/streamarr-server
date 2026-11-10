@@ -116,7 +116,9 @@ public class FakeSegmentStore implements SegmentStore {
           return publishInitialization(sessionId, segmentName, data);
         }
 
-        addSegment(sessionId, segmentName, data);
+        sessions
+            .computeIfAbsent(sessionId, id -> new ConcurrentHashMap<>())
+            .putIfAbsent(segmentName, data);
         return SegmentPublication.PUBLISHED;
       }
 

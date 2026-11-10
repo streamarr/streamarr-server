@@ -268,6 +268,20 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should keep the stored media segment when its name is published again")
+  void shouldKeepStoredMediaSegmentWhenItsNameIsPublishedAgain() {
+    var sessionId = UUID.randomUUID();
+    var stored = "moof mdat from the first job attempt".getBytes();
+    store.storeSegment(sessionId, "720p/segment0.m4s", stored);
+
+    var publication =
+        store.storeSegment(sessionId, "720p/segment0.m4s", "moof mdat from a later one".getBytes());
+
+    assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
+    assertThat(StoredSegments.bytes(store, sessionId, "720p/segment0.m4s")).isEqualTo(stored);
+  }
+
+  @Test
   @DisplayName(
       "Should keep the stored initialization segment when a different one is published for the variant")
   void shouldKeepStoredInitializationSegmentWhenDifferentOneIsPublishedForVariant() {
