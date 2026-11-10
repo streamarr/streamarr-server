@@ -1381,7 +1381,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
 
       var stored = shareRepository.findById(shareId).orElseThrow();
       assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
-      assertThat(stored.getInvalidationReason()).contains("issuer disabled");
+      assertThat(stored.getInvalidationReason()).contains("offerer no longer authorized");
     } finally {
       authTestSupport.deleteIdentity(disabler);
       authTestSupport.deleteIdentity(offerer);

@@ -202,6 +202,43 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should not tell the target HouseholdAdmin how the offerer lost authority when a"
+          + " ServerAdmin disables the offerer")
+  void shouldNotTellTargetHouseholdAdminHowOffererLostAuthorityWhenServerAdminDisablesOfferer()
+      throws Exception {
+    var shareId = offer(owner, managedProfile(ProfileFixture.defaultProfileBuilder()), host);
+    graphql(
+            authTestSupport.freshAccountBearer(adminIdentity()),
+            """
+            mutation { disableAccount(input: {accountId: "%s"}) {
+              account { enabled } userErrors { __typename } } }
+            """
+                .formatted(owner.account().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.disableAccount.account.enabled").value(false));
+
+    var withdrawn =
+        shareWithId(
+            query(
+                host,
+                """
+                query { householdShares(householdId: "%s", statuses: [INVALIDATED]) {
+                  edges { node { id invalidationReason offeredByDisplayName } } } }
+                """
+                    .formatted(host.household().getId()),
+                "householdShares"),
+            shareId);
+
+    // Account status and roles are for the Account's own HouseholdAdmins and ServerAdmins.
+    assertThat(withdrawn.path("offeredByDisplayName").asString())
+        .isEqualTo(owner.account().getDisplayName());
+    assertThat(withdrawn.path("invalidationReason").asString())
+        .isEqualTo("offerer no longer authorized");
+  }
+
+  @Test
   @DisplayName("Should name no offerer when the share was made by the system")
   void shouldNameNoOffererWhenShareWasMadeBySystem() throws Exception {
     graphql(

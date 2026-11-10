@@ -175,7 +175,8 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
     assertThat(disabled.path("errors").isMissingNode()).as("errors in %s", disabled).isTrue();
     assertThat(invalidated.path("status").asString()).isEqualTo("INVALIDATED");
-    assertThat(invalidated.path("invalidationReason").asString()).isEqualTo("issuer disabled");
+    assertThat(invalidated.path("invalidationReason").asString())
+        .isEqualTo("offerer no longer authorized");
   }
 
   @Test
