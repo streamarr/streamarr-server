@@ -30,6 +30,11 @@ public class ProfileSharePartiesResolver {
     return fromSharedProfile(dfe, ProfileSummary::from);
   }
 
+  @DgsData(parentType = "ProfileShare", field = "visitor")
+  public CompletableFuture<Boolean> visitor(DataFetchingEnvironment dfe) {
+    return fromSharedProfile(dfe, SharedProfile::visitor);
+  }
+
   @DgsData(parentType = "ProfileShare", field = "offeredByDisplayName")
   public CompletableFuture<String> offeredByDisplayName(DataFetchingEnvironment dfe) {
     DataLoader<ReaderLoaderKey<ShareReference>, String> loader =

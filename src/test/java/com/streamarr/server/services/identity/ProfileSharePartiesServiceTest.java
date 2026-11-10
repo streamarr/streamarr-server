@@ -51,8 +51,14 @@ class ProfileSharePartiesServiceTest {
   @BeforeEach
   void setUp() {
     target = households.save(HouseholdFixture.defaultHouseholdBuilder().name("Lakeside").build());
+    var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     offered =
-        profiles.save(ProfileFixture.defaultProfileBuilder().name("Sam").picture("fox").build());
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder()
+                .householdId(home.getId())
+                .name("Sam")
+                .picture("fox")
+                .build());
     offerer = accounts.save(AccountFixture.defaultAccountBuilder().displayName("Robin").build());
     share = new ShareReference(offered.getId(), target.getId(), Optional.of(offerer.getId()));
   }
@@ -101,6 +107,21 @@ class ProfileSharePartiesServiceTest {
     assertThat(shown.get(personShare).profile().isRestricted()).isTrue();
     assertThat(shown.get(share).personalProfile()).isFalse();
     assertThat(shown.get(share).profile().isRestricted()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should mark a visitor when the share's Profile belongs to another Household")
+  void shouldMarkVisitorWhenSharesProfileBelongsToAnotherHousehold() {
+    allowOnly(this::administersTarget);
+    var own =
+        profiles.save(ProfileFixture.defaultProfileBuilder().householdId(target.getId()).build());
+    var ownShare = new ShareReference(own.getId(), target.getId(), Optional.empty());
+
+    var shown = service.profiles(reader(), Set.of(share, ownShare));
+
+    assertThat(offered.getHouseholdId()).isNotEqualTo(target.getId());
+    assertThat(shown.get(share).visitor()).isTrue();
+    assertThat(shown.get(ownShare).visitor()).isFalse();
   }
 
   @Test

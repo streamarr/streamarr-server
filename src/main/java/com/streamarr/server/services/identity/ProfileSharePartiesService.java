@@ -43,9 +43,9 @@ public class ProfileSharePartiesService {
   private final HouseholdRepository householdRepository;
 
   /**
-   * The Profile on each share, for the target Household's HouseholdAdmins and for readers who may
-   * see the Profile's administration: its managers, a HouseholdAdmin where it is available, and
-   * ServerAdmins.
+   * The Profile on each share, and whether it is a visitor in the share's Household, for the target
+   * Household's HouseholdAdmins and for readers who may see the Profile's administration: its
+   * managers, a HouseholdAdmin where it is available, and ServerAdmins.
    */
   @Transactional(readOnly = true)
   public Map<ShareReference, SharedProfile> profiles(
@@ -61,11 +61,16 @@ public class ProfileSharePartiesService {
 
     var profiles = new HashMap<ShareReference, SharedProfile>();
     shown.forEach(
-        share ->
-            profiles.put(
-                share,
-                new SharedProfile(
-                    existing.get(share.profileId()), personal.contains(share.profileId()))));
+        share -> {
+          var profile = existing.get(share.profileId());
+          profiles.put(
+              share,
+              SharedProfile.builder()
+                  .profile(profile)
+                  .personalProfile(personal.contains(share.profileId()))
+                  .visitor(!share.householdId().equals(profile.getHouseholdId()))
+                  .build());
+        });
     return profiles;
   }
 
