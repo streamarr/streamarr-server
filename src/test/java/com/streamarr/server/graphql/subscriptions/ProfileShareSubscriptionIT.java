@@ -347,6 +347,16 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should release profileShareChanged when the client completes the operation")
+  void shouldReleaseProfileShareChangedWhenTheClientCompletesTheOperation() {
+    var socket = subscribedSocket(authTestSupport.accountBearer(host));
+
+    socket.complete(OPERATION);
+
+    activeSubscriptions.awaitCount(FIELD, 0);
+  }
+
+  @Test
   @DisplayName("Should deliver nothing for an acceptance that rolls back")
   void shouldDeliverNothingForAnAcceptanceThatRollsBack() {
     var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
