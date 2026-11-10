@@ -265,6 +265,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     var received = changesUntil(strangerSocket, visibleId);
     assertThat(received)
         .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
         .doesNotContain(hiddenId);
   }
 
@@ -290,6 +291,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     var received = changesUntil(managerSocket, keptShareId);
     assertThat(received)
         .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
         .doesNotContain(leavingShareId);
     assertThat(received.getLast().path("share").path("status").asString()).isEqualTo("REJECTED");
   }
@@ -354,6 +356,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     socket.complete(OPERATION);
 
     activeSubscriptions.awaitCount(FIELD, 0);
+    assertThat(activeSubscriptions.count(FIELD)).isZero();
   }
 
   @Test

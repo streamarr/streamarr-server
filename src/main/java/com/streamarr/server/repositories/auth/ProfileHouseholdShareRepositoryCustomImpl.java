@@ -100,8 +100,9 @@ public class ProfileHouseholdShareRepositoryCustomImpl
     return update.fetch().map(ProfileHouseholdShareRepositoryCustomImpl::changedShare);
   }
 
-  private static ChangedShare changedShare(ProfileHouseholdShareRecord record) {
-    return new ChangedShare(record.getId(), record.getProfileId(), record.getHouseholdId());
+  private static ChangedShare changedShare(ProfileHouseholdShareRecord shareRecord) {
+    return new ChangedShare(
+        shareRecord.getId(), shareRecord.getProfileId(), shareRecord.getHouseholdId());
   }
 
   // Each single-share write names its share by id, so it changes at most one row.
@@ -240,7 +241,7 @@ public class ProfileHouseholdShareRepositoryCustomImpl
         .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
         .returning(CHANGED_SHARE)
         .fetch()
-        .forEach(record -> changed.add(changedShare(record)));
+        .forEach(shareRecord -> changed.add(changedShare(shareRecord)));
     return List.copyOf(changed);
   }
 

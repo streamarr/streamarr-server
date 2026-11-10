@@ -710,8 +710,9 @@ class ArchitectureTest {
   @DisplayName("Should reject a direct share write when a service bypasses the share lifecycle")
   void shouldRejectADirectShareWriteWhenAServiceBypassesTheShareLifecycle() {
     var directShareWrite = new ClassFileImporter().importClasses(DirectShareWriteFixture.class);
+    var rule = onlyTheShareLifecycleMayWriteShares();
 
-    assertThatThrownBy(() -> onlyTheShareLifecycleMayWriteShares().check(directShareWrite))
+    assertThatThrownBy(() -> rule.check(directShareWrite))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("tryEndActive");
   }
