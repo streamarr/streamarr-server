@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -33,6 +34,7 @@ import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -60,6 +62,8 @@ class ProfileLifecycleServiceTest {
 
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
+
+  private final CapturingEventPublisher shareEvents = new CapturingEventPublisher();
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
@@ -83,7 +87,7 @@ class ProfileLifecycleServiceTest {
           managerInvitations,
           accountInvitations,
           shares,
-          new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
+          new ProfileShareLifecycle(shares, shareEvents),
           sessions,
           audit,
           new MutationTransactions(
@@ -293,6 +297,22 @@ class ProfileLifecycleServiceTest {
                 .reason("abuse report")
                 .resource("profileId", orphan.getId())
                 .build());
+  }
+
+  @Test
+  @DisplayName("Should announce every share of the Profile when administrative deletion succeeds")
+  void shouldAnnounceEveryShareOfTheProfileWhenAdministrativeDeletionSucceeds() {
+    var otherHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    shares.share(orphan.getId(), otherHousehold.getId(), false);
+    var orphanShares =
+        shares.findByProfileId(orphan.getId()).stream().map(ChangedShare::of).toList();
+
+    service.administrativelyDeleteProfile(identity(), orphan.getId(), "abuse report");
+
+    assertThat(orphanShares).isNotEmpty();
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .extracting(ProfileShareChangedEvent::share)
+        .containsExactlyInAnyOrderElementsOf(orphanShares);
   }
 
   @Test

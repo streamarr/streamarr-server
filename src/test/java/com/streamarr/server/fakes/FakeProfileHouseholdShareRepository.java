@@ -323,6 +323,13 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public List<ProfileHouseholdShare> findByHouseholdId(UUID householdId) {
+    return database.values().stream()
+        .filter(share -> share.getHouseholdId().equals(householdId))
+        .toList();
+  }
+
+  @Override
   public boolean isActivelyShared(UUID profileId, UUID householdId) {
     return findByProfileIdAndHouseholdIdAndStatus(profileId, householdId, ProfileShareStatus.ACTIVE)
         .isPresent();

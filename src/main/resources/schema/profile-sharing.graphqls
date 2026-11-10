@@ -62,10 +62,10 @@ type ProfileSummary {
 extend type Subscription {
     """
     A Profile share changed. A change arrives when a share is created or offered, accepted,
-    declined, canceled, invalidated or ended, when an offer expires, and when a share starts or
-    stops being required by Account membership. An offer whose time runs out arrives as EXPIRED
-    about a minute after its expiresAt; the share queries show it as EXPIRED from expiresAt on. A
-    change that rolls back never arrives.
+    declined, canceled, invalidated or ended, when an offer expires, when a share starts or stops
+    being required by Account membership, and when a share is deleted with its Profile or its
+    Household. An offer whose time runs out arrives as EXPIRED about a minute after its expiresAt;
+    the share queries show it as EXPIRED from expiresAt on. A change that rolls back never arrives.
 
     Any signed-in session may subscribe, with or without a selected Profile. A device-bound session
     gets FORBIDDEN, and so does a disabled Account. A change reaches a subscriber only when the
@@ -74,6 +74,8 @@ extend type Subscription {
     The server decides this for each change as it delivers it, so a subscriber who loses that
     authority stops receiving the share's changes, and a share never reaches someone the queries
     would not show it to. The share's fields are hidden from the same readers as in the queries.
+    A share deleted with its Profile reaches only those who may read its Household's shares, and
+    a share deleted with its Household reaches only those who may read its Profile's shares.
     An operation whose Account may no longer follow share changes ends with FORBIDDEN.
 
     To build current state, subscribe first, then query householdShares or profileShares, and
@@ -92,7 +94,10 @@ extend type Subscription {
 "One committed change to a Profile share."
 type ProfileShareChange {
     shareId: ID!
-    "The share as the server reads it on delivery, or null once the share no longer exists."
+    """
+    The share as the server reads it on delivery, or null once the share no longer exists, as when
+    it was deleted with its Profile or its Household.
+    """
     share: ProfileShare
 }
 

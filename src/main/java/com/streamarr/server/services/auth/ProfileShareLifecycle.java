@@ -17,7 +17,8 @@ import org.springframework.stereotype.Service;
  * Every write of a Profile share (ADR 0024 §Profile sharing). The workflows that offer, decide,
  * end, link, move and delete call it inside their own transactions; no other class writes a share.
  * Each share a write changes is announced as a {@link ProfileShareChangedEvent}, and a write that
- * changes nothing announces nothing.
+ * changes nothing announces nothing. The database deletes a share with its Profile or its
+ * Household, so whoever deletes either announces those shares here first.
  */
 @Service
 @RequiredArgsConstructor
@@ -93,6 +94,18 @@ public class ProfileShareLifecycle {
     announce(
         shareRepository.invalidatePendingOffersByProfileIdAndOffererAccountId(
             profileId, offererAccountId, reason, now));
+  }
+
+  /** Announces every share of the Profile, which the database deletes with the Profile. */
+  public void announceDeletionWithProfile(UUID profileId) {
+    shareRepository.findByProfileId(profileId).forEach(share -> announce(ChangedShare.of(share)));
+  }
+
+  /** Announces every share into the Household, which the database deletes with the Household. */
+  public void announceDeletionWithHousehold(UUID householdId) {
+    shareRepository
+        .findByHouseholdId(householdId)
+        .forEach(share -> announce(ChangedShare.of(share)));
   }
 
   private boolean announced(Optional<ChangedShare> changed) {
