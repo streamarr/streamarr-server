@@ -3,8 +3,9 @@
 Streamarr delivers live changes over GraphQL subscriptions.
 Every client with a selected Profile receives library status, additions and removals.
 Every client of a Profile receives that Profile's watch-state changes.
+Every signed-in client receives the changes to the Profile shares it may read.
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0042-graphql-subscriptions-run-over-websocket-until-token-expiry.adoc[ADR 0042] records the decision.
-The schema descriptions in `src/main/resources/schema/root-subscription.graphqls` define each field.
+The schema descriptions in `src/main/resources/schema/root-subscription.graphqls` define each field, and `profile-sharing.graphqls` defines `profileShareChanged`.
 
 == Transport
 
@@ -48,6 +49,8 @@ A browser client that sees 1006 before `connection_ack` refreshes its token befo
 Each operation is authorized when the client subscribes.
 A refused caller gets a `next` message with an error code, then `complete`.
 `libraryStatusChanged` refuses a caller who is not a ServerAdmin with `FORBIDDEN`.
+`profileShareChanged` needs no selected Profile.
+It refuses a device-bound session and a disabled Account with `FORBIDDEN`, and it decides again for each change, as <<Profile shares>> describes.
 Every other field refuses a token without a selected Profile with `PROFILE_REQUIRED`.
 It refuses a caller without the ViewProfileActivity permission for that Profile with `FORBIDDEN`.
 `AUTHORIZATION_UNAVAILABLE` means the server could not decide; retry later.
@@ -115,7 +118,7 @@ A client stops and reports these codes instead of reconnecting.
 |The field needs a selected Profile, and the access token has none. The operation ends.
 
 |`FORBIDDEN`
-|The caller may not subscribe to the field. The operation ends.
+|The caller may not subscribe to the field. The operation ends. A `profileShareChanged` operation can also end this way at a later change, in an `error` message.
 
 |`AUTHORIZATION_UNAVAILABLE`
 |The server could not decide authorization. Subscribe again later.
@@ -267,6 +270,52 @@ A failed non-null field of the item itself, such as `library` or `unmatched`, ma
 The other items of the change arrive intact.
 When the change's items cannot be resolved, `watchStateChanged` arrives as null.
 The operation continues in every case, and the client recovers as <<Field errors>> describes.
+
+== Profile shares
+
+`profileShareChanged` delivers each committed change to a Profile share.
+A change arrives when a share is offered, accepted, declined, canceled, invalidated or ended, when an offer expires, when a share starts or stops being required by Account membership, and when a share is deleted with its Profile or its Household.
+A change that rolls back never arrives.
+Each change carries `shareId` and `share`, the share as the server reads it when it delivers the change.
+
+=== Who may subscribe
+
+Any signed-in session may subscribe, with or without a selected Profile.
+A device-bound session gets `FORBIDDEN`, and so does a disabled Account.
+
+=== Who receives a change
+
+The server decides each change as it delivers it, with the same reads as the share queries:
+
+* The target Household's HouseholdAdmins and ServerAdmins, who read the share through `householdShares`.
+* The Profile's managers, the Account whose own Profile it is, and ServerAdmins, who read it through `profileShares`.
+
+A HouseholdAdmin who only hosts a Profile receives that Profile's share into their own Household and no other.
+The share's fields are hidden from the same readers as in the queries.
+A subscriber who stops managing a Profile stops receiving its changes at once.
+An Account that is disabled after subscribing gets an `error` message with `FORBIDDEN` at the next change, and the operation ends.
+The HouseholdAdmin role comes from the access token, so a HouseholdAdmin who loses that role keeps receiving their Household's changes until the token expires, as with the queries.
+
+=== Removals
+
+A change whose `share` is `null`, with no `errors`, removes the share: it was deleted with its Profile or its Household.
+A share deleted with its Profile reaches those who may read its Household's shares.
+A share deleted with its Household reaches those who may read its Profile's shares.
+A `null` share with `errors` is not a removal: the client keeps the share and runs its queries again.
+A share that stops being readable to the subscriber does not arrive as removed; the queries stop listing it.
+
+=== Expiry
+
+An offer whose time runs out reads as `EXPIRED` in the queries at once.
+The server stores `EXPIRED` on such offers every `AUTH_SHARING_EXPIRY_SWEEP_INTERVAL`, `1m` by default, and each one then arrives as a change.
+
+=== Building current state
+
+A client subscribes first and then queries `householdShares` or `profileShares`.
+It applies each change by `shareId`, and keeps a share in a list while its status is one of the list's statuses.
+The lists put the newest share first, so a share created after the client subscribed goes first.
+The server delivers one operation's changes in order, so the last change for a share carries its latest state.
+After every reconnect, the client subscribes and queries again.
 
 == Configuration
 
