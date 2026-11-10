@@ -30,6 +30,7 @@ import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.local.FileStoreSegmentFolderSpace;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftovers;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.file.Path;
 import org.springframework.context.ApplicationEventPublisher;
@@ -55,6 +56,10 @@ public class StreamingConfig {
 
   @Bean
   public LocalSegmentStore segmentStore(StreamingProperties properties) {
+    // Before the store exists, so the folder holds nothing of a running store.
+    properties
+        .ownedSegmentFolder()
+        .ifPresent(segmentFolder -> new SegmentFolderLeftovers(segmentFolder).delete());
     return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
   }
 
