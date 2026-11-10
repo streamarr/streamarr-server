@@ -27,12 +27,14 @@ import java.util.concurrent.Future;
 
 /**
  * A worker whose session and report calls a test drives against the service without a socket. The
- * worker runs probes of version 1 and grants 8 playback probes, 8 background probes and 8 keyframe
- * packet scans unless the test registers other capacities.
+ * worker runs probes of version 1, measures streams at measurement version 1, and grants 8 playback
+ * probes, 8 background probes and 8 keyframe packet scans unless the test registers other
+ * capacities.
  */
 final class ReportingWorker {
 
   static final int PROBE_VERSION = 1;
+  static final int MEASUREMENT_VERSION = 1;
 
   private final LiveWorkerConnectionRegistry registry;
   private final WorkerSessionGrpcService service;
@@ -105,7 +107,7 @@ final class ReportingWorker {
             WorkerCapabilities.newBuilder()
                 .addSourceNamespaceIds(toProto(sourceNamespaceId))
                 .addProbeVersions(PROBE_VERSION)
-                .addMeasurementVersions(1)
+                .addMeasurementVersions(MEASUREMENT_VERSION)
                 .build());
     session.onNext(
         EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());

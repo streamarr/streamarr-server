@@ -132,10 +132,13 @@ public final class WorkerSessionServer
    * Returns a refusal with its reason when no worker accepts the attempt. Each execution attempt
    * requires a fresh, non-nil ID, a nonzero contract version, and a source.
    *
-   * <p>Cancelling the future requests worker termination; its reservation remains until a terminal
-   * reply or session end. The configured probe deadline fails the future and requests cancellation.
-   * A worker that does not acknowledge cancellation within the grace period is disconnected and
-   * fenced before more work can be assigned to that session.
+   * <p>Cancelling the future requests worker termination; its reservation remains until the
+   * attempt's report call ends, its result arrives on the worker session, or the session ends. The
+   * configured probe deadline fails the future and requests cancellation, unless the first message
+   * of the attempt's report call or its result on the worker session arrives first: the time that
+   * the worker takes to send the rest of its probe report does not count. A worker that sends
+   * neither within the grace period after a cancel command is disconnected and fenced before more
+   * work can be assigned to that session.
    */
   public synchronized ProbeDispatch dispatchProbe(ProbeRequest request) {
     requireStarted();

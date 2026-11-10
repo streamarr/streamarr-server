@@ -1275,8 +1275,8 @@ final class LiveWorkerConnectionRegistry {
         return new ProbeDispatch.Refused(ProbeRefusal.WORKER_UNREACHABLE);
       }
 
-      return new ProbeDispatch.Dispatched(
-          pending.result().orTimeout(timeoutNanos(request), TimeUnit.NANOSECONDS));
+      pending.timeOutUnlessEndedOnWorkerWithin(timeoutNanos(request));
+      return new ProbeDispatch.Dispatched(pending.result());
     }
 
     private long timeoutNanos(ProbeRequest request) {
@@ -1423,6 +1423,8 @@ final class LiveWorkerConnectionRegistry {
         return new ProbeReportAdmission.NotOwned();
       }
 
+      // Stops the probe's timeout and the wait that follows a cancel command.
+      pending.endOnWorker();
       return new ProbeReportAdmission.Admitted(new ReportedAttempt(attemptId, pending));
     }
 

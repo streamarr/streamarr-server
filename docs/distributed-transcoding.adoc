@@ -181,7 +181,10 @@ When a probe, a packet scan or a bitrate scan chunk reaches its timeout, the com
 When the server stops a probe while the server shuts down, the command carries the shutdown reason.
 The worker learns of a timeout only from this reason.
 The worker may lower its background probe capacity when probes reach the timeout, but not when a packet scan or a bitrate scan chunk does (https://github.com/streamarr/streamarr-adr/blob/main/adr/0032-media-file-probe-results-are-persisted.adoc[ADR 0032]).
-`STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` for the worker to acknowledge termination.
+Each of the three timeouts runs from the start command until the first message of the probe's report call reaches the server, or the probe's result on the worker session.
+The time that a probe report waits on the worker for a free report call counts toward the timeout. The time that the worker takes to send the rest of the probe report does not, so the server never cancels a probe whose probe report is arriving.
+`STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` after a cancel command for the first message of the probe's report call, or for the probe's result on the worker session.
+The server reads the report call of a canceled probe or of a probe that reached its timeout like any other, and the probe report changes nothing.
 Until then, the probe keeps its unit of the worker's probe capacity.
 A worker that misses this deadline is disconnected and fenced. Its other active jobs are abandoned and recover through the existing playback recovery path.
 Closing a worker connection cancels its probes and waits for their native processes to terminate.

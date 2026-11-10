@@ -10,6 +10,7 @@ import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -41,9 +42,36 @@ final class PendingProbe {
     return result;
   }
 
-  /** Completes when the probe has ended on the worker, or when the attempt ends without it. */
+  /**
+   * Completes when the probe has ended on the worker, or when the attempt ends without it. The
+   * probe has ended on the worker when the first message of its report call arrives, or its result
+   * on the worker session.
+   */
   CompletableFuture<Void> terminated() {
     return terminated;
+  }
+
+  /**
+   * Fails the attempt with a {@link java.util.concurrent.TimeoutException} unless the probe ends on
+   * the worker within the time. The time that the worker then takes to send its probe report does
+   * not count.
+   */
+  void timeOutUnlessEndedOnWorkerWithin(long timeoutNanos) {
+    var timeout = new CompletableFuture<Void>().orTimeout(timeoutNanos, TimeUnit.NANOSECONDS);
+    timeout.exceptionally(
+        failure -> {
+          result.completeExceptionally(failure);
+          return null;
+        });
+    terminated.whenComplete((_, _) -> timeout.complete(null));
+  }
+
+  /**
+   * The first message of the attempt's report call has arrived, so the probe has ended on the
+   * worker. From here on only the bounds of the report call apply.
+   */
+  void endOnWorker() {
+    terminated.complete(null);
   }
 
   void add(ProbeKeyframePositionsPart part) {
