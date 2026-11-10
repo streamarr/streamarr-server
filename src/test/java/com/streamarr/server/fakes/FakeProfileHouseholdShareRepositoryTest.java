@@ -54,7 +54,8 @@ class FakeProfileHouseholdShareRepositoryTest {
         fake.rowsIntoHousehold(
             new HouseholdShareFilter(
                 householdId,
-                new ShareStatusFilter(Set.of(ProfileShareStatus.PENDING), Instant.now())),
+                new ShareStatusFilter(Set.of(ProfileShareStatus.PENDING), Instant.now()),
+                false),
             firstSeek(OLDEST_FIRST, 10));
 
     assertThat(rows).extracting(row -> row.item().getId()).containsExactly(LOW, HIGH);

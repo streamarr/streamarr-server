@@ -27,6 +27,7 @@ import com.streamarr.server.graphql.mutation.sharing.OfferProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.RejectProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.identity.HouseholdSharesScope;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.ShareListScope;
 import com.streamarr.server.services.pagination.ListIdentity;
@@ -68,8 +69,12 @@ public class ProfileSharingResolver {
   public Connection<ProfileShareDetails> householdShares(
       @InputArgument String householdId,
       @InputArgument List<ProfileShareStatus> statuses,
+      @InputArgument Boolean visitorsOnly,
       DataFetchingEnvironment dfe) {
-    var household = new ShareListScope(Ids.parseUuid(householdId), statusesOrEvery(statuses));
+    var household =
+        new HouseholdSharesScope(
+            new ShareListScope(Ids.parseUuid(householdId), statusesOrEvery(statuses)),
+            Boolean.TRUE.equals(visitorsOnly));
     var list = new ListIdentity("household-shares", household);
     var page =
         profileSharingService.householdShares(

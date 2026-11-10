@@ -1,6 +1,5 @@
 package com.streamarr.server.services.identity;
 
-import com.streamarr.server.domain.auth.HouseholdShareFilter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.pagination.ListOrder;
 import com.streamarr.server.domain.pagination.Row;
@@ -14,10 +13,10 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-/** The shares into one Household in the scope's statuses, newest first. */
+/** The shares into one Household that the scope keeps, newest first. */
 @Component
 @RequiredArgsConstructor
-public class HouseholdSharesList implements PagedList<ProfileHouseholdShare, ShareListScope> {
+public class HouseholdSharesList implements PagedList<ProfileHouseholdShare, HouseholdSharesScope> {
 
   private static final ListOrder NEWEST_FIRST =
       ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.DESC).build();
@@ -26,13 +25,12 @@ public class HouseholdSharesList implements PagedList<ProfileHouseholdShare, Sha
   private final Clock clock;
 
   @Override
-  public ListOrder order(ShareListScope household) {
+  public ListOrder order(HouseholdSharesScope household) {
     return NEWEST_FIRST;
   }
 
   @Override
-  public List<Row<ProfileHouseholdShare>> rowsBeyond(ShareListScope household, Seek seek) {
-    return shareRepository.rowsIntoHousehold(
-        new HouseholdShareFilter(household.id(), household.filterAt(clock.instant())), seek);
+  public List<Row<ProfileHouseholdShare>> rowsBeyond(HouseholdSharesScope household, Seek seek) {
+    return shareRepository.rowsIntoHousehold(household.filterAt(clock.instant()), seek);
   }
 }

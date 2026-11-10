@@ -14,11 +14,24 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<ProfileHouseholdShare>
     implements ProfileHouseholdShareRepository {
+
+  private final Function<UUID, Optional<UUID>> householdOfProfile;
+
+  /** A fake that knows no Profile's Household, so a list kept to visitors keeps no share. */
+  public FakeProfileHouseholdShareRepository() {
+    this(_ -> Optional.empty());
+  }
+
+  /** A fake that asks where each Profile belongs, as the real query reads the Profile row. */
+  public FakeProfileHouseholdShareRepository(Function<UUID, Optional<UUID>> householdOfProfile) {
+    this.householdOfProfile = householdOfProfile;
+  }
 
   /** Shares a Profile into a Household as ACTIVE (structural when asked). */
   public ProfileHouseholdShare share(UUID profileId, UUID householdId, boolean structural) {
@@ -75,8 +88,17 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
         database.values().stream()
             .filter(share -> share.getHouseholdId().equals(filter.householdId()))
             .filter(share -> keeps(filter.statuses(), share))
+            .filter(share -> !filter.visitorsOnly() || ofVisitor(share))
             .toList(),
         seek);
+  }
+
+  // As the real query reads it: a share whose Profile belongs to another Household.
+  private boolean ofVisitor(ProfileHouseholdShare share) {
+    return householdOfProfile
+        .apply(share.getProfileId())
+        .filter(home -> !home.equals(share.getHouseholdId()))
+        .isPresent();
   }
 
   @Override
