@@ -21,7 +21,13 @@ type Query {
     accountInvitations(first: Int, after: String, last: Int, before: String): AccountInvitationConnection!
     accountInvitationProfilePreview(profileId: ID!): AccountInvitationProfilePreview
     profileSharePreview(profileId: ID!, householdId: ID!): ProfileSharePreview
-    pendingShareOffers(householdId: ID!, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
+    """
+    The Profiles offered or shared to a Household, newest first, for its HouseholdAdmins and for
+    ServerAdmins. Everyone else gets an empty list. statuses keeps only shares in those statuses,
+    and an offer past its expiry counts as EXPIRED. Leave statuses out, or pass an empty list, to
+    get every share. Pass [PENDING] for the offers waiting for a decision.
+    """
+    householdShares(householdId: ID!, statuses: [ProfileShareStatus!], first: Int, after: String, last: Int, before: String): ProfileShareConnection!
     profileShares(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!

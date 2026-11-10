@@ -6,6 +6,7 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
@@ -22,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.jooq.impl.DSL;
 
 @RequiredArgsConstructor
 public class ProfileHouseholdShareRepositoryCustomImpl
@@ -88,15 +90,37 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public List<Row<ProfileHouseholdShare>> rowsPendingInHousehold(
-      UUID householdId, Instant now, Seek seek) {
+  public List<Row<ProfileHouseholdShare>> rowsIntoHousehold(
+      UUID householdId, ShareStatusFilter filter, Seek seek) {
     return rowsBeyond(
-        PROFILE_HOUSEHOLD_SHARE
-            .HOUSEHOLD_ID
-            .eq(householdId)
-            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(inline(ProfileShareStatus.PENDING)))
-            .and(unexpiredAt(inline(now.atOffset(ZoneOffset.UTC)))),
-        seek);
+        PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId).and(keptBy(filter)), seek);
+  }
+
+  /** The shares the filter keeps, each read as of the filter's instant. */
+  private static Condition keptBy(ShareStatusFilter filter) {
+    if (filter.statuses().isEmpty()) {
+      return DSL.noCondition();
+    }
+
+    var at = inline(filter.at().atOffset(ZoneOffset.UTC));
+    return DSL.or(
+        filter.statuses().stream()
+            .map(status -> readsAs(ProfileShareStatus.valueOf(status.name()), at))
+            .toList());
+  }
+
+  private static Condition readsAs(ProfileShareStatus status, Field<OffsetDateTime> at) {
+    var stored = PROFILE_HOUSEHOLD_SHARE.STATUS.eq(inline(status));
+    return switch (status) {
+      case PENDING -> stored.and(unexpiredAt(at));
+      case EXPIRED ->
+          stored.or(
+              PROFILE_HOUSEHOLD_SHARE
+                  .STATUS
+                  .eq(inline(ProfileShareStatus.PENDING))
+                  .and(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(at)));
+      case ACTIVE, REJECTED, CANCELED, INVALIDATED, ENDED -> stored;
+    };
   }
 
   /** Expiry is a predicate over expires_at; a NULL expiry never expires. */

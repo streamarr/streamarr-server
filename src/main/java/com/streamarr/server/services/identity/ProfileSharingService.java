@@ -64,7 +64,7 @@ public class ProfileSharingService {
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final MutationTransactions mutationTransactions;
   private final CredentialCodeProperties credentialCodeProperties;
-  private final PendingShareOffersList pendingShareOffersList;
+  private final HouseholdSharesList householdSharesList;
   private final ProfileSharesList profileSharesList;
   private final Clock clock;
 
@@ -471,14 +471,17 @@ public class ProfileSharingService {
     };
   }
 
-  /** A page of pending offers into one Household, newest first; hidden reads as empty. */
-  public ListPage<ProfileHouseholdShare> pendingShareOffers(
-      AuthenticatedIdentity identity, UUID householdId, PageRequest request) {
-    if (!mayViewHousehold(identity, householdId)) {
+  /**
+   * A page of the shares into one Household in the scope's statuses, newest first; hidden reads as
+   * empty.
+   */
+  public ListPage<ProfileHouseholdShare> householdShares(
+      AuthenticatedIdentity identity, ShareListScope household, PageRequest request) {
+    if (!mayViewHousehold(identity, household.id())) {
       return ListPage.empty();
     }
 
-    return Pager.page(pendingShareOffersList, householdId, request);
+    return Pager.page(householdSharesList, household, request);
   }
 
   /** A page of every share of one Profile, newest first; hidden reads as empty. */
