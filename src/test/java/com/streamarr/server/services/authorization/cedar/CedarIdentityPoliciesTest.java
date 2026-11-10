@@ -907,6 +907,34 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName(
+        "Should show a Profile's share Households when the caller manages it or is ServerAdmin")
+    void shouldShowProfileShareHouseholdsWhenCallerManagesItOrIsServerAdmin() {
+      assertThat(decide(atHome(), new Intent.ViewProfileShareHouseholds(personal.getId())))
+          .isEqualTo(ALLOWED);
+
+      // Hosting a Profile does not tell a HouseholdAdmin where else it is offered.
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var view = new Intent.ViewProfileShareHouseholds(orphan.getId());
+      shares.share(orphan.getId(), account.getHouseholdId(), false);
+      assertThat(decide(atHome(), view)).isEqualTo(DENIED);
+
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), view)).isEqualTo(DENIED);
+      managers.deleteAll();
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), view)).isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should deny sovereign share ending when the Personal Profile is restricted")
     void shouldDenySovereignShareEndingWhenPersonalProfileIsRestricted() {
       var visit =

@@ -104,6 +104,12 @@ enum Action {
       Authorizes.READ,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.PROFILE_MANAGEMENT),
+  VIEW_PROFILE_SHARE_HOUSEHOLDS(
+      "viewProfileShareHouseholds",
+      ResourceKind.PROFILE,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT),
   GRANT_SERVER_ADMIN(
       "grantServerAdmin",
       ResourceKind.ACCOUNT,
