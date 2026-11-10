@@ -298,21 +298,21 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should hide where else a Profile visits when a hosting HouseholdAdmin receives its offer")
-  void shouldHideWhereElseAProfileVisitsWhenAHostingHouseholdAdminReceivesItsOffer() {
+      "Should not deliver where else a Profile visits when a HouseholdAdmin only hosts the Profile")
+  void shouldNotDeliverWhereElseAProfileVisitsWhenAHouseholdAdminOnlyHostsTheProfile() {
     var orphan = managedProfile();
     var hostedId = offer(orphan);
     decide("acceptProfileShare", hostedId);
-    var elsewhere = identity();
     var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
 
-    var elsewhereId = offer(orphan, elsewhere);
-    var hidden = nextShare(hostSocket, elsewhereId);
+    var elsewhereId = offer(orphan, identity());
+    var visibleId = offer(managedProfile());
 
-    // The host may see the Profile it hosts, but not the other Household or who offered it there.
-    assertThat(hidden.path("profile").path("name").asString()).isEqualTo(orphan.getName());
-    assertThat(hidden.path("household").isNull()).isTrue();
-    assertThat(hidden.path("offeredByDisplayName").isNull()).isTrue();
+    var received = changesUntil(hostSocket, visibleId);
+    assertThat(received)
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(elsewhereId);
   }
 
   @Test

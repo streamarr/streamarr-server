@@ -70,7 +70,8 @@ extend type Subscription {
     Any signed-in session may subscribe, with or without a selected Profile. A device-bound session
     gets FORBIDDEN, and so does a disabled Account. A change reaches a subscriber only when the
     subscriber may read the share through householdShares or profileShares: the target
-    Household's HouseholdAdmins, those who may see the Profile's administration, and ServerAdmins.
+    Household's HouseholdAdmins, the Profile's managers, the Account whose own Profile it is, and
+    ServerAdmins.
     The server decides this for each change as it delivers it, so a subscriber who loses that
     authority stops receiving the share's changes, and a share never reaches someone the queries
     would not show it to. The share's fields are hidden from the same readers as in the queries.

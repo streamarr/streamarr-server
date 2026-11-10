@@ -169,20 +169,20 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should hide where else a Profile visits when a hosting HouseholdAdmin lists it")
-  void shouldHideWhereElseProfileVisitsWhenHostingHouseholdAdminListsIt() throws Exception {
+  @DisplayName(
+      "Should not list where else a Profile visits when a hosting HouseholdAdmin lists its shares")
+  void shouldNotListWhereElseProfileVisitsWhenHostingHouseholdAdminListsItsShares()
+      throws Exception {
     var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
-    accept(host, offer(owner, orphan, host));
-    var elsewhere = identity();
-    var elsewhereShareId = offer(owner, orphan, elsewhere);
+    var hostedShareId = offer(owner, orphan, host);
+    accept(host, hostedShareId);
+    offer(owner, orphan, identity());
 
-    var shares = profileShares(host, orphan, "[PENDING]");
-    var hidden = shareWithId(shares, elsewhereShareId);
+    var shares = profileShares(host, orphan, "[]");
 
-    // The host may already see the Profile, but not the other Household or who offered it there.
-    assertThat(hidden.path("profile").path("name").asString()).isEqualTo(orphan.getName());
-    assertThat(hidden.path("household").isNull()).isTrue();
-    assertThat(hidden.path("offeredByDisplayName").isNull()).isTrue();
+    // The host reads the share into its own Household through householdShares, and no other.
+    assertThat(edges(shares)).isEmpty();
+    assertThat(shareWithId(householdShares(host, host, "[ACTIVE]"), hostedShareId)).isNotNull();
   }
 
   @Test
@@ -193,7 +193,7 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     var shareId = offer(owner, orphan, host);
     accept(host, shareId);
 
-    var share = shareWithId(profileShares(host, orphan, "[ACTIVE]"), shareId);
+    var share = shareWithId(householdShares(host, host, "[ACTIVE]"), shareId);
 
     assertThat(share.path("household").path("name").asString())
         .isEqualTo(host.household().getName());
