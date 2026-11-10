@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.local;
 
+import com.google.common.io.MoreFiles;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -8,7 +9,6 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -178,15 +178,9 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   private void deleteDirectoryRecursively(Path dir) {
-    try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
-      for (var entry : stream) {
-        if (!Files.isDirectory(entry)) {
-          Files.deleteIfExists(entry);
-          continue;
-        }
-        deleteDirectoryRecursively(entry);
-      }
-      Files.deleteIfExists(dir);
+    try {
+      // Deletes a soft link itself, never what it points to.
+      MoreFiles.deleteRecursively(dir);
     } catch (IOException e) {
       log.warn("Failed to clean up session directory: {}", dir, e);
     }
