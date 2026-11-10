@@ -15,6 +15,21 @@ when {
    (principal has serverAdmin && principal.serverAdmin))
 };
 
+// The offering side learns the name of each Household the Profile is offered or shared to: its
+// managers, the sovereign Account, and ServerAdmin. A HouseholdAdmin who only hosts the Profile
+// does not learn where else it visits (ADR 0024).
+@id("view-profile-share-households-as-manager-or-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"viewProfileShareHouseholds",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  ((resource has managedByPrincipal && resource.managedByPrincipal) ||
+   (principal has serverAdmin && principal.serverAdmin))
+};
+
 // The target Household consents through its live HouseholdAdmins; ServerAdmin may act for them.
 // Lifecycle (pending, active, expiry) is the conditional transition's business, not authority's:
 // a decided offer answers with its typed lifecycle error, never a policy denial.

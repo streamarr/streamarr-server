@@ -22,7 +22,7 @@ class ActionTest {
             .toList();
     var readActions = Arrays.stream(Action.values()).filter(not(Action::authorizesWrite)).toList();
 
-    assertThat(viewingActions).hasSize(15);
+    assertThat(viewingActions).hasSize(16);
     assertThat(readActions)
         .containsExactlyInAnyOrderElementsOf(
             Stream.concat(viewingActions.stream(), Stream.of(Action.PLAYBACK)).toList());

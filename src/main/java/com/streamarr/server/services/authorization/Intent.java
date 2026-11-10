@@ -53,6 +53,12 @@ public sealed interface Intent {
   /** Pending direct-manager invitations: ProfileManagers and live ServerAdmin only. */
   record ViewManagerInvitations(UUID profileId) implements UnitIntent {}
 
+  /**
+   * The names of the Households a Profile is offered or shared to: the offering side only, meaning
+   * its ProfileManagers, the sovereign Account, and live ServerAdmin.
+   */
+  record ViewProfileShareHouseholds(UUID profileId) implements UnitIntent {}
+
   /** The live playback decision for the selected Profile in the context Household (ADR 0018). */
   record Playback() implements UnitIntent {}
 
