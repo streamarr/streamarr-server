@@ -106,8 +106,8 @@ class HouseholdDevicesEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should show a member neither the Devices nor who linked them")
-  void shouldShowMemberNeitherDevicesNorWhoLinkedThem() throws Exception {
+  @DisplayName("Should hide the Devices and who linked them when a member lists them")
+  void shouldHideDevicesAndWhoLinkedThemWhenMemberListsThem() throws Exception {
     register(host);
     var member = authTestSupport.createHouseholdMemberIdentity(host);
 
