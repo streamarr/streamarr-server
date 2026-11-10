@@ -15,6 +15,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -82,7 +83,7 @@ class ProfileLifecycleServiceTest {
           managerInvitations,
           accountInvitations,
           shares,
-          new ProfileShareLifecycle(shares),
+          new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
           sessions,
           audit,
           new MutationTransactions(

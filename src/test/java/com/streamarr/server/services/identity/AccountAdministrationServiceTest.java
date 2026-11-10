@@ -17,6 +17,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -74,7 +75,7 @@ class AccountAdministrationServiceTest {
           invitations,
           resetCodes,
           shares,
-          new ProfileShareLifecycle(shares),
+          new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           Clock.systemUTC());

@@ -20,6 +20,7 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAccountInvitationReofferRepository;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
@@ -325,7 +326,7 @@ class AccountInvitationServiceTest {
         managers,
         managerInvitations,
         shares,
-        new ProfileShareLifecycle(shares),
+        new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
         reoffers,
         households,
         sessions,
