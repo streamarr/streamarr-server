@@ -275,7 +275,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
   @Test
   @DisplayName(
       "Should store the probe failure as final and schedule no retry when the worker reports a"
-          + " result too large for one session message")
+          + " result too large for the probe report limits")
   void shouldStoreProbeFailureAsFinalAndScheduleNoRetryWhenWorkerReportsResultTooLarge()
       throws Exception {
     var request = request(createMediaFile("crowded.mkv"));
@@ -308,7 +308,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
                 .build());
 
         assertThat(nextCompletion().getResult())
-            .as("A result too large for one session message is not a retryable failure")
+            .as("A result too large for the probe report limits is not a retryable failure")
             .isEqualTo(ExecutionComplete.Result.OK);
         assertThat(reader.find(request.mediaFileId()))
             .hasValueSatisfying(

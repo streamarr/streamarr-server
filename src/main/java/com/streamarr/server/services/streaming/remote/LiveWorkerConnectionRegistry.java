@@ -42,9 +42,7 @@ import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCancelReason;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeFailure;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.StartVariantCommand;
@@ -404,16 +402,6 @@ final class LiveWorkerConnectionRegistry {
     return capacities.stream().reduce(ProbeCapacity.NONE, ProbeCapacity::plus);
   }
 
-  boolean completeProbe(UUID workerId, UUID workerSessionId, ProbeAttemptResult result) {
-    var connection = currentConnection(workerId, workerSessionId);
-    if (connection.isEmpty() || !connection.get().completeProbe(result)) {
-      return false;
-    }
-
-    countIfNoFreeCapacity(result);
-    return true;
-  }
-
   private void countIfNoFreeCapacity(ProbeAttemptResult result) {
     if (result.getFailure() == ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY) {
       countDeferredProbe(
@@ -440,20 +428,6 @@ final class LiveWorkerConnectionRegistry {
     }
 
     return connection.admitProbeReport(fromProto(metadata.getProbeAttemptId()), endReportCall);
-  }
-
-  boolean acceptStreamMeasurementPart(
-      UUID workerId, UUID workerSessionId, ProbeStreamMeasurementPart part) {
-    return currentConnection(workerId, workerSessionId)
-        .map(connection -> connection.acceptStreamMeasurementPart(part))
-        .orElse(false);
-  }
-
-  boolean acceptKeyframePositionsPart(
-      UUID workerId, UUID workerSessionId, ProbeKeyframePositionsPart part) {
-    return currentConnection(workerId, workerSessionId)
-        .map(connection -> connection.acceptKeyframePositionsPart(part))
-        .orElse(false);
   }
 
   Optional<VariantDispatch> dispatchTo(ExecutionTargetId target, VariantJob job) {
@@ -1356,40 +1330,6 @@ final class LiveWorkerConnectionRegistry {
           }
         }
       }
-    }
-
-    private boolean completeProbe(ProbeAttemptResult result) {
-      var attemptId = fromProto(result.getProbeAttemptId());
-      var pending = activeProbes.remove(attemptId);
-      if (pending == null) {
-        return false;
-      }
-
-      try {
-        return pending.tryComplete(result);
-      } finally {
-        pendingProbes.remove(attemptId, pending.result());
-      }
-    }
-
-    private boolean acceptStreamMeasurementPart(ProbeStreamMeasurementPart part) {
-      var pending = activeProbes.get(fromProto(part.getProbeAttemptId()));
-      if (pending == null) {
-        return false;
-      }
-
-      pending.add(part);
-      return true;
-    }
-
-    private boolean acceptKeyframePositionsPart(ProbeKeyframePositionsPart part) {
-      var pending = activeProbes.get(fromProto(part.getProbeAttemptId()));
-      if (pending == null) {
-        return false;
-      }
-
-      pending.add(part);
-      return true;
     }
 
     private void abandonProbe(UUID attemptId) {

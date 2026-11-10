@@ -5,10 +5,7 @@ import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
-import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -22,10 +19,6 @@ final class PendingProbe {
   private final ProbeRequest request;
   private final CompletableFuture<ProbeAttemptReport> result = new CompletableFuture<>();
   private final CompletableFuture<Void> terminated = new CompletableFuture<>();
-  private final ReceivedKeyframePositionsParts keyframePositionsParts =
-      new ReceivedKeyframePositionsParts();
-  private final ReceivedStreamMeasurementParts streamMeasurementParts =
-      new ReceivedStreamMeasurementParts();
   // How to end the one report call that reports the attempt. Unset until that call names it.
   private final AtomicReference<Runnable> reportCallEnd = new AtomicReference<>();
 
@@ -44,8 +37,7 @@ final class PendingProbe {
 
   /**
    * Completes when the probe has ended on the worker, or when the attempt ends without it. The
-   * probe has ended on the worker when the first message of its report call arrives, or its result
-   * on the worker session.
+   * probe has ended on the worker when the first message of its report call arrives.
    */
   CompletableFuture<Void> terminated() {
     return terminated;
@@ -72,42 +64,6 @@ final class PendingProbe {
    */
   void endOnWorker() {
     terminated.complete(null);
-  }
-
-  void add(ProbeKeyframePositionsPart part) {
-    keyframePositionsParts.add(part);
-  }
-
-  void add(ProbeStreamMeasurementPart part) {
-    streamMeasurementParts.add(part);
-  }
-
-  /**
-   * Ends the attempt with the worker's result and the parts that arrived before it. Returns false,
-   * and fails the attempt, when the result names another probe version or the parts break the
-   * contract.
-   */
-  boolean tryComplete(ProbeAttemptResult reported) {
-    if (reported.getProbeVersion() != request.getProbeVersion()) {
-      failForAnotherVersion(reported);
-      return false;
-    }
-
-    if (keyframePositionsParts.violatesContract()) {
-      failForContractViolation(
-          "Worker probe sent keyframe positions parts that break the contract");
-      return false;
-    }
-
-    // The contract discards the parts of an attempt whose result reports no measurement.
-    if (reportsMeasurement(reported) && streamMeasurementParts.violatesContract()) {
-      failForContractViolation(
-          "Worker probe sent stream measurement parts that break the contract");
-      return false;
-    }
-
-    complete(reportOf(reported));
-    return true;
   }
 
   /** Ends the attempt with the probe report. */
@@ -158,37 +114,5 @@ final class PendingProbe {
     if (end != null) {
       end.run();
     }
-  }
-
-  // The probe report that the result and the joined parts make.
-  private ProbeAttemptReport reportOf(ProbeAttemptResult reported) {
-    var report = ProbeAttemptReport.newBuilder().setResult(reported);
-    keyframePositionsParts
-        .parts()
-        .forEach(
-            part ->
-                report
-                    .addAllKeyframePresentationTimeDeltas(part.getPresentationTimeDeltasList())
-                    .addAllKeyframeDecodeTimeDeltas(part.getDecodeTimeDeltasList()));
-    if (reportsMeasurement(reported)) {
-      streamMeasurementParts
-          .parts()
-          .forEach(part -> report.addStreamMeasurementIntervals(intervalsOf(part)));
-    }
-
-    return report.build();
-  }
-
-  private static StreamMeasurementIntervals intervalsOf(ProbeStreamMeasurementPart part) {
-    return StreamMeasurementIntervals.newBuilder()
-        .setStreamIndex(part.getStreamIndex())
-        .addAllKeyframeIntervalBytes(part.getKeyframeIntervalBytesList())
-        .addAllKeyframeIntervalPacketCounts(part.getKeyframeIntervalPacketCountsList())
-        .build();
-  }
-
-  private static boolean reportsMeasurement(ProbeAttemptResult reported) {
-    return reported.getMedia().hasStreamMeasurements()
-        || reported.getBitrateScanChunk().hasMeasured();
   }
 }

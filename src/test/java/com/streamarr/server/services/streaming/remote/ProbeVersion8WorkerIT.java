@@ -27,7 +27,6 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.Presence;
-import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
@@ -99,8 +98,8 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
       UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
   private static final int SEGMENT_SECONDS = 6;
   private static final List<String> CHAPTER_TITLES = List.of("Opening", "Middle", "Closing");
-  // 40 subtitle streams with a 4,000-byte language tag each make a result of more than 160,000
-  // bytes, past the 131,072-byte session message limit.
+  // 40 subtitle streams with a 4,000-byte language tag each make a probe report of more than
+  // 160,000 bytes, past the 131,072 bytes of one message.
   private static final int OVERSIZED_STREAM_COUNT = 40;
   private static final int OVERSIZED_LANGUAGE_BYTES = 4_000;
   private static final int WORKER_SLOTS = 2;
@@ -203,9 +202,11 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should fail only the oversized probe and keep playing when a probe result exceeds the session message limit")
-  void shouldFailOnlyTheOversizedProbeAndKeepPlayingWhenAProbeResultExceedsTheSessionMessageLimit()
-      throws Exception {
+      "Should return the full result, keep the job attempt running and keep the worker's session"
+          + " when a probe result exceeds one message")
+  void
+      shouldReturnTheFullResultKeepTheJobAttemptRunningAndKeepTheWorkersSessionWhenAProbeResultExceedsOneMessage()
+          throws Exception {
     var directory = mediaDirectory();
     var clip = worker.generateMedia(directory.resolve("clip.mp4"), shortMedia());
     var playing = worker.generateMedia(directory.resolve("playing.mkv"), longMedia(clip));
@@ -221,12 +222,15 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
     try {
       awaitSegment(sessionId, 0);
 
-      var oversizedOutcome =
-          new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot)
-              .probe(probeRequest(oversized));
+      var oversizedOutcome = probe(oversized);
       var segmentsBefore = publishedSegmentCount(sessionId);
 
-      assertThat(oversizedOutcome).isEqualTo(new ProbeOutcome.Failure(ProbeError.RESULT_TOO_LARGE));
+      assertThat(oversizedOutcome.mediaProbe().streams())
+          .filteredOn(stream -> "subtitle".equals(stream.codecType()))
+          .extracting(StreamInfo::language)
+          .as("the result holds every subtitle stream's language tag in full")
+          .hasSize(OVERSIZED_STREAM_COUNT)
+          .containsOnly(Optional.of("x".repeat(OVERSIZED_LANGUAGE_BYTES)));
       awaitSegment(sessionId, segmentsBefore);
       assertThat(executor.isRunning(sessionId, StreamSession.defaultVariant()))
           .as("the job attempt keeps running")

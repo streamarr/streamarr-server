@@ -9,10 +9,7 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptStarted;
-import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.ReportProbeAttemptRequest;
 import com.streamarr.transcode.v1.ReportProbeAttemptResponse;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
@@ -218,11 +215,6 @@ final class WorkerSessionGrpcService
         case JOB_ATTEMPT_COMPLETED -> completeOrWarn(request.getJobAttemptCompleted());
         case JOB_ATTEMPT_STOPPED ->
             finishOrWarn(request.getJobAttemptStopped().getJobAttemptId(), "stopped");
-        case PROBE_RESULT -> completeProbe(request.getProbeResult());
-        case PROBE_KEYFRAME_POSITIONS_PART ->
-            acceptKeyframePositionsPart(request.getProbeKeyframePositionsPart());
-        case PROBE_STREAM_MEASUREMENT_PART ->
-            acceptStreamMeasurementPart(request.getProbeStreamMeasurementPart());
         case PROBE_CAPACITY_CHANGED -> changeProbeCapacity(request.getProbeCapacityChanged());
         case VIDEO_ENCODERS_CHANGED -> changeVideoEncoders(request.getVideoEncodersChanged());
         case JOB_ATTEMPT_PROGRESS ->
@@ -272,42 +264,6 @@ final class WorkerSessionGrpcService
           fromProto(started.getJobAttemptId()));
       workerConnections.checkReportedEncoderBackend(
           authenticatedWorkerId, workerSessionId, started);
-    }
-
-    private void completeProbe(ProbeAttemptResult result) {
-      if (workerConnections.completeProbe(authenticatedWorkerId, workerSessionId, result)) {
-        return;
-      }
-
-      log.warn(
-          "Worker {} reported an unaccepted probe result for attempt {} at version {}",
-          authenticatedWorkerId,
-          fromProto(result.getProbeAttemptId()),
-          result.getProbeVersion());
-    }
-
-    private void acceptKeyframePositionsPart(ProbeKeyframePositionsPart part) {
-      if (workerConnections.acceptKeyframePositionsPart(
-          authenticatedWorkerId, workerSessionId, part)) {
-        return;
-      }
-
-      log.warn(
-          "Worker {} sent keyframe positions for unaccepted probe attempt {}",
-          authenticatedWorkerId,
-          fromProto(part.getProbeAttemptId()));
-    }
-
-    private void acceptStreamMeasurementPart(ProbeStreamMeasurementPart part) {
-      if (workerConnections.acceptStreamMeasurementPart(
-          authenticatedWorkerId, workerSessionId, part)) {
-        return;
-      }
-
-      log.warn(
-          "Worker {} sent stream measurements for unaccepted probe attempt {}",
-          authenticatedWorkerId,
-          fromProto(part.getProbeAttemptId()));
     }
 
     private void reportFailedJobAttempt(JobAttemptFailed failed) {

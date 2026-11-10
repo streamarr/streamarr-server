@@ -68,7 +68,7 @@ final class RemoteKeyframeKnowledgeMapper {
   private static List<KeyframePosition> absolutePositions(ProbeAttemptReport report) {
     if (report.getKeyframePresentationTimeDeltasCount()
         != report.getKeyframeDecodeTimeDeltasCount()) {
-      throw violation("Worker probe keyframe part lists differ in length");
+      throw violation("Worker probe report's keyframe position lists differ in length");
     }
 
     var positions = new ArrayList<KeyframePosition>();

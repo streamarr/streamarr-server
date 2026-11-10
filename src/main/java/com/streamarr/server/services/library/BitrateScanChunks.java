@@ -18,7 +18,7 @@ import lombok.NonNull;
 final class BitrateScanChunks {
 
   static final long TARGET_CHUNK_BYTES = 1L << 30;
-  // One chunk's intervals then fit one stream measurement part, which holds at most 4,096 entries.
+  // The worker contract bounds each keyframe list of one BitrateScanChunk at 4,096 entries.
   static final int MAXIMUM_KEYFRAME_INTERVALS = 4_096;
 
   private BitrateScanChunks() {}

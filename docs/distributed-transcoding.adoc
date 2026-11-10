@@ -181,9 +181,9 @@ When a probe, a packet scan or a bitrate scan chunk reaches its timeout, the com
 When the server stops a probe while the server shuts down, the command carries the shutdown reason.
 The worker learns of a timeout only from this reason.
 The worker may lower its background probe capacity when probes reach the timeout, but not when a packet scan or a bitrate scan chunk does (https://github.com/streamarr/streamarr-adr/blob/main/adr/0032-media-file-probe-results-are-persisted.adoc[ADR 0032]).
-Each of the three timeouts runs from the start command until the first message of the probe's report call reaches the server, or the probe's result on the worker session.
+Each of the three timeouts runs from the start command until the first message of the probe's report call reaches the server.
 The time that a probe report waits on the worker for a free report call counts toward the timeout. The time that the worker takes to send the rest of the probe report does not, so the server never cancels a probe whose probe report is arriving.
-`STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` after a cancel command for the first message of the probe's report call, or for the probe's result on the worker session.
+`STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` after a cancel command for the first message of the probe's report call.
 The server reads the report call of a canceled probe or of a probe that reached its timeout like any other, and the probe report changes nothing.
 Until then, the probe keeps its unit of the worker's probe capacity.
 A worker that misses this deadline is disconnected and fenced. Its other active jobs are abandoned and recover through the existing playback recovery path.
@@ -228,7 +228,8 @@ The server then ends that report call with `INVALID_ARGUMENT`, and the violation
 A probe report of another probe version than the server asked for fails its probe as misconfigured, and its report call ends with `FAILED_PRECONDITION`.
 When a report call ends without the server's answer and without a contract violation, the probe fails as on a lost worker and runs again. A message of a report call above the 128 KiB limit of one message ends only that report call, in this way.
 A probe attempt keeps its unit of the worker's probe capacity until its report call ends.
-The server still accepts a probe report on the worker session, as a result with its keyframe positions parts and stream measurement parts, under the fixed limits of that path.
+The server reads a probe report only from a report call.
+It ignores a probe result that a worker built for an earlier contract sends on the worker session, as it ignores any session event that the contract does not define, and that worker's probe ends at its probe timeout.
 
 The server exposes Spring Boot probe groups at `/actuator/health/liveness` and `/actuator/health/readiness` on port `8080`.
 The standalone Spring Boot worker exposes the same paths on port `9091`.

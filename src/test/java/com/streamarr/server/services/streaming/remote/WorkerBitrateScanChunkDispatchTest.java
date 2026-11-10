@@ -13,13 +13,11 @@ import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.BitrateScanChunk;
 import com.streamarr.transcode.v1.BitrateScanChunkResult;
 import com.streamarr.transcode.v1.BitrateScanChunkStreams;
-import com.streamarr.transcode.v1.BitrateScanCopyChangesPackets;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeRequest;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
@@ -140,30 +138,6 @@ class WorkerBitrateScanChunkDispatchTest {
         .hasCauseInstanceOf(ProbeContractViolationException.class);
   }
 
-  @Test
-  @DisplayName(
-      "Should discard the chunk's parts when the worker reports that a copy changes a stream's"
-          + " packets")
-  void shouldDiscardTheChunksPartsWhenTheWorkerReportsThatACopyChangesAStreamsPackets()
-      throws Exception {
-    var session =
-        register(WorkerCapabilities.newBuilder().addMeasurementVersions(MEASUREMENT_VERSION));
-    var request = chunk().build();
-    var pending = dispatched(registry.dispatchProbe(request));
-
-    registry.acceptStreamMeasurementPart(WORKER_ID, session, part(request, 0, 700));
-    var result =
-        answer(request)
-            .setBitrateScanChunk(
-                BitrateScanChunkResult.newBuilder()
-                    .setCopyChangesPackets(
-                        BitrateScanCopyChangesPackets.newBuilder().setStreamIndex(0)))
-            .build();
-
-    assertThat(registry.completeProbe(WORKER_ID, session, result)).isTrue();
-    assertThat(pending.get(1, TimeUnit.SECONDS).getStreamMeasurementIntervalsList()).isEmpty();
-  }
-
   private UUID register(WorkerCapabilities.Builder capabilities) {
     return registry.register(
         WORKER_ID,
@@ -205,15 +179,6 @@ class WorkerBitrateScanChunkDispatchTest {
                 .addAllPresentationTimeDeltas(List.of(0L, 90_000L))
                 .addAllDecodeTimeDeltas(List.of(0L, 90_000L))
                 .setFirstChunk(true));
-  }
-
-  private static ProbeStreamMeasurementPart part(ProbeRequest request, int streamIndex, int bytes) {
-    return ProbeStreamMeasurementPart.newBuilder()
-        .setProbeAttemptId(request.getProbeAttemptId())
-        .setStreamIndex(streamIndex)
-        .addKeyframeIntervalBytes(bytes)
-        .addKeyframeIntervalPacketCounts(1)
-        .build();
   }
 
   private static ProbeAttemptResult measured(ProbeRequest request) {

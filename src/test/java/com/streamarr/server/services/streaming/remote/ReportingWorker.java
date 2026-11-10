@@ -187,6 +187,11 @@ final class ReportingWorker {
                 .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA));
   }
 
+  /** Sends the event on the worker session. */
+  void send(EstablishWorkerSessionRequest event) {
+    session.onNext(event);
+  }
+
   /** Ends the worker session as gRPC does when the worker's connection is lost. */
   void disconnect() {
     session.onError(Status.UNAVAILABLE.asRuntimeException());
