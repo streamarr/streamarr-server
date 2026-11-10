@@ -1,7 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.services.ArtworkRun;
+import com.streamarr.server.services.artwork.ArtworkRun;
 import lombok.NonNull;
 
 /**

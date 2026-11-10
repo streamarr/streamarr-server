@@ -1,4 +1,4 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.artwork;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
@@ -7,8 +7,8 @@ import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.exceptions.ImageDownloadException;
 import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.exceptions.ImageStorageException;
-import com.streamarr.server.services.ArtworkFailure.Retryable;
-import com.streamarr.server.services.ArtworkFailure.Terminal;
+import com.streamarr.server.services.artwork.ArtworkFailure.Retryable;
+import com.streamarr.server.services.artwork.ArtworkFailure.Terminal;
 import java.io.IOException;
 import java.net.http.HttpConnectTimeoutException;
 import java.time.Duration;

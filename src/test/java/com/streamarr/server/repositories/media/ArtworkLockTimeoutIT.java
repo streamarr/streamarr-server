@@ -20,7 +20,7 @@ import com.streamarr.server.domain.media.NewArtworkRequest;
 import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.artwork.ImageService;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.Callable;

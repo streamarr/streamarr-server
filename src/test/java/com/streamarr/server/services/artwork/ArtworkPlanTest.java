@@ -1,4 +1,4 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.artwork;
 
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -11,9 +11,9 @@ import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.domain.media.ImageSource;
 import com.streamarr.server.domain.media.ImageSource.TmdbImageSource;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.services.ArtworkPlan.PlannedImage.DownloadImage;
-import com.streamarr.server.services.ArtworkPlan.PlannedImage.KeepStoredImage;
-import com.streamarr.server.services.ArtworkPlan.PlannedImage.ReportUnavailable;
+import com.streamarr.server.services.artwork.ArtworkPlan.PlannedImage.DownloadImage;
+import com.streamarr.server.services.artwork.ArtworkPlan.PlannedImage.KeepStoredImage;
+import com.streamarr.server.services.artwork.ArtworkPlan.PlannedImage.ReportUnavailable;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;

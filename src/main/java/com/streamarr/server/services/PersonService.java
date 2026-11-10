@@ -6,6 +6,7 @@ import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.domain.media.ImageSource;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.services.artwork.ArtworkRequestService;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;

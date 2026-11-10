@@ -1,4 +1,4 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.artwork;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
@@ -20,7 +20,8 @@ import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.ImageService.ProcessedImage;
+import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.artwork.ImageService.ProcessedImage;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import com.streamarr.server.support.TestFixtureWork;
 import java.util.List;

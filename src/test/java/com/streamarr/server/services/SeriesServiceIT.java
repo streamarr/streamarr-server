@@ -28,6 +28,7 @@ import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.artwork.ArtworkRequestService;
 import com.streamarr.server.services.metadata.MetadataResult;
 import java.time.LocalDate;
 import java.util.ArrayList;

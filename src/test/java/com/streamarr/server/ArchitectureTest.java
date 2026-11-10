@@ -761,6 +761,7 @@ class ArchitectureTest {
         .that()
         .resideInAnyPackage(
             "com.streamarr.server.services",
+            "com.streamarr.server.services.artwork..",
             "com.streamarr.server.services.concurrency..",
             "com.streamarr.server.services.library..",
             "com.streamarr.server.config..")

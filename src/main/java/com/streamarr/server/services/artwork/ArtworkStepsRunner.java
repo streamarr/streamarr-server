@@ -1,4 +1,4 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.artwork;
 
 import com.streamarr.server.domain.media.ArtworkPriority;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
@@ -12,10 +12,10 @@ import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
-import com.streamarr.server.services.ArtworkPlan.PlannedImage.DownloadImage;
-import com.streamarr.server.services.ArtworkPlan.PlannedImage.KeepStoredImage;
-import com.streamarr.server.services.ArtworkPlan.PlannedImage.ReportUnavailable;
-import com.streamarr.server.services.ImageService.ProcessedImage;
+import com.streamarr.server.services.artwork.ArtworkPlan.PlannedImage.DownloadImage;
+import com.streamarr.server.services.artwork.ArtworkPlan.PlannedImage.KeepStoredImage;
+import com.streamarr.server.services.artwork.ArtworkPlan.PlannedImage.ReportUnavailable;
+import com.streamarr.server.services.artwork.ImageService.ProcessedImage;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.concurrency.CpuPermits;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;

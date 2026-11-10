@@ -27,6 +27,7 @@ import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.services.artwork.ArtworkRun;
 import com.streamarr.server.services.metadata.MetadataResult;
 import java.util.LinkedHashSet;
 import java.util.List;

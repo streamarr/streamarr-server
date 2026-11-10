@@ -5,7 +5,7 @@ import com.github.kagkarlsson.scheduler.event.SchedulerListener;
 import com.streamarr.server.config.ArtworkScheduler;
 import com.streamarr.server.domain.media.ArtworkPriority;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
-import com.streamarr.server.services.ArtworkStepsRunner;
+import com.streamarr.server.services.artwork.ArtworkStepsRunner;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;

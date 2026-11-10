@@ -1,4 +1,4 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.artwork;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
@@ -39,6 +39,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.concurrency.CpuPermits;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.support.ArtworkSchedulerStarter;
