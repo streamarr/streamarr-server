@@ -16,8 +16,4 @@ public record ShareStatusFilter(@NonNull Set<ProfileShareStatus> statuses, @NonN
     statuses =
         statuses.isEmpty() ? Set.of() : Collections.unmodifiableSet(EnumSet.copyOf(statuses));
   }
-
-  public boolean keeps(ProfileHouseholdShare share) {
-    return statuses.isEmpty() || statuses.contains(share.statusAt(at));
-  }
 }
