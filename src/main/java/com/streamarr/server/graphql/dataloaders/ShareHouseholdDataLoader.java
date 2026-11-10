@@ -4,6 +4,7 @@ import com.netflix.graphql.dgs.DgsDataLoader;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.graphql.dto.HouseholdSummary;
 import com.streamarr.server.services.identity.ProfileSharePartiesService;
+import com.streamarr.server.services.identity.ShareReference;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -15,16 +16,17 @@ import org.dataloader.MappedBatchLoader;
 @DgsDataLoader(name = ShareHouseholdDataLoader.NAME)
 @RequiredArgsConstructor
 public class ShareHouseholdDataLoader
-    implements MappedBatchLoader<ShareLoaderKey, HouseholdSummary> {
+    implements MappedBatchLoader<ReaderLoaderKey<ShareReference>, HouseholdSummary> {
 
   public static final String NAME = "shareHousehold";
 
   private final ProfileSharePartiesService sharePartiesService;
 
   @Override
-  public CompletionStage<Map<ShareLoaderKey, HouseholdSummary>> load(Set<ShareLoaderKey> keys) {
+  public CompletionStage<Map<ReaderLoaderKey<ShareReference>, HouseholdSummary>> load(
+      Set<ReaderLoaderKey<ShareReference>> keys) {
     return CompletableFuture.completedFuture(
-        ShareLoaderKey.loadByReader(
+        ReaderLoaderKey.loadByReader(
             keys, sharePartiesService::households, ShareHouseholdDataLoader::summary));
   }
 
