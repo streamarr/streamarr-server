@@ -53,6 +53,28 @@ class MutexFactoryCollectionTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep another thread out of a key's mutex when soft references are cleared while it"
+          + " is held")
+  void shouldKeepAnotherThreadOutOfAKeysMutexWhenSoftReferencesAreClearedWhileItIsHeld() {
+    assertThat(report).contains("secondThreadEntered=false");
+  }
+
+  @Test
+  @DisplayName("Should return the held mutex when soft references are cleared while it is held")
+  void shouldReturnTheHeldMutexWhenSoftReferencesAreClearedWhileItIsHeld() {
+    assertThat(report).contains("heldMutexReturned=true");
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer that the current thread holds a mutex when soft references are cleared while"
+          + " it holds one")
+  void shouldAnswerThatTheCurrentThreadHoldsAMutexWhenSoftReferencesAreClearedWhileItHoldsOne() {
+    assertThat(report).contains("holderSeenAsHolding=true");
+  }
+
+  @Test
   @DisplayName("Should let a mutex be collected when no caller references it")
   void shouldLetAMutexBeCollectedWhenNoCallerReferencesIt() {
     assertThat(report).contains("unreferencedMutexCollected=true");

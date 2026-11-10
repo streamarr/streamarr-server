@@ -1,6 +1,7 @@
 package com.streamarr.server.services.concurrency;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -57,6 +58,12 @@ class MutexFactoryTest {
     await().atMost(2, TimeUnit.SECONDS).until(() -> !thread1.isAlive() && !thread2.isAlive());
 
     assertEquals(2, counter, "Expected counter to be incremented twice");
+  }
+
+  @Test
+  @DisplayName("Should reject a null key when asked for its mutex")
+  void shouldRejectANullKeyWhenAskedForItsMutex() {
+    assertThatNullPointerException().isThrownBy(() -> mutexFactory.getMutex(null));
   }
 
   @Test
