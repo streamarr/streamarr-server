@@ -347,14 +347,16 @@ class ArchitectureTest {
                   + " on");
 
   @ArchTest
-  static final ArchRule authRepositoriesMustNotDependOnAuthServices =
+  static final ArchRule repositoriesMustNotDependOnServices =
       noClasses()
           .that()
-          .resideInAPackage("..repositories.auth..")
+          .resideInAPackage("com.streamarr.server.repositories..")
           .should()
           .dependOnClassesThat()
-          .resideInAPackage("..services.auth..")
-          .as("Auth repositories must remain below auth services in the dependency direction");
+          .resideInAPackage("com.streamarr.server.services..")
+          .as(
+              "Repositories must remain below services in the dependency direction; the types"
+                  + " both use belong in domain");
 
   @ArchTest
   static final ArchRule repositoryMethodsMustNotUseQueryAnnotations =
