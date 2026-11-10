@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
+import com.streamarr.server.fixtures.WorkerProbeReporter;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
@@ -286,7 +287,14 @@ class MeshMediaHandlerIT {
               .usePlaintext()
               .intercept(MetadataUtils.newAttachHeadersInterceptor(headers))
               .build();
-      worker = new ProbeWorker(media, segments);
+      var identity =
+          WorkerIdentity.newBuilder()
+              .setWorkerId(toProto(workerId))
+              .setBootId(toProto(UUID.randomUUID()))
+              .build();
+      worker =
+          new ProbeWorker(
+              media, segments, WorkerProbeReporter.builder().channel(channel).worker(identity));
       if (withoutWorker) {
         return;
       }
@@ -296,10 +304,7 @@ class MeshMediaHandlerIT {
           EstablishWorkerSessionRequest.newBuilder()
               .setRegistration(
                   WorkerRegistration.newBuilder()
-                      .setWorker(
-                          WorkerIdentity.newBuilder()
-                              .setWorkerId(toProto(workerId))
-                              .setBootId(toProto(UUID.randomUUID())))
+                      .setWorker(identity)
                       .setAvailableSlots(1)
                       .setBackgroundProbeCapacity(1)
                       .setKeyframePacketScanCapacity(1)
@@ -348,33 +353,40 @@ class MeshMediaHandlerIT {
 
     private final ProbeMediaInfo media;
     private final MeshSegmentStore segments;
+    // Lacks the worker session until the server accepts it.
+    private final WorkerProbeReporter.WorkerProbeReporterBuilder reporter;
     private final CompletableFuture<Void> accepted = new CompletableFuture<>();
     private final CompletableFuture<VariantJob> started = new CompletableFuture<>();
     private final CompletableFuture<Uuid> stopped = new CompletableFuture<>();
     private StreamObserver<EstablishWorkerSessionRequest> requests;
 
-    private ProbeWorker(ProbeMediaInfo media, MeshSegmentStore segments) {
+    private ProbeWorker(
+        ProbeMediaInfo media,
+        MeshSegmentStore segments,
+        WorkerProbeReporter.WorkerProbeReporterBuilder reporter) {
       this.media = media;
       this.segments = segments;
+      this.reporter = reporter;
     }
 
     @Override
     public void onNext(EstablishWorkerSessionResponse response) {
       if (response.hasSessionAccepted()) {
+        reporter.workerSessionId(response.getSessionAccepted().getWorkerSessionId());
         accepted.complete(null);
         return;
       }
 
       if (response.hasStartProbe()) {
         var request = response.getStartProbe().getRequest();
-        requests.onNext(
-            EstablishWorkerSessionRequest.newBuilder()
-                .setProbeResult(
-                    ProbeAttemptResult.newBuilder()
-                        .setProbeAttemptId(request.getProbeAttemptId())
-                        .setProbeVersion(request.getProbeVersion())
-                        .setMedia(media))
-                .build());
+        reporter
+            .build()
+            .report(
+                ProbeAttemptResult.newBuilder()
+                    .setProbeAttemptId(request.getProbeAttemptId())
+                    .setProbeVersion(request.getProbeVersion())
+                    .setMedia(media)
+                    .build());
         return;
       }
 

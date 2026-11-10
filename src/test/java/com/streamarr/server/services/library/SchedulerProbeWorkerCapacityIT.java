@@ -205,11 +205,12 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
   void shouldStoreBothProbesWhenHeldProbeReleasesTheOnlyUnitOfProbeCapacity() throws Exception {
     whenOneUnitOfProbeCapacityServesTwoProbes(
         busy -> {
-          busy.worker().reply(success(busy.held()));
+          busy.worker().report(success(busy.held()));
           var held = nextCompletion();
           advanceClock(probeScheduling.busyWorkerRetryDelay());
           busy.worker()
-              .reply(success(busy.worker().nextResponse(WORKER_WAIT).getStartProbe().getRequest()));
+              .report(
+                  success(busy.worker().nextResponse(WORKER_WAIT).getStartProbe().getRequest()));
           var retried = nextCompletion();
 
           assertThat(List.of(busy.deferred(), held, retried))
@@ -299,7 +300,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
             startScheduler(new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, sourceRoot));
         var dispatched = worker.nextResponse(WORKER_WAIT).getStartProbe().getRequest();
 
-        worker.reply(
+        worker.report(
             ProbeAttemptResult.newBuilder()
                 .setProbeAttemptId(dispatched.getProbeAttemptId())
                 .setProbeVersion(dispatched.getProbeVersion())
@@ -353,7 +354,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
               });
       var pollTime = clock.instant();
 
-      worker.reply(invalidMedia(running));
+      worker.report(invalidMedia(running));
       assertThat(nextCompletion().getResult()).isEqualTo(ExecutionComplete.Result.OK);
       scheduler.triggerCheckForDueExecutions();
 
@@ -395,7 +396,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
       assertThat(server.probeCapacity(SOURCE_NAMESPACE_ID, ProbeVersion.CURRENT).runningProbes())
           .isEqualTo(8);
 
-      three.reply(invalidMedia(onThree.getFirst()));
+      three.report(invalidMedia(onThree.getFirst()));
       assertThat(nextCompletion().getResult()).isEqualTo(ExecutionComplete.Result.OK);
       var pollingInterval = schedulerProperties().getPollingInterval();
       assertThat(pollingInterval).isLessThan(probeScheduling.busyWorkerRetryDelay());
@@ -446,7 +447,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
           .returns(1, ProbeCapacity::runningProbes)
           .returns(1, ProbeCapacity::runningKeyframePacketScans);
 
-      worker.reply(invalidMedia(probe));
+      worker.report(invalidMedia(probe));
       assertThat(nextCompletion().getResult()).isEqualTo(ExecutionComplete.Result.OK);
       scheduler.triggerCheckForDueExecutions();
 
@@ -482,7 +483,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
       // The first worker lowered its capacity while the server sent the probe.
       first.changeProbeCapacities(0, 1);
       second.changeProbeCapacities(2, 1);
-      first.reply(
+      first.report(
           ProbeAttemptResult.newBuilder()
               .setProbeAttemptId(refused.getProbeAttemptId())
               .setProbeVersion(refused.getProbeVersion())
@@ -532,7 +533,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
       assertThat(worker.hasNoResponse())
           .as("The playback request waits for the running probe")
           .isTrue();
-      worker.reply(success(running));
+      worker.report(success(running));
       assertThat(nextCompletion().getResult()).isEqualTo(ExecutionComplete.Result.OK);
       assertThat(reader.find(request.mediaFileId())).isPresent();
       awaitCompletedPoll(polls);
@@ -706,7 +707,7 @@ class SchedulerProbeWorkerCapacityIT extends AbstractIntegrationTest {
           .as("The pool still serves an unrelated query")
           .isEqualTo(1);
 
-      held.forEach(probe -> worker.reply(invalidMedia(probe)));
+      held.forEach(probe -> worker.report(invalidMedia(probe)));
       for (var index = 0; index < probeCapacity; index++) {
         assertThat(nextCompletion().getResult()).isEqualTo(ExecutionComplete.Result.OK);
       }

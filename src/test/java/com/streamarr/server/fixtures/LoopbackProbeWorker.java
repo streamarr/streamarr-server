@@ -10,12 +10,8 @@ import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
-import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
-import com.streamarr.transcode.v1.ReportProbeAttemptRequest;
 import com.streamarr.transcode.v1.ReportProbeAttemptResponse;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.WorkerCapabilities;
@@ -30,23 +26,28 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import lombok.Singular;
 
-/** A gRPC worker session driven by the test: it records server commands and sends replies. */
+/**
+ * A gRPC worker session driven by the test: it records server commands, and sends each probe report
+ * in a report call of its own.
+ */
 public final class LoopbackProbeWorker implements AutoCloseable {
-
-  private static final int LARGEST_REPORT_MESSAGE_BYTES = 64 * 1024;
 
   private final ManagedChannel channel;
   private final StreamObserver<EstablishWorkerSessionRequest> requests;
   private final BlockingQueue<EstablishWorkerSessionResponse> responses =
       new LinkedBlockingQueue<>();
   private final CompletableFuture<Status> terminated = new CompletableFuture<>();
-  private final WorkerIdentity identity;
   private final WorkerSessionAccepted accepted;
+  private final WorkerProbeReporter reporter;
+  private final List<CompletableFuture<ReportProbeAttemptResponse>> reportCalls =
+      new CopyOnWriteArrayList<>();
 
   /**
    * Registers a worker session that advertises the probe version, the playback slots and the probe
@@ -81,7 +82,7 @@ public final class LoopbackProbeWorker implements AutoCloseable {
       keyframePacketScans = keyframePacketScanCapacity;
     }
 
-    identity =
+    var identity =
         WorkerIdentity.newBuilder()
             .setWorkerId(toProto(worker))
             .setBootId(toProto(UUID.randomUUID()))
@@ -126,6 +127,12 @@ public final class LoopbackProbeWorker implements AutoCloseable {
     var first = nextResponse();
     assertThat(first.hasSessionAccepted()).isTrue();
     accepted = first.getSessionAccepted();
+    reporter =
+        WorkerProbeReporter.builder()
+            .channel(channel)
+            .workerSessionId(accepted.getWorkerSessionId())
+            .worker(identity)
+            .build();
   }
 
   /** The limits and the worker session id that the server stated when it accepted the session. */
@@ -158,18 +165,9 @@ public final class LoopbackProbeWorker implements AutoCloseable {
             .build());
   }
 
-  public void reply(ProbeAttemptResult result) {
-    requests.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
-  }
-
-  public void sendKeyframePositionsPart(ProbeKeyframePositionsPart part) {
-    requests.onNext(
-        EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(part).build());
-  }
-
-  public void sendStreamMeasurementPart(ProbeStreamMeasurementPart part) {
-    requests.onNext(
-        EstablishWorkerSessionRequest.newBuilder().setProbeStreamMeasurementPart(part).build());
+  /** Sends a probe report that holds the result alone, in a report call of its own. */
+  public CompletableFuture<ReportProbeAttemptResponse> report(ProbeAttemptResult result) {
+    return tracked(reporter.report(result));
   }
 
   /**
@@ -178,49 +176,18 @@ public final class LoopbackProbeWorker implements AutoCloseable {
    * ended the report call.
    */
   public CompletableFuture<ReportProbeAttemptResponse> report(ProbeAttemptReport report) {
-    return report(report, LARGEST_REPORT_MESSAGE_BYTES);
+    return tracked(reporter.report(report));
   }
 
   /** As {@link #report(ProbeAttemptReport)}, in messages of at most this many bytes of it. */
   public CompletableFuture<ReportProbeAttemptResponse> report(
       ProbeAttemptReport report, int largestMessageBytes) {
-    var answer = new CompletableFuture<ReportProbeAttemptResponse>();
-    var call =
-        TranscodeWorkerServiceGrpc.newStub(channel)
-            .reportProbeAttempt(
-                new StreamObserver<>() {
-                  @Override
-                  public void onNext(ReportProbeAttemptResponse response) {
-                    answer.complete(response);
-                  }
+    return tracked(reporter.report(report, largestMessageBytes));
+  }
 
-                  @Override
-                  public void onError(Throwable failure) {
-                    answer.completeExceptionally(failure);
-                  }
-
-                  @Override
-                  public void onCompleted() {
-                    // The answer has already completed the future.
-                  }
-                });
-    var bytes = report.toByteString();
-    call.onNext(
-        ReportProbeAttemptRequest.newBuilder()
-            .setMetadata(
-                ProbeAttemptReportMetadata.newBuilder()
-                    .setWorkerSessionId(accepted.getWorkerSessionId())
-                    .setWorker(identity)
-                    .setProbeAttemptId(report.getResult().getProbeAttemptId())
-                    .setReportLengthBytes(bytes.size()))
-            .build());
-    for (var sent = 0; sent < bytes.size(); sent += largestMessageBytes) {
-      var end = Math.min(bytes.size(), sent + largestMessageBytes);
-      call.onNext(
-          ReportProbeAttemptRequest.newBuilder().setData(bytes.substring(sent, end)).build());
-    }
-
-    call.onCompleted();
+  private CompletableFuture<ReportProbeAttemptResponse> tracked(
+      CompletableFuture<ReportProbeAttemptResponse> answer) {
+    reportCalls.add(answer);
     return answer;
   }
 
@@ -232,10 +199,22 @@ public final class LoopbackProbeWorker implements AutoCloseable {
     channel.shutdownNow();
   }
 
+  /**
+   * Ends the worker session once the server has ended every report call, as a worker that shuts
+   * down does. A report call is not ordered with the session, so ending the session first could end
+   * a probe attempt before the server reads its report.
+   */
   @Override
   public void close() throws InterruptedException {
+    awaitReportCalls();
     requests.onCompleted();
     channel.shutdownNow();
     assertThat(channel.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+  }
+
+  private void awaitReportCalls() throws InterruptedException {
+    var ended = new CountDownLatch(reportCalls.size());
+    reportCalls.forEach(call -> call.whenComplete((_, _) -> ended.countDown()));
+    assertThat(ended.await(5, TimeUnit.SECONDS)).as("The server ends every report call").isTrue();
   }
 }

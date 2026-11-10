@@ -3,6 +3,7 @@ package com.streamarr.server.fixtures.mesh;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
+import com.streamarr.server.fixtures.WorkerProbeReporter;
 import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -14,6 +15,7 @@ import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
+import io.grpc.Channel;
 import io.grpc.Metadata;
 import io.grpc.Status;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
@@ -79,10 +81,10 @@ public final class MeshValidationClient {
             .intercept(MetadataUtils.newAttachHeadersInterceptor(headers))
             .build();
     try {
-      var session = new Session();
+      var session = new Session(channel, workerId);
       session.requests =
           TranscodeWorkerServiceGrpc.newStub(channel).establishWorkerSession(session);
-      session.register(workerId);
+      session.register();
       if (mode.equals("registered")) {
         session.accepted.get(10, TimeUnit.SECONDS);
         System.out.println("WORKER_REGISTERED");
@@ -180,17 +182,27 @@ public final class MeshValidationClient {
   private static final class Session implements StreamObserver<EstablishWorkerSessionResponse> {
 
     private final CompletableFuture<Void> accepted = new CompletableFuture<>();
+    private final Channel channel;
+    private final WorkerIdentity identity;
     private StreamObserver<EstablishWorkerSessionRequest> requests;
+    // Set when the server accepts the worker session, before it sends a command.
+    private WorkerProbeReporter reporter;
 
-    private void register(UUID workerId) {
+    private Session(Channel channel, UUID workerId) {
+      this.channel = channel;
+      identity =
+          WorkerIdentity.newBuilder()
+              .setWorkerId(toProto(workerId))
+              .setBootId(toProto(UUID.randomUUID()))
+              .build();
+    }
+
+    private void register() {
       requests.onNext(
           EstablishWorkerSessionRequest.newBuilder()
               .setRegistration(
                   WorkerRegistration.newBuilder()
-                      .setWorker(
-                          WorkerIdentity.newBuilder()
-                              .setWorkerId(toProto(workerId))
-                              .setBootId(toProto(UUID.randomUUID())))
+                      .setWorker(identity)
                       .setAvailableSlots(1)
                       .setBackgroundProbeCapacity(1)
                       .setKeyframePacketScanCapacity(1)
@@ -207,22 +219,25 @@ public final class MeshValidationClient {
     @Override
     public void onNext(EstablishWorkerSessionResponse response) {
       if (response.hasSessionAccepted()) {
+        reporter =
+            WorkerProbeReporter.builder()
+                .channel(channel)
+                .workerSessionId(response.getSessionAccepted().getWorkerSessionId())
+                .worker(identity)
+                .build();
         accepted.complete(null);
         return;
       }
 
       if (response.hasStartProbe()) {
         var request = response.getStartProbe().getRequest();
-        requests.onNext(
-            EstablishWorkerSessionRequest.newBuilder()
-                .setProbeResult(
-                    ProbeAttemptResult.newBuilder()
-                        .setProbeAttemptId(request.getProbeAttemptId())
-                        .setProbeVersion(request.getProbeVersion())
-                        .setMedia(
-                            ProbeMediaInfo.newBuilder()
-                                .setContainer(
-                                    ProbeContainerInfo.newBuilder().setFormat("mesh-fixture"))))
+        reporter.report(
+            ProbeAttemptResult.newBuilder()
+                .setProbeAttemptId(request.getProbeAttemptId())
+                .setProbeVersion(request.getProbeVersion())
+                .setMedia(
+                    ProbeMediaInfo.newBuilder()
+                        .setContainer(ProbeContainerInfo.newBuilder().setFormat("mesh-fixture")))
                 .build());
       }
     }

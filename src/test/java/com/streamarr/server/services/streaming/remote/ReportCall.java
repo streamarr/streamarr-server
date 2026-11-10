@@ -114,6 +114,11 @@ final class ReportCall {
     return !responses.answer.isDone();
   }
 
+  /** Whether the server answered the call, and did not end it with a status. */
+  boolean isAnswered() {
+    return responses.answer.isDone() && !responses.answer.isCompletedExceptionally();
+  }
+
   /** The status that ended the call without an answer. */
   Status.Code refusal() {
     assertThat(responses.answer).isCompletedExceptionally();

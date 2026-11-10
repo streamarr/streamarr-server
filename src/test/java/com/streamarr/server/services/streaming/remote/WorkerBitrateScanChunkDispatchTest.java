@@ -3,6 +3,8 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
+import static com.streamarr.server.services.streaming.remote.LiveWorkerConnectionRegistryFixture.report;
+import static com.streamarr.server.services.streaming.remote.LiveWorkerConnectionRegistryFixture.reportingSession;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -44,6 +46,11 @@ class WorkerBitrateScanChunkDispatchTest {
   private final LiveWorkerConnectionRegistry registry =
       LiveWorkerConnectionRegistryFixture.defaultRegistry();
   private final CapturingResponses responses = new CapturingResponses();
+  private final WorkerIdentity worker =
+      WorkerIdentity.newBuilder()
+          .setWorkerId(toProto(WORKER_ID))
+          .setBootId(toProto(UUID.randomUUID()))
+          .build();
 
   @ParameterizedTest(name = "listed measurement versions={0}")
   @ValueSource(strings = {"", "1", "3"})
@@ -87,46 +94,47 @@ class WorkerBitrateScanChunkDispatchTest {
 
   @Test
   @DisplayName(
-      "Should return each measured stream's joined parts when the worker measures the chunk")
-  void shouldReturnEachMeasuredStreamsJoinedPartsWhenTheWorkerMeasuresTheChunk() throws Exception {
+      "Should return each measured stream's keyframe intervals when the worker measures the chunk")
+  void shouldReturnEachMeasuredStreamsKeyframeIntervalsWhenTheWorkerMeasuresTheChunk()
+      throws Exception {
     var session =
         register(WorkerCapabilities.newBuilder().addMeasurementVersions(MEASUREMENT_VERSION));
     var request = chunk().build();
     var pending = dispatched(registry.dispatchProbe(request));
+    var measured =
+        ProbeAttemptReport.newBuilder()
+            .setResult(measured(request))
+            .addStreamMeasurementIntervals(
+                StreamMeasurementIntervals.newBuilder()
+                    .setStreamIndex(0)
+                    .addAllKeyframeIntervalBytes(List.of(700, 300))
+                    .addAllKeyframeIntervalPacketCounts(List.of(1, 1)))
+            .build();
 
-    registry.acceptStreamMeasurementPart(WORKER_ID, session, part(request, 0, 700));
-    registry.acceptStreamMeasurementPart(WORKER_ID, session, part(request, 0, 300));
-    var result = measured(request);
-
-    assertThat(registry.completeProbe(WORKER_ID, session, result)).isTrue();
-    assertThat(pending.get(1, TimeUnit.SECONDS))
-        .isEqualTo(
-            ProbeAttemptReport.newBuilder()
-                .setResult(result)
-                .addStreamMeasurementIntervals(
-                    StreamMeasurementIntervals.newBuilder()
-                        .setStreamIndex(0)
-                        .addAllKeyframeIntervalBytes(List.of(700, 300))
-                        .addAllKeyframeIntervalPacketCounts(List.of(1, 1)))
-                .build());
+    assertThat(report(registry, reportingSession(session, worker), measured).isAnswered()).isTrue();
+    assertThat(pending.get(1, TimeUnit.SECONDS)).isEqualTo(measured);
   }
 
   @Test
   @DisplayName(
-      "Should fail the chunk as a contract violation when its parts break the contract and the"
-          + " worker measures the chunk")
-  void shouldFailTheChunkAsAContractViolationWhenItsPartsBreakTheContract() {
+      "Should fail the chunk as a contract violation when its report holds a stream's bytes"
+          + " without packet counts")
+  void shouldFailTheChunkAsAContractViolationWhenItsReportHoldsAStreamsBytesWithoutPacketCounts()
+      throws Exception {
     var session =
         register(WorkerCapabilities.newBuilder().addMeasurementVersions(MEASUREMENT_VERSION));
     var request = chunk().build();
     var pending = dispatched(registry.dispatchProbe(request));
+    var broken =
+        ProbeAttemptReport.newBuilder()
+            .setResult(measured(request))
+            .addStreamMeasurementIntervals(
+                StreamMeasurementIntervals.newBuilder()
+                    .setStreamIndex(0)
+                    .addKeyframeIntervalBytes(700))
+            .build();
 
-    registry.acceptStreamMeasurementPart(
-        WORKER_ID,
-        session,
-        part(request, 0, 700).toBuilder().clearKeyframeIntervalPacketCounts().build());
-
-    assertThat(registry.completeProbe(WORKER_ID, session, measured(request))).isFalse();
+    assertThat(report(registry, reportingSession(session, worker), broken).isAnswered()).isFalse();
     assertThatThrownBy(() -> pending.get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasCauseInstanceOf(ProbeContractViolationException.class);
@@ -160,10 +168,7 @@ class WorkerBitrateScanChunkDispatchTest {
     return registry.register(
         WORKER_ID,
         WorkerRegistration.newBuilder()
-            .setWorker(
-                WorkerIdentity.newBuilder()
-                    .setWorkerId(toProto(WORKER_ID))
-                    .setBootId(toProto(UUID.randomUUID())))
+            .setWorker(worker)
             .setCapabilities(
                 capabilities
                     .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
