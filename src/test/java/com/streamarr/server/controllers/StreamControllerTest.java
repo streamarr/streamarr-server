@@ -32,6 +32,8 @@ import com.streamarr.server.services.streaming.DirectPlaySourceService;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
+import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.net.URI;
@@ -43,6 +45,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import lombok.Builder;
+import org.apache.catalina.Globals;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -59,6 +62,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 @Tag("UnitTest")
@@ -120,7 +124,7 @@ class StreamControllerTest {
         directPlayMetrics);
   }
 
-  private SegmentDeliveryCoordinator coordinatorOver(FakeSegmentStore store) {
+  private SegmentDeliveryCoordinator coordinatorOver(SegmentStore store) {
     return StreamingRigFixture.streamingRigBuilder()
         .segmentStore(store)
         .transcodeExecutor(transcodeExecutor)
@@ -712,6 +716,161 @@ class StreamControllerTest {
     var source = Files.write(mediaRoot.resolve("movie.mp4"), new byte[] {1, 2, 3});
     streamingService.addSession(
         directPlaySessionBuilder().sessionId(SESSION_ID).sourcePath(source).build());
+  }
+
+  @Test
+  @DisplayName("Should hand the whole segment file to Tomcat when the connection supports sendfile")
+  void shouldHandWholeSegmentFileToTomcatWhenConnectionSupportsSendfile(@TempDir Path segmentFolder)
+      throws Exception {
+    var segmentFile = storeSegmentFile(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+
+    var result =
+        overSegmentFiles(segmentFolder)
+            .perform(segmentRequest().requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertThat(result.getResponse().getContentType()).isEqualTo("video/mp4");
+    assertThat(result.getResponse().getHeader(HttpHeaders.CONTENT_LENGTH)).isEqualTo("5");
+    assertThat(result.getResponse().getContentAsByteArray()).isEmpty();
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILENAME_ATTR))
+        .isEqualTo(segmentFile.toString());
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILE_START_ATTR)).isEqualTo(0L);
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILE_END_ATTR)).isEqualTo(5L);
+  }
+
+  @Test
+  @DisplayName("Should hand one byte range of the segment file to Tomcat when a range is requested")
+  void shouldHandOneByteRangeOfSegmentFileToTomcatWhenRangeIsRequested(@TempDir Path segmentFolder)
+      throws Exception {
+    storeSegmentFile(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+
+    var result =
+        overSegmentFiles(segmentFolder)
+            .perform(
+                segmentRequest()
+                    .header(HttpHeaders.RANGE, "bytes=1-3")
+                    .requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
+            .andExpect(status().isPartialContent())
+            .andReturn();
+
+    assertThat(result.getResponse().getHeader(HttpHeaders.CONTENT_RANGE)).isEqualTo("bytes 1-3/5");
+    assertThat(result.getResponse().getHeader(HttpHeaders.CONTENT_LENGTH)).isEqualTo("3");
+    assertThat(result.getResponse().getContentAsByteArray()).isEmpty();
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILE_START_ATTR)).isEqualTo(1L);
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILE_END_ATTR)).isEqualTo(4L);
+  }
+
+  @Test
+  @DisplayName("Should write the segment itself when the connection does not support sendfile")
+  void shouldWriteSegmentItselfWhenConnectionDoesNotSupportSendfile(@TempDir Path segmentFolder)
+      throws Exception {
+    var segmentData = new byte[] {1, 2, 3, 4, 5};
+    storeSegmentFile(segmentFolder, segmentData);
+
+    var result =
+        overSegmentFiles(segmentFolder)
+            .perform(segmentRequest())
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(segmentData);
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILENAME_ATTR)).isNull();
+  }
+
+  @Test
+  @DisplayName("Should write the ranges itself when several byte ranges are requested")
+  void shouldWriteRangesItselfWhenSeveralByteRangesAreRequested(@TempDir Path segmentFolder)
+      throws Exception {
+    storeSegmentFile(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+
+    var result =
+        overSegmentFiles(segmentFolder)
+            .perform(
+                segmentRequest()
+                    .header(HttpHeaders.RANGE, "bytes=0-0,2-2")
+                    .requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
+            .andExpect(status().isPartialContent())
+            .andReturn();
+
+    assertThat(result.getResponse().getContentType()).startsWith("multipart/byteranges");
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILENAME_ATTR)).isNull();
+  }
+
+  @Test
+  @DisplayName("Should send no segment file when the segment is requested with HEAD")
+  void shouldSendNoSegmentFileWhenSegmentIsRequestedWithHead(@TempDir Path segmentFolder)
+      throws Exception {
+    storeSegmentFile(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+
+    var result =
+        overSegmentFiles(segmentFolder)
+            .perform(
+                request(HttpMethod.HEAD, "/api/stream/{sessionId}/segment0.m4s", SESSION_ID)
+                    .requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILENAME_ATTR)).isNull();
+  }
+
+  @Test
+  @DisplayName("Should write the empty segment itself when the stored segment has no bytes")
+  void shouldWriteEmptySegmentItselfWhenStoredSegmentHasNoBytes(@TempDir Path segmentFolder)
+      throws Exception {
+    storeSegmentFile(segmentFolder, new byte[0]);
+
+    var result =
+        overSegmentFiles(segmentFolder)
+            .perform(segmentRequest().requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILENAME_ATTR)).isNull();
+  }
+
+  @Test
+  @DisplayName("Should answer 416 without a body when the requested range starts past the segment")
+  void shouldAnswer416WithoutBodyWhenRequestedRangeStartsPastSegment(@TempDir Path segmentFolder)
+      throws Exception {
+    storeSegmentFile(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+
+    var result =
+        overSegmentFiles(segmentFolder)
+            .perform(
+                segmentRequest()
+                    .header(HttpHeaders.RANGE, "bytes=9-")
+                    .requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
+            .andExpect(status().isRequestedRangeNotSatisfiable())
+            .andReturn();
+
+    assertThat(result.getResponse().getHeader(HttpHeaders.CONTENT_RANGE)).isEqualTo("bytes */5");
+    assertThat(result.getResponse().getContentAsByteArray()).isEmpty();
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILENAME_ATTR)).isNull();
+  }
+
+  private static MockHttpServletRequestBuilder segmentRequest() {
+    return get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID);
+  }
+
+  private Path storeSegmentFile(Path segmentFolder, byte[] segmentData) {
+    streamingService.setSession(buildSession());
+    new LocalSegmentStore(segmentFolder).storeSegment(SESSION_ID, "segment0.m4s", segmentData);
+    return segmentFolder.resolve(SESSION_ID.toString()).resolve("segment0.m4s");
+  }
+
+  private MockMvc overSegmentFiles(Path segmentFolder) {
+    var segmentFiles = new LocalSegmentStore(segmentFolder);
+    segmentFiles.getOutputDirectory(SESSION_ID);
+    return MockMvcBuilders.standaloneSetup(
+            new StreamController(
+                streamingService,
+                playlistService,
+                coordinatorOver(segmentFiles),
+                new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN),
+                directPlaySources(),
+                directPlayMetrics))
+        .build();
   }
 
   private AuthenticatedIdentity boundIdentity() {

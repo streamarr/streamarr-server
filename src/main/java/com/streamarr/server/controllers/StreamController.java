@@ -17,6 +17,7 @@ import com.streamarr.server.services.streaming.StreamingService;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.InputStream;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 @RestController
 @RequestMapping("/api/stream")
@@ -347,7 +349,23 @@ public class StreamController {
 
   private static ResponseEntity<Resource> segmentAnswer(StoredSegment segment) {
     closeWhenRequestCompletes(StoredSegment.class, segment::close);
-    return ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(new StoredSegmentResource(segment));
+    var request = currentRequest();
+    var resource = new StoredSegmentResource(segment);
+    var range = request.getHeader(HttpHeaders.RANGE);
+    // Spring's own 416 still writes the whole segment as its body.
+    if (range != null && !isSatisfiable(range, resource)) {
+      return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+          .header(HttpHeaders.CONTENT_RANGE, "bytes */" + segment.length())
+          .build();
+    }
+
+    return TomcatSendfile.answer(request, segment, MP4_MEDIA_TYPE)
+        .orElseGet(() -> ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(resource));
+  }
+
+  private static HttpServletRequest currentRequest() {
+    return ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
+        .getRequest();
   }
 
   private boolean hasNoVariant(StreamSession session, String variantLabel) {

@@ -1,7 +1,7 @@
 package com.streamarr.server.services.streaming.local;
 
 import com.streamarr.server.services.streaming.BoundedFileInputStream;
-import com.streamarr.server.services.streaming.StoredSegment;
+import com.streamarr.server.services.streaming.StoredSegmentFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.channels.FileChannel;
@@ -12,12 +12,14 @@ import java.nio.file.StandardOpenOption;
  * A published segment file opened for reading. Every read comes from the opened file, so deleting
  * the file's name afterwards never cuts an answer short.
  */
-final class OpenedSegmentFile implements StoredSegment {
+final class OpenedSegmentFile implements StoredSegmentFile {
 
+  private final Path path;
   private final FileChannel file;
   private final long length;
 
-  private OpenedSegmentFile(FileChannel file, long length) {
+  private OpenedSegmentFile(Path path, FileChannel file, long length) {
+    this.path = path;
     this.file = file;
     this.length = length;
   }
@@ -25,11 +27,16 @@ final class OpenedSegmentFile implements StoredSegment {
   static OpenedSegmentFile open(Path path) throws IOException {
     var file = FileChannel.open(path, StandardOpenOption.READ);
     try {
-      return new OpenedSegmentFile(file, file.size());
+      return new OpenedSegmentFile(path.toAbsolutePath(), file, file.size());
     } catch (IOException | RuntimeException e) {
       file.close();
       throw e;
     }
+  }
+
+  @Override
+  public Path path() {
+    return path;
   }
 
   @Override
