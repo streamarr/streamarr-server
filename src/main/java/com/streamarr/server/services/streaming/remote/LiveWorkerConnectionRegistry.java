@@ -37,6 +37,7 @@ import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptProgress;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
+import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCancelReason;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
@@ -87,6 +88,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -408,12 +410,36 @@ final class LiveWorkerConnectionRegistry {
       return false;
     }
 
+    countIfNoFreeCapacity(result);
+    return true;
+  }
+
+  private void countIfNoFreeCapacity(ProbeAttemptResult result) {
     if (result.getFailure() == ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY) {
       countDeferredProbe(
           "no_free_capacity", "A worker had no free unit of the probe's capacity when it arrived");
     }
+  }
 
-    return true;
+  ProbeReportLimits probeReportLimits() {
+    return probeReportLimits;
+  }
+
+  /**
+   * Decides whether a report call may report the probe attempt that its first message names: an
+   * attempt that the authenticated worker's live session runs and that no other report call
+   * reports. {@code endReportCall} ends the admitted call when the attempt ends without it. Takes
+   * no monitor, so a report call never waits for a publication or a dispatch.
+   */
+  ProbeReportAdmission admitProbeReport(
+      UUID authenticatedWorkerId, ProbeAttemptReportMetadata metadata, Runnable endReportCall) {
+    var connection = connections.get(authenticatedWorkerId);
+    if (connection == null
+        || !connection.isThisWorkerSession(metadata.getWorkerSessionId(), metadata.getWorker())) {
+      return new ProbeReportAdmission.NotOwned();
+    }
+
+    return connection.admitProbeReport(fromProto(metadata.getProbeAttemptId()), endReportCall);
   }
 
   boolean acceptStreamMeasurementPart(
@@ -1306,6 +1332,7 @@ final class LiveWorkerConnectionRegistry {
       }
 
       pendingProbes.remove(attemptId, pending.result());
+      pending.endReportCall();
       var workerId = fromProto(worker.getWorkerId());
       if (!connections.remove(workerId, this)) {
         return;
@@ -1377,6 +1404,75 @@ final class LiveWorkerConnectionRegistry {
 
       pending.failForRetry(reason);
       pendingProbes.remove(attemptId, pending.result());
+      pending.endReportCall();
+    }
+
+    private ProbeReportAdmission admitProbeReport(UUID attemptId, Runnable endReportCall) {
+      var pending = activeProbes.get(attemptId);
+      if (pending == null) {
+        return new ProbeReportAdmission.NotOwned();
+      }
+
+      if (!pending.tryStartReportCall(endReportCall)) {
+        return new ProbeReportAdmission.AlreadyReported();
+      }
+
+      // A worker session that ended since the lookup has failed the attempt and found no report
+      // call to end.
+      if (activeProbes.get(attemptId) != pending) {
+        return new ProbeReportAdmission.NotOwned();
+      }
+
+      return new ProbeReportAdmission.Admitted(new ReportedAttempt(attemptId, pending));
+    }
+
+    /** The probe attempt of this worker session that a report call reports. */
+    @RequiredArgsConstructor
+    private final class ReportedAttempt implements ReportedProbeAttempt {
+
+      private final UUID attemptId;
+      private final PendingProbe pending;
+
+      @Override
+      public ProbeRequest request() {
+        return pending.request();
+      }
+
+      @Override
+      public void complete(ProbeAttemptReport report) {
+        end(
+            () -> {
+              pending.complete(report);
+              countIfNoFreeCapacity(report.getResult());
+            });
+      }
+
+      @Override
+      public void failForAnotherVersion(ProbeAttemptResult reported) {
+        end(() -> pending.failForAnotherVersion(reported));
+      }
+
+      @Override
+      public void failForContractViolation(String message) {
+        end(() -> pending.failForContractViolation(message));
+      }
+
+      @Override
+      public void failForRetry(String reason) {
+        end(() -> pending.failForRetry(reason));
+      }
+
+      private void end(Runnable ending) {
+        if (!activeProbes.remove(attemptId, pending)) {
+          return;
+        }
+
+        try {
+          ending.run();
+        } finally {
+          pendingProbes.remove(attemptId, pending.result());
+        }
+      }
     }
 
     private boolean canAccessSource(VariantJob job) {
@@ -1791,8 +1887,11 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private boolean isFromThisWorkerSession(SegmentUploadMetadata metadata) {
-      return toProto(workerSessionId).equals(metadata.getWorkerSessionId())
-          && worker.equals(metadata.getWorker());
+      return isThisWorkerSession(metadata.getWorkerSessionId(), metadata.getWorker());
+    }
+
+    private boolean isThisWorkerSession(Uuid namedSessionId, WorkerIdentity namedWorker) {
+      return toProto(workerSessionId).equals(namedSessionId) && worker.equals(namedWorker);
     }
 
     private boolean matchesAnActiveJob(SegmentUploadMetadata metadata) {

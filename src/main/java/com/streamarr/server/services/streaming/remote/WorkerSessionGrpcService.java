@@ -13,6 +13,8 @@ import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.ReportProbeAttemptRequest;
+import com.streamarr.transcode.v1.ReportProbeAttemptResponse;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
@@ -50,6 +52,7 @@ final class WorkerSessionGrpcService
   private final LiveWorkerConnectionRegistry workerConnections;
   private final SegmentStore segmentStore;
   private final SegmentUploadAdmission segmentUploadAdmission;
+  private final ProbeReportCalls probeReportCalls;
 
   WorkerSessionGrpcService(
       LiveWorkerConnectionRegistry workerConnections, SegmentStore segmentStore) {
@@ -60,6 +63,7 @@ final class WorkerSessionGrpcService
             SegmentUploadLimits.MAXIMUM_CONCURRENT_SEGMENT_UPLOADS,
             SegmentUploadLimits.MAXIMUM_BUFFERED_SEGMENT_BYTES,
             SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER);
+    probeReportCalls = new ProbeReportCalls(workerConnections);
   }
 
   @Override
@@ -111,6 +115,13 @@ final class WorkerSessionGrpcService
         yield IGNORED_UPLOAD_OBSERVER;
       }
     };
+  }
+
+  @Override
+  public StreamObserver<ReportProbeAttemptRequest> reportProbeAttempt(
+      StreamObserver<ReportProbeAttemptResponse> responseObserver) {
+    return probeReportCalls.open(
+        WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get(), responseObserver);
   }
 
   private static final class RegistrationObserver

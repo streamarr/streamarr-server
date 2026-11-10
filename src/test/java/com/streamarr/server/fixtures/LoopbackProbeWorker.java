@@ -9,14 +9,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
+import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.ReportProbeAttemptRequest;
+import com.streamarr.transcode.v1.ReportProbeAttemptResponse;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
+import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -33,11 +38,15 @@ import lombok.Singular;
 /** A gRPC worker session driven by the test: it records server commands and sends replies. */
 public final class LoopbackProbeWorker implements AutoCloseable {
 
+  private static final int LARGEST_REPORT_MESSAGE_BYTES = 64 * 1024;
+
   private final ManagedChannel channel;
   private final StreamObserver<EstablishWorkerSessionRequest> requests;
   private final BlockingQueue<EstablishWorkerSessionResponse> responses =
       new LinkedBlockingQueue<>();
   private final CompletableFuture<Status> terminated = new CompletableFuture<>();
+  private final WorkerIdentity identity;
+  private final WorkerSessionAccepted accepted;
 
   /**
    * Registers a worker session that advertises the probe version, the playback slots and the probe
@@ -72,6 +81,11 @@ public final class LoopbackProbeWorker implements AutoCloseable {
       keyframePacketScans = keyframePacketScanCapacity;
     }
 
+    identity =
+        WorkerIdentity.newBuilder()
+            .setWorkerId(toProto(worker))
+            .setBootId(toProto(UUID.randomUUID()))
+            .build();
     channel = plaintextChannelBuilder(port, worker).build();
     requests =
         TranscodeWorkerServiceGrpc.newStub(channel)
@@ -102,17 +116,21 @@ public final class LoopbackProbeWorker implements AutoCloseable {
                     .setKeyframePacketScanCapacity(keyframePacketScans)
                     .setBackgroundProbeCapacityControl(
                         BackgroundProbeCapacityControl.BACKGROUND_PROBE_CAPACITY_CONTROL_FIXED)
-                    .setWorker(
-                        WorkerIdentity.newBuilder()
-                            .setWorkerId(toProto(worker))
-                            .setBootId(toProto(UUID.randomUUID())))
+                    .setWorker(identity)
                     .setCapabilities(
                         WorkerCapabilities.newBuilder()
                             .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
                             .addProbeVersions(probeVersion)
                             .addAllMeasurementVersions(measurementVersions)))
             .build());
-    assertThat(nextResponse().hasSessionAccepted()).isTrue();
+    var first = nextResponse();
+    assertThat(first.hasSessionAccepted()).isTrue();
+    accepted = first.getSessionAccepted();
+  }
+
+  /** The limits and the worker session id that the server stated when it accepted the session. */
+  public WorkerSessionAccepted accepted() {
+    return accepted;
   }
 
   public EstablishWorkerSessionResponse nextResponse() throws InterruptedException {
@@ -152,6 +170,58 @@ public final class LoopbackProbeWorker implements AutoCloseable {
   public void sendStreamMeasurementPart(ProbeStreamMeasurementPart part) {
     requests.onNext(
         EstablishWorkerSessionRequest.newBuilder().setProbeStreamMeasurementPart(part).build());
+  }
+
+  /**
+   * Sends the probe report in a report call of its own, in messages of at most 64 KiB of the
+   * report. The future completes with the server's answer, or exceptionally with the status that
+   * ended the report call.
+   */
+  public CompletableFuture<ReportProbeAttemptResponse> report(ProbeAttemptReport report) {
+    return report(report, LARGEST_REPORT_MESSAGE_BYTES);
+  }
+
+  /** As {@link #report(ProbeAttemptReport)}, in messages of at most this many bytes of it. */
+  public CompletableFuture<ReportProbeAttemptResponse> report(
+      ProbeAttemptReport report, int largestMessageBytes) {
+    var answer = new CompletableFuture<ReportProbeAttemptResponse>();
+    var call =
+        TranscodeWorkerServiceGrpc.newStub(channel)
+            .reportProbeAttempt(
+                new StreamObserver<>() {
+                  @Override
+                  public void onNext(ReportProbeAttemptResponse response) {
+                    answer.complete(response);
+                  }
+
+                  @Override
+                  public void onError(Throwable failure) {
+                    answer.completeExceptionally(failure);
+                  }
+
+                  @Override
+                  public void onCompleted() {
+                    // The answer has already completed the future.
+                  }
+                });
+    var bytes = report.toByteString();
+    call.onNext(
+        ReportProbeAttemptRequest.newBuilder()
+            .setMetadata(
+                ProbeAttemptReportMetadata.newBuilder()
+                    .setWorkerSessionId(accepted.getWorkerSessionId())
+                    .setWorker(identity)
+                    .setProbeAttemptId(report.getResult().getProbeAttemptId())
+                    .setReportLengthBytes(bytes.size()))
+            .build());
+    for (var sent = 0; sent < bytes.size(); sent += largestMessageBytes) {
+      var end = Math.min(bytes.size(), sent + largestMessageBytes);
+      call.onNext(
+          ReportProbeAttemptRequest.newBuilder().setData(bytes.substring(sent, end)).build());
+    }
+
+    call.onCompleted();
+    return answer;
   }
 
   public CompletableFuture<Status> terminated() {
