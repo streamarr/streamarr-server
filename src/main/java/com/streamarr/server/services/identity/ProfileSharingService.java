@@ -484,14 +484,17 @@ public class ProfileSharingService {
     return Pager.page(householdSharesList, household, request);
   }
 
-  /** A page of every share of one Profile, newest first; hidden reads as empty. */
+  /**
+   * A page of one Profile's shares in the scope's statuses, newest first; hidden reads as empty.
+   */
   public ListPage<ProfileHouseholdShare> profileShares(
-      AuthenticatedIdentity identity, UUID profileId, PageRequest request) {
-    if (profileRepository.findById(profileId).isEmpty() || !mayViewProfile(identity, profileId)) {
+      AuthenticatedIdentity identity, ShareListScope profile, PageRequest request) {
+    if (profileRepository.findById(profile.id()).isEmpty()
+        || !mayViewProfile(identity, profile.id())) {
       return ListPage.empty();
     }
 
-    return Pager.page(profileSharesList, profileId, request);
+    return Pager.page(profileSharesList, profile, request);
   }
 
   /** The offerer's whole preflight: nothing else about the target Household leaks. */

@@ -95,7 +95,7 @@ class ProfileSharingServiceTest {
                 .replacementLockTimeout(Duration.ofSeconds(5))
                 .build(),
             new HouseholdSharesList(shares, CLOCK),
-            new ProfileSharesList(shares),
+            new ProfileSharesList(shares, CLOCK),
             CLOCK);
     household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     profile = profiles.save(ProfileFixture.defaultProfileBuilder().build());
@@ -383,10 +383,10 @@ class ProfileSharingServiceTest {
   void shouldFailClosedWhenProfileShareAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
     var identity = identity();
-    var profileId = profile.getId();
+    var scope = everyShareOf(profile.getId());
     var options = paginationOptions();
 
-    assertThatThrownBy(() -> service.profileShares(identity, profileId, options))
+    assertThatThrownBy(() -> service.profileShares(identity, scope, options))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -505,9 +505,45 @@ class ProfileSharingServiceTest {
     activeShare();
     authorization.denyAll();
 
-    var page = service.profileShares(identity(), profile.getId(), paginationOptions());
+    var page =
+        service.profileShares(identity(), everyShareOf(profile.getId()), paginationOptions());
 
     assertThat(page.rows()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should keep only the named statuses when a Profile's shares are listed")
+  void shouldKeepOnlyNamedStatusesWhenProfileSharesAreListed() {
+    var visit = activeShare();
+    var offer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(profile.getId())
+                .householdId(
+                    households.save(HouseholdFixture.defaultHouseholdBuilder().build()).getId())
+                .status(ProfileShareStatus.PENDING)
+                .expiresAt(NOW.plusSeconds(3600))
+                .build());
+    shares.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(UUID.randomUUID())
+            .status(ProfileShareStatus.REJECTED)
+            .build());
+
+    var live =
+        service.profileShares(
+            identity(),
+            new ShareListScope(
+                profile.getId(), List.of(ProfileShareStatus.ACTIVE, ProfileShareStatus.PENDING)),
+            paginationOptions());
+    var every =
+        service.profileShares(identity(), everyShareOf(profile.getId()), paginationOptions());
+
+    assertThat(live.rows())
+        .extracting(row -> row.item().getId())
+        .containsExactlyInAnyOrder(visit.getId(), offer.getId());
+    assertThat(every.rows()).hasSize(3);
   }
 
   @Test
@@ -586,7 +622,8 @@ class ProfileSharingServiceTest {
   void shouldAnswerEmptyPageWhenAllowedPrincipalListsSharesOfMissingProfile() {
     authorization.allowAll();
 
-    var page = service.profileShares(identity(), UUID.randomUUID(), paginationOptions());
+    var page =
+        service.profileShares(identity(), everyShareOf(UUID.randomUUID()), paginationOptions());
 
     assertThat(page.rows()).isEmpty();
   }
@@ -653,5 +690,9 @@ class ProfileSharingServiceTest {
 
   private static ShareListScope everyShareInto(Household household) {
     return new ShareListScope(household.getId(), List.of());
+  }
+
+  private static ShareListScope everyShareOf(UUID profileId) {
+    return new ShareListScope(profileId, List.of());
   }
 }

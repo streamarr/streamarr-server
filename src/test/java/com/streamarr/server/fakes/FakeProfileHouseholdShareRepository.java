@@ -76,9 +76,13 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public List<Row<ProfileHouseholdShare>> rowsOfProfile(UUID profileId, Seek seek) {
+  public List<Row<ProfileHouseholdShare>> rowsOfProfile(
+      UUID profileId, ShareStatusFilter filter, Seek seek) {
     return InMemoryKeyset.byCreationTime(
-        database.values().stream().filter(share -> share.getProfileId().equals(profileId)).toList(),
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(filter::keeps)
+            .toList(),
         seek);
   }
 

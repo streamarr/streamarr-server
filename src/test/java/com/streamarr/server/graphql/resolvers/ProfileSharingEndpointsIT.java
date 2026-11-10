@@ -30,6 +30,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.identity.ShareListScope;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
@@ -847,13 +848,15 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     var otherProfile =
         positionCursors
             .encode(
-                new ListIdentity("profile-shares", UUID.randomUUID()),
+                new ListIdentity(
+                    "profile-shares", new ShareListScope(UUID.randomUUID(), List.of())),
                 new Position(new SortValue.OfInstant(Instant.now()), UUID.randomUUID()))
             .getValue();
     var profileList =
         positionCursors
             .encode(
-                new ListIdentity("profile-shares", owner.profile().getId()),
+                new ListIdentity(
+                    "profile-shares", new ShareListScope(owner.profile().getId(), List.of())),
                 new Position(new SortValue.OfInstant(Instant.now()), UUID.randomUUID()))
             .getValue();
 
@@ -911,6 +914,49 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
                 .formatted(host.household().getId(), cursor))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  @Test
+  @DisplayName("Should keep only the live shares when a Profile's shares are listed as live")
+  void shouldKeepOnlyLiveSharesWhenProfileSharesAreListedAsLive() throws Exception {
+    var orphan = managedOrphan();
+    var offered = offer(orphan, host.household().getId());
+    var declinedHost = authTestSupport.createIdentity();
+    try {
+      var declined = offer(orphan, declinedHost.household().getId());
+      graphql(
+              authTestSupport.accountBearer(declinedHost),
+              """
+              mutation { rejectProfileShare(input: {shareId: "%s"}) {
+                share { status } userErrors { __typename } } }
+              """
+                  .formatted(declined))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.data.rejectProfileShare.share.status").value("REJECTED"));
+
+      graphql(
+              authTestSupport.accountBearer(owner),
+              """
+              query {
+                live: profileShares(profileId: "%1$s", statuses: [PENDING, ACTIVE]) {
+                  edges { node { id status } } }
+                every: profileShares(profileId: "%1$s") { edges { node { id } } }
+              }
+              """
+                  .formatted(orphan.getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.live.edges.length()").value(2))
+          .andExpect(
+              jsonPath(
+                  "$.data.live.edges[?(@.node.id == '%s')].node.status".formatted(offered),
+                  contains("PENDING")))
+          .andExpect(
+              jsonPath("$.data.live.edges[?(@.node.id == '%s')]".formatted(declined)).isEmpty())
+          .andExpect(jsonPath("$.data.every.edges.length()").value(3));
+    } finally {
+      authTestSupport.deleteIdentity(declinedHost);
+    }
   }
 
   @Test
