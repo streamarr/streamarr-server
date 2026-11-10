@@ -16,7 +16,7 @@ public class StandardCredentialAttemptPolicyProvider implements CredentialAttemp
           .resetFailuresOnSuccess(true)
           .build();
 
-  private static final CredentialAttemptPolicy PAIRING_POLICY =
+  private static final CredentialAttemptPolicy SUCCESS_KEEPS_FAILURES_POLICY =
       STANDARD_POLICY.toBuilder().resetFailuresOnSuccess(false).build();
 
   /**
@@ -33,7 +33,7 @@ public class StandardCredentialAttemptPolicyProvider implements CredentialAttemp
           PASSWORD_RESET_CODE,
           PROFILE_MANAGER_INVITATION_CODE ->
           STANDARD_POLICY;
-      case DEVICE_PAIRING_CODE -> PAIRING_POLICY;
+      case DEVICE_PAIRING_CODE -> SUCCESS_KEEPS_FAILURES_POLICY;
     };
   }
 }
