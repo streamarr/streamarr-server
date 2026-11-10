@@ -516,13 +516,13 @@ public class ProfileSharingService {
    * One committed share change as the reader may read it, decided as it is delivered. The reader
    * gets it when they may read the shares into its Household or the shares of its Profile, as
    * {@link #householdShares} and {@link #profileShares} decide; it then carries the share as it
-   * stands now, or no share once the share was deleted. Refuses a reader who may no longer follow
-   * share changes at all.
+   * stands now, or no share once the share was deleted. A share deleted with its Profile is decided
+   * by its Household alone. Refuses a reader who may no longer follow share changes at all.
    */
   public Optional<ShareChange> shareChange(AuthenticatedIdentity identity, ChangedShare changed) {
     requireViewProfileShareChanges(identity);
     if (!mayViewHousehold(identity, changed.householdId())
-        && !mayViewProfile(identity, changed.profileId())) {
+        && !mayViewProfileShares(identity, changed.profileId())) {
       return Optional.empty();
     }
 
