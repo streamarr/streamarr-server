@@ -62,6 +62,8 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onProfile(Action.VIEW_MANAGER_INVITATIONS, profileId));
       case Intent.ViewProfileShareHouseholds(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.VIEW_PROFILE_SHARE_HOUSEHOLDS, profileId));
+      case Intent.ViewProfileShareChanges _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_PROFILE_SHARE_CHANGES));
       case Intent.GrantServerAdmin(var accountId) ->
           unitPlan(AuthorizationCheck.onAccount(Action.GRANT_SERVER_ADMIN, accountId));
       case Intent.RevokeServerAdmin(var accountId) ->

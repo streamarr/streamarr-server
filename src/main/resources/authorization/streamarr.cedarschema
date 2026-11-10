@@ -269,6 +269,11 @@ namespace Streamarr {
     resource: Profile,
     context: {},
   };
+  action viewProfileShareChanges in shareAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
   action acceptProfileShare in shareAdministration appliesTo {
     principal: Account,
     resource: Share,

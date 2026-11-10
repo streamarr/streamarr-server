@@ -110,6 +110,11 @@ enum Action {
       Authorizes.READ,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.PROFILE_MANAGEMENT),
+  VIEW_PROFILE_SHARE_CHANGES(
+      "viewProfileShareChanges",
+      ResourceKind.SERVER,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   GRANT_SERVER_ADMIN(
       "grantServerAdmin",
       ResourceKind.ACCOUNT,
