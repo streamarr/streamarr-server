@@ -869,13 +869,23 @@ public class TranscodeDecisionService {
             .mode(AudioMode.COPY)
             .codec(source.audioCodec())
             .channels(sourceChannels)
-            .bitrate(
-                source
-                    .audioBitrate()
-                    .orElse(AudioDecision.bitrateFor(source.audioCodec(), sourceChannels)))
+            .bitrate(copiedTrackBitrate(source, sourceChannels))
             .sourceCodecString(sourceCodecString)
             .build();
     return new SessionAudio(copy, Optional.empty());
+  }
+
+  // A measurement holds the bytes that a copy delivers, so it comes before the probed bitrate and
+  // the codec's nominal one (ADR 0054). The audio steps and the encoded variants compare this
+  // bitrate with an encode's, which counts no segment framing, so it counts none either.
+  private long copiedTrackBitrate(MediaProbe source, int channels) {
+    var measured =
+        VideoCopyBandwidth.copiedAudioBitrate(source, MediaSegmentTimelines.of(source, properties));
+    if (measured.isPresent()) {
+      return measured.get();
+    }
+
+    return source.audioBitrate().orElse(AudioDecision.bitrateFor(source.audioCodec(), channels));
   }
 
   // Only an encode can pad audio that ends early with silence up to the advertised end, so that
