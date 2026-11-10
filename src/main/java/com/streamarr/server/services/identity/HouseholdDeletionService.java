@@ -16,6 +16,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -61,6 +62,7 @@ public class HouseholdDeletionService {
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final AuthSessionRepository authSessionRepository;
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final AccountInvitationRepository accountInvitationRepository;
@@ -316,7 +318,7 @@ public class HouseholdDeletionService {
         .findByHouseholdIdAndStatus(householdId, ProfileShareStatus.ACTIVE)
         .forEach(
             share -> {
-              shareRepository.tryEndActive(share.getId(), now);
+              shareLifecycle.tryEndActive(share.getId(), now);
               authSessionRepository.clearProfileSelectionFromLiveSessions(
                   share.getProfileId(), householdId);
               userAccountRepository

@@ -325,6 +325,7 @@ class AccountInvitationServiceTest {
         managers,
         managerInvitations,
         shares,
+        new ProfileShareLifecycle(shares),
         reoffers,
         households,
         sessions,
@@ -433,7 +434,7 @@ class AccountInvitationServiceTest {
     var fixture = linkAcceptanceFixture();
     var removedHouseholdId = fixture.reofferHouseholdIds().getFirst();
     var retainedHouseholdId = fixture.reofferHouseholdIds().getLast();
-    assertThat(shares.tryEndActive(fixture.visitIds().getFirst(), NOW)).isTrue();
+    assertThat(shares.tryEndActive(fixture.visitIds().getFirst(), NOW)).isPresent();
     reoffers.findByInvitationId(invitations.findAll().getFirst().getId()).stream()
         .filter(reoffer -> reoffer.getHouseholdId().equals(removedHouseholdId))
         .forEach(reoffers::delete);

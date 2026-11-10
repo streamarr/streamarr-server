@@ -8,7 +8,6 @@ import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.properties.CredentialCodeProperties;
-import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -17,6 +16,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.CredentialAttemptGate;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
@@ -59,7 +59,7 @@ public class ProfileManagerAdministrationService {
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileRepository profileRepository;
   private final UserAccountRepository userAccountRepository;
-  private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final OpaqueOneTimeCodes opaqueCodes;
   private final CredentialAttemptGate credentialAttempts;
@@ -449,7 +449,7 @@ public class ProfileManagerAdministrationService {
     var now = clock.instant();
     invitationRepository.invalidatePendingInvitationsByInviterAccountIdAndProfileId(
         leaverAccountId, profileId, INVITER_LEFT_REASON, now);
-    shareRepository.invalidatePendingOffersByProfileIdAndOffererAccountId(
+    shareLifecycle.invalidatePendingOffersByProfileIdAndOffererAccountId(
         profileId, leaverAccountId, "offering manager lost management", now);
   }
 

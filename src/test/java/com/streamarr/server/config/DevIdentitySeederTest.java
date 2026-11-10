@@ -11,6 +11,7 @@ import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.properties.Argon2Properties;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.auth.SetupService;
 import com.streamarr.server.support.LogCapture;
 import java.util.UUID;
@@ -31,7 +32,7 @@ class DevIdentitySeederTest {
           userAccountRepository,
           new FakeHouseholdRepository(),
           new FakeProfileRepository(),
-          new FakeProfileHouseholdShareRepository(),
+          new ProfileShareLifecycle(new FakeProfileHouseholdShareRepository()),
           bootstrapRepository,
           new FakeSessionProgressRepository(),
           new FakeWatchHistoryRepository(),

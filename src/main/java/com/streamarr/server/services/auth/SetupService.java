@@ -10,7 +10,6 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidEmailAddressException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
-import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.ServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -51,7 +50,7 @@ public class SetupService {
   private final UserAccountRepository userAccountRepository;
   private final HouseholdRepository householdRepository;
   private final ProfileRepository profileRepository;
-  private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final ServerBootstrapRepository serverBootstrapRepository;
   private final SessionProgressRepository sessionProgressRepository;
   private final WatchHistoryRepository watchHistoryRepository;
@@ -94,7 +93,7 @@ public class SetupService {
       throw new SetupAlreadyCompletedException();
     }
 
-    shareRepository.saveAndFlush(
+    shareLifecycle.create(
         ProfileHouseholdShare.builder()
             .profileId(profile.getId())
             .householdId(household.getId())

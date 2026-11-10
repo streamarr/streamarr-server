@@ -1,6 +1,7 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.AuditFieldSetter;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.ShareStatusFilter;
@@ -12,6 +13,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<ProfileHouseholdShare>
     implements ProfileHouseholdShareRepository {
@@ -87,7 +89,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public boolean tryActivatePending(UUID shareId, Instant now) {
+  public Optional<ChangedShare> tryActivatePending(UUID shareId, Instant now) {
     var share =
         findById(shareId)
             .filter(offer -> offer.getStatus() == ProfileShareStatus.PENDING)
@@ -97,11 +99,11 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
           offer.setStatus(ProfileShareStatus.ACTIVE);
           offer.setDecidedAt(now);
         });
-    return share.isPresent();
+    return share.map(ChangedShare::of);
   }
 
   @Override
-  public int supersedePending(UUID profileId, UUID householdId, Instant now) {
+  public List<ChangedShare> supersedePending(UUID profileId, UUID householdId, Instant now) {
     var pending =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))
@@ -114,11 +116,11 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
           share.setStatus(expired ? ProfileShareStatus.EXPIRED : ProfileShareStatus.CANCELED);
           share.setDecidedAt(now);
         });
-    return pending.size();
+    return changed(pending);
   }
 
   @Override
-  public boolean tryInvalidatePending(UUID shareId, String reason, Instant now) {
+  public Optional<ChangedShare> tryInvalidatePending(UUID shareId, String reason, Instant now) {
     var pending =
         findById(shareId).filter(share -> share.getStatus() == ProfileShareStatus.PENDING);
     pending.ifPresent(
@@ -127,11 +129,12 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
           share.setInvalidationReason(reason);
           share.setDecidedAt(now);
         });
-    return pending.isPresent();
+    return pending.map(ChangedShare::of);
   }
 
   @Override
-  public int invalidatePendingOfferedBy(UUID offererAccountId, String reason, Instant now) {
+  public List<ChangedShare> invalidatePendingOfferedBy(
+      UUID offererAccountId, String reason, Instant now) {
     var pending =
         database.values().stream()
             .filter(share -> offererAccountId.equals(share.getOfferedByAccountId()))
@@ -144,7 +147,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
           share.setInvalidationReason(reason);
           share.setDecidedAt(now);
         });
-    return pending.size();
+    return changed(pending);
   }
 
   @Override
@@ -153,8 +156,8 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public boolean tryDeclinePending(UUID shareId, ProfileShareStatus target, Instant now)
-      throws IllegalArgumentException {
+  public Optional<ChangedShare> tryDeclinePending(
+      UUID shareId, ProfileShareStatus target, Instant now) throws IllegalArgumentException {
     ProfileHouseholdShareRepositoryCustom.requireDeclineTarget(target);
     var share = findById(shareId).filter(offer -> offer.getStatus() == ProfileShareStatus.PENDING);
     share.ifPresent(
@@ -165,32 +168,35 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
                   : target);
           offer.setDecidedAt(now);
         });
-    return share.isPresent();
+    return share.map(ChangedShare::of);
   }
 
   @Override
-  public boolean tryEndActive(UUID shareId, Instant now) {
+  public Optional<ChangedShare> tryEndActive(UUID shareId, Instant now) {
     var share = findById(shareId).filter(offer -> offer.getStatus() == ProfileShareStatus.ACTIVE);
     share.ifPresent(
         offer -> {
           offer.setStatus(ProfileShareStatus.ENDED);
           offer.setEndedAt(now);
         });
-    return share.isPresent();
+    return share.map(ChangedShare::of);
   }
 
   @Override
-  public void ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now) {
-    database.values().stream()
-        .filter(share -> share.getProfileId().equals(profileId))
-        .filter(share -> share.getHouseholdId().equals(householdId))
-        .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
-        .filter(share -> share.statusAt(now) == ProfileShareStatus.EXPIRED)
-        .forEach(
-            share -> {
-              share.setStatus(ProfileShareStatus.EXPIRED);
-              share.setDecidedAt(now);
-            });
+  public List<ChangedShare> ensureActiveMembershipShare(
+      UUID profileId, UUID householdId, Instant now) {
+    var expired =
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(share -> share.getHouseholdId().equals(householdId))
+            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .filter(share -> share.statusAt(now) == ProfileShareStatus.EXPIRED)
+            .toList();
+    expired.forEach(
+        share -> {
+          share.setStatus(ProfileShareStatus.EXPIRED);
+          share.setDecidedAt(now);
+        });
     var live =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))
@@ -200,33 +206,26 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
                     share.getStatus() == ProfileShareStatus.PENDING
                         || share.getStatus() == ProfileShareStatus.ACTIVE)
             .findFirst();
-    if (live.isPresent()) {
-      live.get().setStatus(ProfileShareStatus.ACTIVE);
-      live.get().setStructural(true);
-      live.get().setDecidedAt(now);
-      return;
-    }
-
-    save(
-        ProfileHouseholdShare.builder()
-            .profileId(profileId)
-            .householdId(householdId)
-            .status(ProfileShareStatus.ACTIVE)
-            .structural(true)
-            .build());
+    var membership =
+        live.orElseGet(
+            () ->
+                save(
+                    ProfileHouseholdShare.builder()
+                        .profileId(profileId)
+                        .householdId(householdId)
+                        .status(ProfileShareStatus.ACTIVE)
+                        .structural(true)
+                        .build()));
+    membership.setStatus(ProfileShareStatus.ACTIVE);
+    membership.setStructural(true);
+    membership.setDecidedAt(now);
+    return changed(Stream.concat(expired.stream(), Stream.of(membership)).toList());
   }
 
   @Override
-  public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
-    database.values().stream()
-        .filter(share -> share.getProfileId().equals(profileId))
-        .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
-        .filter(share -> share.statusAt(now) == ProfileShareStatus.EXPIRED)
-        .forEach(
-            share -> {
-              share.setStatus(ProfileShareStatus.EXPIRED);
-              share.setDecidedAt(now);
-            });
+  public List<ChangedShare> invalidatePendingByProfileId(
+      UUID profileId, String reason, Instant now) {
+    var expired = materializeExpiredPending(profileId, now);
     var pending =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))
@@ -239,33 +238,26 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
           share.setDecidedAt(now);
           AuditFieldSetter.setLastModifiedOn(share, now);
         });
-    return pending.size();
+    return changed(Stream.concat(expired.stream(), pending.stream()).toList());
   }
 
   @Override
-  public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId) {
-    database.values().stream()
-        .filter(share -> share.getProfileId().equals(profileId))
-        .filter(share -> share.getHouseholdId().equals(householdId))
-        .filter(ProfileHouseholdShare::isStructural)
-        .filter(share -> share.getStatus() == ProfileShareStatus.ACTIVE)
-        .findFirst()
-        .ifPresent(share -> share.setStructural(false));
+  public List<ChangedShare> convertMembershipShareToVisitorShare(UUID profileId, UUID householdId) {
+    var membership =
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(share -> share.getHouseholdId().equals(householdId))
+            .filter(ProfileHouseholdShare::isStructural)
+            .filter(share -> share.getStatus() == ProfileShareStatus.ACTIVE)
+            .findFirst();
+    membership.ifPresent(share -> share.setStructural(false));
+    return changed(membership.stream().toList());
   }
 
   @Override
-  public int invalidatePendingOffersByProfileIdAndOffererAccountId(
+  public List<ChangedShare> invalidatePendingOffersByProfileIdAndOffererAccountId(
       UUID profileId, UUID offererAccountId, String reason, Instant now) {
-    database.values().stream()
-        .filter(share -> share.getProfileId().equals(profileId))
-        .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
-        .filter(share -> share.statusAt(now) == ProfileShareStatus.EXPIRED)
-        .forEach(
-            share -> {
-              share.setStatus(ProfileShareStatus.EXPIRED);
-              share.setDecidedAt(now);
-              AuditFieldSetter.setLastModifiedOn(share, now);
-            });
+    var expired = materializeExpiredPending(profileId, now);
     var pending =
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))
@@ -279,7 +271,27 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
           share.setDecidedAt(now);
           AuditFieldSetter.setLastModifiedOn(share, now);
         });
-    return pending.size();
+    return changed(Stream.concat(expired.stream(), pending.stream()).toList());
+  }
+
+  private List<ProfileHouseholdShare> materializeExpiredPending(UUID profileId, Instant now) {
+    var expired =
+        database.values().stream()
+            .filter(share -> share.getProfileId().equals(profileId))
+            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .filter(share -> share.statusAt(now) == ProfileShareStatus.EXPIRED)
+            .toList();
+    expired.forEach(
+        share -> {
+          share.setStatus(ProfileShareStatus.EXPIRED);
+          share.setDecidedAt(now);
+          AuditFieldSetter.setLastModifiedOn(share, now);
+        });
+    return expired;
+  }
+
+  private static List<ChangedShare> changed(List<ProfileHouseholdShare> shares) {
+    return shares.stream().map(ChangedShare::of).toList();
   }
 
   @Override
