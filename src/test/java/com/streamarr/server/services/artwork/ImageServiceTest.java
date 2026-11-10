@@ -228,6 +228,37 @@ class ImageServiceTest {
   }
 
   @Test
+  @DisplayName("Should return the images of every requested entity when finding several entities")
+  void shouldReturnImagesOfEveryRequestedEntityWhenFindingSeveralEntities() {
+    var firstMovieId = UUID.randomUUID();
+    var secondMovieId = UUID.randomUUID();
+    var firstPoster = imageRepository.save(imageBuilder(firstMovieId).path("first.jpg").build());
+    var secondPoster = imageRepository.save(imageBuilder(secondMovieId).path("second.jpg").build());
+    imageRepository.save(imageBuilder(UUID.randomUUID()).path("unrequested.jpg").build());
+
+    var images =
+        imageService.findByEntities(List.of(firstMovieId, secondMovieId), ImageEntityType.MOVIE);
+
+    assertThat(images)
+        .extracting(Image::getId)
+        .containsExactlyInAnyOrder(firstPoster.getId(), secondPoster.getId());
+  }
+
+  @Test
+  @DisplayName("Should leave out another entity type's images when finding several entities")
+  void shouldLeaveOutAnotherEntityTypesImagesWhenFindingSeveralEntities() {
+    var entityId = UUID.randomUUID();
+    imageRepository.save(imageBuilder(entityId).path("movie.jpg").build());
+    var seriesPoster =
+        imageRepository.save(
+            imageBuilder(entityId).entityType(ImageEntityType.SERIES).path("series.jpg").build());
+
+    var images = imageService.findByEntities(List.of(entityId), ImageEntityType.SERIES);
+
+    assertThat(images).extracting(Image::getId).containsExactly(seriesPoster.getId());
+  }
+
+  @Test
   @DisplayName("Should return file contents when reading image file")
   void shouldReturnFileContentsWhenReadingImageFile() throws IOException {
     var relativePath = "movie/test/poster/small.jpg";

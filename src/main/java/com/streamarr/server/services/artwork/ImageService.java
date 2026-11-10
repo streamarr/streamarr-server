@@ -298,6 +298,11 @@ public class ImageService {
     return imageRepository.findByEntityIdAndEntityType(entityId, entityType);
   }
 
+  /** Reads the images of every given entity of one type in one query. */
+  public List<Image> findByEntities(Collection<UUID> entityIds, ImageEntityType entityType) {
+    return imageRepository.findByEntityTypeAndEntityIdIn(entityType, entityIds);
+  }
+
   public byte[] readImageFile(Image image) throws IOException {
     var absolutePath = resolveAbsolutePath(image.getPath());
     return Files.readAllBytes(absolutePath);

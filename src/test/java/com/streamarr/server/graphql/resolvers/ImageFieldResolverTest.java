@@ -21,9 +21,9 @@ import com.streamarr.server.fakes.FakeAuthorizationDecider;
 import com.streamarr.server.fixtures.ImageFixture;
 import com.streamarr.server.graphql.dataloaders.ImageDataLoader;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.artwork.ImageService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.metadata.color.AmbientThemeDeriver;
 import com.streamarr.server.support.security.WithProfileContext;
@@ -62,7 +62,7 @@ class ImageFieldResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private UserAccountRepository userAccountRepository;
-  @MockitoBean private ImageRepository imageRepository;
+  @MockitoBean private ImageService imageService;
   @MockitoBean private MovieService movieService;
   @MockitoBean private SeriesService seriesService;
 
@@ -75,7 +75,7 @@ class ImageFieldResolverTest {
     void shouldLoadImagesViaDataLoaderWhenResolvingMovieImages() {
       var movie = setupMovie();
       var image = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
-      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
+      when(imageService.findByEntities(any(), eq(ImageEntityType.MOVIE)))
           .thenReturn(List.of(image));
 
       String imageType =
@@ -100,7 +100,7 @@ class ImageFieldResolverTest {
               .build();
       var image = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
       image.setAmbientColors(Optional.of(ambientColors));
-      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
+      when(imageService.findByEntities(any(), eq(ImageEntityType.MOVIE)))
           .thenReturn(List.of(image));
 
       Map<String, String> result =
@@ -156,7 +156,7 @@ class ImageFieldResolverTest {
               .path("test/path.jpg")
               .ambientColors(Optional.of(ambientColors))
               .build();
-      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
+      when(imageService.findByEntities(any(), eq(ImageEntityType.MOVIE)))
           .thenReturn(List.of(image));
 
       Map<String, String> theme =
@@ -208,7 +208,7 @@ class ImageFieldResolverTest {
     void shouldSerializeNullAmbientColorsWhenSmallImageHasNone() {
       var movie = setupMovie();
       var image = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
-      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
+      when(imageService.findByEntities(any(), eq(ImageEntityType.MOVIE)))
           .thenReturn(List.of(image));
 
       Object result =
@@ -236,7 +236,7 @@ class ImageFieldResolverTest {
       var movie = setupMovie();
       var posterImage = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
       var backdropImage = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.BACKDROP);
-      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
+      when(imageService.findByEntities(any(), eq(ImageEntityType.MOVIE)))
           .thenReturn(List.of(posterImage, backdropImage));
 
       List<String> imageTypes =
@@ -254,7 +254,7 @@ class ImageFieldResolverTest {
       var movie = setupMovie();
       var posterImage = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
       var backdropImage = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.BACKDROP);
-      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
+      when(imageService.findByEntities(any(), eq(ImageEntityType.MOVIE)))
           .thenReturn(List.of(posterImage, backdropImage));
 
       List<String> imageTypes =
@@ -278,7 +278,7 @@ class ImageFieldResolverTest {
 
       var posterImage = buildImage(series.getId(), ImageEntityType.SERIES, ImageType.POSTER);
       var backdropImage = buildImage(series.getId(), ImageEntityType.SERIES, ImageType.BACKDROP);
-      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.SERIES), any()))
+      when(imageService.findByEntities(any(), eq(ImageEntityType.SERIES)))
           .thenReturn(List.of(posterImage, backdropImage));
 
       List<String> imageTypes =
@@ -306,7 +306,7 @@ class ImageFieldResolverTest {
 
       var posterImage = buildImage(season.getId(), ImageEntityType.SEASON, ImageType.POSTER);
       var backdropImage = buildImage(season.getId(), ImageEntityType.SEASON, ImageType.BACKDROP);
-      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.SEASON), any()))
+      when(imageService.findByEntities(any(), eq(ImageEntityType.SEASON)))
           .thenReturn(List.of(posterImage, backdropImage));
 
       List<String> imageTypes =
@@ -338,7 +338,7 @@ class ImageFieldResolverTest {
 
       var stillImage = buildImage(episode.getId(), ImageEntityType.EPISODE, ImageType.STILL);
       var backdropImage = buildImage(episode.getId(), ImageEntityType.EPISODE, ImageType.BACKDROP);
-      when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.EPISODE), any()))
+      when(imageService.findByEntities(any(), eq(ImageEntityType.EPISODE)))
           .thenReturn(List.of(stillImage, backdropImage));
 
       List<String> imageTypes =
