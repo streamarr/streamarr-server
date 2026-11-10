@@ -1,10 +1,10 @@
 package com.streamarr.server.services.watchprogress;
 
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
-import com.streamarr.server.services.pagination.Row;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;

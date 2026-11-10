@@ -1,4 +1,4 @@
-package com.streamarr.server.services.pagination;
+package com.streamarr.server.domain.pagination;
 
 /** Where a list places the items that have no value for its sort. */
 public enum AbsentValuePlacement {

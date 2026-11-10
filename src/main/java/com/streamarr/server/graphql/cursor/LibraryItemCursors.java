@@ -1,9 +1,9 @@
 package com.streamarr.server.graphql.cursor;
 
+import com.streamarr.server.domain.pagination.MediaFilter;
+import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.services.pagination.ListIdentity;
-import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaOrder;
-import com.streamarr.server.services.pagination.Position;
 import java.util.function.Function;
 
 /**

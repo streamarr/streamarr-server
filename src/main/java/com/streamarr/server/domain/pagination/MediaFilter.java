@@ -1,4 +1,4 @@
-package com.streamarr.server.services.pagination;
+package com.streamarr.server.domain.pagination;
 
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.streaming.WatchStatus;

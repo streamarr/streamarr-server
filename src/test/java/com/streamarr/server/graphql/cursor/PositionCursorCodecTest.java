@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.services.pagination.ListIdentity;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.MalformedCursors;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;

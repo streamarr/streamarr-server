@@ -4,12 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.pagination.PaginationDirection;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.SortDirection;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

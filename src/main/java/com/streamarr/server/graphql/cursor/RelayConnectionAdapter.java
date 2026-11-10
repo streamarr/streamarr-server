@@ -1,11 +1,11 @@
 package com.streamarr.server.graphql.cursor;
 
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.graphql.dto.OrderedEdge;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaOrder;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.Row;
 import graphql.relay.Connection;
 import graphql.relay.DefaultConnection;
 import graphql.relay.DefaultEdge;
