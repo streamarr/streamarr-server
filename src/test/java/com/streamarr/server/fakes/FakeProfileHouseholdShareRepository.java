@@ -73,7 +73,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     return InMemoryKeyset.byCreationTime(
         database.values().stream()
             .filter(share -> share.getHouseholdId().equals(householdId))
-            .filter(filter::keeps)
+            .filter(share -> keeps(filter, share))
             .toList(),
         seek);
   }
@@ -84,9 +84,14 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     return InMemoryKeyset.byCreationTime(
         database.values().stream()
             .filter(share -> share.getProfileId().equals(profileId))
-            .filter(filter::keeps)
+            .filter(share -> keeps(filter, share))
             .toList(),
         seek);
+  }
+
+  // As the real query reads it: an offer past its expiry is EXPIRED, never PENDING.
+  private static boolean keeps(ShareStatusFilter filter, ProfileHouseholdShare share) {
+    return filter.statuses().isEmpty() || filter.statuses().contains(share.statusAt(filter.at()));
   }
 
   @Override
