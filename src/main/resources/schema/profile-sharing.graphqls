@@ -59,6 +59,41 @@ type ProfileSummary {
     restricted: Boolean!
 }
 
+extend type Subscription {
+    """
+    A Profile share changed. A change arrives when a share is created or offered, accepted,
+    declined, canceled, invalidated or ended, and when a share starts or stops being required by
+    Account membership. A change that rolls back never arrives.
+
+    Any signed-in session may subscribe, with or without a selected Profile. A device-bound session
+    gets FORBIDDEN, and so does a disabled Account. A change reaches a subscriber only when the
+    subscriber may read the share through householdShares or profileShares: the target
+    Household's HouseholdAdmins, those who may see the Profile's administration, and ServerAdmins.
+    The server decides this for each change as it delivers it, so a subscriber who loses that
+    authority stops receiving the share's changes, and a share never reaches someone the queries
+    would not show it to. The share's fields are hidden from the same readers as in the queries.
+    An operation whose Account may no longer follow share changes ends with FORBIDDEN.
+
+    To build current state, subscribe first, then query householdShares or profileShares, and
+    apply each change by shareId. The lists put the newest share first, so a share created after
+    the client subscribed goes first; a change to a share on a page the client has not loaded can
+    wait for that page. Keep a share in a list while its status is one of the list's statuses,
+    and remove it when share is null without errors. A null share with errors is not a
+    removal: keep the share and run the queries again. The server reads the share when it delivers
+    the change and delivers one operation's changes in order, so the last change for a share
+    carries its latest state. A share that stops being readable to the subscriber does not arrive
+    as removed; the queries stop listing it. The operation does not complete while the server runs.
+    """
+    profileShareChanged: ProfileShareChange
+}
+
+"One committed change to a Profile share."
+type ProfileShareChange {
+    shareId: ID!
+    "The share as the server reads it on delivery, or null once the share no longer exists."
+    share: ProfileShare
+}
+
 type ProfileShareConnection {
     edges: [ProfileShareEdge!]!
     pageInfo: PageInfo!

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -579,6 +580,91 @@ class ProfileSharingServiceTest {
         service.sharePreflight(identity(), profile.getId(), household.getId()).orElseThrow();
 
     assertThat(preflight.nameConflict()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should give the share as it stands when the reader administers its Household")
+  void shouldGiveTheShareAsItStandsWhenTheReaderAdministersItsHousehold() {
+    var share = pendingShare();
+    authorization.decideUnitWith(
+        intent ->
+            switch (intent) {
+              case Intent.ViewProfileShareChanges _ -> allowed();
+              case Intent.ViewHouseholdAdministration(var id) when id.equals(household.getId()) ->
+                  allowed();
+              default -> denied();
+            });
+
+    var change = service.shareChange(identity(), ChangedShare.of(share)).orElseThrow();
+
+    assertThat(change.shareId()).isEqualTo(share.getId());
+    assertThat(change.share()).contains(share);
+  }
+
+  @Test
+  @DisplayName("Should give the share when the reader may see its Profile's administration")
+  void shouldGiveTheShareWhenTheReaderMaySeeItsProfilesAdministration() {
+    var share = pendingShare();
+    authorization.decideUnitWith(
+        intent ->
+            switch (intent) {
+              case Intent.ViewProfileShareChanges _ -> allowed();
+              case Intent.ViewProfileAdministration(var id) when id.equals(profile.getId()) ->
+                  allowed();
+              default -> denied();
+            });
+
+    assertThat(service.shareChange(identity(), ChangedShare.of(share)))
+        .hasValueSatisfying(change -> assertThat(change.share()).contains(share));
+  }
+
+  @Test
+  @DisplayName("Should give nothing when the reader may read neither side of the share")
+  void shouldGiveNothingWhenTheReaderMayReadNeitherSideOfTheShare() {
+    var share = pendingShare();
+    authorization.decideUnitWith(
+        intent -> intent instanceof Intent.ViewProfileShareChanges ? allowed() : denied());
+
+    assertThat(service.shareChange(identity(), ChangedShare.of(share))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should give the change without a share when the share no longer exists")
+  void shouldGiveTheChangeWithoutAShareWhenTheShareNoLongerExists() {
+    var share = pendingShare();
+    shares.deleteById(share.getId());
+
+    var change = service.shareChange(identity(), ChangedShare.of(share)).orElseThrow();
+
+    assertThat(change.shareId()).isEqualTo(share.getId());
+    assertThat(change.share()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should refuse the change when the reader may no longer follow share changes")
+  void shouldRefuseTheChangeWhenTheReaderMayNoLongerFollowShareChanges() {
+    var share = pendingShare();
+    authorization.decideUnitWith(
+        intent -> intent instanceof Intent.ViewProfileShareChanges ? denied() : allowed());
+
+    assertThatThrownBy(() -> service.shareChange(identity(), ChangedShare.of(share)))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThatThrownBy(() -> service.requireViewProfileShareChanges(identity()))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the reader's authority over the share cannot be decided")
+  void shouldFailClosedWhenTheReadersAuthorityOverTheShareCannotBeDecided() {
+    var share = pendingShare();
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.ViewProfileShareChanges
+                ? allowed()
+                : new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+
+    assertThatThrownBy(() -> service.shareChange(identity(), ChangedShare.of(share)))
+        .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
   private AuthenticatedIdentity identity() {

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
@@ -497,6 +498,32 @@ public class ProfileSharingService {
     }
 
     return Pager.page(profileSharesList, profile, request);
+  }
+
+  /**
+   * Refuses a session that may not follow share changes, such as a session on a TV, with FORBIDDEN,
+   * or with AUTHORIZATION_UNAVAILABLE when no decision could be made.
+   */
+  public void requireViewProfileShareChanges(AuthenticatedIdentity identity) {
+    authorizationService.requireAllowed(identity, new Intent.ViewProfileShareChanges());
+  }
+
+  /**
+   * One committed share change as the reader may read it, decided as it is delivered. The reader
+   * gets it when they may read the shares into its Household or the shares of its Profile, as
+   * {@link #householdShares} and {@link #profileShares} decide; it then carries the share as it
+   * stands now, or no share once the share was deleted. Refuses a reader who may no longer follow
+   * share changes at all.
+   */
+  public Optional<ShareChange> shareChange(AuthenticatedIdentity identity, ChangedShare changed) {
+    requireViewProfileShareChanges(identity);
+    if (!mayViewHousehold(identity, changed.householdId())
+        && !mayViewProfile(identity, changed.profileId())) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        new ShareChange(changed.shareId(), shareRepository.findById(changed.shareId())));
   }
 
   /** The offerer's whole preflight: nothing else about the target Household leaks. */
