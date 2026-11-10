@@ -6,6 +6,7 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.ChangedShare;
+import com.streamarr.server.domain.auth.HouseholdShareFilter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.domain.pagination.Row;
@@ -119,9 +120,13 @@ public class ProfileHouseholdShareRepositoryCustomImpl
 
   @Override
   public List<Row<ProfileHouseholdShare>> rowsIntoHousehold(
-      UUID householdId, ShareStatusFilter filter, Seek seek) {
+      HouseholdShareFilter filter, Seek seek) {
     return rowsBeyond(
-        PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId).and(keptBy(filter)), seek);
+        PROFILE_HOUSEHOLD_SHARE
+            .HOUSEHOLD_ID
+            .eq(filter.householdId())
+            .and(keptBy(filter.statuses())),
+        seek);
   }
 
   /** The shares the filter keeps, each read as of the filter's instant. */

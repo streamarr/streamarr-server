@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.ChangedShare;
+import com.streamarr.server.domain.auth.HouseholdShareFilter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.ShareStatusFilter;
@@ -22,9 +23,8 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** Whether the Profile has any ACTIVE share or unexpired PENDING share, read as a scalar. */
   boolean hasActiveOrPendingShares(UUID profileId, Instant now);
 
-  /** The shares into the Household that the filter keeps, beyond the seek, by creation, then ID. */
-  List<Row<ProfileHouseholdShare>> rowsIntoHousehold(
-      UUID householdId, ShareStatusFilter filter, Seek seek);
+  /** The shares the filter keeps into its Household, beyond the seek, by creation, then ID. */
+  List<Row<ProfileHouseholdShare>> rowsIntoHousehold(HouseholdShareFilter filter, Seek seek);
 
   /** The Profile's shares that the filter keeps, beyond the seek, by creation time, then ID. */
   List<Row<ProfileHouseholdShare>> rowsOfProfile(

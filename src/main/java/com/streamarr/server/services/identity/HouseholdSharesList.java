@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.HouseholdShareFilter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.pagination.ListOrder;
 import com.streamarr.server.domain.pagination.Row;
@@ -32,6 +33,6 @@ public class HouseholdSharesList implements PagedList<ProfileHouseholdShare, Sha
   @Override
   public List<Row<ProfileHouseholdShare>> rowsBeyond(ShareListScope household, Seek seek) {
     return shareRepository.rowsIntoHousehold(
-        household.id(), household.filterAt(clock.instant()), seek);
+        new HouseholdShareFilter(household.id(), household.filterAt(clock.instant())), seek);
   }
 }

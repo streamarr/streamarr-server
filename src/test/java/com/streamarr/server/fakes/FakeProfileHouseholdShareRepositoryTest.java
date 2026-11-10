@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.PaginationFixture.firstSeek;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.AuditFieldSetter;
+import com.streamarr.server.domain.auth.HouseholdShareFilter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.ShareStatusFilter;
@@ -51,8 +52,9 @@ class FakeProfileHouseholdShareRepositoryTest {
 
     var rows =
         fake.rowsIntoHousehold(
-            householdId,
-            new ShareStatusFilter(Set.of(ProfileShareStatus.PENDING), Instant.now()),
+            new HouseholdShareFilter(
+                householdId,
+                new ShareStatusFilter(Set.of(ProfileShareStatus.PENDING), Instant.now())),
             firstSeek(OLDEST_FIRST, 10));
 
     assertThat(rows).extracting(row -> row.item().getId()).containsExactly(LOW, HIGH);
