@@ -31,6 +31,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeStreamingService;
+import com.streamarr.server.fakes.ForwardingPreparedSegment;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.RecordedStream;
@@ -935,19 +936,14 @@ class RemotePlaybackIT {
     }
 
     @Override
-    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
-      var prepared = super.prepareSegment(sessionId, segmentName, data);
-      return new PreparedSegment() {
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+      var prepared = super.prepareSegment(sessionId, segmentName);
+      return new ForwardingPreparedSegment(prepared) {
         @Override
         public SegmentPublication publish() {
           var outcome = prepared.publish();
           publication(segmentName).complete(null);
           return outcome;
-        }
-
-        @Override
-        public void close() {
-          prepared.close();
         }
       };
     }
@@ -971,9 +967,9 @@ class RemotePlaybackIT {
     }
 
     @Override
-    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
-      var prepared = super.prepareSegment(sessionId, segmentName, data);
-      return new PreparedSegment() {
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+      var prepared = super.prepareSegment(sessionId, segmentName);
+      return new ForwardingPreparedSegment(prepared) {
         @Override
         public SegmentPublication publish() {
           try {
@@ -989,11 +985,6 @@ class RemotePlaybackIT {
           }
 
           return prepared.publish();
-        }
-
-        @Override
-        public void close() {
-          prepared.close();
         }
       };
     }

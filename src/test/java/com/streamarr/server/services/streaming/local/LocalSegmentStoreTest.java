@@ -13,6 +13,7 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -294,7 +295,8 @@ class LocalSegmentStoreTest {
         IntStream.range(0, CONTENDERS)
             .mapToObj(
                 contender ->
-                    store.prepareSegment(
+                    prepared(
+                        store,
                         sessionId,
                         VARIANT_INITIALIZATION_SEGMENT,
                         contenderInitialization(contender)))
@@ -317,6 +319,13 @@ class LocalSegmentStoreTest {
     }
   }
 
+  private static SegmentStore.PreparedSegment prepared(
+      SegmentStore store, UUID sessionId, String segmentName, byte[] data) {
+    var prepared = store.prepareSegment(sessionId, segmentName);
+    prepared.append(ByteBuffer.wrap(data));
+    return prepared;
+  }
+
   private static byte[] contenderInitialization(int contender) {
     return ("encoder " + contender).getBytes();
   }
@@ -336,12 +345,32 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should store the appended chunks in order when a prepared segment is published")
+  void shouldStoreAppendedChunksInOrderWhenPreparedSegmentIsPublished() {
+    var sessionId = UUID.randomUUID();
+
+    try (var prepared = store.prepareSegment(sessionId, "720p/segment0.m4s")) {
+      prepared.append(ByteBuffer.wrap("remote ".getBytes()));
+      prepared.append(ByteBuffer.wrap("segment".getBytes()));
+      assertThat(store.segmentExists(sessionId, "720p/segment0.m4s")).isFalse();
+
+      prepared.publish();
+    }
+
+    assertThat(StoredSegments.bytes(store, sessionId, "720p/segment0.m4s"))
+        .isEqualTo("remote segment".getBytes());
+    assertThat(tempDir)
+        .as("no temporary upload file remains beside the session's folder")
+        .isDirectoryNotContaining("glob:**.tmp");
+  }
+
+  @Test
   @DisplayName("Should not expose a prepared segment when publication has not occurred")
   void shouldNotExposePreparedSegmentWhenPublicationHasNotOccurred() {
     var sessionId = UUID.randomUUID();
     var segmentData = "remote segment".getBytes();
 
-    try (var prepared = store.prepareSegment(sessionId, "720p/segment0.m4s", segmentData)) {
+    try (var prepared = prepared(store, sessionId, "720p/segment0.m4s", segmentData)) {
       assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
       assertThat(store.segmentExists(sessionId, "720p/segment0.m4s")).isFalse();
 
@@ -356,8 +385,7 @@ class LocalSegmentStoreTest {
   void shouldDiscardPreparedSegmentWhenClosedWithoutPublication() {
     var sessionId = UUID.randomUUID();
 
-    try (var _ =
-        store.prepareSegment(sessionId, "720p/segment0.m4s", "remote segment".getBytes())) {
+    try (var _ = prepared(store, sessionId, "720p/segment0.m4s", "remote segment".getBytes())) {
       assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
     }
 
@@ -368,7 +396,7 @@ class LocalSegmentStoreTest {
   @DisplayName("Should translate cleanup I/O failure when a prepared segment is closed")
   void shouldTranslateCleanupIoFailureWhenPreparedSegmentIsClosed() throws Exception {
     var prepared =
-        store.prepareSegment(UUID.randomUUID(), "720p/segment0.m4s", "remote segment".getBytes());
+        prepared(store, UUID.randomUUID(), "720p/segment0.m4s", "remote segment".getBytes());
     Path temporary;
     try (var files = Files.list(tempDir)) {
       temporary = files.findFirst().orElseThrow();
@@ -382,16 +410,6 @@ class LocalSegmentStoreTest {
         .hasMessage("Failed to clean up segment upload: 720p/segment0.m4s")
         .cause()
         .isInstanceOf(IOException.class);
-  }
-
-  @Test
-  @DisplayName("Should clean the temporary file when segment preparation fails")
-  void shouldCleanTemporaryFileWhenSegmentPreparationFails() {
-    var sessionId = UUID.randomUUID();
-
-    assertThatThrownBy(() -> store.prepareSegment(sessionId, "segment0.m4s", null))
-        .isInstanceOf(NullPointerException.class);
-    assertThat(tempDir).isEmptyDirectory();
   }
 
   @Test

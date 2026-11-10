@@ -9,6 +9,7 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StoredSegment;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -51,10 +52,10 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   @Override
-  public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
+  public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
     try {
       Files.createDirectories(baseDir);
-      var temporary = PreparedSegmentFile.create(baseDir, data);
+      var temporary = PreparedSegmentFile.create(baseDir);
       return new LocalPreparedSegment(sessionId, segmentName, temporary);
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to prepare segment: " + segmentName, e);
@@ -72,6 +73,15 @@ public class LocalSegmentStore implements SegmentStore {
       this.sessionId = sessionId;
       this.segmentName = segmentName;
       this.temporary = temporary;
+    }
+
+    @Override
+    public void append(ByteBuffer bytes) {
+      try {
+        temporary.append(bytes);
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to write segment upload: " + segmentName, e);
+      }
     }
 
     @Override

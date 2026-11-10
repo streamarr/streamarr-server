@@ -12,7 +12,6 @@ import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
-import java.io.ByteArrayOutputStream;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
@@ -30,7 +29,8 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   @NonNull private final SegmentUploadAdmission.Ticket uploadTicket;
 
   private SegmentUploadMetadata metadata;
-  private ByteArrayOutputStream data;
+  private SegmentStore.PreparedSegment prepared;
+  private long receivedBytes;
   private boolean closed;
 
   @Override
@@ -40,7 +40,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
     }
     if (uploadTicket.isClosed()) {
       // The admission reclaimed this upload's capacity after it exceeded the maximum upload age.
-      // Terminate the stream: buffering on would hold bytes the byte budget no longer accounts for.
+      // Terminate the stream: storing on would hold bytes the byte budget no longer accounts for.
       reject(Status.DEADLINE_EXCEEDED.withDescription("Segment upload exceeded the maximum age"));
       return;
     }
@@ -74,8 +74,12 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
     }
 
     metadata = incoming;
-    data = new ByteArrayOutputStream();
     uploadTicket.onReclaimed(this::expire);
+    try {
+      prepared = segmentStore.prepareSegment(streamSessionId(), storedSegmentName());
+    } catch (RuntimeException e) {
+      rejectStorageFailure(e);
+    }
   }
 
   private void receiveData(UploadSegmentRequest request) {
@@ -87,16 +91,40 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.INVALID_ARGUMENT.withDescription("Segment data exceeds declared length"));
       return;
     }
-    data.writeBytes(request.getData().toByteArray());
+    try {
+      prepared.append(request.getData().asReadOnlyByteBuffer());
+    } catch (RuntimeException e) {
+      rejectStorageFailure(e);
+      return;
+    }
+
+    receivedBytes += request.getData().size();
     workerConnections.reportUploadProgress(authenticatedWorkerId, metadata);
   }
 
   private boolean wouldExceedDeclaredLength(UploadSegmentRequest request) {
-    return (long) data.size() + request.getData().size() > metadata.getContentLengthBytes();
+    return receivedBytes + request.getData().size() > metadata.getContentLengthBytes();
   }
 
   private boolean isComplete() {
-    return metadata != null && data.size() == metadata.getContentLengthBytes();
+    return metadata != null && receivedBytes == metadata.getContentLengthBytes();
+  }
+
+  private UUID streamSessionId() {
+    return fromProto(metadata.getStreamSessionId());
+  }
+
+  private String storedSegmentName() {
+    return SegmentNames.storedSegmentName(metadata.getVariantLabel(), metadata.getSegmentName());
+  }
+
+  private void rejectStorageFailure(RuntimeException failure) {
+    log.error(
+        "Failed to store segment {} for stream session {}",
+        storedSegmentName(),
+        streamSessionId(),
+        failure);
+    reject(Status.INTERNAL.withDescription("Segment could not be stored"));
   }
 
   @Override
@@ -114,21 +142,13 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.INVALID_ARGUMENT.withDescription("Segment upload is incomplete"));
       return;
     }
-    var segmentName =
-        SegmentNames.storedSegmentName(metadata.getVariantLabel(), metadata.getSegmentName());
     Optional<SegmentPublication> outcome;
-    try (var prepared =
-        segmentStore.prepareSegment(
-            fromProto(metadata.getStreamSessionId()), segmentName, data.toByteArray())) {
+    try {
       outcome =
           workerConnections.publishIfAuthorized(authenticatedWorkerId, metadata, prepared::publish);
+      discardPrepared();
     } catch (RuntimeException e) {
-      log.error(
-          "Failed to store segment {} for stream session {}",
-          segmentName,
-          fromProto(metadata.getStreamSessionId()),
-          e);
-      reject(Status.INTERNAL.withDescription("Segment could not be stored"));
+      rejectStorageFailure(e);
       return;
     }
     var status =
@@ -143,7 +163,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       return;
     }
 
-    var acceptedLength = data.size();
+    var acceptedLength = receivedBytes;
     close();
     responseObserver.onNext(
         UploadSegmentResponse.newBuilder()
@@ -204,7 +224,20 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       return;
     }
     closed = true;
-    data = null;
     uploadTicket.close();
+    try {
+      discardPrepared();
+    } catch (RuntimeException e) {
+      log.warn("Failed to discard the upload of segment {}", metadata.getSegmentName(), e);
+    }
+  }
+
+  // Deletes the upload's temporary file. A published segment has already left that file.
+  private void discardPrepared() {
+    var discarded = prepared;
+    prepared = null;
+    if (discarded != null) {
+      discarded.close();
+    }
   }
 }

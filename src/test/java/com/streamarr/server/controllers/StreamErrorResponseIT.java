@@ -183,7 +183,7 @@ class StreamErrorResponseIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
       throw new IllegalStateException(FAILURE_DETAIL);
     }
 

@@ -5,6 +5,8 @@ import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StoredSegment;
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
@@ -27,10 +29,19 @@ public class FakeSegmentStore implements SegmentStore {
   }
 
   @Override
-  public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
+  public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+    var appended = new ByteArrayOutputStream();
     return new PreparedSegment() {
       @Override
+      public void append(ByteBuffer bytes) {
+        var chunk = new byte[bytes.remaining()];
+        bytes.get(chunk);
+        appended.writeBytes(chunk);
+      }
+
+      @Override
       public SegmentPublication publish() {
+        var data = appended.toByteArray();
         if (SegmentNames.isInitSegment(segmentName)) {
           return publishInitialization(sessionId, segmentName, data);
         }
@@ -41,8 +52,7 @@ public class FakeSegmentStore implements SegmentStore {
 
       @Override
       public void close() {
-        // Data remains owned by this object until publish(), so there is no staged resource to
-        // release.
+        // The appended bytes stay on the heap until publish(), so there is nothing to release.
       }
     };
   }
