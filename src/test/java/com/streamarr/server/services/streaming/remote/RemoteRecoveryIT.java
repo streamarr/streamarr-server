@@ -23,6 +23,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.RecordedStream;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
@@ -110,8 +111,9 @@ class RemoteRecoveryIT {
 
         var media =
             switch (delivery) {
-              case SegmentDelivery.Ready(var data) ->
-                  Fmp4Fixture.withInitializationSegment(segmentStore, streamSessionId, data);
+              case SegmentDelivery.Ready _ ->
+                  Fmp4Fixture.withInitializationSegment(
+                      segmentStore, streamSessionId, StoredSegments.bytes(delivery));
               default -> throw new AssertionError(delivery);
             };
         var recoveredMedia = Files.write(tempDir.resolve("recovered.mp4"), media);
@@ -201,11 +203,11 @@ class RemoteRecoveryIT {
 
       var media =
           switch (delivery) {
-            case SegmentDelivery.Ready(var data) ->
+            case SegmentDelivery.Ready _ ->
                 Bytes.concat(
                     Fmp4Fixture.withInitializationSegment(
                         segmentStore, streamSessionId, "segment0.m4s"),
-                    data);
+                    StoredSegments.bytes(delivery));
             default -> throw new AssertionError(delivery);
           };
       var recoveredMedia = Files.write(tempDir.resolve("recovered.mp4"), media);

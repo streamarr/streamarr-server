@@ -19,13 +19,13 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.properties.StreamingProperties;
@@ -255,8 +255,7 @@ class SegmentDeliveryCoordinatorTest {
     var delivery =
         coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
 
-    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(((SegmentDelivery.Ready) delivery).data()).containsExactly(0x47);
+    assertThat(StoredSegments.bytes(delivery)).containsExactly(0x47);
   }
 
   @Test
@@ -382,8 +381,7 @@ class SegmentDeliveryCoordinatorTest {
     trapStore.releaseTrap.countDown();
     exhauster.join(5000);
 
-    assertThat(outcome.get()).isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(((SegmentDelivery.Ready) outcome.get()).data()).containsExactly(0x47);
+    assertThat(StoredSegments.bytes(outcome.get())).containsExactly(0x47);
   }
 
   // ADR 0052: no job attempt can make a segment past a short copy's normal end, and a refusal
@@ -402,7 +400,8 @@ class SegmentDeliveryCoordinatorTest {
 
     try (var pastTheEnd = deliveryHeldWithoutDeadline(sessionId, "segment2.m4s")) {
       assertThat(coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment1.m4s"))
-          .isEqualTo(new SegmentDelivery.Ready(new byte[] {2}));
+          .extracting(StoredSegments::bytes)
+          .isEqualTo(new byte[] {2});
       assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
       destroy(sessionId);
       assertThat(pastTheEnd.await(Duration.ofSeconds(2)))
@@ -515,26 +514,6 @@ class SegmentDeliveryCoordinatorTest {
     var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
-  }
-
-  @Test
-  @DisplayName("Should report the session as ended when a destroy wins between existence and read")
-  void shouldReportSessionEndedWhenADestroyWinsBetweenExistenceAndRead() {
-    var throwingStore =
-        new FakeSegmentStore() {
-          @Override
-          public byte[] readSegment(UUID sessionId, String segmentName) {
-            throw new TranscodeException("Segment not found: " + segmentName);
-          }
-        };
-    var sessionId = UUID.randomUUID();
-    throwingStore.addSegment(sessionId, "segment0.m4s", new byte[] {0x47});
-    var rig = rigWith(transcodeExecutor, throwingStore);
-
-    var delivery =
-        rig.coordinator().deliver(sessionId, StreamSession.defaultVariant(), "segment0.m4s");
-
-    assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
   }
 
   @Test
@@ -2867,7 +2846,9 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
-  /** Blocks one specific thread at segmentExists while the armed condition holds, exactly once. */
+  /**
+   * Blocks one specific thread at a segment lookup while the armed condition holds, exactly once.
+   */
   private static final class TrapSegmentStore extends FakeSegmentStore {
 
     private final CountDownLatch reachedTrap = new CountDownLatch(1);
@@ -2883,14 +2864,23 @@ class SegmentDeliveryCoordinatorTest {
 
     @Override
     public boolean segmentExists(UUID sessionId, String segmentName) {
+      trapArmedThread();
+      return super.segmentExists(sessionId, segmentName);
+    }
+
+    @Override
+    public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
+      trapArmedThread();
+      return super.openSegment(sessionId, segmentName);
+    }
+
+    private void trapArmedThread() {
       if (Thread.currentThread() == trappedThread
           && trapCondition.getAsBoolean()
           && tripped.compareAndSet(false, true)) {
         reachedTrap.countDown();
         awaitTrapRelease();
       }
-
-      return super.segmentExists(sessionId, segmentName);
     }
 
     private void awaitTrapRelease() {
@@ -2927,13 +2917,16 @@ class SegmentDeliveryCoordinatorTest {
     }
 
     @Override
-    public byte[] readSegment(UUID sessionId, String segmentName) {
-      if (segmentName.equals(trappedSegmentName) && tripped.compareAndSet(false, true)) {
+    public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
+      var opened = super.openSegment(sessionId, segmentName);
+      if (opened.isPresent()
+          && segmentName.equals(trappedSegmentName)
+          && tripped.compareAndSet(false, true)) {
         reachedTrap.countDown();
         awaitRelease();
       }
 
-      return super.readSegment(sessionId, segmentName);
+      return opened;
     }
 
     private void awaitRelease() {

@@ -27,6 +27,7 @@ import com.streamarr.server.fakes.FakeLearnedStreamEndRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.properties.StreamingProperties;
@@ -554,9 +555,8 @@ class WorkerPlaybackRecoveryIT {
     }
 
     private byte[] deliver(StreamSession session, String variant, String name) {
-      var result = delivery.deliver(session.getSessionId(), variant, variant + "/" + name);
-      assertThat(result).isInstanceOf(SegmentDelivery.Ready.class);
-      return ((SegmentDelivery.Ready) result).data();
+      return StoredSegments.bytes(
+          delivery.deliver(session.getSessionId(), variant, variant + "/" + name));
     }
 
     private MediaProbe readProbe() {

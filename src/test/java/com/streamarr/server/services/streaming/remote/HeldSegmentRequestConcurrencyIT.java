@@ -21,6 +21,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.properties.StreamingProperties;
@@ -178,7 +179,8 @@ class HeldSegmentRequestConcurrencyIT {
 
     for (var delivery : deliveries) {
       assertThat(delivery.get(BOUND.toSeconds(), TimeUnit.SECONDS))
-          .isEqualTo(new SegmentDelivery.Ready(uploaded));
+          .extracting(StoredSegments::bytes)
+          .isEqualTo(uploaded);
     }
   }
 
@@ -235,7 +237,8 @@ class HeldSegmentRequestConcurrencyIT {
     switch (order) {
       case UPLOAD_BEFORE_DEATH -> {
         assertThat(delivery.get(BOUND.toSeconds(), TimeUnit.SECONDS))
-            .isEqualTo(new SegmentDelivery.Ready(dyingAttempt));
+            .extracting(StoredSegments::bytes)
+            .isEqualTo(dyingAttempt);
         assertThat(dyingUpload.get()).isCompleted();
       }
       case DEATH_BEFORE_UPLOAD -> {
@@ -246,7 +249,8 @@ class HeldSegmentRequestConcurrencyIT {
             .get(BOUND.toSeconds(), TimeUnit.SECONDS);
 
         assertThat(delivery.get(BOUND.toSeconds(), TimeUnit.SECONDS))
-            .isEqualTo(new SegmentDelivery.Ready(replacementAttempt));
+            .extracting(StoredSegments::bytes)
+            .isEqualTo(replacementAttempt);
         assertThat(replacement.getJobAttemptId()).isNotEqualTo(job.getJobAttemptId());
         assertUploadRefused(dyingUpload.get());
       }
@@ -271,7 +275,8 @@ class HeldSegmentRequestConcurrencyIT {
 
     upload.get(BOUND.toSeconds(), TimeUnit.SECONDS);
     assertThat(delivery.get(BOUND.toSeconds(), TimeUnit.SECONDS))
-        .isEqualTo(new SegmentDelivery.Ready(uploaded));
+        .extracting(StoredSegments::bytes)
+        .isEqualTo(uploaded);
   }
 
   @Test
@@ -289,7 +294,8 @@ class HeldSegmentRequestConcurrencyIT {
     var delivery = deliverAsync(session);
 
     assertThat(delivery.get(BOUND.toSeconds(), TimeUnit.SECONDS))
-        .isEqualTo(new SegmentDelivery.Ready(uploaded));
+        .extracting(StoredSegments::bytes)
+        .isEqualTo(uploaded);
     assertThat(transcodeExecutor.looks()).isZero();
     segmentStore.releasePublication();
     upload.get(BOUND.toSeconds(), TimeUnit.SECONDS);

@@ -17,6 +17,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -187,7 +188,7 @@ class HlsRecoveryContinuitySmokeTest {
             () ->
                 segmentStore.segmentExists(sessionId, "init.mp4")
                     && segmentStore.segmentExists(sessionId, "segment0.m4s"));
-    var storedInitialization = segmentStore.readSegment(sessionId, "init.mp4");
+    var storedInitialization = StoredSegments.bytes(segmentStore, sessionId, "init.mp4");
 
     killProducerAndDropSegmentsFrom(session, 1);
 
@@ -196,7 +197,8 @@ class HlsRecoveryContinuitySmokeTest {
     assertThat(delivery)
         .as("the replacement attempt's initialization segment matched the stored one")
         .isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(segmentStore.readSegment(sessionId, "init.mp4")).isEqualTo(storedInitialization);
+    assertThat(StoredSegments.bytes(segmentStore, sessionId, "init.mp4"))
+        .isEqualTo(storedInitialization);
     var recoveredMedia = decodableMediaFile(sessionId, "segment1.m4s");
 
     assertThat(workerFixture.worker().decodedVideoFrameCount(recoveredMedia))

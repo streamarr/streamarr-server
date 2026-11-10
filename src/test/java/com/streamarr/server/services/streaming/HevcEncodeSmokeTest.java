@@ -24,6 +24,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.SyntheticHdrSource;
 import com.streamarr.server.properties.StreamingProperties;
@@ -356,11 +357,12 @@ class HevcEncodeSmokeTest {
         .until(() -> segmentStore.segmentExists(sessionId, segment));
     var media = new ByteArrayOutputStream();
     media.writeBytes(
-        segmentStore.readSegment(
+        StoredSegments.bytes(
+            segmentStore,
             sessionId,
             SegmentNames.storedSegmentName(
                 variant.label(), SegmentNames.INITIALIZATION_SEGMENT_NAME)));
-    media.writeBytes(segmentStore.readSegment(sessionId, segment));
+    media.writeBytes(StoredSegments.bytes(segmentStore, sessionId, segment));
     return Files.write(
         temporaryDirectory.resolve("decodable-" + variant.label() + ".mp4"), media.toByteArray());
   }
@@ -389,7 +391,7 @@ class HevcEncodeSmokeTest {
     await("the initialization segment of " + label)
         .atMost(DELIVERY_LIMIT)
         .until(() -> segmentStore.segmentExists(sessionId, initialization));
-    return segmentStore.readSegment(sessionId, initialization);
+    return StoredSegments.bytes(segmentStore, sessionId, initialization);
   }
 
   // Runs the variant's worker command again with the image's own FFmpeg for a few frames, without

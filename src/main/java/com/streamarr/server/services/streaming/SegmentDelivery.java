@@ -1,32 +1,15 @@
 package com.streamarr.server.services.streaming;
 
-import java.util.Arrays;
+import lombok.NonNull;
 
 /** Terminal outcome of one segment delivery attempt (ADR 0019). */
 public sealed interface SegmentDelivery {
 
   /**
-   * The segment's bytes; publication exposes the final name only after all bytes are written. The
-   * array is handed off at construction — neither party mutates it afterwards; no defensive copy is
-   * taken because segments can be large.
+   * The published segment, opened for reading. Whoever receives the delivery closes the segment
+   * when its answer ends.
    */
-  record Ready(byte[] data) implements SegmentDelivery {
-
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof Ready(byte[] otherData) && Arrays.equals(data, otherData);
-    }
-
-    @Override
-    public int hashCode() {
-      return Arrays.hashCode(data);
-    }
-
-    @Override
-    public String toString() {
-      return "Ready[" + data.length + " bytes]";
-    }
-  }
+  record Ready(@NonNull StoredSegment segment) implements SegmentDelivery {}
 
   /**
    * The session — or the requested variant or segment name — was destroyed, never existed, or names

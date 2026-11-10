@@ -18,7 +18,6 @@ import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -50,6 +49,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -321,7 +321,7 @@ class StreamControllerTest {
     session.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
     runtimeRegistry.save(session);
 
-    var response = new AtomicReference<ResponseEntity<byte[]>>();
+    var response = new AtomicReference<ResponseEntity<Resource>>();
     var worker =
         new Thread(
             () -> {
@@ -346,33 +346,6 @@ class StreamControllerTest {
 
     mockMvc
         .perform(get("/api/stream/{sessionId}/segment99999999999999999999.m4s", SESSION_ID))
-        .andExpect(status().isNotFound());
-  }
-
-  @Test
-  @DisplayName("Should return 404 when segment vanishes between the existence check and the read")
-  void shouldReturn404WhenSegmentVanishesBetweenTheExistenceCheckAndTheRead() throws Exception {
-    streamingService.setSession(buildSession());
-    var throwingStore =
-        new FakeSegmentStore() {
-          @Override
-          public byte[] readSegment(UUID sessionId, String segmentName) {
-            throw new TranscodeException("Segment not found: " + segmentName);
-          }
-        };
-    throwingStore.addSegment(SESSION_ID, "segment0.m4s", new byte[] {0x47});
-    var raceController =
-        new StreamController(
-            streamingService,
-            playlistService,
-            coordinatorOver(throwingStore),
-            new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN),
-            directPlaySources(),
-            directPlayMetrics);
-    var raceMockMvc = MockMvcBuilders.standaloneSetup(raceController).build();
-
-    raceMockMvc
-        .perform(get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID))
         .andExpect(status().isNotFound());
   }
 

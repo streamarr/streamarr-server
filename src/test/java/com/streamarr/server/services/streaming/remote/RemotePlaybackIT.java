@@ -34,6 +34,7 @@ import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.RecordedStream;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
@@ -52,6 +53,7 @@ import com.streamarr.server.services.streaming.TranscodeDecisionRequest;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -67,12 +69,17 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 @Tag("IntegrationTest")
 @DisplayName("Remote Playback Integration Tests")
@@ -136,19 +143,12 @@ class RemotePlaybackIT {
                   .build());
       playback.session().setHandle(handle);
       var streamController = playback.controller();
-      var responses =
+      var bodies =
           List.of(
-              streamController.getInitSegment(streamSessionId),
-              streamController.getSegment(streamSessionId, "segment0.m4s"),
-              streamController.getSegment(streamSessionId, "segment1.m4s"));
+              segmentBody(() -> streamController.getInitSegment(streamSessionId)),
+              segmentBody(() -> streamController.getSegment(streamSessionId, "segment0.m4s")),
+              segmentBody(() -> streamController.getSegment(streamSessionId, "segment1.m4s")));
 
-      assertThat(responses)
-          .allSatisfy(
-              response -> {
-                assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-                assertThat(response.getHeaders().getContentType()).hasToString("video/mp4");
-              });
-      var bodies = responses.stream().map(ResponseEntity::getBody).toList();
       assertThat(bodies)
           .extracting(Fmp4Fixture::firstBoxType)
           .as("the initialization segment, then media segments that each open with a fragment")
@@ -237,15 +237,14 @@ class RemotePlaybackIT {
 
       var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
       playback.session().setHandle(handle);
-      var response = playback.controller().getSegment(streamSessionId, "segment0.m4s");
+      var served =
+          segmentBody(() -> playback.controller().getSegment(streamSessionId, "segment0.m4s"));
 
-      assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-      assertThat(Fmp4Fixture.firstBoxType(response.getBody())).isEqualTo("moof");
+      assertThat(Fmp4Fixture.firstBoxType(served)).isEqualTo("moof");
       var servedMedia =
           Files.write(
               tempDir.resolve("served-first-segment.mp4"),
-              Fmp4Fixture.withInitializationSegment(
-                  segmentStore, streamSessionId, response.getBody()));
+              Fmp4Fixture.withInitializationSegment(segmentStore, streamSessionId, served));
       assertThat(worker.decodedVideoFrameCount(servedMedia)).isPositive();
     }
   }
@@ -477,8 +476,8 @@ class RemotePlaybackIT {
           .isZero();
       assertThat(
               new String(
-                  segmentStore.readSegment(
-                      streamSessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME),
+                  StoredSegments.bytes(
+                      segmentStore, streamSessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME),
                   StandardCharsets.ISO_8859_1))
           .as("the AV1 sample entry in the initialization segment")
           .contains("av01");
@@ -834,6 +833,21 @@ class RemotePlaybackIT {
 
   // A copy that encodes its audio reads from one 4 s period earlier, so that its audio encoder has
   // its lead before the first segment's start.
+  // The controller closes an opened segment when its request ends, so a direct call needs one.
+  private static byte[] segmentBody(Supplier<ResponseEntity<Resource>> request) throws IOException {
+    var attributes = new ServletRequestAttributes(new MockHttpServletRequest());
+    RequestContextHolder.setRequestAttributes(attributes);
+    try {
+      var response = request.get();
+      assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+      assertThat(response.getHeaders().getContentType()).hasToString("video/mp4");
+      return response.getBody().getContentAsByteArray();
+    } finally {
+      attributes.requestCompleted();
+      RequestContextHolder.resetRequestAttributes();
+    }
+  }
+
   private static double copySeekOf(TranscodeDecision decision) {
     if (decision.transcodeMode() == TranscodeMode.AUDIO_TRANSCODE) {
       return 8;

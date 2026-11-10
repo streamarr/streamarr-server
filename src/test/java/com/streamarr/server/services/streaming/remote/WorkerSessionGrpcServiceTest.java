@@ -22,6 +22,7 @@ import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentNames;
@@ -1678,7 +1679,8 @@ class WorkerSessionGrpcServiceTest {
     assertThat(response.completed()).isTrue();
     assertThat(response.response().getAcceptedLengthBytes()).isEqualTo(segmentData.length);
     assertThat(
-            segmentStore.readSegment(
+            StoredSegments.bytes(
+                segmentStore,
                 fromProto(job.getStreamSessionId()),
                 job.getVariant().getVariantLabel() + "/segment0.m4s"))
         .isEqualTo(segmentData);

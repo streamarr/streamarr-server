@@ -1,10 +1,15 @@
 package com.streamarr.server.services.streaming;
 
+import java.util.Optional;
 import java.util.UUID;
 
 public interface SegmentStore {
 
-  byte[] readSegment(UUID sessionId, String segmentName);
+  /**
+   * Opens a published segment, or answers empty when the stream session stores no segment under the
+   * name. The caller closes the opened segment.
+   */
+  Optional<StoredSegment> openSegment(UUID sessionId, String segmentName);
 
   boolean segmentExists(UUID sessionId, String segmentName);
 

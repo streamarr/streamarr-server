@@ -8,7 +8,7 @@ import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Feature;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
-import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
@@ -81,19 +81,55 @@ class LocalSegmentStoreTest {
     var expectedBytes = "segment data".getBytes();
     Files.write(outputDir.resolve("segment0.m4s"), expectedBytes);
 
-    var result = store.readSegment(sessionId, "segment0.m4s");
+    var result = StoredSegments.bytes(store, sessionId, "segment0.m4s");
 
     assertThat(result).isEqualTo(expectedBytes);
   }
 
   @Test
-  @DisplayName("Should throw when reading nonexistent segment")
-  void shouldThrowWhenReadingNonexistentSegment() {
+  @DisplayName("Should find no segment when opening a name that was never published")
+  void shouldFindNoSegmentWhenOpeningNameThatWasNeverPublished() {
     var sessionId = UUID.randomUUID();
     store.getOutputDirectory(sessionId);
 
-    assertThatThrownBy(() -> store.readSegment(sessionId, "missing.m4s"))
-        .isInstanceOf(TranscodeException.class);
+    assertThat(store.openSegment(sessionId, "missing.m4s")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should find no segment when opening one for a session without an output directory")
+  void shouldFindNoSegmentWhenOpeningOneForSessionWithoutOutputDirectory() {
+    assertThat(store.openSegment(UUID.randomUUID(), "segment0.m4s")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should read each stream of an opened segment from its first byte")
+  void shouldReadEachStreamOfOpenedSegmentFromItsFirstByte() throws IOException {
+    var sessionId = UUID.randomUUID();
+    store.storeSegment(sessionId, "segment0.m4s", new byte[] {7, 8, 9});
+
+    try (var opened = store.openSegment(sessionId, "segment0.m4s").orElseThrow();
+        var first = opened.newInputStream();
+        var second = opened.newInputStream()) {
+      assertThat(first.read()).isEqualTo(7);
+      assertThat(second).hasBinaryContent(new byte[] {7, 8, 9});
+      assertThat(first.readAllBytes()).containsExactly(8, 9);
+      assertThat(first.read()).isEqualTo(-1);
+    }
+  }
+
+  @Test
+  @DisplayName("Should keep an opened segment readable when its session is deleted")
+  void shouldKeepOpenedSegmentReadableWhenItsSessionIsDeleted() {
+    var sessionId = UUID.randomUUID();
+    var segmentData = "remote segment".getBytes();
+    store.storeSegment(sessionId, "segment0.m4s", segmentData);
+
+    try (var opened = store.openSegment(sessionId, "segment0.m4s").orElseThrow()) {
+      store.deleteSession(sessionId);
+
+      assertThat(opened.length()).isEqualTo(segmentData.length);
+      assertThat(opened.newInputStream()).hasBinaryContent(segmentData);
+    }
   }
 
   @Test
@@ -132,7 +168,7 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
     store.getOutputDirectory(sessionId);
 
-    assertThatThrownBy(() -> store.readSegment(sessionId, "../../etc/passwd.m4s"))
+    assertThatThrownBy(() -> store.openSegment(sessionId, "../../etc/passwd.m4s"))
         .isInstanceOf(InvalidSegmentPathException.class);
   }
 
@@ -145,7 +181,7 @@ class LocalSegmentStoreTest {
     Files.createDirectories(variantDir);
     Files.write(variantDir.resolve("segment0.m4s"), "data".getBytes());
 
-    var result = store.readSegment(sessionId, "720p/segment0.m4s");
+    var result = StoredSegments.bytes(store, sessionId, "720p/segment0.m4s");
 
     assertThat(result).isEqualTo("data".getBytes());
   }
@@ -162,7 +198,7 @@ class LocalSegmentStoreTest {
     store.storeSegment(sessionId, segmentName, segmentData);
 
     assertThat(store.segmentExists(sessionId, segmentName)).isTrue();
-    assertThat(store.readSegment(sessionId, segmentName)).isEqualTo(segmentData);
+    assertThat(StoredSegments.bytes(store, sessionId, segmentName)).isEqualTo(segmentData);
   }
 
   @Test
@@ -177,7 +213,7 @@ class LocalSegmentStoreTest {
         store.storeSegment(sessionId, "720p/init.mp4", "ftyp moov from encoder B".getBytes());
 
     assertThat(publication).isEqualTo(SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS);
-    assertThat(store.readSegment(sessionId, "720p/init.mp4")).isEqualTo(stored);
+    assertThat(StoredSegments.bytes(store, sessionId, "720p/init.mp4")).isEqualTo(stored);
   }
 
   @Test
@@ -191,7 +227,7 @@ class LocalSegmentStoreTest {
     var publication = store.storeSegment(sessionId, "init.mp4", stored.clone());
 
     assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
-    assertThat(store.readSegment(sessionId, "init.mp4")).isEqualTo(stored);
+    assertThat(StoredSegments.bytes(store, sessionId, "init.mp4")).isEqualTo(stored);
   }
 
   @Test
@@ -215,7 +251,7 @@ class LocalSegmentStoreTest {
           linklessStore.storeSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT, initialization);
 
       assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
-      assertThat(linklessStore.readSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT))
+      assertThat(StoredSegments.bytes(linklessStore, sessionId, VARIANT_INITIALIZATION_SEGMENT))
           .isEqualTo(initialization);
     }
   }
@@ -246,7 +282,7 @@ class LocalSegmentStoreTest {
       var stored = contendersStoredByConcurrentPublication(store, sessionId);
 
       assertThat(stored).as("contenders stored in round %s", round).hasSize(1);
-      assertThat(store.readSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT))
+      assertThat(StoredSegments.bytes(store, sessionId, VARIANT_INITIALIZATION_SEGMENT))
           .isEqualTo(contenderInitialization(stored.getFirst()));
     }
   }
@@ -312,7 +348,7 @@ class LocalSegmentStoreTest {
       prepared.publish();
     }
 
-    assertThat(store.readSegment(sessionId, "720p/segment0.m4s")).isEqualTo(segmentData);
+    assertThat(StoredSegments.bytes(store, sessionId, "720p/segment0.m4s")).isEqualTo(segmentData);
   }
 
   @Test

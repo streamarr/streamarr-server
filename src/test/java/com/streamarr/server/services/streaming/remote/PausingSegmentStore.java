@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.StoredSegment;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -44,8 +46,8 @@ final class PausingSegmentStore implements SegmentStore {
   }
 
   @Override
-  public byte[] readSegment(UUID sessionId, String segmentName) {
-    return delegate.readSegment(sessionId, segmentName);
+  public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
+    return delegate.openSegment(sessionId, segmentName);
   }
 
   @Override

@@ -6,6 +6,7 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.StoredSegment;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.DirectoryStream;
@@ -29,15 +30,18 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   @Override
-  public byte[] readSegment(UUID sessionId, String segmentName) {
-    var segmentPath = resolveSegmentPath(sessionId, segmentName);
+  public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
+    var segmentPath = findSegmentPath(sessionId, segmentName);
+    if (segmentPath.isEmpty()) {
+      return Optional.empty();
+    }
 
     try {
-      return Files.readAllBytes(segmentPath);
-    } catch (NoSuchFileException e) {
-      throw new TranscodeException("Segment not found: " + segmentName, e);
+      return Optional.of(OpenedSegmentFile.open(segmentPath.get()));
+    } catch (NoSuchFileException _) {
+      return Optional.empty();
     } catch (IOException e) {
-      throw new UncheckedIOException("Failed to read segment: " + segmentName, e);
+      throw new UncheckedIOException("Failed to open segment: " + segmentName, e);
     }
   }
 

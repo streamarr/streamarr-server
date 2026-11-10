@@ -31,6 +31,7 @@ import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
@@ -1362,9 +1363,9 @@ class WorkerSessionServerIT {
                     laterMediaSegment),
                 laterMediaSegment),
             Status.Code.PERMISSION_DENIED);
-        assertThat(segmentStore.readSegment(streamSessionId, "720p/init.mp4"))
+        assertThat(StoredSegments.bytes(segmentStore, streamSessionId, "720p/init.mp4"))
             .isEqualTo(storedInitialization);
-        assertThat(segmentStore.readSegment(streamSessionId, "720p/segment0.m4s"))
+        assertThat(StoredSegments.bytes(segmentStore, streamSessionId, "720p/segment0.m4s"))
             .isEqualTo(firstMediaSegment);
         assertThat(segmentStore.segmentExists(streamSessionId, "720p/segment1.m4s")).isFalse();
       } finally {
