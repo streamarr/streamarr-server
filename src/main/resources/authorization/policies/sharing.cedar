@@ -15,9 +15,9 @@ when {
    (principal has serverAdmin && principal.serverAdmin))
 };
 
-// The offering side learns the name of each Household the Profile is offered or shared to: its
+// The offering side sees every share of the Profile and the name of each Household it is into: its
 // managers, the sovereign Account, and ServerAdmin. A HouseholdAdmin who only hosts the Profile
-// does not learn where else it visits (ADR 0024).
+// sees only the share into their own Household, from that Household's side (ADR 0024).
 @id("view-profile-share-households-as-manager-or-server-admin")
 permit (
   principal,

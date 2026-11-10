@@ -30,7 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Each authority is decided once per batch. When a share can be shown from either side, the side
  * with fewer distinct values in the batch is asked first, so a page of the shares into one
  * Household, or of one Profile, needs only a fixed number of decisions for its Profiles and
- * Households.
+ * Households when its reader may list that page. The offerer's name is decided on the target side
+ * alone, once for each Household in the batch.
  */
 @Service
 @RequiredArgsConstructor

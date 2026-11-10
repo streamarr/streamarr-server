@@ -461,9 +461,14 @@ public class ProfileSharingService {
         authorizationService.decide(identity, new Intent.ViewProfileAdministration(profileId)));
   }
 
-  // A Profile that no longer exists has no shares to read and no facts to decide on.
+  // Every share of a Profile is for its offering side; a HouseholdAdmin who only hosts it reads the
+  // share into their own Household from that Household's side. A Profile that no longer exists has
+  // no shares to read and no facts to decide on.
   private boolean mayViewProfileShares(AuthenticatedIdentity identity, UUID profileId) {
-    return profileRepository.findById(profileId).isPresent() && mayViewProfile(identity, profileId);
+    return profileRepository.findById(profileId).isPresent()
+        && isAllowed(
+            authorizationService.decide(
+                identity, new Intent.ViewProfileShareHouseholds(profileId)));
   }
 
   private boolean mayViewHousehold(AuthenticatedIdentity identity, UUID householdId) {
@@ -493,7 +498,8 @@ public class ProfileSharingService {
   }
 
   /**
-   * A page of one Profile's shares in the scope's statuses, newest first; hidden reads as empty.
+   * A page of one Profile's shares in the scope's statuses, newest first, for the Profile's
+   * offering side; hidden reads as empty.
    */
   public ListPage<ProfileHouseholdShare> profileShares(
       AuthenticatedIdentity identity, ShareListScope profile, PageRequest request) {

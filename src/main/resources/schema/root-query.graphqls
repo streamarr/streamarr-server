@@ -29,10 +29,11 @@ type Query {
     """
     householdShares(householdId: ID!, statuses: [ProfileShareStatus!], first: Int, after: String, last: Int, before: String): ProfileShareConnection!
     """
-    A Profile's shares into every Household, newest first, for those who may see the Profile's
-    administration. Everyone else gets an empty list. statuses keeps only shares in those
-    statuses, as householdShares does: pass [PENDING, ACTIVE] for where the Profile is offered or
-    available now.
+    A Profile's shares into every Household, newest first, for its managers, the Account whose own
+    Profile it is, and ServerAdmins. Everyone else gets an empty list, including a HouseholdAdmin
+    where the Profile is available: householdShares gives them the share into their own Household.
+    statuses keeps only shares in those statuses, as householdShares does: pass [PENDING, ACTIVE]
+    for where the Profile is offered or available now.
     """
     profileShares(profileId: ID!, statuses: [ProfileShareStatus!], first: Int, after: String, last: Int, before: String): ProfileShareConnection!
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!

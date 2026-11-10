@@ -516,6 +516,22 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName("Should return an empty page when the reader only hosts the Profile")
+  void shouldReturnEmptyPageWhenReaderOnlyHostsProfile() {
+    activeShare();
+    authorization.decideUnitWith(
+        intent ->
+            intent.equals(new Intent.ViewProfileAdministration(profile.getId()))
+                ? allowed()
+                : denied());
+
+    var page =
+        service.profileShares(identity(), everyShareOf(profile.getId()), paginationOptions());
+
+    assertThat(page.rows()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should keep only the named statuses when a Profile's shares are listed")
   void shouldKeepOnlyNamedStatusesWhenProfileSharesAreListed() {
     var visit = activeShare();
@@ -602,8 +618,25 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should give the share when the reader may see its Profile's administration")
-  void shouldGiveTheShareWhenTheReaderMaySeeItsProfilesAdministration() {
+  @DisplayName("Should give the share when the reader is on the Profile's offering side")
+  void shouldGiveTheShareWhenTheReaderIsOnTheProfilesOfferingSide() {
+    var share = pendingShare();
+    authorization.decideUnitWith(
+        intent ->
+            switch (intent) {
+              case Intent.ViewProfileShareChanges _ -> allowed();
+              case Intent.ViewProfileShareHouseholds(var id) when id.equals(profile.getId()) ->
+                  allowed();
+              default -> denied();
+            });
+
+    assertThat(service.shareChange(identity(), ChangedShare.of(share)))
+        .hasValueSatisfying(change -> assertThat(change.share()).contains(share));
+  }
+
+  @Test
+  @DisplayName("Should give nothing when the reader only hosts the Profile in another Household")
+  void shouldGiveNothingWhenTheReaderOnlyHostsTheProfileInAnotherHousehold() {
     var share = pendingShare();
     authorization.decideUnitWith(
         intent ->
@@ -614,8 +647,7 @@ class ProfileSharingServiceTest {
               default -> denied();
             });
 
-    assertThat(service.shareChange(identity(), ChangedShare.of(share)))
-        .hasValueSatisfying(change -> assertThat(change.share()).contains(share));
+    assertThat(service.shareChange(identity(), ChangedShare.of(share))).isEmpty();
   }
 
   @Test
@@ -636,7 +668,7 @@ class ProfileSharingServiceTest {
         intent ->
             switch (intent) {
               case Intent.ViewProfileShareChanges _ -> allowed();
-              case Intent.ViewProfileAdministration _ ->
+              case Intent.ViewProfileAdministration _, Intent.ViewProfileShareHouseholds _ ->
                   new Decision.Failed<>(Decision.FailureCause.INVALID_SLICE);
               default -> denied();
             });
@@ -646,6 +678,7 @@ class ProfileSharingServiceTest {
     authorization.decideUnitWith(
         intent ->
             intent instanceof Intent.ViewProfileAdministration
+                    || intent instanceof Intent.ViewProfileShareHouseholds
                 ? new Decision.Failed<>(Decision.FailureCause.INVALID_SLICE)
                 : allowed());
     assertThat(service.shareChange(identity(), removed))
