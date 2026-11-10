@@ -641,9 +641,9 @@ message TranscodeExecution {
   // must be greater than start_sequence_number.
   uint32 media_segment_count = 5;
   // This field holds where the attempt starts reading, on the zero-based
-  // timeline of ProbeKeyframePositionsPart. When it is set, the worker uses it
-  // instead of seek_position_seconds. ADR 0037 (early ends) decides when the
-  // server sets it.
+  // timeline of ProbeAttemptReport's keyframe positions. When it is set, the
+  // worker uses it instead of seek_position_seconds. ADR 0037 (early ends)
+  // decides when the server sets it.
   google.protobuf.Duration seek_position = 6;
   // This field holds the encode's exact output frame rate. Every encode sets
   // it. A copy leaves it out.
@@ -656,11 +656,11 @@ message TranscodeExecution {
   reserved 9;
   reserved "segment_start_slots";
   // Segment N's start, in ticks of segment_start_time_base on the zero-based
-  // timeline of ProbeKeyframePositionsPart. Empty means the plain grid (N x
-  // target_segment_duration_seconds). Otherwise media_segment_count strictly
-  // increasing entries: 0, then each later segment's opening keyframe tick if
-  // a variant copies, else its grid start. When advertised_end is set, the
-  // last segment's audio ends there, after the last start (ADR 0037).
+  // timeline of ProbeAttemptReport's keyframe positions. Empty means the plain
+  // grid (N x target_segment_duration_seconds). Otherwise media_segment_count
+  // strictly increasing entries: 0, then each later segment's opening keyframe
+  // tick if a variant copies, else its grid start. When advertised_end is set,
+  // the last segment's audio ends there, after the last start (ADR 0037).
   repeated uint64 segment_start_ticks = 10;
   // This field holds the time base of segment_start_ticks: the time base of
   // the stored keyframe positions of the source's chosen video stream if a
@@ -856,14 +856,15 @@ message EstablishWorkerSessionRequest {
     JobAttemptFailed job_attempt_failed = 3;
     JobAttemptCompleted job_attempt_completed = 4;
     JobAttemptStopped job_attempt_stopped = 5;
-    ProbeAttemptResult probe_result = 6;
-    ProbeKeyframePositionsPart probe_keyframe_positions_part = 7;
     ProbeCapacityChanged probe_capacity_changed = 8;
-    ProbeStreamMeasurementPart probe_stream_measurement_part = 9;
     JobAttemptProgress job_attempt_progress = 10;
     VideoEncodersChanged video_encoders_changed = 11;
     ProbeAttemptEndedWithoutReport probe_attempt_ended_without_report = 12;
   }
+  // A worker built before the ReportProbeAttempt call sends a probe's result
+  // and its parts in these fields. The server ignores them (ADR 0062).
+  reserved 6, 7, 9;
+  reserved "probe_result", "probe_keyframe_positions_part", "probe_stream_measurement_part";
 }
 
 message WorkerSessionAccepted {
@@ -949,8 +950,8 @@ message BitrateScanChunk {
   uint32 time_base_numerator = 4;
   uint32 time_base_denominator = 5;
   // These lists hold the chunk's keyframes in decode order. They use the delta
-  // coding of ProbeKeyframePositionsPart. Both lists hold the same number of
-  // entries, from 1 to 4,096.
+  // coding of ProbeAttemptReport's keyframe lists. Both lists hold the same
+  // number of entries, from 1 to 4,096.
   repeated sint64 presentation_time_deltas = 6;
   repeated sint64 decode_time_deltas = 7;
   // These fields hold the next chunk's first keyframe, where this chunk ends.
@@ -989,8 +990,8 @@ message ProbeContainerInfo {
   optional string major_brand = 6;
 }
 
-// This message describes one chapter, on the timeline of
-// ProbeKeyframePositionsPart.
+// This message describes one chapter, on the timeline of ProbeAttemptReport's
+// keyframe positions.
 message ProbeChapter {
   // The worker leaves this field out when ffprobe reports no start.
   google.protobuf.Duration start_time = 1;
@@ -1168,8 +1169,8 @@ message ProbeStreamInfo {
   optional string codec_string = 16;
   // The worker reports this field for video and audio streams only. It holds
   // where the stream ends, from the container header's duration, on the
-  // timeline of ProbeKeyframePositionsPart. The worker leaves it out when the
-  // header states no duration, and it never estimates one.
+  // timeline of ProbeAttemptReport's keyframe positions. The worker leaves it
+  // out when the header states no duration, and it never estimates one.
   google.protobuf.Duration end_time = 17;
   // The worker reports this field for audio streams only. It holds the sample
   // rate in hertz. The worker leaves it out when ffprobe reports none or 0.
@@ -1419,29 +1420,17 @@ enum KeyframePositionSource {
 }
 
 // This message describes the chosen video stream's keyframe positions. The
-// positions travel in the attempt's ProbeKeyframePositionsPart messages, which
-// arrive before this result.
+// positions travel in the keyframe lists of the attempt's ProbeAttemptReport.
 message KeyframePositions {
   // This field holds the chosen video stream's ProbeStreamInfo.index.
   uint32 stream_index = 1;
   uint32 time_base_numerator = 2;
   uint32 time_base_denominator = 3;
   KeyframePositionSource source = 4;
-  // This field counts the entries in each list across all parts. It is at
-  // least 1. The server fails the probe attempt when the parts hold a
-  // different number.
+  // This field counts the entries in each keyframe list of the
+  // ProbeAttemptReport. It is at least 1. The server fails the probe attempt
+  // when the lists hold a different number.
   uint32 keyframe_count = 5;
-}
-
-// This message carries consecutive keyframe positions of one probe attempt in
-// decode order, before the result. Each list holds at most 4,096 entries in a
-// part and 1,048,576 in an attempt. Both lists have the same length. Times
-// count time-base ticks from the container start. The attempt's first entry
-// is absolute. Each later entry is the difference from the entry before it.
-message ProbeKeyframePositionsPart {
-  Uuid probe_attempt_id = 1;
-  repeated sint64 presentation_time_deltas = 2;
-  repeated sint64 decode_time_deltas = 3;
 }
 
 // This value explains why the server must request a packet scan to learn the
@@ -1498,7 +1487,7 @@ enum StreamMeasurementSource {
 // This message reports one video or audio stream's exact size (ADR 0054). The
 // sizes count the payload bytes that a stream copy delivers, without container
 // framing. The values for each keyframe interval travel in
-// ProbeStreamMeasurementPart messages before the result.
+// ProbeAttemptReport.stream_measurement_intervals.
 message MeasuredStream {
   // This field holds a video or audio stream's ProbeStreamInfo.index.
   uint32 stream_index = 1;
@@ -1526,21 +1515,6 @@ message StreamMeasurements {
   // once. It may also list another video stream, whose packets fall in the
   // interval of their decode time.
   repeated MeasuredStream streams = 2;
-}
-
-// This message carries one stream's bytes and packets in consecutive keyframe
-// intervals, in interval order, before the result. A part holds 1 to 4,096
-// entries. An attempt holds at most 8,388,608 entries across at most 1,024
-// streams.
-message ProbeStreamMeasurementPart {
-  Uuid probe_attempt_id = 1;
-  // This field holds the stream's MeasuredStream.stream_index.
-  uint32 stream_index = 2;
-  // Entry i holds the stream's bytes in the next keyframe interval.
-  repeated uint32 keyframe_interval_bytes = 3;
-  // Entry i counts the stream's packets in the same interval. The list has as
-  // many entries as keyframe_interval_bytes.
-  repeated uint32 keyframe_interval_packet_counts = 4;
 }
 
 message ProbeMediaInfo {
@@ -1579,11 +1553,12 @@ message ProbeAttemptResult {
 // This message reports what the worker found in one bitrate scan chunk.
 message BitrateScanChunkResult {
   oneof result {
-    // The worker measured every requested stream. Each stream has one
-    // ProbeStreamMeasurementPart entry for each keyframe in the chunk.
+    // The worker measured every requested stream. The ProbeAttemptReport holds
+    // one StreamMeasurementIntervals for each stream, with one entry for each
+    // keyframe in the chunk.
     BitrateScanChunkStreams measured = 1;
     // A stream copy would change a measured stream's packets (ADR 0054). The
-    // worker sends no ProbeStreamMeasurementPart for the attempt.
+    // ProbeAttemptReport holds no StreamMeasurementIntervals.
     BitrateScanCopyChangesPackets copy_changes_packets = 2;
   }
 }

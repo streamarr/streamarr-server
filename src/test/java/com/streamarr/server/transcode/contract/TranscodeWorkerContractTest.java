@@ -1199,7 +1199,6 @@ class TranscodeWorkerContractTest {
             "probe_version",
             "probe_versions",
             "start_probe",
-            "probe_result",
             "accepted_length_bytes",
             "encoder_preset")
         .doesNotContain(
