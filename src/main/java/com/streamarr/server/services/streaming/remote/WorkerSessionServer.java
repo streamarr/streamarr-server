@@ -34,8 +34,8 @@ import org.springframework.context.event.ContextClosedEvent;
 public final class WorkerSessionServer
     implements AutoCloseable, ApplicationListener<ContextClosedEvent> {
 
-  private static final int MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION = 33;
-  private static final int MAXIMUM_INBOUND_MESSAGE_BYTES = 128 * 1024;
+  static final int MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION = 33;
+  static final int MAXIMUM_INBOUND_MESSAGE_BYTES = 128 * 1024;
   private static final int PERMITTED_CLIENT_KEEPALIVE_SECONDS = 10;
   private final WorkerSessionServerConfiguration configuration;
   private final SegmentStore segmentStore;

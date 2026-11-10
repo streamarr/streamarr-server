@@ -116,6 +116,7 @@ final class LiveWorkerConnectionRegistry {
   private final long bitrateScanChunkTimeoutNanos;
   private final long probeCancellationTimeoutNanos;
   private final long startReportTimeoutNanos;
+  private final ProbeReportLimits probeReportLimits;
   private final Counter initializationSegmentMismatches;
   private final Counter encoderBackendMismatches;
   private final Counter unknownJobAttemptReports;
@@ -144,6 +145,7 @@ final class LiveWorkerConnectionRegistry {
     bitrateScanChunkTimeoutNanos = configuration.bitrateScanChunkTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
     startReportTimeoutNanos = configuration.startReportTimeout().toNanos();
+    probeReportLimits = configuration.probeReportLimits();
     initializationSegmentMismatches =
         Counter.builder(INITIALIZATION_SEGMENT_MISMATCH_METRIC)
             .description(
@@ -1133,7 +1135,11 @@ final class LiveWorkerConnectionRegistry {
       var accepted =
           WorkerSessionAccepted.newBuilder()
               .setWorkerSessionId(toProto(workerSessionId))
-              .setSegmentUploadLimit(SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER);
+              .setSegmentUploadLimit(SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER)
+              .setProbeReportLimit(ProbeReportLimits.REPORT_CALLS_PER_WORKER)
+              .setProbeReportLengthLimitBytes(probeReportLimits.lengthLimitBytes())
+              .setKeyframeLimit(probeReportLimits.keyframeLimit())
+              .setMeasuredKeyframeIntervalLimit(probeReportLimits.measuredKeyframeIntervalLimit());
       synchronized (outbound) {
         responseObserver.onNext(
             EstablishWorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());

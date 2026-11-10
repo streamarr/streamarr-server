@@ -17,6 +17,13 @@ final class LiveWorkerConnectionRegistryFixture {
     return registryBuilder().heldRequests(heldRequests).build();
   }
 
+  static LiveWorkerConnectionRegistry registryWith(WorkerSessionServerConfiguration configuration) {
+    return registryBuilder()
+        .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+        .configuration(configuration)
+        .build();
+  }
+
   static LiveWorkerConnectionRegistry registryMeteredBy(MeterRegistry meterRegistry) {
     return registryBuilder()
         .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
