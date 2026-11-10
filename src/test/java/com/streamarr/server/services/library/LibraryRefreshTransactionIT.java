@@ -9,6 +9,7 @@ import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryOperation;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSource.TmdbImageSource;
 import com.streamarr.server.domain.media.ImageType;

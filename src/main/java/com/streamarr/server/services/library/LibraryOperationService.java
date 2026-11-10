@@ -1,6 +1,12 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryOperation;
+import com.streamarr.server.domain.LibraryOperationKind;
+import com.streamarr.server.domain.LibraryOperationRejection;
+import com.streamarr.server.domain.LibraryOperationStop;
+import com.streamarr.server.domain.LibraryOperationStopRejection;
+import com.streamarr.server.domain.NewLibraryOperation;
 import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.exceptions.LibraryOperationNotScheduledException;
 import com.streamarr.server.exceptions.LibraryOperationNotStartedException;

@@ -1,4 +1,4 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.domain;
 
 import com.streamarr.server.domain.media.ImageRefreshMode;
 import java.util.Optional;

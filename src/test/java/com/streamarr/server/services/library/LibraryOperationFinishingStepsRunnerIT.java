@@ -6,6 +6,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryOperation;
+import com.streamarr.server.domain.LibraryOperationConclusion;
+import com.streamarr.server.domain.LibraryOperationEnd;
+import com.streamarr.server.domain.LibraryOperationKind;
+import com.streamarr.server.domain.LibraryOperationStop;
+import com.streamarr.server.domain.NewLibraryOperation;
 import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;

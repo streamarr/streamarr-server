@@ -8,6 +8,9 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryOperation;
+import com.streamarr.server.domain.LibraryOperationConclusion;
+import com.streamarr.server.domain.NewLibraryOperation;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;

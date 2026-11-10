@@ -7,11 +7,11 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryOperationConclusion;
 import com.streamarr.server.domain.SkippedFile;
 import com.streamarr.server.domain.SkippedFileReason;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.jooq.generated.tables.records.SkippedFileRecord;
-import com.streamarr.server.services.library.LibraryOperationConclusion;
 import com.streamarr.server.services.pagination.ListOrder;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.Row;

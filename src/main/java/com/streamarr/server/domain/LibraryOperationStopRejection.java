@@ -1,6 +1,5 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.domain;
 
-import com.streamarr.server.domain.LibraryStatus;
 import java.util.Optional;
 import lombok.NonNull;
 

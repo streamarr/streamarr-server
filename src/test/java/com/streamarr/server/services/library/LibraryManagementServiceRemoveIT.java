@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.LibraryOperationRejection;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Episode;

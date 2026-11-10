@@ -1,4 +1,4 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;

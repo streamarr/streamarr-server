@@ -1,6 +1,8 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryOperationRejection;
+import com.streamarr.server.domain.LibraryOperationStopRejection;
 import com.streamarr.server.domain.SkippedFile;
 import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;

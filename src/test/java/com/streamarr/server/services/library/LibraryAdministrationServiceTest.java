@@ -6,6 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryOperation;
+import com.streamarr.server.domain.LibraryOperationKind;
+import com.streamarr.server.domain.LibraryOperationRejection;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.SkippedFile;
 import com.streamarr.server.domain.SkippedFileReason;

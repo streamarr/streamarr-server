@@ -1,6 +1,5 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.domain;
 
-import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.ImageRefreshMode;
 import java.time.Instant;
 import java.util.Optional;

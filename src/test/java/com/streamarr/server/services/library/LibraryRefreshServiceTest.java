@@ -22,6 +22,7 @@ import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
+import com.streamarr.server.domain.LibraryOperation;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.ArtworkSources;
 import com.streamarr.server.domain.media.Image;

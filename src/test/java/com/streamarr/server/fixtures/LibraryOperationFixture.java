@@ -1,10 +1,10 @@
 package com.streamarr.server.fixtures;
 
+import com.streamarr.server.domain.LibraryOperation;
+import com.streamarr.server.domain.LibraryOperationKind;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.ImageRefreshMode;
-import com.streamarr.server.services.library.LibraryOperation;
-import com.streamarr.server.services.library.LibraryOperationKind;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;

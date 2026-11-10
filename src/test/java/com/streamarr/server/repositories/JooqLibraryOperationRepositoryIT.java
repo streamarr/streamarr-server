@@ -1,6 +1,6 @@
 package com.streamarr.server.repositories;
 
-import static com.streamarr.server.services.library.LibraryOperationKind.SCAN;
+import static com.streamarr.server.domain.LibraryOperationKind.SCAN;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -8,19 +8,19 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
+import com.streamarr.server.domain.LibraryOperation;
+import com.streamarr.server.domain.LibraryOperationConclusion;
+import com.streamarr.server.domain.LibraryOperationEnd;
+import com.streamarr.server.domain.LibraryOperationKind;
+import com.streamarr.server.domain.LibraryOperationStop;
+import com.streamarr.server.domain.LibraryOperationStopRejection;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.NewLibraryOperation;
 import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.repositories.LibraryOperationRepository.StopOutcome;
 import com.streamarr.server.repositories.LibraryOperationRepository.StoreOutcome;
 import com.streamarr.server.services.audit.SystemWork;
-import com.streamarr.server.services.library.LibraryOperation;
-import com.streamarr.server.services.library.LibraryOperationConclusion;
-import com.streamarr.server.services.library.LibraryOperationEnd;
-import com.streamarr.server.services.library.LibraryOperationKind;
-import com.streamarr.server.services.library.LibraryOperationStop;
-import com.streamarr.server.services.library.LibraryOperationStopRejection;
-import com.streamarr.server.services.library.NewLibraryOperation;
 import com.streamarr.server.support.BoundedTask;
 import com.streamarr.server.support.PostgresLockTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
