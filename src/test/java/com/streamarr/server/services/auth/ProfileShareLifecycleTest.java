@@ -207,6 +207,28 @@ class ProfileShareLifecycleTest {
         .containsExactlyInAnyOrder(ChangedShare.of(offer), ChangedShare.of(rejected));
   }
 
+  @Test
+  @DisplayName(
+      "Should announce the Profile's shares into both Households when the Profile moves between"
+          + " them")
+  void shouldAnnounceTheProfilesSharesIntoBothHouseholdsWhenTheProfileMovesBetweenThem() {
+    var left = shares.save(pending(UUID.randomUUID()).status(ProfileShareStatus.ACTIVE).build());
+    var profileId = left.getProfileId();
+    var joined =
+        shares.save(
+            pending(UUID.randomUUID())
+                .profileId(profileId)
+                .status(ProfileShareStatus.REJECTED)
+                .build());
+    shares.save(pending(UUID.randomUUID()).profileId(profileId).build());
+    shares.save(pending(UUID.randomUUID()).householdId(joined.getHouseholdId()).build());
+
+    lifecycle.announceMove(profileId, left.getHouseholdId(), joined.getHouseholdId());
+
+    assertThat(announced())
+        .containsExactlyInAnyOrder(ChangedShare.of(left), ChangedShare.of(joined));
+  }
+
   private List<ChangedShare> announced() {
     return events.getEventsOfType(ProfileShareChangedEvent.class).stream()
         .map(ProfileShareChangedEvent::share)

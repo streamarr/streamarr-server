@@ -62,6 +62,7 @@ class AccountRemoval {
     }
 
     profileRepository.rehomePersonalProfile(profileId, sourceHouseholdId, destinationHouseholdId);
+    shareLifecycle.announceMove(profileId, sourceHouseholdId, destinationHouseholdId);
 
     updateSourceHouseholdAccess(transfer);
     shareLifecycle.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
@@ -132,6 +133,7 @@ class AccountRemoval {
     }
 
     profileRepository.rehomePersonalProfile(profileId, sourceHouseholdId, destinationHouseholdId);
+    shareLifecycle.announceMove(profileId, sourceHouseholdId, destinationHouseholdId);
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)

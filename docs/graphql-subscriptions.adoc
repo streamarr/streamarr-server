@@ -275,6 +275,7 @@ The operation continues in every case, and the client recovers as <<Field errors
 
 `profileShareChanged` delivers each committed change to a Profile share.
 A change arrives when a share is offered, accepted, declined, canceled, invalidated or ended, when an offer expires, when a share starts or stops being required by Account membership, and when a share is deleted with its Profile or its Household.
+When a Profile moves to another Household, a change also arrives for each of its shares into the Household it leaves and the one it joins, because whether it is a visitor there changes.
 A change that rolls back never arrives.
 Each change carries `shareId` and `share`, the share as the server reads it when it delivers the change.
 

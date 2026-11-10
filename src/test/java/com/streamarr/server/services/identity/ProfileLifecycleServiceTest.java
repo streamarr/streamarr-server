@@ -194,6 +194,36 @@ class ProfileLifecycleServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should announce the Profile's shares into both Households when the Profile is transferred")
+  void shouldAnnounceTheProfilesSharesIntoBothHouseholdsWhenTheProfileIsTransferred() {
+    // The move writes neither share into the destination, yet the Profile stops visiting there.
+    var hostedVisit = shares.share(orphan.getId(), destination.getId(), false);
+    var declinedOffer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(orphan.getId())
+                .householdId(destination.getId())
+                .status(ProfileShareStatus.REJECTED)
+                .build());
+    var home =
+        shares
+            .findByProfileIdAndHouseholdIdAndStatus(
+                orphan.getId(), source.getId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow();
+    var elsewhere = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var visitElsewhere = shares.share(orphan.getId(), elsewhere.getId(), false);
+
+    assertThat(transferWithAnchor(destinationAnchor.getId())).isInstanceOf(Outcome.Accepted.class);
+
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .extracting(ProfileShareChangedEvent::share)
+        .contains(
+            ChangedShare.of(hostedVisit), ChangedShare.of(declinedOffer), ChangedShare.of(home))
+        .doesNotContain(ChangedShare.of(visitElsewhere));
+  }
+
+  @Test
   @DisplayName("Should reject the transfer when the destination anchor is invalid")
   void shouldRejectTransferWhenDestinationAnchorIsInvalid() {
     assertThat(rejectionOf(transferWithAnchor(null)))

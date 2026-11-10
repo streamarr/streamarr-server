@@ -69,8 +69,10 @@ extend type Subscription {
     """
     A Profile share changed. A change arrives when a share is created or offered, accepted,
     declined, canceled, invalidated or ended, when an offer expires, when a share starts or stops
-    being required by Account membership, and when a share is deleted with its Profile or its
-    Household. An offer whose time runs out arrives as EXPIRED about a minute after its expiresAt;
+    being required by Account membership, when a share is deleted with its Profile or its
+    Household, and, for the Profile's shares into the Households it leaves and joins, when the
+    Profile moves to another Household, since whether it is a visitor there changes. An offer
+    whose time runs out arrives as EXPIRED about a minute after its expiresAt;
     the share queries show it as EXPIRED from expiresAt on. A change that rolls back never arrives.
 
     Any signed-in session may subscribe, with or without a selected Profile. A device-bound session
