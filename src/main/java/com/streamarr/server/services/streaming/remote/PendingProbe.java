@@ -3,11 +3,12 @@ package com.streamarr.server.services.streaming.remote;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
-import java.util.List;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -85,9 +86,7 @@ final class PendingProbe {
       return false;
     }
 
-    result.complete(
-        new ProbeAttemptReport(
-            reported, keyframePositionsParts.parts(), measurementParts(reported)));
+    result.complete(reportOf(reported));
     return true;
   }
 
@@ -97,12 +96,31 @@ final class PendingProbe {
     result.completeExceptionally(new ProbeExecutionException(ItemFailureReason.TEMPORARY, reason));
   }
 
-  private List<ProbeStreamMeasurementPart> measurementParts(ProbeAttemptResult reported) {
-    if (!reportsMeasurement(reported)) {
-      return List.of();
+  // The probe report that the result and the joined parts make.
+  private ProbeAttemptReport reportOf(ProbeAttemptResult reported) {
+    var report = ProbeAttemptReport.newBuilder().setResult(reported);
+    keyframePositionsParts
+        .parts()
+        .forEach(
+            part ->
+                report
+                    .addAllKeyframePresentationTimeDeltas(part.getPresentationTimeDeltasList())
+                    .addAllKeyframeDecodeTimeDeltas(part.getDecodeTimeDeltasList()));
+    if (reportsMeasurement(reported)) {
+      streamMeasurementParts
+          .parts()
+          .forEach(part -> report.addStreamMeasurementIntervals(intervalsOf(part)));
     }
 
-    return streamMeasurementParts.parts();
+    return report.build();
+  }
+
+  private static StreamMeasurementIntervals intervalsOf(ProbeStreamMeasurementPart part) {
+    return StreamMeasurementIntervals.newBuilder()
+        .setStreamIndex(part.getStreamIndex())
+        .addAllKeyframeIntervalBytes(part.getKeyframeIntervalBytesList())
+        .addAllKeyframeIntervalPacketCounts(part.getKeyframeIntervalPacketCountsList())
+        .build();
   }
 
   private static boolean reportsMeasurement(ProbeAttemptResult reported) {

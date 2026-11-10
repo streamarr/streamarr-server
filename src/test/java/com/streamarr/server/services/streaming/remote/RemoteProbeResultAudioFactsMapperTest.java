@@ -9,10 +9,10 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
-import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.function.Consumer;
@@ -264,9 +264,9 @@ class RemoteProbeResultAudioFactsMapperTest {
   }
 
   private static ProbeAttemptReport report(int version, ProbeMediaInfo.Builder media) {
-    return new ProbeAttemptReport(
-        ProbeAttemptResult.newBuilder().setProbeVersion(version).setMedia(media).build(),
-        List.of());
+    return ProbeAttemptReport.newBuilder()
+        .setResult(ProbeAttemptResult.newBuilder().setProbeVersion(version).setMedia(media))
+        .build();
   }
 
   private static ProbeStreamInfo.Builder audio() {

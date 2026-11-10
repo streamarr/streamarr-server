@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.ProbeCancelledException;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeFailure;
@@ -38,7 +39,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class RemoteProbeResultMapperTest {
 
   private static ProbeAttemptReport reportOf(ProbeAttemptResult result) {
-    return new ProbeAttemptReport(result, List.of());
+    return ProbeAttemptReport.newBuilder().setResult(result).build();
   }
 
   @ParameterizedTest

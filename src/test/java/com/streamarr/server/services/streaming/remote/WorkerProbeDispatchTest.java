@@ -153,7 +153,7 @@ class WorkerProbeDispatchTest {
             .as("The replacement must still wait for the old session's segment publication")
             .isNotDone();
         var receiving = executor.submit(() -> secondSession.onNext(event));
-        assertThat(pending.get(1, TimeUnit.SECONDS).result())
+        assertThat(pending.get(1, TimeUnit.SECONDS).getResult())
             .as("The other worker's reply must complete its probe while the replacement waits")
             .isEqualTo(result);
         receiving.get(1, TimeUnit.SECONDS);
@@ -500,7 +500,7 @@ class WorkerProbeDispatchTest {
 
     assertThat(registry.completeProbe(WORKER_ID, sessionId, result)).isTrue();
 
-    assertThat(attempt.get(1, TimeUnit.SECONDS).result()).isEqualTo(result);
+    assertThat(attempt.get(1, TimeUnit.SECONDS).getResult()).isEqualTo(result);
     assertThat(runningProbes(registry, 2)).isZero();
     assertThat(registry.dispatchProbe(probe().setProbeVersion(2).build()))
         .isInstanceOf(ProbeDispatch.Dispatched.class);
@@ -699,7 +699,7 @@ class WorkerProbeDispatchTest {
             .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
             .build();
     assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isTrue();
-    assertThat(original.get(1, TimeUnit.SECONDS).result()).isEqualTo(reply);
+    assertThat(original.get(1, TimeUnit.SECONDS).getResult()).isEqualTo(reply);
     assertThat(responses.values.stream().filter(EstablishWorkerSessionResponse::hasStartProbe))
         .hasSize(1);
     assertThat(runningProbes(registry, 1)).isZero();
@@ -780,7 +780,7 @@ class WorkerProbeDispatchTest {
     assertThat(pending).isNotDone();
     assertThat(runningProbes(registry, 1)).isEqualTo(1);
     assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isTrue();
-    assertThat(pending.get(1, TimeUnit.SECONDS).result()).isEqualTo(reply);
+    assertThat(pending.get(1, TimeUnit.SECONDS).getResult()).isEqualTo(reply);
   }
 
   @Test
@@ -957,7 +957,7 @@ class WorkerProbeDispatchTest {
 
     assertThat(replacement).isNotDone();
     assertThat(registry.completeProbe(WORKER_ID, replacementSession, reply)).isTrue();
-    assertThat(replacement.get(1, TimeUnit.SECONDS).result()).isEqualTo(reply);
+    assertThat(replacement.get(1, TimeUnit.SECONDS).getResult()).isEqualTo(reply);
   }
 
   private WorkerRegistration.Builder registration(UUID workerId) {

@@ -9,7 +9,7 @@ import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.MeasuredStreamOrBuilder;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import com.streamarr.transcode.v1.StreamMeasurementsOrBuilder;
 import java.util.HashSet;
 import java.util.List;
@@ -23,7 +23,9 @@ import java.util.stream.Collectors;
 final class RemoteStreamMeasurementsMapper {
 
   Optional<StreamMeasurements> map(
-      ProbeMediaInfo media, KeyframeKnowledge keyframes, List<ProbeStreamMeasurementPart> parts) {
+      ProbeMediaInfo media,
+      KeyframeKnowledge keyframes,
+      List<StreamMeasurementIntervals> intervals) {
     if (!media.hasStreamMeasurements()) {
       return Optional.empty();
     }
@@ -34,10 +36,10 @@ final class RemoteStreamMeasurementsMapper {
 
     var reported = media.getStreamMeasurements();
     var source = source(reported);
-    var partsByStream =
-        parts.stream()
+    var intervalsByStream =
+        intervals.stream()
             .collect(
-                Collectors.toMap(ProbeStreamMeasurementPart::getStreamIndex, Function.identity()));
+                Collectors.toMap(StreamMeasurementIntervals::getStreamIndex, Function.identity()));
     var measuredIndexes = new HashSet<Integer>();
     var streams =
         reported.getStreamsList().stream()
@@ -47,14 +49,15 @@ final class RemoteStreamMeasurementsMapper {
                     throw violation("Worker probe measured one stream twice");
                   }
 
-                  return measuredStream(media, stream, partsByStream, positions.keyframes().size());
+                  return measuredStream(
+                      media, stream, intervalsByStream, positions.keyframes().size());
                 })
             .toList();
     if (!measuredIndexes.contains(positions.streamIndex())) {
       throw violation("Worker probe measurement leaves out the chosen video stream");
     }
 
-    if (!measuredIndexes.containsAll(partsByStream.keySet())) {
+    if (!measuredIndexes.containsAll(intervalsByStream.keySet())) {
       throw violation("Worker probe sent keyframe interval bytes for a stream it did not measure");
     }
 
@@ -68,7 +71,7 @@ final class RemoteStreamMeasurementsMapper {
   private static MeasuredStream measuredStream(
       ProbeMediaInfo media,
       MeasuredStreamOrBuilder stream,
-      Map<Integer, ProbeStreamMeasurementPart> partsByStream,
+      Map<Integer, StreamMeasurementIntervals> intervalsByStream,
       int keyframeCount) {
     if (!isVideoOrAudioStream(media, stream.getStreamIndex())) {
       throw violation("Worker probe measured a stream that is neither video nor audio");
@@ -83,18 +86,20 @@ final class RemoteStreamMeasurementsMapper {
       throw violation("Worker probe measured stream time base is not positive");
     }
 
-    var part = partsByStream.get(stream.getStreamIndex());
-    if (part == null || !hasAnIntervalForEachKeyframe(part, keyframeCount)) {
+    var intervals = intervalsByStream.get(stream.getStreamIndex());
+    if (intervals == null || !hasAnIntervalForEachKeyframe(intervals, keyframeCount)) {
       throw violation("Worker probe measured stream's intervals differ from its keyframes");
     }
 
-    var bytes = KeyframeIntervalCounts.ofUnsigned(keyframeCount, part::getKeyframeIntervalBytes);
+    var bytes =
+        KeyframeIntervalCounts.ofUnsigned(keyframeCount, intervals::getKeyframeIntervalBytes);
     if (bytes.total() != stream.getMeasuredBytes()) {
       throw violation("Worker probe measured stream's intervals differ from its measured bytes");
     }
 
     var packets =
-        KeyframeIntervalCounts.ofUnsigned(keyframeCount, part::getKeyframeIntervalPacketCounts);
+        KeyframeIntervalCounts.ofUnsigned(
+            keyframeCount, intervals::getKeyframeIntervalPacketCounts);
     if (packets.total() != stream.getPacketCount()) {
       throw violation("Worker probe measured stream's intervals differ from its packet count");
     }
@@ -119,9 +124,9 @@ final class RemoteStreamMeasurementsMapper {
   }
 
   private static boolean hasAnIntervalForEachKeyframe(
-      ProbeStreamMeasurementPart part, int keyframeCount) {
-    return part.getKeyframeIntervalBytesCount() == keyframeCount
-        && part.getKeyframeIntervalPacketCountsCount() == keyframeCount;
+      StreamMeasurementIntervals intervals, int keyframeCount) {
+    return intervals.getKeyframeIntervalBytesCount() == keyframeCount
+        && intervals.getKeyframeIntervalPacketCountsCount() == keyframeCount;
   }
 
   private static Set<Integer> audioStreamIndexes(ProbeMediaInfo media) {

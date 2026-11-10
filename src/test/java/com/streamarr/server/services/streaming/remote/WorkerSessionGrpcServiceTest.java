@@ -44,6 +44,7 @@ import com.streamarr.transcode.v1.JobAttemptProgress;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.JobAttemptStopped;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeFailure;
@@ -53,6 +54,7 @@ import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadLimitReached;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import com.streamarr.transcode.v1.StreamMeasurementSource;
 import com.streamarr.transcode.v1.StreamMeasurements;
 import com.streamarr.transcode.v1.TranscodeDecision;
@@ -162,7 +164,7 @@ class WorkerSessionGrpcServiceTest {
 
     session.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
 
-    assertThat(attempt.get(1, TimeUnit.SECONDS).result()).isEqualTo(result);
+    assertThat(attempt.get(1, TimeUnit.SECONDS).getResult()).isEqualTo(result);
   }
 
   @Test
@@ -250,8 +252,11 @@ class WorkerSessionGrpcServiceTest {
 
     assertThat(probe.attempt().get(1, TimeUnit.SECONDS))
         .isEqualTo(
-            new ProbeAttemptReport(
-                probe.result(), List.of(keyframePositionsPart(probe.request(), 3))));
+            ProbeAttemptReport.newBuilder()
+                .setResult(probe.result())
+                .addAllKeyframePresentationTimeDeltas(Collections.nCopies(3, 90_000L))
+                .addAllKeyframeDecodeTimeDeltas(Collections.nCopies(3, 90_000L))
+                .build());
   }
 
   @Test
@@ -276,8 +281,8 @@ class WorkerSessionGrpcServiceTest {
     singleEntryParts.send(
         EstablishWorkerSessionRequest.newBuilder().setProbeResult(singleEntryParts.result()));
 
-    assertThat(withoutAttemptIds(singleEntryParts.attempt().get(1, TimeUnit.SECONDS)))
-        .isEqualTo(withoutAttemptIds(onePart.attempt().get(1, TimeUnit.SECONDS)));
+    assertThat(keyframePositionsOf(singleEntryParts.attempt().get(1, TimeUnit.SECONDS)))
+        .isEqualTo(keyframePositionsOf(onePart.attempt().get(1, TimeUnit.SECONDS)));
   }
 
   @Test
@@ -294,7 +299,8 @@ class WorkerSessionGrpcServiceTest {
             .setProbeKeyframePositionsPart(keyframePositionsPart(otherAttempt, 1)));
     probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
 
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).keyframePositionsParts()).isEmpty();
+    assertThat(keyframePositionsOf(probe.attempt().get(1, TimeUnit.SECONDS)))
+        .isEqualTo(ProbeAttemptReport.getDefaultInstance());
   }
 
   @Test
@@ -394,15 +400,15 @@ class WorkerSessionGrpcServiceTest {
             .addKeyframeIntervalPacketCounts(13));
     probe.sendMeasuredResult();
 
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).getStreamMeasurementIntervalsList())
         .containsExactly(
-            probe
-                .measurementPart(VIDEO_STREAM)
+            StreamMeasurementIntervals.newBuilder()
+                .setStreamIndex(VIDEO_STREAM)
                 .addAllKeyframeIntervalBytes(List.of(1, 2, 3))
                 .addAllKeyframeIntervalPacketCounts(List.of(11, 12, 13))
                 .build(),
-            probe
-                .measurementPart(AUDIO_STREAM)
+            StreamMeasurementIntervals.newBuilder()
+                .setStreamIndex(AUDIO_STREAM)
                 .addKeyframeIntervalBytes(7)
                 .addKeyframeIntervalPacketCounts(17)
                 .build());
@@ -419,7 +425,8 @@ class WorkerSessionGrpcServiceTest {
             .setProbeAttemptId(toProto(UUID.randomUUID())));
     probe.sendMeasuredResult();
 
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).getStreamMeasurementIntervalsList())
+        .isEmpty();
   }
 
   @Test
@@ -433,9 +440,9 @@ class WorkerSessionGrpcServiceTest {
         withEntries(probe.measurementPart(VIDEO_STREAM), MAXIMUM_ENTRIES_PER_PART));
     probe.sendMeasuredResult();
 
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).getStreamMeasurementIntervalsList())
         .singleElement()
-        .extracting(ProbeStreamMeasurementPart::getKeyframeIntervalBytesCount)
+        .extracting(StreamMeasurementIntervals::getKeyframeIntervalBytesCount)
         .isEqualTo(MAXIMUM_ENTRIES_PER_PART);
   }
 
@@ -464,9 +471,9 @@ class WorkerSessionGrpcServiceTest {
     sendFullMeasurementParts(probe, MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE);
     probe.sendMeasuredResult();
 
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).getStreamMeasurementIntervalsList())
         .singleElement()
-        .extracting(ProbeStreamMeasurementPart::getKeyframeIntervalBytesCount)
+        .extracting(StreamMeasurementIntervals::getKeyframeIntervalBytesCount)
         .isEqualTo(MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE);
   }
 
@@ -532,10 +539,10 @@ class WorkerSessionGrpcServiceTest {
     probe.sendMeasurementPart(withEntries(probe.measurementPart(VIDEO_STREAM), 1));
     probe.sendMeasuredResult();
 
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).getStreamMeasurementIntervalsList())
         .hasSize(MAXIMUM_MEASURED_STREAMS_PER_PROBE)
         .first()
-        .extracting(ProbeStreamMeasurementPart::getKeyframeIntervalBytesCount)
+        .extracting(StreamMeasurementIntervals::getKeyframeIntervalBytesCount)
         .isEqualTo(2);
   }
 
@@ -565,7 +572,8 @@ class WorkerSessionGrpcServiceTest {
     probe.sendMeasurementPart(fill.apply(probe.measurementPart(VIDEO_STREAM)));
     probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
 
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
+    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).getStreamMeasurementIntervalsList())
+        .isEmpty();
   }
 
   static Stream<Arguments> measurementPartsOfUnmeasuredResult() {
@@ -592,10 +600,9 @@ class WorkerSessionGrpcServiceTest {
     return part.addAllKeyframeIntervalBytes(zeros).addAllKeyframeIntervalPacketCounts(zeros);
   }
 
-  private static List<ProbeKeyframePositionsPart> withoutAttemptIds(ProbeAttemptReport report) {
-    return report.keyframePositionsParts().stream()
-        .map(part -> part.toBuilder().clearProbeAttemptId().build())
-        .toList();
+  /** The report's keyframe positions alone, which do not name their probe attempt. */
+  private static ProbeAttemptReport keyframePositionsOf(ProbeAttemptReport report) {
+    return report.toBuilder().clearResult().clearStreamMeasurementIntervals().build();
   }
 
   private static ProbeKeyframePositionsPart keyframePositionsPart(

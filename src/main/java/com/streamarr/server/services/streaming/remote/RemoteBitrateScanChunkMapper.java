@@ -9,7 +9,8 @@ import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.BitrateScanChunk;
 import com.streamarr.transcode.v1.BitrateScanChunkResult;
 import com.streamarr.transcode.v1.BitrateScanChunkStream;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import java.math.BigInteger;
 import java.util.HashSet;
 import java.util.List;
@@ -50,10 +51,11 @@ final class RemoteBitrateScanChunkMapper {
   }
 
   BitrateScanChunkOutcome map(BitrateScanChunk chunk, ProbeAttemptReport report) {
-    var result = report.result();
+    var result = report.getResult();
     return switch (result.getOutcomeCase()) {
       case BITRATE_SCAN_CHUNK ->
-          chunkResult(chunk, result.getBitrateScanChunk(), report.streamMeasurementParts());
+          chunkResult(
+              chunk, result.getBitrateScanChunk(), report.getStreamMeasurementIntervalsList());
       case MEDIA -> throw violation("Worker answered a bitrate scan chunk with a probe result");
       case FAILURE, OUTCOME_NOT_SET ->
           new BitrateScanChunkOutcome.MediaError(RemoteProbeFailureMapper.terminalError(result));
@@ -63,9 +65,9 @@ final class RemoteBitrateScanChunkMapper {
   private static BitrateScanChunkOutcome chunkResult(
       BitrateScanChunk chunk,
       BitrateScanChunkResult result,
-      List<ProbeStreamMeasurementPart> parts) {
+      List<StreamMeasurementIntervals> intervals) {
     return switch (result.getResultCase()) {
-      case MEASURED -> measured(chunk, result, parts);
+      case MEASURED -> measured(chunk, result, intervals);
       case COPY_CHANGES_PACKETS -> copyChangesPackets(chunk, result);
       case RESULT_NOT_SET -> throw violation("Worker bitrate scan chunk result reports no result");
     };
@@ -84,12 +86,12 @@ final class RemoteBitrateScanChunkMapper {
   private static BitrateScanChunkOutcome measured(
       BitrateScanChunk chunk,
       BitrateScanChunkResult result,
-      List<ProbeStreamMeasurementPart> parts) {
+      List<StreamMeasurementIntervals> intervals) {
     var requested = Set.copyOf(chunk.getMeasuredStreamIndexesList());
-    var partsByStream =
-        parts.stream()
+    var intervalsByStream =
+        intervals.stream()
             .collect(
-                Collectors.toMap(ProbeStreamMeasurementPart::getStreamIndex, Function.identity()));
+                Collectors.toMap(StreamMeasurementIntervals::getStreamIndex, Function.identity()));
     var measuredIndexes = new HashSet<Integer>();
     var streams =
         result.getMeasured().getStreamsList().stream()
@@ -104,14 +106,14 @@ final class RemoteBitrateScanChunkMapper {
                     throw violation("Worker bitrate scan chunk measured one stream twice");
                   }
 
-                  return measuredStream(chunk, stream, partsByStream);
+                  return measuredStream(chunk, stream, intervalsByStream);
                 })
             .toList();
     if (!measuredIndexes.equals(requested)) {
       throw violation("Worker bitrate scan chunk leaves out a stream it was asked to measure");
     }
 
-    if (!measuredIndexes.containsAll(partsByStream.keySet())) {
+    if (!measuredIndexes.containsAll(intervalsByStream.keySet())) {
       throw violation(
           "Worker bitrate scan chunk sent keyframe interval bytes for a stream it did not measure");
     }
@@ -122,7 +124,7 @@ final class RemoteBitrateScanChunkMapper {
   private static MeasuredChunkStream measuredStream(
       BitrateScanChunk chunk,
       BitrateScanChunkStream stream,
-      Map<Integer, ProbeStreamMeasurementPart> partsByStream) {
+      Map<Integer, StreamMeasurementIntervals> intervalsByStream) {
     var keyframeCount = chunk.getDecodeTimeDeltasCount();
     if (stream.getMeasuredBytes() < 0 || stream.getPacketCount() < 0) {
       throw violation("Worker bitrate scan chunk bytes or packets exceed the contract's range");
@@ -132,16 +134,18 @@ final class RemoteBitrateScanChunkMapper {
       throw violation("Worker bitrate scan chunk stream time base is not positive");
     }
 
-    var part = partsByStream.get(stream.getStreamIndex());
-    if (part == null
-        || part.getKeyframeIntervalBytesCount() != keyframeCount
-        || part.getKeyframeIntervalPacketCountsCount() != keyframeCount) {
+    var intervals = intervalsByStream.get(stream.getStreamIndex());
+    if (intervals == null
+        || intervals.getKeyframeIntervalBytesCount() != keyframeCount
+        || intervals.getKeyframeIntervalPacketCountsCount() != keyframeCount) {
       throw violation("Worker bitrate scan chunk stream's intervals differ from the chunk's");
     }
 
-    var bytes = KeyframeIntervalCounts.ofUnsigned(keyframeCount, part::getKeyframeIntervalBytes);
+    var bytes =
+        KeyframeIntervalCounts.ofUnsigned(keyframeCount, intervals::getKeyframeIntervalBytes);
     var packets =
-        KeyframeIntervalCounts.ofUnsigned(keyframeCount, part::getKeyframeIntervalPacketCounts);
+        KeyframeIntervalCounts.ofUnsigned(
+            keyframeCount, intervals::getKeyframeIntervalPacketCounts);
     if (bytes.total() != stream.getMeasuredBytes() || packets.total() != stream.getPacketCount()) {
       throw violation("Worker bitrate scan chunk stream's intervals differ from its totals");
     }

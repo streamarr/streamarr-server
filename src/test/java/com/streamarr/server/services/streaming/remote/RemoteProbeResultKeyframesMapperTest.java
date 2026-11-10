@@ -13,8 +13,8 @@ import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
 import com.streamarr.transcode.v1.KeyframesUnavailable;
 import com.streamarr.transcode.v1.KeyframesUnavailableReason;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
@@ -48,13 +48,12 @@ class RemoteProbeResultKeyframesMapperTest {
   // The contract and the domain share these type names.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   @Test
-  @DisplayName("Should map keyframe positions to absolute times when a worker sends them in parts")
-  void shouldMapKeyframePositionsToAbsoluteTimesWhenWorkerSendsThemInParts() {
+  @DisplayName("Should map keyframe positions to absolute times when a worker sends them as deltas")
+  void shouldMapKeyframePositionsToAbsoluteTimesWhenWorkerSendsThemAsDeltas() {
     var report =
         positionsReport(
             positions().setKeyframeCount(3),
-            part(List.of(3_750L, 180_000L), List.of(-3_750L, 180_000L)),
-            part(List.of(176_250L), List.of(183_750L)));
+            deltas(List.of(3_750L, 180_000L, 176_250L), List.of(-3_750L, 180_000L, 183_750L)));
 
     var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(report);
 
@@ -90,7 +89,7 @@ class RemoteProbeResultKeyframesMapperTest {
     var report =
         report(
             result(ProbeKeyframes.newBuilder().setPacketScanRequired(reported)),
-            part(List.of(0L), List.of(0L)));
+            deltas(List.of(0L), List.of(0L)));
 
     var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(report);
 
@@ -131,11 +130,11 @@ class RemoteProbeResultKeyframesMapperTest {
   }
 
   private static Stream<Arguments> contractViolations() {
-    var onePosition = part(List.of(0L), List.of(0L));
+    var onePosition = deltas(List.of(0L), List.of(0L));
     return Stream.of(
         arguments(
             "unequal list lengths",
-            positionsReport(positions(), part(List.of(0L, 1L), List.of(0L)))),
+            positionsReport(positions(), deltas(List.of(0L, 1L), List.of(0L)))),
         arguments(
             "zero time base numerator",
             positionsReport(positions().setTimeBaseNumerator(0), onePosition)),
@@ -148,28 +147,30 @@ class RemoteProbeResultKeyframesMapperTest {
         arguments(
             "repeated decode time",
             positionsReport(
-                positions().setKeyframeCount(2), part(List.of(0L, 1L), List.of(0L, 0L)))),
+                positions().setKeyframeCount(2), deltas(List.of(0L, 1L), List.of(0L, 0L)))),
         arguments(
             "decreasing decode time",
             positionsReport(
-                positions().setKeyframeCount(2), part(List.of(0L, 1L), List.of(10L, -1L)))),
+                positions().setKeyframeCount(2), deltas(List.of(0L, 1L), List.of(10L, -1L)))),
         arguments(
             "decode time beyond the long range",
             positionsReport(
                 positions().setKeyframeCount(2),
-                part(List.of(0L, 0L), List.of(Long.MAX_VALUE, 1L)))),
+                deltas(List.of(0L, 0L), List.of(Long.MAX_VALUE, 1L)))),
         arguments(
             "presentation time beyond the long range",
             positionsReport(
                 positions().setKeyframeCount(2),
-                part(List.of(Long.MAX_VALUE, 1L), List.of(0L, 1L)))),
+                deltas(List.of(Long.MAX_VALUE, 1L), List.of(0L, 1L)))),
         arguments(
             "fewer keyframes than the count",
             positionsReport(positions().setKeyframeCount(2), onePosition)),
         arguments(
             "more keyframes than the count",
-            positionsReport(positions(), onePosition, onePosition)),
-        arguments("no keyframes", positionsReport(positions().setKeyframeCount(0))),
+            positionsReport(positions(), deltas(List.of(0L, 1L), List.of(0L, 1L)))),
+        arguments(
+            "no keyframes",
+            positionsReport(positions().setKeyframeCount(0), deltas(List.of(), List.of()))),
         arguments(
             "unspecified source",
             positionsReport(
@@ -218,20 +219,24 @@ class RemoteProbeResultKeyframesMapperTest {
   }
 
   private static ProbeAttemptReport positionsReport(
-      KeyframePositions.Builder positions, ProbeKeyframePositionsPart... parts) {
-    return report(result(ProbeKeyframes.newBuilder().setPositions(positions)), parts);
+      KeyframePositions.Builder positions, ProbeAttemptReport deltas) {
+    return report(result(ProbeKeyframes.newBuilder().setPositions(positions)), deltas);
   }
 
-  private static ProbeAttemptReport report(
-      ProbeAttemptResult result, ProbeKeyframePositionsPart... parts) {
-    return new ProbeAttemptReport(result, List.of(parts));
+  private static ProbeAttemptReport report(ProbeAttemptResult result) {
+    return ProbeAttemptReport.newBuilder().setResult(result).build();
   }
 
-  private static ProbeKeyframePositionsPart part(
+  private static ProbeAttemptReport report(ProbeAttemptResult result, ProbeAttemptReport deltas) {
+    return deltas.toBuilder().setResult(result).build();
+  }
+
+  /** A report that holds only the keyframe position deltas. */
+  private static ProbeAttemptReport deltas(
       List<Long> presentationTimeDeltas, List<Long> decodeTimeDeltas) {
-    return ProbeKeyframePositionsPart.newBuilder()
-        .addAllPresentationTimeDeltas(presentationTimeDeltas)
-        .addAllDecodeTimeDeltas(decodeTimeDeltas)
+    return ProbeAttemptReport.newBuilder()
+        .addAllKeyframePresentationTimeDeltas(presentationTimeDeltas)
+        .addAllKeyframeDecodeTimeDeltas(decodeTimeDeltas)
         .build();
   }
 }

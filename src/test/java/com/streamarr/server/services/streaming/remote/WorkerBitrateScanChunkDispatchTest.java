@@ -14,9 +14,11 @@ import com.streamarr.transcode.v1.BitrateScanChunkStreams;
 import com.streamarr.transcode.v1.BitrateScanCopyChangesPackets;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -99,16 +101,14 @@ class WorkerBitrateScanChunkDispatchTest {
     assertThat(registry.completeProbe(WORKER_ID, session, result)).isTrue();
     assertThat(pending.get(1, TimeUnit.SECONDS))
         .isEqualTo(
-            new ProbeAttemptReport(
-                result,
-                List.of(),
-                List.of(
-                    ProbeStreamMeasurementPart.newBuilder()
-                        .setProbeAttemptId(request.getProbeAttemptId())
+            ProbeAttemptReport.newBuilder()
+                .setResult(result)
+                .addStreamMeasurementIntervals(
+                    StreamMeasurementIntervals.newBuilder()
                         .setStreamIndex(0)
                         .addAllKeyframeIntervalBytes(List.of(700, 300))
-                        .addAllKeyframeIntervalPacketCounts(List.of(1, 1))
-                        .build())));
+                        .addAllKeyframeIntervalPacketCounts(List.of(1, 1)))
+                .build());
   }
 
   @Test
@@ -153,7 +153,7 @@ class WorkerBitrateScanChunkDispatchTest {
             .build();
 
     assertThat(registry.completeProbe(WORKER_ID, session, result)).isTrue();
-    assertThat(pending.get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
+    assertThat(pending.get(1, TimeUnit.SECONDS).getStreamMeasurementIntervalsList()).isEmpty();
   }
 
   private UUID register(WorkerCapabilities.Builder capabilities) {
