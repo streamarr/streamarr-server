@@ -216,9 +216,9 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     assertThat(deleted.at("/data/deleteProfile/deletedProfileId").asString())
         .as("deletion in %s", deleted)
         .isEqualTo(orphan.getId().toString());
-    var removal = changesUntil(hostSocket, shareId).getLast();
+    var removal = nextRemoval(hostSocket, shareId);
 
-    assertThat(removal.path("share").isNull()).as("removal %s", removal).isTrue();
+    assertThat(removal.path("shareId").asString()).isEqualTo(shareId);
   }
 
   @Test
@@ -247,9 +247,9 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     assertThat(deleted.at("/data/deleteEmptyHousehold/deletedHouseholdId").asString())
         .as("deletion in %s", deleted)
         .isEqualTo(empty.getId().toString());
-    var removal = changesUntil(ownerSocket, shareId).getLast();
+    var removal = nextRemoval(ownerSocket, shareId);
 
-    assertThat(removal.path("share").isNull()).as("removal %s", removal).isTrue();
+    assertThat(removal.path("shareId").asString()).isEqualTo(shareId);
   }
 
   @Test
@@ -533,6 +533,17 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
       var share = nextShare(socket, shareId);
       if (status.equals(share.path("status").asString())) {
         return share;
+      }
+    }
+  }
+
+  // A change carries the share as it reads on delivery, so a change made before the deletion may
+  // still be on its way; the removal is the first change without the share.
+  private static JsonNode nextRemoval(GraphQlTransportWsTestClient socket, String shareId) {
+    while (true) {
+      var change = changesUntil(socket, shareId).getLast();
+      if (change.path("share").isNull()) {
+        return change;
       }
     }
   }
