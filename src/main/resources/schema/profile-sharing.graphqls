@@ -27,6 +27,36 @@ type ProfileShare {
     endedAt: String
     "Why the system withdrew this offer; set only when status is INVALIDATED."
     invalidationReason: String
+    """
+    The Profile on offer or shared. Shown to the target Household's HouseholdAdmins, to those who
+    may see the Profile's administration (its managers, and a HouseholdAdmin where it is
+    available), and to ServerAdmins. Null for everyone else.
+    """
+    profile: ProfileSummary
+    """
+    The display name of the Account that offered the Profile. Shown to the target Household's
+    HouseholdAdmins and to ServerAdmins. Null for everyone else, for a share the system made, and
+    once that Account is deleted.
+    """
+    offeredByDisplayName: String
+    """
+    The Household the Profile is offered or shared to, at every status. Shown to the Profile's
+    managers, to the Account whose own Profile it is, to that Household's HouseholdAdmins, and to
+    ServerAdmins. Null for everyone else.
+    """
+    household: HouseholdSummary
+}
+
+"A Profile as a share shows it."
+type ProfileSummary {
+    id: ID!
+    name: String!
+    picture: String
+    kind: ProfileKind!
+    "Whether this is someone's Personal Profile, so accepting it lets that person use the Household."
+    personalProfile: Boolean!
+    "Whether the Profile is restricted, so the Household's HouseholdAdmins supervise it there."
+    restricted: Boolean!
 }
 
 type ProfileShareConnection {
