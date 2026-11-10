@@ -3,6 +3,7 @@ package com.streamarr.server.properties;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Optional;
 import lombok.Builder;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -33,6 +34,9 @@ public record StreamingProperties(
     // while the job attempt resumes (ADR 0044, hold-back).
     Duration holdBackHighWater,
     Duration holdBackLowWater) {
+
+  private static final Path SHARED_SEGMENT_FOLDER =
+      Path.of(System.getProperty("java.io.tmpdir"), "streamarr-segments");
 
   public StreamingProperties {
     if (maxConcurrentTranscodes == null) {
@@ -120,9 +124,22 @@ public record StreamingProperties(
     }
 
     if (segmentBasePath == null || segmentBasePath.isBlank()) {
-      segmentBasePath =
-          Path.of(System.getProperty("java.io.tmpdir"), "streamarr-segments").toString();
+      segmentBasePath = SHARED_SEGMENT_FOLDER.toString();
     }
+  }
+
+  /**
+   * The segment folder when only this server uses it. Every server process on a machine that names
+   * no segment folder uses the same one in the system's temporary folder, so that folder is no
+   * server's own.
+   */
+  public Optional<Path> ownedSegmentFolder() {
+    var segmentFolder = Path.of(segmentBasePath);
+    if (segmentFolder.equals(SHARED_SEGMENT_FOLDER)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(segmentFolder);
   }
 
   private static void requirePositive(String property, Duration value) {

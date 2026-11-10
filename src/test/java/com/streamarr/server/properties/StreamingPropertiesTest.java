@@ -3,11 +3,13 @@ package com.streamarr.server.properties;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -247,5 +249,32 @@ class StreamingPropertiesTest {
     var properties = StreamingProperties.builder().segmentBasePath("/custom/segments").build();
 
     assertThat(properties.segmentBasePath()).isEqualTo("/custom/segments");
+  }
+
+  @ParameterizedTest
+  @NullSource
+  @ValueSource(strings = {"", "  "})
+  @DisplayName("Should own no segment folder when none is configured")
+  void shouldOwnNoSegmentFolderWhenNoneIsConfigured(String configured) {
+    var properties = StreamingProperties.builder().segmentBasePath(configured).build();
+
+    assertThat(properties.ownedSegmentFolder()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should own no segment folder when the shared one is configured by name")
+  void shouldOwnNoSegmentFolderWhenTheSharedOneIsConfiguredByName() {
+    var shared = StreamingProperties.builder().build().segmentBasePath();
+    var properties = StreamingProperties.builder().segmentBasePath(shared).build();
+
+    assertThat(properties.ownedSegmentFolder()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should own the segment folder when one is configured")
+  void shouldOwnTheSegmentFolderWhenOneIsConfigured() {
+    var properties = StreamingProperties.builder().segmentBasePath("/custom/segments").build();
+
+    assertThat(properties.ownedSegmentFolder()).contains(Path.of("/custom/segments"));
   }
 }
