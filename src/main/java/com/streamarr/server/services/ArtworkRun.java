@@ -1,6 +1,6 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;

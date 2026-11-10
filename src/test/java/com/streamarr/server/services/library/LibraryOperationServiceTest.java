@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.exceptions.LibraryOperationNotScheduledException;
 import com.streamarr.server.exceptions.LibraryOperationNotStartedException;
 import com.streamarr.server.exceptions.ResourceBusyException;
@@ -22,7 +23,6 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import com.streamarr.server.services.library.LibraryOperationRejection.LibraryBusy;
 import com.streamarr.server.services.library.LibraryOperationRejection.LibraryNotFound;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;

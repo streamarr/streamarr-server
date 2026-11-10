@@ -1,10 +1,11 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.domain.media.ArtworkSources;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageRefreshMode;
+import com.streamarr.server.domain.media.ImageSource;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.repositories.CompanyRepository;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
-import com.streamarr.server.services.metadata.events.ImageSource;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;

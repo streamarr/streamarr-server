@@ -1,6 +1,9 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.domain.media.ArtworkSources;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageRefreshMode;
+import com.streamarr.server.domain.media.ImageSource;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
@@ -19,9 +22,7 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.events.library.LibraryItemAddedEvent;
 import com.streamarr.server.services.events.library.LibraryItemRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.MetadataResult;
-import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.pagination.LibraryItemPager;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaFilter;

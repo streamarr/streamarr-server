@@ -1,6 +1,6 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;

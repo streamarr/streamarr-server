@@ -3,6 +3,7 @@ package com.streamarr.server.services;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import com.streamarr.server.domain.media.ArtworkPriority;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;

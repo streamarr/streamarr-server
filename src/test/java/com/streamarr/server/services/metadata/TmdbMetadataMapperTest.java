@@ -2,9 +2,9 @@ package com.streamarr.server.services.metadata;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.media.ImageSource.TmdbImageSource;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredit;
 import com.streamarr.server.services.metadata.tmdb.TmdbGenre;
 import com.streamarr.server.services.metadata.tmdb.TmdbProductionCompany;

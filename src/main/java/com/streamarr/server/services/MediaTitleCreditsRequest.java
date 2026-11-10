@@ -1,9 +1,9 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.media.CreditedMediaTitle;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.domain.media.ImageRefreshMode;
+import com.streamarr.server.domain.media.ImageSource;
 import com.streamarr.server.services.metadata.MetadataResult;
-import com.streamarr.server.services.metadata.events.ImageSource;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;

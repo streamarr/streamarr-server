@@ -2,10 +2,10 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.SkippedFile;
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;

@@ -5,6 +5,7 @@ import static com.streamarr.server.jooq.generated.tables.LibraryOperation.LIBRAR
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.jooq.generated.tables.records.LibraryOperationRecord;
 import com.streamarr.server.services.library.LibraryOperation;
 import com.streamarr.server.services.library.LibraryOperationConclusion;
@@ -14,7 +15,6 @@ import com.streamarr.server.services.library.LibraryOperationRejection;
 import com.streamarr.server.services.library.LibraryOperationStop;
 import com.streamarr.server.services.library.LibraryOperationStopRejection;
 import com.streamarr.server.services.library.NewLibraryOperation;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import jakarta.persistence.EntityManager;
 import java.time.Duration;
 import java.time.ZoneOffset;

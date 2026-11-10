@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
@@ -17,7 +18,6 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.support.TestFixtureWork;
 import java.io.IOException;
 import java.nio.file.Files;

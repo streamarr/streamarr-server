@@ -1,8 +1,10 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.domain.media.ArtworkPriority;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
+import com.streamarr.server.domain.media.ImageSource.TmdbImageSource;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
@@ -17,7 +19,6 @@ import com.streamarr.server.services.ImageService.ProcessedImage;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.concurrency.CpuPermits;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;
-import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;

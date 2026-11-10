@@ -1,6 +1,5 @@
-package com.streamarr.server.services;
+package com.streamarr.server.domain.media;
 
-import com.streamarr.server.domain.media.ImageEntityType;
 import lombok.NonNull;
 
 /**

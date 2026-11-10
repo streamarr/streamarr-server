@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.exceptions.LibraryOperationNotScheduledException;
 import com.streamarr.server.exceptions.LibraryOperationNotStartedException;
 import com.streamarr.server.exceptions.ResourceBusyException;
@@ -12,7 +13,6 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
 import com.streamarr.server.services.library.LibraryOperationMetrics.RequestOutcome;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;

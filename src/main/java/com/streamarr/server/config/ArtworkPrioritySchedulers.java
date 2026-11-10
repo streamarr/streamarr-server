@@ -1,7 +1,7 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.domain.media.ArtworkPriority;
 import com.streamarr.server.domain.media.ArtworkTarget;
-import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.ArtworkScheduling;
 import lombok.Builder;
 import lombok.NonNull;

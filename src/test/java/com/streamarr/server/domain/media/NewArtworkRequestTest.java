@@ -1,10 +1,8 @@
-package com.streamarr.server.services;
+package com.streamarr.server.domain.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
-import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;

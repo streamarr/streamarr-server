@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.domain.media.ArtworkPriority;
 import java.time.Duration;
 import lombok.Builder;
 import lombok.NonNull;

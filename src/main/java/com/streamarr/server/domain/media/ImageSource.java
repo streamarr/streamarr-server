@@ -1,6 +1,4 @@
-package com.streamarr.server.services.metadata.events;
-
-import com.streamarr.server.domain.media.ImageType;
+package com.streamarr.server.domain.media;
 
 public sealed interface ImageSource {
 

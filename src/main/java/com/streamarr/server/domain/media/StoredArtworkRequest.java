@@ -1,6 +1,5 @@
-package com.streamarr.server.services;
+package com.streamarr.server.domain.media;
 
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
