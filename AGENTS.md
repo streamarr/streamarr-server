@@ -190,6 +190,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Domain entities must NEVER import from services, repositories, or graphql packages
 - Services must NEVER import from the graphql package
 - Repositories must NEVER import from the services package; a type that services and repositories both use, such as `Seek`, `LibraryOperation` or `StoredArtworkRequest`, lives in `domain`
+- `services.artwork` (artwork requests, steps, runs and image storage) must NEVER import from the root `services` package, whose catalog services request artwork
 - Services never import jOOQ — `DSLContext` stays in the repository layer
 - External API types (TMDB DTOs) must NEVER leak into the service/domain layer
 - Resolvers and controllers resolve the authenticated identity and translate protocol inputs and
