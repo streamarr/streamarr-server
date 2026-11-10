@@ -513,9 +513,14 @@ public class SeekPriority {
   // uploaded nothing has no own lead to name it for.
   private Optional<ExecutionTargetId> uploadTarget(
       StreamSession session, String variantLabel, TranscodeHandle handle) {
+    return ownOutput(session, variantLabel, handle).flatMap(OwnOutput::uploadedFrom);
+  }
+
+  // Guarded by this monitor. Empty once the variant has started another job attempt.
+  private Optional<OwnOutput> ownOutput(
+      StreamSession session, String variantLabel, TranscodeHandle handle) {
     return Optional.ofNullable(ownOutputs.get(new VariantKey(session.getSessionId(), variantLabel)))
-        .filter(output -> output.attemptId().equals(handle.attemptId()))
-        .flatMap(OwnOutput::uploadedFrom);
+        .filter(output -> output.attemptId().equals(handle.attemptId()));
   }
 
   // The media that the job attempt has stored itself without a gap after the viewer's segment
@@ -565,9 +570,7 @@ public class SeekPriority {
   // another job attempt's upload stored, counts once its own upload publishes that segment again.
   private IntPredicate ownOutputOf(
       StreamSession session, String variantLabel, TranscodeHandle handle) {
-    var output =
-        Optional.ofNullable(ownOutputs.get(new VariantKey(session.getSessionId(), variantLabel)))
-            .filter(recorded -> recorded.attemptId().equals(handle.attemptId()));
+    var output = ownOutput(session, variantLabel, handle);
     if (output.isEmpty()) {
       return _ -> false;
     }
