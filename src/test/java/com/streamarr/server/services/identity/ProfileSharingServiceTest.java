@@ -670,10 +670,12 @@ class ProfileSharingServiceTest {
     var share = pendingShare();
     authorization.decideUnitWith(
         intent -> intent instanceof Intent.ViewProfileShareChanges ? denied() : allowed());
+    var reader = identity();
+    var changed = ChangedShare.of(share);
 
-    assertThatThrownBy(() -> service.shareChange(identity(), ChangedShare.of(share)))
+    assertThatThrownBy(() -> service.shareChange(reader, changed))
         .isInstanceOf(AccessDeniedException.class);
-    assertThatThrownBy(() -> service.requireViewProfileShareChanges(identity()))
+    assertThatThrownBy(() -> service.requireViewProfileShareChanges(reader))
         .isInstanceOf(AccessDeniedException.class);
   }
 
@@ -686,8 +688,10 @@ class ProfileSharingServiceTest {
             intent instanceof Intent.ViewProfileShareChanges
                 ? allowed()
                 : new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
+    var reader = identity();
+    var changed = ChangedShare.of(share);
 
-    assertThatThrownBy(() -> service.shareChange(identity(), ChangedShare.of(share)))
+    assertThatThrownBy(() -> service.shareChange(reader, changed))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
