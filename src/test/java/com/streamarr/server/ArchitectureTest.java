@@ -35,7 +35,9 @@ import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.RuntimeSt
 import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.WorkerDependency;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.controllers.architecturefixture.DirectControllerAccountPasswordMatchFixture;
+import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.graphql.architecturefixture.PasswordEncodingResolverFixture;
+import com.streamarr.server.properties.architecturefixture.DomainDependentPropertiesFixture;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.CreditService;
@@ -400,6 +402,21 @@ class ArchitectureTest {
                   + " layer may import");
 
   @ArchTest
+  static final ArchRule propertiesMustNotDependOnOtherProjectPackages =
+      noClasses()
+          .that()
+          .resideInAPackage("com.streamarr.server.properties..")
+          .should()
+          .dependOnClassesThat(
+              resideInAPackage("com.streamarr.server..")
+                  .and(
+                      DescribedPredicate.not(
+                          resideInAPackage("com.streamarr.server.properties.."))))
+          .as(
+              "Properties must not depend on any other project package, because every layer"
+                  + " imports them");
+
+  @ArchTest
   static final ArchRule repositoryMethodsMustNotUseQueryAnnotations =
       repositoryMethodsMustNotUseQueryAnnotations();
 
@@ -734,6 +751,24 @@ class ArchitectureTest {
             detail ->
                 assertThat(detail)
                     .contains(ReactiveServiceFixture.class.getName(), Flux.class.getName()));
+  }
+
+  @Test
+  @DisplayName("Should reject a project dependency when a properties type uses a domain type")
+  void shouldRejectProjectDependencyWhenPropertiesTypeUsesDomainType() {
+    var properties = new ClassFileImporter().importClasses(DomainDependentPropertiesFixture.class);
+
+    assertThat(
+            propertiesMustNotDependOnOtherProjectPackages
+                .evaluate(properties)
+                .getFailureReport()
+                .getDetails())
+        .anySatisfy(
+            detail ->
+                assertThat(detail)
+                    .contains(
+                        DomainDependentPropertiesFixture.class.getName(),
+                        ImageSize.class.getName()));
   }
 
   @ParameterizedTest
