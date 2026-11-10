@@ -461,6 +461,11 @@ public class ProfileSharingService {
         authorizationService.decide(identity, new Intent.ViewProfileAdministration(profileId)));
   }
 
+  // A Profile that no longer exists has no shares to read and no facts to decide on.
+  private boolean mayViewProfileShares(AuthenticatedIdentity identity, UUID profileId) {
+    return profileRepository.findById(profileId).isPresent() && mayViewProfile(identity, profileId);
+  }
+
   private boolean mayViewHousehold(AuthenticatedIdentity identity, UUID householdId) {
     return isAllowed(
         authorizationService.decide(identity, new Intent.ViewHouseholdAdministration(householdId)));
@@ -492,8 +497,7 @@ public class ProfileSharingService {
    */
   public ListPage<ProfileHouseholdShare> profileShares(
       AuthenticatedIdentity identity, ShareListScope profile, PageRequest request) {
-    if (profileRepository.findById(profile.id()).isEmpty()
-        || !mayViewProfile(identity, profile.id())) {
+    if (!mayViewProfileShares(identity, profile.id())) {
       return ListPage.empty();
     }
 
