@@ -132,8 +132,9 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public List<Row<ProfileHouseholdShare>> rowsOfProfile(UUID profileId, Seek seek) {
-    return rowsBeyond(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId), seek);
+  public List<Row<ProfileHouseholdShare>> rowsOfProfile(
+      UUID profileId, ShareStatusFilter filter, Seek seek) {
+    return rowsBeyond(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId).and(keptBy(filter)), seek);
   }
 
   private List<Row<ProfileHouseholdShare>> rowsBeyond(Condition scope, Seek seek) {

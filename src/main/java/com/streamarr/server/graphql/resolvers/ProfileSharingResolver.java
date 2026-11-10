@@ -79,8 +79,10 @@ public class ProfileSharingResolver {
 
   @DgsQuery
   public Connection<ProfileShareDetails> profileShares(
-      @InputArgument String profileId, DataFetchingEnvironment dfe) {
-    var profile = Ids.parseUuid(profileId);
+      @InputArgument String profileId,
+      @InputArgument List<ProfileShareStatus> statuses,
+      DataFetchingEnvironment dfe) {
+    var profile = new ShareListScope(Ids.parseUuid(profileId), statusesOrEvery(statuses));
     var list = new ListIdentity("profile-shares", profile);
     var page =
         profileSharingService.profileShares(

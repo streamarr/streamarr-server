@@ -28,7 +28,13 @@ type Query {
     get every share. Pass [PENDING] for the offers waiting for a decision.
     """
     householdShares(householdId: ID!, statuses: [ProfileShareStatus!], first: Int, after: String, last: Int, before: String): ProfileShareConnection!
-    profileShares(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
+    """
+    A Profile's shares into every Household, newest first, for those who may see the Profile's
+    administration. Everyone else gets an empty list. statuses keeps only shares in those
+    statuses, as householdShares does: pass [PENDING, ACTIVE] for where the Profile is offered or
+    available now.
+    """
+    profileShares(profileId: ID!, statuses: [ProfileShareStatus!], first: Int, after: String, last: Int, before: String): ProfileShareConnection!
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     householdDevices(householdId: ID!, first: Int, after: String, last: Int, before: String): DeviceRegistrationConnection!

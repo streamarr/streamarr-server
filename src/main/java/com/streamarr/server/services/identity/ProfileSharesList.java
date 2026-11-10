@@ -8,28 +8,29 @@ import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.domain.pagination.SortValueKind;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.services.pagination.PagedList;
+import java.time.Clock;
 import java.util.List;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-/** Every share of one Profile in any status, newest first. */
+/** The shares of one Profile in the scope's statuses, newest first. */
 @Component
 @RequiredArgsConstructor
-public class ProfileSharesList implements PagedList<ProfileHouseholdShare, UUID> {
+public class ProfileSharesList implements PagedList<ProfileHouseholdShare, ShareListScope> {
 
   private static final ListOrder NEWEST_FIRST =
       ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.DESC).build();
 
   private final ProfileHouseholdShareRepository shareRepository;
+  private final Clock clock;
 
   @Override
-  public ListOrder order(UUID profileId) {
+  public ListOrder order(ShareListScope profile) {
     return NEWEST_FIRST;
   }
 
   @Override
-  public List<Row<ProfileHouseholdShare>> rowsBeyond(UUID profileId, Seek seek) {
-    return shareRepository.rowsOfProfile(profileId, seek);
+  public List<Row<ProfileHouseholdShare>> rowsBeyond(ShareListScope profile, Seek seek) {
+    return shareRepository.rowsOfProfile(profile.id(), profile.filterAt(clock.instant()), seek);
   }
 }

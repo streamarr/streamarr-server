@@ -239,6 +239,26 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     assertThat(sharesInto(host, now)).hasSize(ProfileShareStatus.values().length + 1);
   }
 
+  @Test
+  @DisplayName("Should keep only the named statuses when a Profile's shares are filtered")
+  void shouldKeepOnlyNamedStatusesWhenProfileSharesAreFiltered() {
+    var owner = create();
+    var now = Instant.now();
+    var profile = createManagedAdultOrphan(owner);
+    var live = storedShare(profile, create(), ProfileShareStatus.PENDING, now);
+    var expired = storedShare(profile, create(), ProfileShareStatus.EXPIRED, now);
+    var stale = offerExpiringAt(profile, create(), now.minusSeconds(60));
+    var rejected = storedShare(profile, create(), ProfileShareStatus.REJECTED, now);
+
+    assertThat(sharesOf(profile, now, ProfileShareStatus.PENDING)).containsExactly(live);
+    assertThat(sharesOf(profile, now, ProfileShareStatus.EXPIRED))
+        .containsExactlyInAnyOrder(expired, stale);
+    assertThat(sharesOf(profile, now, ProfileShareStatus.REJECTED, ProfileShareStatus.PENDING))
+        .containsExactlyInAnyOrder(rejected, live);
+    // Its home availability is a share too, so naming no status keeps one more.
+    assertThat(sharesOf(profile, now)).hasSize(5);
+  }
+
   // Hosting supervision checks and constraint evaluation order.
 
   @Test
@@ -406,6 +426,21 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
                     .build()));
   }
 
+  private UUID offerExpiringAt(
+      Profile profile, AuthTestSupport.TestIdentity host, Instant expiresAt) {
+    return transactionTemplate
+        .execute(
+            _ ->
+                shareRepository.saveAndFlush(
+                    ProfileHouseholdShare.builder()
+                        .profileId(profile.getId())
+                        .householdId(host.household().getId())
+                        .status(ProfileShareStatus.PENDING)
+                        .expiresAt(expiresAt)
+                        .build()))
+        .getId();
+  }
+
   /** A share stored in the status; a stored PENDING offer is still live at {@code now}. */
   private UUID storedShare(
       Profile profile, AuthTestSupport.TestIdentity host, ProfileShareStatus status, Instant now) {
@@ -430,6 +465,14 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     return ids(
         shareRepository.rowsIntoHousehold(
             host.household().getId(),
+            new ShareStatusFilter(Set.of(statuses), now),
+            firstSeek(NEWEST_FIRST, 20)));
+  }
+
+  private List<UUID> sharesOf(Profile profile, Instant now, ProfileShareStatus... statuses) {
+    return ids(
+        shareRepository.rowsOfProfile(
+            profile.getId(),
             new ShareStatusFilter(Set.of(statuses), now),
             firstSeek(NEWEST_FIRST, 20)));
   }

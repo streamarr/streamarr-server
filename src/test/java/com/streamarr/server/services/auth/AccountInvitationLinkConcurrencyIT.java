@@ -528,7 +528,10 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
         .isEqualTo(AccountInvitationStatus.EXPIRED);
     var shareHistory =
         profileSharingService
-            .profileShares(accountIdentity(sourceAdmin), orphan.getId(), paginationOptions())
+            .profileShares(
+                accountIdentity(sourceAdmin),
+                new ShareListScope(orphan.getId(), List.of()),
+                paginationOptions())
             .rows()
             .stream()
             .map(Row::item)
