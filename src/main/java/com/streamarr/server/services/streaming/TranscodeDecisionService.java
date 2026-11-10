@@ -208,7 +208,8 @@ public class TranscodeDecisionService {
                     .map(EncodeCodecProfile::codecFamilyName)
                     .orElse(source.videoCodec()))
             .encodeCodecProfile(encodeCodecProfile)
-            .audioDecision(audioDecision)
+            .audioDecision(
+                videoCopyable ? audioDecision : besideEncodedVideo(source, audioDecision))
             .subtitleDecision(subtitleDecision)
             .videoSource(source.videoPlaybackFacts())
             .videoBitstreamRewrites(copyPlan.map(CopyPlan::bitstreamRewrites).orElseGet(List::of))
@@ -284,11 +285,21 @@ public class TranscodeDecisionService {
       List<DecisionReason> videoReasons, SessionAudio sessionAudio, AudioDecision audio) {
     var reasons = new ArrayList<>(videoReasons);
     sessionAudio.encodeReason().ifPresent(reasons::add);
-    if (!audio.equals(sessionAudio.decision())) {
+    if (isLowered(audio, sessionAudio.decision())) {
       reasons.add(DecisionReason.AUDIO_LOWERED_FOR_BITRATE_LIMIT);
     }
 
     return reasons;
+  }
+
+  // Every step below the session's audio is an encode, so a copied track is the session's audio
+  // whatever bitrate its measurement gave it.
+  private static boolean isLowered(AudioDecision audio, AudioDecision sessionAudio) {
+    if (audio.mode() == AudioMode.COPY && sessionAudio.mode() == AudioMode.COPY) {
+      return false;
+    }
+
+    return !audio.equals(sessionAudio);
   }
 
   // Direct play and a copy can refuse for the same fact, such as an interlaced source, which the
@@ -353,15 +364,16 @@ public class TranscodeDecisionService {
       return new VideoCopyChoice.Refused(List.of(DecisionReason.VIEWER_CHOSE_SDR));
     }
 
-    var steps = AudioSteps.below(sessionAudio, AudioTrackChannels.of(source), declaration);
     var playlist = CopyMediaPlaylist.of(source, properties);
+    var copyAudio = besideCopiedVideo(source, sessionAudio, playlist);
+    var steps = AudioSteps.below(copyAudio, AudioTrackChannels.of(source), declaration);
     var stepWithinMaximum = limits.audioStepBesideCopyOf(source, steps, playlist);
     var limitRefusals = viewerLimitRefusals(limits.allowsCopyPictureOf(source), stepWithinMaximum);
     if (!limitRefusals.isEmpty() && hasVerifiedEncodeThatTheClientPlays(request)) {
       return new VideoCopyChoice.Refused(beforeViewerLimits(request, limitRefusals));
     }
 
-    var audio = stepWithinMaximum.orElse(sessionAudio);
+    var audio = stepWithinMaximum.orElse(copyAudio);
     return switch (acceptedVideoCopyPlan(request, countsRefusals)) {
       case PlanChoice.Refused(var reasons) -> new VideoCopyChoice.Refused(reasons);
       case PlanChoice.Accepted(var plan, _) when !hasWorkerThatDeliversTheCopy(request, plan) ->
@@ -876,6 +888,35 @@ public class TranscodeDecisionService {
             .sourceCodecString(sourceCodecString)
             .build();
     return new SessionAudio(copy, Optional.empty());
+  }
+
+  // A copied track that the server measured costs its average segment bit rate over the media
+  // playlist that carries it, in place of the probed or nominal bitrate (ADR 0054): the encoded
+  // variants' playlist beside an encoded video, and a stream copy's beside a copied one. The steps
+  // below the track are the ones below that cost.
+  private AudioDecision besideEncodedVideo(MediaProbe source, AudioDecision audio) {
+    if (audio.mode() != AudioMode.COPY) {
+      return audio;
+    }
+
+    return atMeasuredBitRate(
+        audio,
+        VideoCopyBandwidth.copiedAudioBesideEncodedVideo(
+            source, MediaSegmentTimelines.of(source, properties)));
+  }
+
+  private static AudioDecision besideCopiedVideo(
+      MediaProbe source, AudioDecision audio, CopyMediaPlaylist playlist) {
+    if (audio.mode() != AudioMode.COPY) {
+      return audio;
+    }
+
+    return atMeasuredBitRate(
+        audio, VideoCopyBandwidth.copiedAudioBesideCopiedVideo(source, playlist));
+  }
+
+  private static AudioDecision atMeasuredBitRate(AudioDecision audio, Optional<Long> measured) {
+    return measured.map(bitRate -> audio.toBuilder().bitrate(bitRate).build()).orElse(audio);
   }
 
   // Only an encode can pad audio that ends early with silence up to the advertised end, so that

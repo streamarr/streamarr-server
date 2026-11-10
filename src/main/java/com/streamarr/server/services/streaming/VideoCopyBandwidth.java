@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.services.streaming.PeakSegmentBitRate.SegmentSize;
@@ -239,6 +240,43 @@ final class VideoCopyBandwidth {
                           playlist.durationSeconds()))
               .map(bitRate -> saturatedSum(bitRate, audio.bitrate()));
     };
+  }
+
+  /**
+   * A copied audio track's average segment bit rate beside a copied video (ADR 0054): the track's
+   * measured bytes and its framing in every media segment that a stream copy lists, over the sum of
+   * that playlist's EXTINF durations. Empty when the server did not measure the track or the
+   * playlist is unknown.
+   */
+  static Optional<Long> copiedAudioBesideCopiedVideo(
+      @NonNull MediaProbe source, @NonNull CopyMediaPlaylist playlist) {
+    if (!playlist.isKnown()) {
+      return Optional.empty();
+    }
+
+    var segments = BigInteger.valueOf(playlist.segmentCount());
+    return copiedAudio(source)
+        .map(copied -> averageBitRate(trackBytes(copied, segments), playlist.durationSeconds()));
+  }
+
+  /**
+   * A copied audio track's average segment bit rate beside an encoded video (ADR 0054): the track's
+   * measured bytes and its framing in every media segment of the encoded variants' media playlist,
+   * over the sum of that playlist's EXTINF durations. Every encoded variant lists the same media
+   * segments. Empty when the server did not measure the track or the playlist lists no segment. The
+   * copy carries the source's first audio stream.
+   */
+  static Optional<Long> copiedAudioBesideEncodedVideo(
+      @NonNull MediaProbe source, @NonNull MediaSegmentTimeline timeline) {
+    var durations = ExtinfDurations.of(timeline);
+    var durationSeconds = durations.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+    if (durationSeconds.signum() <= 0) {
+      return Optional.empty();
+    }
+
+    var segments = BigInteger.valueOf(durations.size());
+    return copiedAudio(source)
+        .map(copied -> averageBitRate(trackBytes(copied, segments), durationSeconds));
   }
 
   private static Optional<MeasuredStream> measuredVideo(MediaProbe source) {
