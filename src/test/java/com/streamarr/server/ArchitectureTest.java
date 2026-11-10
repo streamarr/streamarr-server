@@ -9,6 +9,7 @@ import static com.tngtech.archunit.core.domain.properties.CanBeAnnotated.Predica
 import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.name;
 import static com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.With.owner;
 import static com.tngtech.archunit.core.domain.properties.HasParameterTypes.Predicates.rawParameterTypes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
@@ -115,6 +116,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -385,6 +387,17 @@ class ArchitectureTest {
           .as(
               "Classes outside config must not depend on config, which wires the application from"
                   + " above every layer; configuration properties belong in properties");
+
+  @ArchTest
+  static final ArchRule configurationPropertiesMustResideInProperties =
+      classes()
+          .that()
+          .areAnnotatedWith(ConfigurationProperties.class)
+          .should()
+          .resideInAPackage("com.streamarr.server.properties..")
+          .as(
+              "Types that bind configuration must reside in properties, the package that every"
+                  + " layer may import");
 
   @ArchTest
   static final ArchRule repositoryMethodsMustNotUseQueryAnnotations =

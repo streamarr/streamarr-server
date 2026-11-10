@@ -10,6 +10,7 @@ import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.graphql.dto.RemovedLibrary;
+import com.streamarr.server.properties.SubscriptionProperties;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;

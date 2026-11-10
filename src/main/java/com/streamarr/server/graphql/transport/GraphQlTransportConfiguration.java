@@ -1,7 +1,7 @@
 package com.streamarr.server.graphql.transport;
 
-import com.streamarr.server.graphql.subscriptions.SubscriptionProperties;
 import com.streamarr.server.properties.CanonicalBaseUrl;
+import com.streamarr.server.properties.SubscriptionProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Duration;

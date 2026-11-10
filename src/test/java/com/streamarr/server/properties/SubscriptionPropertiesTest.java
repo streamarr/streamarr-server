@@ -1,4 +1,4 @@
-package com.streamarr.server.graphql.subscriptions;
+package com.streamarr.server.properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

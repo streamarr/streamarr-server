@@ -1,4 +1,4 @@
-package com.streamarr.server.graphql.subscriptions;
+package com.streamarr.server.properties;
 
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;

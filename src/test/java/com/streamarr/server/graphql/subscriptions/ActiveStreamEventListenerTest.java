@@ -27,6 +27,7 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.graphql.dto.ActiveStreamDto;
 import com.streamarr.server.graphql.dto.MediaTimeRangeDto;
 import com.streamarr.server.properties.StreamingProperties;
+import com.streamarr.server.properties.SubscriptionProperties;
 import com.streamarr.server.services.streaming.ActiveStreamService;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;
