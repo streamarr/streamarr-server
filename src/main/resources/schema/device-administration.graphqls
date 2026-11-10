@@ -12,6 +12,11 @@ type DeviceRegistrationDetails {
     displayName: String!
     householdId: ID
     authorizingAccountId: ID
+    """
+    The display name of the person who linked this Device, shown to those who may list the
+    Household's Devices. Null once that Account is deleted.
+    """
+    authorizingAccountDisplayName: String
     status: DeviceRegistrationStatus!
     pairedAt: String!
 }
