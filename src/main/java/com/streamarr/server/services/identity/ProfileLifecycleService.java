@@ -15,6 +15,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -48,6 +49,7 @@ public class ProfileLifecycleService {
   private final ProfileManagerInvitationRepository managerInvitationRepository;
   private final AccountInvitationRepository accountInvitationRepository;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final AuthSessionRepository authSessionRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final MutationTransactions mutationTransactions;
@@ -188,7 +190,7 @@ public class ProfileLifecycleService {
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
+        .ifPresent(share -> shareLifecycle.tryEndActive(share.getId(), now));
     authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId);
   }
 
@@ -202,7 +204,7 @@ public class ProfileLifecycleService {
       return;
     }
 
-    shareRepository.saveAndFlush(
+    shareLifecycle.create(
         ProfileHouseholdShare.builder()
             .profileId(profileId)
             .householdId(destinationHouseholdId)
@@ -214,7 +216,7 @@ public class ProfileLifecycleService {
   private void invalidateProfileBoundArtifacts(UUID profileId, String reason, Instant now) {
     accountInvitationRepository.invalidatePendingByProfileId(profileId, reason, now);
     managerInvitationRepository.invalidatePendingByProfileId(profileId, reason, now);
-    shareRepository.invalidatePendingByProfileId(profileId, reason, now);
+    shareLifecycle.invalidatePendingByProfileId(profileId, reason, now);
   }
 
   private Optional<TransferRejections.TransferProfile> localManagerRefusal(

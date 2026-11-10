@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -136,11 +137,12 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     var offer = pendingOffer(owner, host, now.minusSeconds(60));
 
     var declined =
-        transactionTemplate.<Boolean>execute(
+        transactionTemplate.execute(
             _ ->
                 shareRepository.tryDeclinePending(offer.getId(), ProfileShareStatus.REJECTED, now));
 
-    assertThat(declined).isTrue();
+    assertThat(declined)
+        .hasValueSatisfying(share -> assertThat(share.shareId()).isEqualTo(offer.getId()));
     assertThat(shareRepository.findById(offer.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileShareStatus.EXPIRED);
   }
@@ -163,7 +165,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
                 shareRepository.invalidatePendingOfferedBy(
                     owner.account().getId(), "issuer disabled", now));
 
-    assertThat(invalidated).isEqualTo(1);
+    assertThat(invalidated).extracting(ChangedShare::shareId).containsExactly(live.getId());
     var stored = shareRepository.findById(live.getId()).orElseThrow();
     assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
     assertThat(stored.getInvalidationReason()).contains("issuer disabled");
@@ -187,7 +189,8 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
                 shareRepository.invalidatePendingByProfileId(
                     owner.profile().getId(), "Profile linked to an Account", now));
 
-    assertThat(invalidated).isZero();
+    // The expired offer is recorded as expired, not invalidated.
+    assertThat(invalidated).extracting(ChangedShare::shareId).containsExactly(expired.getId());
     var stored = shareRepository.findById(expired.getId()).orElseThrow();
     assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
     assertThat(stored.statusAt(now)).isEqualTo(ProfileShareStatus.EXPIRED);

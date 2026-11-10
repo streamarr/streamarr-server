@@ -20,6 +20,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfilePinHasher;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -58,6 +59,7 @@ public class ProfileAdministrationService {
   private final ProfileRepository profileRepository;
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
   private final AccountInvitationRepository accountInvitationRepository;
@@ -176,7 +178,7 @@ public class ProfileAdministrationService {
   }
 
   private void shareProfileWithHousehold(CreateProfileCommand command, Profile profile) {
-    shareRepository.saveAndFlush(
+    shareLifecycle.create(
         ProfileHouseholdShare.builder()
             .profileId(profile.getId())
             .householdId(command.householdId())

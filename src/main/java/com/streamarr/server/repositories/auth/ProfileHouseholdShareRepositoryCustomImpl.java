@@ -5,17 +5,20 @@ import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
+import com.streamarr.server.jooq.generated.tables.records.ProfileHouseholdShareRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,44 +26,54 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.jooq.UpdateResultStep;
 import org.jooq.impl.DSL;
 
 @RequiredArgsConstructor
 public class ProfileHouseholdShareRepositoryCustomImpl
     implements ProfileHouseholdShareRepositoryCustom {
 
+  // The columns a write returns to name each share it changed.
+  private static final List<Field<?>> CHANGED_SHARE =
+      List.of(
+          PROFILE_HOUSEHOLD_SHARE.ID,
+          PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
+          PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID);
+
   private final DSLContext dsl;
   private final EntityManager entityManager;
 
   @Override
-  public int supersedePending(UUID profileId, UUID householdId, Instant now) {
+  public List<ChangedShare> supersedePending(UUID profileId, UUID householdId, Instant now) {
     var nowUtc = now.atOffset(ZoneOffset.UTC);
-    return dsl.update(PROFILE_HOUSEHOLD_SHARE)
-        .set(
-            PROFILE_HOUSEHOLD_SHARE.STATUS,
-            when(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(nowUtc), ProfileShareStatus.EXPIRED)
-                .otherwise(ProfileShareStatus.CANCELED))
-        .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
-        .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
-        .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
-        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
-        .execute();
+    return changed(
+        dsl.update(PROFILE_HOUSEHOLD_SHARE)
+            .set(
+                PROFILE_HOUSEHOLD_SHARE.STATUS,
+                when(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(nowUtc), ProfileShareStatus.EXPIRED)
+                    .otherwise(ProfileShareStatus.CANCELED))
+            .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
+            .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+            .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
+            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
+            .returning(CHANGED_SHARE));
   }
 
   @Override
-  public boolean tryInvalidatePending(UUID shareId, String reason, Instant now) {
-    return invalidatePending(
+  public Optional<ChangedShare> tryInvalidatePending(UUID shareId, String reason, Instant now) {
+    return onlyChanged(
+        invalidatePending(
             PROFILE_HOUSEHOLD_SHARE
                 .ID
                 .eq(shareId)
                 .and(unexpiredAt(val(now.atOffset(ZoneOffset.UTC)))),
             reason,
-            now)
-        > 0;
+            now));
   }
 
   @Override
-  public int invalidatePendingOfferedBy(UUID offererAccountId, String reason, Instant now) {
+  public List<ChangedShare> invalidatePendingOfferedBy(
+      UUID offererAccountId, String reason, Instant now) {
     var nowUtc = now.atOffset(ZoneOffset.UTC);
     return invalidatePending(
         PROFILE_HOUSEHOLD_SHARE
@@ -71,15 +84,29 @@ public class ProfileHouseholdShareRepositoryCustomImpl
         now);
   }
 
-  private int invalidatePending(Condition scope, String reason, Instant now) {
+  private List<ChangedShare> invalidatePending(Condition scope, String reason, Instant now) {
     var nowUtc = now.atOffset(ZoneOffset.UTC);
-    return dsl.update(PROFILE_HOUSEHOLD_SHARE)
-        .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.INVALIDATED)
-        .set(PROFILE_HOUSEHOLD_SHARE.INVALIDATION_REASON, reason)
-        .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
-        .where(scope)
-        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
-        .execute();
+    return changed(
+        dsl.update(PROFILE_HOUSEHOLD_SHARE)
+            .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.INVALIDATED)
+            .set(PROFILE_HOUSEHOLD_SHARE.INVALIDATION_REASON, reason)
+            .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
+            .where(scope)
+            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
+            .returning(CHANGED_SHARE));
+  }
+
+  private static List<ChangedShare> changed(UpdateResultStep<ProfileHouseholdShareRecord> update) {
+    return update.fetch().map(ProfileHouseholdShareRepositoryCustomImpl::changedShare);
+  }
+
+  private static ChangedShare changedShare(ProfileHouseholdShareRecord record) {
+    return new ChangedShare(record.getId(), record.getProfileId(), record.getHouseholdId());
+  }
+
+  // Each single-share write names its share by id, so it changes at most one row.
+  private static Optional<ChangedShare> onlyChanged(List<ChangedShare> changed) {
+    return changed.stream().findFirst();
   }
 
   @Override
@@ -148,50 +175,54 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public boolean tryActivatePending(UUID shareId, Instant now) {
-    return dsl.update(PROFILE_HOUSEHOLD_SHARE)
-            .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
-            .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-            .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
-            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
-            .and(unexpiredAt(val(now.atOffset(ZoneOffset.UTC))))
-            .execute()
-        > 0;
+  public Optional<ChangedShare> tryActivatePending(UUID shareId, Instant now) {
+    return onlyChanged(
+        changed(
+            dsl.update(PROFILE_HOUSEHOLD_SHARE)
+                .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
+                .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
+                .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
+                .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
+                .and(unexpiredAt(val(now.atOffset(ZoneOffset.UTC))))
+                .returning(CHANGED_SHARE)));
   }
 
   @Override
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  public boolean tryDeclinePending(
+  public Optional<ChangedShare> tryDeclinePending(
       UUID shareId, com.streamarr.server.domain.auth.ProfileShareStatus target, Instant now)
       throws IllegalArgumentException {
     ProfileHouseholdShareRepositoryCustom.requireDeclineTarget(target);
     var nowUtc = now.atOffset(ZoneOffset.UTC);
-    return dsl.update(PROFILE_HOUSEHOLD_SHARE)
-            .set(
-                PROFILE_HOUSEHOLD_SHARE.STATUS,
-                when(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(nowUtc), ProfileShareStatus.EXPIRED)
-                    .otherwise(ProfileShareStatus.valueOf(target.name())))
-            .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-            .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
-            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
-            .execute()
-        > 0;
+    return onlyChanged(
+        changed(
+            dsl.update(PROFILE_HOUSEHOLD_SHARE)
+                .set(
+                    PROFILE_HOUSEHOLD_SHARE.STATUS,
+                    when(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(nowUtc), ProfileShareStatus.EXPIRED)
+                        .otherwise(ProfileShareStatus.valueOf(target.name())))
+                .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
+                .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
+                .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
+                .returning(CHANGED_SHARE)));
   }
 
   @Override
-  public boolean tryEndActive(UUID shareId, Instant now) {
-    return dsl.update(PROFILE_HOUSEHOLD_SHARE)
-            .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ENDED)
-            .set(PROFILE_HOUSEHOLD_SHARE.ENDED_AT, now.atOffset(ZoneOffset.UTC))
-            .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
-            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE))
-            .execute()
-        > 0;
+  public Optional<ChangedShare> tryEndActive(UUID shareId, Instant now) {
+    return onlyChanged(
+        changed(
+            dsl.update(PROFILE_HOUSEHOLD_SHARE)
+                .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ENDED)
+                .set(PROFILE_HOUSEHOLD_SHARE.ENDED_AT, now.atOffset(ZoneOffset.UTC))
+                .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId))
+                .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE))
+                .returning(CHANGED_SHARE)));
   }
 
   @Override
-  public void ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now) {
-    materializeExpiredPending(profileId, householdId, now);
+  public List<ChangedShare> ensureActiveMembershipShare(
+      UUID profileId, UUID householdId, Instant now) {
+    var changed = new ArrayList<>(materializeExpiredPending(profileId, householdId, now));
     var timestamp = now.atOffset(ZoneOffset.UTC);
     dsl.insertInto(PROFILE_HOUSEHOLD_SHARE)
         .set(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, profileId)
@@ -207,11 +238,15 @@ public class ProfileHouseholdShareRepositoryCustomImpl
         .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
         .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
         .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
-        .execute();
+        .returning(CHANGED_SHARE)
+        .fetch()
+        .forEach(record -> changed.add(changedShare(record)));
+    return List.copyOf(changed);
   }
 
-  private void materializeExpiredPending(UUID profileId, UUID householdId, Instant now) {
-    materializeExpiredPending(
+  private List<ChangedShare> materializeExpiredPending(
+      UUID profileId, UUID householdId, Instant now) {
+    return materializeExpiredPending(
         PROFILE_HOUSEHOLD_SHARE
             .PROFILE_ID
             .eq(profileId)
@@ -219,49 +254,60 @@ public class ProfileHouseholdShareRepositoryCustomImpl
         now);
   }
 
-  private void materializeExpiredPending(UUID profileId, Instant now) {
-    materializeExpiredPending(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId), now);
+  private List<ChangedShare> materializeExpiredPending(UUID profileId, Instant now) {
+    return materializeExpiredPending(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId), now);
   }
 
-  private void materializeExpiredPending(Condition scope, Instant now) {
+  private List<ChangedShare> materializeExpiredPending(Condition scope, Instant now) {
     var nowUtc = now.atOffset(ZoneOffset.UTC);
-    dsl.update(PROFILE_HOUSEHOLD_SHARE)
-        .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.EXPIRED)
-        .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
-        .where(scope)
-        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
-        .and(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(nowUtc))
-        .execute();
+    return changed(
+        dsl.update(PROFILE_HOUSEHOLD_SHARE)
+            .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.EXPIRED)
+            .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, nowUtc)
+            .where(scope)
+            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
+            .and(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(nowUtc))
+            .returning(CHANGED_SHARE));
   }
 
   @Override
-  public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
-    materializeExpiredPending(profileId, now);
-    return invalidatePending(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId), reason, now);
+  public List<ChangedShare> invalidatePendingByProfileId(
+      UUID profileId, String reason, Instant now) {
+    return concat(
+        materializeExpiredPending(profileId, now),
+        invalidatePending(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId), reason, now));
   }
 
   @Override
-  public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId) {
-    dsl.update(PROFILE_HOUSEHOLD_SHARE)
-        .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, false)
-        .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
-        .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
-        .and(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL.isTrue())
-        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE))
-        .execute();
+  public List<ChangedShare> convertMembershipShareToVisitorShare(UUID profileId, UUID householdId) {
+    return changed(
+        dsl.update(PROFILE_HOUSEHOLD_SHARE)
+            .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, false)
+            .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+            .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
+            .and(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL.isTrue())
+            .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE))
+            .returning(CHANGED_SHARE));
   }
 
   @Override
-  public int invalidatePendingOffersByProfileIdAndOffererAccountId(
+  public List<ChangedShare> invalidatePendingOffersByProfileIdAndOffererAccountId(
       UUID profileId, UUID offererAccountId, String reason, Instant now) {
-    materializeExpiredPending(profileId, now);
-    return invalidatePending(
-        PROFILE_HOUSEHOLD_SHARE
-            .PROFILE_ID
-            .eq(profileId)
-            .and(PROFILE_HOUSEHOLD_SHARE.OFFERED_BY_ACCOUNT_ID.eq(offererAccountId)),
-        reason,
-        now);
+    return concat(
+        materializeExpiredPending(profileId, now),
+        invalidatePending(
+            PROFILE_HOUSEHOLD_SHARE
+                .PROFILE_ID
+                .eq(profileId)
+                .and(PROFILE_HOUSEHOLD_SHARE.OFFERED_BY_ACCOUNT_ID.eq(offererAccountId)),
+            reason,
+            now));
+  }
+
+  private static List<ChangedShare> concat(List<ChangedShare> first, List<ChangedShare> second) {
+    var changed = new ArrayList<>(first);
+    changed.addAll(second);
+    return List.copyOf(changed);
   }
 
   @Override

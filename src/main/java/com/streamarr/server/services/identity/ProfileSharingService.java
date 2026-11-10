@@ -13,6 +13,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -56,6 +57,7 @@ public class ProfileSharingService {
 
   private final AuthorizationService authorizationService;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final ProfileRepository profileRepository;
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
@@ -91,8 +93,8 @@ public class ProfileSharingService {
           }
 
           var now = clock.instant();
-          shareRepository.supersedePending(profileId, householdId, now);
-          return shareRepository.saveAndFlush(
+          shareLifecycle.supersedePending(profileId, householdId, now);
+          return shareLifecycle.create(
               ProfileHouseholdShare.builder()
                   .profileId(profileId)
                   .householdId(householdId)
@@ -251,7 +253,7 @@ public class ProfileSharingService {
               rejection -> {
                 throw new MutationRejection(rejection);
               });
-          if (!shareRepository.tryDeclinePending(shareId, target, clock.instant())) {
+          if (!shareLifecycle.tryDeclinePending(shareId, target, clock.instant())) {
             throw new MutationRejection(new ShareRejections.ShareNotPending());
           }
 
@@ -285,7 +287,7 @@ public class ProfileSharingService {
       return invalidateUnauthorizedOffer(shareId);
     }
 
-    if (!shareRepository.tryActivatePending(shareId, clock.instant())) {
+    if (!shareLifecycle.tryActivatePending(shareId, clock.instant())) {
       throw new MutationRejection(notPending(shareId));
     }
 
@@ -293,7 +295,7 @@ public class ProfileSharingService {
   }
 
   private ProfileHouseholdShare invalidateUnauthorizedOffer(UUID shareId) {
-    if (!shareRepository.tryInvalidatePending(
+    if (!shareLifecycle.tryInvalidatePending(
         shareId, "offerer no longer authorized", clock.instant())) {
       throw new MutationRejection(notPending(shareId));
     }
@@ -334,7 +336,7 @@ public class ProfileSharingService {
           profileRepository.lockSharedByShareId(shareId);
           authorize.run();
           var now = clock.instant();
-          if (!shareRepository.tryEndActive(shareId, now)) {
+          if (!shareLifecycle.tryEndActive(shareId, now)) {
             throw new MutationRejection(refusals.notActive().get());
           }
 

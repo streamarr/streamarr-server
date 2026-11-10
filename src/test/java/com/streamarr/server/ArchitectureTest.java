@@ -1,5 +1,6 @@
 package com.streamarr.server;
 
+import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.core.domain.JavaCall.Predicates.target;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.RECORDS;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.assignableTo;
@@ -7,6 +8,7 @@ import static com.tngtech.archunit.core.domain.JavaClass.Predicates.equivalentTo
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.core.domain.properties.CanBeAnnotated.Predicates.annotatedWith;
 import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.name;
+import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.nameMatching;
 import static com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.With.owner;
 import static com.tngtech.archunit.core.domain.properties.HasParameterTypes.Predicates.rawParameterTypes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
@@ -41,6 +43,7 @@ import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.architecturefixture.PasswordEncodingResolverFixture;
 import com.streamarr.server.properties.architecturefixture.DomainDependentPropertiesFixture;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.CreditService;
 import com.streamarr.server.services.GenreService;
@@ -48,6 +51,7 @@ import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.RootServiceCycleFixture;
 import com.streamarr.server.services.architecturefixture.DirectAccountPasswordMatchFixture;
 import com.streamarr.server.services.architecturefixture.DirectGenreServiceFixture;
+import com.streamarr.server.services.architecturefixture.DirectShareWriteFixture;
 import com.streamarr.server.services.architecturefixture.IncomingHttpServiceFixture;
 import com.streamarr.server.services.architecturefixture.IncomingWebRequestServiceFixture;
 import com.streamarr.server.services.architecturefixture.ReactiveServiceFixture;
@@ -56,6 +60,7 @@ import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordTimingEqualizer;
 import com.streamarr.server.services.auth.ProfilePinVerifier;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.auth.architecturefixture.RequestServiceThreads;
 import com.streamarr.server.services.authorization.AuthorizationDecider;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -449,6 +454,11 @@ class ArchitectureTest {
   @ArchTest
   static final ArchRule onlyCreditServiceMaySaveCredits = onlyCreditServiceMaySaveCredits();
 
+  // Every write of a Profile share sits in ProfileShareLifecycle, so one class names every way a
+  // share changes. The repository's reads stay open to every service.
+  @ArchTest
+  static final ArchRule onlyTheShareLifecycleMayWriteShares = onlyTheShareLifecycleMayWriteShares();
+
   // Authenticated Account-password checks share one throttle and timing contract. Login is exempt
   // because no authenticated Account exists yet.
   @ArchTest
@@ -694,6 +704,16 @@ class ArchitectureTest {
     assertThatThrownBy(() -> onlyCreditServiceMaySaveCredits().check(directGenreSave))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("GenreService");
+  }
+
+  @Test
+  @DisplayName("Should reject a direct share write when a service bypasses the share lifecycle")
+  void shouldRejectADirectShareWriteWhenAServiceBypassesTheShareLifecycle() {
+    var directShareWrite = new ClassFileImporter().importClasses(DirectShareWriteFixture.class);
+
+    assertThatThrownBy(() -> onlyTheShareLifecycleMayWriteShares().check(directShareWrite))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("tryEndActive");
   }
 
   @ParameterizedTest
@@ -1005,6 +1025,17 @@ class ArchitectureTest {
             "Service domains must form a directed acyclic graph — a cycle means neither domain"
                 + " can be understood, tested, or extracted without the other, and it lets a"
                 + " change in one silently reach back through the other");
+  }
+
+  private static ArchRule onlyTheShareLifecycleMayWriteShares() {
+    return noClasses()
+        .that()
+        .doNotBelongToAnyOf(ProfileShareLifecycle.class)
+        .should()
+        .callMethodWhere(
+            target(owner(assignableTo(ProfileHouseholdShareRepository.class)))
+                .and(target(not(nameMatching("(find|exists|count|is|has|lock|rows|flush).*")))))
+        .as("Only ProfileShareLifecycle may write Profile shares");
   }
 
   private static ArchRule onlyCreditServiceMaySaveCredits() {

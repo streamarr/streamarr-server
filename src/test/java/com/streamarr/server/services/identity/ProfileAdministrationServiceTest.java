@@ -31,6 +31,7 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfilePinHasher;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -88,6 +89,7 @@ class ProfileAdministrationServiceTest {
           profiles,
           managers,
           shares,
+          new ProfileShareLifecycle(shares),
           households,
           accounts,
           invitations,
@@ -1156,6 +1158,7 @@ class ProfileAdministrationServiceTest {
         profileRepository,
         managers,
         shares,
+        new ProfileShareLifecycle(shares),
         households,
         accounts,
         invitations,

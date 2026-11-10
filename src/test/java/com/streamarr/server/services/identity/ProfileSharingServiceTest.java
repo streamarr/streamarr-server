@@ -27,6 +27,7 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -81,6 +82,7 @@ class ProfileSharingServiceTest {
         new ProfileSharingService(
             authorization,
             shares,
+            new ProfileShareLifecycle(shares),
             profiles,
             households,
             accounts,
