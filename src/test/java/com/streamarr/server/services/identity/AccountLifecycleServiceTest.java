@@ -157,6 +157,28 @@ class AccountLifecycleServiceTest {
         .isPresent();
   }
 
+  @Test
+  @DisplayName(
+      "Should announce an earlier share into the destination when the Account and its Personal"
+          + " Profile move there")
+  void shouldAnnounceEarlierShareIntoDestinationWhenAccountAndPersonalProfileMoveThere() {
+    // Nothing writes the declined offer, yet the Profile stops being a visitor there.
+    var declinedOffer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(mover.getPersonalProfileId())
+                .householdId(destination.getId())
+                .status(ProfileShareStatus.REJECTED)
+                .build());
+
+    assertThat(service.transferAccount(identity(), transferCommand().build()))
+        .isEqualTo(Outcome.accepted(mover));
+
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .extracting(ProfileShareChangedEvent::share)
+        .contains(ChangedShare.of(declinedOffer));
+  }
+
   @ParameterizedTest
   @EnumSource(SourceHouseholdAccess.class)
   @DisplayName("Should reset playback selection when an Account transfers Households")

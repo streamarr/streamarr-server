@@ -115,6 +115,19 @@ public class ProfileShareLifecycle {
         .forEach(share -> announce(ChangedShare.of(share)));
   }
 
+  /**
+   * Announces the Profile's shares into the Households it moves between. Whether the Profile is a
+   * visitor there changes with the move, even for a share the move does not write.
+   */
+  public void announceMove(UUID profileId, UUID sourceHouseholdId, UUID destinationHouseholdId) {
+    shareRepository.findByProfileId(profileId).stream()
+        .filter(
+            share ->
+                share.getHouseholdId().equals(sourceHouseholdId)
+                    || share.getHouseholdId().equals(destinationHouseholdId))
+        .forEach(share -> announce(ChangedShare.of(share)));
+  }
+
   private boolean announced(Optional<ChangedShare> changed) {
     changed.ifPresent(this::announce);
     return changed.isPresent();

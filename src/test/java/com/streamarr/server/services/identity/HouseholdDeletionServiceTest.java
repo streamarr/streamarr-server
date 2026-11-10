@@ -382,6 +382,31 @@ class HouseholdDeletionServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should announce an earlier share into the destination when the final Account's Profile is"
+          + " kept there")
+  void shouldAnnounceEarlierShareIntoDestinationWhenFinalAccountsProfileIsKeptThere() {
+    var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
+    // Nothing writes the declined offer, yet the Profile stops being a visitor there.
+    var declinedOffer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(lastResident.getPersonalProfileId())
+                .householdId(refuge.getId())
+                .status(ProfileShareStatus.REJECTED)
+                .build());
+
+    assertThat(
+            service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
+                identity(), preservationCommand().build()))
+        .isInstanceOf(Outcome.Accepted.class);
+
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .extracting(ProfileShareChangedEvent::share)
+        .contains(ChangedShare.of(declinedOffer));
+  }
+
+  @Test
   @DisplayName("Should report deletion impact when the caller may view the Household")
   void shouldReportDeletionImpactWhenCallerMayViewHousehold() {
     residentOf(doomed, HouseholdRole.ADMIN);

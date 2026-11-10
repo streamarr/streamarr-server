@@ -103,6 +103,8 @@ public class ProfileLifecycleService {
             throw new MutationRejection(new TransferRejections.ProfileNotFound());
           }
 
+          shareLifecycle.announceMove(
+              command.profileId(), sourceHouseholdId, command.destinationHouseholdId());
           endHomeAvailability(command.profileId(), sourceHouseholdId, now);
           // Invalidate pending offers before creating the destination share to avoid a
           // uniqueness conflict.
