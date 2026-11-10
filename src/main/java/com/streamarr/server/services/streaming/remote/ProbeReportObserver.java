@@ -11,6 +11,8 @@ import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -20,9 +22,9 @@ import lombok.extern.slf4j.Slf4j;
  * probe report, one message at a time. At the half-close it checks the report, completes the probe
  * attempt and answers once.
  *
- * <p>The monitor orders gRPC's callbacks with the end of the worker session and with the grant of
- * room in the memory budget, which arrive on other threads. A method that holds the monitor never
- * takes a monitor of the worker connections.
+ * <p>The monitor orders gRPC's callbacks with the end of the worker session, the grant of room in
+ * the memory budget and the idle timeout, which arrive on other threads. A method that holds the
+ * monitor never takes a monitor of the worker connections.
  */
 @Slf4j
 final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequest> {
@@ -40,6 +42,9 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
   private ByteString received = ByteString.EMPTY;
   // Unset until the metadata states a length that the server may read.
   private ProbeReportMemoryBudget.Reservation room;
+  // Runs while the server has asked for a message that has not arrived. Unset otherwise, so the
+  // time that the report waits for room never counts.
+  private CompletableFuture<Void> idleTimer;
   private boolean closed;
 
   @Builder
@@ -61,7 +66,43 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
   /** Asks for the first message. gRPC requires this before the service method returns. */
   synchronized void start() {
     call.disableAutoRequest();
+    requestMessage();
+  }
+
+  private void requestMessage() {
+    var timer =
+        new CompletableFuture<Void>()
+            .orTimeout(limits.idleTimeout().toNanos(), TimeUnit.NANOSECONDS);
+    idleTimer = timer;
+    // Never run transport callbacks on CompletableFuture's shared timeout thread.
+    timer.exceptionally(
+        _ -> {
+          Thread.ofVirtual().name("probe-report-idle").start(() -> endIfStillIdle(timer));
+          return null;
+        });
     call.request(1);
+  }
+
+  private void stopIdleTimer() {
+    if (idleTimer == null) {
+      return;
+    }
+
+    idleTimer.complete(null);
+    idleTimer = null;
+  }
+
+  // A message, the half-close or the end of the call may have arrived while this waited for the
+  // monitor.
+  private synchronized void endIfStillIdle(CompletableFuture<Void> expired) {
+    if (closed || idleTimer != expired) {
+      return;
+    }
+
+    failAttemptForRetry("Worker's probe report call sent no message within the idle timeout");
+    end(
+        Status.DEADLINE_EXCEEDED.withDescription(
+            "Probe report call sent no message within the idle timeout"));
   }
 
   @Override
@@ -70,6 +111,7 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
       return;
     }
 
+    stopIdleTimer();
     if (attempt == null) {
       admit(request);
       return;
@@ -116,7 +158,7 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
     // The server reads no byte of the report before the whole report has room.
     room = memoryBudget.reserve(statedLength, this::readOnceRoomIsFree);
     if (room.isGrantedAtOnce()) {
-      call.request(1);
+      requestMessage();
     }
   }
 
@@ -125,7 +167,7 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
       return;
     }
 
-    call.request(1);
+    requestMessage();
   }
 
   // A message that is not data holds no bytes either.
@@ -141,9 +183,9 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
     }
 
     received = received.concat(data);
-    // Also after the last byte: a further message breaks the contract, and the half-close needs no
-    // request.
-    call.request(1);
+    // Also after the last byte: a further message breaks the contract, and the idle timeout then
+    // bounds the wait for the half-close, which needs no request.
+    requestMessage();
   }
 
   @Override
@@ -152,6 +194,7 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
       return;
     }
 
+    stopIdleTimer();
     if (attempt == null) {
       end(Status.INVALID_ARGUMENT.withDescription("Probe report metadata is required"));
       return;
@@ -248,6 +291,7 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
 
   private void close() {
     closed = true;
+    stopIdleTimer();
     received = ByteString.EMPTY;
     if (room != null) {
       room.close();

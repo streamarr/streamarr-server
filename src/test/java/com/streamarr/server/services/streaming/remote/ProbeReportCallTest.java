@@ -17,12 +17,14 @@ import com.streamarr.transcode.v1.ReportProbeAttemptRequest;
 import com.streamarr.transcode.v1.ReportProbeAttemptResponse;
 import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import io.grpc.Status;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.stream.Stream;
 import org.assertj.core.api.InstanceOfAssertFactories;
@@ -48,6 +50,7 @@ class ProbeReportCallTest {
   private static final ProbeReportLimits TIGHT_MEMORY =
       ProbeReportLimits.builder().lengthLimitBytes(150_000).memoryBudgetBytes(200_000).build();
   private static final int KEYFRAMES_OF_LARGE_REPORT = 7_000;
+  private static final Duration SHORT_IDLE_TIMEOUT = Duration.ofMillis(250);
 
   @Test
   @DisplayName(
@@ -832,6 +835,115 @@ class ProbeReportCallTest {
     assertThat(later.unreadDemand()).isEqualTo(1);
   }
 
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(Progress.class)
+  @DisplayName(
+      "Should end the report call as overdue and fail its probe for a retry when the server asked"
+          + " for a message and none arrives within the idle timeout")
+  void shouldEndReportCallAsOverdueAndFailItsProbeForRetryWhenNoMessageArrivesWithinIdleTimeout(
+      Progress progress) throws Exception {
+    var worker =
+        ReportingWorker.connectedTo(
+            ProbeReportLimits.builder().idleTimeout(SHORT_IDLE_TIMEOUT).build());
+    var probe = worker.dispatch();
+    var call = worker.openReportCall();
+
+    progress.send(call, worker.metadata(probe.request()), probe.request());
+
+    assertThat(call.awaitRefusal()).isEqualTo(Status.Code.DEADLINE_EXCEEDED);
+    assertThatThrownBy(() -> probe.outcome().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .cause()
+        .isExactlyInstanceOf(ProbeExecutionException.class)
+        .asInstanceOf(InstanceOfAssertFactories.type(ProbeExecutionException.class))
+        .extracting(ProbeExecutionException::reason)
+        .isEqualTo(ItemFailureReason.TEMPORARY);
+    assertThat(worker.isConnected()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should end the report call as overdue and leave every probe pending when its first message"
+          + " does not arrive within the idle timeout")
+  void shouldEndReportCallAsOverdueAndLeaveEveryProbePendingWhenItsFirstMessageDoesNotArrive()
+      throws Exception {
+    var worker =
+        ReportingWorker.connectedTo(
+            ProbeReportLimits.builder().idleTimeout(SHORT_IDLE_TIMEOUT).build());
+    var probe = worker.dispatch();
+
+    var call = worker.openReportCall();
+
+    assertThat(call.awaitRefusal()).isEqualTo(Status.Code.DEADLINE_EXCEEDED);
+    assertThat(probe.outcome()).isNotDone();
+    assertThat(worker.openReportCall().isOpen()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should give a report call the whole idle timeout again for its next message when a message"
+          + " arrives")
+  void shouldGiveReportCallWholeIdleTimeoutAgainForItsNextMessageWhenMessageArrives()
+      throws Exception {
+    var idleTimeout = Duration.ofMillis(600);
+    var worker =
+        ReportingWorker.connectedTo(
+            WorkerSessionServerConfiguration.builder()
+                .probeTimeout(idleTimeout.dividedBy(2))
+                .probeReportLimits(ProbeReportLimits.builder().idleTimeout(idleTimeout).build()));
+    var call = worker.openReportCall();
+    var silent = worker.openReportCall();
+    var probe = worker.dispatch();
+    var bytes = invalidMedia(probe.request()).build().toByteString();
+    // The probe's timeout marks half of the idle timeout since the report calls opened.
+    assertThatThrownBy(() -> probe.outcome().get(5, TimeUnit.SECONDS))
+        .hasCauseInstanceOf(TimeoutException.class);
+    call.sendMetadata(worker.metadata(probe.request()).setReportLengthBytes(bytes.size()));
+    call.sendData(bytes);
+
+    // The silent call marks the whole idle timeout since the report calls opened.
+    silent.awaitRefusal();
+    call.halfClose();
+
+    assertThat(call.answer().get(1, TimeUnit.SECONDS).getAcceptedLengthBytes())
+        .isEqualTo(bytes.size());
+  }
+
+  @Test
+  @DisplayName(
+      "Should not end a report call as overdue when it waits longer than the idle timeout for the"
+          + " memory budget")
+  void shouldNotEndReportCallAsOverdueWhenItWaitsLongerThanIdleTimeoutForMemoryBudget()
+      throws Exception {
+    var worker =
+        ReportingWorker.connectedTo(
+            ProbeReportLimits.builder()
+                .lengthLimitBytes(TIGHT_MEMORY.lengthLimitBytes())
+                .memoryBudgetBytes(TIGHT_MEMORY.memoryBudgetBytes())
+                .idleTimeout(SHORT_IDLE_TIMEOUT)
+                .build());
+    holdRoomForLargeReport(worker);
+    var nextHolder = holdRoomForLargeReport(worker);
+    var probe = worker.dispatch();
+    // Too long to fit beside a large report, so it gets room only when both holders have ended.
+    var report = withWidestKeyframes(invalidMedia(probe.request()), 4_000).build();
+    var bytes = report.toByteString();
+    var waiting = worker.openReportCall();
+    waiting.sendMetadata(worker.metadata(probe.request()).setReportLengthBytes(bytes.size()));
+    var demandWhileWaiting = waiting.unreadDemand();
+
+    // Each holder is overdue one idle timeout after it got its room, so the last call has waited
+    // two idle timeouts for room by now.
+    nextHolder.awaitRefusal();
+    waiting.sendData(bytes);
+    waiting.halfClose();
+
+    assertThat(demandWhileWaiting).isZero();
+    assertThat(waiting.answer().get(1, TimeUnit.SECONDS).getAcceptedLengthBytes())
+        .isEqualTo(bytes.size());
+    assertThat(probe.outcome().get(1, TimeUnit.SECONDS)).isEqualTo(report);
+  }
+
   /** A report call that the server reads and that holds the room of a large report. */
   private static ReportCall holdRoomForLargeReport(ReportingWorker worker) throws Exception {
     var probe = worker.dispatch();
@@ -852,13 +964,18 @@ class ProbeReportCallTest {
     return call;
   }
 
-  /** A report of about 140,000 bytes: each keyframe takes the widest encoding twice. */
+  /** A report of about 140,000 bytes. */
   private static ProbeAttemptReport largeReport(ProbeRequest request) {
-    var widestDeltas = Collections.nCopies(KEYFRAMES_OF_LARGE_REPORT, Long.MIN_VALUE);
-    return invalidMedia(request)
+    return withWidestKeyframes(invalidMedia(request), KEYFRAMES_OF_LARGE_REPORT).build();
+  }
+
+  /** Adds this many keyframes of 20 bytes: each takes the widest encoding twice. */
+  private static ProbeAttemptReport.Builder withWidestKeyframes(
+      ProbeAttemptReport.Builder report, int keyframes) {
+    var widestDeltas = Collections.nCopies(keyframes, Long.MIN_VALUE);
+    return report
         .addAllKeyframePresentationTimeDeltas(widestDeltas)
-        .addAllKeyframeDecodeTimeDeltas(widestDeltas)
-        .build();
+        .addAllKeyframeDecodeTimeDeltas(widestDeltas);
   }
 
   /** A report with as many keyframes and measured keyframe intervals as the limits allow. */

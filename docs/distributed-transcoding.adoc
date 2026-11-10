@@ -207,6 +207,8 @@ A worker reports the keyframes of a file with more keyframes as unavailable, and
 A worker leaves a larger measurement out of a probe.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_LENGTH_LIMIT` sets `probe_report_length_limit_bytes`, the length of the longest probe report. It defaults to `16MB` and must be at least `128KB`, the limit of one message.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT` bounds how long the server waits for a message that it asked for on a report call. It defaults to `30s`.
+When no message arrives in that time, the server ends the report call with `DEADLINE_EXCEEDED`, and the probe runs again.
+The time that a probe report waits for the memory budget does not count, and no bound covers the whole probe report.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_MEMORY_BUDGET` bounds the bytes of probe reports that the server reads at once. It defaults to `64MB` and must be at least the length limit.
 This budget is separate from the 512 MiB of declared segment payload.
 The server reserves the length that the first message states before it reads any byte of the probe report, and releases it when the report call ends.
