@@ -39,6 +39,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -101,14 +103,13 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
     assertThat(positionsRowCount(file.getId())).isZero();
   }
 
-  @Test
-  @DisplayName("Should store unavailable keyframes without positions")
-  void shouldStoreUnavailableKeyframesWithoutPositions() {
+  @ParameterizedTest
+  @EnumSource(KeyframesUnavailableReason.class)
+  @DisplayName("Should store the reason without positions when keyframes are unavailable")
+  void shouldStoreTheReasonWithoutPositionsWhenKeyframesAreUnavailable(
+      KeyframesUnavailableReason reason) {
     var file = createMediaFile();
-    var outcome =
-        success(
-            new KeyframeKnowledge.Unavailable(
-                KeyframesUnavailableReason.KEYFRAME_WITHOUT_TIMESTAMP));
+    var outcome = success(new KeyframeKnowledge.Unavailable(reason));
 
     repository.publish(publication(file.getId(), SNAPSHOT_A, outcome));
 
