@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -146,6 +147,32 @@ class BitrateScanExecutionTest {
   }
 
   @Test
+  @DisplayName(
+      "Should ask for a chunk whose keyframes, each measured in every measured stream, fit the"
+          + " scanner's measured keyframe interval limit when the file has several measured streams")
+  void shouldAskForChunkThatFitsScannersLimitWhenFileHasSeveralMeasuredStreams() {
+    scans.storeOutcomeNeedingScan(
+        MEDIA_FILE_ID,
+        inputsBuilder(request.key())
+            .positions(positionsOf(5))
+            .audioStreamIndexes(List.of(1, 2))
+            .build());
+
+    var result = execution(measuringWithin(7)).execute(request);
+
+    // Three measured streams: two keyframes make six intervals, and a third would make nine.
+    assertThat(result).isEqualTo(new BitrateScanResult.ChunkStored());
+    assertThat(chunks)
+        .singleElement()
+        .satisfies(
+            chunk -> {
+              assertThat(chunk.measuredStreamIndexes()).containsExactly(0, 1, 2);
+              assertThat(chunk.keyframes()).isEqualTo(positionsOf(5).keyframes().subList(0, 2));
+              assertThat(chunk.end()).contains(positionsOf(5).keyframes().get(2));
+            });
+  }
+
+  @Test
   @DisplayName("Should fail the execution for a retry when the source cannot be read")
   void shouldFailTheExecutionForARetryWhenTheSourceCannotBeRead() throws IOException {
     Files.delete(source);
@@ -163,13 +190,35 @@ class BitrateScanExecutionTest {
     return BitrateScanExecution.builder()
         .scans(scans)
         .scanner(
-            chunk -> {
-              chunks.add(chunk);
-              return scanner.scanChunk(chunk);
+            new BitrateScanner() {
+              @Override
+              public BitrateScanChunkOutcome scanChunk(BitrateScanChunkRequest chunk) {
+                chunks.add(chunk);
+                return scanner.scanChunk(chunk);
+              }
+
+              @Override
+              public int measuredKeyframeIntervalLimit() {
+                return scanner.measuredKeyframeIntervalLimit();
+              }
             })
         .fileSystem(FileSystems.getDefault())
         .meterRegistry(new SimpleMeterRegistry())
         .build();
+  }
+
+  private BitrateScanner measuringWithin(int measuredKeyframeIntervalLimit) {
+    return new BitrateScanner() {
+      @Override
+      public BitrateScanChunkOutcome scanChunk(BitrateScanChunkRequest chunk) {
+        return measured(chunk);
+      }
+
+      @Override
+      public int measuredKeyframeIntervalLimit() {
+        return measuredKeyframeIntervalLimit;
+      }
+    };
   }
 
   private BitrateScanChunkOutcome measured(BitrateScanChunkRequest chunk) {
@@ -177,12 +226,29 @@ class BitrateScanExecutionTest {
   }
 
   private static BitrateScanInputs inputs(BitrateScanKey key) {
+    return inputsBuilder(key).build();
+  }
+
+  private static BitrateScanInputs.BitrateScanInputsBuilder inputsBuilder(BitrateScanKey key) {
     return BitrateScanInputs.builder()
         .key(key)
         .positions(POSITIONS)
         .containerDuration(Optional.empty())
         .audioStreamIndexes(List.of())
-        .chosenVideoHasProbedBitrate(false)
+        .chosenVideoHasProbedBitrate(false);
+  }
+
+  /** One keyframe each second of the video stream. */
+  private static KeyframePositions positionsOf(int keyframes) {
+    return KeyframePositions.builder()
+        .streamIndex(POSITIONS.streamIndex())
+        .timeBaseNumerator(POSITIONS.timeBaseNumerator())
+        .timeBaseDenominator(POSITIONS.timeBaseDenominator())
+        .source(POSITIONS.source())
+        .keyframes(
+            IntStream.range(0, keyframes)
+                .mapToObj(index -> new KeyframePosition(index * 90_000L, index * 90_000L))
+                .toList())
         .build();
   }
 

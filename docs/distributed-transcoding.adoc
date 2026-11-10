@@ -208,6 +208,7 @@ The server refuses a report call beyond that limit with `RESOURCE_EXHAUSTED`.
 A worker reports the keyframes of a file with more keyframes as unavailable, and the server encodes that file's video.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_MEASURED_KEYFRAME_INTERVAL_LIMIT` sets `measured_keyframe_interval_limit`, the most measured keyframe intervals in one probe report, added up over its measured streams. It defaults to `1000000`.
 A worker leaves a larger measurement out of a probe.
+The server sizes each bitrate scan chunk so that its keyframes, each measured in every measured stream, stay within the limit.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_LENGTH_LIMIT` sets `probe_report_length_limit_bytes`, the length of the longest probe report. It defaults to `16MB` and must be at least `128KB`, the limit of one message.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT` bounds how long the server waits for a message that it asked for on a report call. It defaults to `30s`.
 When no message arrives in that time, the server ends the report call with `DEADLINE_EXCEEDED`, and the probe runs again.

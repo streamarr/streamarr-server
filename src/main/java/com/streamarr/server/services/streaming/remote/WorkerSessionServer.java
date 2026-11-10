@@ -146,6 +146,14 @@ public final class WorkerSessionServer
   }
 
   /**
+   * The most keyframe intervals, summed over its measured streams, that one probe report may hold.
+   * The server states the same limit to each worker when it accepts the worker session.
+   */
+  public int measuredKeyframeIntervalLimit() {
+    return configuration.probeReportLimits().measuredKeyframeIntervalLimit();
+  }
+
+  /**
    * The probe capacity of the connected workers that run probes of the version in the namespace. A
    * server that has not started has no connected worker. The read never waits for a dispatch.
    */
