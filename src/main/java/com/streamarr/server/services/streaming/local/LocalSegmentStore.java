@@ -8,19 +8,30 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.channels.FileChannel;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class LocalSegmentStore implements SegmentStore {
 
+  private static final Pattern SESSION_DIRECTORY_NAME =
+      Pattern.compile("\\p{XDigit}{8}(-\\p{XDigit}{4}){3}-\\p{XDigit}{12}");
+
+  private static final String OWNER_LOCK_NAME = ".owner.lock";
+
   private final Path baseDir;
+  private volatile FileChannel folderOwnership;
   private final ConcurrentHashMap<UUID, Path> sessionDirs = new ConcurrentHashMap<>();
   private final MutexFactory<Path> initializationSegmentLocks = new MutexFactory<>();
 
@@ -133,6 +144,66 @@ public class LocalSegmentStore implements SegmentStore {
     }
   }
 
+  /**
+   * Deletes what an earlier server process left in the segment folder: its stream sessions'
+   * directories and its unpublished uploads. That process's stream sessions ended with it, so
+   * nothing else would delete them. Any other entry is not this store's and stays, and so does
+   * everything while another running store holds the folder.
+   */
+  public void reclaimLeftovers() {
+    try {
+      Files.createDirectories(baseDir);
+      if (!tryOwnFolder()) {
+        log.warn("Another running server holds the segment folder {}; nothing reclaimed", baseDir);
+        return;
+      }
+
+      reclaimEntries();
+    } catch (IOException e) {
+      log.warn("Failed to reclaim the segment folder's leftovers: {}", baseDir, e);
+    }
+  }
+
+  // The operating system releases the lock when the owning process ends, however it ends, so a
+  // lock that can be taken proves that no running server still serves from the folder.
+  private boolean tryOwnFolder() throws IOException {
+    var channel =
+        FileChannel.open(
+            baseDir.resolve(OWNER_LOCK_NAME), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+    try {
+      if (channel.tryLock() != null) {
+        folderOwnership = channel;
+        return true;
+      }
+    } catch (OverlappingFileLockException _) {
+      // Another store of this process holds the folder.
+    }
+
+    channel.close();
+    return false;
+  }
+
+  private void reclaimEntries() throws IOException {
+    try (var entries = Files.newDirectoryStream(baseDir)) {
+      for (var entry : entries) {
+        reclaim(entry);
+      }
+    }
+  }
+
+  private void reclaim(Path entry) throws IOException {
+    var name = entry.getFileName().toString();
+    var isDirectory = Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS);
+    if (isDirectory && SESSION_DIRECTORY_NAME.matcher(name).matches()) {
+      deleteDirectoryRecursively(entry);
+      return;
+    }
+
+    if (!isDirectory && PreparedSegmentFile.isTemporaryName(name)) {
+      Files.deleteIfExists(entry);
+    }
+  }
+
   public void shutdown() {
     sessionDirs.forEach(
         (id, dir) -> {
@@ -141,6 +212,21 @@ public class LocalSegmentStore implements SegmentStore {
           }
         });
     sessionDirs.clear();
+    releaseFolder();
+  }
+
+  private void releaseFolder() {
+    var ownership = folderOwnership;
+    folderOwnership = null;
+    if (ownership == null) {
+      return;
+    }
+
+    try {
+      ownership.close();
+    } catch (IOException e) {
+      log.warn("Failed to release the segment folder: {}", baseDir, e);
+    }
   }
 
   private Path resolveSegmentPath(UUID sessionId, String segmentName) {

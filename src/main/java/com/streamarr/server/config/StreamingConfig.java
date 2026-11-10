@@ -54,7 +54,9 @@ public class StreamingConfig {
 
   @Bean
   public LocalSegmentStore segmentStore(StreamingProperties properties) {
-    return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
+    var store = new LocalSegmentStore(Path.of(properties.segmentBasePath()));
+    store.reclaimLeftovers();
+    return store;
   }
 
   @Bean

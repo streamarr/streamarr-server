@@ -31,7 +31,7 @@ final class PreparedSegmentFile implements AutoCloseable {
 
     @Override
     public Path createTemporary(Path directory) throws IOException {
-      return Files.createTempFile(directory, ".upload-", ".tmp");
+      return Files.createTempFile(directory, TEMPORARY_PREFIX, TEMPORARY_SUFFIX);
     }
 
     @Override
@@ -66,12 +66,19 @@ final class PreparedSegmentFile implements AutoCloseable {
     }
   }
 
+  private static final String TEMPORARY_PREFIX = ".upload-";
+  private static final String TEMPORARY_SUFFIX = ".tmp";
+
   private final FileOperations files;
   private final Path temporary;
 
   private PreparedSegmentFile(FileOperations files, Path temporary) {
     this.files = files;
     this.temporary = temporary;
+  }
+
+  static boolean isTemporaryName(String fileName) {
+    return fileName.startsWith(TEMPORARY_PREFIX) && fileName.endsWith(TEMPORARY_SUFFIX);
   }
 
   static PreparedSegmentFile create(Path directory, byte[] data) throws IOException {
