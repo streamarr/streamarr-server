@@ -35,7 +35,9 @@ import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.RuntimeSt
 import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.WorkerDependency;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.controllers.architecturefixture.DirectControllerAccountPasswordMatchFixture;
+import com.streamarr.server.domain.architecturefixture.ExceptionsPackageDomainFixture;
 import com.streamarr.server.domain.media.ImageSize;
+import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.architecturefixture.PasswordEncodingResolverFixture;
 import com.streamarr.server.properties.architecturefixture.DomainDependentPropertiesFixture;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
@@ -668,6 +670,20 @@ class ArchitectureTest {
                 .evaluate(directDeciderDependency)
                 .hasViolation())
         .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject an exceptions dependency when a domain type throws one")
+  void shouldRejectExceptionsDependencyWhenDomainTypeThrowsOne() {
+    var domain = new ClassFileImporter().importClasses(ExceptionsPackageDomainFixture.class);
+
+    assertThat(domainMustNotDependOnOuterLayers.evaluate(domain).getFailureReport().getDetails())
+        .anySatisfy(
+            detail ->
+                assertThat(detail)
+                    .contains(
+                        ExceptionsPackageDomainFixture.class.getName(),
+                        InvalidIdException.class.getName()));
   }
 
   @Test
