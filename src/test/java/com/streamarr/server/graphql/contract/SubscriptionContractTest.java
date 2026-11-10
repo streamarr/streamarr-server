@@ -23,9 +23,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The subscription schema contract from ADR 0042: every field is nullable so a field error never
- * ends the operation, every field but the ServerAdmin fields requires a selected Profile with
- * ViewProfileActivity, a removed library is identified by id alone, and a watch-state change lists
- * its items, each nullable so a failed item leaves the others intact.
+ * ends the operation, every field but the ServerAdmin fields and the share field requires a
+ * selected Profile with ViewProfileActivity, the share field follows the share queries' reads, a
+ * removed library is identified by id alone, and a watch-state change lists its items, each
+ * nullable so a failed item leaves the others intact.
  */
 @Tag("UnitTest")
 @DisplayName("Subscription Contract Tests")
@@ -34,6 +35,7 @@ class SubscriptionContractTest {
   private static final TypeDefinitionRegistry SCHEMA = loadSchema();
   private static final List<String> SERVER_ADMIN_FIELDS =
       List.of("libraryStatusChanged", "activeStreamsChanged");
+  private static final String SHARE_FIELD = "profileShareChanged";
 
   @Test
   @DisplayName("Should name the transport and recovery when the Subscription type is documented")
@@ -69,11 +71,26 @@ class SubscriptionContractTest {
 
   @Test
   @DisplayName(
+      "Should name the share queries and refuse device-bound sessions when the share field is"
+          + " documented")
+  void shouldNameTheShareQueriesAndRefuseDeviceBoundSessionsWhenTheShareFieldIsDocumented() {
+    assertThat(descriptionOf(subscriptionField(SHARE_FIELD)))
+        .contains("householdShares")
+        .contains("profileShares")
+        .contains("device-bound session")
+        .contains("FORBIDDEN")
+        .contains("as it delivers it")
+        .doesNotContain("ViewProfileActivity");
+  }
+
+  @Test
+  @DisplayName(
       "Should require a selected Profile and ViewProfileActivity when each other subscription field is documented")
   void
       shouldRequireSelectedProfileAndViewProfileActivityWhenEachOtherSubscriptionFieldIsDocumented() {
     assertThat(subscriptionFields())
         .filteredOn(field -> !SERVER_ADMIN_FIELDS.contains(field.getName()))
+        .filteredOn(field -> !SHARE_FIELD.equals(field.getName()))
         .isNotEmpty()
         .allSatisfy(
             field ->
