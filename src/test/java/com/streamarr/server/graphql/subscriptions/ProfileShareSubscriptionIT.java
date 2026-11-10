@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.subscriptions;
 
 import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
@@ -200,6 +201,9 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   @DisplayName("Should deliver the share's removal to its Household when its Profile is deleted")
   void shouldDeliverTheSharesRemovalToItsHouseholdWhenItsProfileIsDeleted() {
     var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
+    var stranger = identity();
+    var strangerSocket = subscribedSocket(authTestSupport.accountBearer(stranger));
     // Only a Profile with no active or pending share may be deleted.
     var orphan = unsharedManagedProfile();
     var shareId = offer(orphan);
@@ -218,8 +222,19 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
         .as("deletion in %s", deleted)
         .isEqualTo(orphan.getId().toString());
     var removal = nextRemoval(hostSocket, shareId);
+    var visibleId = offer(managedProfile(), stranger);
 
     assertThat(removal.path("shareId").asString()).isEqualTo(shareId);
+    // The managers lose the Profile with it: they get no removal, and their operation stays open.
+    assertThat(changesUntil(ownerSocket, visibleId))
+        .extracting(
+            change -> change.path("shareId").asString(), change -> change.path("share").isNull())
+        .isNotEmpty()
+        .doesNotContain(tuple(shareId, true));
+    assertThat(changesUntil(strangerSocket, visibleId))
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(shareId);
   }
 
   @Test
@@ -227,6 +242,8 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
       "Should deliver the share's removal to the Profile's managers when its Household is deleted")
   void shouldDeliverTheSharesRemovalToTheProfilesManagersWhenItsHouseholdIsDeleted() {
     var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
+    var stranger = identity();
+    var strangerSocket = subscribedSocket(authTestSupport.accountBearer(stranger));
     var empty =
         transactionTemplate.execute(
             _ ->
@@ -249,8 +266,13 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
         .as("deletion in %s", deleted)
         .isEqualTo(empty.getId().toString());
     var removal = nextRemoval(ownerSocket, shareId);
+    var visibleId = offer(managedProfile(), stranger);
 
     assertThat(removal.path("shareId").asString()).isEqualTo(shareId);
+    assertThat(changesUntil(strangerSocket, visibleId))
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(shareId);
   }
 
   @Test
