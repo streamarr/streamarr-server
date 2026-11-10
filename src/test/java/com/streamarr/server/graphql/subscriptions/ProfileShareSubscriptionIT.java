@@ -181,6 +181,36 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should deliver the withdrawn offer when its acceptance finds the offerer no longer"
+          + " authorized")
+  void shouldDeliverTheWithdrawnOfferWhenItsAcceptanceFindsTheOffererNoLongerAuthorized() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var shareId = offer(managedProfile());
+    nextShare(hostSocket, shareId);
+    // Disabled in the database alone, so the offer is still pending when the host accepts it.
+    var offerer = userAccountRepository.findById(owner.account().getId()).orElseThrow();
+    offerer.setEnabled(false);
+    userAccountRepository.saveAndFlush(offerer);
+
+    var accepted =
+        http.execute(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { acceptProfileShare(input: {shareId: "%s"}) { userErrors { __typename } } }
+            """
+                .formatted(shareId));
+    var withdrawn = nextShare(hostSocket, shareId);
+
+    assertThat(accepted.at("/data/acceptProfileShare/userErrors/0/__typename").asString())
+        .as("acceptance in %s", accepted)
+        .isEqualTo("OfferInvalidatedError");
+    assertThat(withdrawn.path("status").asString()).isEqualTo("INVALIDATED");
+    assertThat(withdrawn.path("invalidationReason").asString())
+        .isEqualTo("offerer no longer authorized");
+  }
+
+  @Test
   @DisplayName("Should deliver EXPIRED when an offer's time runs out before anyone decides")
   void shouldDeliverExpiredWhenAnOffersTimeRunsOutBeforeAnyoneDecides() {
     var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
