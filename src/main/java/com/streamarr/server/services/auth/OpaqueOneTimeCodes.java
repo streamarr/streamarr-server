@@ -1,8 +1,6 @@
 package com.streamarr.server.services.auth;
 
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Objects;
@@ -30,7 +28,7 @@ public class OpaqueOneTimeCodes {
   public IssuedCode issue() {
     var publicId = publicIds.generateKey();
     var secret = secrets.generateKey();
-    return new IssuedCode(publicId, publicId + "." + secret, digestOf(secret));
+    return new IssuedCode(publicId, publicId + "." + secret, CredentialDigest.of(secret));
   }
 
   /** Parses {@code publicId.secret}. Returns empty if the format is invalid. */
@@ -49,19 +47,11 @@ public class OpaqueOneTimeCodes {
   }
 
   public boolean matches(PresentedCode presented, byte[] storedDigest) {
-    return MessageDigest.isEqual(digestOf(presented.secret()), storedDigest);
+    return MessageDigest.isEqual(CredentialDigest.of(presented.secret()), storedDigest);
   }
 
   private static StringKeyGenerator keyGenerator(int bytes) {
     return new Base64StringKeyGenerator(Base64.getUrlEncoder().withoutPadding(), bytes);
-  }
-
-  private static byte[] digestOf(String secret) {
-    try {
-      return MessageDigest.getInstance("SHA-256").digest(secret.getBytes(StandardCharsets.UTF_8));
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 is a mandatory JCA algorithm", e);
-    }
   }
 
   /** The issued triple; {@code code} goes to the caller once, {@code digest} to the row. */
