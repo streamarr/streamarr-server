@@ -234,6 +234,10 @@ auth:
     max-outstanding-codes: ${AUTH_DEVICE_MAX_OUTSTANDING_CODES:50}
     # A bare legacy AUTH_DEVICE_SWEEP_INTERVAL_MS value remains milliseconds; duration suffixes are preferred.
     sweep-interval: ${AUTH_DEVICE_SWEEP_INTERVAL_MS:15m}
+  # How often offers of a Profile whose time ran out are stored as EXPIRED, so the change reaches
+  # profileShareChanged. Reads treat such an offer as EXPIRED at once either way.
+  sharing:
+    expiry-sweep-interval: ${AUTH_SHARING_EXPIRY_SWEEP_INTERVAL:1m}
 
 streamarr:
   # The externally reachable base URL. Absent means device pairing is off; the server never

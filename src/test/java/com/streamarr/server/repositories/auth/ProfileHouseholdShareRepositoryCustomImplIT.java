@@ -6,6 +6,7 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
@@ -119,6 +120,47 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
           softly.assertThat(structuralShare.getId()).isNotEqualTo(expiredOffer.getId());
           softly.assertThat(structuralShare.isStructural()).isTrue();
         });
+  }
+
+  @Test
+  @DisplayName("Should store EXPIRED on only the lapsed offers when lapsed offers are expired")
+  void shouldStoreExpiredOnOnlyTheLapsedOffersWhenLapsedOffersAreExpired() {
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var home = householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var away = householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var profile =
+        profileRepository.saveAndFlush(
+            ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    var lapsed =
+        shareRepository.saveAndFlush(offer(profile.getId(), home.getId(), now.minusSeconds(1)));
+    var live =
+        shareRepository.saveAndFlush(offer(profile.getId(), away.getId(), now.plusSeconds(60)));
+
+    var expired = shareRepository.materializeExpiredPending(now);
+
+    assertThat(expired).contains(ChangedShare.of(lapsed)).doesNotContain(ChangedShare.of(live));
+    assertSoftly(
+        softly -> {
+          var stored = shareRepository.findByIdAndReloadFromDatabase(lapsed.getId()).orElseThrow();
+          softly.assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
+          softly.assertThat(stored.getDecidedAt()).isEqualTo(now);
+          softly
+              .assertThat(
+                  shareRepository
+                      .findByIdAndReloadFromDatabase(live.getId())
+                      .orElseThrow()
+                      .getStatus())
+              .isEqualTo(ProfileShareStatus.PENDING);
+        });
+  }
+
+  private static ProfileHouseholdShare offer(UUID profileId, UUID householdId, Instant expiresAt) {
+    return ProfileHouseholdShare.builder()
+        .profileId(profileId)
+        .householdId(householdId)
+        .status(ProfileShareStatus.PENDING)
+        .expiresAt(expiresAt)
+        .build();
   }
 
   @Test

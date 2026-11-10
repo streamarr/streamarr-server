@@ -155,6 +155,21 @@ class ProfileShareLifecycleTest {
     assertThat(announced()).containsExactly(ChangedShare.of(membership));
   }
 
+  @Test
+  @DisplayName("Should announce every lapsed offer when the offers whose time ran out are expired")
+  void shouldAnnounceEveryLapsedOfferWhenTheOffersWhoseTimeRanOutAreExpired() {
+    var lapsed = shares.save(pending(UUID.randomUUID()).expiresAt(NOW.minusSeconds(1)).build());
+    var live = shares.save(pending(UUID.randomUUID()).build());
+
+    var expired = lifecycle.expireLapsedOffers(NOW);
+
+    assertThat(expired).isEqualTo(1);
+    assertThat(announced()).containsExactly(ChangedShare.of(lapsed));
+    assertThat(shares.findById(live.getId()))
+        .hasValueSatisfying(
+            share -> assertThat(share.getStatus()).isEqualTo(ProfileShareStatus.PENDING));
+  }
+
   private List<ChangedShare> announced() {
     return events.getEventsOfType(ProfileShareChangedEvent.class).stream()
         .map(ProfileShareChangedEvent::share)
