@@ -84,6 +84,28 @@ class HouseholdDevicesEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should list only the Devices visitors linked when the list is kept to visitors")
+  void shouldListOnlyDevicesVisitorsLinkedWhenListIsKeptToVisitors() throws Exception {
+    register(host);
+    register(authTestSupport.createHouseholdMemberIdentity(host));
+    var visitor = visitor();
+    var visitorsTv = register(visitor);
+
+    var visitors = edges(householdDevices(host, ", visitorsOnly: true"));
+    var every = edges(householdDevices(host, ", visitorsOnly: false"));
+
+    assertThat(visitors)
+        .singleElement()
+        .satisfies(
+            node -> {
+              assertThat(node.path("id").asString()).isEqualTo(visitorsTv.toString());
+              assertThat(node.path("authorizingAccountDisplayName").asString())
+                  .isEqualTo(visitor.account().getDisplayName());
+            });
+    assertThat(every).hasSize(3);
+  }
+
+  @Test
   @DisplayName("Should show a member neither the Devices nor who linked them")
   void shouldShowMemberNeitherDevicesNorWhoLinkedThem() throws Exception {
     register(host);

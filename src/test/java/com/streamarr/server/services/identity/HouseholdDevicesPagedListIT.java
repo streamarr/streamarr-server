@@ -69,7 +69,9 @@ class HouseholdDevicesPagedListIT
   protected ListPage<DeviceRegistration> page(
       AuthTestSupport.TestIdentity admin, PageRequest request) {
     return deviceAdministration.householdDevices(
-        auth.identityOf(admin), admin.household().getId(), request);
+        auth.identityOf(admin),
+        new HouseholdDevicesScope(admin.household().getId(), false),
+        request);
   }
 
   @Override
