@@ -97,6 +97,7 @@ class StreamSegmentTlsIT extends AbstractIntegrationTest {
     for (var index = 0; index < SEGMENT_LENGTH; index++) {
       segmentBytes[index] = (byte) (index % 251);
     }
+
     STORE.storeSegment(session.getSessionId(), "segment0.m4s", segmentBytes);
   }
 
