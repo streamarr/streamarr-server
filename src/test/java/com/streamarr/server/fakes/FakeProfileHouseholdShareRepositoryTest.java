@@ -6,11 +6,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.domain.pagination.ListOrder;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.domain.pagination.SortValueKind;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -47,7 +49,11 @@ class FakeProfileHouseholdShareRepositoryTest {
       AuditFieldSetter.setCreatedOn(fake.save(share), CREATED_ON);
     }
 
-    var rows = fake.rowsPendingInHousehold(householdId, Instant.now(), firstSeek(OLDEST_FIRST, 10));
+    var rows =
+        fake.rowsIntoHousehold(
+            householdId,
+            new ShareStatusFilter(Set.of(ProfileShareStatus.PENDING), Instant.now()),
+            firstSeek(OLDEST_FIRST, 10));
 
     assertThat(rows).extracting(row -> row.item().getId()).containsExactly(LOW, HIGH);
   }

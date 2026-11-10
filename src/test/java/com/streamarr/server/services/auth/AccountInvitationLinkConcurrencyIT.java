@@ -36,6 +36,7 @@ import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInv
 import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.SessionContextService;
+import com.streamarr.server.services.identity.ShareListScope;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.TestFixtureWork;
@@ -336,8 +337,10 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
 
     assertThat(
             profileSharingService
-                .pendingShareOffers(
-                    accountIdentity(targetAdmin), targetHouseholdId, paginationOptions())
+                .householdShares(
+                    accountIdentity(targetAdmin),
+                    pendingOffersInto(targetHouseholdId),
+                    paginationOptions())
                 .rows())
         .isEmpty();
   }
@@ -397,7 +400,8 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     var targetIdentity = accountIdentity(targetAdmin);
     var reoffer =
         profileSharingService
-            .pendingShareOffers(targetIdentity, targetHouseholdId, paginationOptions())
+            .householdShares(
+                targetIdentity, pendingOffersInto(targetHouseholdId), paginationOptions())
             .rows()
             .getFirst()
             .item();
@@ -860,6 +864,10 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
 
   private static PageRequest paginationOptions() {
     return PaginationFixture.firstRows(100);
+  }
+
+  private static ShareListScope pendingOffersInto(UUID householdId) {
+    return new ShareListScope(householdId, List.of(ProfileShareStatus.PENDING));
   }
 
   private static AcceptInvitationCommand acceptCommand(String code) {

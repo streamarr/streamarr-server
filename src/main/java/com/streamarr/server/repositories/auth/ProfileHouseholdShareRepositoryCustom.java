@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import java.time.Instant;
@@ -20,10 +21,9 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** Whether the Profile has any ACTIVE share or unexpired PENDING share, read as a scalar. */
   boolean hasActiveOrPendingShares(UUID profileId, Instant now);
 
-  /**
-   * The Household's PENDING shares not past expires_at beyond the seek, by creation time, then ID.
-   */
-  List<Row<ProfileHouseholdShare>> rowsPendingInHousehold(UUID householdId, Instant now, Seek seek);
+  /** The shares into the Household that the filter keeps, beyond the seek, by creation, then ID. */
+  List<Row<ProfileHouseholdShare>> rowsIntoHousehold(
+      UUID householdId, ShareStatusFilter filter, Seek seek);
 
   /** The Profile's shares in every status beyond the seek, by creation time, then ID. */
   List<Row<ProfileHouseholdShare>> rowsOfProfile(UUID profileId, Seek seek);

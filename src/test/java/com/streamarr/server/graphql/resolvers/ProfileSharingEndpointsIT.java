@@ -7,6 +7,8 @@ import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -102,11 +104,13 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(host),
             """
-            query { pendingShareOffers(householdId: "%s") { edges { node { id status } } } }
+            query { householdShares(householdId: "%s", statuses: [PENDING]) {
+              edges { node { id status } } } }
             """
                 .formatted(host.household().getId()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.pendingShareOffers.edges[0].node.id").value(shareId));
+        .andExpect(jsonPath("$.data.householdShares.edges.length()").value(1))
+        .andExpect(jsonPath("$.data.householdShares.edges[0].node.id").value(shareId));
 
     graphql(
             authTestSupport.accountBearer(host),
@@ -864,11 +868,102 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(host),
             """
-            query { pendingShareOffers(householdId: "%s", after: "%s") { edges { node { id } } } }
+            query { householdShares(householdId: "%s", after: "%s") { edges { node { id } } } }
             """
                 .formatted(host.household().getId(), profileList))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  @Test
+  @DisplayName("Should reject a Household share cursor when it continues other statuses")
+  void shouldRejectHouseholdShareCursorWhenItContinuesOtherStatuses() throws Exception {
+    offer(managedOrphan(), host.household().getId());
+    var pendingPage =
+        graphql(
+                authTestSupport.accountBearer(host),
+                """
+                query { householdShares(householdId: "%s", statuses: [PENDING]) {
+                  edges { cursor } } }
+                """
+                    .formatted(host.household().getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var cursor =
+        objectMapper
+            .readTree(pendingPage)
+            .path("data")
+            .path("householdShares")
+            .path("edges")
+            .path(0)
+            .path("cursor")
+            .asString();
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            query { householdShares(householdId: "%s", statuses: [ACTIVE], after: "%s") {
+              edges { node { id } } } }
+            """
+                .formatted(host.household().getId(), cursor))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  @Test
+  @DisplayName("Should keep a declined offer when a Household lists its shares in every status")
+  void shouldKeepDeclinedOfferWhenHouseholdListsItsSharesInEveryStatus() throws Exception {
+    var shareId = offer(managedOrphan(), host.household().getId());
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { rejectProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.rejectProfileShare.share.status").value("REJECTED"));
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            query {
+              every: householdShares(householdId: "%1$s") { edges { node { id status } } }
+              live: householdShares(householdId: "%1$s", statuses: [PENDING, ACTIVE]) {
+                edges { node { id status } } }
+              declined: householdShares(householdId: "%1$s", statuses: [REJECTED]) {
+                edges { node { id } } }
+            }
+            """
+                .formatted(host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath(
+                "$.data.every.edges[?(@.node.id == '%s')].node.status".formatted(shareId),
+                contains("REJECTED")))
+        .andExpect(jsonPath("$.data.live.edges[*].node.status", everyItem(is("ACTIVE"))))
+        .andExpect(jsonPath("$.data.declined.edges[*].node.id", contains(shareId)));
+  }
+
+  @Test
+  @DisplayName("Should answer an empty list when a member of the Household lists its shares")
+  void shouldAnswerEmptyListWhenMemberOfHouseholdListsItsShares() throws Exception {
+    offer(managedOrphan(), host.household().getId());
+    var member = authTestSupport.createHouseholdMemberIdentity(host);
+
+    graphql(
+            authTestSupport.accountBearer(member),
+            """
+            query { householdShares(householdId: "%s") { edges { node { id } } } }
+            """
+                .formatted(host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.householdShares.edges").isEmpty());
   }
 
   @Test
@@ -1247,23 +1342,31 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     }
   }
 
-  // ---- Expiry is a predicate: a stale PENDING offer is neither listed nor live.
+  // ---- Expiry is a predicate: a stale PENDING offer is listed as EXPIRED and is not live.
 
   @Test
-  @DisplayName("Should omit an expired offer when a Household lists its pending offers")
-  void shouldOmitExpiredOfferWhenHouseholdListsPendingOffers() throws Exception {
+  @DisplayName("Should list an expired offer as expired when a Household lists its shares")
+  void shouldListExpiredOfferAsExpiredWhenHouseholdListsItsShares() throws Exception {
     var orphan = managedOrphan();
-    expire(UUID.fromString(offer(orphan, host.household().getId())));
+    var shareId = offer(orphan, host.household().getId());
+    expire(UUID.fromString(shareId));
 
     graphql(
             authTestSupport.accountBearer(host),
             """
-            query { pendingShareOffers(householdId: "%s") { edges { node { id status } } } }
+            query {
+              pending: householdShares(householdId: "%1$s", statuses: [PENDING]) {
+                edges { node { id } } }
+              expired: householdShares(householdId: "%1$s", statuses: [EXPIRED]) {
+                edges { node { id status } } }
+            }
             """
                 .formatted(host.household().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.pendingShareOffers.edges.length()").value(0));
+        .andExpect(jsonPath("$.data.pending.edges.length()").value(0))
+        .andExpect(jsonPath("$.data.expired.edges[*].node.id", contains(shareId)))
+        .andExpect(jsonPath("$.data.expired.edges[*].node.status", contains("EXPIRED")));
   }
 
   @Test

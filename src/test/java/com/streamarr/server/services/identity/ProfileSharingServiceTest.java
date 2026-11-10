@@ -38,6 +38,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -93,7 +94,7 @@ class ProfileSharingServiceTest {
                 .passwordResetTtl(Duration.ofHours(1))
                 .replacementLockTimeout(Duration.ofSeconds(5))
                 .build(),
-            new PendingShareOffersList(shares, CLOCK),
+            new HouseholdSharesList(shares, CLOCK),
             new ProfileSharesList(shares),
             CLOCK);
     household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
@@ -366,14 +367,14 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should fail closed when pending-offer authorization is unavailable")
-  void shouldFailClosedWhenPendingOfferAuthorizationIsUnavailable() {
+  @DisplayName("Should fail closed when Household-share authorization is unavailable")
+  void shouldFailClosedWhenHouseholdShareAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
     var identity = identity();
-    var householdId = household.getId();
+    var scope = everyShareInto(household);
     var options = paginationOptions();
 
-    assertThatThrownBy(() -> service.pendingShareOffers(identity, householdId, options))
+    assertThatThrownBy(() -> service.householdShares(identity, scope, options))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -390,14 +391,62 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should return an empty page when pending offers are not visible")
-  void shouldReturnEmptyPageWhenPendingOffersAreNotVisible() {
+  @DisplayName("Should return an empty page when a Household's shares are not visible")
+  void shouldReturnEmptyPageWhenHouseholdSharesAreNotVisible() {
     pendingShare();
     authorization.denyAll();
 
-    var page = service.pendingShareOffers(identity(), household.getId(), paginationOptions());
+    var page = service.householdShares(identity(), everyShareInto(household), paginationOptions());
 
     assertThat(page.rows()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should ask for the Household's administration when its shares are listed")
+  void shouldAskForHouseholdAdministrationWhenItsSharesAreListed() {
+    var offer = pendingShare();
+    authorization.decideUnitWith(
+        intent ->
+            intent.equals(new Intent.ViewHouseholdAdministration(household.getId()))
+                ? allowed()
+                : denied());
+
+    var page = service.householdShares(identity(), everyShareInto(household), paginationOptions());
+
+    assertThat(page.rows()).extracting(row -> row.item().getId()).containsExactly(offer.getId());
+  }
+
+  @Test
+  @DisplayName("Should list every share into the Household when no status is named")
+  void shouldListEveryShareIntoHouseholdWhenNoStatusIsNamed() {
+    var offer = pendingShare();
+    var other = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+    var visit =
+        shares.save(
+            activeShareBuilder().profileId(other.getId()).householdId(household.getId()).build());
+
+    var page = service.householdShares(identity(), everyShareInto(household), paginationOptions());
+
+    assertThat(page.rows())
+        .extracting(row -> row.item().getId())
+        .containsExactlyInAnyOrder(offer.getId(), visit.getId());
+  }
+
+  @Test
+  @DisplayName("Should keep only the named statuses when a Household's shares are listed")
+  void shouldKeepOnlyNamedStatusesWhenHouseholdSharesAreListed() {
+    var offer = pendingShare();
+    var other = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+    shares.save(
+        activeShareBuilder().profileId(other.getId()).householdId(household.getId()).build());
+
+    var page =
+        service.householdShares(
+            identity(),
+            new ShareListScope(household.getId(), List.of(ProfileShareStatus.PENDING)),
+            paginationOptions());
+
+    assertThat(page.rows()).extracting(row -> row.item().getId()).containsExactly(offer.getId());
   }
 
   @Test
@@ -423,19 +472,31 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should omit an expired offer when pending offers are listed")
-  void shouldOmitExpiredOfferWhenPendingOffersAreListed() {
-    shares.save(
-        ProfileHouseholdShare.builder()
-            .profileId(profile.getId())
-            .householdId(household.getId())
-            .status(ProfileShareStatus.PENDING)
-            .expiresAt(NOW.minusSeconds(1))
-            .build());
+  @DisplayName(
+      "Should list an offer past its expiry as expired when a Household's shares are listed")
+  void shouldListOfferPastItsExpiryAsExpiredWhenHouseholdSharesAreListed() {
+    var stale =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(profile.getId())
+                .householdId(household.getId())
+                .status(ProfileShareStatus.PENDING)
+                .expiresAt(NOW.minusSeconds(1))
+                .build());
 
-    var page = service.pendingShareOffers(identity(), household.getId(), paginationOptions());
+    var pending =
+        service.householdShares(
+            identity(),
+            new ShareListScope(household.getId(), List.of(ProfileShareStatus.PENDING)),
+            paginationOptions());
+    var expired =
+        service.householdShares(
+            identity(),
+            new ShareListScope(household.getId(), List.of(ProfileShareStatus.EXPIRED)),
+            paginationOptions());
 
-    assertThat(page.rows()).isEmpty();
+    assertThat(pending.rows()).isEmpty();
+    assertThat(expired.rows()).extracting(row -> row.item().getId()).containsExactly(stale.getId());
   }
 
   @Test
@@ -588,5 +649,9 @@ class ProfileSharingServiceTest {
 
   private static PageRequest paginationOptions() {
     return PaginationFixture.firstRows(100);
+  }
+
+  private static ShareListScope everyShareInto(Household household) {
+    return new ShareListScope(household.getId(), List.of());
   }
 }

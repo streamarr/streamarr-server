@@ -5,6 +5,7 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
@@ -27,12 +28,15 @@ import com.streamarr.server.graphql.mutation.sharing.RejectProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
+import com.streamarr.server.services.identity.ShareListScope;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
+import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 
 @DgsComponent
@@ -61,12 +65,14 @@ public class ProfileSharingResolver {
   }
 
   @DgsQuery
-  public Connection<ProfileShareDetails> pendingShareOffers(
-      @InputArgument String householdId, DataFetchingEnvironment dfe) {
-    var household = Ids.parseUuid(householdId);
-    var list = new ListIdentity("pending-share-offers", household);
+  public Connection<ProfileShareDetails> householdShares(
+      @InputArgument String householdId,
+      @InputArgument List<ProfileShareStatus> statuses,
+      DataFetchingEnvironment dfe) {
+    var household = new ShareListScope(Ids.parseUuid(householdId), statusesOrEvery(statuses));
+    var list = new ListIdentity("household-shares", household);
     var page =
-        profileSharingService.pendingShareOffers(
+        profileSharingService.householdShares(
             authorizationService.currentIdentity(), household, pageRequest(list, dfe));
     return relayConnectionAdapter.toConnection(page, list, this::details);
   }
@@ -157,6 +163,11 @@ public class ProfileSharingResolver {
 
   private ProfileShareDetails details(ProfileHouseholdShare share) {
     return ProfileShareDetails.from(share, clock.instant());
+  }
+
+  /** A missing status list keeps every share, as an empty one does. */
+  private static List<ProfileShareStatus> statusesOrEvery(List<ProfileShareStatus> statuses) {
+    return Objects.requireNonNullElse(statuses, List.of());
   }
 
   private PageRequest pageRequest(ListIdentity list, DataFetchingEnvironment dfe) {

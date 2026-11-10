@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -64,12 +65,12 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public List<Row<ProfileHouseholdShare>> rowsPendingInHousehold(
-      UUID householdId, Instant now, Seek seek) {
+  public List<Row<ProfileHouseholdShare>> rowsIntoHousehold(
+      UUID householdId, ShareStatusFilter filter, Seek seek) {
     return InMemoryKeyset.byCreationTime(
         database.values().stream()
             .filter(share -> share.getHouseholdId().equals(householdId))
-            .filter(share -> share.statusAt(now) == ProfileShareStatus.PENDING)
+            .filter(filter::keeps)
             .toList(),
         seek);
   }
