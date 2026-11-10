@@ -30,6 +30,18 @@ when {
    (principal has serverAdmin && principal.serverAdmin))
 };
 
+// Any enabled Account may follow the changes of the shares it may read; each change is then decided
+// against the reads of its own share. A device-bound session follows none (devices.cedar).
+@id("view-profile-share-changes-as-enabled-account")
+permit (
+  principal,
+  action == Streamarr::Action::"viewProfileShareChanges",
+  resource
+)
+when {
+  principal has enabled && principal.enabled
+};
+
 // The target Household consents through its live HouseholdAdmins; ServerAdmin may act for them.
 // Lifecycle (pending, active, expiry) is the conditional transition's business, not authority's:
 // a decided offer answers with its typed lifecycle error, never a policy denial.

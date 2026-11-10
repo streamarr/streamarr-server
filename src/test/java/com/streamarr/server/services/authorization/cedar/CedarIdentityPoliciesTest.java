@@ -935,6 +935,21 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName(
+        "Should let an enabled Account follow share changes when its session is not device-bound")
+    void shouldLetAnEnabledAccountFollowShareChangesWhenItsSessionIsNotDeviceBound() {
+      var follow = new Intent.ViewProfileShareChanges();
+
+      assertThat(decide(atHome(), follow)).isEqualTo(ALLOWED);
+      assertThat(decide(member(), follow)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), follow)).isEqualTo(DENIED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), follow)).isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should deny sovereign share ending when the Personal Profile is restricted")
     void shouldDenySovereignShareEndingWhenPersonalProfileIsRestricted() {
       var visit =

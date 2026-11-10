@@ -59,6 +59,12 @@ public sealed interface Intent {
    */
   record ViewProfileShareHouseholds(UUID profileId) implements UnitIntent {}
 
+  /**
+   * Following the changes of the Profile shares the caller may read: any enabled Account, never a
+   * device-bound session. Each change is then decided against the reads of its own share.
+   */
+  record ViewProfileShareChanges() implements UnitIntent {}
+
   /** The live playback decision for the selected Profile in the context Household (ADR 0018). */
   record Playback() implements UnitIntent {}
 
