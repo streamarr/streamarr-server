@@ -186,8 +186,9 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should show the hosting HouseholdAdmin every party of the share into its Household")
-  void shouldShowHostingHouseholdAdminEveryPartyOfShareIntoItsHousehold() throws Exception {
+  @DisplayName(
+      "Should show every party when the hosting HouseholdAdmin lists a share into its Household")
+  void shouldShowEveryPartyWhenHostingHouseholdAdminListsShareIntoItsHousehold() throws Exception {
     var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
     var shareId = offer(owner, orphan, host);
     accept(host, shareId);

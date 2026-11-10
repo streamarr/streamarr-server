@@ -357,8 +357,8 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should deliver nothing for an acceptance that rolls back")
-  void shouldDeliverNothingForAnAcceptanceThatRollsBack() {
+  @DisplayName("Should deliver nothing when an acceptance rolls back")
+  void shouldDeliverNothingWhenAnAcceptanceRollsBack() {
     var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
     var twin =
         managedProfile(ProfileFixture.defaultProfileBuilder().name(host.profile().getName()));
