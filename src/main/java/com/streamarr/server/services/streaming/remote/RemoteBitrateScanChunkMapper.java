@@ -139,9 +139,9 @@ final class RemoteBitrateScanChunkMapper {
       throw violation("Worker bitrate scan chunk stream's intervals differ from the chunk's");
     }
 
-    var bytes = KeyframeIntervalCounts.ofUnsigned(toArray(part.getKeyframeIntervalBytesList()));
+    var bytes = KeyframeIntervalCounts.ofUnsigned(keyframeCount, part::getKeyframeIntervalBytes);
     var packets =
-        KeyframeIntervalCounts.ofUnsigned(toArray(part.getKeyframeIntervalPacketCountsList()));
+        KeyframeIntervalCounts.ofUnsigned(keyframeCount, part::getKeyframeIntervalPacketCounts);
     if (bytes.total() != stream.getMeasuredBytes() || packets.total() != stream.getPacketCount()) {
       throw violation("Worker bitrate scan chunk stream's intervals differ from its totals");
     }
@@ -222,10 +222,6 @@ final class RemoteBitrateScanChunkMapper {
 
   private static BigInteger ticks(long time, int timeBaseNumerator) {
     return BigInteger.valueOf(time).multiply(BigInteger.valueOf(timeBaseNumerator));
-  }
-
-  private static int[] toArray(List<Integer> unsignedCounts) {
-    return unsignedCounts.stream().mapToInt(Integer::intValue).toArray();
   }
 
   private static ProbeContractViolationException violation(String message) {

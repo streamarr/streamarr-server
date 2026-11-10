@@ -32,6 +32,16 @@ class KeyframeIntervalCountsTest {
   }
 
   @Test
+  @DisplayName("Should read each interval's count from its source when given a count per interval")
+  void shouldReadEachIntervalsCountFromItsSourceWhenGivenACountPerInterval() {
+    var source = new int[] {-1, 7, 3};
+
+    var counts = KeyframeIntervalCounts.ofUnsigned(source.length, interval -> source[interval]);
+
+    assertThat(counts).isEqualTo(KeyframeIntervalCounts.of(0xFFFF_FFFFL, 7, 3));
+  }
+
+  @Test
   @DisplayName("Should total every count as unsigned when a count uses the top bit")
   void shouldTotalEveryCountAsUnsignedWhenCountUsesTopBit() {
     var counts = KeyframeIntervalCounts.ofUnsigned(new int[] {-1, -1, 7});
@@ -75,5 +85,13 @@ class KeyframeIntervalCountsTest {
   void shouldRefuseToBuildCountsWhenArrayIsMissing() {
     assertThatNullPointerException().isThrownBy(() -> KeyframeIntervalCounts.ofUnsigned(null));
     assertThatNullPointerException().isThrownBy(() -> KeyframeIntervalCounts.of((long[]) null));
+  }
+
+  @Test
+  @DisplayName("Should refuse to build the counts when the source of each count is missing")
+  void shouldRefuseToBuildCountsWhenSourceOfEachCountIsMissing() {
+    assertThatNullPointerException()
+        .isThrownBy(() -> KeyframeIntervalCounts.ofUnsigned(1, null))
+        .withMessageContaining("unsignedCountOf");
   }
 }
