@@ -854,6 +854,29 @@ message WorkerSessionAccepted {
   // fleet-wide limits are reached. A value of 0 states no limit, and the worker
   // then opens each call without waiting.
   uint32 segment_upload_limit = 2;
+  // This field counts the ReportProbeAttempt calls that the server accepts from
+  // the worker at once. The worker keeps no more calls open at once and queues
+  // its other probe reports. A value of 0 states no limit, and the worker then
+  // opens each call without waiting (ADR 0062).
+  uint32 probe_report_limit = 3;
+  // This field holds the length in bytes of the longest encoded
+  // ProbeAttemptReport that the server accepts. When a probe report is longer,
+  // the worker fails the probe with PROBE_FAILURE_RESULT_TOO_LARGE. A value of
+  // 0 states no limit, and the worker then applies no limit of its own (ADR
+  // 0062).
+  uint64 probe_report_length_limit_bytes = 4;
+  // This field holds the largest number of keyframes in one probe report. When
+  // the chosen video stream holds more, the worker reports the keyframes as
+  // unavailable with KEYFRAMES_UNAVAILABLE_REASON_TOO_MANY_KEYFRAMES. A value
+  // of 0 states no limit, and the worker then applies no limit of its own (ADR
+  // 0062).
+  uint32 keyframe_limit = 5;
+  // This field holds the largest number of measured keyframe intervals in one
+  // probe report, added up over the measured streams. When a measurement holds
+  // more, the worker leaves the measurement out, or fails a bitrate scan chunk
+  // with PROBE_FAILURE_RESULT_TOO_LARGE. A value of 0 states no limit, and the
+  // worker then applies no limit of its own (ADR 0062).
+  uint32 measured_keyframe_interval_limit = 6;
 }
 
 message StartVariantCommand {
@@ -1410,6 +1433,10 @@ enum KeyframesUnavailableReason {
   KEYFRAMES_UNAVAILABLE_REASON_KEYFRAME_WITHOUT_TIMESTAMP = 1;
   // A packet scan found no keyframe.
   KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES = 2;
+  // The chosen video stream holds more keyframes than
+  // WorkerSessionAccepted.keyframe_limit. The probe report then holds no
+  // measurement (ADR 0062).
+  KEYFRAMES_UNAVAILABLE_REASON_TOO_MANY_KEYFRAMES = 3;
 }
 
 // The worker cannot report usable keyframe positions. The server never copies
@@ -1723,7 +1750,67 @@ message UploadSegmentResponse {
 // again; on any other refusal it fails the job attempt (ADR 0037).
 message SegmentUploadLimitReached {}
 
+// This message holds everything that the worker sends back for one probe
+// attempt. The worker sends its encoded bytes in a ReportProbeAttempt call
+// (ADR 0062).
+message ProbeAttemptReport {
+  // The worker always sets this field.
+  ProbeAttemptResult result = 1;
+  // These lists hold the chosen video stream's keyframe positions in decode
+  // order. Times count time-base ticks from the container start. The first
+  // entry is absolute, and each later entry is the difference from the entry
+  // before it. Each list holds KeyframePositions.keyframe_count entries. Both
+  // are empty when the result reports no KeyframePositions.
+  repeated sint64 keyframe_presentation_time_deltas = 2;
+  repeated sint64 keyframe_decode_time_deltas = 3;
+  // This field holds one entry for each measured stream. It is empty when the
+  // probe report holds no measurement.
+  repeated StreamMeasurementIntervals stream_measurement_intervals = 4;
+}
+
+// This message holds one measured stream's bytes and packets in every keyframe
+// interval, in interval order (ADR 0054).
+message StreamMeasurementIntervals {
+  // This field holds the stream's ProbeStreamInfo.index.
+  uint32 stream_index = 1;
+  // Entry i holds the stream's bytes in keyframe interval i.
+  repeated uint32 keyframe_interval_bytes = 2;
+  // Entry i counts the stream's packets in the same interval. The list has as
+  // many entries as keyframe_interval_bytes.
+  repeated uint32 keyframe_interval_packet_counts = 3;
+}
+
+message ProbeAttemptReportMetadata {
+  Uuid worker_session_id = 1;
+  WorkerIdentity worker = 2;
+  Uuid probe_attempt_id = 3;
+  // This field holds the length in bytes of the encoded ProbeAttemptReport. It
+  // is at least 1, and at most
+  // WorkerSessionAccepted.probe_report_length_limit_bytes when the server
+  // states one (ADR 0062).
+  uint64 report_length_bytes = 4;
+}
+
+// The first request carries the metadata. Each later request carries a
+// non-empty chunk of the encoded ProbeAttemptReport, in order (ADR 0062).
+message ReportProbeAttemptRequest {
+  oneof frame {
+    ProbeAttemptReportMetadata metadata = 1;
+    bytes data = 2;
+  }
+}
+
+message ReportProbeAttemptResponse {
+  Uuid probe_attempt_id = 1;
+  // This field counts the bytes of the encoded ProbeAttemptReport that the
+  // server accepted.
+  uint64 accepted_length_bytes = 2;
+}
+
 service TranscodeWorkerService {
   rpc EstablishWorkerSession(stream EstablishWorkerSessionRequest) returns (stream EstablishWorkerSessionResponse) {}
   rpc UploadSegment(stream UploadSegmentRequest) returns (UploadSegmentResponse) {}
+  // The worker sends the ProbeAttemptReport of one probe attempt on each call
+  // (ADR 0062).
+  rpc ReportProbeAttempt(stream ReportProbeAttemptRequest) returns (ReportProbeAttemptResponse) {}
 }
