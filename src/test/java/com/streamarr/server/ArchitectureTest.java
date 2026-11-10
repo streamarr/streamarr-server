@@ -157,8 +157,12 @@ class ArchitectureTest {
           .resideInAPackage("..domain..")
           .should()
           .dependOnClassesThat()
-          .resideInAnyPackage("..services..", "..repositories..", "..graphql..")
-          .as("Domain must not depend on services, repositories, or graphql");
+          .resideInAnyPackage(
+              "..services..",
+              "..repositories..",
+              "..graphql..",
+              "com.streamarr.server.exceptions..")
+          .as("Domain must not depend on services, repositories, graphql, or exceptions");
 
   @ArchTest
   static final ArchRule tmdbTypesMustNotLeakOutsideMetadata =
