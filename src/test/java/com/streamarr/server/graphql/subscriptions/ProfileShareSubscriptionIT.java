@@ -9,7 +9,9 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SystemActor;
+import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -70,9 +72,11 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private ProfileShareExpirySweeper expirySweeper;
+  @Autowired private HouseholdRepository householdRepository;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
+  private final List<UUID> households = new ArrayList<>();
   private ActiveSubscriptions activeSubscriptions;
   private GraphQlHttpTestClient http;
   private AuthTestSupport.TestIdentity owner;
@@ -91,6 +95,10 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     sockets.forEach(GraphQlTransportWsTestClient::close);
     http.close();
     activeSubscriptions.awaitNoneActive();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            households.forEach(
+                id -> householdRepository.findById(id).ifPresent(householdRepository::delete)));
     identities.reversed().forEach(authTestSupport::deleteIdentity);
   }
 
@@ -185,6 +193,63 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     assertThat(nextShare(hostSocket, shareId).path("status").asString()).isEqualTo("EXPIRED");
     assertThat(shareRepository.findById(offer.getId()).orElseThrow().getLastModifiedBy())
         .isEqualTo(SystemActor.ID);
+  }
+
+  @Test
+  @DisplayName("Should deliver the share's removal to its Household when its Profile is deleted")
+  void shouldDeliverTheSharesRemovalToItsHouseholdWhenItsProfileIsDeleted() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    // Only a Profile with no active or pending share may be deleted.
+    var orphan = unsharedManagedProfile();
+    var shareId = offer(orphan);
+    decide("rejectProfileShare", shareId);
+    nextShareWithStatus(hostSocket, shareId, "REJECTED");
+
+    var deleted =
+        http.execute(
+            authTestSupport.freshAccountBearer(owner),
+            """
+            mutation { deleteProfile(input: {profileId: "%s"}) {
+              deletedProfileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()));
+    assertThat(deleted.at("/data/deleteProfile/deletedProfileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    var removal = changesUntil(hostSocket, shareId).getLast();
+
+    assertThat(removal.path("share").isNull()).as("removal %s", removal).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the share's removal to the Profile's managers when its Household is deleted")
+  void shouldDeliverTheSharesRemovalToTheProfilesManagersWhenItsHouseholdIsDeleted() {
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
+    var empty =
+        transactionTemplate.execute(
+            _ ->
+                householdRepository.saveAndFlush(
+                    HouseholdFixture.defaultHouseholdBuilder().build()));
+    households.add(empty.getId());
+    var shareId = offer(managedProfile(), empty.getId());
+    nextShare(ownerSocket, shareId);
+    var serverAdmin = adminIdentity();
+
+    var deleted =
+        http.execute(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { deleteEmptyHousehold(input: {householdId: "%s", reason: "closing"}) {
+              deletedHouseholdId userErrors { __typename } } }
+            """
+                .formatted(empty.getId()));
+    assertThat(deleted.at("/data/deleteEmptyHousehold/deletedHouseholdId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(empty.getId().toString());
+    var removal = changesUntil(ownerSocket, shareId).getLast();
+
+    assertThat(removal.path("share").isNull()).as("removal %s", removal).isTrue();
   }
 
   @Test
@@ -309,6 +374,10 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   private String offer(Profile profile, AuthTestSupport.TestIdentity target) {
+    return offer(profile, target.household().getId());
+  }
+
+  private String offer(Profile profile, UUID householdId) {
     var response =
         http.execute(
             authTestSupport.accountBearer(owner),
@@ -316,7 +385,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
             mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
               share { id status } userErrors { __typename } } }
             """
-                .formatted(profile.getId(), target.household().getId()));
+                .formatted(profile.getId(), householdId));
     var share = response.at("/data/offerProfileShare/share");
     assertThat(share.path("status").asString()).as("offer in %s", response).isEqualTo("PENDING");
     return share.path("id").asString();
@@ -351,6 +420,24 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
   private Profile managedProfile() {
     return managedProfile(ProfileFixture.defaultProfileBuilder());
+  }
+
+  /** A Profile the owner manages, available nowhere. */
+  private Profile unsharedManagedProfile() {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(owner.household().getId())
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(owner.account().getId())
+                  .profileId(profile.getId())
+                  .build());
+          return profile;
+        });
   }
 
   /** A Profile the owner manages, available in the owner's Household. */

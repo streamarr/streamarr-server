@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -33,6 +34,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfilePinHasher;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -71,6 +73,8 @@ class ProfileAdministrationServiceTest {
 
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
+
+  private final CapturingEventPublisher shareEvents = new CapturingEventPublisher();
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
   private final FakeProfileManagerRepository managers = new FakeProfileManagerRepository();
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
@@ -90,7 +94,7 @@ class ProfileAdministrationServiceTest {
           profiles,
           managers,
           shares,
-          new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
+          new ProfileShareLifecycle(shares, shareEvents),
           households,
           accounts,
           invitations,
@@ -943,6 +947,21 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName("Should announce every share of the Profile when deletion succeeds")
+  void shouldAnnounceEveryShareOfTheProfileWhenDeletionSucceeds() {
+    var orphan =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var home = shares.share(orphan.getId(), household.getId(), false);
+
+    service.deleteProfile(identity(), orphan.getId());
+
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .extracting(ProfileShareChangedEvent::share)
+        .containsExactly(ChangedShare.of(home));
+  }
+
+  @Test
   @DisplayName("Should return not found without auditing when deleting a missing Profile")
   void shouldReturnNotFoundWithoutAuditingWhenDeletingMissingProfile() {
     var outcome = service.deleteProfile(identity(), UUID.randomUUID());
@@ -1159,7 +1178,7 @@ class ProfileAdministrationServiceTest {
         profileRepository,
         managers,
         shares,
-        new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
+        new ProfileShareLifecycle(shares, shareEvents),
         households,
         accounts,
         invitations,

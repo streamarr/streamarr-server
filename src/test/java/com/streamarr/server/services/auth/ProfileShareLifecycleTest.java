@@ -170,6 +170,43 @@ class ProfileShareLifecycleTest {
             share -> assertThat(share.getStatus()).isEqualTo(ProfileShareStatus.PENDING));
   }
 
+  @Test
+  @DisplayName("Should announce every share of the Profile when the Profile is about to be deleted")
+  void shouldAnnounceEveryShareOfTheProfileWhenTheProfileIsAboutToBeDeleted() {
+    var offer = shares.save(pending(UUID.randomUUID()).build());
+    var ended =
+        shares.save(
+            pending(UUID.randomUUID())
+                .profileId(offer.getProfileId())
+                .status(ProfileShareStatus.ENDED)
+                .build());
+    shares.save(pending(UUID.randomUUID()).build());
+
+    lifecycle.announceDeletionWithProfile(offer.getProfileId());
+
+    assertThat(announced())
+        .containsExactlyInAnyOrder(ChangedShare.of(offer), ChangedShare.of(ended));
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce every share into the Household when the Household is about to be deleted")
+  void shouldAnnounceEveryShareIntoTheHouseholdWhenTheHouseholdIsAboutToBeDeleted() {
+    var offer = shares.save(pending(UUID.randomUUID()).build());
+    var rejected =
+        shares.save(
+            pending(UUID.randomUUID())
+                .householdId(offer.getHouseholdId())
+                .status(ProfileShareStatus.REJECTED)
+                .build());
+    shares.save(pending(UUID.randomUUID()).build());
+
+    lifecycle.announceDeletionWithHousehold(offer.getHouseholdId());
+
+    assertThat(announced())
+        .containsExactlyInAnyOrder(ChangedShare.of(offer), ChangedShare.of(rejected));
+  }
+
   private List<ChangedShare> announced() {
     return events.getEventsOfType(ProfileShareChangedEvent.class).stream()
         .map(ProfileShareChangedEvent::share)

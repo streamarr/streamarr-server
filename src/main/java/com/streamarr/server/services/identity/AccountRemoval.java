@@ -151,6 +151,7 @@ class AccountRemoval {
             share ->
                 authSessionRepository.clearProfileSelectionFromLiveSessions(
                     profileId, share.getHouseholdId()));
+    shareLifecycle.announceDeletionWithProfile(profileId);
     profileRepository.deleteById(profileId);
     profileRepository.flush();
   }

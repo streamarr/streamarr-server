@@ -192,6 +192,7 @@ public class HouseholdDeletionService {
         request.householdId(), HOUSEHOLD_DELETED_REASON, now);
     endHostedVisits(request.householdId(), now);
     deleteResidentProfiles(request.householdId(), now);
+    shareLifecycle.announceDeletionWithHousehold(request.householdId());
     householdRepository.deleteById(request.householdId());
     householdRepository.flush();
     securityAuditEventRepository.append(

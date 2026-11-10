@@ -5,8 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.AuditFieldSetter;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.SessionProgress;
@@ -34,6 +37,7 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -71,6 +75,8 @@ class HouseholdDeletionServiceTest {
 
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
+
+  private final CapturingEventPublisher shareEvents = new CapturingEventPublisher();
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
@@ -273,6 +279,25 @@ class HouseholdDeletionServiceTest {
                 .reason("closing shop")
                 .resource("householdId", doomed.getId())
                 .build());
+  }
+
+  @Test
+  @DisplayName("Should announce every share into the Household when deleting it")
+  void shouldAnnounceEveryShareIntoTheHouseholdWhenDeletingIt() {
+    var visit = shares.share(UUID.randomUUID(), doomed.getId(), false);
+    var declined =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(UUID.randomUUID())
+                .householdId(doomed.getId())
+                .status(ProfileShareStatus.REJECTED)
+                .build());
+
+    deleteEmptyHousehold("closing shop");
+
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .extracting(ProfileShareChangedEvent::share)
+        .contains(ChangedShare.of(visit), ChangedShare.of(declined));
   }
 
   @Test
@@ -587,7 +612,7 @@ class HouseholdDeletionServiceTest {
             accountRepository,
             profiles,
             shares,
-            new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
+            new ProfileShareLifecycle(shares, shareEvents),
             managers,
             managerInvitations,
             accountInvitations,
@@ -598,7 +623,7 @@ class HouseholdDeletionServiceTest {
         accountRepository,
         profiles,
         shares,
-        new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
+        new ProfileShareLifecycle(shares, shareEvents),
         sessions,
         registrationLifecycle,
         accountInvitations,
