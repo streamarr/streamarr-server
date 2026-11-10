@@ -20,7 +20,7 @@ public final class MutexFactoryCollectionProbe {
 
   private MutexFactoryCollectionProbe() {}
 
-  public static void main(String[] args) throws Exception {
+  public static void main() throws Exception {
     var mutexFactory = new MutexFactory<String>();
     var unreferenced = new WeakReference<>(mutexFactory.getMutex(UNREFERENCED_KEY));
     var held = mutexFactory.getMutex(HELD_KEY);
