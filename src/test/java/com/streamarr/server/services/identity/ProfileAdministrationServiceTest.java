@@ -14,6 +14,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
@@ -89,7 +90,7 @@ class ProfileAdministrationServiceTest {
           profiles,
           managers,
           shares,
-          new ProfileShareLifecycle(shares),
+          new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
           households,
           accounts,
           invitations,
@@ -1158,7 +1159,7 @@ class ProfileAdministrationServiceTest {
         profileRepository,
         managers,
         shares,
-        new ProfileShareLifecycle(shares),
+        new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
         households,
         accounts,
         invitations,

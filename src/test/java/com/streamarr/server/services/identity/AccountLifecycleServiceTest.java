@@ -20,6 +20,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -101,7 +102,7 @@ class AccountLifecycleServiceTest {
               accounts,
               profiles,
               shares,
-              new ProfileShareLifecycle(shares),
+              new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
               managers,
               managerInvitations,
               accountInvitations,

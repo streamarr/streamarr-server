@@ -10,6 +10,7 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
@@ -82,7 +83,7 @@ class ProfileSharingServiceTest {
         new ProfileSharingService(
             authorization,
             shares,
-            new ProfileShareLifecycle(shares),
+            new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
             profiles,
             households,
             accounts,
