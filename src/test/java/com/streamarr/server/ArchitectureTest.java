@@ -372,6 +372,20 @@ class ArchitectureTest {
               "Repositories must remain below services in the dependency direction; the types"
                   + " both use belong in domain");
 
+  // Config wires the application and may depend on every layer, so a dependency back into config
+  // from any other package puts the two in a cycle.
+  @ArchTest
+  static final ArchRule classesOutsideConfigMustNotDependOnConfig =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("com.streamarr.server.config..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("com.streamarr.server.config..")
+          .as(
+              "Classes outside config must not depend on config, which wires the application from"
+                  + " above every layer; configuration properties belong in properties");
+
   @ArchTest
   static final ArchRule repositoryMethodsMustNotUseQueryAnnotations =
       repositoryMethodsMustNotUseQueryAnnotations();
