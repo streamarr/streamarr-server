@@ -532,10 +532,10 @@ class AccountAdministrationServiceTest {
             .build());
   }
 
+  // The target Household may read the reason, so it names no fact about the offerer's Account.
   private void assertOfferInvalidated(UUID shareId) {
     var stored = shares.findById(shareId).orElseThrow();
     assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
-    assertThat(stored.getInvalidationReason())
-        .hasValueSatisfying(reason -> assertThat(reason).isNotBlank());
+    assertThat(stored.getInvalidationReason()).contains("offerer no longer authorized");
   }
 }

@@ -297,7 +297,7 @@ public class ProfileSharingService {
 
   private ProfileHouseholdShare invalidateUnauthorizedOffer(UUID shareId) {
     if (!shareLifecycle.tryInvalidatePending(
-        shareId, "offerer no longer authorized", clock.instant())) {
+        shareId, ProfileShareLifecycle.OFFERER_NO_LONGER_AUTHORIZED, clock.instant())) {
       throw new MutationRejection(notPending(shareId));
     }
 

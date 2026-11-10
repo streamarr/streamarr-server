@@ -263,14 +263,14 @@ public class AccountAdministrationService {
     return invalidated
         + switch (authorityLoss) {
           case ACCOUNT_DISABLED ->
-              shareLifecycle.invalidatePendingOfferedBy(issuerAccountId, reason, now);
+              shareLifecycle.invalidatePendingOfferedBy(
+                  issuerAccountId, ProfileShareLifecycle.OFFERER_NO_LONGER_AUTHORIZED, now);
           case SERVER_ADMIN_REVOKED ->
-              invalidateUnauthorizedProfileShareOffers(issuerAccountId, reason, now);
+              invalidateUnauthorizedProfileShareOffers(issuerAccountId, now);
         };
   }
 
-  private int invalidateUnauthorizedProfileShareOffers(
-      UUID issuerAccountId, String reason, Instant now) {
+  private int invalidateUnauthorizedProfileShareOffers(UUID issuerAccountId, Instant now) {
     var invalidated = 0;
     var pendingOffers =
         profileHouseholdShareRepository.findByOfferedByAccountIdAndStatus(
@@ -281,7 +281,8 @@ public class AccountAdministrationService {
         continue;
       }
 
-      if (shareLifecycle.tryInvalidatePending(offer.getId(), reason, now)) {
+      if (shareLifecycle.tryInvalidatePending(
+          offer.getId(), ProfileShareLifecycle.OFFERER_NO_LONGER_AUTHORIZED, now)) {
         invalidated++;
       }
     }
