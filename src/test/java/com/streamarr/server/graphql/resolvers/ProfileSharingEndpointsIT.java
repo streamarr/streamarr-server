@@ -7,6 +7,7 @@ import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -910,6 +911,78 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
             """
             query { householdShares(householdId: "%s", statuses: [ACTIVE], after: "%s") {
               edges { node { id } } } }
+            """
+                .formatted(host.household().getId(), cursor))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  @Test
+  @DisplayName("Should keep only visitors' shares when a Household's shares are kept to visitors")
+  void shouldKeepOnlyVisitorsSharesWhenHouseholdsSharesAreKeptToVisitors() throws Exception {
+    var visitId = offer(managedOrphan(), host.household().getId());
+    var hostsOwnId =
+        shareRepository
+            .findByProfileIdAndHouseholdIdAndStatus(
+                host.profile().getId(), host.household().getId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow()
+            .getId()
+            .toString();
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            query {
+              visitors: householdShares(householdId: "%1$s", visitorsOnly: true) {
+                edges { node { id visitor } } }
+              every: householdShares(householdId: "%1$s", visitorsOnly: false) {
+                edges { node { id visitor } } }
+              unfiltered: householdShares(householdId: "%1$s") { edges { node { id } } }
+            }
+            """
+                .formatted(host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.visitors.edges[*].node.id", contains(visitId)))
+        .andExpect(jsonPath("$.data.visitors.edges[*].node.visitor", contains(true)))
+        .andExpect(
+            jsonPath("$.data.every.edges[*].node.id", containsInAnyOrder(visitId, hostsOwnId)))
+        .andExpect(
+            jsonPath(
+                "$.data.every.edges[?(@.node.id == '%s')].node.visitor".formatted(hostsOwnId),
+                contains(false)))
+        .andExpect(
+            jsonPath(
+                "$.data.unfiltered.edges[*].node.id", containsInAnyOrder(visitId, hostsOwnId)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a Household share cursor when it continues the list without its visitor"
+          + " filter")
+  void shouldRejectHouseholdShareCursorWhenItContinuesListWithoutItsVisitorFilter()
+      throws Exception {
+    offer(managedOrphan(), host.household().getId());
+    var visitorsPage =
+        graphql(
+                authTestSupport.accountBearer(host),
+                """
+                query { householdShares(householdId: "%s", visitorsOnly: true) {
+                  edges { cursor } } }
+                """
+                    .formatted(host.household().getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var cursor =
+        objectMapper.readTree(visitorsPage).at("/data/householdShares/edges/0/cursor").asString();
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            query { householdShares(householdId: "%s", after: "%s") { edges { node { id } } } }
             """
                 .formatted(host.household().getId(), cursor))
         .andExpect(status().isOk())

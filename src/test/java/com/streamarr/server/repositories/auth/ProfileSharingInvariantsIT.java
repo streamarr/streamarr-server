@@ -263,6 +263,29 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     assertThat(sharesOf(profile, now)).hasSize(5);
   }
 
+  @Test
+  @DisplayName("Should keep only visitors' shares when a Household's shares are kept to visitors")
+  void shouldKeepOnlyVisitorsSharesWhenHouseholdSharesAreKeptToVisitors() {
+    var owner = create();
+    var host = create();
+    var now = Instant.now();
+    var visiting =
+        storedShare(createManagedAdultOrphan(owner), host, ProfileShareStatus.PENDING, now);
+    var hostsOwn =
+        shareRepository
+            .findByProfileIdAndHouseholdIdAndStatus(
+                createManagedAdultOrphan(host).getId(),
+                host.household().getId(),
+                ProfileShareStatus.ACTIVE)
+            .orElseThrow()
+            .getId();
+
+    assertThat(visitorsSharesInto(host, now)).containsExactly(visiting);
+    // The visitor filter and the status filter must both keep a share.
+    assertThat(visitorsSharesInto(host, now, ProfileShareStatus.ACTIVE)).isEmpty();
+    assertThat(sharesInto(host, now)).contains(visiting, hostsOwn).hasSize(3);
+  }
+
   // Hosting supervision checks and constraint evaluation order.
 
   @Test
@@ -466,11 +489,20 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
 
   private List<UUID> sharesInto(
       AuthTestSupport.TestIdentity host, Instant now, ProfileShareStatus... statuses) {
-    return ids(
-        shareRepository.rowsIntoHousehold(
-            new HouseholdShareFilter(
-                host.household().getId(), new ShareStatusFilter(Set.of(statuses), now)),
-            firstSeek(NEWEST_FIRST, 20)));
+    return keptBy(
+        new HouseholdShareFilter(
+            host.household().getId(), new ShareStatusFilter(Set.of(statuses), now), false));
+  }
+
+  private List<UUID> visitorsSharesInto(
+      AuthTestSupport.TestIdentity host, Instant now, ProfileShareStatus... statuses) {
+    return keptBy(
+        new HouseholdShareFilter(
+            host.household().getId(), new ShareStatusFilter(Set.of(statuses), now), true));
+  }
+
+  private List<UUID> keptBy(HouseholdShareFilter filter) {
+    return ids(shareRepository.rowsIntoHousehold(filter, firstSeek(NEWEST_FIRST, 20)));
   }
 
   private List<UUID> sharesOf(Profile profile, Instant now, ProfileShareStatus... statuses) {

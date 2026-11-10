@@ -83,7 +83,10 @@ class HouseholdSharesPagedListIT
   protected ListPage<ProfileHouseholdShare> page(Scope scope, PageRequest request) {
     return profileSharing.householdShares(
         auth.identityOf(scope.host()),
-        new ShareListScope(scope.host().household().getId(), List.of(ProfileShareStatus.PENDING)),
+        new HouseholdSharesScope(
+            new ShareListScope(
+                scope.host().household().getId(), List.of(ProfileShareStatus.PENDING)),
+            false),
         request);
   }
 

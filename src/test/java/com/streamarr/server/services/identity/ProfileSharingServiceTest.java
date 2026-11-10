@@ -42,6 +42,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -63,7 +64,7 @@ class ProfileSharingServiceTest {
   private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 
   private final FakeProfileHouseholdShareRepository shares =
-      new FakeProfileHouseholdShareRepository();
+      new FakeProfileHouseholdShareRepository(this::householdOfProfile);
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
@@ -446,11 +447,41 @@ class ProfileSharingServiceTest {
 
     var page =
         service.householdShares(
-            identity(),
-            new ShareListScope(household.getId(), List.of(ProfileShareStatus.PENDING)),
-            paginationOptions());
+            identity(), sharesInto(household, ProfileShareStatus.PENDING), paginationOptions());
 
     assertThat(page.rows()).extracting(row -> row.item().getId()).containsExactly(offer.getId());
+  }
+
+  @Test
+  @DisplayName("Should keep only visitors' shares when a Household's shares are kept to visitors")
+  void shouldKeepOnlyVisitorsSharesWhenHouseholdsSharesAreKeptToVisitors() {
+    var elsewhere = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var visitor =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(elsewhere.getId()).build());
+    var own =
+        profiles.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var visit =
+        shares.save(
+            activeShareBuilder().profileId(visitor.getId()).householdId(household.getId()).build());
+    var home =
+        shares.save(
+            activeShareBuilder().profileId(own.getId()).householdId(household.getId()).build());
+
+    var visitors =
+        service.householdShares(
+            identity(),
+            new HouseholdSharesScope(new ShareListScope(household.getId(), List.of()), true),
+            paginationOptions());
+    var every = service.householdShares(identity(), everyShareInto(household), paginationOptions());
+
+    assertThat(visitors.rows())
+        .extracting(row -> row.item().getId())
+        .containsExactly(visit.getId());
+    assertThat(every.rows())
+        .extracting(row -> row.item().getId())
+        .containsExactlyInAnyOrder(visit.getId(), home.getId());
   }
 
   @Test
@@ -490,14 +521,10 @@ class ProfileSharingServiceTest {
 
     var pending =
         service.householdShares(
-            identity(),
-            new ShareListScope(household.getId(), List.of(ProfileShareStatus.PENDING)),
-            paginationOptions());
+            identity(), sharesInto(household, ProfileShareStatus.PENDING), paginationOptions());
     var expired =
         service.householdShares(
-            identity(),
-            new ShareListScope(household.getId(), List.of(ProfileShareStatus.EXPIRED)),
-            paginationOptions());
+            identity(), sharesInto(household, ProfileShareStatus.EXPIRED), paginationOptions());
 
     assertThat(pending.rows()).isEmpty();
     assertThat(expired.rows()).extracting(row -> row.item().getId()).containsExactly(stale.getId());
@@ -838,8 +865,18 @@ class ProfileSharingServiceTest {
     return PaginationFixture.firstRows(100);
   }
 
-  private static ShareListScope everyShareInto(Household household) {
-    return new ShareListScope(household.getId(), List.of());
+  private Optional<UUID> householdOfProfile(UUID profileId) {
+    return profiles.findById(profileId).map(Profile::getHouseholdId);
+  }
+
+  private static HouseholdSharesScope everyShareInto(Household household) {
+    return sharesInto(household);
+  }
+
+  private static HouseholdSharesScope sharesInto(
+      Household household, ProfileShareStatus... statuses) {
+    return new HouseholdSharesScope(
+        new ShareListScope(household.getId(), List.of(statuses)), false);
   }
 
   private static ShareListScope everyShareOf(UUID profileId) {

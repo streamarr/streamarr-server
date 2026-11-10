@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
@@ -125,8 +126,18 @@ public class ProfileHouseholdShareRepositoryCustomImpl
         PROFILE_HOUSEHOLD_SHARE
             .HOUSEHOLD_ID
             .eq(filter.householdId())
-            .and(keptBy(filter.statuses())),
+            .and(keptBy(filter.statuses()))
+            .and(filter.visitorsOnly() ? ofVisitor() : DSL.noCondition()),
         seek);
+  }
+
+  /** A share of a Profile that belongs to another Household than the one the share is into. */
+  private static Condition ofVisitor() {
+    return DSL.exists(
+        DSL.selectOne()
+            .from(PROFILE)
+            .where(PROFILE.ID.eq(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID))
+            .and(PROFILE.HOUSEHOLD_ID.ne(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)));
   }
 
   /** The shares the filter keeps, each read as of the filter's instant. */

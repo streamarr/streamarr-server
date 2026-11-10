@@ -485,12 +485,12 @@ public class ProfileSharingService {
   }
 
   /**
-   * A page of the shares into one Household in the scope's statuses, newest first; hidden reads as
+   * A page of the shares into one Household that the scope keeps, newest first; hidden reads as
    * empty.
    */
   public ListPage<ProfileHouseholdShare> householdShares(
-      AuthenticatedIdentity identity, ShareListScope household, PageRequest request) {
-    if (!mayViewHousehold(identity, household.id())) {
+      AuthenticatedIdentity identity, HouseholdSharesScope household, PageRequest request) {
+    if (!mayViewHousehold(identity, household.householdId())) {
       return ListPage.empty();
     }
 

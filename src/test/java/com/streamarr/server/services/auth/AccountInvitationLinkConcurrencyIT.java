@@ -34,6 +34,7 @@ import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
 import com.streamarr.server.services.identity.CredentialRejections;
+import com.streamarr.server.services.identity.HouseholdSharesScope;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.SessionContextService;
 import com.streamarr.server.services.identity.ShareListScope;
@@ -869,8 +870,9 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     return PaginationFixture.firstRows(100);
   }
 
-  private static ShareListScope pendingOffersInto(UUID householdId) {
-    return new ShareListScope(householdId, List.of(ProfileShareStatus.PENDING));
+  private static HouseholdSharesScope pendingOffersInto(UUID householdId) {
+    return new HouseholdSharesScope(
+        new ShareListScope(householdId, List.of(ProfileShareStatus.PENDING)), false);
   }
 
   private static AcceptInvitationCommand acceptCommand(String code) {
