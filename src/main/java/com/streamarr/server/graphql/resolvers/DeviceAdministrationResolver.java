@@ -24,6 +24,7 @@ import com.streamarr.server.graphql.mutation.devices.UnblockEsnPayload;
 import com.streamarr.server.graphql.mutation.devices.UnblockEsnServerWidePayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.DeviceAdministrationService;
+import com.streamarr.server.services.identity.HouseholdDevicesScope;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -49,8 +50,11 @@ public class DeviceAdministrationResolver {
 
   @DgsQuery
   public Connection<DeviceRegistrationDetails> householdDevices(
-      @InputArgument String householdId, DataFetchingEnvironment dfe) {
-    var household = Ids.parseUuid(householdId);
+      @InputArgument String householdId,
+      @InputArgument Boolean visitorsOnly,
+      DataFetchingEnvironment dfe) {
+    var household =
+        new HouseholdDevicesScope(Ids.parseUuid(householdId), Boolean.TRUE.equals(visitorsOnly));
     var list = new ListIdentity("household-devices", household);
     var page =
         deviceAdministrationService.householdDevices(

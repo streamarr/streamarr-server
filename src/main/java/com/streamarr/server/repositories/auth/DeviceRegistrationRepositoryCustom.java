@@ -1,7 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.DeviceRegistration;
-import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.domain.auth.HouseholdRegistrationFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import java.time.Instant;
@@ -10,9 +10,8 @@ import java.util.UUID;
 
 public interface DeviceRegistrationRepositoryCustom {
 
-  /** The Household's registrations in one status beyond the seek, by creation time, then ID. */
-  List<Row<DeviceRegistration>> rowsInHousehold(
-      UUID householdId, DeviceRegistrationStatus status, Seek seek);
+  /** The Household's registrations the filter keeps, beyond the seek, by creation time, then ID. */
+  List<Row<DeviceRegistration>> rowsInHousehold(HouseholdRegistrationFilter filter, Seek seek);
 
   /** Revokes one ACTIVE registration. Returns false if it is missing or already revoked. */
   boolean tryRevoke(UUID registrationId, UUID actorAccountId, String reason, Instant now);
