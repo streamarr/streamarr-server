@@ -4,7 +4,6 @@ import static com.streamarr.server.jooq.generated.tables.ShareCode.SHARE_CODE;
 import static org.jooq.impl.DSL.inline;
 
 import com.streamarr.server.domain.auth.ShareCode;
-import com.streamarr.server.domain.auth.ShareCodeFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.enums.ShareCodeStatus;
@@ -21,8 +20,6 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
-import org.jooq.Field;
-import org.jooq.impl.DSL;
 
 @RequiredArgsConstructor
 public class ShareCodeRepositoryCustomImpl implements ShareCodeRepositoryCustom {
@@ -82,38 +79,20 @@ public class ShareCodeRepositoryCustomImpl implements ShareCodeRepositoryCustom 
   }
 
   @Override
-  public List<Row<ShareCode>> rowsInHousehold(ShareCodeFilter filter, Seek seek) {
+  public List<Row<ShareCode>> liveRowsInHousehold(UUID householdId, Instant now, Seek seek) {
     var keyset =
         Keyset.<OffsetDateTime>builder()
             .sortValue(SHARE_CODE.CREATED_ON)
             .itemId(SHARE_CODE.ID)
             .build();
-    var scope = SHARE_CODE.HOUSEHOLD_ID.eq(filter.householdId()).and(keptBy(filter));
+    var scope =
+        SHARE_CODE
+            .HOUSEHOLD_ID
+            .eq(householdId)
+            .and(SHARE_CODE.STATUS.eq(inline(ShareCodeStatus.LIVE)))
+            .and(SHARE_CODE.EXPIRES_AT.gt(inline(now.atOffset(ZoneOffset.UTC))));
     var query = keyset.rowsBeyond(keyset.selectFrom(dsl, SHARE_CODE), scope, seek);
     return JooqQueryHelper.nativeRows(entityManager, query, ShareCode.class, keyset);
-  }
-
-  /** The codes the filter keeps, each read as of the filter's instant. */
-  private static Condition keptBy(ShareCodeFilter filter) {
-    if (filter.statuses().isEmpty()) {
-      return DSL.noCondition();
-    }
-
-    var at = inline(filter.at().atOffset(ZoneOffset.UTC));
-    return DSL.or(
-        filter.statuses().stream()
-            .map(status -> readsAs(ShareCodeStatus.valueOf(status.name()), at))
-            .toList());
-  }
-
-  private static Condition readsAs(ShareCodeStatus status, Field<OffsetDateTime> at) {
-    var stored = SHARE_CODE.STATUS.eq(inline(status));
-    var live = SHARE_CODE.STATUS.eq(inline(ShareCodeStatus.LIVE));
-    return switch (status) {
-      case LIVE -> stored.and(SHARE_CODE.EXPIRES_AT.gt(at));
-      case EXPIRED -> stored.or(live.and(SHARE_CODE.EXPIRES_AT.le(at)));
-      case SPENT, WITHDRAWN, INVALIDATED -> stored;
-    };
   }
 
   @Override

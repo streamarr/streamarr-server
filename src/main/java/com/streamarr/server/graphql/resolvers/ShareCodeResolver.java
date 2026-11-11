@@ -4,7 +4,6 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.graphql.ClientIpAddressGraphQlInterceptor;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
@@ -21,7 +20,6 @@ import com.streamarr.server.graphql.mutation.sharing.LookUpShareCodePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.graphql.mutation.sharing.WithdrawShareCodePayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.identity.HouseholdShareCodesScope;
 import com.streamarr.server.services.identity.NewShareCode;
 import com.streamarr.server.services.identity.ShareCodeCommand;
 import com.streamarr.server.services.identity.ShareCodeService;
@@ -31,8 +29,6 @@ import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
-import java.util.List;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -53,12 +49,8 @@ public class ShareCodeResolver {
 
   @DgsQuery
   public Connection<ShareCodeDetails> householdShareCodes(
-      @InputArgument String householdId,
-      @InputArgument List<ShareCodeStatus> statuses,
-      DataFetchingEnvironment dfe) {
-    var household =
-        new HouseholdShareCodesScope(
-            Ids.parseUuid(householdId), Objects.requireNonNullElse(statuses, List.of()));
+      @InputArgument String householdId, DataFetchingEnvironment dfe) {
+    var household = Ids.parseUuid(householdId);
     var list = new ListIdentity("household-share-codes", household);
     var page =
         shareCodeService.householdShareCodes(

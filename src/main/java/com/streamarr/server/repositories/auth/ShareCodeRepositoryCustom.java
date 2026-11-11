@@ -1,7 +1,6 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.ShareCode;
-import com.streamarr.server.domain.auth.ShareCodeFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import java.time.Instant;
@@ -41,8 +40,8 @@ public interface ShareCodeRepositoryCustom {
    */
   int invalidateLiveIssuedFor(UUID issuerAccountId, UUID householdId, Instant now);
 
-  /** The codes of one Household that the filter keeps, newest first, beyond the seek. */
-  List<Row<ShareCode>> rowsInHousehold(ShareCodeFilter filter, Seek seek);
+  /** The codes of one Household that are live at the instant, newest first, beyond the seek. */
+  List<Row<ShareCode>> liveRowsInHousehold(UUID householdId, Instant now, Seek seek);
 
   /** Reads the code past any stale managed copy this transaction holds. */
   Optional<ShareCode> findByIdAndReloadFromDatabase(UUID shareCodeId);

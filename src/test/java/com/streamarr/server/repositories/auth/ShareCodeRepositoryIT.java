@@ -7,7 +7,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.ShareCode;
-import com.streamarr.server.domain.auth.ShareCodeFilter;
 import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.domain.pagination.ListOrder;
 import com.streamarr.server.domain.pagination.SortDirection;
@@ -20,7 +19,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
@@ -198,23 +196,17 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should read each code as it stands at the filter's instant when a list keeps statuses")
-  void shouldReadEachCodeAsItStandsAtFiltersInstantWhenListKeepsStatuses() {
+  @DisplayName("Should list only the codes live at the instant when a Household's codes are listed")
+  void shouldListOnlyCodesLiveAtInstantWhenHouseholdsCodesAreListed() {
     var live = insert(shareCodes.issue().digest(), now.plusSeconds(60));
-    var expired = insert(shareCodes.issue().digest(), now);
+    insert(shareCodes.issue().digest(), now);
     var spent = insert(shareCodes.issue().digest(), now.plusSeconds(60));
     transactionTemplate.execute(_ -> shareCodeRepository.trySpend(spent, now));
+    var withdrawn = insert(shareCodes.issue().digest(), now.plusSeconds(60));
+    transactionTemplate.execute(_ -> shareCodeRepository.tryWithdraw(withdrawn, now));
 
-    assertThat(listed()).containsExactlyInAnyOrder(live, expired, spent);
-    assertThat(listed(ShareCodeStatus.LIVE)).containsExactly(live);
-    assertThat(listed(ShareCodeStatus.EXPIRED)).containsExactly(expired);
-    assertThat(listed(ShareCodeStatus.SPENT, ShareCodeStatus.LIVE))
-        .containsExactlyInAnyOrder(spent, live);
-    assertThat(
-            shareCodeRepository.rowsInHousehold(
-                new ShareCodeFilter(UUID.randomUUID(), Set.of(), now), firstSeek(NEWEST_FIRST, 10)))
-        .isEmpty();
+    assertThat(listed(host.household().getId())).containsExactly(live);
+    assertThat(listed(UUID.randomUUID())).isEmpty();
   }
 
   @Test
@@ -300,11 +292,9 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
         .hasMessageContaining("chk_share_code_ended_at");
   }
 
-  private List<UUID> listed(ShareCodeStatus... statuses) {
+  private List<UUID> listed(UUID householdId) {
     return shareCodeRepository
-        .rowsInHousehold(
-            new ShareCodeFilter(host.household().getId(), Set.of(statuses), now),
-            firstSeek(NEWEST_FIRST, 10))
+        .liveRowsInHousehold(householdId, now, firstSeek(NEWEST_FIRST, 10))
         .stream()
         .map(row -> row.item().getId())
         .toList();

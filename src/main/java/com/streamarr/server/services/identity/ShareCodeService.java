@@ -184,16 +184,16 @@ public class ShareCodeService {
   }
 
   /**
-   * A page of the Household's share codes in the scope, newest first, never the codes themselves;
-   * hidden reads as empty.
+   * A page of the Household's live share codes, newest first, never the codes themselves; hidden
+   * reads as empty.
    */
   public ListPage<ShareCodeWithIssuer> householdShareCodes(
-      AuthenticatedIdentity identity, HouseholdShareCodesScope household, PageRequest request) {
-    if (!mayViewShareCodes(identity, household.householdId())) {
+      AuthenticatedIdentity identity, UUID householdId, PageRequest request) {
+    if (!mayViewShareCodes(identity, householdId)) {
       return ListPage.empty();
     }
 
-    var page = Pager.page(householdShareCodesList, household, request);
+    var page = Pager.page(householdShareCodesList, householdId, request);
     var names =
         displayNames(page.rows().stream().map(row -> row.item().getIssuerAccountId()).toList());
     return page.map(

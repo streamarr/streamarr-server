@@ -1,7 +1,6 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.ShareCode;
-import com.streamarr.server.domain.auth.ShareCodeFilter;
 import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
@@ -63,14 +62,11 @@ public class FakeShareCodeRepository extends FakeJpaRepository<ShareCode>
   }
 
   @Override
-  public List<Row<ShareCode>> rowsInHousehold(ShareCodeFilter filter, Seek seek) {
+  public List<Row<ShareCode>> liveRowsInHousehold(UUID householdId, Instant now, Seek seek) {
     return InMemoryKeyset.byCreationTime(
         database.values().stream()
-            .filter(shareCode -> filter.householdId().equals(shareCode.getHouseholdId()))
-            .filter(
-                shareCode ->
-                    filter.statuses().isEmpty()
-                        || filter.statuses().contains(shareCode.statusAt(filter.at())))
+            .filter(shareCode -> householdId.equals(shareCode.getHouseholdId()))
+            .filter(shareCode -> shareCode.isLiveAt(now))
             .toList(),
         seek);
   }

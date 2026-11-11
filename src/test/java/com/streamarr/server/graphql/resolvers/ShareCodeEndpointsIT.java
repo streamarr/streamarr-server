@@ -44,8 +44,7 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
           issued {
             code
             shareCode {
-              id householdId status issuedAt expiresAt endedAt
-              issuedByAccountId issuedByDisplayName
+              id householdId status issuedAt expiresAt endedAt issuedByDisplayName
             }
           }
           userErrors { __typename ... on InputMutationError { message inputPath } }
@@ -65,9 +64,9 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
 
   private static final String LIST =
       """
-      query List($householdId: ID!, $statuses: [ShareCodeStatus!]) {
-        householdShareCodes(householdId: $householdId, statuses: $statuses) {
-          edges { node { id status expiresAt issuedByAccountId issuedByDisplayName } }
+      query List($householdId: ID!) {
+        householdShareCodes(householdId: $householdId) {
+          edges { node { id status expiresAt issuedByDisplayName } }
         }
       }
       """;
@@ -117,8 +116,6 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
         .isEqualTo(host.household().getId().toString());
     assertThat(shareCode.path("status").asString()).isEqualTo("LIVE");
     assertThat(shareCode.path("endedAt").isNull()).isTrue();
-    assertThat(shareCode.path("issuedByAccountId").asString())
-        .isEqualTo(host.account().getId().toString());
     assertThat(shareCode.path("issuedByDisplayName").asString())
         .isEqualTo(host.account().getDisplayName());
     assertThat(
@@ -192,7 +189,7 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
     var servers =
         issuedId(issue(authTestSupport.accountBearer(serverAdmin), host.household().getId()));
 
-    var listed = list(authTestSupport.accountBearer(host), List.of());
+    var listed = list(authTestSupport.accountBearer(host));
 
     assertThat(listed)
         .extracting(node -> node.path("id").asString())
@@ -205,13 +202,34 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should name no Account for an issuer when a HouseholdAdmin asks the list for one")
+  void shouldNameNoAccountForIssuerWhenHouseholdAdminAsksListForOne() throws Exception {
+    issue(authTestSupport.accountBearer(host), host.household().getId());
+
+    var body =
+        executeAllowingErrors(
+            authTestSupport.accountBearer(host),
+            """
+            query List($householdId: ID!) {
+              householdShareCodes(householdId: $householdId) {
+                edges { node { issuedByAccountId } }
+              }
+            }
+            """,
+            Map.of("householdId", host.household().getId().toString()));
+
+    assertThat(errors(body).path("message").asString()).contains("issuedByAccountId");
+    assertThat(body.path("data").path("householdShareCodes").isMissingNode()).isTrue();
+  }
+
+  @Test
   @DisplayName("Should list nothing when a member or a device-bound session lists the codes")
   void shouldListNothingWhenMemberOrDeviceBoundSessionListsCodes() throws Exception {
     issue(authTestSupport.accountBearer(host), host.household().getId());
     var member = authTestSupport.createHouseholdMemberIdentity(host);
 
-    assertThat(list(authTestSupport.accountBearer(member), List.of())).isEmpty();
-    assertThat(list(authTestSupport.deviceBoundProfileBearer(host), List.of())).isEmpty();
+    assertThat(list(authTestSupport.accountBearer(member))).isEmpty();
+    assertThat(list(authTestSupport.deviceBoundProfileBearer(host))).isEmpty();
   }
 
   @Test
@@ -229,12 +247,9 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
     assertThat(payload.path("userErrors")).isEmpty();
     assertThat(payload.path("shareCode").path("status").asString()).isEqualTo("WITHDRAWN");
     assertThat(payload.path("shareCode").path("endedAt").asString()).isNotEmpty();
-    assertThat(list(authTestSupport.accountBearer(host), List.of("LIVE")))
+    assertThat(list(authTestSupport.accountBearer(host)))
         .extracting(node -> node.path("id").asString())
         .containsExactly(kept);
-    assertThat(list(authTestSupport.accountBearer(host), List.of("WITHDRAWN")))
-        .extracting(node -> node.path("id").asString())
-        .containsExactly(withdrawnId);
   }
 
   @Test
@@ -267,7 +282,7 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
         .singleElement()
         .extracting(error -> error.path("__typename").asString())
         .isEqualTo("ShareCodeNotFoundError");
-    assertThat(list(authTestSupport.accountBearer(host), List.of("LIVE")))
+    assertThat(list(authTestSupport.accountBearer(host)))
         .extracting(node -> node.path("id").asString())
         .containsExactly(id);
   }
@@ -381,12 +396,9 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
         .path("withdrawShareCode");
   }
 
-  private List<JsonNode> list(String bearer, List<String> statuses) throws Exception {
+  private List<JsonNode> list(String bearer) throws Exception {
     var nodes = new ArrayList<JsonNode>();
-    execute(
-            bearer,
-            LIST,
-            Map.of("householdId", host.household().getId().toString(), "statuses", statuses))
+    execute(bearer, LIST, Map.of("householdId", host.household().getId().toString()))
         .path("data")
         .path("householdShareCodes")
         .path("edges")
