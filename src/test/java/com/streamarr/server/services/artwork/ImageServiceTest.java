@@ -1,13 +1,23 @@
 package com.streamarr.server.services.artwork;
 
+import static com.streamarr.server.fakes.TestImages.OPAQUE_TEAL;
+import static com.streamarr.server.fakes.TestImages.alphaOfCornerPixel;
+import static com.streamarr.server.fakes.TestImages.centrePixelOf;
+import static com.streamarr.server.fakes.TestImages.createOpaquePngImageWithAlphaChannel;
+import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitOpaquePngImage;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTestImageWithMismatchedColorProfile;
 import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
+import static com.streamarr.server.fakes.TestImages.formatNameOf;
 import static com.streamarr.server.fixtures.ArtworkStepsAttemptFixture.attemptFor;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
+import static org.junit.jupiter.api.Named.named;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -21,18 +31,23 @@ import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fixtures.AmbientArtworkFixture;
 import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.services.metadata.ImageVariantService;
+import java.awt.Color;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -142,6 +157,87 @@ class ImageServiceTest {
         .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
         .singleElement()
         .satisfies(image -> assertThat(image.getAmbientColors()).isEmpty());
+  }
+
+  @Test
+  @DisplayName("Should store resized variants as transparent PNG when image has transparent pixels")
+  void shouldStoreResizedVariantsAsTransparentPngWhenImageHasTransparentPixels() {
+    var result = processLogo(createPngImageWithTransparentBorder());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(ImageServiceTest::assertPngWithTransparentBorder);
+  }
+
+  @Test
+  @DisplayName(
+      "Should store resized variants as transparent PNG when transparency is a palette entry")
+  void shouldStoreResizedVariantsAsTransparentPngWhenTransparencyIsPaletteEntry() {
+    var result = processLogo(createPalettePngImageWithTransparentBorder());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(ImageServiceTest::assertPngWithTransparentBorder);
+  }
+
+  @Test
+  @DisplayName("Should omit BlurHash when image has transparent pixels")
+  void shouldOmitBlurHashWhenImageHasTransparentPixels() {
+    var result = processLogo(createPngImageWithTransparentBorder());
+
+    assertThat(result.images())
+        .hasSize(4)
+        .allSatisfy(image -> assertThat(image.getBlurHash()).isNull());
+  }
+
+  @Test
+  @DisplayName("Should omit ambient colors when image has transparent pixels")
+  void shouldOmitAmbientColorsWhenImageHasTransparentPixels() {
+    var result = processLogo(createPngImageWithTransparentBorder());
+
+    assertThat(result.images())
+        .hasSize(4)
+        .allSatisfy(image -> assertThat(image.getAmbientColors()).isEmpty());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("opaqueImagesThatResizeWithAlphaChannel")
+  @DisplayName("Should store resized variants as JPEG when every pixel is opaque")
+  void shouldStoreResizedVariantsAsJpegWhenEveryPixelIsOpaque(byte[] imageData) {
+    var result = processPoster(imageData);
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(ImageServiceTest::assertJpegOfSolidTeal);
+  }
+
+  private static Stream<Named<byte[]>> opaqueImagesThatResizeWithAlphaChannel() {
+    return Stream.of(
+        named(
+            "alpha channel in which every pixel is opaque", createOpaquePngImageWithAlphaChannel()),
+        named("16-bit color samples without an alpha channel", createSixteenBitOpaquePngImage()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should compute the BlurHash of the picture without alpha when alpha channel is fully opaque")
+  void shouldComputeBlurHashOfPictureWithoutAlphaWhenAlphaChannelIsFullyOpaque() {
+    var withoutAlphaChannel = processPoster(createSolidPngImage(600, 900, 0x00A0A0));
+
+    var withOpaqueAlphaChannel = processPoster(createOpaquePngImageWithAlphaChannel());
+
+    assertThat(smallOf(withOpaqueAlphaChannel).getBlurHash())
+        .isNotBlank()
+        .isEqualTo(smallOf(withoutAlphaChannel).getBlurHash());
+  }
+
+  @Test
+  @DisplayName("Should compute ambient colors when alpha channel is fully opaque")
+  void shouldComputeAmbientColorsWhenAlphaChannelIsFullyOpaque() {
+    var result = processPoster(createOpaquePngImageWithAlphaChannel());
+
+    assertThat(smallOf(result).getAmbientColors())
+        .hasValueSatisfying(colors -> assertThat(colors.primary()).isEqualTo("#00a0a0"));
   }
 
   @Test
@@ -663,5 +759,51 @@ class ImageServiceTest {
                 imageService.processImage(
                     imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE))
         .isInstanceOf(ImageStorageException.class);
+  }
+
+  private ImageService.ProcessedImage processLogo(byte[] imageData) {
+    return imageService.processImage(
+        imageData, ImageType.LOGO, UUID.randomUUID(), ImageEntityType.COMPANY);
+  }
+
+  private ImageService.ProcessedImage processPoster(byte[] imageData) {
+    return imageService.processImage(
+        imageData, ImageType.POSTER, UUID.randomUUID(), ImageEntityType.MOVIE);
+  }
+
+  private List<byte[]> resizedVariantFilesOf(ImageService.ProcessedImage processed) {
+    return processed.images().stream()
+        .filter(image -> image.getVariant() != ImageSize.ORIGINAL)
+        .map(this::storedBytesOf)
+        .toList();
+  }
+
+  private byte[] storedBytesOf(Image image) {
+    try {
+      return imageService.readImageFile(image);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  private static Image smallOf(ImageService.ProcessedImage processed) {
+    return processed.images().stream()
+        .filter(image -> image.getVariant() == ImageSize.SMALL)
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private static void assertPngWithTransparentBorder(byte[] imageData) {
+    assertThat(formatNameOf(imageData)).isEqualTo("png");
+    assertThat(alphaOfCornerPixel(imageData)).as("corner alpha").isZero();
+    assertThat(centrePixelOf(imageData)).as("centre pixel").isEqualTo(OPAQUE_TEAL);
+  }
+
+  private static void assertJpegOfSolidTeal(byte[] imageData) {
+    assertThat(formatNameOf(imageData)).isEqualTo("jpeg");
+    var centre = new Color(centrePixelOf(imageData));
+    assertThat(centre.getRed()).as("red").isCloseTo(0x00, within(4));
+    assertThat(centre.getGreen()).as("green").isCloseTo(0xA0, within(4));
+    assertThat(centre.getBlue()).as("blue").isCloseTo(0xA0, within(4));
   }
 }

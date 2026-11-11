@@ -1,5 +1,6 @@
 package com.streamarr.server.services.metadata;
 
+import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -157,6 +158,19 @@ class ImageVariantServiceTest {
     for (var variant : nonSmallVariants) {
       assertThat(variant.blurHash()).isNull();
     }
+  }
+
+  @Test
+  @DisplayName("Should encode every resized variant when image has transparent pixels")
+  void shouldEncodeEveryResizedVariantWhenImageHasTransparentPixels() {
+    var variants =
+        imageVariantService.generateVariants(createPngImageWithTransparentBorder(), ImageType.LOGO);
+
+    assertThat(variants)
+        .filteredOn(variant -> variant.variant() != ImageSize.ORIGINAL)
+        .hasSize(3)
+        .allSatisfy(
+            variant -> assertThat(variant.data()).as(variant.variant().name()).isNotEmpty());
   }
 
   @ParameterizedTest
