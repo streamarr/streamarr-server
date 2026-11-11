@@ -67,6 +67,15 @@ public class FakeShareCodeRepository extends FakeJpaRepository<ShareCode>
   }
 
   @Override
+  public int countLiveInHousehold(UUID householdId, Instant now) {
+    return (int)
+        database.values().stream()
+            .filter(shareCode -> householdId.equals(shareCode.getHouseholdId()))
+            .filter(shareCode -> shareCode.isLiveAt(now))
+            .count();
+  }
+
+  @Override
   public List<Row<ShareCode>> liveRowsInHousehold(UUID householdId, Instant now, Seek seek) {
     return InMemoryKeyset.byCreationTime(
         database.values().stream()

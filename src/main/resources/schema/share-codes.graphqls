@@ -58,7 +58,7 @@ type IssueShareCodePayload {
     userErrors: [IssueShareCodeError!]!
 }
 
-union IssueShareCodeError = HouseholdNotFoundError
+union IssueShareCodeError = HouseholdNotFoundError | ShareCodeLimitReachedError
 
 input WithdrawShareCodeInput {
     shareCodeId: ID!

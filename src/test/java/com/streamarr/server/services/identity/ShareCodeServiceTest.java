@@ -143,6 +143,80 @@ class ShareCodeServiceTest {
   }
 
   @Test
+  @DisplayName("Should refuse with the limit reached when the Household holds ten live codes")
+  void shouldRefuseWithLimitReachedWhenHouseholdHoldsTenLiveCodes() {
+    for (var issued = 0; issued < 10; issued++) {
+      accepted(service.issueShareCode(identity(), householdId));
+    }
+
+    assertThat(rejectionOf(service.issueShareCode(identity(), householdId)))
+        .isEqualTo(new ShareCodeRejections.ShareCodeLimitReached());
+    assertThat(shareCodes.findAll()).hasSize(10);
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = UnusableCode.class,
+      names = {"SPENT", "WITHDRAWN", "INVALIDATED", "EXPIRED"})
+  @DisplayName("Should issue another code when a live code ends at the limit")
+  void shouldIssueAnotherCodeWhenALiveCodeEndsAtTheLimit(UnusableCode ending) {
+    limitShareCodesTo(1);
+    var first = accepted(service.issueShareCode(identity(), householdId));
+    ending.present(first, shareCodes, service, identity());
+
+    var second = accepted(service.issueShareCode(identity(), householdId));
+
+    assertThat(second.shareCode().shareCode().isLiveAt(NOW)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should issue a code when another Household holds the limit of live codes")
+  void shouldIssueCodeWhenAnotherHouseholdHoldsTheLimitOfLiveCodes() {
+    limitShareCodesTo(1);
+    var otherHouseholdId =
+        households.save(HouseholdFixture.defaultHouseholdBuilder().build()).getId();
+    shareCodes.tryInsert(
+        ShareCode.builder()
+            .householdId(otherHouseholdId)
+            .issuerAccountId(issuer.getId())
+            .codeDigest(new byte[32])
+            .expiresAt(NOW.plus(DEFAULT_SHARE_CODE_LIFETIME))
+            .build());
+
+    var issued = accepted(service.issueShareCode(identity(), householdId));
+
+    assertThat(issued.shareCode().shareCode().getHouseholdId()).isEqualTo(householdId);
+  }
+
+  @Test
+  @DisplayName("Should keep every live code and refuse another when the limit is below them")
+  void shouldKeepEveryLiveCodeAndRefuseAnotherWhenTheLimitIsBelowThem() {
+    for (var issued = 0; issued < 3; issued++) {
+      accepted(service.issueShareCode(identity(), householdId));
+    }
+
+    limitShareCodesTo(1);
+
+    assertThat(rejectionOf(service.issueShareCode(identity(), householdId)))
+        .isEqualTo(new ShareCodeRejections.ShareCodeLimitReached());
+    assertThat(shareCodes.findAll())
+        .hasSize(3)
+        .allSatisfy(stored -> assertThat(stored.isLiveAt(NOW)).isTrue());
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse as not found, not at the limit, when the caller may not see the codes")
+  void shouldRefuseAsNotFoundNotAtTheLimitWhenCallerMayNotSeeTheCodes() {
+    limitShareCodesTo(1);
+    accepted(service.issueShareCode(identity(), householdId));
+    authorization.denyAll();
+
+    assertThat(rejectionOf(service.issueShareCode(identity(), householdId)))
+        .isEqualTo(new ShareCodeRejections.HouseholdNotFound());
+  }
+
+  @Test
   @DisplayName("Should refuse as not found when the caller may not see the Household's codes")
   void shouldRefuseAsNotFoundWhenCallerMayNotSeeHouseholdsCodes() {
     authorization.denyAll();
@@ -532,6 +606,12 @@ class ShareCodeServiceTest {
         drawn,
         new ServerSettingsService(authorization, serverSettings),
         Clock.fixed(NOW, ZoneOffset.UTC));
+  }
+
+  private void limitShareCodesTo(int codes) {
+    var settings = serverSettings.findAll().getFirst();
+    settings.setShareCodeLimit(codes);
+    serverSettings.save(settings);
   }
 
   private static ShareCodeCommand command(String code) {

@@ -308,6 +308,15 @@ type ShareCodeNotFoundError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
+"""
+The Household already holds as many live share codes as the server allows, so no code was issued.
+A code that is spent, withdrawn or invalidated, or that expires, makes room for another. Only a
+HouseholdAdmin of the Household or a ServerAdmin gets it: everyone else gets HouseholdNotFoundError.
+"""
+type ShareCodeLimitReachedError implements MutationError {
+    message: String!
+}
+
 "The share code no longer works: it was spent, withdrawn or invalidated, or it expired."
 type ShareCodeNotLiveError implements InputMutationError & MutationError {
     message: String!

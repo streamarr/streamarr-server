@@ -87,6 +87,11 @@ public class ShareCodeRepositoryCustomImpl implements ShareCodeRepositoryCustom 
   }
 
   @Override
+  public int countLiveInHousehold(UUID householdId, Instant now) {
+    return dsl.fetchCount(SHARE_CODE, SHARE_CODE.HOUSEHOLD_ID.eq(householdId).and(liveAt(now)));
+  }
+
+  @Override
   public List<Row<ShareCode>> liveRowsInHousehold(UUID householdId, Instant now, Seek seek) {
     var keyset =
         Keyset.<OffsetDateTime>builder()
