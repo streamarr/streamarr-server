@@ -122,6 +122,54 @@ class PlannedVideoOutputTest {
             true));
   }
 
+  // ADR 0050: the lower variants beside a copy keep its range and bit depth. An encode writes SDR
+  // at 8 or 10 bits and PQ or HLG at 10 bits, and reshapes Dolby Vision without a compatible base
+  // into PQ.
+  @ParameterizedTest(name = "{0} at {1} bits")
+  @MethodSource("copiesAndTheEncodeFormatInTheirRangeAndBitDepth")
+  @DisplayName(
+      "Should name the encode format in a copy's range and bit depth when an encode writes them")
+  void shouldNameTheEncodeFormatInACopysRangeAndBitDepthWhenAnEncodeWritesThem(
+      VideoDynamicRange range, int bitDepth, Optional<EncodeFormat> expected) {
+    var copy = copyBuilder().dynamicRange(range).bitDepth(OptionalInt.of(bitDepth)).build();
+
+    assertThat(copy.encodeFormatInItsRangeAndBitDepth()).isEqualTo(expected);
+  }
+
+  static Stream<Arguments> copiesAndTheEncodeFormatInTheirRangeAndBitDepth() {
+    var sdr = Named.of("SDR", VideoDynamicRange.SDR);
+    var pq = Named.of("PQ", copyOf(CompatibleBase.PQ).dynamicRange());
+    var hlg = Named.of("HLG", copyOf(CompatibleBase.HLG).dynamicRange());
+    var dolbyVisionWithoutABase =
+        Named.of(
+            "Dolby Vision without a compatible base",
+            new VideoDynamicRange(
+                CompatibleBase.NONE,
+                Presence.ABSENT,
+                new DolbyVision.Present(Optional.empty(), Presence.PRESENT)));
+    var pqEncode = Optional.of(EncodeFormat.hdr(VideoRange.PQ));
+    return Stream.of(
+        Arguments.of(sdr, 8, Optional.of(EncodeFormat.SDR_8_BIT)),
+        Arguments.of(sdr, 10, Optional.of(EncodeFormat.SDR_10_BIT)),
+        Arguments.of(sdr, 12, Optional.empty()),
+        Arguments.of(pq, 10, pqEncode),
+        Arguments.of(pq, 8, Optional.empty()),
+        Arguments.of(pq, 12, Optional.empty()),
+        Arguments.of(hlg, 10, Optional.of(EncodeFormat.hdr(VideoRange.HLG))),
+        Arguments.of(hlg, 12, Optional.empty()),
+        Arguments.of(dolbyVisionWithoutABase, 10, pqEncode),
+        Arguments.of(dolbyVisionWithoutABase, 12, Optional.empty()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should name no encode format in a copy's range and bit depth when its bit depth is unknown")
+  void shouldNameNoEncodeFormatInACopysRangeAndBitDepthWhenItsBitDepthIsUnknown() {
+    var copy = copyBuilder().build();
+
+    assertThat(copy.encodeFormatInItsRangeAndBitDepth()).isEmpty();
+  }
+
   private static PlannedVideoOutput.StreamCopy copyOf(CompatibleBase base) {
     return copyBuilder()
         .dynamicRange(new VideoDynamicRange(base, Presence.ABSENT, new DolbyVision.Absent()))

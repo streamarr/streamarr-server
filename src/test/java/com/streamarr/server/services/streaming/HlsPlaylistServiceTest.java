@@ -42,6 +42,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
@@ -815,12 +816,13 @@ class HlsPlaylistServiceTest {
                       .doesNotContain("SUPPLEMENTAL-CODECS"));
     }
 
+    // ADR 0050: the lower variants keep the copy's range, so every entry announces PQ and a
+    // player reads them as one ladder.
     @Test
     @DisplayName(
-        "Should announce the copy's PQ range and leave it off its SDR lower variants when the"
-            + " session copies a PQ source beside lower variants")
-    void
-        shouldAnnounceTheCopysPqRangeAndLeaveItOffItsSdrLowerVariantsWhenTheCopyHasLowerVariants() {
+        "Should announce the copy's PQ range on the copy and on each lower variant when the session"
+            + " copies a PQ source beside lower variants")
+    void shouldAnnounceTheCopysPqRangeOnTheCopyAndOnEachLowerVariantWhenTheCopyHasLowerVariants() {
       var session =
           StreamSessionFixture.defaultSessionBuilder()
               .transcodeDecision(
@@ -829,11 +831,13 @@ class HlsPlaylistServiceTest {
                               .dynamicRange(
                                   VideoPlaybackFactsFixture.rangeWithoutEnhancement(
                                       CompatibleBase.PQ))
+                              .bitDepth(OptionalInt.of(10))
                               .codecString(Optional.of("hvc1.2.4.L150.B0")))
                       .lowerVariantEncode(
                           Optional.of(
                               new LowerVariantEncode(
-                                  EncodeCodecProfile.H264_HIGH, EncodeFormat.SDR_8_BIT)))
+                                  EncodeCodecProfile.HEVC_MAIN_10,
+                                  EncodeFormat.hdr(VideoRange.PQ))))
                       .build())
               .variants(
                   List.of(
@@ -856,8 +860,8 @@ class HlsPlaylistServiceTest {
               lower ->
                   assertThat(lower)
                       .contains("RESOLUTION=1280x720")
-                      .contains("CODECS=\"avc1.64001F,mp4a.40.2\"")
-                      .doesNotContain("VIDEO-RANGE"));
+                      .containsPattern("CODECS=\"hvc1\\.2\\.4\\.L\\d+\\.90,mp4a\\.40\\.2\"")
+                      .contains(",VIDEO-RANGE=PQ"));
       assertThat(playlist.lines().filter(line -> !line.startsWith("#")))
           .containsExactly("stream.m3u8?t=test-token", "720p/stream.m3u8?t=test-token");
     }

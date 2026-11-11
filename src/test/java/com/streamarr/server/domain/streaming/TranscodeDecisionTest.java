@@ -212,6 +212,108 @@ class TranscodeDecisionTest {
         .hasMessageContaining("cannot hold an encode codec profile");
   }
 
+  // ADR 0050: a bandwidth dip must not move a television between HDR and SDR, and a 10-bit copy
+  // keeps its 10 bits, so no decision pairs a copy with lower variants in another format.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesAndLowerVariantsInAnotherFormat")
+  @DisplayName(
+      "Should refuse a copy decision when its lower variants leave the copy's range or bit depth")
+  void shouldRefuseACopyDecisionWhenItsLowerVariantsLeaveTheCopysRangeOrBitDepth(
+      VideoPlaybackFacts copied, LowerVariantEncode lowerVariants) {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoSource(Optional.of(copied))
+            .lowerVariantEncode(Optional.of(lowerVariants));
+
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must keep the copy's range and bit depth");
+  }
+
+  static Stream<Arguments> copiesAndLowerVariantsInAnotherFormat() {
+    var eightBitSdr = new LowerVariantEncode(EncodeCodecProfile.H264_HIGH, EncodeFormat.SDR_8_BIT);
+    var pq = new LowerVariantEncode(EncodeCodecProfile.AV1_MAIN, EncodeFormat.hdr(VideoRange.PQ));
+    return Stream.of(
+        Arguments.of(
+            Named.of("a PQ copy above 8-bit SDR", tenBitFacts(CompatibleBase.PQ)), eightBitSdr),
+        Arguments.of(
+            Named.of("an HLG copy above 8-bit SDR", tenBitFacts(CompatibleBase.HLG)), eightBitSdr),
+        Arguments.of(
+            Named.of("a 10-bit SDR copy above 8-bit SDR", tenBitFacts(CompatibleBase.SDR)),
+            eightBitSdr),
+        Arguments.of(Named.of("an HLG copy above PQ", tenBitFacts(CompatibleBase.HLG)), pq),
+        Arguments.of(
+            Named.of(
+                "an 8-bit SDR copy above PQ",
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()),
+            pq),
+        Arguments.of(
+            Named.of(
+                "a 12-bit PQ copy above 10-bit PQ",
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .dynamicRange(
+                        VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+                    .bitDepth(OptionalInt.of(12))
+                    .build()),
+            pq));
+  }
+
+  // A lower variant beside a PQ copy is a 10-bit PQ encode of the same video stream with the
+  // source's static metadata, and it keeps neither the copy's rewrites nor its Dolby Vision.
+  @Test
+  @DisplayName(
+      "Should plan each lower variant as an encode in the lower variant encode's codec profile and"
+          + " format when a copy holds one")
+  void shouldPlanEachLowerVariantAsAnEncodeInTheLowerVariantEncodesCodecProfileAndFormat() {
+    var copied =
+        tenBitFactsBuilder(CompatibleBase.PQ)
+            .masteringDisplay(Optional.of(VideoPlaybackFactsFixture.MASTERING_DISPLAY))
+            .contentLightLevel(Optional.of(VideoPlaybackFactsFixture.CONTENT_LIGHT_LEVEL))
+            .build();
+    var copy =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoCodecFamily("hevc")
+            .videoSource(Optional.of(copied))
+            .videoBitstreamRewrites(List.of(BitstreamRewrite.STRIP_HDR10_PLUS))
+            .lowerVariantEncode(
+                Optional.of(
+                    new LowerVariantEncode(
+                        EncodeCodecProfile.HEVC_MAIN_10, EncodeFormat.hdr(VideoRange.PQ))))
+            .build();
+
+    var lowerVariant = copy.lowerVariantDecision().orElseThrow();
+
+    assertThat(lowerVariant.transcodeMode().copiesVideo()).isFalse();
+    assertThat(lowerVariant.videoCodecFamily()).isEqualTo("hevc");
+    assertThat(lowerVariant.videoBitstreamRewrites()).isEmpty();
+    assertThat(lowerVariant.lowerVariantEncode()).isEmpty();
+    assertThat(lowerVariant.videoRange()).isEqualTo(copy.videoRange());
+    assertThat(lowerVariant.plannedVideoOutput())
+        .isEqualTo(
+            PlannedVideoOutput.Encode.builder()
+                .codecProfile(Optional.of(EncodeCodecProfile.HEVC_MAIN_10))
+                .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+                .bitDepth(10)
+                .chromaSubsampling(ChromaSubsampling.CHROMA_420)
+                .masteringDisplay(Optional.of(VideoPlaybackFactsFixture.MASTERING_DISPLAY))
+                .contentLightLevel(Optional.of(VideoPlaybackFactsFixture.CONTENT_LIGHT_LEVEL))
+                .build());
+  }
+
+  // 10-bit HEVC Main 10 in the compatible base, with neither HDR10+ nor Dolby Vision.
+  private static VideoPlaybackFacts tenBitFacts(CompatibleBase base) {
+    return tenBitFactsBuilder(base).build();
+  }
+
+  private static VideoPlaybackFacts.VideoPlaybackFactsBuilder tenBitFactsBuilder(
+      CompatibleBase base) {
+    return VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+        .codecFamily(Optional.of(ProbedCodecFamily.HEVC))
+        .codecString(Optional.of("hvc1.2.4.L150.90"))
+        .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(base))
+        .bitDepth(OptionalInt.of(10));
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("modesAndTheirModeWithOtherAudio")
   @DisplayName(

@@ -214,7 +214,7 @@ public class TranscodeDecisionService {
             .videoSource(source.videoPlaybackFacts())
             .videoBitstreamRewrites(copyPlan.map(CopyPlan::bitstreamRewrites).orElseGet(List::of))
             .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
-            .lowerVariantEncode(copyPlan.flatMap(_ -> lowerVariantEncode(request)))
+            .lowerVariantEncode(copyPlan.flatMap(plan -> lowerVariantEncode(request, plan)))
             .reasons(
                 afterDirectPlayRefusals(
                     request,
@@ -273,9 +273,17 @@ public class TranscodeDecisionService {
 
   // In Auto, encoded lower variants sit beside a copy (ADR 0050). They encode only once the player
   // switches to one, so a busy worker's verified encoder counts. A source without an encoded
-  // variant, such as one without a usable frame rate, copies alone.
-  private static Optional<LowerVariantEncode> lowerVariantEncode(TranscodeDecisionRequest request) {
+  // variant, such as one without a usable frame rate, copies alone. So does a copy whose range or
+  // bit depth an 8-bit SDR encode would change: a bandwidth dip must not move a television between
+  // HDR and SDR.
+  private static Optional<LowerVariantEncode> lowerVariantEncode(
+      TranscodeDecisionRequest request, CopyPlan plan) {
     if (request.viewerLimits().quality() != VideoQuality.AUTO) {
+      return Optional.empty();
+    }
+
+    var copyFormat = plannedCopy(request, plan).encodeFormatInItsRangeAndBitDepth();
+    if (!copyFormat.equals(Optional.of(EncodeFormat.SDR_8_BIT))) {
       return Optional.empty();
     }
 
@@ -435,13 +443,17 @@ public class TranscodeDecisionService {
   // for capacity and never turns the copy into an encode.
   private static boolean hasWorkerThatDeliversTheCopy(
       TranscodeDecisionRequest request, CopyPlan plan) {
-    var plannedCopy =
-        PlannedVideoOutput.StreamCopy.of(
-            request.source().videoPlaybackFacts().orElseThrow(), plan.bitstreamRewrites());
+    var plannedCopy = plannedCopy(request, plan);
     var copy = plan.dolbyVisionOutput().map(plannedCopy::withDolbyVisionOutput).orElse(plannedCopy);
     return !copy.requiresPlannedOutputSupport()
         || request.videoCopySupport().stream()
             .anyMatch(worker -> worker.deliversPlannedOutputOf(copy));
+  }
+
+  private static PlannedVideoOutput.StreamCopy plannedCopy(
+      TranscodeDecisionRequest request, CopyPlan plan) {
+    return PlannedVideoOutput.StreamCopy.of(
+        request.source().videoPlaybackFacts().orElseThrow(), plan.bitstreamRewrites());
   }
 
   // Busy workers' verified encoders count, so a lack of free slots refuses a session for capacity

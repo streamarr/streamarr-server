@@ -25,7 +25,7 @@ import lombok.NonNull;
  * (ADR 0044). {@code videoEncodeFormat} is the range and bit depth that the decision's encode
  * writes, and a decision that copies the video holds 8-bit SDR (#397). {@code lowerVariantEncode}
  * is the encode that the lower variants beside a copy run in Auto, so only a decision that copies
- * the video holds one (ADR 0050).
+ * the video holds one, and it writes the copy's range at the copy's bit depth (ADR 0050).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -75,6 +75,16 @@ public record TranscodeDecision(
     if (!copiesVideo && lowerVariantEncode.isPresent()) {
       throw new IllegalArgumentException(
           "A decision that encodes the video cannot hold a lower variant encode");
+    }
+
+    // A bandwidth dip must not move a television between HDR and SDR (ADR 0050).
+    var lowerVariantFormat = lowerVariantEncode.map(LowerVariantEncode::format);
+    if (lowerVariantFormat.isPresent()
+        && !lowerVariantFormat.equals(
+            PlannedVideoOutput.StreamCopy.of(videoSource.orElseThrow(), videoBitstreamRewrites)
+                .encodeFormatInItsRangeAndBitDepth())) {
+      throw new IllegalArgumentException(
+          "A copy's lower variants must keep the copy's range and bit depth");
     }
 
     videoBitstreamRewrites = List.copyOf(videoBitstreamRewrites);
