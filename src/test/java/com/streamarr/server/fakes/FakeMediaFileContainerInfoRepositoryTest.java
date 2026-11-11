@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.repositories.KeptKeyframePositionsRepositoryContract;
 import com.streamarr.server.repositories.MediaFileContainerInfoRepositoryContract;
 import com.streamarr.server.repositories.ProbePlaybackFactsRepositoryContract;
 import com.streamarr.server.repositories.StreamMeasurementRepositoryContract;
@@ -12,7 +13,8 @@ import org.junit.jupiter.api.Tag;
 @Tag("UnitTest")
 @DisplayName("Fake Media File Container Info Repository Tests")
 class FakeMediaFileContainerInfoRepositoryTest
-    implements MediaFileContainerInfoRepositoryContract,
+    implements KeptKeyframePositionsRepositoryContract,
+        MediaFileContainerInfoRepositoryContract,
         ProbePlaybackFactsRepositoryContract,
         StreamMeasurementRepositoryContract {
 

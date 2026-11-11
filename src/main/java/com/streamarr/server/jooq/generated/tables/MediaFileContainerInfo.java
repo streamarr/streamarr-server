@@ -436,7 +436,7 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
             Internal.createCheck(this, DSL.name("media_file_container_info_time_base_numerator_check"), "((time_base_numerator > 0))", true),
             Internal.createCheck(this, DSL.name("output_frame_rate_absent_only_when_refused"), "(((output_frame_rate_basis IS NULL) OR ((output_frame_rate_numerator IS NULL) = (output_frame_rate_basis = 'REFUSED'::text))))", true),
             Internal.createCheck(this, DSL.name("packet_scan_has_frame_count"), "(((packet_scan_frame_count IS NOT NULL) OR ((packet_scan_motion_rate IS NULL) AND (packet_scan_duration_seconds IS NULL))))", true),
-            Internal.createCheck(this, DSL.name("packet_scan_reason_only_when_packet_scan_required"), "(((NOT (keyframe_status IS DISTINCT FROM 'PACKET_SCAN_REQUIRED'::text)) = (keyframe_packet_scan_reason IS NOT NULL)))", true),
+            Internal.createCheck(this, DSL.name("packet_scan_reason_only_while_packet_scan_owed"), "(\nCASE keyframe_status\n    WHEN 'PACKET_SCAN_REQUIRED'::text THEN (keyframe_packet_scan_reason IS NOT NULL)\n    WHEN 'KNOWN'::text THEN true\n    ELSE (keyframe_packet_scan_reason IS NULL)\nEND)", true),
             Internal.createCheck(this, DSL.name("unavailable_reason_only_when_keyframes_unavailable"), "(((NOT (keyframe_status IS DISTINCT FROM 'UNAVAILABLE'::text)) = (keyframes_unavailable_reason IS NOT NULL)))", true)
         );
     }

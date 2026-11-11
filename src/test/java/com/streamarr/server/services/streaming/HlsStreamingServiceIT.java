@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.github.kagkarlsson.scheduler.SchedulerClient;
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
@@ -15,6 +16,10 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -23,6 +28,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -44,6 +50,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,6 +73,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @Autowired private ProbeTaskRequests probeTaskRequests;
   @Autowired private MediaFileContainerInfoRepository probeResults;
   @Autowired private HlsPlaylistService playlistService;
+  @Autowired private ProducerLifecycleService producerLifecycle;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private JdbcTemplate jdbc;
@@ -185,7 +193,8 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should refuse playback without starting a job attempt when the persisted probe has no duration")
+      "Should refuse playback without starting a job attempt when the persisted probe has no"
+          + " duration")
   void shouldRefusePlaybackWithoutStartingJobAttemptWhenThePersistedProbeHasNoDuration() {
     var complete = ProbeFixture.completeProbe(defaultProbeBuilder().build());
     storeOutcome(
@@ -209,7 +218,8 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @ParameterizedTest
   @CsvSource({"4,UNSPECIFIED", "4,ABSENT", "5,UNSPECIFIED", "5,ABSENT"})
   @DisplayName(
-      "Should request a new probe without starting a job attempt when a stored result has no compatible base without Dolby Vision")
+      "Should request a new probe without starting a job attempt when a stored result has no"
+          + " compatible base without Dolby Vision")
   void
       shouldRequestNewProbeWithoutStartingJobAttemptWhenStoredResultHasNoCompatibleBaseWithoutDolbyVision(
           int probeVersion, String dolbyVision) {
@@ -279,6 +289,62 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
             "#EXT-X-ENDLIST")
         .doesNotContain("segment12.m4s", ".ts?");
     assertThat(scheduledRequest()).contains(refresh);
+  }
+
+  // The scan read a keyframe every 6 s. A copy opens a media segment at each of them, and a seek
+  // to segment 15 reads from that segment's keyframe at 90 s.
+  @Test
+  @DisplayName(
+      "Should copy the video at its scanned keyframes when a new probe of the unchanged file still"
+          + " owes its packet scan")
+  void shouldCopyVideoAtScannedKeyframesWhenNewProbeOfUnchangedFileStillOwesItsPacketScan() {
+    var unscanned =
+        ProbeFixture.completeProbeBuilder(
+                defaultProbeBuilder().duration(Duration.ofSeconds(120)).build())
+            .keyframes(
+                new KeyframeKnowledge.PacketScanRequired(
+                    KeyframePacketScanReason.NO_CONTAINER_INDEX))
+            .build();
+    var scanned =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1000)
+            .source(KeyframePositionSource.PACKET_SCAN)
+            .keyframes(
+                LongStream.range(0, 20)
+                    .mapToObj(keyframe -> new KeyframePosition(keyframe * 6_000, keyframe * 6_000))
+                    .toList())
+            .build();
+    storeOutcome(unscanned, ProbeVersion.CURRENT - 1);
+    assertThat(
+            probeResults.publishKeyframePacketScan(
+                KeyframePacketScanPublication.builder()
+                    .mediaFileId(savedMediaFile.getId())
+                    .snapshot(sourceSnapshot)
+                    .probeVersion(ProbeVersion.CURRENT - 1)
+                    .keyframes(new KeyframeKnowledge.Known(scanned))
+                    .build()))
+        .isTrue();
+    storeOutcome(unscanned, ProbeVersion.CURRENT);
+
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    // The two calls that segment delivery makes for a media segment that is not in the store yet.
+    producerLifecycle.recover(
+        producerLifecycle.prepareRequestedVariant(
+            session.getSessionId(), StreamSession.defaultVariant(), "segment15.m4s"));
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getMediaProbe().keyframes()).isEqualTo(new KeyframeKnowledge.Known(scanned));
+    assertThat(
+            playlistService.generateMediaPlaylist(session, StreamSession.defaultVariant(), "token"))
+        .contains("#EXTINF:6.000000,", "segment19.m4s?t=token", "#EXT-X-ENDLIST")
+        .doesNotContain("segment20.m4s");
+    assertThat(FAKE_EXECUTOR.getStartedRequests())
+        .filteredOn(request -> request.sessionId().equals(session.getSessionId()))
+        .extracting(TranscodeRequest::startSequenceNumber, TranscodeRequest::keyframeSeekPosition)
+        .containsExactly(
+            tuple(0, Optional.empty()), tuple(15, Optional.of(Duration.ofSeconds(90))));
   }
 
   private void storeProbe(MediaProbe probe) {

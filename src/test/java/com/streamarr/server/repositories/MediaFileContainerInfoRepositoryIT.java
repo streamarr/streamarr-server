@@ -228,8 +228,11 @@ class MediaFileContainerInfoRepositoryIT extends AbstractIntegrationTest {
 
     assertThat(reader.find(file.getId()))
         .contains(
-            new PersistedProbeOutcome(
-                snapshot, 1, new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM)));
+            PersistedProbeOutcome.builder()
+                .snapshot(snapshot)
+                .probeVersion(1)
+                .outcome(new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM))
+                .build());
   }
 
   @Test
@@ -277,7 +280,8 @@ class MediaFileContainerInfoRepositoryIT extends AbstractIntegrationTest {
   @Test
   @Transactional
   @DisplayName(
-      "Should remove streams and make playback data unavailable when a migration invalidates an outcome")
+      "Should remove streams and make playback data unavailable when a migration invalidates an"
+          + " outcome")
   void shouldRemoveStreamsAndMakePlaybackDataUnavailableWhenMigrationInvalidatesOutcome() {
     var file = createMediaFile();
     var stream =

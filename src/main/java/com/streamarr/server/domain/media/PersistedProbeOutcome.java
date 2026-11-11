@@ -15,12 +15,6 @@ public record PersistedProbeOutcome(
     @NonNull ProbeOutcome outcome,
     boolean keyframePacketScanOwed) {
 
-  /** A stored outcome that owes a keyframe packet scan exactly when its probe asked for one. */
-  public PersistedProbeOutcome(
-      SourceFileSnapshot snapshot, int probeVersion, ProbeOutcome outcome) {
-    this(snapshot, probeVersion, outcome, outcome.needsKeyframePacketScan());
-  }
-
   public boolean matches(SourceFileSnapshot requestedSnapshot, int requestedVersion) {
     return snapshot.equals(requestedSnapshot) && probeVersion == requestedVersion;
   }
