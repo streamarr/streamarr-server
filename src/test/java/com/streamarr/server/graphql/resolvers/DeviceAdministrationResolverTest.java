@@ -329,15 +329,13 @@ class DeviceAdministrationResolverTest {
   @Test
   @DisplayName("Should reject a Device cursor when it continues the list of every Device")
   void shouldRejectDeviceCursorWhenItContinuesListOfEveryDevice() {
-    var cursor =
-        positionCursors
-            .encode(
-                new ListIdentity(
-                    "household-devices", new HouseholdDevicesScope(householdId, false)),
-                new Position(
-                    new SortValue.OfInstant(Instant.parse("2026-08-22T12:00:00Z")),
-                    UUID.randomUUID()))
-            .getValue();
+    stubThreeRegistrations();
+    stubRegistrations(
+        new HouseholdDevicesScope(householdId, true), List.of(registration("esn-visitor")));
+    String cursor =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            householdDevicesQuery("visitorsOnly: false, first: 1"),
+            "data.householdDevices.edges[0].cursor");
 
     var result =
         dgsQueryExecutor.execute(
