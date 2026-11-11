@@ -42,7 +42,7 @@ import com.streamarr.server.properties.AuthTokenProperties;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.auth.AccountInvitationService.InvitationCodeCommand;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import java.sql.SQLException;
 import java.time.Clock;

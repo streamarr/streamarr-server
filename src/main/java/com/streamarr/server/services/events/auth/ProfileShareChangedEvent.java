@@ -1,4 +1,4 @@
-package com.streamarr.server.services.auth.events;
+package com.streamarr.server.services.events.auth;
 
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ShareAction;

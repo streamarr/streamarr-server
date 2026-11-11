@@ -3,7 +3,7 @@ package com.streamarr.server.graphql.subscriptions;
 import com.streamarr.server.graphql.dto.NotificationsChange;
 import com.streamarr.server.graphql.dto.WatchStateChange;
 import com.streamarr.server.properties.SubscriptionProperties;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.UUID;
 import org.springframework.context.annotation.Bean;
