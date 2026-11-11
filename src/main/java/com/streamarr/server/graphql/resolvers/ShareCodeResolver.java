@@ -5,6 +5,7 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.ShareCodeStatus;
+import com.streamarr.server.graphql.ClientIpAddressGraphQlInterceptor;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
@@ -12,14 +13,17 @@ import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.IssuedShareCodeDetails;
 import com.streamarr.server.graphql.dto.ShareCodeDetails;
 import com.streamarr.server.graphql.inputs.IssueShareCodeInput;
+import com.streamarr.server.graphql.inputs.LookUpShareCodeInput;
 import com.streamarr.server.graphql.inputs.WithdrawShareCodeInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.sharing.IssueShareCodePayload;
+import com.streamarr.server.graphql.mutation.sharing.LookUpShareCodePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.graphql.mutation.sharing.WithdrawShareCodePayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.HouseholdShareCodesScope;
 import com.streamarr.server.services.identity.NewShareCode;
+import com.streamarr.server.services.identity.ShareCodeCommand;
 import com.streamarr.server.services.identity.ShareCodeService;
 import com.streamarr.server.services.identity.ShareCodeWithIssuer;
 import com.streamarr.server.services.pagination.ListIdentity;
@@ -31,7 +35,9 @@ import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 
-/** Share codes (ADR 0024 §Share codes): a Household's codes, and issuing and withdrawing one. */
+/**
+ * Share codes (ADR 0024 §Share codes): a Household's codes, issuing, withdrawing and looking up.
+ */
 @DgsComponent
 @RequiredArgsConstructor
 public class ShareCodeResolver {
@@ -84,6 +90,20 @@ public class ShareCodeResolver {
             .map(this::details),
         ShareErrors::toWithdrawShareCodeError,
         WithdrawShareCodePayload::new);
+  }
+
+  @DgsMutation
+  public LookUpShareCodePayload lookUpShareCode(
+      @InputArgument LookUpShareCodeInput input, DataFetchingEnvironment dfe) {
+    return MutationPayloads.payload(
+        shareCodeService.lookUpShareCode(
+            authorizationService.currentIdentity(),
+            ShareCodeCommand.builder()
+                .code(input.code())
+                .ipAddress(ClientIpAddressGraphQlInterceptor.resolve(dfe))
+                .build()),
+        ShareErrors::toLookUpShareCodeError,
+        LookUpShareCodePayload::new);
   }
 
   private IssuedShareCodeDetails issued(NewShareCode issued) {

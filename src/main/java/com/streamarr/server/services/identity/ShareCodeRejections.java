@@ -9,6 +9,8 @@ public final class ShareCodeRejections {
 
   public sealed interface Withdraw permits ShareCodeNotFound, ShareCodeNotLive {}
 
+  public sealed interface LookUp permits ShareCodeRefused {}
+
   /** No such Household, or the caller may not see its share codes. */
   public record HouseholdNotFound() implements Issue {}
 
@@ -17,4 +19,10 @@ public final class ShareCodeRejections {
 
   /** The code was already spent, withdrawn or invalidated, or it expired. */
   public record ShareCodeNotLive() implements Withdraw {}
+
+  /**
+   * The presented code is wrong, spent, withdrawn, expired or invalidated: one refusal for each,
+   * naming no Household.
+   */
+  public record ShareCodeRefused() implements LookUp {}
 }

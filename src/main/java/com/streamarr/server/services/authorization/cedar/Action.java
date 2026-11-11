@@ -307,6 +307,11 @@ enum Action {
       Authorizes.WRITE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD),
+  VIEW_SHARE_CODE_HOUSEHOLD(
+      "viewShareCodeHousehold",
+      ResourceKind.SERVER,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   INVITE_PROFILE_MANAGER(
       "inviteProfileManager",
       ResourceKind.PROFILE,

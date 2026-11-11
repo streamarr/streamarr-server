@@ -1236,6 +1236,22 @@ class CedarIdentityPoliciesTest {
       assertThat(administration(home)).allSatisfy(intent -> assertDecision(intent, DENIED));
     }
 
+    @Test
+    @DisplayName(
+        "Should let an enabled Account look a share code up when its session is not device-bound")
+    void shouldLetEnabledAccountLookShareCodeUpWhenItsSessionIsNotDeviceBound() {
+      var lookUp = new Intent.ViewShareCodeHousehold();
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+
+      assertThat(decide(member(), lookUp)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(member()), lookUp)).isEqualTo(DENIED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(member(), lookUp)).isEqualTo(DENIED);
+    }
+
     private List<Intent.UnitIntent> administration(UUID householdId) {
       return List.of(
           new Intent.IssueShareCode(householdId),

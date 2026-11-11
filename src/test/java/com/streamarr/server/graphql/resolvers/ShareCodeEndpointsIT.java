@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.jooq.generated.tables.ShareCode.SHARE_CODE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,10 +11,14 @@ import com.streamarr.server.services.auth.ShareCodes;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +28,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -66,10 +72,22 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
       }
       """;
 
+  private static final String LOOK_UP =
+      """
+      mutation LookUp($code: String!) {
+        lookUpShareCode(input: { code: $code }) {
+          householdName
+          userErrors { __typename ... on InputMutationError { message inputPath } }
+        }
+      }
+      """;
+
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private ShareCodeRepository shareCodeRepository;
+  @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private DSLContext dsl;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private AuthTestSupport.TestIdentity host;
@@ -253,6 +271,105 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
         .containsExactly(id);
   }
 
+  @Test
+  @DisplayName(
+      "Should name only the Household when someone of another Household looks a live code up")
+  void shouldNameOnlyHouseholdWhenSomeoneOfAnotherHouseholdLooksLiveCodeUp() throws Exception {
+    var code = issuedCode(issue(authTestSupport.accountBearer(host), host.household().getId()));
+    var presenter = identity();
+
+    var payload = lookUp(authTestSupport.accountBearer(presenter), code.toLowerCase(Locale.ROOT));
+
+    assertThat(payload.path("userErrors")).isEmpty();
+    assertThat(payload.path("householdName").asString()).isEqualTo(host.household().getName());
+  }
+
+  @Test
+  @DisplayName("Should refuse in one way naming no Household when the code does not work")
+  void shouldRefuseInOneWayNamingNoHouseholdWhenCodeDoesNotWork() throws Exception {
+    var presenter = identity();
+    var withdrawn = issue(authTestSupport.accountBearer(host), host.household().getId());
+    withdraw(authTestSupport.accountBearer(host), issuedId(withdrawn));
+    var expired = issue(authTestSupport.accountBearer(host), host.household().getId());
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.update(SHARE_CODE)
+                .set(SHARE_CODE.EXPIRES_AT, OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1))
+                .where(SHARE_CODE.ID.eq(UUID.fromString(issuedId(expired))))
+                .execute());
+
+    var refusals =
+        List.of(
+            lookUp(authTestSupport.accountBearer(presenter), "BCDF-GHJK"),
+            lookUp(authTestSupport.accountBearer(presenter), issuedCode(withdrawn)),
+            lookUp(authTestSupport.accountBearer(presenter), issuedCode(expired)));
+
+    assertThat(refusals)
+        .allSatisfy(
+            payload -> {
+              assertThat(payload.path("householdName").isNull()).isTrue();
+              assertThat(payload.path("userErrors"))
+                  .isEqualTo(refusals.getFirst().path("userErrors"));
+            });
+    assertThat(refusals.getFirst().path("userErrors"))
+        .singleElement()
+        .satisfies(
+            error -> {
+              assertThat(error.path("__typename").asString()).isEqualTo("ShareCodeRefusedError");
+              assertThat(error.path("message").asString())
+                  .doesNotContain(host.household().getName());
+              assertThat(error.path("inputPath").get(0).asString()).isEqualTo("code");
+            });
+  }
+
+  @Test
+  @DisplayName("Should keep earlier failures when a lookup succeeds between wrong codes")
+  void shouldKeepEarlierFailuresWhenLookupSucceedsBetweenWrongCodes() throws Exception {
+    var code = issuedCode(issue(authTestSupport.accountBearer(host), host.household().getId()));
+    var presenter = authTestSupport.accountBearer(identity());
+    for (var failure = 0; failure < 4; failure++) {
+      assertThat(lookUp(presenter, "BCDF-GHJK").path("userErrors")).hasSize(1);
+    }
+
+    assertThat(lookUp(presenter, code).path("householdName").asString())
+        .isEqualTo(host.household().getName());
+    assertThat(lookUp(presenter, "BCDF-GHJK").path("userErrors")).hasSize(1);
+
+    var throttled = errors(executeAllowingErrors(presenter, LOOK_UP, Map.of("code", code)));
+    assertThat(throttled.path("extensions").path("code").asString())
+        .isEqualTo("TOO_MANY_CREDENTIAL_ATTEMPTS");
+    assertThat(throttled.path("extensions").path("retryAfterSeconds").asLong()).isPositive();
+  }
+
+  @Test
+  @DisplayName("Should forbid the lookup when a device-bound session presents a code")
+  void shouldForbidLookupWhenDeviceBoundSessionPresentsCode() throws Exception {
+    var code = issuedCode(issue(authTestSupport.accountBearer(host), host.household().getId()));
+    var presenter = identity();
+
+    var forbidden =
+        errors(
+            executeAllowingErrors(
+                authTestSupport.deviceBoundProfileBearer(presenter),
+                LOOK_UP,
+                Map.of("code", code)));
+
+    assertThat(forbidden.path("extensions").path("code").asString()).isEqualTo("FORBIDDEN");
+  }
+
+  private static String issuedCode(JsonNode payload) {
+    return payload.path("issued").path("code").asString();
+  }
+
+  private JsonNode lookUp(String bearer, String code) throws Exception {
+    return execute(bearer, LOOK_UP, Map.of("code", code)).path("data").path("lookUpShareCode");
+  }
+
+  private static JsonNode errors(JsonNode body) {
+    assertThat(body.path("errors")).hasSize(1);
+    return body.path("errors").get(0);
+  }
+
   private static String issuedId(JsonNode payload) {
     return payload.path("issued").path("shareCode").path("id").asString();
   }
@@ -297,6 +414,15 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
 
   private JsonNode execute(String bearer, String document, Map<String, Object> variables)
       throws Exception {
+    var body = executeAllowingErrors(bearer, document, variables);
+    assertThat(body.path("errors").isMissingNode())
+        .as("errors in %s", body.path("errors"))
+        .isTrue();
+    return body;
+  }
+
+  private JsonNode executeAllowingErrors(
+      String bearer, String document, Map<String, Object> variables) throws Exception {
     var response =
         mockMvc
             .perform(
@@ -310,11 +436,7 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
             .andReturn()
             .getResponse()
             .getContentAsString();
-    var body = objectMapper.readTree(response);
-    assertThat(body.path("errors").isMissingNode())
-        .as("errors in %s", body.path("errors"))
-        .isTrue();
-    return body;
+    return objectMapper.readTree(response);
   }
 
   private AuthTestSupport.TestIdentity identity() {

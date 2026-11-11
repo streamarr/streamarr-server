@@ -128,6 +128,8 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onHousehold(Action.VIEW_SHARE_CODES, householdId));
       case Intent.WithdrawShareCode(var householdId) ->
           unitPlan(AuthorizationCheck.onHousehold(Action.WITHDRAW_SHARE_CODE, householdId));
+      case Intent.ViewShareCodeHousehold _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_SHARE_CODE_HOUSEHOLD));
       case Intent.InviteProfileManager(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.INVITE_PROFILE_MANAGER, profileId));
       case Intent.CancelManagerInvitation(var invitationId) ->

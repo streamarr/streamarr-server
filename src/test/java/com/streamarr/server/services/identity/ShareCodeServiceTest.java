@@ -4,10 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.AuditFieldSetter;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.RetryAfterAware;
+import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeShareCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
@@ -31,11 +36,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.security.access.AccessDeniedException;
 
 /** Share codes over fakes: who may issue one, what the answer carries, and what the row keeps. */
@@ -45,10 +53,12 @@ class ShareCodeServiceTest {
 
   private static final Instant NOW = Instant.parse("2026-11-10T12:00:00Z");
   private static final Duration SHARE_CODE_TTL = Duration.ofDays(7);
+  private static final UUID PRESENTER_ID = UUID.fromString("30000000-0000-0000-0000-000000000001");
 
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeShareCodeRepository shareCodes = new FakeShareCodeRepository();
+  private final FakeCredentialAttemptRepository attempts = new FakeCredentialAttemptRepository();
   private final ShareCodes codes = new ShareCodes();
 
   private UserAccount issuer;
@@ -74,6 +84,7 @@ class ShareCodeServiceTest {
             accounts,
             new MutationTransactions(
                 new FakeTransactionManager(), new ConstraintViolationTranslator()),
+            attempts.gate(Clock.fixed(NOW, ZoneOffset.UTC)),
             new HouseholdShareCodesList(shareCodes, Clock.fixed(NOW, ZoneOffset.UTC)),
             codes,
             CredentialCodeProperties.builder()
@@ -262,6 +273,163 @@ class ShareCodeServiceTest {
     assertThatThrownBy(
             () -> service.householdShareCodes(identity(), every(), PaginationFixture.firstRows(10)))
         .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should name only the Household when a live code is looked up")
+  void shouldNameOnlyHouseholdWhenLiveCodeIsLookedUp() {
+    var issued = accepted(service.issueShareCode(identity(), householdId));
+    var typed = issued.code().toLowerCase(Locale.ROOT).replace("-", " ");
+
+    var householdName = accepted(service.lookUpShareCode(presenter(), command(typed)));
+
+    assertThat(householdName).isEqualTo(households.findById(householdId).orElseThrow().getName());
+    assertThat(attempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.metadata().kind()).isEqualTo(CredentialKind.SHARE_CODE);
+              assertThat(attempt.metadata().accountId()).isEqualTo(PRESENTER_ID);
+              assertThat(attempt.metadata().credentialId()).isNull();
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(UnusableCode.class)
+  @DisplayName("Should refuse in one way and count a failure when the code does not work")
+  void shouldRefuseInOneWayAndCountFailureWhenCodeDoesNotWork(UnusableCode unusable) {
+    var issued = accepted(service.issueShareCode(identity(), householdId));
+    var typed = unusable.present(issued, shareCodes, service, identity());
+
+    var refused = rejectionOf(service.lookUpShareCode(presenter(), command(typed)));
+
+    assertThat(refused).isEqualTo(new ShareCodeRejections.ShareCodeRefused());
+    assertThat(attempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.metadata().kind()).isEqualTo(CredentialKind.SHARE_CODE);
+              assertThat(attempt.metadata().accountId()).isEqualTo(PRESENTER_ID);
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
+            });
+  }
+
+  @Test
+  @DisplayName("Should refuse to look up with the retry delay when the presenter is throttled")
+  void shouldRefuseToLookUpWithRetryDelayWhenPresenterIsThrottled() {
+    var issued = accepted(service.issueShareCode(identity(), householdId));
+    attempts.rejectReservations(Duration.ofMinutes(3));
+
+    assertThatThrownBy(() -> service.lookUpShareCode(presenter(), command(issued.code())))
+        .isInstanceOf(TooManyCredentialAttemptsException.class)
+        .extracting(failure -> ((RetryAfterAware) failure).retryAfter())
+        .isEqualTo(Duration.ofMinutes(3));
+  }
+
+  @Test
+  @DisplayName("Should refuse before counting an attempt when the presenter may not look codes up")
+  void shouldRefuseBeforeCountingAttemptWhenPresenterMayNotLookCodesUp() {
+    var issued = accepted(service.issueShareCode(identity(), householdId));
+    authorization.denyAll();
+
+    assertThatThrownBy(() -> service.lookUpShareCode(presenter(), command(issued.code())))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(attempts.attempts()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should keep the code live when it is looked up")
+  void shouldKeepCodeLiveWhenItIsLookedUp() {
+    var issued = accepted(service.issueShareCode(identity(), householdId));
+
+    accepted(service.lookUpShareCode(presenter(), command(issued.code())));
+    accepted(service.lookUpShareCode(presenter(), command(issued.code())));
+
+    assertThat(issued.shareCode().shareCode().isLiveAt(NOW)).isTrue();
+  }
+
+  /** The ways a presented code fails to name a Household. */
+  enum UnusableCode {
+    WRONG {
+      @Override
+      String present(
+          NewShareCode issued,
+          FakeShareCodeRepository stored,
+          ShareCodeService service,
+          AuthenticatedIdentity admin) {
+        return issued.code().equals("BBBB-BBBB") ? "CCCC-CCCC" : "BBBB-BBBB";
+      }
+    },
+    MALFORMED {
+      @Override
+      String present(
+          NewShareCode issued,
+          FakeShareCodeRepository stored,
+          ShareCodeService service,
+          AuthenticatedIdentity admin) {
+        return "AEIO-1234";
+      }
+    },
+    SPENT {
+      @Override
+      String present(
+          NewShareCode issued,
+          FakeShareCodeRepository stored,
+          ShareCodeService service,
+          AuthenticatedIdentity admin) {
+        stored.trySpend(issued.shareCode().shareCode().getId(), NOW);
+        return issued.code();
+      }
+    },
+    WITHDRAWN {
+      @Override
+      String present(
+          NewShareCode issued,
+          FakeShareCodeRepository stored,
+          ShareCodeService service,
+          AuthenticatedIdentity admin) {
+        service.withdrawShareCode(admin, issued.shareCode().shareCode().getId());
+        return issued.code();
+      }
+    },
+    INVALIDATED {
+      @Override
+      String present(
+          NewShareCode issued,
+          FakeShareCodeRepository stored,
+          ShareCodeService service,
+          AuthenticatedIdentity admin) {
+        stored.tryInvalidate(issued.shareCode().shareCode().getId(), NOW);
+        return issued.code();
+      }
+    },
+    EXPIRED {
+      @Override
+      String present(
+          NewShareCode issued,
+          FakeShareCodeRepository stored,
+          ShareCodeService service,
+          AuthenticatedIdentity admin) {
+        issued.shareCode().shareCode().setExpiresAt(NOW);
+        return issued.code();
+      }
+    };
+
+    abstract String present(
+        NewShareCode issued,
+        FakeShareCodeRepository stored,
+        ShareCodeService service,
+        AuthenticatedIdentity admin);
+  }
+
+  private static ShareCodeCommand command(String code) {
+    return ShareCodeCommand.builder().code(code).ipAddress("192.0.2.40").build();
+  }
+
+  /** Someone of another Household, who holds the code. */
+  private static AuthenticatedIdentity presenter() {
+    return AuthenticatedIdentityFixture.accountScopedBuilder().accountId(PRESENTER_ID).build();
   }
 
   private HouseholdShareCodesScope every() {
