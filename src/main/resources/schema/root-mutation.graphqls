@@ -122,6 +122,18 @@ type Mutation {
     deleteLastAccountAndHouseholdPreservingPersonalProfile(input: DeleteLastAccountAndHouseholdPreservingPersonalProfileInput!): DeleteLastAccountAndHouseholdPreservingPersonalProfilePayload
     changeEncoderPreset(input: ChangeEncoderPresetInput!): ChangeEncoderPresetPayload
     changeIdleSegmentRetention(input: ChangeIdleSegmentRetentionInput!): ChangeIdleSegmentRetentionPayload
+    """
+    Marks one of the signed-in Account's Notifications read. Marking a read Notification again
+    returns it unchanged. A Notification of another Account, or one the guard hides, answers
+    NotificationNotFoundError. The same access as notifications.
+    """
+    markNotificationRead(input: MarkNotificationReadInput!): MarkNotificationReadPayload
+    """
+    Marks read every unread Notification of the signed-in Account at or below a position in the
+    list. One that arrived, or moved up through an update in place, after the client showed the
+    list stays unread. The same access as notifications.
+    """
+    markAllNotificationsRead(input: MarkAllNotificationsReadInput!): MarkAllNotificationsReadPayload
     "Changes how long the server keeps read news and resolved requests. Requires a ServerAdmin."
     changeNotificationRetention(input: ChangeNotificationRetentionInput!): ChangeNotificationRetentionPayload
 }

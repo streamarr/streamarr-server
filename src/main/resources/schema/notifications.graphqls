@@ -163,3 +163,33 @@ type NotificationEdge implements OrderedEdge {
     "Compare as ascending ASCII strings. Includes latestEventAt descending and the ID tie-breaker."
     orderKey: String!
 }
+
+input MarkNotificationReadInput {
+    notificationId: ID!
+}
+
+type MarkNotificationReadPayload {
+    "The Notification in its resulting state. Null when userErrors is not empty."
+    notification: Notification
+    "The signed-in Account's unread count after the change."
+    unreadNotificationCount: Int
+    userErrors: [MarkNotificationReadError!]!
+}
+
+union MarkNotificationReadError = NotificationNotFoundError | InvalidIdError
+
+input MarkAllNotificationsReadInput {
+    """
+    The cursor of the newest Notification that the client shows. Every unread Notification at
+    that position or below it becomes read. A Notification above it stays unread.
+    """
+    through: String!
+}
+
+type MarkAllNotificationsReadPayload {
+    "The signed-in Account's unread count after the change."
+    unreadNotificationCount: Int
+    userErrors: [MarkAllNotificationsReadError!]!
+}
+
+union MarkAllNotificationsReadError = InvalidCursorError
