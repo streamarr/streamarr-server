@@ -2,6 +2,9 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -28,12 +31,14 @@ class ShareCodesTest {
   @DisplayName(
       "Should store the SHA-256 digest of the normalised code, as an invitation's code is stored,"
           + " when a code is issued")
-  void shouldStoreSha256DigestOfNormalisedCodeWhenCodeIsIssued() {
+  void shouldStoreSha256DigestOfNormalisedCodeWhenCodeIsIssued() throws NoSuchAlgorithmException {
     var issued = shareCodes.issue();
+    var normalised = UserCode.normalize(issued.code());
 
     assertThat(issued.digest())
-        .hasSize(32)
-        .isEqualTo(CredentialDigest.of(UserCode.normalize(issued.code())));
+        .isEqualTo(
+            MessageDigest.getInstance("SHA-256")
+                .digest(normalised.getBytes(StandardCharsets.UTF_8)));
   }
 
   @Test
