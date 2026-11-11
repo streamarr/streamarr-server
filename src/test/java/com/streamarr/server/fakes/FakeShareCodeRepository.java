@@ -43,6 +43,19 @@ public class FakeShareCodeRepository extends FakeJpaRepository<ShareCode>
   }
 
   @Override
+  public synchronized int invalidateLiveIssuedBy(UUID issuerAccountId, Instant now) {
+    var invalidated = 0;
+    for (var shareCode : List.copyOf(database.values())) {
+      if (issuerAccountId.equals(shareCode.getIssuerAccountId())
+          && endLive(shareCode.getId(), ShareCodeStatus.INVALIDATED, now)) {
+        invalidated++;
+      }
+    }
+
+    return invalidated;
+  }
+
+  @Override
   public List<Row<ShareCode>> rowsInHousehold(ShareCodeFilter filter, Seek seek) {
     return InMemoryKeyset.byCreationTime(
         database.values().stream()

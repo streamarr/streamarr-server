@@ -85,12 +85,35 @@ class ShareCodeIssuerAuthorityTest {
   void shouldInvalidateEveryLiveCodeWhenItsIssuerIsAboutToBeDeleted() {
     var kept = liveCode(ISSUER_ID, KEPT_HOUSEHOLD);
     var lost = liveCode(ISSUER_ID, LOST_HOUSEHOLD);
+    authorization.failWith(Decision.FailureCause.EVALUATION_ERROR);
 
     var invalidated = issuerAuthority.beforeIssuerDeleted(ISSUER_ID, NOW);
 
     assertThat(invalidated).isEqualTo(2);
     assertThat(kept.getStatus()).isEqualTo(ShareCodeStatus.INVALIDATED);
     assertThat(lost.getStatus()).isEqualTo(ShareCodeStatus.INVALIDATED);
+    assertThat(authorization.recordedIntents()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should invalidate every live code without a decision when the issuer is disabled")
+  void shouldInvalidateEveryLiveCodeWithoutDecisionWhenIssuerIsDisabled() {
+    var kept = liveCode(ISSUER_ID, KEPT_HOUSEHOLD);
+    var lost = liveCode(ISSUER_ID, LOST_HOUSEHOLD);
+    var expired = liveCode(ISSUER_ID, LOST_HOUSEHOLD);
+    expired.setExpiresAt(NOW);
+    var someoneElses = liveCode(UUID.randomUUID(), LOST_HOUSEHOLD);
+    authorization.failWith(Decision.FailureCause.EVALUATION_ERROR);
+
+    var invalidated = issuerAuthority.afterIssuerDisabled(ISSUER_ID, NOW);
+
+    assertThat(invalidated).isEqualTo(2);
+    assertThat(kept.getStatus()).isEqualTo(ShareCodeStatus.INVALIDATED);
+    assertThat(lost.getStatus()).isEqualTo(ShareCodeStatus.INVALIDATED);
+    assertThat(lost.getEndedAt()).isEqualTo(NOW);
+    assertThat(expired.statusAt(NOW)).isEqualTo(ShareCodeStatus.EXPIRED);
+    assertThat(someoneElses.getStatus()).isEqualTo(ShareCodeStatus.LIVE);
+    assertThat(authorization.recordedIntents()).isEmpty();
   }
 
   @Test

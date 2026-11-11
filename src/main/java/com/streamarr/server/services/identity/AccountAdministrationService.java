@@ -262,14 +262,15 @@ public class AccountAdministrationService {
     invalidated +=
         passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
             issuerAccountId, reason, now);
-    invalidated += shareCodeIssuers.afterIssuerChanged(issuerAccountId, now);
     return invalidated
         + switch (authorityLoss) {
           case ACCOUNT_DISABLED ->
               shareLifecycle.invalidatePendingOfferedBy(
-                  issuerAccountId, ProfileShareLifecycle.OFFERER_NO_LONGER_AUTHORIZED, now);
+                      issuerAccountId, ProfileShareLifecycle.OFFERER_NO_LONGER_AUTHORIZED, now)
+                  + shareCodeIssuers.afterIssuerDisabled(issuerAccountId, now);
           case SERVER_ADMIN_REVOKED ->
-              invalidateUnauthorizedProfileShareOffers(issuerAccountId, now);
+              invalidateUnauthorizedProfileShareOffers(issuerAccountId, now)
+                  + shareCodeIssuers.afterIssuerChanged(issuerAccountId, now);
         };
   }
 
