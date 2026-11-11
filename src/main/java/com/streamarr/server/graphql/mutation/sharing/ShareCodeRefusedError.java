@@ -4,4 +4,4 @@ import com.streamarr.server.graphql.mutation.InputMutationError;
 import java.util.List;
 
 public record ShareCodeRefusedError(String message, List<String> inputPath)
-    implements LookUpShareCodeError, InputMutationError {}
+    implements LookUpShareCodeError, OfferProfileShareError, InputMutationError {}

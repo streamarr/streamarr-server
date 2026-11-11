@@ -23,12 +23,32 @@ class ShareErrorsTest {
               .assertThat(ShareErrors.toOfferError(new ShareRejections.ProfileNotFound()))
               .isExactlyInstanceOf(ProfileNotFoundError.class);
           softly
-              .assertThat(ShareErrors.toOfferError(new ShareRejections.HouseholdNotFound()))
-              .isExactlyInstanceOf(HouseholdNotFoundError.class);
+              .assertThat(ShareErrors.toOfferError(new ShareCodeRejections.ShareCodeRefused()))
+              .isExactlyInstanceOf(ShareCodeRefusedError.class);
           softly
               .assertThat(ShareErrors.toOfferError(new ShareRejections.AlreadyShared()))
               .isExactlyInstanceOf(ProfileAlreadySharedError.class);
         });
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse as a lookup does, on the share code input, when an offer's code fails")
+  void shouldRefuseAsLookupDoesOnShareCodeInputWhenOffersCodeFails() {
+    assertThat(ShareErrors.toOfferError(new ShareCodeRejections.ShareCodeRefused()))
+        .isEqualTo(
+            new ShareCodeRefusedError(
+                "This share code does not work. Ask the Household for a new one.",
+                List.of("shareCode")));
+  }
+
+  @Test
+  @DisplayName("Should point at the Profile when it is already available where the code leads")
+  void shouldPointAtProfileWhenItIsAlreadyAvailableWhereCodeLeads() {
+    assertThat(ShareErrors.toOfferError(new ShareRejections.AlreadyShared()))
+        .isEqualTo(
+            new ProfileAlreadySharedError(
+                "That Profile is already available in that Household.", List.of("profileId")));
   }
 
   @Test

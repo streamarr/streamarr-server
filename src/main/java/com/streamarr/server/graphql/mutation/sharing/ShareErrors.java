@@ -9,18 +9,18 @@ public final class ShareErrors {
 
   private static final String SHARE_ID = "shareId";
   private static final String SHARE_CODE_ID = "shareCodeId";
+  private static final String PROFILE_ID = "profileId";
 
   private ShareErrors() {}
 
   public static OfferProfileShareError toOfferError(ShareRejections.Offer rejection) {
     return switch (rejection) {
       case ShareRejections.ProfileNotFound _ ->
-          new ProfileNotFoundError("No such Profile.", InputPath.of("profileId"));
-      case ShareRejections.HouseholdNotFound _ ->
-          new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
+          new ProfileNotFoundError("No such Profile.", InputPath.of(PROFILE_ID));
+      case ShareCodeRejections.ShareCodeRefused _ -> shareCodeRefused("shareCode");
       case ShareRejections.AlreadyShared _ ->
           new ProfileAlreadySharedError(
-              "That Profile is already available in that Household.", InputPath.of("householdId"));
+              "That Profile is already available in that Household.", InputPath.of(PROFILE_ID));
     };
   }
 
@@ -45,11 +45,14 @@ public final class ShareErrors {
 
   public static LookUpShareCodeError toLookUpShareCodeError(ShareCodeRejections.LookUp rejection) {
     return switch (rejection) {
-      case ShareCodeRejections.ShareCodeRefused _ ->
-          new ShareCodeRefusedError(
-              "This share code does not work. Ask the Household for a new one.",
-              InputPath.of("code"));
+      case ShareCodeRejections.ShareCodeRefused _ -> shareCodeRefused("code");
     };
+  }
+
+  /** One plain refusal for every code that does not work, wherever it was presented. */
+  private static ShareCodeRefusedError shareCodeRefused(String input) {
+    return new ShareCodeRefusedError(
+        "This share code does not work. Ask the Household for a new one.", InputPath.of(input));
   }
 
   public static AcceptProfileShareError toAcceptError(ShareRejections.Accept rejection) {

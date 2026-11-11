@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
+import com.streamarr.server.domain.auth.ShareCode;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.properties.CredentialCodeProperties;
@@ -12,6 +13,7 @@ import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
+import com.streamarr.server.repositories.auth.ShareCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
@@ -74,45 +76,62 @@ public class ProfileSharingService {
   private final HouseholdSharesList householdSharesList;
   private final ProfileSharesList profileSharesList;
   private final ShareCodeService shareCodeService;
+  private final ShareCodeRepository shareCodeRepository;
   private final Clock clock;
 
+  /**
+   * Offers the Profile to the Household a share code names (ADR 0024 §Share codes). Presenting the
+   * code is a credential attempt by the caller; a code that does not work is refused without naming
+   * any Household. The offer spends the code in the transaction that creates it, so an offer that
+   * is refused leaves the code live, and of two offers that present one code exactly one is made.
+   */
   public Outcome<ProfileHouseholdShare, ShareRejections.Offer> offerProfileShare(
-      AuthenticatedIdentity identity, UUID profileId, UUID householdId) {
+      AuthenticatedIdentity identity, UUID profileId, ShareCodeCommand shareCode) {
+    var presented = shareCodeService.presentedShareCode(identity, shareCode);
+    if (presented.isEmpty()) {
+      return Outcome.rejected(new ShareCodeRejections.ShareCodeRefused());
+    }
+
     return mutationTransactions.write(
-        () -> {
-          if (!profileRepository.lockById(profileId)) {
-            throw new MutationRejection(new ShareRejections.ProfileNotFound());
-          }
-
-          Optional<ShareRejections.Offer> refusal =
-              refusalOf(
-                  identity,
-                  new Intent.OfferProfileShare(profileId),
-                  () -> mayViewProfile(identity, profileId),
-                  Refusals.<ShareRejections.Offer>hiddenAs(ShareRejections.ProfileNotFound::new));
-          refusal.ifPresent(
-              rejection -> {
-                throw new MutationRejection(rejection);
-              });
-          if (householdRepository.findById(householdId).isEmpty()) {
-            throw new MutationRejection(new ShareRejections.HouseholdNotFound());
-          }
-
-          var now = clock.instant();
-          shareLifecycle.supersedePending(profileId, householdId, now);
-          return shareLifecycle.create(
-              ProfileHouseholdShare.builder()
-                  .profileId(profileId)
-                  .householdId(householdId)
-                  .status(ProfileShareStatus.PENDING)
-                  .offeredByAccountId(identity.accountId())
-                  .expiresAt(now.plus(credentialCodeProperties.invitationTtl()))
-                  .build());
-        },
+        () -> offerInTransaction(identity, profileId, presented.get()),
         constraint ->
             UQ_LIVE_SHARE.equals(constraint)
                 ? Optional.of(new ShareRejections.AlreadyShared())
                 : Optional.empty());
+  }
+
+  private ProfileHouseholdShare offerInTransaction(
+      AuthenticatedIdentity identity, UUID profileId, ShareCode shareCode) {
+    if (!profileRepository.lockById(profileId)) {
+      throw new MutationRejection(new ShareRejections.ProfileNotFound());
+    }
+
+    Optional<ShareRejections.Offer> refusal =
+        refusalOf(
+            identity,
+            new Intent.OfferProfileShare(profileId),
+            () -> mayViewProfile(identity, profileId),
+            Refusals.<ShareRejections.Offer>hiddenAs(ShareRejections.ProfileNotFound::new));
+    refusal.ifPresent(
+        rejection -> {
+          throw new MutationRejection(rejection);
+        });
+    var now = clock.instant();
+    // The code may have been spent, withdrawn or invalidated since it was presented.
+    if (!shareCodeRepository.trySpend(shareCode.getId(), now)) {
+      throw new MutationRejection(new ShareCodeRejections.ShareCodeRefused());
+    }
+
+    var householdId = shareCode.getHouseholdId();
+    shareLifecycle.supersedePending(profileId, householdId, now);
+    return shareLifecycle.create(
+        ProfileHouseholdShare.builder()
+            .profileId(profileId)
+            .householdId(householdId)
+            .status(ProfileShareStatus.PENDING)
+            .offeredByAccountId(identity.accountId())
+            .expiresAt(now.plus(credentialCodeProperties.invitationTtl()))
+            .build());
   }
 
   public Outcome<ProfileHouseholdShare, ShareRejections.Accept> acceptProfileShare(

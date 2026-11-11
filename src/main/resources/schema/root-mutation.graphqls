@@ -56,6 +56,17 @@ type Mutation {
     issueAccountInvitationForExistingProfile(input: IssueAccountInvitationForExistingProfileInput!): IssueAccountInvitationForExistingProfilePayload
     cancelAccountInvitation(input: CancelAccountInvitationInput!): CancelAccountInvitationPayload
     issuePasswordReset(input: IssuePasswordResetInput!): IssuePasswordResetPayload
+    """
+    Offer a Profile to the Household that a share code names. A share code is the only way to name
+    the Household. The offer waits as PENDING until a HouseholdAdmin of that Household, or a
+    ServerAdmin, accepts or rejects it: holding a code consents to nothing, and the caller may offer
+    only a Profile they may already offer. The offer spends the code, and a spent code stays spent
+    whatever becomes of the offer. An offer that is refused spends nothing. Of two offers that
+    present one code, exactly one is made. A code that does not work gets ShareCodeRefusedError,
+    which names no Household. Each offer is a credential attempt by the Account that presents the
+    code, counted as lookUpShareCode counts it; a device-bound session and a disabled Account get
+    FORBIDDEN. A newer offer of the same Profile to the same Household replaces a pending one.
+    """
     offerProfileShare(input: OfferProfileShareInput!): OfferProfileSharePayload
     acceptProfileShare(input: AcceptProfileShareInput!): AcceptProfileSharePayload
     rejectProfileShare(input: RejectProfileShareInput!): RejectProfileSharePayload

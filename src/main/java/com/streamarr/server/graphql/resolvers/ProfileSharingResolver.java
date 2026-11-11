@@ -99,13 +99,14 @@ public class ProfileSharingResolver {
   }
 
   @DgsMutation
-  public OfferProfileSharePayload offerProfileShare(@InputArgument OfferProfileShareInput input) {
+  public OfferProfileSharePayload offerProfileShare(
+      @InputArgument OfferProfileShareInput input, DataFetchingEnvironment dfe) {
     return MutationPayloads.payload(
         profileSharingService
             .offerProfileShare(
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.profileId()),
-                Ids.parseUuid(input.householdId()))
+                presented(input.shareCode(), dfe))
             .map(this::details),
         ShareErrors::toOfferError,
         OfferProfileSharePayload::new);
