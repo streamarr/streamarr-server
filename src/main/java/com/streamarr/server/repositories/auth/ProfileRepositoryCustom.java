@@ -3,8 +3,10 @@ package com.streamarr.server.repositories.auth;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
+import com.streamarr.server.domain.auth.ProfileReaderRelation;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,6 +26,12 @@ public interface ProfileRepositoryCustom {
   List<Profile> findAvailableKidsInHousehold(UUID householdId);
 
   boolean existsAvailableInHouseholdWithNameIgnoreCase(UUID householdId, String name);
+
+  /**
+   * What the Account is to each of the Profiles that exist, in one statement: whether it manages
+   * each and whether it supervises each, as the Cedar facts would decide them one at a time.
+   */
+  List<ProfileReaderRelation> relationsTo(UUID accountId, Collection<UUID> profileIds);
 
   /**
    * The Profile's current policy read under a row-level write lock (SELECT … FOR UPDATE), as
