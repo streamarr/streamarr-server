@@ -39,6 +39,7 @@ import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -175,6 +176,8 @@ public class NotificationResolver {
     DataLoader<ReaderLoaderKey<ShareReference>, HouseholdSummary> households =
         dfe.getDataLoader(ShareHouseholdDataLoader.NAME);
     var profileName = profileNameOf(dfe, notification, key);
+    var toReadersHousehold =
+        Objects.equals(key.reader().householdId(), notification.share().householdId());
     // Each kind's line names one other party, so only that party's loader is asked.
     var offererName =
         notification.kind() == NotificationKind.PROFILE_SHARE_OFFERED
@@ -195,6 +198,7 @@ public class NotificationResolver {
                         Optional.ofNullable(household.join()).map(HouseholdSummary::name))
                     .answer(notification.answer())
                     .endedBy(notification.endedBy())
+                    .toReadersHousehold(toReadersHousehold)
                     .build()
                     .text());
   }
