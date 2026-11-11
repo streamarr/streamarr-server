@@ -12,7 +12,10 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ChosenVideoStream;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
@@ -26,10 +29,12 @@ import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.task.BitrateScanChunkPublication;
 import com.streamarr.server.domain.task.BitrateScanInputs;
 import com.streamarr.server.domain.task.BitrateScanKey;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.StreamMeasurementPublication;
 import com.streamarr.server.fixtures.BitrateScanChunkFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.repositories.media.BitrateScanRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -65,6 +70,8 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
       new SourceFileSnapshot(1_234, Instant.parse("2026-10-30T10:00:00Z"));
   private static final String MATROSKA = "matroska,webm";
   private static final String MP4 = "mov,mp4,m4a,3gp,3g2,mj2";
+  private static final String MPEG_TS = "mpegts";
+  private static final int EARLIER_VERSION = ProbeVersion.CURRENT - 1;
 
   @Autowired private BitrateScanRepository repository;
   @Autowired private MediaFileContainerInfoRepository outcomes;
@@ -233,6 +240,62 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
   }
 
   @Test
+  @DisplayName(
+      "Should keep the measurement when a new probe of the unchanged file keeps the scanned"
+          + " keyframe positions")
+  void shouldKeepTheMeasurementWhenANewProbeOfTheUnchangedFileKeepsTheScannedPositions() {
+    var mediaFileId = storeMeasuredPacketScan();
+
+    probeAgainKeepingScannedPositions(mediaFileId);
+
+    assertThat(outcomes.findStreamMeasurements(mediaFileId)).contains(measurement());
+    assertThat(repository.findBitrateScanInputs(mediaFileId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the measurement when the owed packet scan stores the kept keyframe positions"
+          + " again")
+  void shouldKeepTheMeasurementWhenTheOwedPacketScanStoresTheKeptPositionsAgain() {
+    var mediaFileId = storeMeasuredPacketScan();
+    probeAgainKeepingScannedPositions(mediaFileId);
+
+    var published =
+        outcomes.publishKeyframePacketScan(
+            packetScanBuilder(mediaFileId)
+                .probeVersion(ProbeVersion.CURRENT)
+                .keyframes(known(scannedPositions()))
+                .build());
+
+    assertThat(published).isTrue();
+    assertThat(outcomes.owesKeyframePacketScan(mediaFileId)).isFalse();
+    assertThat(outcomes.findStreamMeasurements(mediaFileId)).contains(measurement());
+    assertThat(repository.findBitrateScanInputs(mediaFileId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should need a scan of the new keyframe positions when the owed packet scan stores other"
+          + " positions in place of the kept ones")
+  void shouldNeedAScanOfTheNewPositionsWhenTheOwedPacketScanStoresOtherPositions() {
+    var mediaFileId = storeMeasuredPacketScan();
+    probeAgainKeepingScannedPositions(mediaFileId);
+    var rescanned = positions(45_000, KeyframePositionSource.PACKET_SCAN);
+
+    var published =
+        outcomes.publishKeyframePacketScan(
+            packetScanBuilder(mediaFileId)
+                .probeVersion(ProbeVersion.CURRENT)
+                .keyframes(known(rescanned))
+                .build());
+
+    assertThat(published).isTrue();
+    assertThat(outcomes.findStreamMeasurements(mediaFileId)).isEmpty();
+    assertThat(repository.findBitrateScanInputs(mediaFileId))
+        .hasValueSatisfying(inputs -> assertThat(inputs.positions()).isEqualTo(rescanned));
+  }
+
+  @Test
   @DisplayName("Should require the caller's transaction when the scan inputs are locked")
   void shouldRequireTheCallersTransactionWhenTheScanInputsAreLocked() {
     var scan = createFileNeedingScan();
@@ -286,6 +349,64 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
   private Optional<BitrateScanInputs> lockedInputs(UUID mediaFileId) {
     return new TransactionTemplate(transactionManager)
         .execute(_ -> repository.lockBitrateScanInputs(mediaFileId));
+  }
+
+  // A file without a container index whose packet scan, at the earlier probe version, a bitrate
+  // scan has measured.
+  private UUID storeMeasuredPacketScan() {
+    var mediaFileId = createMediaFile();
+    assertThat(
+            outcomes.publish(
+                publication(mediaFileId, EARLIER_VERSION, packetScanRequiredOutcome())))
+        .isTrue();
+    assertThat(
+            outcomes.publishKeyframePacketScan(
+                packetScanBuilder(mediaFileId)
+                    .probeVersion(EARLIER_VERSION)
+                    .keyframes(known(scannedPositions()))
+                    .build()))
+        .isTrue();
+    assertThat(
+            repository.publishMeasurement(
+                measurementOf(new StoredScan(mediaFileId, currentKey(mediaFileId)))))
+        .isTrue();
+    return mediaFileId;
+  }
+
+  // A probe of the current version that requires a packet scan of the unchanged file again.
+  private void probeAgainKeepingScannedPositions(UUID mediaFileId) {
+    assertThat(
+            outcomes.publish(
+                publication(mediaFileId, ProbeVersion.CURRENT, packetScanRequiredOutcome())))
+        .isTrue();
+    assertThat(outcomes.findKeyframeKnowledge(mediaFileId))
+        .as("The new probe kept the scanned positions")
+        .contains(known(scannedPositions()));
+    assertThat(outcomes.owesKeyframePacketScan(mediaFileId))
+        .as("The new probe owes its own packet scan")
+        .isTrue();
+  }
+
+  private static KeyframePacketScanPublication.KeyframePacketScanPublicationBuilder
+      packetScanBuilder(UUID mediaFileId) {
+    return KeyframePacketScanPublication.builder().mediaFileId(mediaFileId).snapshot(SNAPSHOT);
+  }
+
+  private static KeyframePositions scannedPositions() {
+    return positions(90_000, KeyframePositionSource.PACKET_SCAN);
+  }
+
+  // An H.264 stream in MPEG-TS, which has no container index, chosen as the video stream.
+  private static ProbeOutcome.Success packetScanRequiredOutcome() {
+    return outcome()
+        .container(container(MPEG_TS))
+        .keyframes(
+            new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX))
+        .chosenVideoStream(
+            Optional.of(
+                new ChosenVideoStream(
+                    0, VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))))
+        .build();
   }
 
   private void storeKeyframePositionsAgain(UUID mediaFileId) {
