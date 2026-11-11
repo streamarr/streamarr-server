@@ -396,7 +396,8 @@ class HlsPlaylistServiceTest {
 
   // A keyframe packet scan read that the picture ends at 14 s and the session's audio at 16 s. A
   // copy cannot pad, so its playlist lists the audio after the last picture. The second audio track
-  // runs to 20 s, as the container does, but the session does not deliver it.
+  // runs to 19 s, as the container does, but the session does not deliver it. No stream ends a
+  // whole segment before another, so the transcode decision copies this source.
   @Test
   @DisplayName(
       "Should end a stream copy's last segment at the audio's end when the session's audio"
@@ -405,19 +406,19 @@ class HlsPlaylistServiceTest {
     var scanned = scannedEndBuilder();
     var probe =
         StreamSessionFixture.defaultProbeBuilder()
-            .duration(Duration.ofSeconds(20))
+            .duration(Duration.ofSeconds(19))
             .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
             .streams(
                 List.of(
-                    streamEndingAt("video", 0, Duration.ofSeconds(20)),
-                    streamEndingAt("audio", 1, Duration.ofSeconds(20)),
-                    streamEndingAt("audio", 2, Duration.ofSeconds(20))))
+                    streamEndingAt("video", 0, Duration.ofSeconds(19)),
+                    streamEndingAt("audio", 1, Duration.ofSeconds(19)),
+                    streamEndingAt("audio", 2, Duration.ofSeconds(19))))
             .build()
             .withLearnedEndTimes(
                 List.of(
                     scanned.streamIndex(0).endTime(Duration.ofSeconds(14)).build(),
                     scanned.streamIndex(1).endTime(Duration.ofSeconds(16)).build(),
-                    scanned.streamIndex(2).endTime(Duration.ofSeconds(20)).build()));
+                    scanned.streamIndex(2).endTime(Duration.ofSeconds(19)).build()));
     var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
 
     var playlist =
@@ -485,6 +486,76 @@ class HlsPlaylistServiceTest {
     assertThat(playlist)
         .containsSubsequence(
             "#EXTINF:6.000000,\n", "#EXTINF:6.000000,\n", "#EXTINF:8.000000,\n", "#EXT-X-ENDLIST");
+  }
+
+  // A copy's segments open at the source keyframes, and an encode's on the plain grid, which merges
+  // a final slot shorter than 2 s. The two lists differ in shape, and both must still end at the
+  // scanned media end, or a player that changes variant at the tail finds two ends.
+  @ParameterizedTest(name = "keyframes at {0} ms, media end at {1} ms")
+  @MethodSource("scannedSourcesWhoseCopyAndEncodeListsDiffer")
+  @DisplayName(
+      "Should end a stream copy and an encode of one source at the same scanned media end when"
+          + " their segment lists differ")
+  void shouldEndAStreamCopyAndAnEncodeOfOneSourceAtTheSameScannedMediaEndWhenTheirListsDiffer(
+      List<Long> keyframeMillis, long mediaEndMillis) {
+    var probe = sourceScannedToEndAt(keyframeMillis, Duration.ofMillis(mediaEndMillis));
+    var copy = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
+    var encode =
+        StreamSessionFixture.defaultSessionBuilder()
+            .transcodeDecision(StreamSessionFixture.fullTranscodeDecision("h264"))
+            .mediaProbe(probe)
+            .build();
+
+    var copyPlaylist =
+        service.generateMediaPlaylist(copy, StreamSession.defaultVariant(), "test-token");
+    var encodePlaylist =
+        service.generateMediaPlaylist(encode, StreamSession.defaultVariant(), "test-token");
+
+    var mediaEnd = BigDecimal.valueOf(mediaEndMillis, 3);
+    assertThat(advertisedEnd(copyPlaylist)).isEqualByComparingTo(mediaEnd);
+    assertThat(advertisedEnd(encodePlaylist)).isEqualByComparingTo(mediaEnd);
+    assertThat(segmentDurations(copyPlaylist)).isNotEqualTo(segmentDurations(encodePlaylist));
+  }
+
+  static Stream<Arguments> scannedSourcesWhoseCopyAndEncodeListsDiffer() {
+    return Stream.of(
+        // The encode merges its 1.5 s final slot; the copy's last keyframe opens a 2.3 s segment.
+        Arguments.of(List.of(0L, 5_500L, 11_200L), 13_500L),
+        // The copy's keyframe at 12.4 s presents less than 2 s before the end and opens no segment.
+        Arguments.of(List.of(0L, 5_500L, 12_400L), 14_250L),
+        // The copy holds two slots without a keyframe in one long segment.
+        Arguments.of(List.of(0L, 4_100L, 17_900L), 20_333L));
+  }
+
+  private static List<String> segmentDurations(String playlist) {
+    return playlist.lines().filter(line -> line.startsWith("#EXTINF:")).toList();
+  }
+
+  // A source whose header states 60 s, and whose keyframe packet scan read the given keyframes and
+  // where its video and audio end.
+  private static MediaProbe sourceScannedToEndAt(List<Long> keyframeMillis, Duration mediaEnd) {
+    var scanned = scannedEndBuilder();
+    var positions =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1_000)
+            .source(KeyframePositionSource.PACKET_SCAN)
+            .keyframes(
+                keyframeMillis.stream().map(time -> new KeyframePosition(time, time)).toList())
+            .build();
+    return StreamSessionFixture.defaultProbeBuilder()
+        .duration(Duration.ofSeconds(60))
+        .keyframes(new KeyframeKnowledge.Known(positions))
+        .streams(
+            List.of(
+                streamEndingAt("video", 0, Duration.ofSeconds(60)),
+                streamEndingAt("audio", 1, Duration.ofSeconds(60))))
+        .build()
+        .withLearnedEndTimes(
+            List.of(
+                scanned.streamIndex(0).endTime(mediaEnd.minusMillis(83)).build(),
+                scanned.streamIndex(1).endTime(mediaEnd).build()));
   }
 
   private static LearnedStreamEnd.LearnedStreamEndBuilder scannedEndBuilder() {
