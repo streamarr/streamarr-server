@@ -101,6 +101,42 @@ class HouseholdProfilesIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should list only the Profiles the member manages that belong there when a member who is no"
+          + " admin reads the Household")
+  void shouldListOnlyTheProfilesTheMemberManagesThatBelongThereWhenAMemberWhoIsNoAdminReadsIt()
+      throws Exception {
+    var member = authTestSupport.createHouseholdMemberIdentity(smith);
+    var alex = cast.profileManagedBy(smith, ProfileFixture.defaultProfileBuilder().name("Alex"));
+    cast.grant(member, alex);
+    cast.makeAvailable(alex, cabin);
+    cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder());
+    var mara = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Mara"));
+    cast.grant(member, mara);
+
+    assertThat(householdProfiles(member, smith))
+        .extracting(row -> row.path("profile").path("id").asString())
+        .containsExactlyInAnyOrder(idOf(alex), idOf(member.profile()));
+    assertThat(householdProfiles(member, cabin))
+        .extracting(row -> row.path("profile").path("id").asString())
+        .containsExactly(idOf(mara));
+  }
+
+  @Test
+  @DisplayName("Should give an empty list when the reader's own Personal Profile is supervised")
+  void shouldGiveAnEmptyListWhenTheReadersOwnPersonalProfileIsSupervised() throws Exception {
+    var supervised = cast.supervisedMemberOf(smith);
+
+    assertThat(householdProfiles(supervised, smith)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should give an empty list when a device-bound session reads the Household")
+  void shouldGiveAnEmptyListWhenADeviceBoundSessionReadsTheHousehold() throws Exception {
+    assertThat(householdProfiles(authTestSupport.deviceBoundProfileBearer(smith), smith)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
       "Should read a Household's Profiles in the same number of statements when it holds more")
   void shouldReadAHouseholdsProfilesInTheSameNumberOfStatementsWhenItHoldsMore() throws Exception {
     cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder());
