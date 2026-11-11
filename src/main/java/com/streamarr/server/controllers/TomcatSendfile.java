@@ -31,7 +31,7 @@ final class TomcatSendfile {
   /**
    * The answer for the whole segment or for one satisfiable byte range of it. Empty when the
    * connection, the request or the segment leaves the body to Spring: no sendfile support, a method
-   * other than {@code GET}, several ranges, or a segment that is not a file.
+   * other than {@code GET}, several ranges, an empty segment, or a segment that is not a file.
    */
   static Optional<ResponseEntity<Resource>> answer(
       HttpServletRequest request, StoredSegment segment, MediaType mediaType) {
