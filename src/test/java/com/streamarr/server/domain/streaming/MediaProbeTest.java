@@ -509,6 +509,22 @@ class MediaProbeTest {
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(scannedAudioEndMillis));
   }
 
+  // The segment list counts in whole milliseconds. Counted down, an audio stream that ends at
+  // 5.035041667 s would be advertised to 5.035 s, before its last sample ends.
+  @Test
+  @DisplayName(
+      "Should count a scanned end up to the next whole millisecond when it falls between two")
+  void shouldCountAScannedEndUpToTheNextWholeMillisecondWhenItFallsBetweenTwo() {
+    var probe =
+        probeLasting(Duration.ofSeconds(30), video(), audio(1))
+            .withLearnedEndTimes(
+                List.of(
+                    scannedEnd(0, Duration.ofSeconds(4)),
+                    scannedEnd(1, Duration.ofSeconds(5, 35_041_667))));
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(5_036));
+  }
+
   // The header of a file cut near 14 s states 30 s for each stream. A keyframe packet scan read
   // where each stream's packets end.
   @Test
