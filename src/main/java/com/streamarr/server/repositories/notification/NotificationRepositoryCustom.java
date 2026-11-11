@@ -1,11 +1,11 @@
 package com.streamarr.server.repositories.notification;
 
+import com.streamarr.server.domain.notification.GuardedNotification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.domain.notification.UnreadNews;
-import com.streamarr.server.domain.notification.UnreadShareNews;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -43,7 +43,7 @@ public interface NotificationRepositoryCustom {
   int deleteHistoryBefore(Instant cutoff, Instant now);
 
   /** The unread news whose latest event is before the cutoff. */
-  List<UnreadShareNews> findUnreadNewsBefore(Instant cutoff);
+  List<GuardedNotification> findUnreadNewsBefore(Instant cutoff);
 
   /**
    * Deletes the given Notifications that are still unread news with a latest event before the

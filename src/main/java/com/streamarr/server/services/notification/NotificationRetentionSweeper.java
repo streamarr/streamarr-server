@@ -1,6 +1,6 @@
 package com.streamarr.server.services.notification;
 
-import com.streamarr.server.domain.notification.UnreadShareNews;
+import com.streamarr.server.domain.notification.GuardedNotification;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
@@ -44,7 +44,7 @@ class NotificationRetentionSweeper {
     var hidden =
         notificationRepository.findUnreadNewsBefore(cutoff).stream()
             .filter(this::isHidden)
-            .map(UnreadShareNews::notificationId)
+            .map(GuardedNotification::notificationId)
             .toList();
     if (hidden.isEmpty()) {
       return;
@@ -62,7 +62,7 @@ class NotificationRetentionSweeper {
     log.info("Deleted {} read or resolved Notifications older than {}.", deleted, cutoff);
   }
 
-  private boolean isHidden(UnreadShareNews news) {
+  private boolean isHidden(GuardedNotification news) {
     return guard.visibility(news.recipientAccountId(), news.profileId(), news.householdId())
         == NotificationVisibility.HIDDEN;
   }
