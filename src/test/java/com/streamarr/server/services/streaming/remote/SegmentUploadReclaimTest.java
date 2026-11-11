@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.ForwardingPreparedSegment;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
@@ -24,6 +25,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -77,6 +79,58 @@ class SegmentUploadReclaimTest {
         .isNotNull();
     assertThat(Status.fromThrowable(error.get()).getCode())
         .isEqualTo(Status.Code.DEADLINE_EXCEEDED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should discard the upload's temporary bytes when admission reclaims its ticket before the upload's first data")
+  void shouldDiscardTemporaryBytesWhenAdmissionReclaimsTicketBeforeFirstData() {
+    var clock = new MutableClock();
+    var admission = new SegmentUploadAdmission(1, 1024, 8, Duration.ofSeconds(30), clock);
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var worker = worker(workerId);
+    var workerConnections = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var workerSessionId =
+        workerConnections.register(
+            workerId, registration(worker, sourceNamespaceId), noOpResponseObserver());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(workerConnections.dispatch(job)).isPresent();
+    var discarded = new AtomicBoolean();
+    // The ticket expires and a successor reclaims it after the upload reserved its bytes and
+    // before the upload learns of the reclaim.
+    var store =
+        new FakeSegmentStore() {
+          @Override
+          public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+            clock.advance(Duration.ofSeconds(31));
+            admitted(admission.tryAdmit(UUID.randomUUID())).close();
+            return new ForwardingPreparedSegment(super.prepareSegment(sessionId, segmentName)) {
+              @Override
+              public void close() {
+                discarded.set(true);
+              }
+            };
+          }
+        };
+    var error = new AtomicReference<Throwable>();
+    var observer =
+        SegmentUploadObserver.builder()
+            .authenticatedWorkerId(workerId)
+            .workerConnections(workerConnections)
+            .segmentStore(store)
+            .responseObserver(errorCapturingResponseObserver(error))
+            .uploadTicket(admitted(admission.tryAdmit(workerId)))
+            .build();
+
+    observer.onNext(
+        UploadSegmentRequest.newBuilder()
+            .setMetadata(metadataBuilder(workerSessionId, worker, job).setContentLengthBytes(8L))
+            .build());
+
+    assertThat(Status.fromThrowable(error.get()).getCode())
+        .isEqualTo(Status.Code.DEADLINE_EXCEEDED);
+    assertThat(discarded).isTrue();
   }
 
   private static WorkerIdentity worker(UUID workerId) {

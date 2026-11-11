@@ -74,12 +74,16 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
     }
 
     metadata = incoming;
-    uploadTicket.onReclaimed(this::expire);
     try {
       prepared = segmentStore.prepareSegment(streamSessionId(), storedSegmentName());
     } catch (RuntimeException e) {
       rejectStorageFailure(e);
+      return;
     }
+
+    // A ticket reclaimed since its reservation expires this upload at once, so the upload must
+    // already own its temporary file for that expiry to discard.
+    uploadTicket.onReclaimed(this::expire);
   }
 
   private void receiveData(UploadSegmentRequest request) {
