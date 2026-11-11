@@ -30,6 +30,7 @@ import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -638,7 +639,7 @@ class ProfileSharingServiceTest {
               default -> denied();
             });
 
-    var change = service.shareChange(identity(), ChangedShare.of(share)).orElseThrow();
+    var change = service.shareChange(identity(), changeOf(share)).orElseThrow();
 
     assertThat(change.shareId()).isEqualTo(share.getId());
     assertThat(change.share()).contains(share);
@@ -657,7 +658,7 @@ class ProfileSharingServiceTest {
               default -> denied();
             });
 
-    assertThat(service.shareChange(identity(), ChangedShare.of(share)))
+    assertThat(service.shareChange(identity(), changeOf(share)))
         .hasValueSatisfying(change -> assertThat(change.share()).contains(share));
   }
 
@@ -674,7 +675,7 @@ class ProfileSharingServiceTest {
               default -> denied();
             });
 
-    assertThat(service.shareChange(identity(), ChangedShare.of(share))).isEmpty();
+    assertThat(service.shareChange(identity(), changeOf(share))).isEmpty();
   }
 
   @Test
@@ -684,13 +685,15 @@ class ProfileSharingServiceTest {
     authorization.decideUnitWith(
         intent -> intent instanceof Intent.ViewProfileShareChanges ? allowed() : denied());
 
-    assertThat(service.shareChange(identity(), ChangedShare.of(share))).isEmpty();
+    assertThat(service.shareChange(identity(), changeOf(share))).isEmpty();
   }
 
   @Test
   @DisplayName("Should decide a change by its Household alone when its Profile no longer exists")
   void shouldDecideAChangeByItsHouseholdAloneWhenItsProfileNoLongerExists() {
-    var removed = new ChangedShare(UUID.randomUUID(), UUID.randomUUID(), household.getId());
+    var removed =
+        new ProfileShareChangedEvent(
+            new ChangedShare(UUID.randomUUID(), UUID.randomUUID(), household.getId()));
     authorization.decideUnitWith(
         intent ->
             switch (intent) {
@@ -718,7 +721,7 @@ class ProfileSharingServiceTest {
     var share = pendingShare();
     shares.deleteById(share.getId());
 
-    var change = service.shareChange(identity(), ChangedShare.of(share)).orElseThrow();
+    var change = service.shareChange(identity(), changeOf(share)).orElseThrow();
 
     assertThat(change.shareId()).isEqualTo(share.getId());
     assertThat(change.share()).isEmpty();
@@ -731,7 +734,7 @@ class ProfileSharingServiceTest {
     authorization.decideUnitWith(
         intent -> intent instanceof Intent.ViewProfileShareChanges ? denied() : allowed());
     var reader = identity();
-    var changed = ChangedShare.of(share);
+    var changed = changeOf(share);
 
     assertThatThrownBy(() -> service.shareChange(reader, changed))
         .isInstanceOf(AccessDeniedException.class);
@@ -749,7 +752,7 @@ class ProfileSharingServiceTest {
                 ? allowed()
                 : new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE));
     var reader = identity();
-    var changed = ChangedShare.of(share);
+    var changed = changeOf(share);
 
     assertThatThrownBy(() -> service.shareChange(reader, changed))
         .isInstanceOf(AuthorizationUnavailableException.class);
@@ -757,6 +760,10 @@ class ProfileSharingServiceTest {
 
   private AuthenticatedIdentity identity() {
     return authorization.currentIdentity();
+  }
+
+  private static ProfileShareChangedEvent changeOf(ProfileHouseholdShare share) {
+    return new ProfileShareChangedEvent(ChangedShare.of(share));
   }
 
   private ProfileHouseholdShare pendingShare() {
