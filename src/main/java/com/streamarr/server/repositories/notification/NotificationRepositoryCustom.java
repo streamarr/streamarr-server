@@ -3,7 +3,9 @@ package com.streamarr.server.repositories.notification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
+import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.domain.notification.UnreadNews;
+import java.util.Optional;
 import java.util.UUID;
 
 /** The writes of Notifications about a Profile share (ADR 0063). */
@@ -23,4 +25,10 @@ public interface NotificationRepositoryCustom {
 
   /** Stores the facts on a Notification that this transaction already holds. */
   void replaceFacts(UUID notificationId, ProfileShareFacts facts);
+
+  /**
+   * The share as it is stored now, with its Profile's current name and the Accounts on each of its
+   * sides, read past Hibernate's first-level cache; empty when the share no longer exists.
+   */
+  Optional<ShareSides> findShareSides(UUID shareId);
 }
