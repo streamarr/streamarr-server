@@ -168,6 +168,27 @@ class ShareCodeServiceTest {
   }
 
   @Test
+  @DisplayName("Should fail closed when the view decision is unavailable after a refused issue")
+  void shouldFailClosedWhenViewDecisionIsUnavailableAfterRefusedIssue() {
+    authorization.decideUnitWith(ShareCodeServiceTest::viewUnavailableOtherwiseDenied);
+
+    assertThatThrownBy(() -> service.issueShareCode(identity(), householdId))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+    assertThat(shareCodes.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the view decision is unavailable after a refused withdraw")
+  void shouldFailClosedWhenViewDecisionIsUnavailableAfterRefusedWithdraw() {
+    var issued = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
+    authorization.decideUnitWith(ShareCodeServiceTest::viewUnavailableOtherwiseDenied);
+
+    assertThatThrownBy(() -> service.withdrawShareCode(identity(), issued.getId()))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+    assertThat(issued.isLiveAt(NOW)).isTrue();
+  }
+
+  @Test
   @DisplayName("Should withdraw a live code once when an admin of the Household withdraws it")
   void shouldWithdrawLiveCodeOnceWhenAdminOfHouseholdWithdrawsIt() {
     var issued = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
@@ -422,6 +443,13 @@ class ShareCodeServiceTest {
         FakeShareCodeRepository stored,
         ShareCodeService service,
         AuthenticatedIdentity admin);
+  }
+
+  private static Decision<AuthorizationUnit> viewUnavailableOtherwiseDenied(
+      Intent.UnitIntent intent) {
+    return intent instanceof Intent.ViewShareCodes
+        ? new Decision.Failed<>(Decision.FailureCause.EVALUATION_ERROR)
+        : new Decision.Denied<>(Decision.DenialReason.POLICY);
   }
 
   private static ShareCodeCommand command(String code) {

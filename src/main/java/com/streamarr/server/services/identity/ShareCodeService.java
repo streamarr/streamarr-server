@@ -14,8 +14,6 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.CredentialAttemptGate;
 import com.streamarr.server.services.auth.ShareCodes;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.authorization.AuthorizationUnit;
-import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
@@ -191,8 +189,7 @@ public class ShareCodeService {
    */
   public ListPage<ShareCodeWithIssuer> householdShareCodes(
       AuthenticatedIdentity identity, HouseholdShareCodesScope household, PageRequest request) {
-    if (!authorizationService.isAllowed(
-        identity, new Intent.ViewShareCodes(household.householdId()))) {
+    if (!mayViewShareCodes(identity, household.householdId())) {
       return ListPage.empty();
     }
 
@@ -257,8 +254,7 @@ public class ShareCodeService {
   }
 
   private boolean mayViewShareCodes(AuthenticatedIdentity identity, UUID householdId) {
-    return authorizationService.decide(identity, new Intent.ViewShareCodes(householdId))
-        instanceof Decision.Allowed<AuthorizationUnit>;
+    return authorizationService.isAllowed(identity, new Intent.ViewShareCodes(householdId));
   }
 
   private static void reject(Object rejection) {
