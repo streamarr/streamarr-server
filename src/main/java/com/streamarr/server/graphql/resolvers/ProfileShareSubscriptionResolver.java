@@ -31,7 +31,7 @@ public class ProfileShareSubscriptionResolver {
         .<ProfileShareChangeDetails>handle(
             (event, sink) ->
                 profileSharingService
-                    .shareChange(identity, event.share())
+                    .shareChange(identity, event)
                     .map(change -> ProfileShareChangeDetails.from(change, clock.instant()))
                     .ifPresent(sink::next));
   }

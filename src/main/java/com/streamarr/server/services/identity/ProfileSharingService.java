@@ -1,6 +1,5 @@
 package com.streamarr.server.services.identity;
 
-import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
@@ -15,6 +14,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -525,8 +525,10 @@ public class ProfileSharingService {
    * stands now, or no share once the share was deleted. A share deleted with its Profile is decided
    * by its Household alone. Refuses a reader who may no longer follow share changes at all.
    */
-  public Optional<ShareChange> shareChange(AuthenticatedIdentity identity, ChangedShare changed) {
+  public Optional<ShareChange> shareChange(
+      AuthenticatedIdentity identity, ProfileShareChangedEvent change) {
     requireViewProfileShareChanges(identity);
+    var changed = change.share();
     if (!mayViewHousehold(identity, changed.householdId())
         && !mayViewProfileShares(identity, changed.profileId())) {
       return Optional.empty();
