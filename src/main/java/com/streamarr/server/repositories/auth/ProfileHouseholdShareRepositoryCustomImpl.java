@@ -2,6 +2,8 @@ package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
+import static com.streamarr.server.repositories.auth.ProfileShareStatusReads.readsAs;
+import static com.streamarr.server.repositories.auth.ProfileShareStatusReads.unexpiredAt;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
@@ -192,28 +194,6 @@ public class ProfileHouseholdShareRepositoryCustomImpl
         filter.statuses().stream()
             .map(status -> readsAs(ProfileShareStatus.valueOf(status.name()), at))
             .toList());
-  }
-
-  private static Condition readsAs(ProfileShareStatus status, Field<OffsetDateTime> at) {
-    var stored = PROFILE_HOUSEHOLD_SHARE.STATUS.eq(inline(status));
-    return switch (status) {
-      case PENDING -> stored.and(unexpiredAt(at));
-      case EXPIRED ->
-          stored.or(
-              PROFILE_HOUSEHOLD_SHARE
-                  .STATUS
-                  .eq(inline(ProfileShareStatus.PENDING))
-                  .and(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.le(at)));
-      case ACTIVE, REJECTED, CANCELED, INVALIDATED, ENDED -> stored;
-    };
-  }
-
-  /** Expiry is a predicate over expires_at; a NULL expiry never expires. */
-  private static Condition unexpiredAt(Field<OffsetDateTime> now) {
-    return PROFILE_HOUSEHOLD_SHARE
-        .EXPIRES_AT
-        .isNull()
-        .or(PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT.gt(now));
   }
 
   @Override
