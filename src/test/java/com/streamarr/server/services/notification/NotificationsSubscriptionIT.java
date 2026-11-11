@@ -19,6 +19,7 @@ import com.streamarr.server.services.identity.AccountAdministrationService;
 import com.streamarr.server.services.identity.AccountLifecycleService;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.identity.ProfileSharingService;
+import com.streamarr.server.services.identity.ShareRejections;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
@@ -187,6 +188,25 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     var decided = nextChange(householdSide);
     assertThat(nodeOf(decided).path("resolution").asString()).isEqualTo("DECIDED");
     assertMatchesAFreshQuery(decided, riversideAdmin);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the request's withdrawal when its acceptance finds the Account that made the"
+          + " offer no longer authorized")
+  void shouldDeliverTheRequestsWithdrawalWhenItsAcceptanceFindsTheOffererNoLongerAuthorized()
+      throws Exception {
+    var offer = steps.offer(theo, steps.profileManagedBy("Kai", sam, sam, theo), riverside);
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+    // Disabled in the database alone, so the offer still waits when the Household accepts it.
+    var offerer = userAccountRepository.findById(theo.account().getId()).orElseThrow();
+    offerer.setEnabled(false);
+    userAccountRepository.saveAndFlush(offerer);
+
+    var outcome = sharing.acceptProfileShare(authTestSupport.identityOf(riverside), offer.getId());
+
+    assertThat(outcome).isEqualTo(Outcome.rejected(new ShareRejections.OfferInvalidated()));
+    assertWithdrawn(nextChange(socket), riversideAdmin, offer);
   }
 
   @Test
@@ -420,6 +440,18 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
                 notification.getRecipientAccountId().equals(recipient.account().getId()))
         .findFirst()
         .orElseThrow();
+  }
+
+  /**
+   * The change resolves the recipient's request about the offer as withdrawn, as a fresh query
+   * reads it.
+   */
+  private void assertWithdrawn(JsonNode change, TestIdentity recipient, ProfileHouseholdShare offer)
+      throws Exception {
+    assertThat(onlyChange(change).path("notificationId").asString())
+        .isEqualTo(requestFor(recipient, offer).getId().toString());
+    assertThat(nodeOf(change).path("resolution").asString()).isEqualTo("WITHDRAWN");
+    assertMatchesAFreshQuery(change, recipient);
   }
 
   /** Each pushed edge, and the pushed unread count, are the ones a fresh query reads. */
