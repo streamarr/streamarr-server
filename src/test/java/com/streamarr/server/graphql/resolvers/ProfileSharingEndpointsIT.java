@@ -1482,9 +1482,9 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should list an expired offer as expired for a ServerAdmin and not at all for the"
-          + " Household's HouseholdAdmin")
-  void shouldListExpiredOfferAsExpiredForServerAdminAndNotAtAllForHouseholdAdmin()
+      "Should list an expired offer as expired for a ServerAdmin and not for the Household's"
+          + " HouseholdAdmin when they list its shares")
+  void shouldListExpiredOfferAsExpiredForServerAdminAndNotForHouseholdAdminWhenTheyListItsShares()
       throws Exception {
     var orphan = managedOrphan();
     var shareId = offer(orphan, host.household().getId());

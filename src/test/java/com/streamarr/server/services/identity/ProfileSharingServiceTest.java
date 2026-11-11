@@ -719,8 +719,9 @@ class ProfileSharingServiceTest {
 
   @Test
   @DisplayName(
-      "Should give the Household's HouseholdAdmin the change that ends a share and none after it")
-  void shouldGiveHouseholdAdminTheChangeThatEndsShareAndNoneAfterIt() {
+      "Should give the change that ends a share and none after it when the reader administers its"
+          + " Household")
+  void shouldGiveChangeThatEndsShareAndNoneAfterItWhenReaderAdministersItsHousehold() {
     var share = declinedShare();
     authorization.decideUnitWith(
         intent ->
@@ -758,8 +759,9 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should give the offering side every change of a share that is over")
-  void shouldGiveOfferingSideEveryChangeOfShareThatIsOver() {
+  @DisplayName(
+      "Should give every change of a share that is over when the reader is on the offering side")
+  void shouldGiveEveryChangeOfShareThatIsOverWhenReaderIsOnOfferingSide() {
     var share = declinedShare();
     authorization.decideUnitWith(
         intent ->

@@ -318,9 +318,9 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should deliver nothing more to the Household after the change that ends an offer, and"
-          + " everything to a ServerAdmin")
-  void shouldDeliverNothingMoreToHouseholdAfterChangeThatEndsOfferAndEverythingToServerAdmin() {
+      "Should deliver the removal to a ServerAdmin and not to the Household when the Profile of a"
+          + " declined offer is deleted")
+  void shouldDeliverRemovalToServerAdminAndNotToHouseholdWhenProfileOfDeclinedOfferIsDeleted() {
     var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
     var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
     var serverAdmin = adminIdentity();
