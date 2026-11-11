@@ -9,6 +9,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.repositories.auth.ShareCodeRepository;
 import com.streamarr.server.services.auth.ShareCodes;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.LogCapture;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -77,6 +78,16 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
         lookUpShareCode(input: { code: $code }) {
           householdName
           userErrors { __typename ... on InputMutationError { message inputPath } }
+        }
+      }
+      """;
+
+  private static final String OFFER =
+      """
+      mutation Offer($profileId: ID!, $shareCode: String!) {
+        offerProfileShare(input: { profileId: $profileId, shareCode: $shareCode }) {
+          share { id }
+          userErrors { __typename }
         }
       }
       """;
@@ -355,6 +366,36 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
     assertThat(throttled.path("extensions").path("code").asString())
         .isEqualTo("TOO_MANY_CREDENTIAL_ATTEMPTS");
     assertThat(throttled.path("extensions").path("retryAfterSeconds").asLong()).isPositive();
+  }
+
+  @Test
+  @DisplayName("Should keep the code out of every log line when a throttled Account presents it")
+  void shouldKeepCodeOutOfEveryLogLineWhenThrottledAccountPresentsIt() throws Exception {
+    var code = issuedCode(issue(authTestSupport.accountBearer(host), host.household().getId()));
+    var presenter = identity();
+    var bearer = authTestSupport.accountBearer(presenter);
+
+    try (var logs = LogCapture.everything()) {
+      lookUp(bearer, code.toLowerCase(Locale.ROOT));
+      for (var failure = 0; failure < 5; failure++) {
+        lookUp(bearer, "BCDF-GHJK");
+      }
+      var throttled = errors(executeAllowingErrors(bearer, LOOK_UP, Map.of("code", code)));
+      executeAllowingErrors(
+          bearer,
+          OFFER,
+          Map.of("profileId", presenter.profile().getId().toString(), "shareCode", code));
+
+      assertThat(throttled.path("extensions").path("code").asString())
+          .isEqualTo("TOO_MANY_CREDENTIAL_ATTEMPTS");
+      assertThat(logs.renderedEvents())
+          .isNotEmpty()
+          .allSatisfy(
+              event ->
+                  assertThat(event.toUpperCase(Locale.ROOT))
+                      .doesNotContain(code)
+                      .doesNotContain(code.replace("-", "")));
+    }
   }
 
   @Test

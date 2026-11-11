@@ -7,12 +7,23 @@ import ch.qos.logback.core.read.ListAppender;
 import java.util.List;
 import org.slf4j.LoggerFactory;
 
-/** Captures the Logback events one class emits for the duration of a try-with-resources block. */
+/**
+ * Captures the Logback events one class, or every class, emits for the duration of a
+ * try-with-resources block.
+ */
 public record LogCapture(Logger logger, ListAppender<ILoggingEvent> appender)
     implements AutoCloseable {
 
   public static LogCapture forClass(Class<?> type) {
-    var logger = (Logger) LoggerFactory.getLogger(type);
+    return attachedTo((Logger) LoggerFactory.getLogger(type));
+  }
+
+  /** Every event any logger passes up to the root, from any thread, at the levels it logs. */
+  public static LogCapture everything() {
+    return attachedTo((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME));
+  }
+
+  private static LogCapture attachedTo(Logger logger) {
     var appender = new ListAppender<ILoggingEvent>();
     appender.start();
     logger.addAppender(appender);
