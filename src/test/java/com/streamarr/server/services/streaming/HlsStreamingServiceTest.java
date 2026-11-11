@@ -6775,7 +6775,8 @@ class HlsStreamingServiceTest {
 
     assertThat(accessSession(session)).isEmpty();
     assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.m4s")).isFalse();
-    assertThat(transcodeExecutor.terminalFailure(sessionId)).isEmpty();
+    assertThat(transcodeExecutor.terminalFailure(sessionId, session.getTranscodeDecision()))
+        .isEmpty();
   }
 
   @Test
@@ -7345,11 +7346,12 @@ class HlsStreamingServiceTest {
   }
 
   private void assertStartupRolledBack(FailingStartupTranscodeExecutor executor) {
-    var sessionId = executor.getAttemptedRequests().getFirst().sessionId();
+    var attempted = executor.getAttemptedRequests().getFirst();
+    var sessionId = attempted.sessionId();
     assertThat(runtimeRegistry.findById(sessionId)).isEmpty();
     assertThat(executor.getRunningCount()).isZero();
     assertThat(segmentStore.segmentExists(sessionId, "startup.m4s")).isFalse();
-    assertThat(executor.terminalFailure(sessionId)).isEmpty();
+    assertThat(executor.terminalFailure(sessionId, attempted.transcodeDecision())).isEmpty();
   }
 
   @Test

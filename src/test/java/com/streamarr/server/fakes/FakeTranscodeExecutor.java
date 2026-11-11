@@ -43,6 +43,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
+  private record TerminalFailureKey(UUID sessionId, boolean copiesVideo) {}
+
   private record RefusedCopyStart(UUID sessionId, ExecutionTargetId target) {}
 
   private final Set<ProcessKey> running = ConcurrentHashMap.newKeySet();
@@ -51,7 +53,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<ProcessKey> runningCopies = ConcurrentHashMap.newKeySet();
   private final Set<ProcessKey> started = ConcurrentHashMap.newKeySet();
   private final Set<UUID> stopped = ConcurrentHashMap.newKeySet();
-  private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
+  private final Map<TerminalFailureKey, TranscodeFailure> terminalFailures =
+      new ConcurrentHashMap<>();
   private final Set<ProcessKey> hardwareEncoderFailures = ConcurrentHashMap.newKeySet();
   private final Set<UUID> failingOnStop = ConcurrentHashMap.newKeySet();
   private final List<TranscodeRequest> startedRequests =
@@ -256,7 +259,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     try {
       stop(sessionId);
     } finally {
-      terminalFailures.remove(sessionId);
+      terminalFailures.keySet().removeIf(key -> key.sessionId().equals(sessionId));
       hardwareEncoderFailures.removeIf(key -> key.sessionId().equals(sessionId));
       refusedCopyStarts.values().removeIf(refusal -> refusal.sessionId().equals(sessionId));
     }
@@ -452,13 +455,24 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Optional<TranscodeFailure> terminalFailure(UUID sessionId) {
-    return Optional.ofNullable(terminalFailures.get(sessionId));
+  public Optional<TranscodeFailure> terminalFailure(UUID sessionId, TranscodeDecision decision) {
+    return Optional.ofNullable(
+        terminalFailures.get(
+            new TerminalFailureKey(sessionId, decision.transcodeMode().copiesVideo())));
   }
 
+  /** Ends every job attempt of the stream session as workers that report the failure of each do. */
   public void failTerminally(UUID sessionId, TranscodeFailure failure) {
-    terminalFailures.put(sessionId, failure);
+    terminalFailures.put(new TerminalFailureKey(sessionId, true), failure);
+    terminalFailures.put(new TerminalFailureKey(sessionId, false), failure);
     endAll(sessionId);
+  }
+
+  /** Ends the variant's running job attempt as a worker that reports its terminal failure does. */
+  public void failTerminally(UUID sessionId, String variantLabel, TranscodeFailure failure) {
+    var key = new ProcessKey(sessionId, variantLabel);
+    terminalFailures.put(new TerminalFailureKey(sessionId, runningCopies.contains(key)), failure);
+    end(key);
   }
 
   @Override

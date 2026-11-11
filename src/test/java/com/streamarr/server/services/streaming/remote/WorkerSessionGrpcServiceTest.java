@@ -1088,7 +1088,7 @@ class WorkerSessionGrpcServiceTest {
                 .build());
 
     assertThat(started.isRunning()).isTrue();
-    assertThat(started.registry().terminalFailure(streamSessionId)).isEmpty();
+    assertThat(started.registry().terminalFailure(streamSessionId, false)).isEmpty();
   }
 
   @Test
@@ -1913,7 +1913,7 @@ class WorkerSessionGrpcServiceTest {
                     .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH))
             .build());
 
-    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()))).isEmpty();
+    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()), true)).isEmpty();
     assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
     assertThat(
             registry.isRunning(
@@ -2090,7 +2090,7 @@ class WorkerSessionGrpcServiceTest {
                     .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH))
             .build());
 
-    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()))).isEmpty();
+    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()), true)).isEmpty();
     assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
     assertThat(registry.hasConnectedWorker(sourceNamespaceId)).isFalse();
   }

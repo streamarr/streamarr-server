@@ -40,4 +40,12 @@ public interface StreamingService {
    * known or once the stream session is gone.
    */
   Optional<String> playedVariantOf(UUID sessionId);
+
+  /**
+   * Withdraws the encoded lower variants beside the stream session's copy after one of them failed
+   * (ADR 0050). The copy keeps playing in the same stream session: its multivariant playlist lists
+   * the copy alone from here on, and a request for a withdrawn variant finds nothing. A stream
+   * session without a copy, without lower variants or already gone stays as it is.
+   */
+  void withdrawLowerVariants(UUID sessionId, LowerVariantFailure failure);
 }

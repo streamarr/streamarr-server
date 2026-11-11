@@ -146,7 +146,7 @@ class HardwareEncoderFailureRegistryTest {
                 .jobAttemptId(fromProto(job.getJobAttemptId()))
                 .variantLabel("720p")
                 .build());
-    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()))).isEmpty();
+    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()), false)).isEmpty();
     assertThat(registry.dispatch(h264Encode(false))).isPresent();
   }
 

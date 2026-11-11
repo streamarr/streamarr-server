@@ -176,7 +176,11 @@ final class LiveWorkerConnectionRegistry {
   }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
-  private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
+  // A copy and the encoded lower variants beside it run different decisions, so the failure that
+  // one repeats says nothing about the other (ADR 0050). Every variant of a stream session without
+  // a copy encodes, and shares one entry.
+  private final Map<TerminalFailureKey, TranscodeFailure> terminalFailures =
+      new ConcurrentHashMap<>();
   // The labels of each stream session's variants whose hardware encoder failed (ADR 0044).
   private final Map<UUID, Set<String>> hardwareEncoderFailures = new ConcurrentHashMap<>();
   // Keyed by job attempt. Each entry lasts until its stream session is destroyed.
@@ -537,7 +541,7 @@ final class LiveWorkerConnectionRegistry {
     try {
       stopStreamSession(streamSessionId);
     } finally {
-      terminalFailures.remove(streamSessionId);
+      terminalFailures.keySet().removeIf(key -> key.streamSessionId().equals(streamSessionId));
       hardwareEncoderFailures.remove(streamSessionId);
       refusedCopyStarts
           .values()
@@ -684,8 +688,9 @@ final class LiveWorkerConnectionRegistry {
         .sum();
   }
 
-  Optional<TranscodeFailure> terminalFailure(UUID streamSessionId) {
-    return Optional.ofNullable(terminalFailures.get(streamSessionId));
+  Optional<TranscodeFailure> terminalFailure(UUID streamSessionId, boolean copiesVideo) {
+    return Optional.ofNullable(
+        terminalFailures.get(new TerminalFailureKey(streamSessionId, copiesVideo)));
   }
 
   boolean hasHardwareEncoderFailed(UUID streamSessionId, String variantLabel) {
@@ -697,6 +702,15 @@ final class LiveWorkerConnectionRegistry {
   }
 
   private record RefusedCopyStart(UUID streamSessionId, ExecutionTargetId target) {}
+
+  private record TerminalFailureKey(UUID streamSessionId, boolean copiesVideo) {
+
+    static TerminalFailureKey of(VariantJob job) {
+      return new TerminalFailureKey(
+          fromProto(job.getStreamSessionId()),
+          LiveWorkerConnectionRegistry.copiesVideo(job.getDecision()));
+    }
+  }
 
   /** From this call on, a probe cancelled before its timeout tells its worker of the shutdown. */
   void beginShutdown() {
@@ -1141,7 +1155,7 @@ final class LiveWorkerConnectionRegistry {
         VariantJob job, Optional<WorkerVerifiedEncoder> pinnedEncoder) {
       var dispatch = dispatchFor(job.getDecision(), pinnedEncoder);
       if (dispatch.isEmpty()
-          || terminalFailures.containsKey(fromProto(job.getStreamSessionId()))
+          || terminalFailures.containsKey(TerminalFailureKey.of(job))
           || !canAccessSource(job)
           || !canEncodeAudioLayout(job.getDecision())
           || !canDeliverVideoAsPlanned(job.getDecision().getVideo())
@@ -1618,8 +1632,7 @@ final class LiveWorkerConnectionRegistry {
       var job = activeVariants.get(attemptId);
       if (job != null) {
         terminalFailure(job, failed)
-            .ifPresent(
-                failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
+            .ifPresent(failure -> terminalFailures.put(TerminalFailureKey.of(job), failure));
         rememberRefusedCopyStart(attemptId, job, failed);
       }
 

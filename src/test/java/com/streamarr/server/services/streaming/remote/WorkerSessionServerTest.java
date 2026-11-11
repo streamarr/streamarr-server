@@ -173,7 +173,7 @@ class WorkerSessionServerTest {
     assertNotStarted(() -> server.hardwareEncodableVideoCodecFamilies(sourceNamespaceId));
     assertNotStarted(() -> server.verifiedHardwareVideoCodecFamilies(sourceNamespaceId));
     assertNotStarted(() -> server.stopVariant(UUID.randomUUID(), "720p"));
-    assertNotStarted(() -> server.terminalFailure(UUID.randomUUID()));
+    assertNotStarted(() -> server.terminalFailure(UUID.randomUUID(), true));
     assertNotStarted(() -> server.refusedCopyStart(UUID.randomUUID()));
     assertNotStarted(() -> server.destroyStreamSession(UUID.randomUUID()));
   }

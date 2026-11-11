@@ -1523,7 +1523,9 @@ class ProducerLifecycleServiceTest {
         .contains(session.getHandle().orElseThrow().withStatus(TranscodeStatus.FAILED));
     assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptId);
     assertThat(transcodeExecutor.getStartedRequests()).isEqualTo(startedRequests);
-    assertThat(transcodeExecutor.terminalFailure(session.getSessionId()))
+    assertThat(
+            transcodeExecutor.terminalFailure(
+                session.getSessionId(), session.getTranscodeDecision()))
         .contains(TranscodeFailure.OUTPUT_MISMATCH);
   }
 

@@ -66,10 +66,12 @@ public interface TranscodeExecutor {
   Optional<ExecutionTargetId> runningExecutionTarget(UUID sessionId, String variantLabel);
 
   /**
-   * Remains available until the stream session is destroyed, including before its handle is
-   * installed.
+   * The failure that every job attempt of the stream session with this decision's video output
+   * repeats. A copy and the encoded lower variants beside it differ there, so the failure of one
+   * leaves the other's job attempts alone (ADR 0050). Remains available until the stream session is
+   * destroyed, including before its handle is installed.
    */
-  Optional<TranscodeFailure> terminalFailure(UUID sessionId);
+  Optional<TranscodeFailure> terminalFailure(UUID sessionId, TranscodeDecision decision);
 
   /**
    * Whether the hardware encoder of one of the variant's job attempts failed (ADR 0044). Remains

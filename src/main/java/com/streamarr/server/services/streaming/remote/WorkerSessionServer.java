@@ -219,9 +219,10 @@ public final class WorkerSessionServer
     return workerConnections.runningExecutionTarget(streamSessionId, variantLabel);
   }
 
-  public synchronized Optional<TranscodeFailure> terminalFailure(UUID streamSessionId) {
+  public synchronized Optional<TranscodeFailure> terminalFailure(
+      UUID streamSessionId, boolean copiesVideo) {
     requireStarted();
-    return workerConnections.terminalFailure(streamSessionId);
+    return workerConnections.terminalFailure(streamSessionId, copiesVideo);
   }
 
   public synchronized boolean hasHardwareEncoderFailed(UUID streamSessionId, String variantLabel) {

@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.Set;
@@ -379,7 +380,9 @@ public class ProducerLifecycleService {
       return pastShortCopy.get();
     }
 
-    if (transcodeExecutor.terminalFailure(sessionId).isPresent()) {
+    if (transcodeExecutor
+        .terminalFailure(sessionId, session.decisionOf(variantLabel))
+        .isPresent()) {
       session
           .getVariantHandle(variantLabel)
           .ifPresent(handle -> doExhaust(sessionId, variantLabel, handle.attemptId()));
@@ -1168,6 +1171,66 @@ public class ProducerLifecycleService {
     return Optional.ofNullable(playingVariants.get(sessionId))
         .or(() -> requested)
         .or(() -> startedForPlaylist);
+  }
+
+  /**
+   * Withdraws the encoded lower variants beside the stream session's copy (ADR 0050): the stream
+   * session no longer offers them, their job attempts stop, and the copy keeps its own. Answers
+   * whether this call withdrew them.
+   */
+  public boolean tryWithdrawLowerVariants(UUID sessionId) {
+    return withSessionLock(sessionId, () -> doWithdrawLowerVariants(sessionId));
+  }
+
+  private boolean doWithdrawLowerVariants(UUID sessionId) {
+    var session = runtimeRegistry.findById(sessionId).orElse(null);
+    if (session == null || !session.tryWithdrawLowerVariants()) {
+      return false;
+    }
+
+    forgetVariantsOtherThanTheCopy(sessionId);
+    try {
+      doStopVideoVariantsExcept(session, Set.of(StreamSession.defaultVariant()));
+    } catch (IllegalStateException | TranscodeException e) {
+      // The stream session no longer offers the variants, so a job attempt that a failed stop
+      // leaves, as one during shutdown does, serves no request and ends with the stream session.
+      log.warn(
+          "Could not stop the withdrawn lower variants of session {}: {}",
+          sessionId,
+          e.getMessage());
+    }
+
+    runtimeRegistry.save(session);
+    return true;
+  }
+
+  // From here on the copy is the one variant that the player can request, so nothing that names
+  // another variant may answer as the played variant or keep a left variant running.
+  private void forgetVariantsOtherThanTheCopy(UUID sessionId) {
+    var copy = StreamSession.defaultVariant();
+    recoveryStates
+        .keySet()
+        .removeIf(key -> key.sessionId().equals(sessionId) && !key.variantLabel().equals(copy));
+    newestPositioningRequests
+        .keySet()
+        .removeIf(key -> key.sessionId().equals(sessionId) && !key.variantLabel().equals(copy));
+    var newest = newestMediaSegmentRequests.get(sessionId);
+    if (newest != null && !newest.variantLabel().equals(copy)) {
+      newestMediaSegmentRequests.remove(sessionId);
+      newestVariantArrivals.remove(sessionId);
+    }
+
+    sessionsKeepingLeftVariant.remove(sessionId);
+    forgetVariantUnlessTheCopy(playingVariants, sessionId);
+    forgetVariantUnlessTheCopy(variantsStartedForTheirPlaylist, sessionId);
+    forgetVariantUnlessTheCopy(variantsStartedForTheirPlayer, sessionId);
+  }
+
+  private static void forgetVariantUnlessTheCopy(Map<UUID, String> variants, UUID sessionId) {
+    var variant = variants.get(sessionId);
+    if (variant != null && !variant.equals(StreamSession.defaultVariant())) {
+      variants.remove(sessionId);
+    }
   }
 
   // The played variant while the newest media-segment request asks for another variant.

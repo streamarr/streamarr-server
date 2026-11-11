@@ -475,8 +475,8 @@ class HeldSegmentRequestConcurrencyIT {
     }
 
     @Override
-    public Optional<TranscodeFailure> terminalFailure(UUID sessionId) {
-      return delegate.terminalFailure(sessionId);
+    public Optional<TranscodeFailure> terminalFailure(UUID sessionId, TranscodeDecision decision) {
+      return delegate.terminalFailure(sessionId, decision);
     }
 
     @Override
