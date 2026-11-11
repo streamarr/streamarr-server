@@ -91,6 +91,7 @@ class CredentialIssuanceServiceTest {
           audit,
           new OpaqueOneTimeCodes(),
           codeProperties(),
+          () -> INVITATION_TTL,
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           Clock.fixed(NOW, ZoneOffset.UTC));
@@ -891,6 +892,7 @@ class CredentialIssuanceServiceTest {
         audit,
         new OpaqueOneTimeCodes(),
         codeProperties(),
+        () -> INVITATION_TTL,
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
         Clock.fixed(NOW, ZoneOffset.UTC));
   }

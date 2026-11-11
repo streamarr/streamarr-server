@@ -33,7 +33,6 @@ import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
@@ -103,12 +102,6 @@ class ProfileSharingServiceTest {
   void setUp() {
     var mutationTransactions =
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator());
-    var credentialCodes =
-        CredentialCodeProperties.builder()
-            .invitationTtl(INVITATION_TTL)
-            .passwordResetTtl(Duration.ofHours(1))
-            .replacementLockTimeout(Duration.ofSeconds(5))
-            .build();
     shareCodeService =
         new ShareCodeService(
             authorization,
@@ -133,7 +126,7 @@ class ProfileSharingServiceTest {
             new DeviceRegistrationLifecycle(registrations, sessions),
             audit,
             mutationTransactions,
-            credentialCodes,
+            () -> INVITATION_TTL,
             new HouseholdSharesList(shares, CLOCK),
             new ProfileSharesList(shares, CLOCK),
             shareCodeService,

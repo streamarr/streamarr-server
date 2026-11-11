@@ -29,7 +29,6 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
@@ -83,10 +82,7 @@ class ProfileManagerAdministrationServiceTest {
           audit,
           new OpaqueOneTimeCodes(),
           credentialAttempts.gate(clock),
-          CredentialCodeProperties.builder()
-              .invitationTtl(Duration.ofDays(7))
-              .replacementLockTimeout(Duration.ofSeconds(5))
-              .build(),
+          () -> Duration.ofDays(7),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           new ProfileManagerInvitationsList(invitations, clock),

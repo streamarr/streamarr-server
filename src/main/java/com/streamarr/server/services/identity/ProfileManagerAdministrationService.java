@@ -7,7 +7,6 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
-import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -15,6 +14,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.CredentialAttemptGate;
+import com.streamarr.server.services.auth.InvitationLifetime;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -63,7 +63,7 @@ public class ProfileManagerAdministrationService {
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final OpaqueOneTimeCodes opaqueCodes;
   private final CredentialAttemptGate credentialAttempts;
-  private final CredentialCodeProperties properties;
+  private final InvitationLifetime invitationLifetime;
   private final MutationTransactions mutationTransactions;
   private final ProfileManagerInvitationsList profileManagerInvitationsList;
   private final ReceivedManagerInvitationsList receivedManagerInvitationsList;
@@ -120,7 +120,7 @@ public class ProfileManagerAdministrationService {
                       .inviterDisplayName(inviterName)
                       .recipientAccountId(recipientAccountId)
                       .recipientEmail(recipient.get().getEmail())
-                      .expiresAt(now.plus(properties.invitationTtl()))
+                      .expiresAt(now.plus(invitationLifetime.invitationLifetime()))
                       .publicId(issued.publicId())
                       .secretDigest(issued.digest())
                       .build());
