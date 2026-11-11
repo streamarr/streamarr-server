@@ -3,9 +3,11 @@ package com.streamarr.server.services;
 import static com.streamarr.server.fakes.TestImages.OPAQUE_TEAL;
 import static com.streamarr.server.fakes.TestImages.alphaOfCornerPixel;
 import static com.streamarr.server.fakes.TestImages.centrePixelOf;
+import static com.streamarr.server.fakes.TestImages.colorComponentCountOf;
 import static com.streamarr.server.fakes.TestImages.createFloatingPointOpaqueTiffImageWithAlphaChannel;
 import static com.streamarr.server.fakes.TestImages.createFloatingPointTiffImageWithHalfTransparentPixels;
 import static com.streamarr.server.fakes.TestImages.createGifImage;
+import static com.streamarr.server.fakes.TestImages.createGrayscalePngImage;
 import static com.streamarr.server.fakes.TestImages.createOpaquePngImageWithAlphaChannel;
 import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithOneTranslucentPixel;
 import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithTransparentBorder;
@@ -272,6 +274,16 @@ class ImageServiceTest {
         named(
             "floating-point samples with a fully opaque alpha channel",
             createFloatingPointOpaqueTiffImageWithAlphaChannel()));
+  }
+
+  @Test
+  @DisplayName("Should store resized variants as grayscale JPEG when image is 8-bit grayscale")
+  void shouldStoreResizedVariantsAsGrayscaleJpegWhenImageIsEightBitGrayscale() {
+    var result = processPoster(createGrayscalePngImage());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(ImageServiceTest::assertGrayscaleJpeg);
   }
 
   @Test
@@ -874,6 +886,11 @@ class ImageServiceTest {
   private static void assertHalfTransparentPng(byte[] imageData) {
     assertThat(formatNameOf(imageData)).isEqualTo("png");
     assertThat(alphaOfCornerPixel(imageData)).as("corner alpha").isCloseTo(0x80, within(1));
+  }
+
+  private static void assertGrayscaleJpeg(byte[] imageData) {
+    assertThat(formatNameOf(imageData)).isEqualTo("jpeg");
+    assertThat(colorComponentCountOf(imageData)).as("color components").isEqualTo(1);
   }
 
   private static void assertJpegOfSolidTeal(byte[] imageData) {
