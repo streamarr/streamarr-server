@@ -28,8 +28,11 @@ import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.LowerVariantEncode;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.PlaybackState;
@@ -70,6 +73,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
@@ -542,6 +546,83 @@ class PlaybackSessionServiceTest {
               assertThat(replacement.options().quality()).isEqualTo(VideoQuality.AUTO);
               assertThat(replacement.excludedEncodeCodecFamilies()).containsExactly("h264");
             });
+  }
+
+  // Auto can play an encoded lower variant beside a copy. The lower variant's failure leaves the
+  // copy alone: the stream session withdraws its lower variants and no format attempt follows (ADR
+  // 0050).
+  @Test
+  @DisplayName(
+      "Should withdraw the lower variants and keep the copy's format attempt when the player fails"
+          + " on the lower variant it plays beside a copy")
+  void
+      shouldWithdrawTheLowerVariantsAndKeepTheCopysFormatAttemptWhenThePlayerFailsOnALowerVariant() {
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
+    var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
+    var initial = accepted(service.start(command));
+    var streamSessionId = initial.currentFormatAttempt().streamSessionId();
+    streams.playedVariants.put(streamSessionId, "720p");
+
+    var afterTheFailure =
+        service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(afterTheFailure.currentFormatAttempt()).isEqualTo(initial.currentFormatAttempt());
+    assertThat(afterTheFailure.formatAttemptCount()).isEqualTo(1);
+    assertThat(streams.createdCommands).hasSize(1);
+    assertThat(streams.withdrawals)
+        .containsExactly(
+            new Withdrawal(streamSessionId, LowerVariantFailure.PLAYER_FORMAT_FAILURE));
+  }
+
+  @Test
+  @DisplayName(
+      "Should recover as a failed copy does when the player fails on the copy that it plays beside"
+          + " lower variants")
+  void shouldRecoverAsAFailedCopyDoesWhenThePlayerFailsOnTheCopyBesideLowerVariants() {
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
+    var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
+    var initial = accepted(service.start(command));
+    streams.playedVariants.put(initial.currentFormatAttempt().streamSessionId(), "default");
+
+    var recovered = service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.currentFormatAttempt()).isNotEqualTo(initial.currentFormatAttempt());
+    assertThat(streams.createdCommands.getLast().videoFormatConstraint())
+        .isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+    assertThat(streams.withdrawals).isEmpty();
+  }
+
+  // The worker contract says that every job attempt with the same decision repeats these failures.
+  // The copy runs another decision, so it plays on, even after a segment over the cap (ADR 0037).
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeFailure.class,
+      names = {"OUTPUT_MISMATCH", "INVALID_SPECIFICATION", "SEGMENT_CAP_EXCEEDED"})
+  @DisplayName(
+      "Should withdraw the lower variants and keep the copy's format attempt when a lower variant's"
+          + " job attempts fail for good beside a copy")
+  void shouldWithdrawTheLowerVariantsAndKeepTheCopysFormatAttemptWhenALowerVariantsJobsFailForGood(
+      TranscodeFailure failure) {
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
+    var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
+    var initial = accepted(service.start(command));
+    var streamSessionId = initial.currentFormatAttempt().streamSessionId();
+
+    service.onTerminalTranscodeFailure(
+        TerminalTranscodeFailureEvent.builder()
+            .streamSessionId(streamSessionId)
+            .jobAttemptId(UUID.randomUUID())
+            .variantLabel("720p")
+            .failure(failure)
+            .build());
+
+    var current = service.access(request(initial, command)).orElseThrow();
+    assertThat(current.currentFormatAttempt()).isEqualTo(initial.currentFormatAttempt());
+    assertThat(current.formatAttemptCount()).isEqualTo(1);
+    assertThat(streams.createdCommands).hasSize(1);
+    assertThat(streams.withdrawals)
+        .containsExactly(new Withdrawal(streamSessionId, LowerVariantFailure.JOB_FAILURE));
   }
 
   @Test
@@ -1157,6 +1238,33 @@ class PlaybackSessionServiceTest {
     var current = service.access(request(initial, command)).orElseThrow();
     assertThat(current.formatAttemptCount()).isEqualTo(1);
     assertThat(current.currentFormatAttempt()).isEqualTo(initial.currentFormatAttempt());
+  }
+
+  // In Auto, a lower variant encodes beside a copy. ADR 0044's software continuation would replace
+  // the stream session and so end the copy, so the lower variants are withdrawn instead (ADR 0050).
+  @Test
+  @DisplayName(
+      "Should withdraw the lower variants and keep the copy's format attempt when the hardware"
+          + " encoder of a lower variant beside a copy fails")
+  void shouldWithdrawTheLowerVariantsAndKeepTheCopyWhenALowerVariantsHardwareEncoderFails() {
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
+    var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
+    var initial = accepted(service.start(command));
+    var streamSessionId = initial.currentFormatAttempt().streamSessionId();
+
+    service.onRequestedVariantHardwareEncoderFailed(
+        RequestedVariantHardwareEncoderFailedEvent.builder()
+            .streamSessionId(streamSessionId)
+            .variantLabel("720p")
+            .build());
+
+    var current = service.access(request(initial, command)).orElseThrow();
+    assertThat(current.currentFormatAttempt()).isEqualTo(initial.currentFormatAttempt());
+    assertThat(current.formatAttemptCount()).isEqualTo(1);
+    assertThat(streams.createdCommands).hasSize(1);
+    assertThat(streams.withdrawals)
+        .containsExactly(
+            new Withdrawal(streamSessionId, LowerVariantFailure.HARDWARE_ENCODER_FAILURE));
   }
 
   private static RequestedVariantHardwareEncoderFailedEvent hardwareEncoderFailure(
@@ -3525,6 +3633,8 @@ class PlaybackSessionServiceTest {
           .label("720p")
           .build();
 
+  private record Withdrawal(UUID streamSessionId, LowerVariantFailure failure) {}
+
   private static class ChildStreams implements StreamingService {
     private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
     private final List<CreateStreamSessionCommand> createdCommands = new CopyOnWriteArrayList<>();
@@ -3544,6 +3654,11 @@ class PlaybackSessionServiceTest {
     // The Dolby Vision that a copy keeps when the format attempt may keep it, as the transcode
     // decision finds for a client that declares the profile.
     private Optional<DolbyVisionProfile> copiedDolbyVision = Optional.empty();
+    // The codec profile of the encoded lower variants that a copy lists beside it.
+    private Optional<EncodeCodecProfile> lowerVariantCodecProfile = Optional.empty();
+    // The variant whose segments the player last played, by stream session.
+    private final Map<UUID, String> playedVariants = new ConcurrentHashMap<>();
+    private final List<Withdrawal> withdrawals = new CopyOnWriteArrayList<>();
 
     @Override
     public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
@@ -3610,8 +3725,13 @@ class PlaybackSessionServiceTest {
               .map(ChildStreams::keepingDolbyVision)
               .orElseGet(StreamSessionFixture::remuxDecisionBuilder);
       return defaultSessionBuilder()
-          .transcodeDecision(copy.reasons(copyReasons).build())
-          .variants(List.of());
+          .transcodeDecision(
+              copy.reasons(copyReasons)
+                  .lowerVariantEncode(
+                      lowerVariantCodecProfile.map(
+                          profile -> new LowerVariantEncode(profile, EncodeFormat.SDR_8_BIT)))
+                  .build())
+          .variants(lowerVariantCodecProfile.map(_ -> List.of(ENCODED_720P)).orElseGet(List::of));
     }
 
     // A copy that keeps Dolby Vision copies a source that carries it, on the profile's base.
@@ -3674,6 +3794,16 @@ class PlaybackSessionServiceTest {
     @Override
     public int getActiveSessionCount() {
       return sessions.size();
+    }
+
+    @Override
+    public Optional<String> playedVariantOf(UUID sessionId) {
+      return Optional.ofNullable(playedVariants.get(sessionId));
+    }
+
+    @Override
+    public void withdrawLowerVariants(UUID sessionId, LowerVariantFailure failure) {
+      withdrawals.add(new Withdrawal(sessionId, failure));
     }
   }
 }

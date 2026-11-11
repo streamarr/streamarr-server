@@ -25,6 +25,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -42,6 +43,8 @@ public class HlsStreamingService implements StreamingService {
   private static final String CAPACITY_REFUSALS_METRIC = "streamarr.streaming.capacity_refusals";
   private static final String MISSING_ENCODER_SESSIONS_METRIC =
       "streamarr.streaming.missing_encoder_sessions";
+  private static final String LOWER_VARIANT_WITHDRAWALS_METRIC =
+      "streamarr.streaming.lower_variant_withdrawals";
 
   private final MediaFileRepository mediaFileRepository;
   private final TranscodeExecutor transcodeExecutor;
@@ -576,14 +579,83 @@ public class HlsStreamingService implements StreamingService {
     return runtimeRegistry.count();
   }
 
-  // Every encode runs as a variant of the ladder; a copy keeps the source and the session's audio
-  // and has no ladder.
+  @Override
+  public Optional<String> playedVariantOf(UUID sessionId) {
+    return producerLifecycle.playedVariantOf(sessionId);
+  }
+
+  @Override
+  public void withdrawLowerVariants(UUID sessionId, LowerVariantFailure failure) {
+    if (!producerLifecycle.tryWithdrawLowerVariants(sessionId)) {
+      return;
+    }
+
+    deliveryCoordinator.variantsWithdrawn(sessionId);
+    Counter.builder(LOWER_VARIANT_WITHDRAWALS_METRIC)
+        .description(
+            "Stream sessions that withdrew the encoded lower variants beside their copy after one"
+                + " of them failed")
+        .tag("failure", failure.name().toLowerCase(Locale.ROOT))
+        .register(meterRegistry)
+        .increment();
+    log.info(
+        "Session {} withdrew its lower variants after a {} and plays its copy alone",
+        sessionId,
+        failure);
+  }
+
+  // Every encode runs as a variant of the ladder. A copy keeps the source and the session's audio,
+  // and in Auto lists the encoded variants of Auto's ladder below it (ADR 0050).
   private QualityLadder resolveLadder(
       TranscodeDecisionRequest decisionRequest, TranscodeDecision decision) {
-    return decision
-        .encodeCodecProfile()
-        .map(codecProfile -> encodedLadder(decisionRequest, decision, codecProfile))
-        .orElseGet(() -> new QualityLadder(List.of(), decision.audioDecision()));
+    if (decision.encodeCodecProfile().isPresent()) {
+      return encodedLadder(decisionRequest, decision, decision.encodeCodecProfile().get());
+    }
+
+    var lowerVariants =
+        decision
+            .lowerVariantDecision()
+            .map(lower -> lowerVariantsBesideTheCopy(decisionRequest, decision, lower))
+            .orElseGet(List::of);
+    return new QualityLadder(lowerVariants, decision.audioDecision());
+  }
+
+  // The rungs of Auto's ladder whose picture is smaller than the copy's and, when the copy's
+  // bitrate is known, whose average bandwidth is lower, highest first. Every rung keeps the copy's
+  // audio, because every variant shares the one audio rendition (ADR 0043).
+  private List<QualityVariant> lowerVariantsBesideTheCopy(
+      TranscodeDecisionRequest decisionRequest,
+      TranscodeDecision copy,
+      TranscodeDecision lowerVariant) {
+    var source = decisionRequest.source();
+    var audio = copy.audioDecision();
+    var request =
+        QualityLadderRequest.builder()
+            .probe(source)
+            .viewerLimits(decisionRequest.viewerLimits())
+            .capabilityDeclaration(decisionRequest.capabilityDeclaration())
+            .codecProfile(lowerVariant.encodeCodecProfile().orElseThrow())
+            .encodeFormat(lowerVariant.videoEncodeFormat())
+            .frameRate(lowerVariant.outputFrameRate().orElseThrow())
+            .audioSteps(new AudioSteps(List.of(audio)))
+            .build();
+    var copyPlaylist = CopyMediaPlaylist.of(source, properties);
+    var copyBandwidth = VideoCopyBandwidth.averageBandwidth(source, audio, copyPlaylist);
+    var copyBitrateKnown = VideoCopyBandwidth.isKnown(source, copyPlaylist);
+    var copyArea = area(source.displayedSize().width(), source.displayedSize().height());
+    return qualityLadderService.generateVariants(request).variants().stream()
+        .filter(variant -> area(variant.width(), variant.height()) < copyArea)
+        .filter(
+            variant ->
+                !copyBitrateKnown || variant.averageBandwidth(audio.bitrate()) < copyBandwidth)
+        .sorted(
+            Comparator.comparingLong((QualityVariant variant) -> variant.averageBandwidth(0))
+                .reversed())
+        .toList();
+  }
+
+  private static long area(int width, int height) {
+    return (long) width * height;
   }
 
   private QualityLadder encodedLadder(

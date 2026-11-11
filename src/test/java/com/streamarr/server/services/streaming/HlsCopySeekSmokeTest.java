@@ -1,9 +1,13 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuilder;
-import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
+import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.awaitility.Awaitility.await;
@@ -12,16 +16,22 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.LowerVariantEncode;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.domain.streaming.ProbedCodecFamily;
+import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
@@ -37,6 +47,7 @@ import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -61,7 +72,9 @@ import org.junit.jupiter.params.provider.ValueSource;
  * Real-FFmpeg proof that a stream copy seeks to the keyframe that opens the requested segment. A
  * replacement attempt must deliver the same video samples as the attempt that copied the source
  * from its start, also when its segment merges slots without a keyframe (ADR 0037). A copy whose
- * audio runs on long after its video keeps its producer while it copies that audio.
+ * audio runs on long after its video keeps its producer while it copies that audio. An encoded
+ * lower variant beside a copy starts only when the player requests one of its segments, and it
+ * keeps the copy's range and bit depth.
  */
 @Tag("SmokeTest")
 @DisplayName("HLS Stream Copy Seek Smoke Tests")
@@ -157,6 +170,70 @@ class HlsCopySeekSmokeTest {
         exec ffmpeg "${paced[@]}"
       fi
       """;
+
+  // 854x480 noise at 24 fps with a keyframe every 2 s keeps the copy's bitrate above the 360p
+  // variant's, so Auto lists that variant beside the copy.
+  private static final List<String> NOISY_480P =
+      List.of(
+          "-f",
+          "lavfi",
+          "-i",
+          "testsrc2=size=854x480:duration=36:rate=24,noise=alls=40:allf=t",
+          "-f",
+          "lavfi",
+          "-i",
+          "sine=frequency=440:duration=36",
+          "-c:v",
+          "libx264",
+          "-pix_fmt",
+          "yuv420p",
+          "-crf",
+          "18",
+          "-g",
+          "48",
+          "-keyint_min",
+          "48",
+          "-sc_threshold",
+          "0",
+          "-c:a",
+          "aac",
+          "-shortest",
+          "-f",
+          "matroska");
+
+  // The same picture as 10-bit PQ H.265 with a mastering display and a content light level, as an
+  // HDR10 source carries them.
+  private static final List<String> NOISY_480P_HDR10 =
+      List.of(
+          "-f",
+          "lavfi",
+          "-i",
+          "testsrc2=size=854x480:duration=36:rate=24,noise=alls=40:allf=t",
+          "-f",
+          "lavfi",
+          "-i",
+          "sine=frequency=440:duration=36",
+          "-c:v",
+          "libx265",
+          "-preset",
+          "ultrafast",
+          "-pix_fmt",
+          "yuv420p10le",
+          "-crf",
+          "18",
+          "-x265-params",
+          "keyint=48:min-keyint=48:scenecut=0:bframes=0:log-level=error"
+              + ":colorprim=bt2020:colormatrix=bt2020nc:transfer=smpte2084"
+              + ":master-display=G(8500,39850)B(6550,2300)R(35400,14600)"
+              + "WP(15635,16450)L(10000000,50)"
+              + ":max-cll=1000,400",
+          "-tag:v",
+          "hvc1",
+          "-c:a",
+          "aac",
+          "-shortest",
+          "-f",
+          "mp4");
 
   private FakeMediaFileRepository mediaFileRepository;
   private FakeMediaFileContainerInfoRepository probeRepository;
@@ -318,6 +395,102 @@ class HlsCopySeekSmokeTest {
     assertThat(videoPresentationTimes(sessionId))
         .as("the replacement's segment 2 holds the same video as the copy from the start")
         .isEqualTo(fromStart);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start a lower variant's encode at its segment's start when the player first requests"
+          + " the segment beside a running copy")
+  void shouldStartALowerVariantsEncodeAtItsSegmentsStartWhenThePlayerFirstRequestsItBesideACopy()
+      throws Exception {
+    var source =
+        workerFixture.worker().generateMedia(sourceRoot.resolve("noisy-480p.mkv"), NOISY_480P);
+    storeProbeWithKeyframes(source);
+    var session = createSession(source);
+    var sessionId = session.getSessionId();
+    var lowerSegment = "360p/" + SegmentNames.mediaSegmentName(1);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getVariants()).extracting(QualityVariant::label).contains("360p");
+    await()
+        .atMost(Duration.ofSeconds(60))
+        .until(() -> segmentStore.segmentExists(sessionId, SegmentNames.mediaSegmentName(0)));
+    assertThat(transcodeExecutor.isRunning(sessionId, StreamSession.defaultVariant())).isTrue();
+    assertThat(transcodeExecutor.isRunning(sessionId, "360p")).isFalse();
+
+    var delivery = coordinator.deliver(sessionId, "360p", lowerSegment);
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
+    var initialization = segmentStore.readSegment(sessionId, "360p/init.mp4");
+    assertThat(Fmp4Fixture.avcCodecString(initialization)).isEqualTo("avc1.64001E");
+    var media = new ByteArrayOutputStream();
+    media.writeBytes(initialization);
+    media.writeBytes(segmentStore.readSegment(sessionId, lowerSegment));
+    assertThat(Fmp4Fixture.firstVideoPresentationTime(media.toByteArray()))
+        .as("the encode forces a keyframe at the start of the copy's segment 1")
+        .isCloseTo(SEGMENT_SECONDS, within(0.05));
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a lower variant in 10-bit PQ H.265 with the source's static HDR metadata when"
+          + " the player requests it beside an HDR10 copy")
+  void shouldEncodeALowerVariantInTenBitPqH265WhenThePlayerRequestsItBesideAnHdr10Copy()
+      throws Exception {
+    var source =
+        workerFixture
+            .worker()
+            .generateMedia(sourceRoot.resolve("noisy-480p-hdr10.mp4"), NOISY_480P_HDR10);
+    storeProbeWithKeyframes(source);
+    var session = createSession(source, h264AndHdrH265AndAv1Declaration());
+    var sessionId = session.getSessionId();
+    var lowerSegment = "360p/" + SegmentNames.mediaSegmentName(1);
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getTranscodeDecision().lowerVariantEncode())
+        .contains(
+            new LowerVariantEncode(
+                EncodeCodecProfile.HEVC_MAIN_10, EncodeFormat.hdr(VideoRange.PQ)));
+    assertThat(session.getVariants()).extracting(QualityVariant::label).contains("360p");
+    await()
+        .atMost(Duration.ofSeconds(60))
+        .until(() -> segmentStore.segmentExists(sessionId, SegmentNames.mediaSegmentName(0)));
+
+    var delivery = coordinator.deliver(sessionId, "360p", lowerSegment);
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
+    var initialization = segmentStore.readSegment(sessionId, "360p/init.mp4");
+    var producedCodecString = Fmp4Fixture.hevcCodecString(initialization);
+    assertThat(producedCodecString).startsWith("hvc1.2.4.");
+    assertThat(streamInfLines(session))
+        .as("every variant announces PQ, and the 360p variant the codec string it delivers")
+        .allSatisfy(line -> assertThat(line).contains("VIDEO-RANGE=PQ"))
+        .anySatisfy(line -> assertThat(line).contains("CODECS=\"" + producedCodecString + ","));
+    var media = new ByteArrayOutputStream();
+    media.writeBytes(initialization);
+    media.writeBytes(segmentStore.readSegment(sessionId, lowerSegment));
+    assertThat(Fmp4Fixture.firstVideoPresentationTime(media.toByteArray()))
+        .as("the encode forces a keyframe at the start of the copy's segment 1")
+        .isCloseTo(SEGMENT_SECONDS, within(0.05));
+    var decodable =
+        Files.write(
+            Files.createTempFile(temporaryDirectory, "lower-variant", ".mp4"), media.toByteArray());
+    assertThat(workerFixture.worker().firstVideoFrame(decodable))
+        .containsEntry("pix_fmt", "yuv420p10le")
+        .containsEntry("color_primaries", "bt2020")
+        .containsEntry("color_transfer", "smpte2084")
+        .containsEntry("red_x", "35400/50000")
+        .containsEntry("red_y", "14600/50000")
+        .containsEntry("green_x", "8500/50000")
+        .containsEntry("green_y", "39850/50000")
+        .containsEntry("blue_x", "6550/50000")
+        .containsEntry("blue_y", "2300/50000")
+        .containsEntry("white_point_x", "15635/50000")
+        .containsEntry("white_point_y", "16450/50000")
+        .containsEntry("max_luminance", "10000000/10000")
+        .containsEntry("min_luminance", "50/10000")
+        .containsEntry("max_content", "1000")
+        .containsEntry("max_average", "400");
   }
 
   static Stream<Arguments> irregularKeyframeSources() {
@@ -521,6 +694,24 @@ class HlsCopySeekSmokeTest {
   }
 
   private StreamSession createSession(Path source) throws Exception {
+    return createSession(source, declarationBuilderFor(ProbedCodecFamily.H264).build());
+  }
+
+  // H.264 in 8-bit SDR beside H.265 and AV1 up to 10 bits in SDR, PQ and HLG. The codec preference
+  // puts AV1 before H.265, so only the copy's codec family makes a lower variant H.265.
+  private static ClientCapabilityDeclaration h264AndHdrH265AndAv1Declaration() {
+    var everyRange = List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG);
+    return declarationBuilderFor(ProbedCodecFamily.H264)
+        .video(
+            List.of(
+                h264EntryBuilder().build(),
+                hevcEntryBuilder().compatibleBases(everyRange).build(),
+                av1EntryBuilder().compatibleBases(everyRange).build()))
+        .build();
+  }
+
+  private StreamSession createSession(Path source, ClientCapabilityDeclaration declaration)
+      throws Exception {
     var file =
         mediaFileRepository.save(
             MediaFile.builder()
@@ -529,10 +720,11 @@ class HlsCopySeekSmokeTest {
                 .status(MediaFileStatus.MATCHED)
                 .size(Files.size(source))
                 .build());
-    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
     return OutcomeTestSupport.accepted(
         streamingService.createSession(
-            createStreamSessionCommand(file.getId(), UUID.randomUUID(), options)));
+            createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+                .capabilityDeclaration(declaration)
+                .build()));
   }
 
   private void killProducerAndDropSegmentsFrom(
@@ -565,6 +757,14 @@ class HlsCopySeekSmokeTest {
   // The slots that the media reaches into, counted in whole milliseconds as the plain grid counts.
   private static long gridSlotCount(StreamSession session) {
     return Math.ceilDiv(session.getMediaProbe().duration().toMillis(), SEGMENT_SECONDS * 1000L);
+  }
+
+  private List<String> streamInfLines(StreamSession session) {
+    return playlistService
+        .generateMultivariantPlaylist(session, "smoke-token")
+        .lines()
+        .filter(line -> line.startsWith("#EXT-X-STREAM-INF:"))
+        .toList();
   }
 
   private static List<Double> extinfSeconds(String playlist) {

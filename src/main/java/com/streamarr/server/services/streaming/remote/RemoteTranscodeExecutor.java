@@ -110,8 +110,8 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
-  public Optional<TranscodeFailure> terminalFailure(UUID sessionId) {
-    return workerServer.terminalFailure(sessionId);
+  public Optional<TranscodeFailure> terminalFailure(UUID sessionId, TranscodeDecision decision) {
+    return workerServer.terminalFailure(sessionId, decision.transcodeMode().copiesVideo());
   }
 
   @Override

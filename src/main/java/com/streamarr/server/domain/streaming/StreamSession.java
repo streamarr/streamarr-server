@@ -66,7 +66,13 @@ public class StreamSession {
   @Builder.Default
   private final Map<String, EncoderPreset> variantEncoderPresets = new ConcurrentHashMap<>();
 
-  @Builder.Default private final List<QualityVariant> variants = Collections.emptyList();
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
+  private final List<QualityVariant> variants = Collections.emptyList();
+
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
+  private final AtomicBoolean lowerVariantsWithdrawn = new AtomicBoolean();
 
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
@@ -187,23 +193,82 @@ public class StreamSession {
   }
 
   /**
-   * Whether the stream session offers this variant: a variant of its ladder, or the default variant
-   * when the session has no ladder.
+   * The transcode decision that the variant's job attempts run: the encode of a copy's lower
+   * variants for a labelled variant beside a copy (ADR 0050), and the stream session's decision for
+   * every other variant.
    */
-  public boolean offersVariant(String variantLabel) {
-    if (variants.isEmpty()) {
-      return DEFAULT_VARIANT.equals(variantLabel);
+  public TranscodeDecision decisionOf(@NonNull String variantLabel) {
+    if (DEFAULT_VARIANT.equals(variantLabel)) {
+      return transcodeDecision;
     }
 
-    return variants.stream().anyMatch(variant -> variant.label().equals(variantLabel));
+    return transcodeDecision.lowerVariantDecision().orElse(transcodeDecision);
   }
 
   /**
-   * The variant that the multivariant playlist lists first: the default variant of a stream session
-   * without a ladder, and the first variant of its ladder otherwise.
+   * The variants of the stream session's ladder: every variant of an encode, and the encoded lower
+   * variants beside a copy (ADR 0050), which are gone once the stream session withdrew them.
    */
+  public List<QualityVariant> getVariants() {
+    if (lowerVariantsWithdrawn.get()) {
+      return List.of();
+    }
+
+    return variants;
+  }
+
+  /**
+   * Withdraws the encoded lower variants beside the stream session's copy, which then is its one
+   * variant (ADR 0050). Answers whether this call withdrew them: a stream session without a copy or
+   * without lower variants keeps its variants.
+   */
+  public boolean tryWithdrawLowerVariants() {
+    if (!copiesVideo() || variants.isEmpty()) {
+      return false;
+    }
+
+    return lowerVariantsWithdrawn.compareAndSet(false, true);
+  }
+
+  /**
+   * Whether the label names an encoded lower variant beside the stream session's copy (ADR 0050),
+   * listed or withdrawn.
+   */
+  public boolean isLowerVariantBesideTheCopy(@NonNull String variantLabel) {
+    return copiesVideo()
+        && variants.stream().anyMatch(variant -> variant.label().equals(variantLabel));
+  }
+
+  /**
+   * Whether the stream session offers this variant: a variant of its ladder, or the default variant
+   * when the multivariant playlist lists it.
+   */
+  public boolean offersVariant(String variantLabel) {
+    if (DEFAULT_VARIANT.equals(variantLabel) && listsDefaultVariant()) {
+      return true;
+    }
+
+    return getVariants().stream().anyMatch(variant -> variant.label().equals(variantLabel));
+  }
+
+  /**
+   * Whether the multivariant playlist lists the default variant: the one variant of a stream
+   * session without a ladder, or a copy, which lists first beside its encoded lower variants (ADR
+   * 0050).
+   */
+  public boolean listsDefaultVariant() {
+    return variants.isEmpty() || copiesVideo();
+  }
+
+  private boolean copiesVideo() {
+    return transcodeDecision != null
+        && transcodeDecision.transcodeMode() != null
+        && transcodeDecision.transcodeMode().copiesVideo();
+  }
+
+  /** The variant that the multivariant playlist lists first. */
   public String firstListedVariant() {
-    if (variants.isEmpty()) {
+    if (listsDefaultVariant()) {
       return DEFAULT_VARIANT;
     }
 

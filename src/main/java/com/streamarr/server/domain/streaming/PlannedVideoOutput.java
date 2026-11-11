@@ -87,6 +87,26 @@ public sealed interface PlannedVideoOutput {
     }
 
     /**
+     * The format of an encode that writes this copy's range at this copy's bit depth, which the
+     * lower variants beside the copy keep (ADR 0050). Dolby Vision without a compatible base is PQ.
+     * Empty when no encode writes them: an encode writes SDR at 8 or 10 bits, and PQ or HLG at 10
+     * bits.
+     */
+    public Optional<EncodeFormat> encodeFormatInItsRangeAndBitDepth() {
+      var range = VideoRange.ofCompatibleBase(dynamicRange.compatibleBase());
+      var depth = bitDepth.orElse(0);
+      if (range == VideoRange.SDR && depth == 8) {
+        return Optional.of(EncodeFormat.SDR_8_BIT);
+      }
+
+      if (depth != 10) {
+        return Optional.empty();
+      }
+
+      return Optional.of(new EncodeFormat(range, depth));
+    }
+
+    /**
      * Whether only a worker that checks a copy against its planned output can deliver this copy: a
      * copy whose output is not SDR, or that lists a rewrite. An SDR copy without rewrites passes
      * the source through, so any worker delivers it (ADR 0013).

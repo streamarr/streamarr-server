@@ -16,6 +16,8 @@ import com.streamarr.server.domain.streaming.ContainerCropping;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
+import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
@@ -24,6 +26,7 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.LowerVariantEncode;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
@@ -39,6 +42,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
@@ -812,6 +816,56 @@ class HlsPlaylistServiceTest {
                       .doesNotContain("SUPPLEMENTAL-CODECS"));
     }
 
+    // ADR 0050: the lower variants keep the copy's range, so every entry announces PQ and a
+    // player reads them as one ladder.
+    @Test
+    @DisplayName(
+        "Should announce the copy's PQ range on the copy and on each lower variant when the session"
+            + " copies a PQ source beside lower variants")
+    void shouldAnnounceTheCopysPqRangeOnTheCopyAndOnEachLowerVariantWhenTheCopyHasLowerVariants() {
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .transcodeDecision(
+                  copyDecisionBuilder(
+                          VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                              .dynamicRange(
+                                  VideoPlaybackFactsFixture.rangeWithoutEnhancement(
+                                      CompatibleBase.PQ))
+                              .bitDepth(OptionalInt.of(10))
+                              .codecString(Optional.of("hvc1.2.4.L150.B0")))
+                      .lowerVariantEncode(
+                          Optional.of(
+                              new LowerVariantEncode(
+                                  EncodeCodecProfile.HEVC_MAIN_10,
+                                  EncodeFormat.hdr(VideoRange.PQ))))
+                      .build())
+              .variants(
+                  List.of(
+                      StreamSessionFixture.defaultVariantBuilder()
+                          .width(1280)
+                          .height(720)
+                          .videoBitrate(3_000_000L)
+                          .label("720p")
+                          .build()))
+              .build();
+
+      var playlist = service.generateMultivariantPlaylist(session, "test-token");
+
+      assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
+          .satisfiesExactly(
+              copy ->
+                  assertThat(copy)
+                      .contains("CODECS=\"hvc1.2.4.L150.B0,mp4a.40.2\"")
+                      .contains(",VIDEO-RANGE=PQ"),
+              lower ->
+                  assertThat(lower)
+                      .contains("RESOLUTION=1280x720")
+                      .containsPattern("CODECS=\"hvc1\\.2\\.4\\.L\\d+\\.90,mp4a\\.40\\.2\"")
+                      .contains(",VIDEO-RANGE=PQ"));
+      assertThat(playlist.lines().filter(line -> !line.startsWith("#")))
+          .containsExactly("stream.m3u8?t=test-token", "720p/stream.m3u8?t=test-token");
+    }
+
     // ADR 0013: a copy that keeps Dolby Vision on a PQ or HLG base takes CODECS from its base
     // sample entry and announces the Dolby Vision at the decision's level beside it.
     @ParameterizedTest(name = "{0}")
@@ -1075,6 +1129,31 @@ class HlsPlaylistServiceTest {
           .doesNotContain(INDEPENDENT_SEGMENTS);
       assertThat(mediaPlaylist(session, "1080p").lines()).contains(INDEPENDENT_SEGMENTS);
       assertThat(mediaPlaylist(session, "720p").lines()).doesNotContain(INDEPENDENT_SEGMENTS);
+    }
+
+    @Test
+    @DisplayName(
+        "Should write the tag only in the lower variants' media playlists when a copy sits beside"
+            + " keyframe-verified lower variants")
+    void shouldWriteTagOnlyInLowerVariantsMediaPlaylistsWhenACopySitsBesideKeyframeVerifiedOnes() {
+      var session =
+          StreamSessionFixture.abrSessionBuilder()
+              .transcodeDecision(
+                  StreamSessionFixture.remuxDecision().toBuilder()
+                      .lowerVariantEncode(
+                          Optional.of(
+                              new LowerVariantEncode(
+                                  EncodeCodecProfile.H264_HIGH, EncodeFormat.SDR_8_BIT)))
+                      .build())
+              .build();
+      session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx264());
+      session.pinEncoder("720p", WorkerVerifiedEncoderFixture.libx264());
+
+      assertThat(service.generateMultivariantPlaylist(session, "test-token").lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, StreamSession.defaultVariant()).lines())
+          .doesNotContain(INDEPENDENT_SEGMENTS);
+      assertThat(mediaPlaylist(session, "720p").lines()).contains(INDEPENDENT_SEGMENTS);
     }
 
     @Test

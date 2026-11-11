@@ -23,7 +23,10 @@ import lombok.NonNull;
  * in a fixed quality, and is empty in Auto and Original (ADR 0013). {@code softwareEncoder} is true
  * when the encode runs on the software encoder of its codec family after a hardware encoder failed
  * (ADR 0044). {@code videoEncodeFormat} is the range and bit depth that the decision's encode
- * writes, and a decision that copies the video holds 8-bit SDR (#397).
+ * writes, and a decision that copies the video holds 8-bit SDR (#397). {@code lowerVariantEncode}
+ * is the encode that the lower variants beside a copy run in Auto, so only a decision that copies
+ * the video holds one, and it writes the copy's range at the copy's bit depth in the copy's codec
+ * family (ADR 0050).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -40,7 +43,8 @@ public record TranscodeDecision(
     @NonNull OptionalInt audioStreamIndex,
     @NonNull Optional<DynamicRangeChoice> dynamicRangeChoice,
     boolean softwareEncoder,
-    @NonNull EncodeFormat videoEncodeFormat) {
+    @NonNull EncodeFormat videoEncodeFormat,
+    @NonNull Optional<LowerVariantEncode> lowerVariantEncode) {
 
   public TranscodeDecision {
     var copiesVideo = transcodeMode != null && transcodeMode.copiesVideo();
@@ -69,6 +73,10 @@ public record TranscodeDecision(
           "A decision that encodes the video cannot hold a Dolby Vision output");
     }
 
+    requireLowerVariantsInTheCopysFormat(
+        lowerVariantEncode, videoSource.filter(_ -> copiesVideo), videoBitstreamRewrites);
+    requireLowerVariantsInTheCopysCodecFamily(lowerVariantEncode, videoCodecFamily);
+
     videoBitstreamRewrites = List.copyOf(videoBitstreamRewrites);
     reasons = List.copyOf(reasons);
     videoCapabilityEntryRefusals = List.copyOf(videoCapabilityEntryRefusals);
@@ -83,6 +91,42 @@ public record TranscodeDecision(
         .isPresent()) {
       throw new IllegalArgumentException(
           "An encode codec profile must belong to the decision's video codec family");
+    }
+  }
+
+  // Only a copy lists lower variants. A bandwidth dip must not move a television between HDR and
+  // SDR, so they keep the copy's range and bit depth (ADR 0050).
+  private static void requireLowerVariantsInTheCopysFormat(
+      Optional<LowerVariantEncode> lowerVariants,
+      Optional<VideoPlaybackFacts> copiedVideo,
+      List<BitstreamRewrite> rewrites) {
+    if (lowerVariants.isEmpty()) {
+      return;
+    }
+
+    if (copiedVideo.isEmpty()) {
+      throw new IllegalArgumentException(
+          "A decision that encodes the video cannot hold a lower variant encode");
+    }
+
+    var copyFormat =
+        PlannedVideoOutput.StreamCopy.of(copiedVideo.get(), rewrites)
+            .encodeFormatInItsRangeAndBitDepth();
+    if (!lowerVariants.map(LowerVariantEncode::format).equals(copyFormat)) {
+      throw new IllegalArgumentException(
+          "A copy's lower variants must keep the copy's range and bit depth");
+    }
+  }
+
+  // A player moves down and back up only between variants of one codec family, so a copy's lower
+  // variants keep the copy's (ADR 0050).
+  private static void requireLowerVariantsInTheCopysCodecFamily(
+      Optional<LowerVariantEncode> lowerVariants, String copyCodecFamily) {
+    if (lowerVariants
+        .filter(encode -> !encode.codecProfile().codecFamilyName().equals(copyCodecFamily))
+        .isPresent()) {
+      throw new IllegalArgumentException(
+          "A copy's lower variants must stay in the copy's codec family");
     }
   }
 
@@ -110,6 +154,25 @@ public record TranscodeDecision(
     }
 
     return Stream.concat(reasons.stream(), Stream.of(added)).toList();
+  }
+
+  /**
+   * The decision that the encoded lower variants beside this decision's copy run: the lower variant
+   * encode of the same video stream, with this decision's audio and subtitles. Empty for a decision
+   * without lower variants.
+   */
+  public Optional<TranscodeDecision> lowerVariantDecision() {
+    return lowerVariantEncode.map(
+        encode ->
+            toBuilder()
+                .transcodeMode(TranscodeMode.of(false, audioDecision.mode()))
+                .videoCodecFamily(encode.codecProfile().codecFamilyName())
+                .encodeCodecProfile(Optional.of(encode.codecProfile()))
+                .videoEncodeFormat(encode.format())
+                .videoBitstreamRewrites(List.of())
+                .videoDolbyVisionOutput(Optional.empty())
+                .lowerVariantEncode(Optional.empty())
+                .build());
   }
 
   /**
@@ -177,5 +240,6 @@ public record TranscodeDecision(
     private OptionalInt audioStreamIndex = OptionalInt.empty();
     private Optional<DynamicRangeChoice> dynamicRangeChoice = Optional.empty();
     private EncodeFormat videoEncodeFormat = EncodeFormat.SDR_8_BIT;
+    private Optional<LowerVariantEncode> lowerVariantEncode = Optional.empty();
   }
 }

@@ -50,6 +50,7 @@ import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.StopVariantCommand;
 import com.streamarr.transcode.v1.TranscodeDecision;
+import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
@@ -85,6 +86,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
@@ -174,7 +176,11 @@ final class LiveWorkerConnectionRegistry {
   }
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
-  private final Map<UUID, TranscodeFailure> terminalFailures = new ConcurrentHashMap<>();
+  // A copy and the encoded lower variants beside it run different decisions, so the failure that
+  // one repeats says nothing about the other (ADR 0050). Every variant of a stream session without
+  // a copy encodes, and shares one entry.
+  private final Map<TerminalFailureKey, TranscodeFailure> terminalFailures =
+      new ConcurrentHashMap<>();
   // The labels of each stream session's variants whose hardware encoder failed (ADR 0044).
   private final Map<UUID, Set<String>> hardwareEncoderFailures = new ConcurrentHashMap<>();
   // Keyed by job attempt. Each entry lasts until its stream session is destroyed.
@@ -535,7 +541,7 @@ final class LiveWorkerConnectionRegistry {
     try {
       stopStreamSession(streamSessionId);
     } finally {
-      terminalFailures.remove(streamSessionId);
+      terminalFailures.keySet().removeIf(key -> key.streamSessionId().equals(streamSessionId));
       hardwareEncoderFailures.remove(streamSessionId);
       refusedCopyStarts
           .values()
@@ -682,8 +688,9 @@ final class LiveWorkerConnectionRegistry {
         .sum();
   }
 
-  Optional<TranscodeFailure> terminalFailure(UUID streamSessionId) {
-    return Optional.ofNullable(terminalFailures.get(streamSessionId));
+  Optional<TranscodeFailure> terminalFailure(UUID streamSessionId, boolean copiesVideo) {
+    return Optional.ofNullable(
+        terminalFailures.get(new TerminalFailureKey(streamSessionId, copiesVideo)));
   }
 
   boolean hasHardwareEncoderFailed(UUID streamSessionId, String variantLabel) {
@@ -695,6 +702,15 @@ final class LiveWorkerConnectionRegistry {
   }
 
   private record RefusedCopyStart(UUID streamSessionId, ExecutionTargetId target) {}
+
+  private record TerminalFailureKey(UUID streamSessionId, boolean copiesVideo) {
+
+    static TerminalFailureKey of(VariantJob job) {
+      return new TerminalFailureKey(
+          fromProto(job.getStreamSessionId()),
+          LiveWorkerConnectionRegistry.copiesVideo(job.getDecision()));
+    }
+  }
 
   /** From this call on, a probe cancelled before its timeout tells its worker of the shutdown. */
   void beginShutdown() {
@@ -1139,7 +1155,7 @@ final class LiveWorkerConnectionRegistry {
         VariantJob job, Optional<WorkerVerifiedEncoder> pinnedEncoder) {
       var dispatch = dispatchFor(job.getDecision(), pinnedEncoder);
       if (dispatch.isEmpty()
-          || terminalFailures.containsKey(fromProto(job.getStreamSessionId()))
+          || terminalFailures.containsKey(TerminalFailureKey.of(job))
           || !canAccessSource(job)
           || !canEncodeAudioLayout(job.getDecision())
           || !canDeliverVideoAsPlanned(job.getDecision().getVideo())
@@ -1616,8 +1632,7 @@ final class LiveWorkerConnectionRegistry {
       var job = activeVariants.get(attemptId);
       if (job != null) {
         terminalFailure(job, failed)
-            .ifPresent(
-                failure -> terminalFailures.put(fromProto(job.getStreamSessionId()), failure));
+            .ifPresent(failure -> terminalFailures.put(TerminalFailureKey.of(job), failure));
         rememberRefusedCopyStart(attemptId, job, failed);
       }
 
@@ -1676,15 +1691,35 @@ final class LiveWorkerConnectionRegistry {
       };
     }
 
-    // Only a stream session that copies the video cuts keyframe-merged segments. An encode runs on
-    // the plain grid, which keeps ordinary recovery for a segment over the cap even when its final
-    // slot merges into the last segment and the job lists every segment's start (ADR 0037).
+    // Only a stream session that copies the video cuts keyframe-merged segments: the copy, and each
+    // encoded lower variant beside it, which carries the copy's keyframe ticks (ADR 0050). An
+    // encode
+    // on the plain grid keeps ordinary recovery for a segment over the cap even when its final slot
+    // merges into the last segment and the job lists every segment's start (ADR 0037).
     private static Optional<TranscodeFailure> segmentCapFailure(VariantJob job) {
-      if (!copiesVideo(job)) {
+      if (!copiesVideo(job) && !listsKeyframeTicks(job)) {
         return Optional.empty();
       }
 
       return Optional.of(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
+    }
+
+    // A merged plain grid lists segment N at N periods in the time base 1/1. Any other list counts
+    // a copy's keyframe ticks, even in a 1/1 keyframe time base.
+    private static boolean listsKeyframeTicks(VariantJob job) {
+      var execution = job.getExecution();
+      return execution.getSegmentStartTicksCount() > 0 && !listsThePlainGrid(execution);
+    }
+
+    private static boolean listsThePlainGrid(TranscodeExecution execution) {
+      var timeBase = execution.getSegmentStartTimeBase();
+      if (timeBase.getNumerator() != 1 || timeBase.getDenominator() != 1) {
+        return false;
+      }
+
+      long period = execution.getTargetSegmentDurationSeconds();
+      var ticks = execution.getSegmentStartTicksList();
+      return IntStream.range(0, ticks.size()).allMatch(index -> ticks.get(index) == index * period);
     }
 
     private static boolean isCopyOutputMismatch(VariantJob job, JobAttemptFailed failed) {

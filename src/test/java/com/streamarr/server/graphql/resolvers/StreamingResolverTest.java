@@ -75,6 +75,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
+import com.streamarr.server.services.streaming.LowerVariantFailure;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.PlaybackSessionRequest;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
@@ -2729,6 +2730,16 @@ class StreamingResolverTest {
     @Override
     public int getActiveSessionCount() {
       return sessions.size();
+    }
+
+    @Override
+    public Optional<String> playedVariantOf(UUID sessionId) {
+      return Optional.empty();
+    }
+
+    @Override
+    public void withdrawLowerVariants(UUID sessionId, LowerVariantFailure failure) {
+      // No stream session here lists lower variants.
     }
   }
 

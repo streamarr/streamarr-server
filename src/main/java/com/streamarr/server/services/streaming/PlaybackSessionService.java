@@ -241,12 +241,75 @@ public class PlaybackSessionService implements AutoCloseable {
     return accessibleSession(command.playbackSessionId(), command.identity())
         .flatMap(
             playback -> {
-              recover(
-                  playback,
-                  command.streamSessionId(),
-                  new PlaybackSessionFailure.FixedFormatFailed(command.reason()));
+              recoverFromPlayersFormatFailure(playback, command);
               return snapshot(playback);
             });
+  }
+
+  private void recoverFromPlayersFormatFailure(
+      PlaybackSession playback, ReportPlaybackFormatFailureCommand command) {
+    var failedId = command.streamSessionId();
+    var playedVariant = streamingService.playedVariantOf(failedId);
+    if (playedVariant.isPresent()
+        && tryWithdrawLowerVariants(
+            LowerVariantFailureReport.builder()
+                .playback(playback)
+                .streamSessionId(failedId)
+                .variantLabel(playedVariant.get())
+                .failure(LowerVariantFailure.PLAYER_FORMAT_FAILURE)
+                .build())) {
+      return;
+    }
+
+    recover(playback, failedId, new PlaybackSessionFailure.FixedFormatFailed(command.reason()));
+  }
+
+  @Builder
+  private record LowerVariantFailureReport(
+      PlaybackSession playback,
+      UUID streamSessionId,
+      String variantLabel,
+      LowerVariantFailure failure) {}
+
+  /**
+   * A failure of an encoded lower variant beside the copy that plays leaves the copy alone: the
+   * stream session withdraws its lower variants and the playback session keeps its format attempt,
+   * its range and its budget of format attempts (ADR 0050). Answers whether the failure was such a
+   * variant's, so that no recovery follows it. A failure of the copy itself is not.
+   */
+  private boolean tryWithdrawLowerVariants(LowerVariantFailureReport report) {
+    var failedBesideTheCopy =
+        locked(
+            report.playback(),
+            () ->
+                isLowerVariantBesideTheCurrentCopy(
+                    report.playback(), report.streamSessionId(), report.variantLabel()));
+    if (!failedBesideTheCopy) {
+      return false;
+    }
+
+    streamingService.withdrawLowerVariants(report.streamSessionId(), report.failure());
+    return true;
+  }
+
+  private boolean isLowerVariantBesideTheCurrentCopy(
+      PlaybackSession playback, UUID streamId, String variantLabel) {
+    return isCurrentAttempt(playback, streamId)
+        && playback.current instanceof PlaybackFormatAttempt.Ready(var session)
+        && session.isLowerVariantBesideTheCopy(variantLabel);
+  }
+
+  private boolean tryWithdrawLowerVariantsAfterJobFailure(
+      UUID failedId, String variantLabel, LowerVariantFailure failure) {
+    var playback = streamOwners.get(failedId);
+    return playback != null
+        && tryWithdrawLowerVariants(
+            LowerVariantFailureReport.builder()
+                .playback(playback)
+                .streamSessionId(failedId)
+                .variantLabel(variantLabel)
+                .failure(failure)
+                .build());
   }
 
   /**
@@ -632,11 +695,17 @@ public class PlaybackSessionService implements AutoCloseable {
   /**
    * Fails the playback session without another format attempt, which would fail the same way. A
    * segment over the cap on the segment list starts a new format attempt instead, as a failed copy
-   * does, because that attempt's stream session encodes on the plain grid (ADR 0037).
+   * does, because that attempt's stream session encodes on the plain grid (ADR 0037). A failure of
+   * a lower variant beside a copy does neither: the copy plays on alone (ADR 0050).
    */
   @EventListener
   public void onTerminalTranscodeFailure(@NonNull TerminalTranscodeFailureEvent event) {
     var failedId = event.streamSessionId();
+    if (tryWithdrawLowerVariantsAfterJobFailure(
+        failedId, event.variantLabel(), LowerVariantFailure.JOB_FAILURE)) {
+      return;
+    }
+
     switch (event.failure()) {
       case OUTPUT_MISMATCH ->
           failWithoutFormatAttempt(failedId, new PlaybackSessionFailure.OutputMismatch());
@@ -766,12 +835,18 @@ public class PlaybackSessionService implements AutoCloseable {
   /**
    * Continues the requested variant's encode on the software encoder of the same codec family in a
    * new format attempt, which the client reopens at the same position (ADR 0044). It spends no
-   * format attempt, and no worker with room for it ends the playback session.
+   * format attempt, and no worker with room for it ends the playback session. A lower variant
+   * beside a copy does not continue: the copy plays on alone (ADR 0050).
    */
   @EventListener
   public void onRequestedVariantHardwareEncoderFailed(
       @NonNull RequestedVariantHardwareEncoderFailedEvent event) {
     var failedId = event.streamSessionId();
+    if (tryWithdrawLowerVariantsAfterJobFailure(
+        failedId, event.variantLabel(), LowerVariantFailure.HARDWARE_ENCODER_FAILURE)) {
+      return;
+    }
+
     handleJobFailure(failedId, playback -> reserveSoftwareContinuation(playback, failedId));
   }
 
@@ -780,7 +855,8 @@ public class PlaybackSessionService implements AutoCloseable {
     if (!isCurrentAttempt(playback, failedId)
         || endedNormally(playback)
         || !(playback.current instanceof PlaybackFormatAttempt.Ready(var session))
-        || !(outputOf(session) instanceof FailedFormatAttempt.Encode(var codecFamily, var _))) {
+        || !(outputOf(session.getTranscodeDecision())
+            instanceof FailedFormatAttempt.Encode(var codecFamily, var _))) {
       return Optional.empty();
     }
 
@@ -831,13 +907,17 @@ public class PlaybackSessionService implements AutoCloseable {
   // worker reports a Dolby Vision conversion failure only from a copy that converts profile 7 on a
   // PQ base (streamarr/streamarr-server#651), so that report names a Dolby Vision copy on an HDR
   // base; its output mismatch names a copy.
-  private static FailedFormatAttempt failedAttempt(
+  private FailedFormatAttempt failedAttempt(
       PlaybackSession playback, PlaybackSessionFailure reason) {
-    if (playback.current instanceof PlaybackFormatAttempt.Ready(var session)) {
-      return new FailedFormatAttempt(reason, outputOf(session));
+    if (!(playback.current instanceof PlaybackFormatAttempt.Ready(var session))) {
+      return new FailedFormatAttempt(reason, outputOfAPendingCopy(reason));
     }
 
-    return new FailedFormatAttempt(reason, outputOfAPendingCopy(reason));
+    if (session.getDelivery() == StreamDelivery.DIRECT_PLAY) {
+      return new FailedFormatAttempt(reason, new FailedFormatAttempt.DirectPlay());
+    }
+
+    return new FailedFormatAttempt(reason, outputOf(session.getTranscodeDecision()));
   }
 
   private static FailedFormatAttempt.Output outputOfAPendingCopy(PlaybackSessionFailure reason) {
@@ -848,12 +928,7 @@ public class PlaybackSessionService implements AutoCloseable {
     return new FailedFormatAttempt.Copy();
   }
 
-  private static FailedFormatAttempt.Output outputOf(StreamSession session) {
-    if (session.getDelivery() == StreamDelivery.DIRECT_PLAY) {
-      return new FailedFormatAttempt.DirectPlay();
-    }
-
-    var decision = session.getTranscodeDecision();
+  private static FailedFormatAttempt.Output outputOf(TranscodeDecision decision) {
     if (!decision.transcodeMode().copiesVideo()) {
       return new FailedFormatAttempt.Encode(
           decision.videoCodecFamily(), decision.videoEncodeFormat());

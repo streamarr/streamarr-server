@@ -920,7 +920,8 @@ class HdrFormatRecoveryTest {
         .video("h264", 8);
   }
 
-  // Auto copies the source's own video in one variant.
+  // Auto copies the source's own video as its playlist's one variant: lower variants stay in the
+  // copy's codec family, and no worker here encodes H.265 (ADR 0050).
   private static DeliveredAttempt.DeliveredAttemptBuilder autoCopy(
       Output output, VideoRange range) {
     return delivered(output, range).choice(VideoQuality.AUTO);
@@ -1025,8 +1026,8 @@ class HdrFormatRecoveryTest {
   }
 
   // The client's HDR toggle shows the range that the answer reports, which must be the range that
-  // the decision plans and the playlist announces (ADR 0052). A playlist without VIDEO-RANGE
-  // announces SDR (RFC 8216).
+  // the decision plans and every playlist entry announces (ADR 0052), a copy's lower variants
+  // included (ADR 0050). A playlist without VIDEO-RANGE announces SDR (RFC 8216).
   private static VideoRange announcedRange(StreamSession session, String playlist) {
     var planned = session.getTranscodeDecision().videoRange();
     var announced =
@@ -1039,10 +1040,18 @@ class HdrFormatRecoveryTest {
     assertThat(announced)
         .as("the playlist's range")
         .isEqualTo(planned == VideoRange.SDR ? Set.of() : Set.of(planned));
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
+        .as("the playlist entries that announce a range")
+        .isNotEmpty()
+        .allSatisfy(
+            entry ->
+                assertThat(VIDEO_RANGE_ATTRIBUTE.matcher(entry).find())
+                    .isEqualTo(planned != VideoRange.SDR));
     return planned;
   }
 
-  // The bit depth that the decision plans, which every AV1 codec string in the playlist must name.
+  // The bit depth that the decision plans, which every AV1 codec string in the playlist must name,
+  // those of a copy's lower variants included.
   private static int announcedBitDepth(StreamSession session, String playlist) {
     var planned =
         switch (session.getTranscodeDecision().plannedVideoOutput()) {
@@ -1055,6 +1064,7 @@ class HdrFormatRecoveryTest {
             .results()
             .map(match -> Integer.parseInt(match.group(1)))
             .collect(Collectors.toSet());
+    assertThat(announced).as("the playlist's AV1 bit depths").isSubsetOf(planned);
     if (session.getTranscodeDecision().videoCodecFamily().equals("av1")) {
       assertThat(announced).as("the playlist's AV1 bit depth").containsExactly(planned);
     }

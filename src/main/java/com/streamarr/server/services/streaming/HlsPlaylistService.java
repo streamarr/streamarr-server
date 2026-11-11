@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlannedVideoOutput;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.VideoEncodeDecision;
 import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
@@ -62,13 +63,14 @@ public class HlsPlaylistService {
   // One variant's EXT-X-STREAM-INF tag and URI.
   private record PlaylistEntry(String variantLabel, String lines) {}
 
-  // Only a copy runs without a ladder.
+  // A copy lists first, so creating the stream session starts only the copy; its encoded lower
+  // variants follow (ADR 0050).
   private List<PlaylistEntry> entries(StreamSession session, String token, boolean hasAudio) {
-    if (session.getVariants().isEmpty()) {
-      return List.of(copyEntry(session, token, hasAudio));
+    var entries = new ArrayList<PlaylistEntry>();
+    if (session.listsDefaultVariant()) {
+      entries.add(copyEntry(session, token, hasAudio));
     }
 
-    var entries = new ArrayList<PlaylistEntry>();
     for (var variant : session.getVariants()) {
       entries.add(encodedEntry(session, variant, token, hasAudio));
     }
@@ -105,7 +107,7 @@ public class HlsPlaylistService {
         codecs(session, copiedVideoCodecString(session)),
         hasAudio);
     appendCopiedFrameRate(sb, probe);
-    appendVideoRange(sb, session);
+    appendVideoRange(sb, session.getTranscodeDecision());
     appendSupplementalCodecs(sb, session);
     sb.append("\n");
     sb.append("stream.m3u8?t=").append(token).append("\n");
@@ -114,6 +116,7 @@ public class HlsPlaylistService {
 
   private PlaylistEntry encodedEntry(
       StreamSession session, QualityVariant variant, String token, boolean hasAudio) {
+    var decision = session.decisionOf(variant.label());
     var bandwidth =
         VariantBandwidth.ofEncoded(variant, session.getTranscodeDecision().audioDecision());
     var sb = new StringBuilder();
@@ -122,10 +125,10 @@ public class HlsPlaylistService {
         bandwidth,
         variant.width(),
         variant.height(),
-        codecs(session, encodedVideoCodecString(session, variant)),
+        codecs(session, encodedVideoCodecString(decision, variant)),
         hasAudio);
     appendFrameRate(sb, variant);
-    appendVideoRange(sb, session);
+    appendVideoRange(sb, decision);
     sb.append("\n");
     sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
     return new PlaylistEntry(variant.label(), sb.toString());
@@ -141,8 +144,8 @@ public class HlsPlaylistService {
   }
 
   // An encoded variant advertises the codec string that its job attempts force.
-  private static String encodedVideoCodecString(StreamSession session, QualityVariant variant) {
-    var decision = session.getTranscodeDecision();
+  private static String encodedVideoCodecString(
+      TranscodeDecision decision, QualityVariant variant) {
     return VideoEncodeDecision.of(
             EncodedVideoOutput.builder()
                 .codecFamily(decision.videoCodecFamily())
@@ -170,8 +173,9 @@ public class HlsPlaylistService {
   }
 
   private static boolean isEveryVideoVariantKeyframeVerified(StreamSession session) {
-    if (session.getVariants().isEmpty()) {
-      return isKeyframeVerified(session, StreamSession.defaultVariant());
+    if (session.listsDefaultVariant()
+        && !isKeyframeVerified(session, StreamSession.defaultVariant())) {
+      return false;
     }
 
     return session.getVariants().stream()
@@ -245,8 +249,7 @@ public class HlsPlaylistService {
   // The playlist announces the planned output's range (ADR 0013). A copy that keeps Dolby Vision
   // under an SDR compatible base declares its SDR base layer explicitly and announces no Dolby
   // Vision (ADR 0036). Every other SDR output announces none, which HLS reads as SDR.
-  private static void appendVideoRange(StringBuilder sb, StreamSession session) {
-    var decision = session.getTranscodeDecision();
+  private static void appendVideoRange(StringBuilder sb, TranscodeDecision decision) {
     var range = decision.videoRange();
     if (range != VideoRange.SDR) {
       sb.append(",VIDEO-RANGE=").append(range.name());

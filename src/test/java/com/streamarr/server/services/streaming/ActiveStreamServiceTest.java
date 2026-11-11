@@ -320,9 +320,14 @@ class ActiveStreamServiceTest {
 
   private record PlayingSession(UUID playbackSessionId, UUID streamSessionId) {}
 
-  // 1080p, listed first, holds only media segment 6; 720p holds media segments 4 to 8.
+  // An encode lists its ladder's first variant first: 1080p holds only media segment 6; 720p holds
+  // media segments 4 to 8.
   private PlayingSession playingLadderSessionWithStoredSegments() {
-    streams.shapeSessions(session -> session.variants(List.of(variant("1080p"), variant("720p"))));
+    streams.shapeSessions(
+        session ->
+            session
+                .transcodeDecision(fullTranscodeDecision("h264"))
+                .variants(List.of(variant("1080p"), variant("720p"))));
     var snapshot = acceptedPlayback(playbackSessions.start(startPlaybackBuilder().build()));
     var session = readySession(snapshot);
     session.updatePlaybackState(40, PlaybackState.PLAYING);

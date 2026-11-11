@@ -117,7 +117,9 @@ class RemoteFormatFailureIT {
       worker.fail(worker.nextJob());
 
       assertThat(waiting.await(Duration.ofSeconds(5))).isTrue();
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+      assertThat(
+              rig.executor.terminalFailure(
+                  rig.session.getSessionId(), rig.session.getTranscodeDecision()))
           .contains(TranscodeFailure.OUTPUT_MISMATCH);
     }
   }
@@ -133,7 +135,9 @@ class RemoteFormatFailureIT {
 
       rig.streaming.lifecycle().suspend(rig.session.getSessionId());
 
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+      assertThat(
+              rig.executor.terminalFailure(
+                  rig.session.getSessionId(), rig.session.getTranscodeDecision()))
           .contains(TranscodeFailure.OUTPUT_MISMATCH);
       assertThat(rig.deliver()).isInstanceOf(SegmentDelivery.Unrecoverable.class);
       var restartRequest = rig.requestBuilder().build();
@@ -165,7 +169,10 @@ class RemoteFormatFailureIT {
       service.destroySession(rig.session.getSessionId());
 
       assertThat(rig.registry.findById(rig.session.getSessionId())).isEmpty();
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId())).isEmpty();
+      assertThat(
+              rig.executor.terminalFailure(
+                  rig.session.getSessionId(), rig.session.getTranscodeDecision()))
+          .isEmpty();
     }
   }
 
@@ -182,7 +189,7 @@ class RemoteFormatFailureIT {
             var mismatch = (VideoCopyOutputMismatchEvent) event;
             try {
               var listenerServer = server.get(5, TimeUnit.SECONDS);
-              assertThat(listenerServer.terminalFailure(mismatch.streamSessionId()))
+              assertThat(listenerServer.terminalFailure(mismatch.streamSessionId(), true))
                   .contains(TranscodeFailure.OUTPUT_MISMATCH);
               tasks
                   .submit(() -> listenerServer.destroyStreamSession(mismatch.streamSessionId()))
@@ -200,7 +207,10 @@ class RemoteFormatFailureIT {
 
         handled.get(5, TimeUnit.SECONDS);
 
-        assertThat(rig.executor.terminalFailure(rig.session.getSessionId())).isEmpty();
+        assertThat(
+                rig.executor.terminalFailure(
+                    rig.session.getSessionId(), rig.session.getTranscodeDecision()))
+            .isEmpty();
         assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).hasSize(1);
       }
     }
@@ -221,7 +231,9 @@ class RemoteFormatFailureIT {
 
       assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class))
           .containsExactly(eventFor(job));
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+      assertThat(
+              rig.executor.terminalFailure(
+                  rig.session.getSessionId(), rig.session.getTranscodeDecision()))
           .contains(TranscodeFailure.OUTPUT_MISMATCH);
     }
   }
@@ -243,7 +255,10 @@ class RemoteFormatFailureIT {
 
       assertThat(rig.executor.isRunning(rig.session.getSessionId(), StreamSession.defaultVariant()))
           .isTrue();
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId())).isEmpty();
+      assertThat(
+              rig.executor.terminalFailure(
+                  rig.session.getSessionId(), rig.session.getTranscodeDecision()))
+          .isEmpty();
       assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
       worker.fail(newJob);
       rig.awaitStopped();
@@ -275,7 +290,9 @@ class RemoteFormatFailureIT {
         assertThatThrownBy(() -> rig.executor.start(targetedRequest, target))
             .isInstanceOf(TranscodeException.class);
         assertThat(replacement.jobs).isEmpty();
-        assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+        assertThat(
+                rig.executor.terminalFailure(
+                    rig.session.getSessionId(), rig.session.getTranscodeDecision()))
             .contains(TranscodeFailure.OUTPUT_MISMATCH);
       }
     }
@@ -308,7 +325,10 @@ class RemoteFormatFailureIT {
       assertThat(delivery.get(5, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
       assertThat(worker.jobs).hasSize(2);
       assertThat(recovered.getDecision().getMode()).isEqualTo(TRANSCODE_MODE_REMUX);
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId())).isEmpty();
+      assertThat(
+              rig.executor.terminalFailure(
+                  rig.session.getSessionId(), rig.session.getTranscodeDecision()))
+          .isEmpty();
       assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
     }
   }
@@ -331,7 +351,7 @@ class RemoteFormatFailureIT {
       worker.fail(job);
       worker.awaitProcessed(rig.server);
 
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+      assertThat(rig.executor.terminalFailure(rig.session.getSessionId(), rig.decision(mode)))
           .contains(TranscodeFailure.OUTPUT_MISMATCH);
       assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class))
           .hasSize(copiesVideo ? 1 : 0);
@@ -366,7 +386,7 @@ class RemoteFormatFailureIT {
       worker.fail(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_DOLBY_VISION_CONVERSION_FAILED);
       worker.awaitProcessed(rig.server);
 
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+      assertThat(rig.executor.terminalFailure(rig.session.getSessionId(), rig.decision(mode)))
           .contains(TranscodeFailure.DOLBY_VISION_CONVERSION_FAILED);
       assertThat(events.getEventsOfType(DolbyVisionConversionFailedEvent.class))
           .isEqualTo(copiesVideo ? List.of(conversionEventFor(job)) : List.of());
@@ -404,7 +424,9 @@ class RemoteFormatFailureIT {
       worker.fail(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED);
       rig.awaitStopped();
 
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+      assertThat(
+              rig.executor.terminalFailure(
+                  rig.session.getSessionId(), rig.session.getTranscodeDecision()))
           .contains(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
       assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
           .containsExactly(terminalEventFor(job, TranscodeFailure.SEGMENT_CAP_EXCEEDED));
@@ -439,7 +461,10 @@ class RemoteFormatFailureIT {
           .extracting(job -> job.getExecution().getMediaSegmentCount())
           .containsExactly(2, 2);
       assertThat(recovered.getDecision().getMode()).isEqualTo(TRANSCODE_MODE_FULL_TRANSCODE);
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId())).isEmpty();
+      assertThat(
+              rig.executor.terminalFailure(
+                  rig.session.getSessionId(), rig.session.getTranscodeDecision()))
+          .isEmpty();
       assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class)).isEmpty();
     }
   }
@@ -459,7 +484,7 @@ class RemoteFormatFailureIT {
       worker.fail(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION);
       worker.awaitProcessed(rig.server);
 
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+      assertThat(rig.executor.terminalFailure(rig.session.getSessionId(), rig.decision(mode)))
           .contains(TranscodeFailure.INVALID_SPECIFICATION);
       assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
       assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
@@ -477,9 +502,9 @@ class RemoteFormatFailureIT {
   @DisplayName("Should send no replacement attempt when a segment request follows a final failure")
   void shouldSendNoReplacementAttemptWhenSegmentRequestFollowsFinalFailure(
       TranscodeMode mode, JobAttemptFailure failure) throws Exception {
-    try (var rig = new FailureRig(new CapturingEventPublisher());
+    try (var rig = new FailureRig(new CapturingEventPublisher(), sessionThatRuns(mode));
         var worker = new TestWorker(rig.server)) {
-      var request = rig.requestBuilder().transcodeDecision(rig.decision(mode)).build();
+      var request = rig.requestBuilder().build();
       rig.session.setHandle(rig.executor.start(request));
       worker.fail(worker.nextJob(), failure);
       rig.awaitStopped();
@@ -502,7 +527,10 @@ class RemoteFormatFailureIT {
       rig.server.close();
       rig.server.start();
 
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId())).isEmpty();
+      assertThat(
+              rig.executor.terminalFailure(
+                  rig.session.getSessionId(), rig.session.getTranscodeDecision()))
+          .isEmpty();
     }
   }
 
@@ -519,9 +547,29 @@ class RemoteFormatFailureIT {
       worker.fail(job);
       worker.awaitProcessed(rig.server);
 
-      assertThat(rig.executor.terminalFailure(rig.session.getSessionId())).isEmpty();
+      assertThat(
+              rig.executor.terminalFailure(
+                  rig.session.getSessionId(), rig.session.getTranscodeDecision()))
+          .isEmpty();
       assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
     }
+  }
+
+  // Recovery asks for the failure that the stream session's own decision repeats, so the stream
+  // session runs the mode of the job that fails.
+  private static StreamSession sessionThatRuns(TranscodeMode mode) {
+    var original = defaultSessionBuilder().build().getTranscodeDecision();
+    return defaultSessionBuilder().transcodeDecision(decisionIn(mode, original)).build();
+  }
+
+  private static TranscodeDecision decisionIn(TranscodeMode mode, TranscodeDecision original) {
+    return TranscodeDecision.builder()
+        .transcodeMode(mode)
+        .videoCodecFamily(original.videoCodecFamily())
+        .audioDecision(original.audioDecision())
+        .subtitleDecision(original.subtitleDecision())
+        .videoSource(original.videoSource())
+        .build();
   }
 
   // 13.5 s on the 6 s grid reaches 1.5 s into a third slot, which merges into the second segment.
@@ -611,14 +659,7 @@ class RemoteFormatFailureIT {
     }
 
     private TranscodeDecision decision(TranscodeMode mode) {
-      var original = session.getTranscodeDecision();
-      return TranscodeDecision.builder()
-          .transcodeMode(mode)
-          .videoCodecFamily(original.videoCodecFamily())
-          .audioDecision(original.audioDecision())
-          .subtitleDecision(original.subtitleDecision())
-          .videoSource(original.videoSource())
-          .build();
+      return decisionIn(mode, session.getTranscodeDecision());
     }
 
     private SegmentDelivery deliver() {

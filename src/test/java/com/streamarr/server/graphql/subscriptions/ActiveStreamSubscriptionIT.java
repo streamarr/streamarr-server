@@ -30,6 +30,7 @@ import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
+import com.streamarr.server.services.streaming.LowerVariantFailure;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.SegmentNames;
@@ -192,6 +193,16 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
     @Override
     public Optional<StreamSession> accessSession(PlaybackRequest request) {
       return registry.findById(request.streamSessionId());
+    }
+
+    @Override
+    public Optional<String> playedVariantOf(UUID sessionId) {
+      return Optional.empty();
+    }
+
+    @Override
+    public void withdrawLowerVariants(UUID sessionId, LowerVariantFailure failure) {
+      // No stream session here lists lower variants.
     }
 
     @Override

@@ -32,4 +32,20 @@ public interface StreamingService {
   Collection<StreamSession> getAllSessions();
 
   int getActiveSessionCount();
+
+  /**
+   * The variant of the stream session that the player plays: the one whose segment it received
+   * last; before it received one, the variant of its newest media-segment request; and before it
+   * requested one, the variant that the stream session started for its playlist. Empty when none is
+   * known or once the stream session is gone.
+   */
+  Optional<String> playedVariantOf(UUID sessionId);
+
+  /**
+   * Withdraws the encoded lower variants beside the stream session's copy after one of them failed
+   * (ADR 0050). The copy keeps playing in the same stream session: its multivariant playlist lists
+   * the copy alone from here on, and a request for a withdrawn variant finds nothing. A stream
+   * session without a copy, without lower variants or already gone stays as it is.
+   */
+  void withdrawLowerVariants(UUID sessionId, LowerVariantFailure failure);
 }

@@ -103,6 +103,7 @@ import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
@@ -176,6 +177,8 @@ import org.springframework.dao.DataAccessResourceFailureException;
 @Tag("UnitTest")
 @DisplayName("HLS Streaming Service Tests")
 class HlsStreamingServiceTest {
+
+  private static final Pattern CODECS_ATTRIBUTE = Pattern.compile("CODECS=\"([^\"]+)\"");
 
   private static final StreamingOptions OVER_THE_MAXIMUM_BITRATE =
       StreamingOptions.builder().quality(VideoQuality.AUTO).maxBitrate(14_333_000).build();
@@ -2567,8 +2570,9 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
     assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
-        .singleElement()
+        .first()
         .asString()
+        .contains("RESOLUTION=1920x1080")
         .contains(",FRAME-RATE=23.976");
   }
 
@@ -2953,7 +2957,6 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
-    assertThat(session.getVariants()).isEmpty();
   }
 
   @Test
@@ -3965,7 +3968,6 @@ class HlsStreamingServiceTest {
         createSession(seedMediaFile().getId(), UUID.randomUUID(), sourceAndLimits.options());
 
     assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
-    assertThat(session.getVariants()).isEmpty();
   }
 
   @ParameterizedTest(name = "{0}")
@@ -6773,7 +6775,8 @@ class HlsStreamingServiceTest {
 
     assertThat(accessSession(session)).isEmpty();
     assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.m4s")).isFalse();
-    assertThat(transcodeExecutor.terminalFailure(sessionId)).isEmpty();
+    assertThat(transcodeExecutor.terminalFailure(sessionId, session.getTranscodeDecision()))
+        .isEmpty();
   }
 
   @Test
@@ -7343,23 +7346,181 @@ class HlsStreamingServiceTest {
   }
 
   private void assertStartupRolledBack(FailingStartupTranscodeExecutor executor) {
-    var sessionId = executor.getAttemptedRequests().getFirst().sessionId();
+    var attempted = executor.getAttemptedRequests().getFirst();
+    var sessionId = attempted.sessionId();
     assertThat(runtimeRegistry.findById(sessionId)).isEmpty();
     assertThat(executor.getRunningCount()).isZero();
     assertThat(segmentStore.segmentExists(sessionId, "startup.m4s")).isFalse();
-    assertThat(executor.terminalFailure(sessionId)).isEmpty();
+    assertThat(executor.terminalFailure(sessionId, attempted.transcodeDecision())).isEmpty();
   }
 
   @Test
-  @DisplayName("Should use single variant when auto quality with remux")
-  void shouldUseSingleVariantWhenAutoQualityWithRemux() {
+  @DisplayName("Should offer only the copy when Original copies the video")
+  void shouldOfferOnlyTheCopyWhenOriginalCopiesTheVideo() {
     var file = seedMediaFile();
-    var options = defaultOptions();
+    var options = StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build();
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(session.getVariants()).isEmpty();
     assertThat(session.getHandle()).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should list the encoded variants below the copy when Auto copies the video")
+  void shouldListTheEncodedVariantsBelowTheCopyWhenAutoCopiesTheVideo() {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label, QualityVariant::width, QualityVariant::height)
+        .containsExactly(
+            tuple("720p", 1280, 720), tuple("480p", 854, 480), tuple("360p", 640, 360));
+  }
+
+  @Test
+  @DisplayName("Should start only the copy when an Auto stream session lists lower variants")
+  void shouldStartOnlyTheCopyWhenAnAutoStreamSessionListsLowerVariants() {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(
+            copy -> {
+              assertThat(copy.variantLabel()).isEqualTo(StreamSession.defaultVariant());
+              assertThat(copy.transcodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+            });
+  }
+
+  @Test
+  @DisplayName("Should leave out a lower variant whose bitrate the copy does not exceed")
+  void shouldLeaveOutALowerVariantWhoseBitrateTheCopyDoesNotExceed() {
+    probeResults.setDefaultProbe(defaultProbeBuilder().bitrate(2_000_000L).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactly("480p", "360p");
+  }
+
+  @Test
+  @DisplayName("Should list the copy first and each lower variant's encode below it")
+  void shouldListTheCopyFirstAndEachLowerVariantsEncodeBelowIt() {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    var playlist =
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
+
+    assertThat(playlist.lines().filter(line -> !line.startsWith("#")))
+        .containsExactly(
+            "stream.m3u8?t=t",
+            "720p/stream.m3u8?t=t",
+            "480p/stream.m3u8?t=t",
+            "360p/stream.m3u8?t=t");
+    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF")))
+        .extracting(HlsStreamingServiceTest::codecsAttribute)
+        .containsExactly(
+            "avc1.640028,mp4a.40.2",
+            "avc1.64001F,mp4a.40.2",
+            "avc1.64001E,mp4a.40.2",
+            "avc1.64001E,mp4a.40.2");
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the lower variant's encode when the player first requests one of its"
+          + " segments")
+  void shouldStartTheLowerVariantsEncodeWhenThePlayerFirstRequestsOneOfItsSegments() {
+    var lower = firstLowerVariantJobFor("480p", "480p/segment2.m4s");
+
+    assertThat(lower.variantLabel()).isEqualTo("480p");
+    assertThat(lower.transcodeDecision().transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(lower.transcodeDecision().encodeCodecProfile())
+        .contains(EncodeCodecProfile.H264_HIGH);
+    assertThat(lower.width()).isEqualTo(854);
+    assertThat(lower.startSequenceNumber()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should run a lower variant's encode on the copy's segments and seek it like an encode when"
+          + " it starts after segment 0")
+  void shouldRunALowerVariantsEncodeOnTheCopysSegmentsAndSeekItLikeAnEncode() {
+    // A keyframe every 2 s up to 118 s leaves the last 6 s slot, 120 s to 121 s, without one, so
+    // the copy lists 20 segments where the grid has 21.
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(121))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(2), Duration.ofSeconds(119)))
+            .build());
+
+    var lower = firstLowerVariantJobFor("480p", "480p/segment2.m4s");
+
+    assertThat(lower.mediaSegmentCount()).isEqualTo(20);
+    // The encode reads from the last keyframe at least half a second before 12 s, not from the
+    // copy's keyframe at 12 s.
+    assertThat(lower.keyframeSeekPosition()).contains(Duration.ofSeconds(10));
+  }
+
+  // At the 6 s period, keyframes 10 s apart open the copy's segments at 0, 10, 20, 30 and 40 s, so
+  // segment 3 starts at 30 s, in slot 5. The encode reads from the last keyframe at least half a
+  // second before that start, at 20 s, not from one before slot 3's grid start at 18 s.
+  @Test
+  @DisplayName(
+      "Should seek a lower variant's encode from the last keyframe at least half a second before"
+          + " the copy's start of its first segment when the copy merges slots")
+  void shouldSeekALowerVariantsEncodeFromTheKeyframeBeforeTheCopysStartWhenTheCopyMergesSlots() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(50))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(10), Duration.ofSeconds(40)))
+            .build());
+
+    var lower = firstLowerVariantJobFor("480p", "480p/segment3.m4s");
+
+    assertThat(lower.startSequenceNumber()).isEqualTo(3);
+    assertThat(lower.keyframeSeekPosition()).contains(Duration.ofSeconds(20));
+  }
+
+  // The copy's segments open at its keyframes, and the lower variant forces its keyframes at the
+  // same exact starts, so a player that switches between them at a segment boundary repeats or
+  // skips less than one output frame (A77, ADR 0050).
+  @Test
+  @DisplayName(
+      "Should carry the copy's exact segment starts in a lower variant's job when the player"
+          + " requests one of its segments")
+  void shouldCarryTheCopysExactSegmentStartsInALowerVariantsJob() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(50))
+            .keyframes(keyframesAtMillis(0, 6_500, 12_500, 23_000, 31_000, 40_000))
+            .build());
+
+    var lower = firstLowerVariantJobFor("480p", "480p/segment2.m4s");
+
+    assertThat(lower.exactSegmentStarts())
+        .hasValue(
+            new ExactSegmentStarts(
+                List.of(0L, 6_500L, 12_500L, 23_000L, 31_000L, 40_000L), new Fraction(1, 1_000)))
+        .isEqualTo(transcodeExecutor.getStartedRequests().getFirst().exactSegmentStarts());
+  }
+
+  // Creates an Auto copy session, then requests a lower variant's segment as its player would, and
+  // answers the job that the request started.
+  private TranscodeRequest firstLowerVariantJobFor(String variantLabel, String segmentName) {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var sessionId = session.getSessionId();
+    var delivery =
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(sessionId, variantLabel, segmentName));
+    transcodeExecutor.awaitStartedRequestCount(2);
+    upload(sessionId, variantLabel, segmentName);
+
+    assertThat(delivery.join()).isInstanceOf(SegmentDelivery.Ready.class);
+    return transcodeExecutor.getStartedRequests().getLast();
   }
 
   @Test
@@ -7418,15 +7579,12 @@ class HlsStreamingServiceTest {
     assertThat(listedVariants(session)).containsExactly("360p/stream.m3u8?t=t");
   }
 
-  @ParameterizedTest
-  @EnumSource(
-      value = VideoQuality.class,
-      names = {"AUTO", "ORIGINAL"})
+  @Test
   @DisplayName(
-      "Should list the copy, its only variant, when the copy does not fit the upload budget")
-  void shouldListTheCopyItsOnlyVariantWhenTheCopyDoesNotFitTheUploadBudget(VideoQuality quality) {
-    // 80% of 1 Mb/s leaves nothing beside the active copy's 5 Mb/s average, but a copy lists no
-    // other variant, so it is the lowest variant and stays.
+      "Should list the copy, Original's only variant, when the copy does not fit the upload budget")
+  void shouldListTheCopyOriginalsOnlyVariantWhenTheCopyDoesNotFitTheUploadBudget() {
+    // 80% of 1 Mb/s leaves nothing beside the active copy's 5 Mb/s average, but Original lists no
+    // other variant beside its copy, so the copy is the lowest variant and stays.
     createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     setInternetUploadMegabitsPerSecond(1);
 
@@ -7434,10 +7592,58 @@ class HlsStreamingServiceTest {
         createSession(
             seedMediaFile().getId(),
             UUID.randomUUID(),
-            StreamingOptions.builder().quality(quality).build());
+            StreamingOptions.builder().quality(VideoQuality.ORIGINAL).build());
 
     assertThat(listedVariants(session)).containsExactly("stream.m3u8?t=t");
     assertThat(withheldVariants()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should list only the copy's lower variants that fit when the copy would take the active"
+          + " streams over the upload budget")
+  void shouldListOnlyTheCopysLowerVariantsThatFitWhenTheCopyWouldTakeActiveStreamsOverTheBudget() {
+    // Streams get 80% of 11 Mb/s, 8.8 Mb/s. The active copy counts at its 5 Mb/s average, which
+    // leaves 3.8 Mb/s: the next copy (5 Mb/s) does not fit, and its 720p variant (3.125 Mb/s
+    // average) does.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(11);
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(listedVariants(session))
+        .containsExactly("720p/stream.m3u8?t=t", "480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
+  }
+
+  // The player plays the variant that the stream session started for its playlist until it
+  // receives a segment, so a failure that it reports before then is that variant's.
+  @Test
+  @DisplayName(
+      "Should answer the variant started for the playlist as the played one when the upload budget"
+          + " leaves out the copy and the player has received no segment")
+  void shouldAnswerTheVariantStartedForThePlaylistAsPlayedWhenTheBudgetLeavesOutTheCopy() {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(11);
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(service.playedVariantOf(session.getSessionId())).contains("720p");
+  }
+
+  // The player's first media request of that variant arrives before its segment does, and a
+  // failure that it reports in between is still that variant's.
+  @Test
+  @DisplayName(
+      "Should answer the requested variant as the played one when the player has requested a media"
+          + " segment and received none")
+  void shouldAnswerTheRequestedVariantAsPlayedWhenThePlayerHasRequestedASegmentAndReceivedNone() {
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(11);
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    producerLifecycle.prepareRequestedVariant(session.getSessionId(), "720p", "720p/segment0.m4s");
+
+    assertThat(service.playedVariantOf(session.getSessionId())).contains("720p");
   }
 
   @Test
@@ -8203,6 +8409,12 @@ class HlsStreamingServiceTest {
     return meters.get("streamarr.streaming.upload_budget_withheld_variants").counter().count();
   }
 
+  private static String codecsAttribute(String streamInf) {
+    var matcher = CODECS_ATTRIBUTE.matcher(streamInf);
+    assertThat(matcher.find()).as("CODECS in %s", streamInf).isTrue();
+    return matcher.group(1);
+  }
+
   private void setInternetUploadMegabitsPerSecond(int megabitsPerSecond) {
     accepted(
         serverSettings.changeUploadBudget(
@@ -8219,14 +8431,84 @@ class HlsStreamingServiceTest {
   }
 
   private void requestAndDeliver(UUID sessionId, String variantLabel, String segmentName) {
+    var startedJobs = transcodeExecutor.getStartedRequests().size();
     var delivery =
         CompletableFuture.supplyAsync(
             () -> coordinator.deliver(sessionId, variantLabel, segmentName));
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> transcodeExecutor.isRunning(sessionId, variantLabel));
+    transcodeExecutor.awaitStartedRequestCount(startedJobs + 1);
     upload(sessionId, variantLabel, segmentName);
     assertThat(delivery.join()).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a running lower variant under the transcode limit and the copy beside it not")
+  void shouldCountARunningLowerVariantUnderTheTranscodeLimitAndTheCopyBesideItNot() {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var sessionId = session.getSessionId();
+    var freeWithTheCopy = producerLifecycle.freeConfiguredTranscodeSlots();
+
+    var delivery =
+        CompletableFuture.supplyAsync(
+            () -> coordinator.deliver(sessionId, "720p", "720p/segment0.m4s"));
+    transcodeExecutor.awaitStartedRequestCount(2);
+    upload(sessionId, "720p", "720p/segment0.m4s");
+    delivery.join();
+
+    assertThat(freeWithTheCopy).isEqualTo(3);
+    assertThat(transcodeExecutor.isRunning(sessionId, "720p")).isTrue();
+    assertThat(producerLifecycle.freeConfiguredTranscodeSlots()).isEqualTo(2);
+  }
+
+  // The copy stores its segments at the stream session's root, not under its label. Its segment 0
+  // shows that its attempt reaches segment 4 without a relocation, so it keeps running beside the
+  // lower variant that the player requests, even when that encode finds no transcode place.
+  @Test
+  @DisplayName(
+      "Should keep the copy running when the player requests a lower variant's segment that the"
+          + " copy reaches without a relocation")
+  void shouldKeepTheCopyRunningWhenThePlayerRequestsALowerVariantsSegmentTheCopyReaches() {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var sessionId = session.getSessionId();
+    upload(sessionId, StreamSession.defaultVariant(), "segment0.m4s");
+    producerLifecycle.completeVariantSwitch(
+        producerLifecycle.prepareRequestedVariant(
+            sessionId, StreamSession.defaultVariant(), "segment0.m4s"));
+    for (int i = 0; i < streamingProperties().maxConcurrentTranscodes(); i++) {
+      var encode =
+          createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+              .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+              .build();
+      assertThat(service.createSession(encode)).isInstanceOf(Outcome.Accepted.class);
+    }
+
+    producerLifecycle.prepareRequestedVariant(sessionId, "720p", "720p/segment4.m4s");
+
+    assertThat(transcodeExecutor.isRunning(sessionId, StreamSession.defaultVariant())).isTrue();
+  }
+
+  // The upload budget can start a lower variant beside a copy that it leaves out. That start must
+  // take its own place under the transcode limit, not the copy's, which needs none.
+  @Test
+  @DisplayName(
+      "Should start no lower variant beside a copy when the transcode limit leaves no place for"
+          + " its encode")
+  void shouldStartNoLowerVariantBesideACopyWhenTheTranscodeLimitLeavesNoPlaceForItsEncode() {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    for (int i = 0; i < streamingProperties().maxConcurrentTranscodes(); i++) {
+      var encode =
+          createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+              .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+              .build();
+      assertThat(service.createSession(encode)).isInstanceOf(Outcome.Accepted.class);
+    }
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    assertThatThrownBy(() -> producerLifecycle.startListedVariant(session, "720p"))
+        .isInstanceOf(TranscodeLimitReachedException.class);
+
+    assertThat(transcodeExecutor.isRunning(session.getSessionId(), "720p")).isFalse();
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
   }
 
   @Test

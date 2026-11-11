@@ -30,12 +30,13 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
-// ADR 0037: every replacement attempt of a copy on its keyframe-merged segment list cuts the same
+// ADR 0037: every replacement attempt on a copy's keyframe-merged segment list cuts the same
 // segments, so a segment over the cap ends the stream session's recovery. An encode on the plain
 // grid keeps ordinary recovery, even when the grid's final slot merges into its last segment.
 @Tag("UnitTest")
@@ -45,12 +46,22 @@ class SegmentCapFailureRegistryTest {
   private static final UUID WORKER_ID = UUID.randomUUID();
   private static final TranscodeExecution EXACT_STARTS =
       TranscodeExecution.newBuilder()
+          .setTargetSegmentDurationSeconds(6)
           .setMediaSegmentCount(3)
           .addAllSegmentStartTicks(List.of(0L, 6_006L, 18_018L))
           .setSegmentStartTimeBase(Fraction.newBuilder().setNumerator(1).setDenominator(1_000))
           .build();
+  // A source whose video time base is 1/1 stores its keyframe ticks in whole seconds too.
+  private static final TranscodeExecution WHOLE_SECOND_KEYFRAME_STARTS =
+      TranscodeExecution.newBuilder()
+          .setTargetSegmentDurationSeconds(6)
+          .setMediaSegmentCount(3)
+          .addAllSegmentStartTicks(List.of(0L, 7L, 19L))
+          .setSegmentStartTimeBase(Fraction.newBuilder().setNumerator(1).setDenominator(1))
+          .build();
   private static final TranscodeExecution MERGED_PLAIN_GRID_TICKS =
       TranscodeExecution.newBuilder()
+          .setTargetSegmentDurationSeconds(6)
           .setMediaSegmentCount(2)
           .addAllSegmentStartTicks(List.of(0L, 6L))
           .setSegmentStartTimeBase(Fraction.newBuilder().setNumerator(1).setDenominator(1))
@@ -81,7 +92,7 @@ class SegmentCapFailureRegistryTest {
 
     failOverTheCap(job);
 
-    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId())))
+    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()), true))
         .contains(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
   }
 
@@ -96,32 +107,90 @@ class SegmentCapFailureRegistryTest {
 
     failOverTheCap(job);
 
-    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()))).isEmpty();
+    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()), false)).isEmpty();
+  }
+
+  // In Auto, an encoded lower variant beside a copy carries the copy's keyframe-merged starts
+  // (ADR 0050), so every replacement attempt cuts the same oversized segment.
+  static Stream<Arguments> lowerVariantsOnACopysSegmentList() {
+    return Stream.of(
+        Arguments.of(TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE, EXACT_STARTS),
+        Arguments.of(TranscodeMode.TRANSCODE_MODE_FULL_TRANSCODE, EXACT_STARTS),
+        Arguments.of(TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE, WHOLE_SECOND_KEYFRAME_STARTS));
+  }
+
+  @ParameterizedTest
+  @MethodSource("lowerVariantsOnACopysSegmentList")
+  @DisplayName(
+      "Should end the stream session's recovery when a lower variant's encode on the copy's"
+          + " segment list passes the segment cap")
+  void shouldEndTheStreamSessionsRecoveryWhenALowerVariantOnTheCopysListPassesTheSegmentCap(
+      TranscodeMode mode, TranscodeExecution execution) {
+    var job = jobRunning(mode, VideoMode.VIDEO_MODE_ENCODE, execution);
+
+    failOverTheCap(job);
+
+    assertThat(registry.terminalFailure(fromProto(job.getStreamSessionId()), false))
+        .contains(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
+  }
+
+  // The copy runs another decision than the lower variants beside it (ADR 0050), so the failure
+  // that every attempt of a lower variant repeats must not end the copy's recovery.
+  @Test
+  @DisplayName(
+      "Should keep the copy's recovery and end only the lower variants' when a lower variant"
+          + " beside the copy passes the segment cap")
+  void shouldKeepTheCopysRecoveryAndEndOnlyTheLowerVariantsWhenALowerVariantPassesTheSegmentCap() {
+    var lowerVariant =
+        jobRunning(
+            TranscodeMode.TRANSCODE_MODE_VIDEO_TRANSCODE,
+            VideoMode.VIDEO_MODE_ENCODE,
+            EXACT_STARTS);
+    var streamSessionId = fromProto(lowerVariant.getStreamSessionId());
+    var copyReplacement =
+        job(TranscodeMode.TRANSCODE_MODE_REMUX, VideoMode.VIDEO_MODE_COPY, EXACT_STARTS).toBuilder()
+            .setStreamSessionId(lowerVariant.getStreamSessionId())
+            .setVariant(VariantSpec.newBuilder().setVariantLabel("default"))
+            .build();
+    var lowerVariantReplacement =
+        lowerVariant.toBuilder().setJobAttemptId(toProto(UUID.randomUUID())).build();
+
+    failOverTheCap(lowerVariant);
+
+    assertThat(registry.terminalFailure(streamSessionId, true)).isEmpty();
+    assertThat(registry.terminalFailure(streamSessionId, false))
+        .contains(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
+    assertThat(registry.dispatch(copyReplacement)).isPresent();
+    assertThat(registry.dispatch(lowerVariantReplacement)).isEmpty();
   }
 
   private VariantJob jobRunning(
       TranscodeMode mode, VideoMode videoMode, TranscodeExecution execution) {
-    var job =
-        VariantJob.newBuilder()
-            .setStreamSessionId(toProto(UUID.randomUUID()))
-            .setJobId(toProto(UUID.randomUUID()))
-            .setJobAttemptId(toProto(UUID.randomUUID()))
-            .setSource(
-                MediaSourceRef.newBuilder()
-                    .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
-                    .setRelativeKey("movie.mkv"))
-            .setVariant(VariantSpec.newBuilder().setVariantLabel("720p"))
-            .setDecision(
-                TranscodeDecision.newBuilder()
-                    .setMode(mode)
-                    .setVideo(
-                        VideoDecision.newBuilder()
-                            .setMode(videoMode)
-                            .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264)))
-            .setExecution(execution)
-            .build();
+    var job = job(mode, videoMode, execution);
     assertThat(registry.dispatch(job)).isPresent();
     return job;
+  }
+
+  private static VariantJob job(
+      TranscodeMode mode, VideoMode videoMode, TranscodeExecution execution) {
+    return VariantJob.newBuilder()
+        .setStreamSessionId(toProto(UUID.randomUUID()))
+        .setJobId(toProto(UUID.randomUUID()))
+        .setJobAttemptId(toProto(UUID.randomUUID()))
+        .setSource(
+            MediaSourceRef.newBuilder()
+                .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
+                .setRelativeKey("movie.mkv"))
+        .setVariant(VariantSpec.newBuilder().setVariantLabel("720p"))
+        .setDecision(
+            TranscodeDecision.newBuilder()
+                .setMode(mode)
+                .setVideo(
+                    VideoDecision.newBuilder()
+                        .setMode(videoMode)
+                        .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264)))
+        .setExecution(execution)
+        .build();
   }
 
   private void failOverTheCap(VariantJob job) {
