@@ -53,6 +53,7 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("Profile Share Parties Integration Tests")
 class ProfileSharePartiesIT extends AbstractIntegrationTest {
 
+  private static final int COUNTED_RUNS = 3;
   private static final String PARTIES =
       """
       edges { node { id status householdId
@@ -707,7 +708,18 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
   }
 
   // Hibernate statistics are global, so the count holds only while no other test uses the context.
+  // The session reaper also reads the server settings every few seconds on its own thread, so a
+  // run can count one statement that is not the request's; the fewest over a few runs is its own.
   private long statementsWhile(Request request) throws Exception {
+    var fewest = Long.MAX_VALUE;
+    for (var run = 0; run < COUNTED_RUNS; run++) {
+      fewest = Math.min(fewest, statementsOfOneRun(request));
+    }
+
+    return fewest;
+  }
+
+  private long statementsOfOneRun(Request request) throws Exception {
     var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
     var previouslyEnabled = statistics.isStatisticsEnabled();
     statistics.setStatisticsEnabled(true);
