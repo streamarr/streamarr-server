@@ -95,6 +95,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
@@ -7883,6 +7884,46 @@ class HlsStreamingServiceTest {
 
     var outcome =
         service.createSession(createCommandDeclaring(av1Declaration(List.of(CompatibleBase.PQ))));
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CreateStreamSessionRejection.TranscodeCapacityUnavailable.class);
+    assertThat(transcodeExecutor.isRunning(switchingId, "480p")).isTrue();
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(left.switched().get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  // A software continuation keeps the failed encode's range (ADR 0013), so an 8-bit SDR encode on
+  // the freed worker would not continue a PQ encode and stopping the left variant would only cost
+  // its player the switch back.
+  @Test
+  @DisplayName(
+      "Should keep a left variant on a worker without PQ when a PQ encode continues in software"
+          + " and the only worker whose software encoder writes PQ is busy")
+  void shouldKeepALeftVariantOnAWorkerWithoutPqWhenAPqEncodeContinuesInSoftware() throws Exception {
+    var left = keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy();
+    var switching = left.session();
+    var switchingId = switching.getSessionId();
+    transcodeExecutor.setTargetSoftwareEncoders(AV1_WORKER, List.of(libsvtav1()));
+    transcodeExecutor.setTargetSoftwareEncoders(
+        new ExecutionTargetId("pq-worker"),
+        List.of(
+            WorkerVerifiedEncoder.builder()
+                .backend(libsvtav1().backend())
+                .keyframeVerified(true)
+                .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                .build()));
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .capabilityDeclaration(
+                    av1Declaration(List.of(CompatibleBase.SDR, CompatibleBase.PQ)))
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .softwareContinuation(
+                    Optional.of(new SoftwareContinuation("av1", EncodeFormat.hdr(VideoRange.PQ))))
+                .build());
 
     assertThat(rejectionOf(outcome))
         .isInstanceOf(CreateStreamSessionRejection.TranscodeCapacityUnavailable.class);
