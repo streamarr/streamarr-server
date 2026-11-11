@@ -13,6 +13,7 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -657,8 +658,9 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     Runnable move =
         switch (status) {
           case PENDING -> () -> {};
-          case ACTIVE -> () -> shareLifecycle.tryActivatePending(id, now);
-          case REJECTED, CANCELED -> () -> shareLifecycle.tryDeclinePending(id, status, now);
+          case ACTIVE -> () -> shareLifecycle.tryActivatePending(id, host.account().getId(), now);
+          case REJECTED -> () -> shareLifecycle.tryRejectPending(id, host.account().getId(), now);
+          case CANCELED -> () -> shareLifecycle.tryCancelPending(id, now);
           case EXPIRED -> () -> lapse(id, now);
           case INVALIDATED ->
               () ->
@@ -666,8 +668,9 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
                       id, ProfileShareLifecycle.OFFERER_NO_LONGER_AUTHORIZED, now);
           case ENDED ->
               () -> {
-                shareLifecycle.tryActivatePending(id, now);
-                shareLifecycle.tryEndActive(id, now);
+                shareLifecycle.tryActivatePending(id, host.account().getId(), now);
+                shareLifecycle.tryEndActive(
+                    id, new ShareAction.EndedBySide(host.account().getId()), now);
               };
         };
     transactionTemplate.executeWithoutResult(_ -> move.run());

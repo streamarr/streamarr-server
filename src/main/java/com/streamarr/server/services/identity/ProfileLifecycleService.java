@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
+import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -105,7 +106,13 @@ public class ProfileLifecycleService {
 
           shareLifecycle.announceMove(
               command.profileId(), sourceHouseholdId, command.destinationHouseholdId());
-          endHomeAvailability(command.profileId(), sourceHouseholdId, now);
+          endHomeAvailability(
+              HomeAvailabilityEnd.builder()
+                  .profileId(command.profileId())
+                  .sourceHouseholdId(sourceHouseholdId)
+                  .ending(new ShareAction.EndedByServer(identity.accountId()))
+                  .now(now)
+                  .build());
           // Invalidate pending offers before creating the destination share to avoid a
           // uniqueness conflict.
           invalidateProfileBoundArtifacts(command.profileId(), PROFILE_TRANSFERRED, now);
@@ -190,12 +197,13 @@ public class ProfileLifecycleService {
     return new MutationRejection(new TransferRejections.ProfileNotFound());
   }
 
-  private void endHomeAvailability(UUID profileId, UUID sourceHouseholdId, Instant now) {
+  private void endHomeAvailability(HomeAvailabilityEnd end) {
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
-            profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareLifecycle.tryEndActive(share.getId(), now));
-    authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId);
+            end.profileId(), end.sourceHouseholdId(), ProfileShareStatus.ACTIVE)
+        .ifPresent(share -> shareLifecycle.tryEndActive(share.getId(), end.ending(), end.now()));
+    authSessionRepository.clearProfileSelectionFromLiveSessions(
+        end.profileId(), end.sourceHouseholdId());
   }
 
   private void makeAvailableAtHome(UUID profileId, UUID destinationHouseholdId, Instant now) {
@@ -274,6 +282,11 @@ public class ProfileLifecycleService {
   private static boolean isBlank(String value) {
     return value == null || value.isBlank();
   }
+
+  /** How a transferred Profile's share into the Household it leaves ends, and when. */
+  @Builder
+  private record HomeAvailabilityEnd(
+      UUID profileId, UUID sourceHouseholdId, ShareAction.Ending ending, Instant now) {}
 
   @Builder
   public record TransferProfileCommand(

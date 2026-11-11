@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import java.time.Instant;
@@ -39,10 +40,16 @@ public class ProfileShareLifecycle {
   private final ProfileHouseholdShareRepository shareRepository;
   private final ApplicationEventPublisher events;
 
-  /** Stores a new share. */
+  /** Stores a new share; a pending one is announced as an offer. */
   public ProfileHouseholdShare create(ProfileHouseholdShare share) {
     var created = shareRepository.saveAndFlush(share);
-    announceAsStored(created);
+    events.publishEvent(
+        new ProfileShareChangedEvent(
+            ChangedShare.of(created),
+            created.getStatus().isLive(),
+            created.getStatus() == ProfileShareStatus.PENDING
+                ? new ShareAction.Offered()
+                : new ShareAction.Other()));
     return created;
   }
 
@@ -53,7 +60,8 @@ public class ProfileShareLifecycle {
 
   /** Withdraws one pending offer with the reason it will later explain; false when not pending. */
   public boolean tryInvalidatePending(UUID shareId, String reason, Instant now) {
-    return announced(shareRepository.tryInvalidatePending(shareId, reason, now));
+    return announced(
+        shareRepository.tryInvalidatePending(shareId, reason, now), new ShareAction.Other());
   }
 
   /** Withdraws every unexpired pending offer the Account made; answers how many. */
@@ -70,19 +78,36 @@ public class ProfileShareLifecycle {
     return expired.size();
   }
 
-  /** Accepts a pending, unexpired offer; false when another decision won. */
-  public boolean tryActivatePending(UUID shareId, Instant now) {
-    return announced(shareRepository.tryActivatePending(shareId, now));
+  /** The Account accepts a pending, unexpired offer; false when another decision won. */
+  public boolean tryActivatePending(UUID shareId, UUID acceptingAccountId, Instant now) {
+    return announced(
+        shareRepository.tryActivatePending(shareId, now),
+        new ShareAction.Answered(acceptingAccountId));
   }
 
-  /** Declines or cancels a pending offer; false when it was no longer pending. */
-  public boolean tryDeclinePending(UUID shareId, ProfileShareStatus target, Instant now) {
-    return announced(shareRepository.tryDeclinePending(shareId, target, now));
+  /**
+   * The Account rejects a pending offer, which stores EXPIRED instead when its time has already run
+   * out; false when it was no longer pending.
+   */
+  public boolean tryRejectPending(UUID shareId, UUID rejectingAccountId, Instant now) {
+    return announced(
+        shareRepository.tryDeclinePending(shareId, ProfileShareStatus.REJECTED, now),
+        new ShareAction.Answered(rejectingAccountId));
   }
 
-  /** Ends an active share; false when it was not active. */
-  public boolean tryEndActive(UUID shareId, Instant now) {
-    return announced(shareRepository.tryEndActive(shareId, now));
+  /**
+   * Cancels a pending offer, which stores EXPIRED instead when its time has already run out; false
+   * when it was no longer pending.
+   */
+  public boolean tryCancelPending(UUID shareId, Instant now) {
+    return announced(
+        shareRepository.tryDeclinePending(shareId, ProfileShareStatus.CANCELED, now),
+        new ShareAction.Other());
+  }
+
+  /** Ends an active share the way the ending says; false when it was not active. */
+  public boolean tryEndActive(UUID shareId, ShareAction.Ending ending, Instant now) {
+    return announced(shareRepository.tryEndActive(shareId, now), ending);
   }
 
   /** Makes the Profile's availability in its Account's Household the structural share. */
@@ -140,8 +165,9 @@ public class ProfileShareLifecycle {
         .forEach(this::announceAsStored);
   }
 
-  private boolean announced(Optional<ChangedShare> changed) {
-    changed.ifPresent(this::announce);
+  private boolean announced(Optional<ChangedShare> changed, ShareAction action) {
+    changed.ifPresent(
+        share -> events.publishEvent(new ProfileShareChangedEvent(share, true, action)));
     return changed.isPresent();
   }
 
