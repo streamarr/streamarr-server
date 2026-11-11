@@ -9,6 +9,8 @@ import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
+import com.streamarr.server.services.notification.events.NotificationsReadEvent;
+import com.streamarr.server.services.notification.events.ReadNotification;
 import java.time.Clock;
 import java.util.HashSet;
 import java.util.Optional;
@@ -30,6 +32,7 @@ class ProfileShareNotifications {
 
   private final NotificationRepository notificationRepository;
   private final NotificationWriter<NotificationKind, ProfileShareFacts> writer;
+  private final ApplicationEventPublisher events;
   private final Clock clock;
 
   ProfileShareNotifications(
@@ -42,6 +45,7 @@ class ProfileShareNotifications {
             new ProfileShareKinds(),
             new ProfileShareNotificationStore(notificationRepository),
             events);
+    this.events = events;
     this.clock = clock;
   }
 
@@ -51,13 +55,54 @@ class ProfileShareNotifications {
     switch (change.action()) {
       case ShareAction.Offered() -> sidesOf(shareId).ifPresent(sides -> tellOffer(shareId, sides));
       case ShareAction.Answered(var accountId) ->
-          sidesOf(shareId).ifPresent(sides -> tellAnswer(shareId, sides, accountId));
+          sidesOf(shareId)
+              .ifPresent(
+                  sides -> {
+                    tellAnswer(shareId, sides, accountId);
+                    resolveRequests(shareId);
+                  });
       case ShareAction.EndedBySide(var accountId) ->
           sidesOf(shareId).ifPresent(sides -> tellEndBySide(shareId, sides, accountId));
       case ShareAction.EndedByServer(var accountId) ->
           sidesOf(shareId).ifPresent(sides -> tellEndByServer(shareId, sides, accountId));
-      case ShareAction.EndedWithHousehold(), ShareAction.Other() -> {}
+      case ShareAction.Other() -> {
+        if (change.live()) {
+          sidesOf(shareId)
+              .filter(sides -> withdrawnOrExpired(sides.status()))
+              .ifPresent(_ -> resolveRequests(shareId));
+        }
+      }
+      case ShareAction.EndedWithHousehold() -> {}
     }
+  }
+
+  // A pending offer that was withdrawn, replaced, invalidated or expired resolves its requests. A
+  // live share that another write left active or pending resolved nothing.
+  private static boolean withdrawnOrExpired(ProfileShareStatus status) {
+    return switch (status) {
+      case CANCELED, INVALIDATED, EXPIRED -> true;
+      case PENDING, ACTIVE, REJECTED, ENDED -> false;
+    };
+  }
+
+  // A request reads its resolution from the share, so resolving it writes nothing: its recipients'
+  // open screens are told after commit.
+  private void resolveRequests(UUID shareId) {
+    var requests = notificationRepository.findRequestsAbout(shareId);
+    if (requests.isEmpty()) {
+      return;
+    }
+
+    events.publishEvent(
+        new NotificationsReadEvent(
+            requests.stream()
+                .map(
+                    request ->
+                        new ReadNotification(
+                            request.notificationId(),
+                            request.recipientAccountId(),
+                            ReadNotification.Read.RESOLVED))
+                .toList()));
   }
 
   private Optional<ShareSides> sidesOf(UUID shareId) {

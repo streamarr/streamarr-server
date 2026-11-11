@@ -75,6 +75,36 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   }
 
   @Override
+  public List<Row<Notification>> rowsOfRecipientWithIds(
+      UUID recipientAccountId, Collection<UUID> notificationIds) {
+    if (notificationIds.isEmpty()) {
+      return List.of();
+    }
+
+    var query =
+        NEWEST_FIRST
+            .selectFrom(dsl, NOTIFICATION)
+            .where(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
+            .and(NOTIFICATION.ID.in(notificationIds));
+    return JooqQueryHelper.nativeRows(entityManager, query, Notification.class, NEWEST_FIRST);
+  }
+
+  @Override
+  public List<GuardedNotification> findRequestsAbout(UUID shareId) {
+    return dsl.select(
+            NOTIFICATION.ID,
+            NOTIFICATION.RECIPIENT_ACCOUNT_ID,
+            PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
+            PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
+        .from(NOTIFICATION)
+        .join(PROFILE_HOUSEHOLD_SHARE)
+        .on(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
+        .where(NOTIFICATION.SHARE_ID.eq(shareId))
+        .and(NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)))
+        .fetch(Records.mapping(GuardedNotification::new));
+  }
+
+  @Override
   public List<Notification> findUnreadOfRecipient(UUID recipientAccountId, Instant now) {
     return unreadOf(recipientAccountId, DSL.noCondition(), now);
   }

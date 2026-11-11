@@ -9,15 +9,19 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.notification.events.NotificationsReadEvent;
+import com.streamarr.server.services.notification.events.ReadNotification;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
 import java.time.Clock;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +39,12 @@ public class NotificationService {
   private final ShareNotifications shareNotifications;
   private final NotificationRepository notificationRepository;
   private final Clock clock;
+  private final ApplicationEventPublisher events;
+
+  /** Refuses a session that may not follow the Account's Notifications. */
+  public void requireViewNotifications(@NonNull AuthenticatedIdentity identity) {
+    authorizationService.requireAllowed(identity, new Intent.ViewNotifications());
+  }
 
   /** The Account's Notifications, newest latest event first. */
   @Transactional(readOnly = true)
@@ -72,6 +82,7 @@ public class NotificationService {
     if (notification.getReadAt().isEmpty()) {
       notification.setReadAt(clock.instant());
       notificationRepository.saveAndFlush(notification);
+      publishMarked(identity.accountId(), List.of(notificationId));
     }
 
     return Outcome.accepted(
@@ -103,12 +114,44 @@ public class NotificationService {
     var shown =
         shareNotifications.shown(
             notificationRepository.findUnreadOfRecipientThrough(accountId, atOrBelow, now));
-    notificationRepository.markReadThrough(
-        shown.stream().map(notification -> notification.notification().getId()).toList(),
-        accountId,
-        atOrBelow,
-        now);
+    var marked =
+        notificationRepository.markReadThrough(
+            shown.stream().map(notification -> notification.notification().getId()).toList(),
+            accountId,
+            atOrBelow,
+            now);
+    publishMarked(accountId, marked);
     return Outcome.accepted(unreadCountOf(accountId));
+  }
+
+  /**
+   * Those of a change's Notifications that the guard shows the Account now, and its unread count
+   * after the change. Empty when the guard shows it none of them, or none is still kept.
+   */
+  @Transactional(readOnly = true)
+  public Optional<NotificationsShown> shownChange(
+      @NonNull AuthenticatedIdentity identity, @NonNull Collection<UUID> notificationIds) {
+    authorizationService.requireAllowed(identity, new Intent.ViewNotifications());
+    var shown =
+        notificationsList.shownOf(
+            notificationRepository.rowsOfRecipientWithIds(identity.accountId(), notificationIds));
+    if (shown.isEmpty()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(new NotificationsShown(shown, unreadCountOf(identity.accountId())));
+  }
+
+  private void publishMarked(UUID accountId, List<UUID> notificationIds) {
+    if (notificationIds.isEmpty()) {
+      return;
+    }
+
+    events.publishEvent(
+        new NotificationsReadEvent(
+            notificationIds.stream()
+                .map(id -> new ReadNotification(id, accountId, ReadNotification.Read.MARKED))
+                .toList()));
   }
 
   private int unreadCountOf(UUID accountId) {

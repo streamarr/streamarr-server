@@ -10,6 +10,7 @@ import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareLine;
 import com.streamarr.server.domain.pagination.OrderMediaBy;
 import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
@@ -20,6 +21,7 @@ import com.streamarr.server.graphql.dataloaders.ShareOffererNameDataLoader;
 import com.streamarr.server.graphql.dataloaders.ShareProfileDataLoader;
 import com.streamarr.server.graphql.dto.HouseholdSummary;
 import com.streamarr.server.graphql.dto.NotificationDetails;
+import com.streamarr.server.graphql.dto.NotificationsChangeDetails;
 import com.streamarr.server.graphql.inputs.MarkAllNotificationsReadInput;
 import com.streamarr.server.graphql.inputs.MarkNotificationReadInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
@@ -30,6 +32,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ShareReference;
 import com.streamarr.server.services.identity.SharedProfile;
 import com.streamarr.server.services.notification.NotificationService;
+import com.streamarr.server.services.notification.NotificationsShown;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.MediaOrder;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -72,6 +75,24 @@ public class NotificationResolver {
         page.map(notification -> NotificationDetails.from(notification, now)),
         list,
         NotificationResolver::orderOf);
+  }
+
+  /** A change's shown Notifications as the schema shows them, each with the query's edge. */
+  NotificationsChangeDetails changeDetails(NotificationsShown shown) {
+    var now = clock.instant();
+    return new NotificationsChangeDetails(
+        shown.notifications().stream()
+            .map(
+                row -> {
+                  var list = listOf(row.item().notification().getRecipientAccountId());
+                  var details =
+                      new Row<>(NotificationDetails.from(row.item(), now), row.position());
+                  return new NotificationsChangeDetails.NotificationChangeDetails(
+                      row.item().notification().getId(),
+                      connections.toEdge(details, list, NotificationResolver::orderOf));
+                })
+            .toList(),
+        shown.unreadCount());
   }
 
   @DgsQuery
