@@ -21,6 +21,8 @@ import com.streamarr.server.services.identity.AccountAdministrationService;
 import com.streamarr.server.services.identity.AccountLifecycleService;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
+import com.streamarr.server.services.identity.ProfileLifecycleService;
+import com.streamarr.server.services.identity.ProfileLifecycleService.TransferProfileCommand;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.ShareRejections;
@@ -106,6 +108,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private AccountInvitationService accountInvitations;
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private ProfileManagerAdministrationService profileManagement;
+  @Autowired private ProfileLifecycleService profileLifecycle;
   @Autowired private NotificationService notificationService;
   @Autowired private ProfileShareExpirySweeper expirySweeper;
   @Autowired private ProfileRepository profileRepository;
@@ -317,6 +320,37 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     var withdrawn = nextChange(socket);
     assertThat(nodeOf(withdrawn).path("resolution").asString()).isEqualTo("WITHDRAWN");
     assertMatchesAFreshQuery(withdrawn, riversideAdmin);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the request's withdrawal and the end of the share into the Household the"
+          + " Profile leaves when the Profile is transferred")
+  void shouldDeliverTheWithdrawalAndTheEndOfTheShareItLeavesWhenTheProfileIsTransferred()
+      throws Exception {
+    var kai = kai();
+    var offer = steps.offer(sam, kai, riverside);
+    var brook = track(authTestSupport.createIdentity());
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var householdLeft = subscribedSocket(authTestSupport.accountBearer(sam));
+    var householdOffered = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    var outcome =
+        profileLifecycle.transferProfile(
+            authTestSupport.freshIdentityOf(serverAdmin),
+            TransferProfileCommand.builder()
+                .profileId(kai.getId())
+                .destinationHouseholdId(brook.household().getId())
+                .localManagerAccountId(brook.account().getId())
+                .reason("Kai lives with Brook now")
+                .build());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertWithdrawn(nextChange(householdOffered), riversideAdmin, offer);
+    var ended = nextChange(householdLeft);
+    assertThat(nodeOf(ended).path("__typename").asString())
+        .isEqualTo("ProfileShareEndedNotification");
+    assertMatchesAFreshQuery(ended, sam);
   }
 
   @Test
