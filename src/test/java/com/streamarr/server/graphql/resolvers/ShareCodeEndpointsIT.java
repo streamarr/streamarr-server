@@ -158,11 +158,37 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
 
     assertThat(refused.path("issued").isNull()).isTrue();
     assertThat(refused.path("userErrors")).hasSize(1);
-    assertThat(refused.path("userErrors").get(0).path("__typename").asString())
+    assertThat(refused.path("userErrors").path(0).path("__typename").asString())
         .isEqualTo("ShareCodeLimitReachedError");
-    assertThat(refused.path("userErrors").get(0).path("message").asString())
+    assertThat(refused.path("userErrors").path(0).path("message").asString())
         .isEqualTo("Withdraw a code before issuing another.");
     assertThat(liveCodesOf(host.household().getId())).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep every live code and refuse the next when a ServerAdmin lowers the limit below"
+          + " them")
+  void shouldKeepEveryLiveCodeAndRefuseTheNextWhenServerAdminLowersTheLimitBelowThem()
+      throws Exception {
+    var bearer = authTestSupport.accountBearer(host);
+    var householdId = host.household().getId();
+    issue(bearer, householdId);
+    issue(bearer, householdId);
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    identities.add(serverAdmin);
+    execute(
+        authTestSupport.accountBearer(serverAdmin),
+        "mutation { changeShareCodeLimit(input: {codes: 1}) { userErrors { __typename } } }",
+        Map.of());
+
+    var refused = issue(bearer, householdId);
+
+    assertThat(refused.path("userErrors").path(0).path("__typename").asString())
+        .isEqualTo("ShareCodeLimitReachedError");
+    assertThat(list(bearer))
+        .hasSize(2)
+        .allSatisfy(node -> assertThat(node.path("status").asString()).isEqualTo("LIVE"));
   }
 
   @Test

@@ -296,6 +296,18 @@ public sealed interface Intent {
   record ChangeInvitationLifetime() implements UnitIntent {}
 
   /**
+   * Read how many live share codes a Household may hold (ADR 0024 §Share codes); a whole-surface
+   * gate.
+   */
+  record ViewShareCodeLimit() implements UnitIntent {}
+
+  /**
+   * Change how many live share codes a Household may hold (ADR 0024 §Share codes); a whole-surface
+   * gate.
+   */
+  record ChangeShareCodeLimit() implements UnitIntent {}
+
+  /**
    * List, count and follow the signed-in Account's own Notifications (ADR 0063): any enabled
    * Account, never a device-bound session. It reads only what was told to that Account, and nothing
    * else decides what it reads.

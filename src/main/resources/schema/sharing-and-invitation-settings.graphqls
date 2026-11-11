@@ -58,3 +58,32 @@ type ChangeInvitationLifetimePayload {
 }
 
 union ChangeInvitationLifetimeError = LifetimeOutOfRangeError
+
+"""
+How many live share codes a Household may hold at once. At the limit, issuing another answers
+ShareCodeLimitReachedError. Only a ServerAdmin reads or changes it. A lower limit ends no live code:
+it refuses the next issue until the Household holds fewer codes than the limit.
+"""
+type ShareCodeLimitSetting {
+    "The same for every read and change, so a client cache can update the setting in place."
+    id: ID!
+    codes: Int!
+    "The lowest limit a ServerAdmin can choose."
+    minimumCodes: Int!
+    "The highest limit a ServerAdmin can choose."
+    maximumCodes: Int!
+}
+
+"Only a ServerAdmin may change the share code limit."
+input ChangeShareCodeLimitInput {
+    "How many live share codes a Household may hold, from minimumCodes to maximumCodes."
+    codes: Int!
+}
+
+type ChangeShareCodeLimitPayload {
+    "The setting as changed. Null when the change is refused."
+    shareCodeLimitSetting: ShareCodeLimitSetting
+    userErrors: [ChangeShareCodeLimitError!]!
+}
+
+union ChangeShareCodeLimitError = ShareCodeLimitOutOfRangeError

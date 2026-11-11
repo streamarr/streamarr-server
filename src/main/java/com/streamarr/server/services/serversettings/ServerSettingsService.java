@@ -179,12 +179,39 @@ public class ServerSettingsService implements InvitationLifetime {
     return new LifetimeSetting(settings.getId(), settings.getInvitationLifetimeHours());
   }
 
+  public ShareCodeLimitSetting readShareCodeLimitSetting(@NonNull AuthenticatedIdentity identity) {
+    authorizationService.requireAllowed(identity, new Intent.ViewShareCodeLimit());
+    return shareCodeLimitOf(storedSettings());
+  }
+
+  /**
+   * Last write wins; the audit columns record the ServerAdmin who made the change. A lower limit
+   * ends no live code: it refuses the next issue.
+   */
+  @Transactional
+  public Outcome<ShareCodeLimitSetting, ChangeShareCodeLimitRejection> changeShareCodeLimit(
+      @NonNull AuthenticatedIdentity identity, int codes) {
+    authorizationService.requireAllowed(identity, new Intent.ChangeShareCodeLimit());
+    if (!ShareCodeLimitSetting.allows(codes)) {
+      return Outcome.rejected(new ChangeShareCodeLimitRejection.OutOfRange());
+    }
+
+    var settings = storedSettings();
+    settings.setShareCodeLimit(codes);
+    serverSettingsRepository.save(settings);
+    return Outcome.accepted(shareCodeLimitOf(settings));
+  }
+
   /**
    * How many live share codes a Household may hold at once. Issuing reads the setting for the
    * Household, not for a caller, so this read is not authorized.
    */
   public int shareCodeLimit() {
     return storedSettings().getShareCodeLimit();
+  }
+
+  private static ShareCodeLimitSetting shareCodeLimitOf(ServerSettings settings) {
+    return new ShareCodeLimitSetting(settings.getId(), settings.getShareCodeLimit());
   }
 
   private static LifetimeSetting shareCodeLifetimeOf(ServerSettings settings) {
