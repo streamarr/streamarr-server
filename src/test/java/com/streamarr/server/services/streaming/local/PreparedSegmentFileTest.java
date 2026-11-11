@@ -26,23 +26,24 @@ class PreparedSegmentFileTest {
   private static final Path INITIALIZATION_TARGET = DIRECTORY.resolve("session/720p/init.mp4");
 
   @Test
-  @DisplayName("Should fall back to a replacement move when atomic move is unavailable")
-  void shouldFallBackToReplacementMoveWhenAtomicMoveIsUnavailable() throws Exception {
+  @DisplayName(
+      "Should fail the publication and store nothing when the volume cannot move a file atomically")
+  void shouldFailPublicationAndStoreNothingWhenVolumeCannotMoveFileAtomically() throws Exception {
     var files = new InMemoryFileOperations();
-    var expected = "complete segment".getBytes();
-    var prepared = prepared(files, expected);
+    files.refuseAtomicMoves = true;
+    var prepared = prepared(files, "complete segment".getBytes());
 
-    prepared.publishTo(TARGET);
+    assertThatThrownBy(() -> prepared.publishWhenNothingIsStored(TARGET))
+        .isInstanceOf(AtomicMoveNotSupportedException.class);
+    prepared.close();
 
-    assertThat(files.bytesAt(TARGET)).containsExactly(expected);
+    assertThat(files.bytesAt(TARGET)).isNull();
     assertThat(files.hasTemporaryFile()).isFalse();
   }
 
   @Test
-  @DisplayName(
-      "Should publish through a replacement move when nothing is stored and atomic move is unavailable")
-  void shouldPublishThroughReplacementMoveWhenNothingIsStoredAndAtomicMoveIsUnavailable()
-      throws Exception {
+  @DisplayName("Should publish the appended bytes when nothing is stored at the target")
+  void shouldPublishAppendedBytesWhenNothingIsStoredAtTarget() throws Exception {
     var files = new InMemoryFileOperations();
     var expected = "ftyp moov from encoder A".getBytes();
     var prepared = prepared(files, expected);
@@ -133,6 +134,7 @@ class PreparedSegmentFileTest {
     private boolean failWrite;
     private boolean failClose;
     private boolean failDelete;
+    private boolean refuseAtomicMoves;
 
     @Override
     public Path createTemporary(Path directory) {
@@ -178,12 +180,11 @@ class PreparedSegmentFileTest {
 
     @Override
     public void moveAtomically(Path source, Path target) throws IOException {
-      throw new AtomicMoveNotSupportedException(
-          source.toString(), target.toString(), "atomic moves disabled");
-    }
+      if (refuseAtomicMoves) {
+        throw new AtomicMoveNotSupportedException(
+            source.toString(), target.toString(), "atomic moves disabled");
+      }
 
-    @Override
-    public void moveReplacing(Path source, Path target) {
       contents.put(target, contents.remove(source));
     }
 

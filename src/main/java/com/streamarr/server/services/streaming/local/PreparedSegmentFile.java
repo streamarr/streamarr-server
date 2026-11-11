@@ -4,7 +4,6 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -20,9 +19,8 @@ final class PreparedSegmentFile implements AutoCloseable {
 
     WritableByteChannel openForWriting(Path path) throws IOException;
 
+    /** Fails, moving nothing, on a volume that cannot move a file atomically. */
     void moveAtomically(Path source, Path target) throws IOException;
-
-    void moveReplacing(Path source, Path target) throws IOException;
 
     /** Fails when the file system cannot say whether a file is at {@code path}. */
     boolean notExists(Path path) throws IOException;
@@ -49,11 +47,6 @@ final class PreparedSegmentFile implements AutoCloseable {
     public void moveAtomically(Path source, Path target) throws IOException {
       Files.move(
           source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-    }
-
-    @Override
-    public void moveReplacing(Path source, Path target) throws IOException {
-      Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
     }
 
     @Override
@@ -116,11 +109,9 @@ final class PreparedSegmentFile implements AutoCloseable {
 
   void publishTo(Path target) throws IOException {
     content.close();
-    try {
-      files.moveAtomically(temporary, target);
-    } catch (AtomicMoveNotSupportedException _) {
-      files.moveReplacing(temporary, target);
-    }
+    // Never a plain move: one that fails can leave part of the file at the target, and the next
+    // publication would keep that part as the stored segment.
+    files.moveAtomically(temporary, target);
   }
 
   /**
