@@ -27,6 +27,7 @@ public class ShareCodes {
 
   private static final String KEY_SETTING = "AUTH_SHARE_CODE_KEY";
   private static final int MINIMUM_KEY_BYTES = 32;
+  private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
   private final UserCodeGenerator userCodes;
   private final SecretKey key;
@@ -57,7 +58,7 @@ public class ShareCodes {
               + " when the server restarts.",
           KEY_SETTING);
       var generated = new byte[MINIMUM_KEY_BYTES];
-      new SecureRandom().nextBytes(generated);
+      SECURE_RANDOM.nextBytes(generated);
       return new SecretKeySpec(generated, CredentialDigest.KEYED_ALGORITHM);
     }
 
