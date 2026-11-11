@@ -302,6 +302,18 @@ type ShareNotPendingError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
+"No share code has that id, or the caller may not see the share codes of its Household."
+type ShareCodeNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"The share code no longer works: it was spent, withdrawn or invalidated, or it expired."
+type ShareCodeNotLiveError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 "The system withdrew the offer, so it cannot be accepted. The message does not say why: the share's invalidationReason says why to the Profile's managers and ServerAdmins."
 type OfferInvalidatedError implements InputMutationError & MutationError {
     message: String!

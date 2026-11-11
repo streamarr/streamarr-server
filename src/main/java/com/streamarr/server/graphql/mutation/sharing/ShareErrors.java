@@ -8,6 +8,7 @@ import com.streamarr.server.services.identity.ShareRejections;
 public final class ShareErrors {
 
   private static final String SHARE_ID = "shareId";
+  private static final String SHARE_CODE_ID = "shareCodeId";
 
   private ShareErrors() {}
 
@@ -27,6 +28,18 @@ public final class ShareErrors {
     return switch (rejection) {
       case ShareCodeRejections.HouseholdNotFound _ ->
           new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
+    };
+  }
+
+  public static WithdrawShareCodeError toWithdrawShareCodeError(
+      ShareCodeRejections.Withdraw rejection) {
+    return switch (rejection) {
+      case ShareCodeRejections.ShareCodeNotFound _ ->
+          new ShareCodeNotFoundError("No such share code.", InputPath.of(SHARE_CODE_ID));
+      case ShareCodeRejections.ShareCodeNotLive _ ->
+          new ShareCodeNotLiveError(
+              "This share code no longer works, so there is nothing to withdraw.",
+              InputPath.of(SHARE_CODE_ID));
     };
   }
 

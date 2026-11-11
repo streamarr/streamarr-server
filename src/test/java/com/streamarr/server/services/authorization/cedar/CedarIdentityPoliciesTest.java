@@ -1198,17 +1198,14 @@ class CedarIdentityPoliciesTest {
     void shouldAllowShareCodeAdministrationWhenCallerIsHouseholdsLiveAdminOrServerAdmin() {
       var home = account.getHouseholdId();
 
-      assertThat(decide(atHome(), new Intent.IssueShareCode(home))).isEqualTo(ALLOWED);
-      assertThat(decide(atHome(), new Intent.ViewShareCodes(home))).isEqualTo(ALLOWED);
-      assertThat(decide(atHome(), new Intent.IssueShareCode(visitedHouseholdId))).isEqualTo(DENIED);
-      assertThat(decide(atHome(), new Intent.ViewShareCodes(visitedHouseholdId))).isEqualTo(DENIED);
+      assertThat(administration(home)).allSatisfy(intent -> assertDecision(intent, ALLOWED));
+      assertThat(administration(visitedHouseholdId))
+          .allSatisfy(intent -> assertDecision(intent, DENIED));
 
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decide(atHome(), new Intent.IssueShareCode(visitedHouseholdId)))
-          .isEqualTo(ALLOWED);
-      assertThat(decide(atHome(), new Intent.ViewShareCodes(visitedHouseholdId)))
-          .isEqualTo(ALLOWED);
+      assertThat(administration(visitedHouseholdId))
+          .allSatisfy(intent -> assertDecision(intent, ALLOWED));
     }
 
     @Test
@@ -1220,8 +1217,7 @@ class CedarIdentityPoliciesTest {
 
       // The session still carries the admin role it was signed with.
       assertThat(atHome().householdRole()).isEqualTo(HouseholdRole.ADMIN);
-      assertThat(decide(atHome(), new Intent.IssueShareCode(home))).isEqualTo(DENIED);
-      assertThat(decide(atHome(), new Intent.ViewShareCodes(home))).isEqualTo(DENIED);
+      assertThat(administration(home)).allSatisfy(intent -> assertDecision(intent, DENIED));
     }
 
     @Test
@@ -1232,13 +1228,23 @@ class CedarIdentityPoliciesTest {
       account.setServerAdmin(true);
       accounts.save(account);
 
-      assertThat(decide(onDevice(atHome()), new Intent.IssueShareCode(home))).isEqualTo(DENIED);
-      assertThat(decide(onDevice(atHome()), new Intent.ViewShareCodes(home))).isEqualTo(DENIED);
+      assertThat(administration(home))
+          .allSatisfy(intent -> assertThat(decide(onDevice(atHome()), intent)).isEqualTo(DENIED));
 
       account.setEnabled(false);
       accounts.save(account);
-      assertThat(decide(atHome(), new Intent.IssueShareCode(home))).isEqualTo(DENIED);
-      assertThat(decide(atHome(), new Intent.ViewShareCodes(home))).isEqualTo(DENIED);
+      assertThat(administration(home)).allSatisfy(intent -> assertDecision(intent, DENIED));
+    }
+
+    private List<Intent.UnitIntent> administration(UUID householdId) {
+      return List.of(
+          new Intent.IssueShareCode(householdId),
+          new Intent.ViewShareCodes(householdId),
+          new Intent.WithdrawShareCode(householdId));
+    }
+
+    private void assertDecision(Intent.UnitIntent intent, Decision<AuthorizationUnit> expected) {
+      assertThat(decide(atHome(), intent)).as("%s", intent).isEqualTo(expected);
     }
   }
 

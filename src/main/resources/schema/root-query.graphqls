@@ -43,6 +43,14 @@ type Query {
     for where the Profile is offered or available now.
     """
     profileShares(profileId: ID!, statuses: [ProfileShareStatus!], first: Int, after: String, last: Int, before: String): ProfileShareConnection!
+    """
+    A Household's share codes, newest first, for its HouseholdAdmins and for ServerAdmins: who
+    issued each, its status and when it expires, never the code. Everyone else gets an empty list,
+    and so does a device-bound session. statuses keeps only codes in those statuses, and a live code
+    past its expiry counts as EXPIRED. Leave statuses out, or pass an empty list, to get every code.
+    Pass [LIVE] for the codes that still work.
+    """
+    householdShareCodes(householdId: ID!, statuses: [ShareCodeStatus!], first: Int, after: String, last: Int, before: String): ShareCodeConnection!
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     """

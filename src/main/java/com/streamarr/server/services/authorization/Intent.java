@@ -187,6 +187,9 @@ public sealed interface Intent {
   /** List a Household's share codes, never the codes themselves: the seats that may issue one. */
   record ViewShareCodes(UUID householdId) implements UnitIntent {}
 
+  /** Withdraw any of a Household's live share codes, whoever issued it: the same seats. */
+  record WithdrawShareCode(UUID householdId) implements UnitIntent {}
+
   /** Propose another eligible Account as a direct ProfileManager (ADR 0024 §ProfileManager). */
   record InviteProfileManager(UUID profileId) implements UnitIntent {}
 

@@ -47,6 +47,25 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
       }
       """;
 
+  private static final String WITHDRAW =
+      """
+      mutation Withdraw($shareCodeId: ID!) {
+        withdrawShareCode(input: { shareCodeId: $shareCodeId }) {
+          shareCode { id status endedAt issuedByDisplayName }
+          userErrors { __typename ... on InputMutationError { message inputPath } }
+        }
+      }
+      """;
+
+  private static final String LIST =
+      """
+      query List($householdId: ID!, $statuses: [ShareCodeStatus!]) {
+        householdShareCodes(householdId: $householdId, statuses: $statuses) {
+          edges { node { id status expiresAt issuedByAccountId issuedByDisplayName } }
+        }
+      }
+      """;
+
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
@@ -142,6 +161,119 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
     identities.add(serverAdmin);
 
     assertHouseholdNotFound(issue(authTestSupport.accountBearer(serverAdmin), UUID.randomUUID()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should list who issued each code and when it expires when a HouseholdAdmin lists them")
+  void shouldListWhoIssuedEachCodeAndWhenItExpiresWhenHouseholdAdminListsThem() throws Exception {
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    identities.add(serverAdmin);
+    var hosts = issuedId(issue(authTestSupport.accountBearer(host), host.household().getId()));
+    var servers =
+        issuedId(issue(authTestSupport.accountBearer(serverAdmin), host.household().getId()));
+
+    var listed = list(authTestSupport.accountBearer(host), List.of());
+
+    assertThat(listed)
+        .extracting(node -> node.path("id").asString())
+        .containsExactly(servers, hosts);
+    assertThat(listed)
+        .extracting(node -> node.path("issuedByDisplayName").asString())
+        .containsExactly(serverAdmin.account().getDisplayName(), host.account().getDisplayName());
+    assertThat(listed)
+        .allSatisfy(node -> assertThat(node.path("expiresAt").asString()).isNotEmpty());
+  }
+
+  @Test
+  @DisplayName("Should list nothing when a member or a device-bound session lists the codes")
+  void shouldListNothingWhenMemberOrDeviceBoundSessionListsCodes() throws Exception {
+    issue(authTestSupport.accountBearer(host), host.household().getId());
+    var member = authTestSupport.createHouseholdMemberIdentity(host);
+
+    assertThat(list(authTestSupport.accountBearer(member), List.of())).isEmpty();
+    assertThat(list(authTestSupport.deviceBoundProfileBearer(host), List.of())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should take a withdrawn code out of the live list when a HouseholdAdmin withdraws it")
+  void shouldTakeWithdrawnCodeOutOfLiveListWhenHouseholdAdminWithdrawsIt() throws Exception {
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    identities.add(serverAdmin);
+    var kept = issuedId(issue(authTestSupport.accountBearer(host), host.household().getId()));
+    var withdrawnId =
+        issuedId(issue(authTestSupport.accountBearer(serverAdmin), host.household().getId()));
+
+    var payload = withdraw(authTestSupport.accountBearer(host), withdrawnId);
+
+    assertThat(payload.path("userErrors")).isEmpty();
+    assertThat(payload.path("shareCode").path("status").asString()).isEqualTo("WITHDRAWN");
+    assertThat(payload.path("shareCode").path("endedAt").asString()).isNotEmpty();
+    assertThat(list(authTestSupport.accountBearer(host), List.of("LIVE")))
+        .extracting(node -> node.path("id").asString())
+        .containsExactly(kept);
+    assertThat(list(authTestSupport.accountBearer(host), List.of("WITHDRAWN")))
+        .extracting(node -> node.path("id").asString())
+        .containsExactly(withdrawnId);
+  }
+
+  @Test
+  @DisplayName("Should refuse as not live when a withdrawn code is withdrawn again")
+  void shouldRefuseAsNotLiveWhenWithdrawnCodeIsWithdrawnAgain() throws Exception {
+    var id = issuedId(issue(authTestSupport.accountBearer(host), host.household().getId()));
+    withdraw(authTestSupport.accountBearer(host), id);
+
+    var again = withdraw(authTestSupport.accountBearer(host), id);
+
+    assertThat(again.path("shareCode").isNull()).isTrue();
+    assertThat(again.path("userErrors"))
+        .singleElement()
+        .satisfies(
+            error -> {
+              assertThat(error.path("__typename").asString()).isEqualTo("ShareCodeNotLiveError");
+              assertThat(error.path("inputPath").get(0).asString()).isEqualTo("shareCodeId");
+            });
+  }
+
+  @Test
+  @DisplayName("Should refuse as not found when a member withdraws the Household's code")
+  void shouldRefuseAsNotFoundWhenMemberWithdrawsHouseholdsCode() throws Exception {
+    var id = issuedId(issue(authTestSupport.accountBearer(host), host.household().getId()));
+    var member = authTestSupport.createHouseholdMemberIdentity(host);
+
+    var payload = withdraw(authTestSupport.accountBearer(member), id);
+
+    assertThat(payload.path("userErrors"))
+        .singleElement()
+        .extracting(error -> error.path("__typename").asString())
+        .isEqualTo("ShareCodeNotFoundError");
+    assertThat(list(authTestSupport.accountBearer(host), List.of("LIVE")))
+        .extracting(node -> node.path("id").asString())
+        .containsExactly(id);
+  }
+
+  private static String issuedId(JsonNode payload) {
+    return payload.path("issued").path("shareCode").path("id").asString();
+  }
+
+  private JsonNode withdraw(String bearer, String shareCodeId) throws Exception {
+    return execute(bearer, WITHDRAW, Map.of("shareCodeId", shareCodeId))
+        .path("data")
+        .path("withdrawShareCode");
+  }
+
+  private List<JsonNode> list(String bearer, List<String> statuses) throws Exception {
+    var nodes = new ArrayList<JsonNode>();
+    execute(
+            bearer,
+            LIST,
+            Map.of("householdId", host.household().getId().toString(), "statuses", statuses))
+        .path("data")
+        .path("householdShareCodes")
+        .path("edges")
+        .forEach(edge -> nodes.add(edge.path("node")));
+    return nodes;
   }
 
   private void assertHouseholdNotFound(JsonNode payload) {

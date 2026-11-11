@@ -19,6 +19,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -39,6 +40,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.ShareCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
@@ -88,6 +90,8 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private AccountInvitationRepository accountInvitationRepository;
   @Autowired private ProfileManagerInvitationRepository profileManagerInvitationRepository;
+  @Autowired private ShareCodeRepository shareCodeRepository;
+  @Autowired private ShareCodeService shareCodeService;
   @Autowired private DeviceRegistrationRepository registrationRepository;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
@@ -418,6 +422,33 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
     assertThat(watchHistory.findById(visitorHistory.getId())).isPresent();
     assertThat(profileRepository.findById(unrelatedProfile.getId())).isPresent();
     assertThat(watchHistory.findById(unrelatedHistory.getId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should delete only the target's share codes when deleting a Household")
+  void shouldDeleteOnlyTargetsShareCodesWhenDeletingHousehold() {
+    var targetsCode = issueShareCode(admin, doomed.household().getId());
+    var issuedByDoomed = issueShareCode(doomed, doomed.household().getId());
+    var unrelated = issueShareCode(admin, admin.household().getId());
+
+    performSuccessfulTransferAndDeletion();
+
+    assertThat(shareCodeRepository.findById(targetsCode)).isEmpty();
+    assertThat(shareCodeRepository.findById(issuedByDoomed)).isEmpty();
+    assertThat(shareCodeRepository.findById(unrelated))
+        .get()
+        .extracting(shareCode -> shareCode.getStatus())
+        .isEqualTo(ShareCodeStatus.LIVE);
+  }
+
+  private UUID issueShareCode(AuthTestSupport.TestIdentity issuer, UUID householdId) {
+    return shareCodeService
+        .issueShareCode(authTestSupport.identityOf(issuer), householdId)
+        .fold(
+            issued -> issued.shareCode().shareCode().getId(),
+            rejections -> {
+              throw new AssertionError("rejected: " + rejections);
+            });
   }
 
   @Test

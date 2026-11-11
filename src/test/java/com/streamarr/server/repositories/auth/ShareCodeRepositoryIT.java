@@ -1,12 +1,17 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstSeek;
 import static com.streamarr.server.jooq.generated.tables.ShareCode.SHARE_CODE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.ShareCode;
+import com.streamarr.server.domain.auth.ShareCodeFilter;
 import com.streamarr.server.domain.auth.ShareCodeStatus;
+import com.streamarr.server.domain.pagination.ListOrder;
+import com.streamarr.server.domain.pagination.SortDirection;
+import com.streamarr.server.domain.pagination.SortValueKind;
 import com.streamarr.server.services.auth.ShareCodes;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.TestFixtureWork;
@@ -14,6 +19,8 @@ import com.streamarr.server.support.security.WithAccountContext;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
@@ -35,6 +42,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 class ShareCodeRepositoryIT extends AbstractIntegrationTest {
 
   private static final int CONCURRENT_OFFERS = 8;
+  private static final ListOrder NEWEST_FIRST =
+      ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.DESC).build();
 
   @Autowired private ShareCodeRepository shareCodeRepository;
   @Autowired private AuthTestSupport authTestSupport;
@@ -124,6 +133,26 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should read each code as it stands at the filter's instant when a list keeps statuses")
+  void shouldReadEachCodeAsItStandsAtFiltersInstantWhenListKeepsStatuses() {
+    var live = insert(shareCodes.issue().digest(), now.plusSeconds(60));
+    var expired = insert(shareCodes.issue().digest(), now);
+    var spent = insert(shareCodes.issue().digest(), now.plusSeconds(60));
+    transactionTemplate.execute(_ -> shareCodeRepository.trySpend(spent, now));
+
+    assertThat(listed()).containsExactlyInAnyOrder(live, expired, spent);
+    assertThat(listed(ShareCodeStatus.LIVE)).containsExactly(live);
+    assertThat(listed(ShareCodeStatus.EXPIRED)).containsExactly(expired);
+    assertThat(listed(ShareCodeStatus.SPENT, ShareCodeStatus.LIVE))
+        .containsExactlyInAnyOrder(spent, live);
+    assertThat(
+            shareCodeRepository.rowsInHousehold(
+                new ShareCodeFilter(UUID.randomUUID(), Set.of(), now), firstSeek(NEWEST_FIRST, 10)))
+        .isEmpty();
+  }
+
+  @Test
   @DisplayName("Should spend a code once when many offers present it at the same time")
   void shouldSpendCodeOnceWhenManyOffersPresentItAtSameTime() throws Exception {
     var id = insert(shareCodes.issue().digest(), now.plus(7, ChronoUnit.DAYS));
@@ -204,6 +233,16 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
                             .execute()))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("chk_share_code_ended_at");
+  }
+
+  private List<UUID> listed(ShareCodeStatus... statuses) {
+    return shareCodeRepository
+        .rowsInHousehold(
+            new ShareCodeFilter(host.household().getId(), Set.of(statuses), now),
+            firstSeek(NEWEST_FIRST, 10))
+        .stream()
+        .map(row -> row.item().getId())
+        .toList();
   }
 
   private UUID insert(byte[] digest, Instant expiresAt) {
