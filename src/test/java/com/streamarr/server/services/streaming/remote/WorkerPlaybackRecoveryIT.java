@@ -15,6 +15,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -49,6 +50,7 @@ import com.streamarr.server.services.streaming.StartPlaybackSessionCommand;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.events.CopiedVariantRanShortEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
+import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -57,8 +59,10 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.List;
@@ -77,6 +81,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.context.ApplicationEventPublisher;
 
 @Tag("IntegrationTest")
@@ -122,6 +128,82 @@ class WorkerPlaybackRecoveryIT {
       // Closes the worker, then the server that it connects to.
     } finally {
       segments.shutdown();
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({"AUTO,0,50", "AUTO,24100,50", "HIGH_720P,24100,50", "AUTO,0,90"})
+  @DisplayName(
+      "Should recover with padded audio when truncated copied audio ends beside encoded video")
+  void shouldRecoverWithPaddedAudioWhenTruncatedCopiedAudioEndsBesideEncodedVideo(
+      VideoQuality quality, long startMillis, int retainedPercent) throws Exception {
+    var source =
+        worker.generateMedia(
+            sourceRoot.resolve("truncated.mp4"),
+            List.of(
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x180:rate=24:duration=30",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=30",
+                "-map",
+                "0:v",
+                "-map",
+                "1:a",
+                "-c:v",
+                "mpeg2video",
+                "-g",
+                "24",
+                "-c:a",
+                "aac",
+                "-movflags",
+                "+faststart"));
+    var storedProbe = probe(source);
+    var startPosition = Optional.<Duration>empty();
+    if (startMillis > 0) {
+      startPosition = Optional.of(Duration.ofMillis(startMillis));
+    }
+
+    try (var file = FileChannel.open(source, StandardOpenOption.WRITE)) {
+      file.truncate(Files.size(source) * retainedPercent / 100);
+    }
+
+    try (var playback =
+        new PlaybackRig(
+            PlayedSource.builder()
+                .file(source)
+                .storedProbe(storedProbe)
+                .quality(quality)
+                .startPosition(startPosition)
+                .build())) {
+      var started = accepted(playback.sessions.start(playback.command));
+      var original = ((PlaybackFormatAttempt.Ready) started.currentFormatAttempt()).session();
+      assertThat(original.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+      assertThat(original.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.COPY);
+
+      var replacement = playback.awaitReplacement(started);
+
+      assertThat(replacement.getTranscodeDecision().audioDecision().mode())
+          .isEqualTo(AudioMode.TRANSCODE);
+      assertThat(replacement.getTranscodeDecision().videoCodecFamily())
+          .isEqualTo(original.getTranscodeDecision().videoCodecFamily());
+      assertThat(replacement.getStartPosition()).isEqualTo(startPosition);
+      var variant = replacement.getVariants().getFirst().label();
+      var initialization = playback.deliver(replacement, variant, "init.mp4");
+      var tail = playback.deliver(replacement, variant, "segment4.m4s");
+      var served = Files.write(sourceRoot.resolve("tail.mp4"), combine(initialization, tail));
+      assertThat(worker.decodedVideoFrameCount(served)).isPositive();
+      assertThat(worker.audioPacketHashes(served)).hasSizeBetween(281, 282);
+      assertThat(
+              playback
+                  .sessions
+                  .access(playback.requestFor(started))
+                  .orElseThrow()
+                  .formatAttemptCount())
+          .isEqualTo(2);
     }
   }
 
@@ -417,7 +499,13 @@ class WorkerPlaybackRecoveryIT {
   private record PlayedSource(
       @NonNull Path file,
       ProbeOutcome.@NonNull Success storedProbe,
-      @NonNull VideoQuality quality) {}
+      @NonNull VideoQuality quality,
+      @NonNull Optional<Duration> startPosition) {
+
+    static class PlayedSourceBuilder {
+      private Optional<Duration> startPosition = Optional.empty();
+    }
+  }
 
   // Hands each event that the worker session server publishes to the listeners of its type, as
   // Spring's event multicaster does.
@@ -518,6 +606,7 @@ class WorkerPlaybackRecoveryIT {
               .maximumFormatAttempts(3)
               .build();
       events.listen(VideoCopyOutputMismatchEvent.class, sessions::onVideoCopyOutputMismatch);
+      events.listen(TerminalTranscodeFailureEvent.class, sessions::onTerminalTranscodeFailure);
       learning = new LearnedStreamEndListener(registry, learnedEnds, new SimpleMeterRegistry());
       events.listen(JobAttemptCompletedEvent.class, learning::onJobAttemptCompleted);
       var shortCopies = new ShortCopyListener(lifecycle.lifecycle(), events);
@@ -529,6 +618,7 @@ class WorkerPlaybackRecoveryIT {
               .mediaFileId(file.getId())
               .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
               .options(StreamingOptions.builder().quality(played.quality()).build())
+              .startPosition(played.startPosition())
               .capabilityDeclaration(defaultDeclarationBuilder().build())
               .build();
     }
@@ -555,8 +645,8 @@ class WorkerPlaybackRecoveryIT {
     }
 
     private byte[] deliver(StreamSession session, String variant, String name) {
-      return StoredSegments.bytes(
-          delivery.deliver(session.getSessionId(), variant, variant + "/" + name));
+      var path = StreamSession.defaultVariant().equals(variant) ? name : variant + "/" + name;
+      return StoredSegments.bytes(delivery.deliver(session.getSessionId(), variant, path));
     }
 
     private MediaProbe readProbe() {
