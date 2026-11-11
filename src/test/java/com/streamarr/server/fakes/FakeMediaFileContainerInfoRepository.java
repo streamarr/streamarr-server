@@ -7,6 +7,7 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -165,6 +166,19 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
               .fromPacketScan(true)
               .build());
     }
+  }
+
+  @Override
+  public synchronized boolean publishKeyframePacketScanFailure(
+      UUID mediaFileId, ProbeInputs inputs) {
+    return publishKeyframePacketScan(
+        KeyframePacketScanPublication.builder()
+            .mediaFileId(mediaFileId)
+            .snapshot(inputs.snapshot())
+            .probeVersion(inputs.probeVersion())
+            .keyframes(
+                new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED))
+            .build());
   }
 
   @Override
