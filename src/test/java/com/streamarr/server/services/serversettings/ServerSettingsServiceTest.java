@@ -210,6 +210,23 @@ class ServerSettingsServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep Notification history for ninety days when no ServerAdmin has changed it")
+  void shouldKeepNotificationHistoryForNinetyDaysWhenNoServerAdminHasChangedIt() {
+    assertThat(serverSettingsService.notificationRetention()).isEqualTo(Duration.ofDays(90));
+  }
+
+  @Test
+  @DisplayName("Should keep Notification history for the stored days when the setting was changed")
+  void shouldKeepNotificationHistoryForTheStoredDaysWhenTheSettingWasChanged() {
+    var settings = serverSettingsRepository.findAll().getFirst();
+    settings.setNotificationRetentionDays(30);
+    serverSettingsRepository.save(settings);
+
+    assertThat(serverSettingsService.notificationRetention()).isEqualTo(Duration.ofDays(30));
+  }
+
+  @Test
   @DisplayName("Should fail with a missing-settings error when the settings row is absent")
   void shouldFailWithMissingSettingsErrorWhenSettingsRowIsAbsent() {
     serverSettingsRepository.deleteAll();

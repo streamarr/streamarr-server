@@ -96,6 +96,12 @@ public class ServerSettings extends TableImpl<ServerSettingsRecord> {
      */
     public final TableField<ServerSettingsRecord, Integer> IDLE_SEGMENT_RETENTION_MINUTES = createField(DSL.name("idle_segment_retention_minutes"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("60"), SQLDataType.INTEGER)), this, "");
 
+    /**
+     * The column
+     * <code>public.server_settings.notification_retention_days</code>.
+     */
+    public final TableField<ServerSettingsRecord, Integer> NOTIFICATION_RETENTION_DAYS = createField(DSL.name("notification_retention_days"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("90"), SQLDataType.INTEGER)), this, "");
+
     private ServerSettings(Name alias, Table<ServerSettingsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -145,6 +151,7 @@ public class ServerSettings extends TableImpl<ServerSettingsRecord> {
         return Arrays.asList(
             Internal.createCheck(this, DSL.name("chk_server_settings_encoder_preset"), "((encoder_preset = ANY (ARRAY['AUTOMATIC'::text, 'SUPERFAST'::text, 'VERYFAST'::text, 'FASTER'::text, 'FAST'::text, 'MEDIUM'::text, 'SLOW'::text, 'SLOWER'::text, 'VERYSLOW'::text])))", true),
             Internal.createCheck(this, DSL.name("chk_server_settings_idle_segment_retention_minutes"), "(((idle_segment_retention_minutes >= 5) AND (idle_segment_retention_minutes <= 10080)))", true),
+            Internal.createCheck(this, DSL.name("chk_server_settings_notification_retention_days"), "(((notification_retention_days >= 1) AND (notification_retention_days <= 365)))", true),
             Internal.createCheck(this, DSL.name("chk_server_settings_singleton"), "(singleton)", true)
         );
     }
