@@ -212,6 +212,25 @@ class TranscodeDecisionTest {
         .hasMessageContaining("cannot hold an encode codec profile");
   }
 
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"VIDEO_TRANSCODE", "FULL_TRANSCODE"})
+  @DisplayName(
+      "Should refuse a decision that encodes the video when it holds a lower variant encode")
+  void shouldRefuseADecisionThatEncodesTheVideoWhenItHoldsALowerVariantEncode(TranscodeMode mode) {
+    var decision =
+        decisionBuilder(mode)
+            .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
+            .lowerVariantEncode(
+                Optional.of(
+                    new LowerVariantEncode(EncodeCodecProfile.H264_HIGH, EncodeFormat.SDR_8_BIT)));
+
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("cannot hold a lower variant encode");
+  }
+
   // ADR 0050: a bandwidth dip must not move a television between HDR and SDR, and a 10-bit copy
   // keeps its 10 bits, so no decision pairs a copy with lower variants in another format.
   @ParameterizedTest(name = "{0}")
