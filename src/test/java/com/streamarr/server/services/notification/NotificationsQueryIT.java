@@ -492,10 +492,10 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
       throws Exception {
     var bearer = authTestSupport.accountBearer(riversideAdmin);
     offerProfiles(2);
-    var few = statementsWhile(() -> mockMvc.perform(graphqlRequest(bearer, NOTIFICATIONS)));
+    var few = statementsWhile(() -> readsPage(bearer, 2));
     offerProfiles(4);
 
-    var many = statementsWhile(() -> mockMvc.perform(graphqlRequest(bearer, NOTIFICATIONS)));
+    var many = statementsWhile(() -> readsPage(bearer, 6));
 
     assertThat(many).isEqualTo(few);
   }
@@ -510,10 +510,10 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
     var kai = track(authTestSupport.createIdentity());
     steps.offer(sam, steps.profileManagedBy("Ollie", sam, sam), riverside);
     hideFromRiversideAdmin(2, kai);
-    var few = statementsWhile(() -> mockMvc.perform(graphqlRequest(bearer, NOTIFICATIONS)));
+    var few = statementsWhile(() -> readsPage(bearer, 1));
     hideFromRiversideAdmin(24, kai);
 
-    var many = statementsWhile(() -> mockMvc.perform(graphqlRequest(bearer, NOTIFICATIONS)));
+    var many = statementsWhile(() -> readsPage(bearer, 1));
 
     assertThat(many).isEqualTo(few);
   }
@@ -582,6 +582,16 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
                       .at(at)
                       .build()));
     }
+  }
+
+  /** The page reads without an error, and holds as many Notifications as its unread count. */
+  private void readsPage(String bearer, int unread) throws Exception {
+    mockMvc
+        .perform(graphqlRequest(bearer, NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(unread))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(unread)));
   }
 
   /** Riverside's HouseholdAdmin reads its request about the offer under the name. */
