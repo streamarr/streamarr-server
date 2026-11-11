@@ -350,14 +350,13 @@ public record MediaProbe(
    * reported: an attempt's FFmpeg can stop at a read error and still complete, where a scan fails.
    * The container's duration also stands while it runs less than {@link
    * #LEAST_HEADER_OVERSTATEMENT} past the scanned end, so a healthy file is never advertised
-   * shorter than its header states. A scanned end counts up to the next whole millisecond, the unit
-   * of the segment list, so the list never ends before the stream's last sample does.
+   * shorter than its header states. The end counts up to the next whole millisecond, the unit of
+   * the segment list, so the list never ends before the last sample does.
    */
   public Duration mediaEnd() {
-    return scannedMediaEnd()
-        .filter(scannedEnd -> !headerAgreesWith(scannedEnd))
-        .map(MediaProbe::countedUpToAWholeMillisecond)
-        .orElse(duration);
+    var end =
+        scannedMediaEnd().filter(scannedEnd -> !headerAgreesWith(scannedEnd)).orElse(duration);
+    return countedUpToAWholeMillisecond(end);
   }
 
   private static Duration countedUpToAWholeMillisecond(Duration time) {

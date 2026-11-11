@@ -525,6 +525,29 @@ class MediaProbeTest {
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(5_036));
   }
 
+  // A header states its duration in microseconds or finer. Counted down to the segment list's
+  // whole milliseconds, a healthy file of 5.035042 s would be advertised to 5.035 s, before its
+  // last sample ends, whether or not a scan read its stream ends.
+  @ParameterizedTest
+  @ValueSource(longs = {0, 5_035_000_000L})
+  @DisplayName(
+      "Should count the container's duration up to the next whole millisecond when the media ends"
+          + " there")
+  void shouldCountTheContainersDurationUpToTheNextWholeMillisecondWhenTheMediaEndsThere(
+      long scannedAudioEndNanos) {
+    var healthy = probeLasting(Duration.ofNanos(5_035_042_000L), video(), audio(1));
+    var probe = healthy;
+    if (scannedAudioEndNanos > 0) {
+      probe =
+          healthy.withLearnedEndTimes(
+              List.of(
+                  scannedEnd(0, Duration.ofSeconds(4)),
+                  scannedEnd(1, Duration.ofNanos(scannedAudioEndNanos))));
+    }
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(5_036));
+  }
+
   // The header of a file cut near 14 s states 30 s for each stream. A keyframe packet scan read
   // where each stream's packets end.
   @Test
