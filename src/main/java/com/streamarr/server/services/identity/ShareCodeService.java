@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -122,14 +123,25 @@ public class ShareCodeService {
    */
   public Outcome<String, ShareCodeRejections.LookUp> lookUpShareCode(
       AuthenticatedIdentity identity, ShareCodeCommand command) {
+    return present(identity, command, this::householdNameOf)
+        .<Outcome<String, ShareCodeRejections.LookUp>>map(Outcome::accepted)
+        .orElseGet(() -> Outcome.rejected(new ShareCodeRejections.ShareCodeRefused()));
+  }
+
+  /**
+   * What the presented code admits, verified as a credential attempt by the presenting Account; a
+   * code that does not work admits nothing. A session that may not present share codes is refused
+   * with FORBIDDEN before any attempt counts.
+   */
+  private <T> Optional<T> present(
+      AuthenticatedIdentity identity, ShareCodeCommand command, Function<ShareCode, T> admitted) {
     authorizationService.requireAllowed(identity, new Intent.ViewShareCodeHousehold());
     try {
-      return Outcome.accepted(
+      return Optional.of(
           credentialAttempts.attempt(
-              presentedBy(identity, command),
-              () -> householdNameOf(liveShareCode(command.code()))));
+              presentedBy(identity, command), () -> admitted.apply(liveShareCode(command.code()))));
     } catch (InvalidOneTimeCodeException _) {
-      return Outcome.rejected(new ShareCodeRejections.ShareCodeRefused());
+      return Optional.empty();
     }
   }
 
@@ -138,7 +150,7 @@ public class ShareCodeService {
    * gate. A malformed, unknown, spent, withdrawn, expired or invalidated code throws the same
    * refusal.
    */
-  ShareCode liveShareCode(String typed) {
+  private ShareCode liveShareCode(String typed) {
     var now = clock.instant();
     return shareCodes
         .digestOf(typed)
@@ -148,7 +160,7 @@ public class ShareCodeService {
   }
 
   /** A presentation counts against the Account that presents the code, never against the code. */
-  static CredentialAttemptMetadata presentedBy(
+  private static CredentialAttemptMetadata presentedBy(
       AuthenticatedIdentity identity, ShareCodeCommand command) {
     return CredentialAttemptMetadata.builder()
         .kind(CredentialKind.SHARE_CODE)
