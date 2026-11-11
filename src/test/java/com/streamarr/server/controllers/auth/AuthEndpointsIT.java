@@ -361,21 +361,24 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   // U+0130, a capital I with a dot, is i under PostgreSQL's lower().
   @ParameterizedTest
   @CsvSource({
-    "sam@example.com, SAM@Example.COM",
-    "ilker@example.com, \u0130lker@example.com",
-    "\u0130lker@example.com, ilker@example.com"
+    "sam-%s@example.com, SAM-%s@Example.COM",
+    "ilker-%s@example.com, \u0130lker-%s@example.com",
+    "\u0130lker-%s@example.com, ilker-%s@example.com"
   })
   @DisplayName("Should sign in to the Account when the email differs from it only in case")
-  void shouldSignInToAccountWhenEmailDiffersFromItOnlyInCase(String storedEmail, String typedEmail)
-      throws Exception {
-    var stored = seedAccountWithEmail(storedEmail);
+  void shouldSignInToAccountWhenEmailDiffersFromItOnlyInCase(
+      String storedEmailFormat, String typedEmailFormat) throws Exception {
+    var randomPart = UUID.randomUUID().toString();
+    var stored = seedAccountWithEmail(storedEmailFormat.formatted(randomPart));
 
     var response =
         mockMvc
             .perform(
                 post("/api/auth/login")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(loginBody(typedEmail, authTestSupport.password())))
+                    .content(
+                        loginBody(
+                            typedEmailFormat.formatted(randomPart), authTestSupport.password())))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()
@@ -385,15 +388,17 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(claims.getSubject()).isEqualTo(stored.getId().toString());
   }
 
-  // U+0131, a dotless i, stays itself under lower(): the address is not ilker@example.com.
+  // U+0131, a dotless i, stays itself under lower(): the typed address is not the Account's.
   @Test
   @DisplayName(
       "Should refuse sign-in like an unknown email when the email differs from an Account's by a dotless i")
   void shouldRefuseSignInLikeUnknownEmailWhenEmailDiffersFromAccountByDotlessI() throws Exception {
-    var stored = seedAccountWithEmail("ilker@example.com");
+    var randomPart = UUID.randomUUID();
+    var stored = seedAccountWithEmail("ilker-" + randomPart + "@example.com");
     var unknownEmailAnswer = refusedSignIn("absent-" + UUID.randomUUID() + "@example.com");
 
-    assertThat(refusedSignIn("\u0131lker@example.com")).isEqualTo(unknownEmailAnswer);
+    assertThat(refusedSignIn("\u0131lker-" + randomPart + "@example.com"))
+        .isEqualTo(unknownEmailAnswer);
     assertThat(dsl.fetchCount(CREDENTIAL_ATTEMPT, CREDENTIAL_ATTEMPT.ACCOUNT_ID.eq(stored.getId())))
         .isZero();
   }
