@@ -30,6 +30,15 @@ public sealed interface MediaSegmentTimeline {
    */
   Optional<Duration> keyframeSeekPosition(int index);
 
+  /**
+   * The latest presentation time of the keyframe that an encoded attempt reads from when its first
+   * segment starts at this second: half a second before that start, so that the attempt decodes the
+   * pictures before it (streamarr/streamarr-server#502).
+   */
+  static Duration latestReadKeyframePresentation(int startSeconds) {
+    return Duration.ofSeconds(startSeconds).minusMillis(500);
+  }
+
   default int targetSegmentDurationSeconds() {
     return (int) targetSegmentDuration().toSeconds();
   }
@@ -221,8 +230,6 @@ public sealed interface MediaSegmentTimeline {
       @NonNull DemuxerSeekTime seekTime)
       implements MediaSegmentTimeline {
 
-    private static final Duration SEEK_MARGIN = Duration.ofMillis(500);
-
     @Override
     public Duration targetSegmentDuration() {
       return grid.targetSegmentDuration();
@@ -249,7 +256,7 @@ public sealed interface MediaSegmentTimeline {
       }
 
       var latestPresentation =
-          Duration.ofSeconds(mediaSegmentStartSeconds(index)).minus(SEEK_MARGIN);
+          MediaSegmentTimeline.latestReadKeyframePresentation(mediaSegmentStartSeconds(index));
       // Rounding up keeps a seek from reaching back to the keyframe before.
       var position =
           positions.keyframes().stream()
