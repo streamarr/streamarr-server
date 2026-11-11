@@ -28,7 +28,8 @@ class UnmeasuredCopyListenerTest {
   @DisplayName(
       "Should move the file's bitrate scan to the copied file's priority when a stream session"
           + " copies the file without a measurement")
-  void shouldMoveTheFilesBitrateScanToTheCopiedFilesPriorityWhenAStreamSessionCopiesTheFile() {
+  void
+      shouldMoveTheFilesBitrateScanToTheCopiedFilesPriorityWhenAStreamSessionCopiesTheFileWithoutAMeasurement() {
     waitingScans.put(mediaFileId, BitrateScanPriority.UNPROBED_BITRATE);
 
     listenerOver(this::raiseWaitingScan)

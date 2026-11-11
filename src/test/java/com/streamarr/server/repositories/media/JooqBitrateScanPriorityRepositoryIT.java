@@ -178,8 +178,9 @@ class JooqBitrateScanPriorityRepositoryIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should raise the rescheduled scan when a chunk's completion reschedules the scan while the"
           + " raise waits for its row")
-  void shouldRaiseTheRescheduledScanWhenAChunksCompletionReschedulesTheScanWhileTheRaiseWaits()
-      throws Exception {
+  void
+      shouldRaiseTheRescheduledScanWhenAChunksCompletionReschedulesTheScanWhileTheRaiseWaitsForItsRow()
+          throws Exception {
     var mediaFileId = UUID.randomUUID();
     requestBitrateScan(mediaFileId, BitrateScanPriority.PROBED_BITRATE);
     var waiting = bitrateScanOf(mediaFileId);
@@ -214,7 +215,7 @@ class JooqBitrateScanPriorityRepositoryIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should write nothing when the scan finishes and its row is removed while the raise waits"
           + " for the row")
-  void shouldWriteNothingWhenTheScanFinishesAndItsRowIsRemovedWhileTheRaiseWaits()
+  void shouldWriteNothingWhenTheScanFinishesAndItsRowIsRemovedWhileTheRaiseWaitsForTheRow()
       throws Exception {
     var mediaFileId = UUID.randomUUID();
     requestBitrateScan(mediaFileId, BitrateScanPriority.PROBED_BITRATE);
