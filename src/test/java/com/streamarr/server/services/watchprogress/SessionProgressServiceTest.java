@@ -10,11 +10,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.LearnedStreamEnd;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.SessionProgress;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -30,6 +33,9 @@ import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.properties.WatchProgressProperties;
 import com.streamarr.server.services.events.watchprogress.WatchStateChangedEvent;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -447,6 +453,91 @@ class SessionProgressServiceTest {
       var progress =
           sessionProgressRepository.findBySessionId(shortSession.getSessionId()).orElseThrow();
       assertThat(progress.getPositionSeconds()).isEqualTo(10);
+    }
+  }
+
+  @Nested
+  @DisplayName("Media End")
+  class MediaEnd {
+
+    // The header of a file cut near 14 s states 30 s. Measured against the header, a viewer who
+    // plays the file to its end stops at 47 %, so the file never completes and every resume
+    // starts in its last segment.
+    @Test
+    @DisplayName(
+        "Should mark a file watched when playback stops at the scanned media end and the container"
+            + " header overstates the file's length")
+    void shouldMarkAFileWatchedWhenPlaybackStopsAtTheScannedMediaEndOfAnOverstatedFile() {
+      var session = addSessionScannedToEndAt(Duration.ofSeconds(30), Duration.ofMillis(14_250));
+
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 14, PlaybackState.STOPPED);
+
+      assertThat(watchHistoryRepository.count()).isOne();
+      assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+        "Should measure progress against the scanned media end when the container header"
+            + " overstates the file's length")
+    void shouldMeasureProgressAgainstTheScannedMediaEndWhenTheHeaderOverstatesTheLength() {
+      var session = addSessionScannedToEndAt(Duration.ofSeconds(30), Duration.ofMillis(14_250));
+
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 7, PlaybackState.PLAYING);
+
+      var progress =
+          sessionProgressRepository.findBySessionId(session.getSessionId()).orElseThrow();
+      assertThat(progress.getDurationSeconds()).isEqualTo(14);
+      assertThat(progress.getPercentComplete()).isEqualTo(50.0);
+    }
+
+    // A file that was written to a pipe states no duration, so its header reads as zero.
+    @Test
+    @DisplayName(
+        "Should store progress against the scanned media end when the container header states no"
+            + " duration")
+    void shouldStoreProgressAgainstTheScannedMediaEndWhenTheHeaderStatesNoDuration() {
+      var session = addSessionScannedToEndAt(Duration.ZERO, Duration.ofMillis(14_250));
+
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 7, PlaybackState.PLAYING);
+
+      assertThat(sessionProgressRepository.findBySessionId(session.getSessionId()))
+          .get()
+          .extracting(SessionProgress::getDurationSeconds)
+          .isEqualTo(14);
+    }
+
+    // A session of a file whose header states the container duration, and whose keyframe packet
+    // scan read the video's end one frame before the media end and the audio's end at it.
+    private StreamSession addSessionScannedToEndAt(Duration containerDuration, Duration mediaEnd) {
+      var scanned =
+          LearnedStreamEnd.builder()
+              .mediaFileId(UUID.randomUUID())
+              .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+              .fromPacketScan(true);
+      var probe =
+          StreamSessionFixture.defaultProbeBuilder()
+              .duration(containerDuration)
+              .streams(
+                  List.of(
+                      StreamInfo.builder().index(0).codecType("video").build(),
+                      StreamInfo.builder().index(1).codecType("audio").build()))
+              .build()
+              .withLearnedEndTimes(
+                  List.of(
+                      scanned.streamIndex(0).endTime(mediaEnd.minusMillis(42)).build(),
+                      scanned.streamIndex(1).endTime(mediaEnd).build()));
+      var session =
+          StreamSessionFixture.defaultSessionBuilder()
+              .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
+              .mediaProbe(probe)
+              .build();
+      runtimeRegistry.save(session);
+      saveMediaFileForSession(session);
+      return session;
     }
   }
 
