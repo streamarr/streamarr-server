@@ -184,6 +184,83 @@ class ProfileLockPreviewServiceTest {
         .isEmpty();
   }
 
+  @Test
+  @DisplayName("Should list the Adults without a PIN when a Kid is added to the Household")
+  void shouldListTheAdultsWithoutAPinWhenAKidIsAddedToTheHousehold() {
+    var mara = available(ProfileFixture.defaultProfileBuilder().name("Mara"));
+    var theo = available(ProfileFixture.defaultProfileBuilder().name("Theo"));
+
+    var preview =
+        service
+            .creationPreview(reader, smith.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10))
+            .orElseThrow();
+
+    assertThat(preview)
+        .singleElement()
+        .satisfies(
+            locks -> {
+              assertThat(locks.household().getName()).isEqualTo("Smith Family");
+              assertThat(locks.profiles())
+                  .extracting(Profile::getId)
+                  .containsExactly(mara.getId(), theo.getId());
+              assertThat(locks.locksThisProfile()).isFalse();
+            });
+  }
+
+  @Test
+  @DisplayName("Should say the new Profile would lock when an Adult is added where a Kid lives")
+  void shouldSayTheNewProfileWouldLockWhenAnAdultIsAddedWhereAKidLives() {
+    available(ProfileFixture.kidProfileBuilder().name("Sam").maximumAllowedRatingAge(10));
+
+    var preview =
+        service
+            .creationPreview(
+                reader, smith.getId(), new ProfilePolicyTarget(ProfileKind.ADULT, null))
+            .orElseThrow();
+
+    assertThat(preview)
+        .singleElement()
+        .satisfies(
+            locks -> {
+              assertThat(locks.profiles()).isEmpty();
+              assertThat(locks.locksThisProfile()).isTrue();
+            });
+  }
+
+  @Test
+  @DisplayName("Should list no Household when the caller cannot see its Profile picker")
+  void shouldListNoHouseholdWhenTheCallerCannotSeeItsProfilePicker() {
+    var cabin = households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
+    var theo = profiles.save(ProfileFixture.defaultProfileBuilder().name("Theo").build());
+    shares.share(theo.getId(), cabin.getId(), true);
+
+    assertThat(
+            service.creationPreview(
+                reader, cabin.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10)))
+        .hasValue(List.of());
+  }
+
+  @Test
+  @DisplayName("Should answer nothing when the caller may not create a Profile in the Household")
+  void shouldAnswerNothingWhenTheCallerMayNotCreateAProfileInTheHousehold() {
+    available(ProfileFixture.defaultProfileBuilder().name("Mara"));
+    authorization.denyAll();
+
+    assertThat(
+            service.creationPreview(
+                reader, smith.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10)))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should answer nothing when the Household does not exist")
+  void shouldAnswerNothingWhenTheHouseholdDoesNotExist() {
+    assertThat(
+            service.creationPreview(
+                reader, UUID.randomUUID(), new ProfilePolicyTarget(ProfileKind.KID, 10)))
+        .isEmpty();
+  }
+
   private Profile available(Profile.ProfileBuilder<?, ?> profile) {
     var saved = profiles.save(profile.householdId(smith.getId()).build());
     shares.share(saved.getId(), smith.getId(), true);

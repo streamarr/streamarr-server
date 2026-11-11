@@ -36,6 +36,12 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
         households { household { id name } profiles { id name } locksThisProfile } } }
       """;
 
+  private static final String CREATION_PREVIEW =
+      """
+      query { profileCreationPreview(householdId: "%s", kind: %s, maximumAllowedRatingAge: %s) {
+        households { household { id name } profiles { id name } locksThisProfile } } }
+      """;
+
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
@@ -139,19 +145,89 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
         .isTrue();
   }
 
+  @Test
+  @DisplayName(
+      "Should list the Adults without a PIN when a HouseholdAdmin previews adding a Kid to its"
+          + " Household")
+  void shouldListTheAdultsWithoutAPinWhenAHouseholdAdminPreviewsAddingAKidToItsHousehold()
+      throws Exception {
+    var mara = cast.profileManagedBy(smith, ProfileFixture.defaultProfileBuilder().name("Mara"));
+
+    var preview = creationPreview(authTestSupport.accountBearer(smith), ProfileKind.KID, "10");
+
+    assertThat(preview.path("households"))
+        .singleElement()
+        .satisfies(
+            household -> {
+              assertThat(household.path("household").path("name").asString())
+                  .isEqualTo(smith.household().getName());
+              assertThat(household.path("profiles"))
+                  .extracting(profile -> profile.path("id").asString())
+                  .containsExactlyInAnyOrder(idOf(mara), idOf(smith.profile()));
+              assertThat(household.path("locksThisProfile").asBoolean()).isFalse();
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should say the new Profile would lock when a HouseholdAdmin previews adding an Adult where"
+          + " a Kid lives")
+  void shouldSayTheNewProfileWouldLockWhenAHouseholdAdminPreviewsAddingAnAdultWhereAKidLives()
+      throws Exception {
+    cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder().name("Sam"));
+
+    var preview = creationPreview(authTestSupport.accountBearer(smith), ProfileKind.ADULT, "null");
+
+    assertThat(preview.path("households"))
+        .singleElement()
+        .satisfies(
+            household -> {
+              assertThat(household.path("profiles")).isEmpty();
+              assertThat(household.path("locksThisProfile").asBoolean()).isTrue();
+            });
+  }
+
+  @Test
+  @DisplayName("Should answer null when a member who is no admin previews adding a Profile")
+  void shouldAnswerNullWhenAMemberWhoIsNoAdminPreviewsAddingAProfile() throws Exception {
+    var member = authTestSupport.createHouseholdMemberIdentity(smith);
+
+    assertThat(
+            creationPreview(authTestSupport.accountBearer(member), ProfileKind.KID, "10").isNull())
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should answer null when a device-bound session previews adding a Profile")
+  void shouldAnswerNullWhenADeviceBoundSessionPreviewsAddingAProfile() throws Exception {
+    assertThat(
+            creationPreview(authTestSupport.deviceBoundProfileBearer(smith), ProfileKind.KID, "10")
+                .isNull())
+        .isTrue();
+  }
+
   private JsonNode preview(String bearer, Profile profile, ProfileKind kind, String ceiling)
       throws Exception {
+    return data(bearer, POLICY_CHANGE_PREVIEW.formatted(profile.getId(), kind, ceiling))
+        .path("profilePolicyChangePreview");
+  }
+
+  private JsonNode creationPreview(String bearer, ProfileKind kind, String ceiling)
+      throws Exception {
+    return data(bearer, CREATION_PREVIEW.formatted(smith.household().getId(), kind, ceiling))
+        .path("profileCreationPreview");
+  }
+
+  private JsonNode data(String bearer, String query) throws Exception {
     var body =
         mockMvc
-            .perform(
-                graphqlRequest(
-                    bearer, POLICY_CHANGE_PREVIEW.formatted(profile.getId(), kind, ceiling)))
+            .perform(graphqlRequest(bearer, query))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andReturn()
             .getResponse()
             .getContentAsString();
-    return objectMapper.readTree(body).path("data").path("profilePolicyChangePreview");
+    return objectMapper.readTree(body).path("data");
   }
 
   private static String idOf(Profile profile) {

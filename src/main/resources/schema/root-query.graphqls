@@ -95,6 +95,16 @@ type Query {
     """
     profilePolicyChangePreview(profileId: ID!, kind: ProfileKind!, maximumAllowedRatingAge: Int): ProfileLockPreview
     """
+    Which Profiles creating a Profile of this kind and content limit in the Household would lock
+    there, and whether the new Profile itself would be locked until it has a PIN, before it is
+    created; maximumAllowedRatingAge null means no content limit. For whoever may create a Profile
+    there: its HouseholdAdmins whose own Personal Profile is an unrestricted Adult, and
+    ServerAdmins. It lists the Household only when the asking Account may see its Profile picker,
+    so a ServerAdmin who may not use the Household gets an empty list. Null for everyone else, for
+    a device-bound session and when no Household has the id.
+    """
+    profileCreationPreview(householdId: ID!, kind: ProfileKind!, maximumAllowedRatingAge: Int): ProfileLockPreview
+    """
     The Accounts that manage a Profile, for the Managers section of its page: the Account whose own
     Personal Profile it is first, then its direct managers by display name. Only the Profile's
     managers and ServerAdmins read it. Anyone else, a HouseholdAdmin who only supervises it among
