@@ -28,8 +28,6 @@ type ShareCode {
     expiresAt: String!
     "When the code was spent, withdrawn or invalidated. Null while it is live, and for an expired code."
     endedAt: String
-    "The Account that issued the code. Null once that Account is deleted."
-    issuedByAccountId: ID
     "The display name of the Account that issued the code. Null once that Account is deleted."
     issuedByDisplayName: String
 }

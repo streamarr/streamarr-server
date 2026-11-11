@@ -15,7 +15,6 @@ public record ShareCodeDetails(
     String issuedAt,
     String expiresAt,
     String endedAt,
-    UUID issuedByAccountId,
     String issuedByDisplayName) {
 
   public static ShareCodeDetails from(ShareCodeWithIssuer listed, Instant now) {
@@ -27,7 +26,6 @@ public record ShareCodeDetails(
         .issuedAt(shareCode.getCreatedOn().toString())
         .expiresAt(shareCode.getExpiresAt().toString())
         .endedAt(shareCode.getEndedAt() == null ? null : shareCode.getEndedAt().toString())
-        .issuedByAccountId(shareCode.getIssuerAccountId())
         .issuedByDisplayName(listed.issuedByDisplayName())
         .build();
   }

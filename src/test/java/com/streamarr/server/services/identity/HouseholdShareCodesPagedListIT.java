@@ -3,7 +3,6 @@ package com.streamarr.server.services.identity;
 import static com.streamarr.server.jooq.generated.tables.ShareCode.SHARE_CODE;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.services.mutation.Outcome;
@@ -13,17 +12,13 @@ import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PagedListContract;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 
-/**
- * The live share codes of a Household, paged through its codes kept to LIVE: withdrawing a code
- * takes it out of the list.
- */
+/** The live share codes of a Household: withdrawing a code takes it out of the list. */
 @Tag("IntegrationTest")
 @DisplayName("Household share code paging")
 class HouseholdShareCodesPagedListIT
@@ -68,9 +63,7 @@ class HouseholdShareCodesPagedListIT
   protected ListPage<ShareCodeWithIssuer> page(
       AuthTestSupport.TestIdentity host, PageRequest request) {
     return shareCodeService.householdShareCodes(
-        auth.identityOf(host),
-        new HouseholdShareCodesScope(host.household().getId(), List.of(ShareCodeStatus.LIVE)),
-        request);
+        auth.identityOf(host), host.household().getId(), request);
   }
 
   @Override

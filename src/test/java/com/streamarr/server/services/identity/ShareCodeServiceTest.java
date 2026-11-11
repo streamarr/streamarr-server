@@ -36,7 +36,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -252,7 +251,8 @@ class ShareCodeServiceTest {
     AuditFieldSetter.setCreatedOn(older, NOW.minusSeconds(60));
     accounts.deleteById(issuer.getId());
 
-    var page = service.householdShareCodes(identity(), every(), PaginationFixture.firstRows(10));
+    var page =
+        service.householdShareCodes(identity(), householdId, PaginationFixture.firstRows(10));
 
     assertThat(page.rows())
         .extracting(row -> row.item().shareCode().getId())
@@ -262,19 +262,23 @@ class ShareCodeServiceTest {
   }
 
   @Test
-  @DisplayName("Should keep only the codes in the statuses when the list names statuses")
-  void shouldKeepOnlyCodesInStatusesWhenListNamesStatuses() {
+  @DisplayName("Should list only the live codes when the Household also holds codes that ended")
+  void shouldListOnlyLiveCodesWhenHouseholdAlsoHoldsCodesThatEnded() {
     var live = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
     var expired = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
     var withdrawn =
         accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
+    var spent = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
     expired.setExpiresAt(NOW);
     accepted(service.withdrawShareCode(identity(), withdrawn.getId()));
+    shareCodes.trySpend(spent.getId(), NOW);
 
-    assertThat(listed(ShareCodeStatus.LIVE)).containsExactly(live.getId());
-    assertThat(listed(ShareCodeStatus.EXPIRED)).containsExactly(expired.getId());
-    assertThat(listed(ShareCodeStatus.WITHDRAWN, ShareCodeStatus.EXPIRED))
-        .containsExactlyInAnyOrder(withdrawn.getId(), expired.getId());
+    var page =
+        service.householdShareCodes(identity(), householdId, PaginationFixture.firstRows(10));
+
+    assertThat(page.rows())
+        .extracting(row -> row.item().shareCode().getId())
+        .containsExactly(live.getId());
   }
 
   @Test
@@ -283,7 +287,8 @@ class ShareCodeServiceTest {
     accepted(service.issueShareCode(identity(), householdId));
     authorization.denyAll();
 
-    assertThat(service.householdShareCodes(identity(), every(), PaginationFixture.firstRows(10)))
+    assertThat(
+            service.householdShareCodes(identity(), householdId, PaginationFixture.firstRows(10)))
         .isEqualTo(ListPage.empty());
   }
 
@@ -293,7 +298,9 @@ class ShareCodeServiceTest {
     authorization.failWith(Decision.FailureCause.EVALUATION_ERROR);
 
     assertThatThrownBy(
-            () -> service.householdShareCodes(identity(), every(), PaginationFixture.firstRows(10)))
+            () ->
+                service.householdShareCodes(
+                    identity(), householdId, PaginationFixture.firstRows(10)))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -459,22 +466,6 @@ class ShareCodeServiceTest {
   /** Someone of another Household, who holds the code. */
   private static AuthenticatedIdentity presenter() {
     return AuthenticatedIdentityFixture.accountScopedBuilder().accountId(PRESENTER_ID).build();
-  }
-
-  private HouseholdShareCodesScope every() {
-    return new HouseholdShareCodesScope(householdId, List.of());
-  }
-
-  private List<UUID> listed(ShareCodeStatus... statuses) {
-    return service
-        .householdShareCodes(
-            identity(),
-            new HouseholdShareCodesScope(householdId, List.of(statuses)),
-            PaginationFixture.firstRows(10))
-        .rows()
-        .stream()
-        .map(row -> row.item().shareCode().getId())
-        .toList();
   }
 
   private AuthenticatedIdentity identity() {

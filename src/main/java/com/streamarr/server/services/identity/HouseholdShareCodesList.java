@@ -10,13 +10,14 @@ import com.streamarr.server.repositories.auth.ShareCodeRepository;
 import com.streamarr.server.services.pagination.PagedList;
 import java.time.Clock;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-/** The share codes of one Household that the scope keeps, newest first. */
+/** The live share codes of one Household, newest first. */
 @Component
 @RequiredArgsConstructor
-public class HouseholdShareCodesList implements PagedList<ShareCode, HouseholdShareCodesScope> {
+public class HouseholdShareCodesList implements PagedList<ShareCode, UUID> {
 
   private static final ListOrder NEWEST_FIRST =
       ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.DESC).build();
@@ -25,12 +26,12 @@ public class HouseholdShareCodesList implements PagedList<ShareCode, HouseholdSh
   private final Clock clock;
 
   @Override
-  public ListOrder order(HouseholdShareCodesScope household) {
+  public ListOrder order(UUID householdId) {
     return NEWEST_FIRST;
   }
 
   @Override
-  public List<Row<ShareCode>> rowsBeyond(HouseholdShareCodesScope household, Seek seek) {
-    return shareCodeRepository.rowsInHousehold(household.filterAt(clock.instant()), seek);
+  public List<Row<ShareCode>> rowsBeyond(UUID householdId, Seek seek) {
+    return shareCodeRepository.liveRowsInHousehold(householdId, clock.instant(), seek);
   }
 }
