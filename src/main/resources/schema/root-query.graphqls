@@ -29,6 +29,11 @@ type Query {
     householdAdministration(householdId: ID!): HouseholdAdministration
     households(first: Int, after: String, last: Int, before: String): HouseholdAdministrationConnection!
     accountAdministration(accountId: ID!): AccountAdministration
+    """
+    A Profile's administrative details: for its managers, for the HouseholdAdmins of a Household
+    where it is available, and for ServerAdmins. Null for everyone else, for a device-bound session
+    and when no Profile has the id.
+    """
     profileAdministration(profileId: ID!): ProfileAdministration
     """
     A Household's Profiles for Household settings, by name. Its HouseholdAdmins and ServerAdmins
@@ -39,7 +44,17 @@ type Query {
     from. A device-bound session and a disabled Account get an empty list.
     """
     householdProfiles(householdId: ID!, first: Int, after: String, last: Int, before: String): HouseholdProfileConnection!
+    """
+    Every Account invitation, newest first. ServerAdmin work: everyone else, a device-bound session
+    included, gets FORBIDDEN.
+    """
     accountInvitations(first: Int, after: String, last: Int, before: String): AccountInvitationConnection!
+    """
+    Before an Account is invited for an existing Profile: the Profile, the Household it belongs to
+    and the other Households where it is available. ServerAdmin work: everyone else, a device-bound
+    session included, gets FORBIDDEN. Null when no Profile has the id, when it is already an
+    Account's Personal Profile, or when its Household no longer exists.
+    """
     accountInvitationProfilePreview(profileId: ID!): AccountInvitationProfilePreview
     """
     What offering this Profile to the Household a share code names would mean: whether the Profile
@@ -85,6 +100,12 @@ type Query {
     A missing code, an unauthorized caller or a device-bound session gets null.
     """
     shareCode(shareCodeId: ID!): ShareCode
+    """
+    The pending invitations to manage a Profile, newest first, for its managers and for
+    ServerAdmins. An invitation leaves the list once it is accepted, declined, canceled, replaced,
+    invalidated or expired. Everyone else gets an empty list, a HouseholdAdmin who only supervises
+    the Profile included, as do a device-bound session and a Profile that does not exist.
+    """
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     """
     Which Profiles giving this Profile the kind and content limit given would lock, before the
@@ -112,6 +133,10 @@ type Query {
     does not exist.
     """
     profileManagers(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileManagerConnection!
+    """
+    The pending invitations to manage a Profile that name the signed-in Account, newest first. Empty
+    for a device-bound session and for a disabled Account.
+    """
     pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     """
     A Household's active Devices, newest first, for its HouseholdAdmins and for ServerAdmins.
@@ -124,6 +149,11 @@ type Query {
     serverEsnBlocks(first: Int, after: String, last: Int, before: String): EsnBlockConnection!
     householdDeletionPreview(householdId: ID!): HouseholdDeletionPreview
     securityAuditEvents(first: Int, after: String, last: Int, before: String): SecurityAuditEventConnection!
+    """
+    A Profile's viewing activity, most recent first: for its managers, for a session whose selected
+    Profile it is, and for ServerAdmins. Everyone else gets an empty list, as does a Profile that
+    does not exist.
+    """
     profileActivity(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileActivityConnection!
     encoderPresetSetting: EncoderPresetSetting!
     idleSegmentRetentionSetting: IdleSegmentRetentionSetting!

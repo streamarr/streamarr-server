@@ -27,16 +27,19 @@ type ProfileManagerDetails {
     reader: Boolean!
 }
 
+"A page of the Accounts that manage a Profile."
 type ProfileManagerConnection {
     edges: [ProfileManagerEdge!]!
     pageInfo: PageInfo!
 }
 
+"One Account that manages a Profile and where it sits in the list."
 type ProfileManagerEdge {
     node: ProfileManagerDetails!
     cursor: String!
 }
 
+"An invitation to manage a Profile (ADR 0024 §ProfileManager). It never carries its code."
 type ManagerInvitationDetails {
     id: ID!
     profileId: ID
@@ -49,11 +52,13 @@ type ManagerInvitationDetails {
     expiresAt: String!
 }
 
+"A page of invitations to manage a Profile."
 type ManagerInvitationConnection {
     edges: [ManagerInvitationEdge!]!
     pageInfo: PageInfo!
 }
 
+"One invitation to manage a Profile and where it sits in its list."
 type ManagerInvitationEdge {
     node: ManagerInvitationDetails!
     cursor: String!
