@@ -76,12 +76,16 @@ public interface NotificationRepositoryCustom {
    */
   int deleteHistoryBefore(Instant cutoff, Instant now);
 
-  /** The unread news whose latest event is before the cutoff. */
+  /**
+   * The unread news whose latest event is before the cutoff, except a disabled Account's: nothing
+   * changes for a disabled Account's Notifications until it is enabled again.
+   */
   List<GuardedNotification> findUnreadNewsBefore(Instant cutoff);
 
   /**
    * Deletes the given Notifications that are still unread news with a latest event before the
-   * cutoff, so a later event keeps the news it moves. Answers how many it deleted.
+   * cutoff and whose recipient is not disabled, so a later event keeps the news it moves. Answers
+   * how many it deleted.
    */
   int deleteUnreadNewsBefore(Collection<UUID> notificationIds, Instant cutoff);
 }
