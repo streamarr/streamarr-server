@@ -197,6 +197,11 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onServer(Action.CHANGE_IDLE_SEGMENT_RETENTION));
       case Intent.ViewActiveStreams _ ->
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_ACTIVE_STREAMS));
+      case Intent.ViewNotifications _ ->
+          unitPlan(AuthorizationCheck.onAccount(Action.VIEW_NOTIFICATIONS, identity.accountId()));
+      case Intent.MarkNotificationsRead _ ->
+          unitPlan(
+              AuthorizationCheck.onAccount(Action.MARK_NOTIFICATIONS_READ, identity.accountId()));
     };
   }
 

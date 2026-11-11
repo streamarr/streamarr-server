@@ -274,7 +274,9 @@ class AuthorizationParityTest {
           DELETE_MY_ACCOUNT,
           TRANSFER_PROFILE,
           ADMINISTRATIVELY_DELETE_PROFILE,
-          DELETE_HOUSEHOLD ->
+          DELETE_HOUSEHOLD,
+          VIEW_NOTIFICATIONS,
+          MARK_NOTIFICATIONS_READ ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -376,6 +378,8 @@ class AuthorizationParityTest {
         new Intent.ChangeEncoderPreset(),
         new Intent.ViewIdleSegmentRetention(),
         new Intent.ChangeIdleSegmentRetention(),
-        new Intent.ViewActiveStreams());
+        new Intent.ViewActiveStreams(),
+        new Intent.ViewNotifications(),
+        new Intent.MarkNotificationsRead());
   }
 }
