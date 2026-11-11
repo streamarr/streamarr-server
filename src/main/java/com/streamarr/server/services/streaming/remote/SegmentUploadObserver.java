@@ -95,6 +95,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.INVALID_ARGUMENT.withDescription("Segment data exceeds declared length"));
       return;
     }
+
     try {
       prepared.append(request.getData().asReadOnlyByteBuffer());
     } catch (RuntimeException e) {
