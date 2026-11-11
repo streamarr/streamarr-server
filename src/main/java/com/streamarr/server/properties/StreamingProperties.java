@@ -1,5 +1,7 @@
 package com.streamarr.server.properties;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Objects;
@@ -135,11 +137,21 @@ public record StreamingProperties(
    */
   public Optional<Path> ownedSegmentFolder() {
     var segmentFolder = Path.of(segmentBasePath);
-    if (segmentFolder.equals(SHARED_SEGMENT_FOLDER)) {
+    if (isSharedSegmentFolder(segmentFolder)) {
       return Optional.empty();
     }
 
     return Optional.of(segmentFolder);
+  }
+
+  // Another spelling of the shared folder's path, or a soft link to it, names the same folder.
+  private static boolean isSharedSegmentFolder(Path segmentFolder) {
+    try {
+      return Files.isSameFile(segmentFolder, SHARED_SEGMENT_FOLDER);
+    } catch (IOException _) {
+      // One of the two does not exist yet, so the named folder holds no leftovers.
+      return false;
+    }
   }
 
   private static void requirePositive(String property, Duration value) {
