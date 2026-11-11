@@ -2198,10 +2198,10 @@ class WorkerSessionGrpcServiceTest {
 
   @Test
   @DisplayName(
-      "Should accept a media segment's second upload and keep the bytes that its first upload"
-          + " stored")
-  void shouldAcceptMediaSegmentsSecondUploadAndKeepBytesThatItsFirstUploadStored()
-      throws Exception {
+      "Should accept and credit the second upload and keep the first stored bytes when a media"
+          + " segment is uploaded twice")
+  void shouldAcceptAndCreditSecondUploadAndKeepFirstStoredBytesWhenMediaSegmentIsUploadedTwice(
+      @TempDir Path segmentFolder) throws Exception {
     var events = new CapturingEventPublisher();
     var registry =
         LiveWorkerConnectionRegistry.builder()
@@ -2218,7 +2218,7 @@ class WorkerSessionGrpcServiceTest {
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
     var job = variantJob(sourceNamespaceId);
     assertThat(registry.dispatch(job)).isPresent();
-    var segmentStore = new FakeSegmentStore();
+    var segmentStore = new LocalSegmentStore(segmentFolder);
     var service = new WorkerSessionGrpcService(registry, segmentStore);
 
     for (var segmentBytes : List.of(new byte[] {1}, new byte[] {2})) {
