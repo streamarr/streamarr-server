@@ -1,9 +1,6 @@
 package com.streamarr.server.services.notification;
 
 import com.streamarr.server.domain.notification.SubjectNotification;
-import com.streamarr.server.domain.pagination.PaginationDirection;
-import com.streamarr.server.domain.pagination.Position;
-import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -33,6 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
+
+  private static final int FEWEST_MARKED = 1;
+  private static final int MOST_MARKED = 100;
 
   private final AuthorizationService authorizationService;
   private final NotificationsList notificationsList;
@@ -69,70 +69,31 @@ public class NotificationService {
     return unreadCountOf(identity.accountId());
   }
 
-  /** Marks one of the Account's Notifications read; marking a read one again changes nothing. */
-  @Transactional
-  public Outcome<NotificationRead, MarkNotificationReadRejection> markNotificationRead(
-      @NonNull AuthenticatedIdentity identity, @NonNull UUID notificationId) {
-    authorizationService.requireAllowed(identity, new Intent.MarkNotificationsRead());
-    var shown =
-        notificationRepository
-            .findById(notificationId)
-            .filter(
-                notification -> notification.getRecipientAccountId().equals(identity.accountId()))
-            .flatMap(
-                notification ->
-                    notificationReads.shown(List.of(notification)).stream().findFirst());
-    if (shown.isEmpty()) {
-      return Outcome.rejected(new MarkNotificationReadRejection.NotFound());
-    }
-
-    if (notificationRepository.markRead(notificationId, identity.accountId(), clock.instant())) {
-      publishMarked(identity.accountId(), List.of(notificationId));
-    }
-
-    var read = shown.orElseThrow();
-    return notificationRepository
-        .findByIdAndReloadFromDatabase(notificationId)
-        .<Outcome<NotificationRead, MarkNotificationReadRejection>>map(
-            marked ->
-                Outcome.accepted(
-                    new NotificationRead(
-                        read.withNotification(marked), unreadCountOf(identity.accountId()))))
-        .orElseGet(() -> Outcome.rejected(new MarkNotificationReadRejection.NotFound()));
-  }
-
   /**
-   * Marks read every unread Notification of the Account at or below the position, and answers the
-   * Account's unread count after it. An empty position is one the client's cursor did not name.
+   * Marks read those of the given Notifications that are the Account's, that the guard shows it and
+   * that are unread, and answers the Account's unread count after it. Every other id is skipped
+   * alike, so the answer never tells which Notifications exist.
    */
   @Transactional
-  public Outcome<Integer, MarkAllNotificationsReadRejection> markAllNotificationsRead(
-      @NonNull AuthenticatedIdentity identity, @NonNull Optional<Position> through) {
+  public Outcome<Integer, MarkNotificationsReadRejection> markNotificationsRead(
+      @NonNull AuthenticatedIdentity identity, @NonNull List<UUID> notificationIds) {
     authorizationService.requireAllowed(identity, new Intent.MarkNotificationsRead());
-    if (through.isEmpty()) {
-      return Outcome.rejected(new MarkAllNotificationsReadRejection.UnreadablePosition());
+    if (notificationIds.size() < FEWEST_MARKED || notificationIds.size() > MOST_MARKED) {
+      return Outcome.rejected(
+          new MarkNotificationsReadRejection.IdCountOutOfRange(FEWEST_MARKED, MOST_MARKED));
     }
 
     var now = clock.instant();
     var accountId = identity.accountId();
-    var atOrBelow =
-        Seek.builder()
-            .order(NotificationsList.NEWEST_FIRST)
-            .position(through)
-            .direction(PaginationDirection.FORWARD)
-            .limit(1)
-            .includingPosition(true)
-            .build();
     var shown =
         notificationReads.shown(
-            notificationRepository.findUnreadOfRecipientThrough(accountId, atOrBelow, now));
-    var marked =
-        notificationRepository.markReadThrough(
+            notificationRepository.findUnreadOfRecipientWithIds(accountId, notificationIds, now));
+    publishMarked(
+        accountId,
+        notificationRepository.markRead(
             shown.stream().map(notification -> notification.notification().getId()).toList(),
             accountId,
-            atOrBelow,
-            now);
-    publishMarked(accountId, marked);
+            now));
     return Outcome.accepted(unreadCountOf(accountId));
   }
 

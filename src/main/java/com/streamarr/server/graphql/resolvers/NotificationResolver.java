@@ -11,8 +11,8 @@ import com.streamarr.server.domain.notification.ProfileShareLine;
 import com.streamarr.server.domain.pagination.OrderMediaBy;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
-import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dataloaders.ReaderLoaderKey;
@@ -22,11 +22,9 @@ import com.streamarr.server.graphql.dataloaders.ShareProfileDataLoader;
 import com.streamarr.server.graphql.dto.HouseholdSummary;
 import com.streamarr.server.graphql.dto.NotificationDetails;
 import com.streamarr.server.graphql.dto.NotificationsChangeDetails;
-import com.streamarr.server.graphql.inputs.MarkAllNotificationsReadInput;
-import com.streamarr.server.graphql.inputs.MarkNotificationReadInput;
+import com.streamarr.server.graphql.inputs.MarkNotificationsReadInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
-import com.streamarr.server.graphql.mutation.notification.MarkAllNotificationsReadPayload;
-import com.streamarr.server.graphql.mutation.notification.MarkNotificationReadPayload;
+import com.streamarr.server.graphql.mutation.notification.MarkNotificationsReadPayload;
 import com.streamarr.server.graphql.mutation.notification.NotificationErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ShareReference;
@@ -40,10 +38,13 @@ import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import org.dataloader.DataLoader;
 
@@ -103,49 +104,29 @@ public class NotificationResolver {
   }
 
   @DgsMutation
-  public MarkNotificationReadPayload markNotificationRead(
-      @InputArgument MarkNotificationReadInput input) {
+  public MarkNotificationsReadPayload markNotificationsRead(
+      @InputArgument MarkNotificationsReadInput input) {
     var identity = authorizationService.currentIdentity();
     notificationService.requireMarkNotificationsRead(identity);
-    return MutationPayloads.withUuid(
-        input.notificationId(),
-        notificationId -> {
-          var now = clock.instant();
-          return MutationPayloads.payload(
-              notificationService
-                  .markNotificationRead(identity, notificationId)
-                  .map(
-                      read ->
-                          new MarkNotificationReadPayload.MarkedNotification(
-                              NotificationDetails.from(read.notification(), now),
-                              read.unreadCount())),
-              NotificationErrors::toMarkReadError,
-              MarkNotificationReadPayload::of);
-        },
-        () ->
-            MutationPayloads.inputError(
-                NotificationErrors.invalidNotificationId(), MarkNotificationReadPayload::of));
-  }
-
-  @DgsMutation
-  public MarkAllNotificationsReadPayload markAllNotificationsRead(
-      @InputArgument MarkAllNotificationsReadInput input) {
-    var identity = authorizationService.currentIdentity();
-    return MutationPayloads.payload(
-        notificationService.markAllNotificationsRead(
-            identity, positionOf(listOf(identity.accountId()), input.through())),
-        NotificationErrors::toMarkAllReadError,
-        MarkAllNotificationsReadPayload::of);
-  }
-
-  // A cursor that GraphQL accepts but that names no position in this Account's list is a value
-  // the server cannot use, which the mutation answers as InvalidCursorError.
-  private Optional<Position> positionOf(ListIdentity list, String cursor) {
-    try {
-      return Optional.of(cursors.decode(list, cursor));
-    } catch (InvalidCursorException _) {
-      return Optional.empty();
+    var ids = input.ids();
+    var malformed = firstMalformed(ids);
+    if (malformed.isPresent()) {
+      return MutationPayloads.inputError(
+          NotificationErrors.invalidNotificationId(malformed.getAsInt()),
+          MarkNotificationsReadPayload::of);
     }
+
+    return MutationPayloads.payload(
+        notificationService.markNotificationsRead(
+            identity, ids.stream().map(Ids::parseUuid).toList()),
+        NotificationErrors::toMarkReadError,
+        MarkNotificationsReadPayload::of);
+  }
+
+  private static OptionalInt firstMalformed(List<String> ids) {
+    return IntStream.range(0, ids.size())
+        .filter(index -> !MutationPayloads.withUuid(ids.get(index), _ -> true, () -> false))
+        .findFirst();
   }
 
   @DgsTypeResolver(name = "Notification")

@@ -15,7 +15,4 @@ public sealed interface SubjectNotification permits ShareNotification {
    * request also until it resolves.
    */
   boolean unreadAt(Instant now);
-
-  /** The same subject with the Notification as it is stored now. */
-  SubjectNotification withNotification(Notification stored);
 }

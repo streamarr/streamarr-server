@@ -41,29 +41,16 @@ public interface NotificationRepositoryCustom {
    */
   List<Notification> findUnreadOfRecipient(UUID recipientAccountId, Instant now);
 
-  /** As {@link #findUnreadOfRecipient}, among the Notifications that the seek reads. */
-  List<Notification> findUnreadOfRecipientThrough(
-      UUID recipientAccountId, Seek through, Instant now);
+  /** As {@link #findUnreadOfRecipient}, among the Notifications with the given ids. */
+  List<Notification> findUnreadOfRecipientWithIds(
+      UUID recipientAccountId, Collection<UUID> notificationIds, Instant now);
 
   /**
-   * Marks read, at the instant, those of the given Notifications that are still unread and still
-   * among the ones the seek reads, and answers their ids. One that moved above the seek's position
-   * meanwhile stays unread.
+   * Marks read at the instant those of the given Notifications that are the recipient's and still
+   * unread, writing nothing else, so an update in place that commits first keeps what it stored.
+   * Answers the ids of the ones it marked.
    */
-  List<UUID> markReadThrough(
-      Collection<UUID> notificationIds, UUID recipientAccountId, Seek through, Instant now);
-
-  /**
-   * Marks the recipient's Notification read at the instant, writing nothing else, so an update in
-   * place that commits first keeps what it stored. False when it was already read.
-   */
-  boolean markRead(UUID notificationId, UUID recipientAccountId, Instant now);
-
-  /**
-   * The Notification as it is stored now, read past Hibernate's first-level cache, which a jOOQ
-   * write in this transaction leaves stale.
-   */
-  Optional<Notification> findByIdAndReloadFromDatabase(UUID notificationId);
+  List<UUID> markRead(Collection<UUID> notificationIds, UUID recipientAccountId, Instant now);
 
   /** Stores a new Notification for its recipient, unread, and answers its id. */
   UUID insert(NotificationDraft<NotificationKind, ProfileShareFacts> draft);

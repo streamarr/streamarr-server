@@ -1,38 +1,30 @@
 package com.streamarr.server.graphql.mutation.notification;
 
 import com.streamarr.server.graphql.mutation.InputPath;
-import com.streamarr.server.services.notification.MarkAllNotificationsReadRejection;
-import com.streamarr.server.services.notification.MarkNotificationReadRejection;
+import com.streamarr.server.services.notification.MarkNotificationsReadRejection;
 import com.streamarr.server.services.serversettings.ChangeNotificationRetentionRejection;
 import com.streamarr.server.services.serversettings.NotificationRetentionSetting;
 
 /** The exhaustive mappings from service rejection to schema error type, one per union. */
 public final class NotificationErrors {
 
-  private static final String NOTIFICATION_ID = "notificationId";
+  private static final String IDS = "ids";
 
   private NotificationErrors() {}
 
-  public static MarkNotificationReadError toMarkReadError(MarkNotificationReadRejection rejection) {
+  public static MarkNotificationsReadError toMarkReadError(
+      MarkNotificationsReadRejection rejection) {
     return switch (rejection) {
-      case MarkNotificationReadRejection.NotFound _ ->
-          new MarkNotificationReadError.NotificationNotFoundError(
-              "No such Notification.", InputPath.of(NOTIFICATION_ID));
+      case MarkNotificationsReadRejection.IdCountOutOfRange(var minimum, var maximum) ->
+          new MarkNotificationsReadError.NotificationIdCountOutOfRangeError(
+              "Pass from %d to %d ids.".formatted(minimum, maximum), InputPath.of(IDS));
     };
   }
 
-  public static MarkNotificationReadError invalidNotificationId() {
-    return new MarkNotificationReadError.InvalidIdError(
-        "Enter a valid ID.", InputPath.of(NOTIFICATION_ID));
-  }
-
-  public static MarkAllNotificationsReadError toMarkAllReadError(
-      MarkAllNotificationsReadRejection rejection) {
-    return switch (rejection) {
-      case MarkAllNotificationsReadRejection.UnreadablePosition _ ->
-          new MarkAllNotificationsReadError.InvalidCursorError(
-              "Pass a cursor from the notifications list unchanged.", InputPath.of("through"));
-    };
+  /** The id at the index of the input's list is not an id. */
+  public static MarkNotificationsReadError invalidNotificationId(int index) {
+    return new MarkNotificationsReadError.InvalidIdError(
+        "Enter a valid ID.", InputPath.element(IDS, index));
   }
 
   public static ChangeNotificationRetentionError toChangeRetentionError(

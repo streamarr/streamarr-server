@@ -123,17 +123,11 @@ type Mutation {
     changeEncoderPreset(input: ChangeEncoderPresetInput!): ChangeEncoderPresetPayload
     changeIdleSegmentRetention(input: ChangeIdleSegmentRetentionInput!): ChangeIdleSegmentRetentionPayload
     """
-    Marks one of the signed-in Account's Notifications read. Marking a read Notification again
-    returns it unchanged. A Notification of another Account, or one the guard hides, answers
-    NotificationNotFoundError. The same access as notifications.
+    Marks read the unread Notifications among the ids, which are the ones the client showed the
+    signed-in Account. A Notification that the client did not show stays unread, however old its
+    latest event. The same access as notifications.
     """
-    markNotificationRead(input: MarkNotificationReadInput!): MarkNotificationReadPayload
-    """
-    Marks read every unread Notification of the signed-in Account at or below a position in the
-    list. One that arrived, or moved up through an update in place, after the client showed the
-    list stays unread. The same access as notifications.
-    """
-    markAllNotificationsRead(input: MarkAllNotificationsReadInput!): MarkAllNotificationsReadPayload
+    markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload
     "Changes how long the server keeps read news and resolved requests. Requires a ServerAdmin."
     changeNotificationRetention(input: ChangeNotificationRetentionInput!): ChangeNotificationRetentionPayload
 }
