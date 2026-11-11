@@ -20,8 +20,9 @@ import lombok.NonNull;
  * 8-bit SDR that an encode may plan (#397), and {@code verifiedVideoEncoders} adds busy workers'
  * encoders. An encode plans no format in {@code excludedEncodeFormats}. {@code directPlayRefusals}
  * names why the format attempt does not direct-play the source file, and the decision names them
- * before its own reasons. {@code softwareEncodeCodecFamily} names the only codec family that the
- * decision may encode, with the software encoder, after a hardware encoder failed (ADR 0044).
+ * before its own reasons. {@code softwareContinuation} names the encode that the decision continues
+ * with the software encoder after a hardware encoder failed, and the decision may encode its codec
+ * family alone (ADR 0044).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecisionRequest(
@@ -38,7 +39,7 @@ public record TranscodeDecisionRequest(
     @NonNull List<WorkerVerifiedEncoder> videoEncoders,
     @NonNull List<WorkerVerifiedEncoder> verifiedVideoEncoders,
     @NonNull List<DecisionReason> directPlayRefusals,
-    @NonNull Optional<String> softwareEncodeCodecFamily) {
+    @NonNull Optional<SoftwareContinuation> softwareContinuation) {
 
   public TranscodeDecisionRequest {
     // A codec family that a worker with a free slot encodes has a worker-verified encoder.
@@ -69,7 +70,7 @@ public record TranscodeDecisionRequest(
     private List<WorkerVerifiedEncoder> videoEncoders = List.of();
     private List<WorkerVerifiedEncoder> verifiedVideoEncoders = List.of();
     private List<DecisionReason> directPlayRefusals = List.of();
-    private Optional<String> softwareEncodeCodecFamily = Optional.empty();
+    private Optional<SoftwareContinuation> softwareContinuation = Optional.empty();
 
     public TranscodeDecisionRequest build() {
       return new TranscodeDecisionRequest(
@@ -86,7 +87,7 @@ public record TranscodeDecisionRequest(
           videoEncoders,
           verifiedVideoEncoders,
           directPlayRefusals,
-          softwareEncodeCodecFamily);
+          softwareContinuation);
     }
   }
 }

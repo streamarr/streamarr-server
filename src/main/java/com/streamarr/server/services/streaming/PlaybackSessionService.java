@@ -129,8 +129,8 @@ public class PlaybackSessionService implements AutoCloseable {
   /**
    * The format attempt that a reservation starts: its stream session and the video operations it
    * may use. It plays {@code choice}, or {@code choiceWhenEncoding} once it turns out to encode the
-   * video. {@code softwareEncodeCodecFamily} names the codec family that it encodes in software
-   * after a hardware encoder failure.
+   * video. {@code softwareContinuation} names the encode that it continues in software after a
+   * hardware encoder failure.
    */
   @Builder
   private record ReservedFormatAttempt(
@@ -138,12 +138,12 @@ public class PlaybackSessionService implements AutoCloseable {
       @NonNull VideoFormatConstraint videoFormatConstraint,
       @NonNull PlayingChoice choice,
       @NonNull PlayingChoice choiceWhenEncoding,
-      @NonNull Optional<String> softwareEncodeCodecFamily) {
+      @NonNull Optional<SoftwareContinuation> softwareContinuation) {
 
     // Lombok builder defaults — its generated setters assign them
     @SuppressWarnings("java:S9438")
     private static class ReservedFormatAttemptBuilder {
-      private Optional<String> softwareEncodeCodecFamily = Optional.empty();
+      private Optional<SoftwareContinuation> softwareContinuation = Optional.empty();
     }
   }
 
@@ -780,7 +780,8 @@ public class PlaybackSessionService implements AutoCloseable {
     if (!isCurrentAttempt(playback, failedId)
         || endedNormally(playback)
         || !(playback.current instanceof PlaybackFormatAttempt.Ready(var session))
-        || !(outputOf(session) instanceof FailedFormatAttempt.Encode(var codecFamily, var _))) {
+        || !(outputOf(session)
+            instanceof FailedFormatAttempt.Encode(var codecFamily, var format))) {
       return Optional.empty();
     }
 
@@ -793,7 +794,7 @@ public class PlaybackSessionService implements AutoCloseable {
                 .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                 .choice(playback.choice)
                 .choiceWhenEncoding(playback.choice)
-                .softwareEncodeCodecFamily(Optional.of(codecFamily))));
+                .softwareContinuation(Optional.of(new SoftwareContinuation(codecFamily, format)))));
   }
 
   // A failed HDR or 10-bit encode keeps its format out of every later format attempt, in every
@@ -884,7 +885,7 @@ public class PlaybackSessionService implements AutoCloseable {
     playback.choice = next.choice();
     playback.lastAccessedAt = clock.instant();
     playback.current = new PlaybackFormatAttempt.Pending(childId);
-    if (next.softwareEncodeCodecFamily().isEmpty()) {
+    if (next.softwareContinuation().isEmpty()) {
       playback.formatAttemptCount++;
     }
 
@@ -958,7 +959,7 @@ public class PlaybackSessionService implements AutoCloseable {
           streamingService.createSession(
               childCommand(work.playback(), streamId)
                   .videoFormatConstraint(next.videoFormatConstraint())
-                  .softwareEncodeCodecFamily(next.softwareEncodeCodecFamily())
+                  .softwareContinuation(next.softwareContinuation())
                   .build());
       switch (outcome) {
         case Outcome.Accepted(var session) ->
