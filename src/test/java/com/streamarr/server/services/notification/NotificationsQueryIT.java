@@ -114,6 +114,8 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
       throws Exception {
     var kai = steps.profileManagedBy("Kai", sam, sam);
     var offer = steps.offer(sam, kai, riverside);
+    // The database keeps microseconds; a clock with finer ticks gives the offer in memory more.
+    var storedExpiry = shareRepository.findById(offer.getId()).orElseThrow().getExpiresAt();
 
     mockMvc
         .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
@@ -133,8 +135,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(true))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").doesNotExist())
         .andExpect(
-            jsonPath("$.data.notifications.edges[0].node.expiresAt")
-                .value(offer.getExpiresAt().toString()))
+            jsonPath("$.data.notifications.edges[0].node.expiresAt").value(storedExpiry.toString()))
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.share.id").value(offer.getId().toString()))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.share.status").value("PENDING"))
