@@ -44,7 +44,7 @@ public record ProfileShareLine(
     var verb =
         switch (answer) {
           case ACCEPTED -> "accepted";
-          case REJECTED -> "rejected";
+          case REJECTED -> "declined";
         };
     return householdName
         .map(household -> "%s %s %s.".formatted(quoted(household), verb, profile))

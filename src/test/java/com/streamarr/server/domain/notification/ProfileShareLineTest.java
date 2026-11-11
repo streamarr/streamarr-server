@@ -42,17 +42,17 @@ class ProfileShareLineTest {
             answered(ProfileShareAnswer.ACCEPTED, RIVERSIDE),
             "“Riverside” accepted the Profile “Kai”."),
         Arguments.of(
-            "rejected, with the Household",
+            "declined, with the Household",
             answered(ProfileShareAnswer.REJECTED, RIVERSIDE),
-            "“Riverside” rejected the Profile “Kai”."),
+            "“Riverside” declined the Profile “Kai”."),
         Arguments.of(
             "accepted, without the Household",
             answered(ProfileShareAnswer.ACCEPTED, Optional.empty()),
             "The offer of the Profile “Kai” was accepted."),
         Arguments.of(
-            "rejected, without the Household",
+            "declined, without the Household",
             answered(ProfileShareAnswer.REJECTED, Optional.empty()),
-            "The offer of the Profile “Kai” was rejected."),
+            "The offer of the Profile “Kai” was declined."),
         Arguments.of(
             "ended by the Household, told to the offering side",
             ended(ProfileShareEndedBy.HOUSEHOLD_SIDE, RIVERSIDE, false),
