@@ -2,6 +2,7 @@ package com.streamarr.server.properties;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Objects;
@@ -148,9 +149,12 @@ public record StreamingProperties(
   private static boolean isSharedSegmentFolder(Path segmentFolder) {
     try {
       return Files.isSameFile(segmentFolder, SHARED_SEGMENT_FOLDER);
-    } catch (IOException _) {
+    } catch (NoSuchFileException _) {
       // One of the two does not exist yet, so the named folder holds no leftovers.
       return false;
+    } catch (IOException _) {
+      // The server cannot tell the two apart, so it deletes nothing in the named folder.
+      return true;
     }
   }
 
