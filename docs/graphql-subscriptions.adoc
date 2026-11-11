@@ -325,7 +325,11 @@ The server stores `EXPIRED` on such offers every `AUTH_SHARING_EXPIRY_SWEEP_INTE
 === Building current state
 
 A client subscribes first and then queries `householdShares` or `profileShares`.
-It applies each change by `shareId`, and keeps a share in a list while its status is one of the list's statuses.
+It applies each change by `shareId`.
+In a `profileShares` list, it keeps a share while its status is one of the list's statuses.
+In a `householdShares` list, it keeps a share on the same terms when the reader is a ServerAdmin (`me.serverAdmin`).
+For any other reader, a `householdShares` list holds only offers that are `PENDING` and before their `expiresAt`, and `ACTIVE` shares, whatever its statuses, so the client keeps a share there only while it is one of those.
+A HouseholdAdmin who also manages the Profile still receives the share's later changes through the Profile's side, and still drops the share from their `householdShares` list once it is over.
 In a `householdShares` list kept to `visitorsOnly`, it also keeps a share only while its `visitor` field is true.
 The lists put the newest share first, so a share created after the client subscribed goes first.
 The server delivers one operation's changes in order, so the last change for a share carries its latest state.
