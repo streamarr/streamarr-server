@@ -2392,6 +2392,38 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName(
+      "Should refuse the request when a codec profile in its declaration carries a maximum tier")
+  void shouldRefuseTheRequestWhenACodecProfileInItsDeclarationCarriesAMaximumTier() {
+    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
+    var capabilities =
+        CAPABILITIES.replace(
+            "codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]",
+            "codecFamily: HEVC, codecProfiles: [{profile: HEVC_MAIN, maxLevel: 51, maxTier: MAIN}]");
+    assertThat(capabilities).contains("maxTier: MAIN");
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+                playbackSession { id }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), capabilities));
+
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(
+            error -> {
+              assertThat(error.getErrorType()).hasToString("INVALID_ARGUMENT");
+              assertThat(error.getMessage()).contains("maxTier");
+            });
+    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should refuse the request when it carries no capability declaration")
   void shouldRefuseTheRequestWhenItCarriesNoCapabilityDeclaration() {
     STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
