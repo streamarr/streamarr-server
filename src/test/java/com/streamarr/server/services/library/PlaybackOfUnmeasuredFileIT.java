@@ -4,7 +4,11 @@ import static com.streamarr.server.fixtures.BitrateScanChunkFixture.measured;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitBlockedBackendPidRunning;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
@@ -32,9 +36,12 @@ import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -51,6 +58,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.IntStream;
+import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
@@ -76,12 +84,20 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
   private static final int TWO_CHUNKS = 4_100;
   private static final String BITRATE_SCAN_CHUNK = "bitrate scan chunk";
   private static final String KEYFRAME_PACKET_SCAN = "keyframe packet scan";
+  // A third of the 30 s that a statement waits for a row lock before PostgreSQL ends it, so a
+  // stream session that waited for the raise would still wait when this bound passes.
+  private static final Duration SESSION_START_BOUND = Duration.ofSeconds(10);
+  private static final String RAISE = "update%keyframe_scan_scheduled_tasks%priority%";
+  private static final String LOCK_BITRATE_SCAN =
+      "SELECT task_instance FROM keyframe_scan_scheduled_tasks"
+          + " WHERE task_name = ? AND task_instance = ? FOR UPDATE";
 
   @Autowired private StreamingService streamingService;
   @Autowired private HlsPlaylistService playlists;
   @Autowired private BitrateScanRepository bitrateScans;
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private DSLContext dsl;
+  @Autowired private DataSource dataSource;
 
   @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean SegmentStore segmentStore;
@@ -136,7 +152,7 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
     store(copied, copyableOutcome(OptionalLong.of(PROBED_VIDEO_BITRATE), ONE_CHUNK));
     store(withoutKeyframePositions, keyframePacketScanRequired());
 
-    createCopySession(copied);
+    createCopySessionAndAwaitTheMovedScan(copied);
     startScanScheduler();
     awaitCompletedScans(4);
 
@@ -172,7 +188,7 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
     startScanScheduler();
     assertThat(firstChunkRuns.await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
 
-    createCopySession(copied);
+    createCopySessionAndAwaitTheMovedScan(copied);
     finishFirstChunk.complete(null);
     awaitCompletedScans(3);
 
@@ -203,6 +219,7 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
 
     var session = createCopySession(copied);
     var completedBeforeTheSessionStarted = List.copyOf(completedScans);
+    awaitMovedBitrateScan(copied);
     finishChunk.complete(null);
 
     assertThat(completedBeforeTheSessionStarted).as("The chunk still ran").isEmpty();
@@ -220,7 +237,7 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
     store(copied, copyableOutcome(OptionalLong.of(PROBED_VIDEO_BITRATE), ONE_CHUNK));
     freeKeyframePacketScanUnits(0);
 
-    createCopySession(copied);
+    createCopySessionAndAwaitTheMovedScan(copied);
     startScanScheduler();
     // Each claim reads the capacity first, so the second read follows a whole claim.
     assertThat(capacityReads.tryAcquire(2, BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
@@ -240,7 +257,7 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
       throws Exception {
     var copied = requestUnchangedFiles(1).getFirst();
     store(copied, copyableOutcome(OptionalLong.of(PROBED_VIDEO_BITRATE), TWO_CHUNKS));
-    createCopySession(copied);
+    createCopySessionAndAwaitTheMovedScan(copied);
 
     startScanScheduler();
     awaitCompletedScans(2);
@@ -259,7 +276,7 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
       throws Exception {
     var copied = requestUnchangedFiles(1).getFirst();
     store(copied, copyableOutcome(OptionalLong.of(PROBED_VIDEO_BITRATE), TWO_CHUNKS));
-    var first = createCopySession(copied);
+    var first = createCopySessionAndAwaitTheMovedScan(copied);
 
     startScanScheduler();
     awaitCompletedScans(2);
@@ -268,6 +285,37 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
         .as("The file's bitrate scan published its measurement")
         .isPresent();
     assertThat(multivariantPlaylist(first)).contains("AVERAGE-BANDWIDTH=8000000,");
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the stream session while the raise of the file's bitrate scan waits when"
+          + " another transaction holds the scan's row")
+  void
+      shouldStartTheStreamSessionWhileTheRaiseOfTheFilesBitrateScanWaitsWhenAnotherTransactionHoldsTheScansRow()
+          throws Exception {
+    var copied = requestUnchangedFiles(1).getFirst();
+    store(copied, copyableOutcome(OptionalLong.of(PROBED_VIDEO_BITRATE), ONE_CHUNK));
+    int raisesWaitingAfterTheStart;
+    int priorityAfterTheStart;
+
+    try (var holder = dataSource.getConnection();
+        var observer = dataSource.getConnection()) {
+      holder.setAutoCommit(false);
+      lockBitrateScan(holder, copied);
+      try (var start = BoundedTask.start(() -> createCopySession(copied))) {
+        awaitBlockedBackendPidRunning(observer, backendPid(holder), RAISE);
+        start.await(SESSION_START_BOUND);
+      }
+
+      raisesWaitingAfterTheStart = waitersBehind(observer, backendPid(holder), RAISE);
+      priorityAfterTheStart = bitrateScanPriorityOf(copied);
+      holder.rollback();
+    }
+
+    awaitMovedBitrateScan(copied);
+    assertThat(raisesWaitingAfterTheStart).isOne();
+    assertThat(priorityAfterTheStart).isEqualTo(BitrateScanPriority.PROBED_BITRATE.value());
   }
 
   @Override
@@ -306,6 +354,42 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
         .as("The stream session copies the video")
         .isTrue();
     return session;
+  }
+
+  // The raise runs on its own thread after the stream session starts.
+  private StreamSession createCopySessionAndAwaitTheMovedScan(ProbeTaskRequest file) {
+    var session = createCopySession(file);
+    awaitMovedBitrateScan(file);
+    return session;
+  }
+
+  private void awaitMovedBitrateScan(ProbeTaskRequest file) {
+    await()
+        .atMost(Duration.ofSeconds(BOUND_SECONDS))
+        .untilAsserted(
+            () ->
+                assertThat(bitrateScanPriorityOf(file))
+                    .isEqualTo(BitrateScanPriority.COPIED_BY_STREAM_SESSION.value()));
+  }
+
+  private int bitrateScanPriorityOf(ProbeTaskRequest file) {
+    return dsl.select(DSL.field(DSL.name("priority"), Integer.class))
+        .from(DSL.table(DSL.name(KeyframePacketScanScheduler.TABLE_NAME)))
+        .where(DSL.field(DSL.name("task_name"), String.class).eq(BitrateScanTask.NAME))
+        .and(DSL.field(DSL.name("task_instance"), String.class).eq(file.mediaFileId().toString()))
+        .fetchSingle()
+        .value1();
+  }
+
+  private static void lockBitrateScan(Connection holder, ProbeTaskRequest file)
+      throws SQLException {
+    try (var lock = holder.prepareStatement(LOCK_BITRATE_SCAN)) {
+      lock.setString(1, BitrateScanTask.NAME);
+      lock.setString(2, file.mediaFileId().toString());
+      try (var rows = lock.executeQuery()) {
+        assertThat(rows.next()).as("The file has a bitrate scan").isTrue();
+      }
+    }
   }
 
   private String multivariantPlaylist(StreamSession session) {
