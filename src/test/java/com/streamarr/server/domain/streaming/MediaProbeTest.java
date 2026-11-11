@@ -476,6 +476,39 @@ class MediaProbeTest {
     assertThat(probe.videoEndTime()).contains(Duration.ofMillis(12_291));
   }
 
+  // Packet times are not sample times. A Matroska file counts them in whole milliseconds, and an
+  // AC-3 track's last packet can state less than its frame holds: a scan read 5.009 s where the
+  // last decoded sample ends at 5.01356 s and the container states 5.014 s. A container that ends
+  // less than 1 s after the scanned end is therefore not cut short, and its duration stands.
+  @ParameterizedTest
+  @CsvSource({"5014, 5009, 5014", "6008, 5009, 6008", "6009, 5009, 5009", "30000, 5009, 5009"})
+  @DisplayName(
+      "Should end the media at the container's duration unless the container runs at least 1 s"
+          + " past the scanned end")
+  void shouldEndTheMediaAtTheContainersDurationUnlessItRunsAtLeastOneSecondPastTheScannedEnd(
+      long containerMillis, long scannedAudioEndMillis, long expectedMillis) {
+    var probe =
+        probeLasting(Duration.ofMillis(containerMillis), video(), audio(1))
+            .withLearnedEndTimes(
+                List.of(scannedEnd(0, 4_000), scannedEnd(1, scannedAudioEndMillis)));
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(expectedMillis));
+  }
+
+  // A file that was written to a pipe states no duration, so its header reads as zero.
+  @ParameterizedTest
+  @CsvSource({"0, 5009", "5000, 5009"})
+  @DisplayName("Should end the media at the scanned end when it lies past the container's duration")
+  void shouldEndTheMediaAtTheScannedEndWhenItLiesPastTheContainersDuration(
+      long containerMillis, long scannedAudioEndMillis) {
+    var probe =
+        probeLasting(Duration.ofMillis(containerMillis), video(), audio(1))
+            .withLearnedEndTimes(
+                List.of(scannedEnd(0, 4_000), scannedEnd(1, scannedAudioEndMillis)));
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(scannedAudioEndMillis));
+  }
+
   // The header of a file cut near 14 s states 30 s for each stream. A keyframe packet scan read
   // where each stream's packets end.
   @Test
