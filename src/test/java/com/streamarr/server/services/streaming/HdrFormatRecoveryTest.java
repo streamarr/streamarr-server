@@ -1042,6 +1042,7 @@ class HdrFormatRecoveryTest {
         .isEqualTo(planned == VideoRange.SDR ? Set.of() : Set.of(planned));
     assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:")))
         .as("the playlist entries that announce a range")
+        .isNotEmpty()
         .allSatisfy(
             entry ->
                 assertThat(VIDEO_RANGE_ATTRIBUTE.matcher(entry).find())

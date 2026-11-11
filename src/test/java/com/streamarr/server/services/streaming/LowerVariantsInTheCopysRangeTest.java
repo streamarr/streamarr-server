@@ -167,6 +167,7 @@ class LowerVariantsInTheCopysRangeTest {
         .containsOnly(ladder.range());
     assertThat(videoCodecOf(entries.getFirst())).startsWith(ladder.copySampleEntry() + ".");
     assertThat(lowerEntries)
+        .hasSize(3)
         .allSatisfy(
             entry -> {
               assertThat(videoCodecOf(entry)).matches(TEN_BIT_AV1);
