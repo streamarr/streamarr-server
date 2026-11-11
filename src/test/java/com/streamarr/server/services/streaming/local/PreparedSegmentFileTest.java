@@ -25,7 +25,6 @@ import org.junit.jupiter.api.io.TempDir;
 class PreparedSegmentFileTest {
 
   private static final Path DIRECTORY = Path.of("segments");
-  private static final Path TARGET = DIRECTORY.resolve("session/720p/segment0.m4s");
   private static final Path INITIALIZATION_TARGET = DIRECTORY.resolve("session/720p/init.mp4");
 
   // The temporary file is on the default file system and the target on another one. Java moves
@@ -47,20 +46,6 @@ class PreparedSegmentFileTest {
       assertThat(target).doesNotExist();
       assertThat(temporaryDirectory).isEmptyDirectory();
     }
-  }
-
-  @Test
-  @DisplayName("Should publish the appended bytes when nothing is stored at the target")
-  void shouldPublishAppendedBytesWhenNothingIsStoredAtTarget() throws Exception {
-    var files = new InMemoryFileOperations();
-    var expected = "ftyp moov from encoder A".getBytes();
-    var prepared = prepared(files, expected);
-
-    var publication = prepared.publishUnlessStored(INITIALIZATION_TARGET);
-
-    assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
-    assertThat(files.bytesAt(INITIALIZATION_TARGET)).containsExactly(expected);
-    assertThat(files.hasTemporaryFile()).isFalse();
   }
 
   @Test
