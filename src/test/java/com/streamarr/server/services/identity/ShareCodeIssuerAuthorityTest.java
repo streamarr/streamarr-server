@@ -45,8 +45,10 @@ class ShareCodeIssuerAuthorityTest {
   private final ShareCodes codes = new ShareCodes();
 
   @Test
-  @DisplayName("Should invalidate only the codes for Households the issuer may no longer issue for")
-  void shouldInvalidateOnlyCodesForHouseholdsIssuerMayNoLongerIssueFor() {
+  @DisplayName(
+      "Should invalidate only the codes for Households the issuer may no longer issue for when the"
+          + " issuer changes")
+  void shouldInvalidateOnlyCodesForHouseholdsIssuerMayNoLongerIssueForWhenIssuerChanges() {
     var kept = liveCode(ISSUER_ID, KEPT_HOUSEHOLD);
     var lost = liveCode(ISSUER_ID, LOST_HOUSEHOLD);
 
@@ -59,8 +61,9 @@ class ShareCodeIssuerAuthorityTest {
   }
 
   @Test
-  @DisplayName("Should leave codes that no longer work and other issuers' codes as they were")
-  void shouldLeaveCodesThatNoLongerWorkAndOtherIssuersCodesAsTheyWere() {
+  @DisplayName(
+      "Should leave codes that no longer work and other issuers' codes when the issuer changes")
+  void shouldLeaveCodesThatNoLongerWorkAndOtherIssuersCodesWhenIssuerChanges() {
     var expired = liveCode(ISSUER_ID, LOST_HOUSEHOLD);
     expired.setExpiresAt(NOW);
     var withdrawn = liveCode(ISSUER_ID, LOST_HOUSEHOLD);

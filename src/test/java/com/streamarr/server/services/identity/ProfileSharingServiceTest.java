@@ -176,8 +176,8 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should refuse a second offer that presents a code already spent")
-  void shouldRefuseSecondOfferThatPresentsCodeAlreadySpent() {
+  @DisplayName("Should refuse an offer when it presents a code already spent")
+  void shouldRefuseOfferWhenItPresentsCodeAlreadySpent() {
     var code = shareCodeFor(household);
     var other = profiles.save(ProfileFixture.defaultProfileBuilder().name("Other").build());
     acceptedShare(service.offerProfileShare(identity(), profile.getId(), presenting(code)));
