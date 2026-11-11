@@ -23,6 +23,7 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.ProfileCastSupport;
 import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.util.UUID;
@@ -51,6 +52,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private ProfileCastSupport cast;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
@@ -841,7 +843,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     var kid = kidProfile();
     var host = authTestSupport.createIdentity();
     try {
-      shareInto(kid, host);
+      cast.makeAvailable(kid, host);
 
       assertThat(readerAuthority(admin, kid)).isEqualTo("MANAGES");
       assertThat(readerAuthority(host, kid)).isEqualTo("SUPERVISES");
@@ -859,7 +861,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     var kid = kidProfile();
     var host = authTestSupport.createIdentity();
     try {
-      shareInto(kid, host);
+      cast.makeAvailable(kid, host);
 
       assertThat(administration(host, kid).path("household").isNull()).isTrue();
       assertThat(administration(admin, kid).path("household").path("name").asString())
@@ -909,17 +911,6 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
             .path("profileAdministration")
             .path("readerAuthority");
     return authority.isNull() ? null : authority.asString();
-  }
-
-  private void shareInto(Profile profile, AuthTestSupport.TestIdentity host) {
-    transactionTemplate.executeWithoutResult(
-        _ ->
-            shareRepository.saveAndFlush(
-                ProfileHouseholdShare.builder()
-                    .profileId(profile.getId())
-                    .householdId(host.household().getId())
-                    .status(ProfileShareStatus.ACTIVE)
-                    .build()));
   }
 
   private ResultActions graphql(String bearer, String query) throws Exception {
