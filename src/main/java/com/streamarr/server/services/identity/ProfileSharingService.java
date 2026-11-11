@@ -326,8 +326,7 @@ public class ProfileSharingService {
       return Optional.empty();
     }
 
-    return Optional.of(
-        new ShareRejections.OfferInvalidated(share.getInvalidationReason().orElse("withdrawn")));
+    return Optional.of(new ShareRejections.OfferInvalidated());
   }
 
   /**

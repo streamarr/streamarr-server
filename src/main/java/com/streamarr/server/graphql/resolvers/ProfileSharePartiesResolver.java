@@ -44,6 +44,23 @@ public class ProfileSharePartiesResolver {
 
   @DgsData(parentType = "ProfileShare", field = "household")
   public CompletableFuture<HouseholdSummary> household(DataFetchingEnvironment dfe) {
+    return householdOf(dfe);
+  }
+
+  // Why the system withdrew an offer tells what became of its Profile or its offerer, so it is for
+  // the readers who see the share's Household: the Profile's side and ServerAdmins.
+  @DgsData(parentType = "ProfileShare", field = "invalidationReason")
+  public CompletableFuture<String> invalidationReason(DataFetchingEnvironment dfe) {
+    ProfileShareDetails share = dfe.getSource();
+    if (share.invalidationReason() == null) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    return householdOf(dfe)
+        .thenApply(household -> household == null ? null : share.invalidationReason());
+  }
+
+  private CompletableFuture<HouseholdSummary> householdOf(DataFetchingEnvironment dfe) {
     DataLoader<ReaderLoaderKey<ShareReference>, HouseholdSummary> loader =
         dfe.getDataLoader(ShareHouseholdDataLoader.NAME);
     return loader.load(keyOf(dfe));

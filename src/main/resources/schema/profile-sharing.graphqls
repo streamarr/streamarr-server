@@ -11,7 +11,7 @@ enum ProfileShareStatus {
     CANCELED
     "Timed out before a decision."
     EXPIRED
-    "Withdrawn by the system because its offerer lost authority; invalidationReason says why."
+    "Withdrawn by the system because the offer could no longer stand, as when its offerer lost authority or its Profile was transferred; invalidationReason says why."
     INVALIDATED
     "Ended after being active."
     ENDED
@@ -25,7 +25,11 @@ type ProfileShare {
     requiredByAccountMembership: Boolean!
     expiresAt: String
     endedAt: String
-    "Why the system withdrew this offer; set only when status is INVALIDATED."
+    """
+    Why the system withdrew this offer; set only when status is INVALIDATED. Shown to the same
+    readers as household: the Profile's managers and ServerAdmins. Null for everyone else,
+    including the target Household's HouseholdAdmins.
+    """
     invalidationReason: String
     """
     The Profile on offer or shared. Shown to the Profile's managers and to ServerAdmins at every
@@ -90,7 +94,7 @@ extend type Subscription {
     The target Household's HouseholdAdmins follow a share while the offer is PENDING or the share
     is ACTIVE. They also get the change that ends it: the offer declined, canceled, expired or
     invalidated, or the share ended. That last change carries the share's own fields, such as its
-    status and invalidationReason, with profile, visitor, offeredByDisplayName and household null,
+    status, with profile, visitor, offeredByDisplayName, household and invalidationReason null,
     so the client can take the share out of its lists. No change of that share reaches them after
     it, not even its removal. ServerAdmins and the Profile's managers get every change.
     A share deleted with its Profile reaches only those who may read its Household's shares, and

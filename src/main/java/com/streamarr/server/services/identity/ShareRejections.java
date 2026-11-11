@@ -36,8 +36,11 @@ public final class ShareRejections {
 
   public record ShareNotPending() implements Accept, Decline {}
 
-  /** The system withdrew the offer — its offerer lost authority — and recorded why. */
-  public record OfferInvalidated(String reason) implements Accept {}
+  /**
+   * The system withdrew the offer. Why is not part of the refusal: the share's invalidation reason
+   * is for the Profile's side and ServerAdmins, and the target Household's HouseholdAdmins accept.
+   */
+  public record OfferInvalidated() implements Accept {}
 
   /** A Household hosting a restricted Profile holds an eligible HouseholdAdmin. */
   public record NoEligibleAdmin() implements Accept {}

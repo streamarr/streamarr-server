@@ -558,25 +558,28 @@ class ProfileSharingServiceTest {
   }
 
   @Test
-  @DisplayName("Should explain a withdrawn offer when the offerer lost authority before acceptance")
-  void shouldExplainWithdrawnOfferWhenOffererLostAuthorityBeforeAcceptance() {
+  @DisplayName(
+      "Should answer that the offer was withdrawn when the offerer lost authority before acceptance")
+  void shouldAnswerThatOfferWasWithdrawnWhenOffererLostAuthorityBeforeAcceptance() {
     var offer = pendingShare();
     authorization.decideForAccountWith(_ -> new Decision.Denied<>(Decision.DenialReason.POLICY));
 
     assertThat(rejectionOf(service.acceptProfileShare(identity(), offer.getId())))
-        .isEqualTo(new ShareRejections.OfferInvalidated("offerer no longer authorized"));
-    assertThat(shares.findById(offer.getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileShareStatus.INVALIDATED);
+        .isEqualTo(new ShareRejections.OfferInvalidated());
+    var withdrawn = shares.findById(offer.getId()).orElseThrow();
+    assertThat(withdrawn.getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertThat(withdrawn.getInvalidationReason()).contains("offerer no longer authorized");
   }
 
   @Test
-  @DisplayName("Should explain a withdrawn offer when it was invalidated before acceptance")
-  void shouldExplainWithdrawnOfferWhenItWasInvalidatedBeforeAcceptance() {
+  @DisplayName(
+      "Should answer that the offer was withdrawn when it was invalidated before acceptance")
+  void shouldAnswerThatOfferWasWithdrawnWhenItWasInvalidatedBeforeAcceptance() {
     var offer = pendingShare();
     shares.tryInvalidatePending(offer.getId(), "issuer disabled", NOW);
 
     assertThat(rejectionOf(service.acceptProfileShare(identity(), offer.getId())))
-        .isEqualTo(new ShareRejections.OfferInvalidated("issuer disabled"));
+        .isEqualTo(new ShareRejections.OfferInvalidated());
   }
 
   @Test

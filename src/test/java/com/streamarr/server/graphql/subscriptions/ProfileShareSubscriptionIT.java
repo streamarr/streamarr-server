@@ -219,10 +219,44 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
     assertThat(disabled.path("errors").isMissingNode()).as("errors in %s", disabled).isTrue();
     assertThat(invalidated.path("status").asString()).isEqualTo("INVALIDATED");
-    // The reason says nothing about what happened to the offerer's Account.
-    assertThat(invalidated.path("invalidationReason").asString())
-        .isEqualTo("offerer no longer authorized");
     assertPartiesHidden(invalidated);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell only the Profile's side why the offer was withdrawn when its offerer stops"
+          + " managing the Profile")
+  void shouldTellOnlyTheProfilesSideWhyTheOfferWasWithdrawnWhenItsOffererStopsManagingTheProfile() {
+    var manager = authTestSupport.createHouseholdMemberIdentity(owner);
+    identities.add(manager);
+    var profile = managedProfile();
+    grantManagement(manager, profile);
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var managerSocket = subscribedSocket(authTestSupport.accountBearer(manager));
+    var shareId = offer(profile);
+    nextShare(hostSocket, shareId);
+    nextShare(managerSocket, shareId);
+
+    var relinquished =
+        http.execute(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { relinquishProfileManagement(input: {profileId: "%s"}) {
+              profileId userErrors { __typename } } }
+            """
+                .formatted(profile.getId()));
+    var forHost = nextShare(hostSocket, shareId);
+    var forManager = nextShare(managerSocket, shareId);
+
+    assertThat(relinquished.at("/data/relinquishProfileManagement/userErrors").isEmpty())
+        .as("relinquish in %s", relinquished)
+        .isTrue();
+    assertThat(forHost.path("status").asString()).isEqualTo("INVALIDATED");
+    // The reason tells what became of the offerer, which the Household no longer sees.
+    assertPartiesHidden(forHost);
+    assertThat(forManager.path("status").asString()).isEqualTo("INVALIDATED");
+    assertThat(forManager.path("invalidationReason").asString())
+        .isEqualTo("offering manager lost management");
   }
 
   @Test
@@ -251,8 +285,6 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
         .as("acceptance in %s", accepted)
         .isEqualTo("OfferInvalidatedError");
     assertThat(withdrawn.path("status").asString()).isEqualTo("INVALIDATED");
-    assertThat(withdrawn.path("invalidationReason").asString())
-        .isEqualTo("offerer no longer authorized");
     assertPartiesHidden(withdrawn);
   }
 
@@ -695,13 +727,15 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   // What the target Household's HouseholdAdmins still get once the offer or the share is over: the
-  // share's own fields, and none of the Profile's details or the offerer's name (ADR 0024).
+  // share's own fields, and none of the Profile's details, the offerer's name, or why the system
+  // withdrew the offer (ADR 0024).
   private static void assertPartiesHidden(JsonNode share) {
     assertThat(share.path("id").asString()).as("id in %s", share).isNotEmpty();
     assertThat(share.path("profile").isNull()).as("profile in %s", share).isTrue();
     assertThat(share.path("visitor").isNull()).as("visitor in %s", share).isTrue();
     assertThat(share.path("offeredByDisplayName").isNull()).as("offerer in %s", share).isTrue();
     assertThat(share.path("household").isNull()).as("household in %s", share).isTrue();
+    assertThat(share.path("invalidationReason").isNull()).as("reason in %s", share).isTrue();
   }
 
   private static JsonNode nextChange(GraphQlTransportWsTestClient socket) {
