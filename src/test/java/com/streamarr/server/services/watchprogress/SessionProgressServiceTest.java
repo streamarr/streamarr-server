@@ -510,14 +510,64 @@ class SessionProgressServiceTest {
           .isEqualTo(14);
     }
 
-    // A session of a file whose header states the container duration, and whose keyframe packet
-    // scan read the video's end one frame before the media end and the audio's end at it.
-    private StreamSession addSessionScannedToEndAt(Duration containerDuration, Duration mediaEnd) {
-      var scanned =
-          LearnedStreamEnd.builder()
-              .mediaFileId(UUID.randomUUID())
-              .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
-              .fromPacketScan(true);
+    // The scan read the last sample 42 ms before the duration that the header states. That is
+    // inside the allowance of 1 s, so a healthy file is measured as before.
+    @Test
+    @DisplayName(
+        "Should measure progress against the container's duration when the scan agrees with the"
+            + " container header")
+    void shouldMeasureProgressAgainstTheContainersDurationWhenTheScanAgreesWithTheHeader() {
+      var session = addSessionScannedToEndAt(Duration.ofSeconds(30), Duration.ofMillis(29_958));
+
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 15, PlaybackState.PLAYING);
+
+      var progress =
+          sessionProgressRepository.findBySessionId(session.getSessionId()).orElseThrow();
+      assertThat(progress.getDurationSeconds()).isEqualTo(30);
+      assertThat(progress.getPercentComplete()).isEqualTo(50.0);
+    }
+
+    // A job attempt's FFmpeg can stop at a read error and still report an end, so only a keyframe
+    // packet scan moves the media end. Until a scan reads this file, it is measured as before.
+    @Test
+    @DisplayName(
+        "Should measure progress against the container's duration when only a job attempt"
+            + " reported the file's end")
+    void shouldMeasureProgressAgainstTheContainersDurationWhenOnlyAJobAttemptReportedTheEnd() {
+      var session =
+          addSessionWithLearnedEnds(
+              learnedEnd().fromPacketScan(false),
+              Duration.ofSeconds(30),
+              Duration.ofMillis(14_250));
+
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 15, PlaybackState.PLAYING);
+
+      var progress =
+          sessionProgressRepository.findBySessionId(session.getSessionId()).orElseThrow();
+      assertThat(progress.getDurationSeconds()).isEqualTo(30);
+      assertThat(progress.getPercentComplete()).isEqualTo(50.0);
+    }
+
+    private StreamSession addSessionScannedToEndAt(
+        Duration containerDuration, Duration scannedAudioEnd) {
+      return addSessionWithLearnedEnds(
+          learnedEnd().fromPacketScan(true), containerDuration, scannedAudioEnd);
+    }
+
+    private static LearnedStreamEnd.LearnedStreamEndBuilder learnedEnd() {
+      return LearnedStreamEnd.builder().snapshot(new SourceFileSnapshot(1, Instant.EPOCH));
+    }
+
+    // A session of a file whose header states the container duration, and whose video ends one
+    // frame before its audio, as the source of the learned ends read them.
+    private StreamSession addSessionWithLearnedEnds(
+        LearnedStreamEnd.LearnedStreamEndBuilder learned,
+        Duration containerDuration,
+        Duration audioEnd) {
+      var mediaFileId = UUID.randomUUID();
+      learned.mediaFileId(mediaFileId);
       var probe =
           StreamSessionFixture.defaultProbeBuilder()
               .duration(containerDuration)
@@ -528,10 +578,11 @@ class SessionProgressServiceTest {
               .build()
               .withLearnedEndTimes(
                   List.of(
-                      scanned.streamIndex(0).endTime(mediaEnd.minusMillis(42)).build(),
-                      scanned.streamIndex(1).endTime(mediaEnd).build()));
+                      learned.streamIndex(0).endTime(audioEnd.minusMillis(42)).build(),
+                      learned.streamIndex(1).endTime(audioEnd).build()));
       var session =
           StreamSessionFixture.defaultSessionBuilder()
+              .mediaFileId(mediaFileId)
               .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
               .mediaProbe(probe)
               .build();

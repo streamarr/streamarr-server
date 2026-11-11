@@ -56,8 +56,8 @@ public class SessionProgressService {
     runtimeRegistry.updatePlaybackState(sessionId, positionSeconds, state);
     eventPublisher.publishEvent(new StreamSessionTimelineReportedEvent(sessionId));
 
-    // Progress is measured against the media end, where every playlist of the stream session ends.
-    // The duration that a container header states can lie far past it, or be missing.
+    // Progress is measured against the media end, where the stream session's media ends. The
+    // duration that a container header states can lie far past it, or be missing.
     var durationSeconds = (int) session.getMediaProbe().mediaEnd().toSeconds();
     if (durationSeconds <= 0) {
       return;
