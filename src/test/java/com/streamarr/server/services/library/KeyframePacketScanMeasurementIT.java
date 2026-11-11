@@ -254,12 +254,12 @@ class KeyframePacketScanMeasurementIT extends AbstractProbeSchedulerIntegrationT
             .bitrateScanExecution(bitrateScanExecution)
             .meterRegistry(meterRegistry)
             .clock(Clock.systemUTC())
-            .listeners(List.of(recordingKeyframeScanCompletions()))
+            .listeners(List.of(keyframeScanCompletionListener()))
             .build();
     scanScheduler.start();
   }
 
-  private AbstractSchedulerListener recordingKeyframeScanCompletions() {
+  private AbstractSchedulerListener keyframeScanCompletionListener() {
     return new AbstractSchedulerListener() {
       @Override
       public void onExecutionComplete(ExecutionComplete executionComplete) {
