@@ -344,11 +344,45 @@ class NotificationRepositoryIT extends AbstractIntegrationTest {
         break;
       }
 
+      assertThat(page).extracting(Notification::getId).noneMatch(read::contains);
       page.forEach(notification -> read.add(notification.getId()));
       after = Optional.of(page.getLast().getId());
     }
 
     assertThat(read).doesNotHaveDuplicates().containsAll(arranged);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the news when a later event moved it past the cutoff or its recipient read it"
+          + " after the sweep chose it")
+  void shouldKeepTheNewsWhenALaterEventMovedItPastTheCutoffOrItsRecipientReadItAfterItWasChosen() {
+    var cutoff = EVENT.minus(Duration.ofDays(90));
+    var movedShare = offerOf(managedProfile("Ollie"), sam);
+    var moved = upsert(answered(sam, movedShare).at(cutoff.minusSeconds(60)).build());
+    var read =
+        upsert(
+            answered(sam, offerOf(managedProfile("Ash"), sam)).at(cutoff.minusSeconds(60)).build());
+    var arranged = List.of(moved.notificationId(), read.notificationId());
+    var chosen =
+        notificationRepository
+            .findUnreadNewsBefore(cutoff, Optional.empty(), Integer.MAX_VALUE)
+            .stream()
+            .map(Notification::getId)
+            .filter(arranged::contains)
+            .toList();
+    assertThat(chosen).containsExactlyInAnyOrderElementsOf(arranged);
+    upsert(answered(sam, movedShare).at(EVENT).build());
+    markRead(read.notificationId());
+
+    var deleted =
+        transactionTemplate.execute(
+            _ -> notificationRepository.deleteUnreadNewsBefore(chosen, cutoff));
+
+    assertThat(deleted).isZero();
+    assertThat(notificationsOf(sam))
+        .extracting(Notification::getId)
+        .containsExactlyInAnyOrderElementsOf(arranged);
   }
 
   private UUID insert(NotificationDraft<NotificationKind, ProfileShareFacts> draft) {
