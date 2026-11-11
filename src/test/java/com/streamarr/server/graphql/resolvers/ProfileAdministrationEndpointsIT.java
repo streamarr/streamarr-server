@@ -831,6 +831,59 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should say what the reader is to a visiting Kid when its manager and a hosting"
+          + " HouseholdAdmin read it")
+  void shouldSayWhatTheReaderIsToAVisitingKidWhenItsManagerAndAHostingHouseholdAdminReadIt()
+      throws Exception {
+    var kid = kidProfile();
+    var host = authTestSupport.createIdentity();
+    try {
+      shareInto(kid, host);
+
+      assertThat(readerAuthority(admin, kid)).isEqualTo("MANAGES");
+      assertThat(readerAuthority(host, kid)).isEqualTo("SUPERVISES");
+      assertThat(readerAuthority(serverAdmin, kid)).isNull();
+    } finally {
+      authTestSupport.deleteIdentity(host);
+    }
+  }
+
+  private String readerAuthority(AuthTestSupport.TestIdentity reader, Profile profile)
+      throws Exception {
+    var body =
+        graphql(
+                authTestSupport.accountBearer(reader),
+                """
+                query { profileAdministration(profileId: "%s") { readerAuthority } }
+                """
+                    .formatted(profile.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var authority =
+        objectMapper
+            .readTree(body)
+            .path("data")
+            .path("profileAdministration")
+            .path("readerAuthority");
+    return authority.isNull() ? null : authority.asString();
+  }
+
+  private void shareInto(Profile profile, AuthTestSupport.TestIdentity host) {
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            shareRepository.saveAndFlush(
+                ProfileHouseholdShare.builder()
+                    .profileId(profile.getId())
+                    .householdId(host.household().getId())
+                    .status(ProfileShareStatus.ACTIVE)
+                    .build()));
+  }
+
   private ResultActions graphql(String bearer, String query) throws Exception {
     return mockMvc.perform(graphqlRequest(bearer, query));
   }

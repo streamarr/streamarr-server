@@ -4,12 +4,14 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
+import com.streamarr.server.domain.auth.ProfileReaderRelation;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -201,5 +203,12 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
     return findAvailableInHousehold(householdId).stream()
         .map(Profile::getName)
         .anyMatch(name::equalsIgnoreCase);
+  }
+
+  // Who manages or supervises a Profile is decided by SQL that mirrors the Cedar facts; only
+  // PostgreSQL proves it (ProfileReaderAuthorityParityIT).
+  @Override
+  public List<ProfileReaderRelation> relationsTo(UUID accountId, Collection<UUID> profileIds) {
+    throw new UnsupportedOperationException("Reader relations are read only from PostgreSQL");
   }
 }

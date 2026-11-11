@@ -10,6 +10,25 @@ type ProfileAdministration {
     restricted: Boolean!
     householdId: ID!
     linked: Boolean!
+    """
+    What the requesting Account is to the Profile. MANAGES for each of its ProfileManagers: the
+    Account whose Personal Profile it is while that Profile is an unrestricted Adult, and every
+    Account with a direct grant. SUPERVISES for a HouseholdAdmin who does not manage it while the
+    restricted Profile is available in that Account's Household. Null for everyone else, a
+    ServerAdmin who does not manage it included.
+    """
+    readerAuthority: ProfileAuthority
+}
+
+"What an Account is to a Profile (ADR 0024)."
+enum ProfileAuthority {
+    "A ProfileManager: edits the Profile and its policy, manages its PIN, invites managers and offers it to Households."
+    MANAGES
+    """
+    A HouseholdAdmin where the restricted Profile is available: edits its name, picture, content
+    limit and PIN, never its kind, and never leaves it unrestricted.
+    """
+    SUPERVISES
 }
 
 input CreateProfileInput {
