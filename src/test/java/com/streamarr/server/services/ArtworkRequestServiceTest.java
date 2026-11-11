@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -10,6 +11,7 @@ import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ItemOutcome;
@@ -23,6 +25,7 @@ import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fakes.TestImages;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.metadata.ImageVariantService;
@@ -31,6 +34,7 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLTransientConnectionException;
@@ -559,6 +563,32 @@ class ArtworkRequestServiceTest {
       assertThat(imageRepository.findByEntityIdAndEntityType(entityId, entityType))
           .extracting(Image::getImageType)
           .containsOnly(imageType);
+    }
+
+    @Test
+    @DisplayName("Should store a transparent company logo as PNG variants at each configured width")
+    void shouldStoreTransparentCompanyLogoAsPngVariantsAtEachConfiguredWidth() {
+      var companyId = UUID.randomUUID();
+      var sources =
+          ArtworkSources.builder()
+              .targetId(companyId)
+              .targetType(ImageEntityType.COMPANY)
+              .sources(List.of(new TmdbImageSource(ImageType.LOGO, "/logo.png")))
+              .build();
+      imageDownloader.setImageData(createPngImageWithTransparentBorder());
+
+      artworkRequestService.requestBackgroundArtwork(sources, ImageRefreshMode.PRESERVE);
+
+      assertThat(imageRepository.findByEntityIdAndEntityType(companyId, ImageEntityType.COMPANY))
+          .filteredOn(image -> image.getVariant() != ImageSize.ORIGINAL)
+          .extracting(ArtworkRequestServiceTest.this::storedBytesOf)
+          .as("format, width and corner alpha of each resized logo")
+          .extracting(
+              TestImages::formatNameOf,
+              imageData -> TestImages.decode(imageData).getWidth(),
+              TestImages::alphaOfCornerPixel)
+          .containsExactlyInAnyOrder(
+              tuple("png", 92, 0), tuple("png", 185, 0), tuple("png", 500, 0));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -1366,6 +1396,14 @@ class ArtworkRequestServiceTest {
             "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
     artworkRequestService.requestPrimaryArtwork(run, sources);
     return artwork.closeAndAwait(run);
+  }
+
+  private byte[] storedBytesOf(Image image) {
+    try {
+      return Files.readAllBytes(artwork.fileSystem().getPath("/data/images", image.getPath()));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 
   private List<Path> storedFiles() throws IOException {

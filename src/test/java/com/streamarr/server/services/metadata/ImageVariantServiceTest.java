@@ -3,9 +3,13 @@ package com.streamarr.server.services.metadata;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
+import static com.streamarr.server.fakes.TestImages.decode;
+import static com.streamarr.server.fakes.TestImages.formatNameOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.data.Offset.offset;
+import static org.junit.jupiter.api.Named.named;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
@@ -20,14 +24,17 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Optional;
+import java.util.stream.Stream;
 import javax.imageio.ImageIO;
 import lombok.Builder;
 import net.coobird.thumbnailator.Thumbnails;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Image Variant Service Tests")
@@ -160,28 +167,36 @@ class ImageVariantServiceTest {
     }
   }
 
-  @Test
-  @DisplayName("Should encode every resized variant when image has transparent pixels")
-  void shouldEncodeEveryResizedVariantWhenImageHasTransparentPixels() {
-    var variants =
-        imageVariantService.generateVariants(createPngImageWithTransparentBorder(), ImageType.LOGO);
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("imagesWithTransparentPixels")
+  @DisplayName("Should encode every variant so that it decodes when image has transparent pixels")
+  void shouldEncodeEveryVariantSoThatItDecodesWhenImageHasTransparentPixels(byte[] imageData) {
+    var variants = imageVariantService.generateVariants(imageData, ImageType.LOGO);
 
     assertThat(variants)
-        .filteredOn(variant -> variant.variant() != ImageSize.ORIGINAL)
-        .hasSize(3)
+        .hasSize(4)
         .allSatisfy(
-            variant -> assertThat(variant.data()).as(variant.variant().name()).isNotEmpty());
+            variant -> assertThat(decode(variant.data())).as(variant.variant().name()).isNotNull());
+  }
+
+  private static Stream<Named<byte[]>> imagesWithTransparentPixels() {
+    return Stream.of(
+        named("a transparent border", createPngImageWithTransparentBorder()),
+        named("every pixel transparent", createTransparentPngImage()));
   }
 
   @ParameterizedTest
   @EnumSource(ImageType.class)
-  @DisplayName("Should generate four variants when given any ImageType")
-  void shouldGenerateFourVariantsWhenGivenAnyImageType(ImageType imageType) {
+  @DisplayName("Should generate four JPEG variants that decode when given any ImageType")
+  void shouldGenerateFourJpegVariantsThatDecodeWhenGivenAnyImageType(ImageType imageType) {
     var imageData = createTestImage(600, 900);
 
     var variants = imageVariantService.generateVariants(imageData, imageType);
 
-    assertThat(variants).hasSize(4);
+    assertThat(variants)
+        .hasSize(4)
+        .allSatisfy(variant -> assertThat(formatNameOf(variant.data())).isEqualTo("jpeg"))
+        .allSatisfy(variant -> assertThat(decode(variant.data())).isNotNull());
   }
 
   @Test
