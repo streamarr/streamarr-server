@@ -72,6 +72,16 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
       }
       """;
 
+  private static final String PAGE =
+      """
+      query Page($householdId: ID!, $first: Int, $after: String) {
+        householdShareCodes(householdId: $householdId, first: $first, after: $after) {
+          edges { cursor node { id } }
+          pageInfo { hasNextPage }
+        }
+      }
+      """;
+
   private static final String LOOK_UP =
       """
       mutation LookUp($code: String!) {
@@ -241,6 +251,45 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
 
     assertThat(list(authTestSupport.accountBearer(member))).isEmpty();
     assertThat(list(authTestSupport.deviceBoundProfileBearer(host))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return the next code when an after cursor is supplied")
+  void shouldReturnNextCodeWhenAfterCursorIsSupplied() throws Exception {
+    var bearer = authTestSupport.accountBearer(host);
+    issue(bearer, host.household().getId());
+    var middle = issuedId(issue(bearer, host.household().getId()));
+    var newest = issuedId(issue(bearer, host.household().getId()));
+
+    var firstPage = page(bearer, firstCodeOf(host.household().getId()));
+    var secondPage = page(bearer, codeAfter(cursorOf(firstPage), host.household().getId()));
+
+    assertThat(idsOf(firstPage)).containsExactly(newest);
+    assertThat(firstPage.path("pageInfo").path("hasNextPage").asBoolean()).isTrue();
+    assertThat(idsOf(secondPage)).containsExactly(middle);
+    assertThat(secondPage.path("pageInfo").path("hasNextPage").asBoolean()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject a share code cursor when it continues another Household's list")
+  void shouldRejectShareCodeCursorWhenItContinuesAnotherHouseholdsList() throws Exception {
+    var stranger = identity();
+    issue(authTestSupport.accountBearer(host), host.household().getId());
+    issue(authTestSupport.accountBearer(stranger), stranger.household().getId());
+    var strangersCursor =
+        cursorOf(
+            page(
+                authTestSupport.accountBearer(stranger),
+                firstCodeOf(stranger.household().getId())));
+
+    var continued =
+        executeAllowingErrors(
+            authTestSupport.accountBearer(host),
+            PAGE,
+            codeAfter(strangersCursor, host.household().getId()));
+
+    assertThat(errors(continued).path("extensions").path("code").asString())
+        .isEqualTo("INVALID_CURSOR");
   }
 
   @Test
@@ -482,6 +531,28 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
         .path("edges")
         .forEach(edge -> nodes.add(edge.path("node")));
     return nodes;
+  }
+
+  private JsonNode page(String bearer, Map<String, Object> variables) throws Exception {
+    return execute(bearer, PAGE, variables).path("data").path("householdShareCodes");
+  }
+
+  private static Map<String, Object> firstCodeOf(UUID householdId) {
+    return Map.of("householdId", householdId.toString(), "first", 1);
+  }
+
+  private static Map<String, Object> codeAfter(String cursor, UUID householdId) {
+    return Map.of("householdId", householdId.toString(), "first", 1, "after", cursor);
+  }
+
+  private static String cursorOf(JsonNode page) {
+    return page.path("edges").path(0).path("cursor").asString();
+  }
+
+  private static List<String> idsOf(JsonNode page) {
+    var ids = new ArrayList<String>();
+    page.path("edges").forEach(edge -> ids.add(edge.path("node").path("id").asString()));
+    return ids;
   }
 
   private void assertHouseholdNotFound(JsonNode payload) {
