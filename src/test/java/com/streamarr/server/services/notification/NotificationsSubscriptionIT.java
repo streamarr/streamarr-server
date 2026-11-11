@@ -9,15 +9,18 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.notification.Notification;
+import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
 import com.streamarr.server.services.identity.AccountAdministrationService;
 import com.streamarr.server.services.identity.AccountLifecycleService;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
+import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.ShareRejections;
 import com.streamarr.server.services.mutation.Outcome;
@@ -91,12 +94,16 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
       """;
 
   private static final ObjectMapper JSON = new ObjectMapper();
+  private static final String CONNECTED_EMAIL = "ollie.connected@example.com";
 
   @LocalServerPort private int port;
   @Autowired private MockMvc mockMvc;
   @Autowired private ProfileSharingService sharing;
   @Autowired private AccountLifecycleService accountLifecycle;
   @Autowired private AccountAdministrationService accountAdministration;
+  @Autowired private CredentialIssuanceService credentialIssuance;
+  @Autowired private AccountInvitationService accountInvitations;
+  @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private NotificationService notificationService;
   @Autowired private ProfileShareExpirySweeper expirySweeper;
   @Autowired private ProfileRepository profileRepository;
@@ -116,6 +123,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   private TestIdentity riverside;
   private TestIdentity riversideAdmin;
   private ShareSteps steps;
+  private ProfileConnections connections;
 
   @BeforeEach
   void setUp() {
@@ -130,6 +138,15 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
             .accounts(userAccountRepository)
             .transactions(transactionTemplate)
             .build();
+    connections =
+        ProfileConnections.builder()
+            .credentialIssuance(credentialIssuance)
+            .accountInvitations(accountInvitations)
+            .invitations(invitationRepository)
+            .accounts(userAccountRepository)
+            .auth(authTestSupport)
+            .recipientEmail(CONNECTED_EMAIL)
+            .build();
     sam = track(authTestSupport.createIdentity());
     theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
     riverside = track(authTestSupport.createIdentity());
@@ -141,6 +158,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   void tearDown() {
     sockets.forEach(GraphQlTransportWsTestClient::close);
     activeSubscriptions.awaitNoneActive();
+    connections.deleteConnected();
     identities.reversed().forEach(authTestSupport::deleteIdentity);
   }
 
@@ -297,6 +315,39 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     var withdrawn = nextChange(socket);
     assertThat(nodeOf(withdrawn).path("resolution").asString()).isEqualTo("WITHDRAWN");
     assertMatchesAFreshQuery(withdrawn, riversideAdmin);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver each visit's end, each withdrawn request and each new request when a Profile"
+          + " is connected to an Account")
+  void shouldDeliverEachEndWithdrawalAndNewRequestWhenAProfileIsConnectedToAnAccount()
+      throws Exception {
+    var brook = track(authTestSupport.createIdentity());
+    var ollie = steps.profileManagedBy("Ollie", sam, sam);
+    steps.accept(riverside, steps.offer(sam, ollie, riverside));
+    var waiting = steps.offer(sam, ollie, brook);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var offeringSide = subscribedSocket(authTestSupport.accountBearer(sam));
+    var householdSide = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+    var waitedOn = subscribedSocket(authTestSupport.accountBearer(brook));
+
+    connections.connect(ollie, serverAdmin, riverside);
+
+    var toldOffering = nextChange(offeringSide);
+    assertThat(nodeOf(toldOffering).path("__typename").asString())
+        .isEqualTo("ProfileShareEndedNotification");
+    assertMatchesAFreshQuery(toldOffering, sam);
+    var ended = nextChange(householdSide);
+    assertThat(nodeOf(ended).path("__typename").asString())
+        .isEqualTo("ProfileShareEndedNotification");
+    assertMatchesAFreshQuery(ended, riversideAdmin);
+    var reoffered = nextChange(householdSide);
+    assertThat(nodeOf(reoffered).path("__typename").asString())
+        .isEqualTo("ProfileShareOfferedNotification");
+    assertThat(nodeOf(reoffered).path("unread").asBoolean()).isTrue();
+    assertMatchesAFreshQuery(reoffered, riversideAdmin);
+    assertWithdrawn(nextChange(waitedOn), brook, waiting);
   }
 
   @Test
