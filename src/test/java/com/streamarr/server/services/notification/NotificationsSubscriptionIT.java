@@ -319,6 +319,25 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should deliver the request's withdrawal when the ServerAdmin that made the offer loses that"
+          + " authority")
+  void shouldDeliverTheRequestsWithdrawalWhenTheServerAdminThatMadeTheOfferLosesThatAuthority()
+      throws Exception {
+    var offerer = track(authTestSupport.createAdminIdentity());
+    var offer = steps.offer(offerer, kai(), riverside);
+    var revoker = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    var outcome =
+        accountAdministration.revokeServerAdmin(
+            authTestSupport.freshIdentityOf(revoker), offerer.account().getId(), "rotation");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertWithdrawn(nextChange(socket), riversideAdmin, offer);
+  }
+
+  @Test
+  @DisplayName(
       "Should deliver each visit's end, each withdrawn request and each new request when a Profile"
           + " is connected to an Account")
   void shouldDeliverEachEndWithdrawalAndNewRequestWhenAProfileIsConnectedToAnAccount()
