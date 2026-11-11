@@ -2,7 +2,6 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
-import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -28,6 +27,8 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.BitrateScanRequesters;
+import com.streamarr.server.fixtures.PlaybackSessionFixture;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -43,7 +44,6 @@ import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegist
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
-import com.streamarr.server.support.OutcomeTestSupport;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
@@ -60,6 +60,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
+import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -76,7 +77,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
  * Plays stream copies as a client does, against the pinned worker image: the probe task stores the
- * source's probe outcome, the entry service creates the stream session, and the client reads the
+ * source's probe outcome, the playback session service starts playback, and the client reads the
  * media playlist and every segment that it lists from the stream endpoints.
  */
 @Tag("SmokeTest")
@@ -85,6 +86,10 @@ class HlsCopyPlaylistApiSmokeTest {
 
   private static final int SEGMENT_SECONDS = 6;
   private static final double FRAME_SECONDS = 1.0 / 24;
+  private static final Offset<Double> HALF_A_FRAME = within(FRAME_SECONDS / 2);
+  // The AAC encoder's priming samples make each source about 23 ms longer than its video, which
+  // the last segment's EXTINF includes. The offset stays below one frame.
+  private static final Offset<Double> AUDIO_TAIL = within(0.03);
   private static final String TOKEN = "smoke-token";
   private static final Duration RESPONSE_BOUND = Duration.ofSeconds(90);
 
@@ -111,14 +116,14 @@ class HlsCopyPlaylistApiSmokeTest {
       new FakeMediaFileContainerInfoRepository();
   private final CapturingKeyframePacketScanRequests packetScans =
       new CapturingKeyframePacketScanRequests();
-  private final UUID streamSessionId = UUID.randomUUID();
-  private final AuthenticatedIdentity playbackIdentity =
-      AuthenticatedIdentityFixture.defaultIdentityBuilder()
-          .streamSessionId(streamSessionId)
-          .build();
+  private final AuthenticatedIdentity viewer =
+      StreamSessionFixture.identityFor(
+          StreamSessionFixture.defaultPlaybackAuthorityBuilder().build());
+  private volatile UUID streamSessionId;
   private WorkerStreamingSmokeFixture workerFixture;
   private RemoteFfprobeService probes;
   private HlsStreamingService streamingService;
+  private PlaybackSessionService playbackSessions;
   private MockMvc streamEndpoints;
   private volatile ProducerLifecycleService producerLifecycle;
   private Path sourceRoot;
@@ -175,6 +180,7 @@ class HlsCopyPlaylistApiSmokeTest {
             .producerLifecycle(producerLifecycle)
             .deliveryCoordinator(rig.coordinator())
             .build();
+    playbackSessions = PlaybackSessionFixture.playbackServiceBuilder(streamingService).build();
     var directPlayMetrics = new DirectPlayMetrics(new SimpleMeterRegistry());
     streamEndpoints =
         MockMvcBuilders.standaloneSetup(
@@ -182,7 +188,7 @@ class HlsCopyPlaylistApiSmokeTest {
                     streamingService,
                     new HlsPlaylistService(properties),
                     rig.coordinator(),
-                    new FakeAuthorizationService(() -> playbackIdentity, TOKEN),
+                    new FakeAuthorizationService(this::playbackIdentity, TOKEN),
                     new DirectPlaySourceService(
                         streamingService,
                         new RemoteTranscodeProperties(namespaceId, sourceRoot.toString()),
@@ -205,7 +211,7 @@ class HlsCopyPlaylistApiSmokeTest {
       case JobAttemptCompletedEvent completed ->
           new ShortCopyListener(lifecycle, _ -> {}).onJobAttemptCompleted(completed);
       default -> {
-        // No other event changes what the stream endpoints serve.
+        // These tests need no other listener.
       }
     }
   }
@@ -218,7 +224,9 @@ class HlsCopyPlaylistApiSmokeTest {
 
     try {
       if (streamingService != null) {
-        streamingService.destroySession(streamSessionId);
+        streamingService
+            .getAllSessions()
+            .forEach(session -> streamingService.destroySession(session.getSessionId()));
       }
     } finally {
       workerFixture.close();
@@ -236,7 +244,7 @@ class HlsCopyPlaylistApiSmokeTest {
     var source = generateSource("keyframe-gaps.mkv", KEYFRAME_GAPS_MATROSKA);
     storeProbeOutcome(source);
 
-    var session = createCopySession(source);
+    var session = startCopyPlayback(source);
     var firstAttempt = session.getHandle().orElseThrow().attemptId();
     var playlist = mediaPlaylist();
     var served = servedSegments(playlist);
@@ -246,7 +254,7 @@ class HlsCopyPlaylistApiSmokeTest {
         .as("the copy's segments open at the keyframes 10 s apart")
         .zipSatisfy(
             List.of(10.0, 10.0, 10.0, 6.0),
-            (advertised, expected) -> assertThat(advertised).isCloseTo(expected, within(0.1)));
+            (advertised, expected) -> assertThat(advertised).isCloseTo(expected, AUDIO_TAIL));
     assertThat(workerFixture.worker().videoPacketHashes(playable(playlist, served)))
         .as("the segments carry every source video packet once, in order, across both gaps")
         .isEqualTo(workerFixture.worker().videoPacketHashes(source));
@@ -266,7 +274,7 @@ class HlsCopyPlaylistApiSmokeTest {
     var source = generateSource("irregular-keyframes.mkv", IRREGULAR_KEYFRAMES_MATROSKA);
     storeProbeOutcome(source);
 
-    createCopySession(source);
+    startCopyPlayback(source);
     var playlist = mediaPlaylist();
     var served = servedSegments(playlist);
 
@@ -274,13 +282,13 @@ class HlsCopyPlaylistApiSmokeTest {
         .extracting(AdvertisedSegment::seconds)
         .zipSatisfy(
             List.of(7.5, 5.5, 7.5, 5.5, 5.0, 5.0),
-            (advertised, expected) -> assertThat(advertised).isCloseTo(expected, within(0.1)));
+            (advertised, expected) -> assertThat(advertised).isCloseTo(expected, AUDIO_TAIL));
     assertThat(playlist.targetDurationSeconds()).isEqualTo(8);
     assertThat(videoSecondsOf(playlist, served))
         .as("the video that each served segment holds lasts as long as its EXTINF says")
         .zipSatisfy(
             playlist.segments(),
-            (video, advertised) -> assertThat(video).isCloseTo(advertised.seconds(), within(0.1)));
+            (video, advertised) -> assertThat(video).isCloseTo(advertised.seconds(), AUDIO_TAIL));
   }
 
   // The index lists every keyframe of the 30 s source, but the file's data ends near 14 s. The
@@ -312,23 +320,23 @@ class HlsCopyPlaylistApiSmokeTest {
                 assertThat(known.positions().source())
                     .isEqualTo(KeyframePositionSource.PACKET_SCAN));
 
-    createCopySession(source);
+    startCopyPlayback(source);
     var playlist = mediaPlaylist();
     var served = servedSegments(playlist);
 
     assertThat(realEnd)
-        .as("the cut source ends before the plain grid's last slot starts")
-        .isLessThan(24.0);
+        .as("the cut source ends after its second slot and before the plain grid's last slot")
+        .isStrictlyBetween(6.0, 24.0);
     assertThat(playlist.segmentStarts())
         .as("one segment for each 6 s slot that starts before the real end at %s s", realEnd)
         .zipSatisfy(
             slotStartsBefore(realEnd),
-            (advertised, slotStart) -> assertThat(advertised).isCloseTo(slotStart, within(0.1)));
-    assertThat(firstVideoPresentationTimes(playlist, served))
-        .as("each advertised segment holds video from where the playlist says it starts")
+            (advertised, slotStart) -> assertThat(advertised).isCloseTo(slotStart, HALF_A_FRAME));
+    assertThat(videoOpeningsAfterTheFirst(playlist, served))
+        .as("each advertised segment's video opens as long after the first segment's as listed")
         .zipSatisfy(
             playlist.segmentStarts(),
-            (opening, advertised) -> assertThat(opening).isCloseTo(advertised, within(0.1)));
+            (opening, advertised) -> assertThat(opening).isCloseTo(advertised, HALF_A_FRAME));
   }
 
   static Stream<Arguments> indexFirstSources() {
@@ -387,7 +395,7 @@ class HlsCopyPlaylistApiSmokeTest {
     return Stream.iterate(0.0, start -> start < seconds, start -> start + SEGMENT_SECONDS).toList();
   }
 
-  /** Runs the probe task of the source with the worker, as a library scan requests it. */
+  // Runs the probe task of the source with the worker, as a library scan requests it.
   private MediaFile storeProbeOutcome(Path source) throws Exception {
     var file =
         mediaFiles.save(
@@ -422,7 +430,7 @@ class HlsCopyPlaylistApiSmokeTest {
     return file;
   }
 
-  /** Runs each keyframe packet scan that a probe task requested, as the scan's task does. */
+  // Runs each keyframe packet scan that a probe task requested, as the scan's task does.
   private List<KeyframePacketScanResult> runRequestedPacketScans() {
     var execution =
         KeyframePacketScanExecution.builder()
@@ -435,28 +443,33 @@ class HlsCopyPlaylistApiSmokeTest {
     return packetScans.requests().stream().map(execution::execute).toList();
   }
 
-  private StreamSession createCopySession(Path source) {
+  // Starts playback as the client's mutation does. The playback token that the client then sends
+  // to the stream endpoints names the stream session of the format attempt.
+  private StreamSession startCopyPlayback(Path source) {
     var file = mediaFiles.findFirstByFilepathUri(FilepathCodec.encode(source)).orElseThrow();
-    var session =
-        OutcomeTestSupport.accepted(
-            streamingService.createSession(
-                createStreamSessionCommandBuilder(file.getId(), playbackIdentity.profileId())
-                    .streamSessionId(streamSessionId)
-                    .identity(profileIdentity())
+    var playback =
+        PlaybackSessionFixture.acceptedPlayback(
+            playbackSessions.start(
+                PlaybackSessionFixture.startPlaybackBuilder()
+                    .mediaFileId(file.getId())
+                    .identity(viewer)
                     .build()));
 
+    assertThat(playback.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    var session = ((PlaybackFormatAttempt.Ready) playback.currentFormatAttempt()).session();
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    streamSessionId = session.getSessionId();
     return session;
   }
 
-  // The access token of the profile that the playback token names.
-  private AuthenticatedIdentity profileIdentity() {
-    return AuthenticatedIdentityFixture.profileScopedBuilder()
-        .accountId(playbackIdentity.accountId())
-        .authSessionId(playbackIdentity.authSessionId())
-        .householdId(playbackIdentity.householdId())
-        .contextHouseholdId(playbackIdentity.contextHouseholdId())
-        .profileId(playbackIdentity.profileId())
+  private AuthenticatedIdentity playbackIdentity() {
+    return AuthenticatedIdentityFixture.defaultIdentityBuilder()
+        .accountId(viewer.accountId())
+        .authSessionId(viewer.authSessionId())
+        .householdId(viewer.householdId())
+        .contextHouseholdId(viewer.contextHouseholdId())
+        .profileId(viewer.profileId())
+        .streamSessionId(streamSessionId)
         .build();
   }
 
@@ -467,7 +480,7 @@ class HlsCopyPlaylistApiSmokeTest {
     return MediaPlaylist.parse(response.getContentAsString());
   }
 
-  /** The body of each media segment that the playlist lists, requested in order by its URI. */
+  // The body of each media segment that the playlist lists, requested in order by its URI.
   private List<byte[]> servedSegments(MediaPlaylist playlist) throws Exception {
     var served = new ArrayList<byte[]>();
     for (var segment : playlist.segments()) {
@@ -498,7 +511,7 @@ class HlsCopyPlaylistApiSmokeTest {
         .get(RESPONSE_BOUND.toSeconds(), TimeUnit.SECONDS);
   }
 
-  /** The initialization segment and the served media segments, as one file that a player reads. */
+  // The initialization segment and the served media segments, as one file that a player reads.
   private Path playable(MediaPlaylist playlist, List<byte[]> mediaSegments) throws Exception {
     var media = new ByteArrayOutputStream();
     media.writeBytes(bodyOf(playlist.initializationUri()));
@@ -507,7 +520,8 @@ class HlsCopyPlaylistApiSmokeTest {
         Files.createTempFile(temporaryDirectory, "served", ".mp4"), media.toByteArray());
   }
 
-  private List<Double> firstVideoPresentationTimes(MediaPlaylist playlist, List<byte[]> served)
+  // When each served segment's first frame presents, counted from the first segment's first frame.
+  private List<Double> videoOpeningsAfterTheFirst(MediaPlaylist playlist, List<byte[]> served)
       throws Exception {
     var openings = new ArrayList<Double>();
     for (var segment : served) {
@@ -515,7 +529,7 @@ class HlsCopyPlaylistApiSmokeTest {
           videoPresentationTimes(playlist, segment).stream().min(Double::compare).orElseThrow());
     }
 
-    return openings;
+    return openings.stream().map(opening -> opening - openings.getFirst()).toList();
   }
 
   // From a segment's first frame to the end of its last frame.
@@ -539,7 +553,7 @@ class HlsCopyPlaylistApiSmokeTest {
 
   private record AdvertisedSegment(double seconds, String uri) {}
 
-  /** What a client reads from a media playlist: the lines that RFC 8216 §4.3 defines. */
+  // What a client reads from a media playlist: the lines that RFC 8216 §4.3 defines.
   private record MediaPlaylist(
       int targetDurationSeconds, String initializationUri, List<AdvertisedSegment> segments) {
 
@@ -572,7 +586,7 @@ class HlsCopyPlaylistApiSmokeTest {
           .orElseThrow();
     }
 
-    /** Where each segment starts: the sum of the EXTINF durations before it. */
+    // Where each segment starts: the sum of the EXTINF durations before it.
     List<Double> segmentStarts() {
       var starts = new ArrayList<Double>();
       var start = 0.0;
