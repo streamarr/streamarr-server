@@ -4,8 +4,9 @@ import java.time.Duration;
 import lombok.NonNull;
 
 /**
- * Where a completed job attempt read one chosen source stream's last sample, on the zero-based
- * timeline of the probe's keyframe positions (ADR 0037, early ends). The worker reads it from the
- * source, not from the probe.
+ * Where one source stream ends, on the zero-based timeline of the probe's keyframe positions (ADR
+ * 0037, early ends). A completed job attempt reports it for a chosen stream whose last sample it
+ * read, and a keyframe packet scan for each stream whose packets it read. The worker reads it from
+ * the source's packets, not from the container header.
  */
 public record SourceStreamEnd(int streamIndex, @NonNull Duration endTime) {}

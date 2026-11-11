@@ -10,9 +10,15 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
@@ -83,6 +89,51 @@ class LearnedStreamEndRepositoryIT extends AbstractIntegrationTest
   public void storeProbeOutcome(UUID mediaFileId, SourceFileSnapshot snapshot) {
     assertThat(probeOutcomes.publish(publication(mediaFileId, snapshot, ProbeVersion.CURRENT)))
         .isTrue();
+  }
+
+  @Override
+  public void storeProbeOutcomeNeedingPacketScan(UUID mediaFileId, SourceFileSnapshot snapshot) {
+    assertThat(probeOutcomes.publish(needingPacketScan(mediaFileId, snapshot))).isTrue();
+  }
+
+  @Override
+  public boolean publishKeyframePacketScan(
+      UUID mediaFileId, SourceFileSnapshot snapshot, List<SourceStreamEnd> streamEnds) {
+    return probeOutcomes.publishKeyframePacketScan(packetScan(mediaFileId, snapshot, streamEnds));
+  }
+
+  // A probe publication locks the media file's row and then replaces the file's outcome row. A
+  // scan publication that wrote the outcome row before it took the media file's row lock would
+  // wait for that lock while the probe publication waits for the outcome row, and PostgreSQL
+  // would end one of the two as a deadlock.
+  @Test
+  @DisplayName(
+      "Should let a probe publication replace the outcome when a keyframe packet scan publishes its"
+          + " stream ends at the same moment")
+  void shouldLetAProbePublicationReplaceTheOutcomeWhenAKeyframePacketScanPublishesAtTheSameMoment()
+      throws Exception {
+    var mediaFileId = createMediaFile();
+    storeProbeOutcomeNeedingPacketScan(mediaFileId, SNAPSHOT);
+    var scan =
+        packetScan(mediaFileId, SNAPSHOT, List.of(new SourceStreamEnd(1, Duration.ofSeconds(14))));
+
+    try (var threads = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publishingScan =
+          transactionTemplate.execute(
+              _ -> {
+                dsl.execute("SELECT 1 FROM media_file WHERE id = ? FOR UPDATE", mediaFileId);
+                var holder = dsl.fetchValue(DSL.field("pg_backend_pid()", Integer.class));
+                Future<Boolean> pending =
+                    threads.submit(() -> probeOutcomes.publishKeyframePacketScan(scan));
+                await().atMost(Duration.ofSeconds(10)).until(() -> hasBackendWaitingBehind(holder));
+                storeProbeOutcome(mediaFileId, SNAPSHOT);
+                return pending;
+              });
+
+      assertThat(publishingScan.get(10, TimeUnit.SECONDS)).isFalse();
+    }
+
+    assertThat(learnedStreamEnds.findFor(mediaFileId, SNAPSHOT)).isEmpty();
   }
 
   @Test
@@ -192,10 +243,25 @@ class LearnedStreamEndRepositoryIT extends AbstractIntegrationTest
   // A Matroska outcome whose audio header states no end time.
   private static ProbePublication publication(
       UUID mediaFileId, SourceFileSnapshot snapshot, int probeVersion) {
+    return publicationBuilder(mediaFileId, snapshot, new KeyframeKnowledge.NotReported())
+        .probeVersion(probeVersion)
+        .build();
+  }
+
+  private static ProbePublication needingPacketScan(UUID mediaFileId, SourceFileSnapshot snapshot) {
+    return publicationBuilder(
+            mediaFileId,
+            snapshot,
+            new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX))
+        .probeVersion(ProbeVersion.CURRENT)
+        .build();
+  }
+
+  private static ProbePublication.ProbePublicationBuilder publicationBuilder(
+      UUID mediaFileId, SourceFileSnapshot snapshot, KeyframeKnowledge keyframes) {
     return ProbePublication.builder()
         .mediaFileId(mediaFileId)
         .snapshot(snapshot)
-        .probeVersion(probeVersion)
         .outcome(
             new ProbeOutcome.Success(
                 ProbeContainer.builder()
@@ -213,7 +279,25 @@ class LearnedStreamEndRepositoryIT extends AbstractIntegrationTest
                         .codecType("audio")
                         .codec(Optional.of("aac"))
                         .build()),
-                new KeyframeKnowledge.NotReported()))
+                keyframes));
+  }
+
+  private static KeyframePacketScanPublication packetScan(
+      UUID mediaFileId, SourceFileSnapshot snapshot, List<SourceStreamEnd> streamEnds) {
+    return KeyframePacketScanPublication.builder()
+        .mediaFileId(mediaFileId)
+        .snapshot(snapshot)
+        .probeVersion(ProbeVersion.CURRENT)
+        .keyframes(
+            new KeyframeKnowledge.Known(
+                KeyframePositions.builder()
+                    .streamIndex(0)
+                    .timeBaseNumerator(1)
+                    .timeBaseDenominator(90_000)
+                    .source(KeyframePositionSource.PACKET_SCAN)
+                    .keyframes(List.of(new KeyframePosition(0, 0)))
+                    .build()))
+        .streamEnds(streamEnds)
         .build();
   }
 }
