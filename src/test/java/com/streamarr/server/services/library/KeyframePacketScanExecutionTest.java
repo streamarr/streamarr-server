@@ -429,7 +429,6 @@ class KeyframePacketScanExecutionTest {
         .build();
   }
 
-  // An outcome that names its chosen video stream, as every outcome from probe version 4 does.
   // An outcome of the current probe version that keeps the positions that the earlier version's
   // packet scan read, with the request for its own packet scan.
   private KeyframePacketScanTaskRequest storeOutcomeKeepingScannedPositions() {
@@ -448,6 +447,7 @@ class KeyframePacketScanExecutionTest {
     return request;
   }
 
+  // An outcome that names its chosen video stream, as every outcome from probe version 4 does.
   private KeyframePacketScanTaskRequest storeUnscannedNamingChosenStream(int probeVersion) {
     var snapshot = snapshot(source);
     outcomes.publish(

@@ -10,8 +10,10 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Probe version")
 class ProbeVersionTest {
 
-  // ADR 0032 decides this for every probe version through this one: "An earlier outcome and a
-  // probe version 9 outcome of the same file share one media time zero."
+  // ADR 0032 decides this for every probe version through this one. Its section on the start time
+  // correction, probe version 9 on main and version 10 in streamarr/streamarr-adr#135, says:
+  // "Media time zero stays the container start time that the probe reads under its limits, so
+  // every other stored time keeps its meaning."
   private static final int LAST_VERSION_WITH_A_DECIDED_KEYFRAME_TIMELINE = 9;
 
   @Test
@@ -21,7 +23,8 @@ class ProbeVersionTest {
         .as(
             "Decide whether probe version %d moves media time zero. If it does, make it"
                 + " ProbeVersion.FIRST_ON_CURRENT_KEYFRAME_TIMELINE, so that keyframe positions"
-                + " that an earlier version's packet scan read are dropped. Then record the"
+                + " that an earlier version's packet scan read are dropped, and decide the same"
+                + " for learned stream ends, which lie on that timeline too. Then record the"
                 + " decision here.",
             ProbeVersion.CURRENT)
         .isLessThanOrEqualTo(LAST_VERSION_WITH_A_DECIDED_KEYFRAME_TIMELINE);
