@@ -477,6 +477,16 @@ enum Action {
       "viewActiveStreams",
       ResourceKind.SERVER,
       Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_NOTIFICATIONS(
+      "viewNotifications",
+      ResourceKind.ACCOUNT,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  MARK_NOTIFICATIONS_READ(
+      "markNotificationsRead",
+      ResourceKind.ACCOUNT,
+      Authorizes.WRITE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";

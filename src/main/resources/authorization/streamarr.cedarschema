@@ -476,4 +476,17 @@ namespace Streamarr {
     resource: Profile,
     context: {},
   };
+
+  // The signed-in Account's own Notifications (ADR 0063); the resource is the Account itself.
+  action notifications;
+  action viewNotifications in notifications appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
+  action markNotificationsRead in notifications appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
 }

@@ -98,6 +98,7 @@ class ReadDecisionsInReadOnlyTransactionIT extends AbstractIntegrationTest {
       case VIEW_ENCODER_PRESET -> new Intent.ViewEncoderPreset();
       case VIEW_IDLE_SEGMENT_RETENTION -> new Intent.ViewIdleSegmentRetention();
       case VIEW_ACTIVE_STREAMS -> new Intent.ViewActiveStreams();
+      case VIEW_NOTIFICATIONS -> new Intent.ViewNotifications();
       default -> throw new AssertionError(action + " authorizes a read but names no intent here");
     };
   }

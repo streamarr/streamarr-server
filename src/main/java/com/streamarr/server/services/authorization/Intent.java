@@ -271,4 +271,14 @@ public sealed interface Intent {
 
   /** See every active stream on the server and why it plays as it does; a whole-surface gate. */
   record ViewActiveStreams() implements UnitIntent {}
+
+  /**
+   * List, count and follow the signed-in Account's own Notifications (ADR 0063): any enabled
+   * Account, never a device-bound session. Each Notification is then guarded by the read of its
+   * subject, decided for the Account from its stored relationships.
+   */
+  record ViewNotifications() implements UnitIntent {}
+
+  /** Mark the signed-in Account's own Notifications read: the same seats as viewing them. */
+  record MarkNotificationsRead() implements UnitIntent {}
 }

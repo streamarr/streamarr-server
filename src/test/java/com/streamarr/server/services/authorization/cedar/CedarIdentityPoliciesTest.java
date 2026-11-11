@@ -1631,6 +1631,54 @@ class CedarIdentityPoliciesTest {
   }
 
   @Nested
+  @DisplayName("Notifications")
+  class Notifications {
+
+    private final List<Intent.UnitIntent> notificationIntents =
+        List.of(new Intent.ViewNotifications(), new Intent.MarkNotificationsRead());
+
+    @Test
+    @DisplayName(
+        "Should let an enabled Account read and mark its own Notifications when its session is"
+            + " not device-bound, with or without a selected Profile")
+    void shouldLetAnEnabledAccountReadAndMarkItsOwnNotificationsWhenItsSessionIsNotDeviceBound() {
+      var selected =
+          identityBuilder().scope(TokenScope.PROFILE).profileId(personal.getId()).build();
+
+      assertThat(notificationIntents)
+          .allSatisfy(
+              intent -> {
+                assertThat(decide(atHome(), intent)).isEqualTo(ALLOWED);
+                assertThat(decide(member(), intent)).isEqualTo(ALLOWED);
+                assertThat(decide(visiting(), intent)).isEqualTo(ALLOWED);
+                assertThat(decide(selected, intent)).isEqualTo(ALLOWED);
+              });
+    }
+
+    @Test
+    @DisplayName(
+        "Should refuse every Notification action when the session is device-bound, a ServerAdmin's"
+            + " included")
+    void shouldRefuseEveryNotificationActionWhenTheSessionIsDeviceBound() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(notificationIntents)
+          .allSatisfy(intent -> assertThat(decide(onDevice(atHome()), intent)).isEqualTo(DENIED));
+    }
+
+    @Test
+    @DisplayName("Should refuse every Notification action when the Account is disabled")
+    void shouldRefuseEveryNotificationActionWhenTheAccountIsDisabled() {
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(notificationIntents)
+          .allSatisfy(intent -> assertThat(decide(atHome(), intent)).isEqualTo(DENIED));
+    }
+  }
+
+  @Nested
   @DisplayName("Transfers and deletion")
   class TransfersAndDeletion {
 

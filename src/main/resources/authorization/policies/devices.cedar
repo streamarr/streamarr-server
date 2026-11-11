@@ -21,6 +21,16 @@ forbid (
 )
 when { principal has deviceBound && principal.deviceBound };
 
+// A device-bound session receives no Notifications (ADR 0063): a shared TV runs on the session of
+// the Account that linked it while other people use it, and can open none of their subjects.
+@id("device-bound-sessions-receive-no-notifications")
+forbid (
+  principal,
+  action in Streamarr::Action::"notifications",
+  resource
+)
+when { principal has deviceBound && principal.deviceBound };
+
 // Any enabled Account can approve its own pairing grant. The pairing service checks the chosen
 // Household and ESN block outside Cedar. The successful poll rechecks both.
 @id("link-device-as-enabled-account")
