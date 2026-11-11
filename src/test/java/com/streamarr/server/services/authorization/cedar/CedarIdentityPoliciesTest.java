@@ -1352,6 +1352,34 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName(
+        "Should let only the named Account read an invitation, and never from a device-bound"
+            + " session")
+    void shouldLetOnlyTheNamedAccountReadAnInvitationAndNeverFromADeviceBoundSession() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var invitation =
+          new Intent.ViewReceivedManagerInvitation(
+              pendingManagerInvitation(orphan.getId(), account.getId()).getId());
+      assertThat(decide(atHome(), invitation)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), invitation)).isEqualTo(DENIED);
+
+      // The inviter and a ServerAdmin read it through the Profile's administration instead.
+      var someoneElses = pendingManagerInvitation(orphan.getId(), UUID.randomUUID());
+      someoneElses.setInviterAccountId(account.getId());
+      managerInvitations.save(someoneElses);
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.ViewReceivedManagerInvitation(someoneElses.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.ViewReceivedManagerInvitation(UUID.randomUUID())))
+          .isEqualTo(DENIED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), invitation)).isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should allow an invitation answer when the caller is the named recipient")
     void shouldAllowInvitationAnswerWhenCallerIsNamedRecipient() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());

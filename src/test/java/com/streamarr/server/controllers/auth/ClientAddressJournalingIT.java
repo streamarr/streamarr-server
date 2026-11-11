@@ -280,18 +280,18 @@ class ClientAddressJournalingIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should journal the client address when a manager invitation is declined over GraphQL")
-  void shouldJournalClientAddressWhenManagerInvitationIsDeclinedOverGraphQl() throws Exception {
+      "Should journal the client address when a manager invitation code is looked up over GraphQL")
+  void shouldJournalClientAddressWhenManagerInvitationCodeIsLookedUpOverGraphQl() throws Exception {
     graphql(
             authTestSupport.accountBearer(identity),
             "198.51.100.110",
             """
-            mutation { declineManagerInvitation(input: {code: "unknown.secret"}) {
-              invitation { status } userErrors { __typename } } }
+            mutation { lookUpManagerInvitationCode(input: {code: "unknown.secret"}) {
+              invitation { id } userErrors { __typename } } }
             """)
         .andExpect(status().isOk())
         .andExpect(
-            jsonPath("$.data.declineManagerInvitation.userErrors[0].__typename")
+            jsonPath("$.data.lookUpManagerInvitationCode.userErrors[0].__typename")
                 .value("ManagerInvitationNotFoundError"));
 
     assertThat(

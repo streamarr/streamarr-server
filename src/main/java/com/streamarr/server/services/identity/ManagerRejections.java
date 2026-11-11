@@ -14,10 +14,20 @@ public final class ManagerRejections {
 
   public sealed interface Cancel permits ManagerInvitationNotFound, InvitationNotPending {}
 
+  /**
+   * The named Account decides by the invitation's id. Anyone else, and an id that names no
+   * invitation, get the same miss; only the named Account learns that an invitation was decided.
+   */
   public sealed interface Accept
-      permits ManagerInvitationNotFound, RecipientNotEligible, AlreadyManager {}
+      permits ManagerInvitationNotFound,
+          InvitationNotPending,
+          RecipientNotEligible,
+          AlreadyManager {}
 
-  public sealed interface Decline permits ManagerInvitationNotFound {}
+  public sealed interface Decline permits ManagerInvitationNotFound, InvitationNotPending {}
+
+  /** A code that does not work, and one that names another Account, get the same miss. */
+  public sealed interface LookUp permits ManagerInvitationNotFound {}
 
   public sealed interface Relinquish
       permits ProfileNotFound, ManagementAlreadyRemoved, EligibleManagerRequired {}
@@ -56,10 +66,14 @@ public final class ManagerRejections {
 
   public record AlreadyManager() implements Accept, AdministrativelyGrant {}
 
-  /** The one deliberate answer for every miss: unknown, expired, decided, or hidden. */
-  public record ManagerInvitationNotFound() implements Cancel, Accept, Decline {}
+  /**
+   * The one deliberate answer for every miss: no such invitation, one the caller may not see, and a
+   * code that does not work.
+   */
+  public record ManagerInvitationNotFound() implements Cancel, Accept, Decline, LookUp {}
 
-  public record InvitationNotPending() implements Cancel {}
+  /** A visible invitation that was already decided, canceled or withdrawn, or that expired. */
+  public record InvitationNotPending() implements Cancel, Accept, Decline {}
 
   public record ManagementAlreadyRemoved() implements Relinquish {}
 

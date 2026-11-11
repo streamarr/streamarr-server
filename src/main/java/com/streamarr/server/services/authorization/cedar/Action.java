@@ -120,6 +120,12 @@ enum Action {
       ResourceKind.ACCOUNT,
       Authorizes.READ,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_RECEIVED_MANAGER_INVITATION(
+      "viewReceivedManagerInvitation",
+      ResourceKind.MANAGER_INVITATION,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.MANAGER_INVITATION_FACTS),
   VIEW_PROFILE_SHARE_HOUSEHOLDS(
       "viewProfileShareHouseholds",
       ResourceKind.PROFILE,

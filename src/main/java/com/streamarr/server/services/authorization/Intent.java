@@ -72,6 +72,13 @@ public sealed interface Intent {
   record ViewReceivedManagerInvitations() implements UnitIntent {}
 
   /**
+   * One manager invitation that names the caller's own Account, whatever its status: an enabled
+   * Account, never from a device-bound session, which may not answer it. The inviter and a
+   * ServerAdmin read it through the Profile's administration instead.
+   */
+  record ViewReceivedManagerInvitation(UUID invitationId) implements UnitIntent {}
+
+  /**
    * A Profile's shares into every Household and the name of each: the offering side only, meaning
    * its ProfileManagers and live ServerAdmin. The Account of a self-managed Personal Profile is one
    * of its ProfileManagers; the Account of a supervised one is not.

@@ -8,6 +8,7 @@ public final class ManagerErrors {
 
   private static final String PROFILE_ID = "profileId";
   private static final String CODE = "code";
+  private static final String INVITATION_ID = "invitationId";
   private static final String ACCOUNT_ID = "accountId";
   private static final String EMAIL = "email";
   private static final String INVITATION_UNAVAILABLE = "That invitation is unavailable.";
@@ -30,26 +31,30 @@ public final class ManagerErrors {
 
   public static CancelManagerInvitationError toCancelError(ManagerRejections.Cancel rejection) {
     return switch (rejection) {
-      case ManagerRejections.ManagerInvitationNotFound _ ->
-          new ManagerInvitationNotFoundError(INVITATION_UNAVAILABLE, InputPath.of("invitationId"));
-      case ManagerRejections.InvitationNotPending _ ->
-          new InvitationNotPendingError(INVITATION_UNAVAILABLE, InputPath.of("invitationId"));
+      case ManagerRejections.ManagerInvitationNotFound _ -> invitationNotFound(INVITATION_ID);
+      case ManagerRejections.InvitationNotPending _ -> invitationNotPending();
     };
   }
 
   public static AcceptManagerInvitationError toAcceptError(ManagerRejections.Accept rejection) {
     return switch (rejection) {
-      case ManagerRejections.ManagerInvitationNotFound _ ->
-          new ManagerInvitationNotFoundError(INVITATION_UNAVAILABLE, InputPath.of(CODE));
-      case ManagerRejections.RecipientNotEligible _ -> recipientNotEligible(CODE);
-      case ManagerRejections.AlreadyManager _ -> alreadyManager(CODE);
+      case ManagerRejections.ManagerInvitationNotFound _ -> invitationNotFound(INVITATION_ID);
+      case ManagerRejections.InvitationNotPending _ -> invitationNotPending();
+      case ManagerRejections.RecipientNotEligible _ -> recipientNotEligible(INVITATION_ID);
+      case ManagerRejections.AlreadyManager _ -> alreadyManager(INVITATION_ID);
     };
   }
 
   public static DeclineManagerInvitationError toDeclineError(ManagerRejections.Decline rejection) {
     return switch (rejection) {
-      case ManagerRejections.ManagerInvitationNotFound _ ->
-          new ManagerInvitationNotFoundError(INVITATION_UNAVAILABLE, InputPath.of(CODE));
+      case ManagerRejections.ManagerInvitationNotFound _ -> invitationNotFound(INVITATION_ID);
+      case ManagerRejections.InvitationNotPending _ -> invitationNotPending();
+    };
+  }
+
+  public static LookUpManagerInvitationCodeError toLookUpError(ManagerRejections.LookUp rejection) {
+    return switch (rejection) {
+      case ManagerRejections.ManagerInvitationNotFound _ -> invitationNotFound(CODE);
     };
   }
 
@@ -92,6 +97,15 @@ public final class ManagerErrors {
       case ManagerRejections.NotAManager _ -> notAManager();
       case ManagerRejections.EligibleManagerRequired _ -> eligibleManagerRequired();
     };
+  }
+
+  private static ManagerInvitationNotFoundError invitationNotFound(String inputPath) {
+    return new ManagerInvitationNotFoundError(INVITATION_UNAVAILABLE, InputPath.of(inputPath));
+  }
+
+  private static InvitationNotPendingError invitationNotPending() {
+    return new InvitationNotPendingError(
+        "That invitation no longer waits for an answer.", InputPath.of(INVITATION_ID));
   }
 
   private static ProfileNotFoundError profileNotFound() {

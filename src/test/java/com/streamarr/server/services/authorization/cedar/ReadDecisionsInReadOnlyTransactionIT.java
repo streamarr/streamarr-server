@@ -3,13 +3,17 @@ package com.streamarr.server.services.authorization.cedar;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.support.AuthTestSupport;
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +43,7 @@ class ReadDecisionsInReadOnlyTransactionIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private JwtDecoder jwtDecoder;
   @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private ProfileManagerInvitationRepository invitations;
 
   private AuthTestSupport.TestIdentity serverAdmin;
 
@@ -89,6 +94,8 @@ class ReadDecisionsInReadOnlyTransactionIT extends AbstractIntegrationTest {
       case VIEW_MANAGER_INVITATIONS -> new Intent.ViewManagerInvitations(profileId);
       case VIEW_PROFILE_MANAGERS -> new Intent.ViewProfileManagers(profileId);
       case VIEW_RECEIVED_MANAGER_INVITATIONS -> new Intent.ViewReceivedManagerInvitations();
+      case VIEW_RECEIVED_MANAGER_INVITATION ->
+          new Intent.ViewReceivedManagerInvitation(invitationToTheServerAdmin());
       case VIEW_PROFILE_SHARE_HOUSEHOLDS -> new Intent.ViewProfileShareHouseholds(profileId);
       case VIEW_HOUSEHOLD_SHARE_HISTORY -> new Intent.ViewHouseholdShareHistory(householdId);
       case VIEW_PROFILE_SHARE_CHANGES -> new Intent.ViewProfileShareChanges();
@@ -108,6 +115,24 @@ class ReadDecisionsInReadOnlyTransactionIT extends AbstractIntegrationTest {
       case VIEW_SHARE_CODE_LIMIT -> new Intent.ViewShareCodeLimit();
       default -> throw new AssertionError(action + " authorizes a read but names no intent here");
     };
+  }
+
+  private UUID invitationToTheServerAdmin() {
+    var account = serverAdmin.account();
+    return invitations
+        .saveAndFlush(
+            ProfileManagerInvitation.builder()
+                .profileId(serverAdmin.profile().getId())
+                .profileName(serverAdmin.profile().getName())
+                .inviterAccountId(account.getId())
+                .inviterDisplayName(account.getDisplayName())
+                .recipientAccountId(account.getId())
+                .recipientEmail(account.getEmail())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .publicId(UUID.randomUUID().toString())
+                .secretDigest(new byte[] {1})
+                .build())
+        .getId();
   }
 
   private AuthenticatedIdentity watchingAs(AuthTestSupport.TestIdentity identity) {

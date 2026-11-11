@@ -278,6 +278,11 @@ type EligibleProfileManagerRequiredError implements InputMutationError & Mutatio
     inputPath: [String!]!
 }
 
+"""
+The invitation no longer waits for an answer: it was accepted, declined, canceled, replaced or
+withdrawn, or it expired. For a manager invitation, only a caller who may see the invitation gets
+this; everyone else gets ManagerInvitationNotFoundError.
+"""
 type InvitationNotPendingError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
@@ -390,7 +395,10 @@ type AlreadyManagerError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The invitation is unavailable."
+"""
+No invitation that the caller may see has that id, or the code does not work. An invitation that
+exists but names another Account gets the same answer.
+"""
 type ManagerInvitationNotFoundError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

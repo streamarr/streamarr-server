@@ -183,25 +183,47 @@ public class ProfileManagerAdministrationService {
         _ -> Optional.empty());
   }
 
-  public Outcome<ProfileManagerInvitation, ManagerRejections.Accept> acceptManagerInvitation(
+  /**
+   * The invitation a presented code belongs to, so that its named Account can decide it by id. Each
+   * lookup is a credential attempt by the presenting Account, counted against the invitation, and
+   * it leaves the invitation pending. A session that may not read the invitations it received is
+   * refused with FORBIDDEN before any attempt counts. A code that does not work, and one that names
+   * another Account, get ManagerInvitationNotFound.
+   */
+  public Outcome<ProfileManagerInvitation, ManagerRejections.LookUp> lookUpManagerInvitationCode(
       AuthenticatedIdentity identity, ManagerInvitationCodeCommand command) {
-    var resolved = resolvePresented(command);
-    if (resolved.isEmpty()) {
+    authorizationService.requireAllowed(identity, new Intent.ViewReceivedManagerInvitations());
+    return resolvePresented(command)
+        .filter(
+            invitation ->
+                authorizationService.isAllowed(
+                    identity, new Intent.ViewReceivedManagerInvitation(invitation.getId())))
+        .<Outcome<ProfileManagerInvitation, ManagerRejections.LookUp>>map(Outcome::accepted)
+        .orElseGet(() -> Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound()));
+  }
+
+  /**
+   * The named Account accepts by the invitation's id and becomes a direct manager. No code is
+   * presented, so nothing counts as a credential attempt.
+   */
+  public Outcome<ProfileManagerInvitation, ManagerRejections.Accept> acceptManagerInvitation(
+      AuthenticatedIdentity identity, UUID invitationId) {
+    var found =
+        decidableBy(identity, invitationId, new Intent.AcceptManagerInvitation(invitationId));
+    if (found.isEmpty()) {
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
 
-    var invitation = resolved.get();
-    if (!authorizationService.isAllowed(
-        identity, new Intent.AcceptManagerInvitation(invitation.getId()))) {
-      // Return the same error as an unknown invitation when the caller is not its recipient.
-      return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
+    var invitation = found.get();
+    var now = clock.instant();
+    if (invitation.statusAt(now) != ProfileManagerInvitationStatus.PENDING) {
+      return Outcome.rejected(new ManagerRejections.InvitationNotPending());
     }
 
     if (!userAccountRepository.findById(identity.accountId()).map(this::isEligible).orElse(false)) {
       return Outcome.rejected(new ManagerRejections.RecipientNotEligible());
     }
 
-    var now = clock.instant();
     Outcome<Optional<ProfileManagerInvitation>, ManagerRejections.Accept> attempt =
         mutationTransactions.write(
             () -> {
@@ -214,7 +236,7 @@ public class ProfileManagerAdministrationService {
 
               if (!invitationLifecycle.tryAcceptPending(
                   invitation.getId(), identity.accountId(), now)) {
-                throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
+                throw new MutationRejection(new ManagerRejections.InvitationNotPending());
               }
 
               if (!profileManagerRepository.tryGrantDirectManagement(
@@ -238,8 +260,7 @@ public class ProfileManagerAdministrationService {
         accepted ->
             accepted
                 .<Outcome<ProfileManagerInvitation, ManagerRejections.Accept>>map(Outcome::accepted)
-                .orElseGet(
-                    () -> Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound())),
+                .orElseGet(() -> Outcome.rejected(new ManagerRejections.InvitationNotPending())),
         Outcome::rejected);
   }
 
@@ -258,33 +279,38 @@ public class ProfileManagerAdministrationService {
     profileIds.stream()
         .distinct()
         .sorted()
-        .forEach(
-            profileId -> lockProfile(profileId, ManagerRejections.ManagerInvitationNotFound::new));
+        .forEach(profileId -> lockProfile(profileId, ManagerRejections.InvitationNotPending::new));
   }
 
+  /** The named Account declines by the invitation's id. */
   public Outcome<ProfileManagerInvitation, ManagerRejections.Decline> declineManagerInvitation(
-      AuthenticatedIdentity identity, ManagerInvitationCodeCommand command) {
-    var resolved = resolvePresented(command);
-    if (resolved.isEmpty()) {
-      return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
-    }
-
-    var invitation = resolved.get();
-    if (!authorizationService.isAllowed(
-        identity, new Intent.DeclineManagerInvitation(invitation.getId()))) {
+      AuthenticatedIdentity identity, UUID invitationId) {
+    if (decidableBy(identity, invitationId, new Intent.DeclineManagerInvitation(invitationId))
+        .isEmpty()) {
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
 
     return mutationTransactions.write(
         () -> {
           if (!invitationLifecycle.tryDeclinePending(
-              invitation.getId(), identity.accountId(), clock.instant())) {
-            throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
+              invitationId, identity.accountId(), clock.instant())) {
+            throw new MutationRejection(new ManagerRejections.InvitationNotPending());
           }
 
-          return invitationRepository.findById(invitation.getId()).orElseThrow();
+          return invitationRepository.findById(invitationId).orElseThrow();
         },
         _ -> Optional.empty());
+  }
+
+  /**
+   * The invitation, when the caller is the Account it names; empty for anyone else and for an id
+   * that names no invitation, which answer alike.
+   */
+  private Optional<ProfileManagerInvitation> decidableBy(
+      AuthenticatedIdentity identity, UUID invitationId, Intent.UnitIntent decision) {
+    return invitationRepository
+        .findById(invitationId)
+        .filter(_ -> authorizationService.isAllowed(identity, decision));
   }
 
   public Outcome<UUID, ManagerRejections.Relinquish> relinquishProfileManagement(
