@@ -81,6 +81,20 @@ public class ServerSettingsService {
     return storedIdleSegmentRetention().duration();
   }
 
+  /**
+   * How long the server keeps Notification history, and the unread news that its guard hides, after
+   * its latest event. The retention sweep reads the setting for the system, not for a caller, so
+   * this read is not authorized.
+   */
+  public Duration notificationRetention() {
+    return notificationRetentionOf(storedSettings()).duration();
+  }
+
+  private static NotificationRetentionSetting notificationRetentionOf(ServerSettings settings) {
+    return new NotificationRetentionSetting(
+        settings.getId(), settings.getNotificationRetentionDays());
+  }
+
   private IdleSegmentRetentionSetting storedIdleSegmentRetention() {
     return idleSegmentRetentionOf(storedSettings());
   }
