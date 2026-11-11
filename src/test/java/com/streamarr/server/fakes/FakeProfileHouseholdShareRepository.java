@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.HouseholdShareFilter;
+import com.streamarr.server.domain.auth.MembershipShareChanges;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.ShareStatusFilter;
@@ -246,7 +247,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
-  public List<ChangedShare> ensureActiveMembershipShare(
+  public MembershipShareChanges ensureActiveMembershipShare(
       UUID profileId, UUID householdId, Instant now) {
     var expired =
         database.values().stream()
@@ -269,6 +270,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
                     share.getStatus() == ProfileShareStatus.PENDING
                         || share.getStatus() == ProfileShareStatus.ACTIVE)
             .findFirst();
+    var taken = live.filter(share -> share.getStatus() == ProfileShareStatus.PENDING);
     var membership =
         live.orElseGet(
             () ->
@@ -282,7 +284,9 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
     membership.setStatus(ProfileShareStatus.ACTIVE);
     membership.setStructural(true);
     membership.setDecidedAt(now);
-    return changed(Stream.concat(expired.stream(), Stream.of(membership)).toList());
+    return new MembershipShareChanges(
+        changed(Stream.concat(expired.stream(), taken.stream()).toList()),
+        taken.isPresent() ? List.of() : changed(List.of(membership)));
   }
 
   @Override

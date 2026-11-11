@@ -10,6 +10,7 @@ import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.HouseholdShareFilter;
+import com.streamarr.server.domain.auth.MembershipShareChanges;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.domain.pagination.Row;
@@ -283,28 +284,43 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
-  public List<ChangedShare> ensureActiveMembershipShare(
+  public MembershipShareChanges ensureActiveMembershipShare(
       UUID profileId, UUID householdId, Instant now) {
-    var changed = new ArrayList<>(materializeExpiredPending(profileId, householdId, now));
+    var stoppedWaiting = new ArrayList<>(materializeExpiredPending(profileId, householdId, now));
     var timestamp = now.atOffset(ZoneOffset.UTC);
-    dsl.insertInto(PROFILE_HOUSEHOLD_SHARE)
-        .set(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, profileId)
-        .set(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, householdId)
-        .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
-        .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
-        .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
-        .onConflict(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
-        .where(
-            PROFILE_HOUSEHOLD_SHARE.STATUS.in(
-                ProfileShareStatus.PENDING, ProfileShareStatus.ACTIVE))
-        .doUpdate()
-        .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
-        .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
-        .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
-        .returning(CHANGED_SHARE)
-        .fetch()
-        .forEach(shareRecord -> changed.add(changedShare(shareRecord)));
-    return List.copyOf(changed);
+    stoppedWaiting.addAll(
+        changed(
+            dsl.update(PROFILE_HOUSEHOLD_SHARE)
+                .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
+                .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
+                .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
+                .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
+                .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
+                .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.PENDING))
+                .returning(CHANGED_SHARE)));
+    var others =
+        dsl
+            .insertInto(PROFILE_HOUSEHOLD_SHARE)
+            .set(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, profileId)
+            .set(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, householdId)
+            .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
+            .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
+            .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
+            .onConflict(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
+            .where(
+                PROFILE_HOUSEHOLD_SHARE.STATUS.in(
+                    ProfileShareStatus.PENDING, ProfileShareStatus.ACTIVE))
+            .doUpdate()
+            .set(PROFILE_HOUSEHOLD_SHARE.STATUS, ProfileShareStatus.ACTIVE)
+            .set(PROFILE_HOUSEHOLD_SHARE.STRUCTURAL, true)
+            .set(PROFILE_HOUSEHOLD_SHARE.DECIDED_AT, timestamp)
+            .returning(CHANGED_SHARE)
+            .fetch()
+            .map(ProfileHouseholdShareRepositoryCustomImpl::changedShare)
+            .stream()
+            .filter(share -> !stoppedWaiting.contains(share))
+            .toList();
+    return new MembershipShareChanges(stoppedWaiting, others);
   }
 
   @Override

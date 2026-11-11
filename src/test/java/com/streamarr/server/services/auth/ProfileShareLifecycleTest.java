@@ -397,19 +397,79 @@ class ProfileShareLifecycleTest {
   }
 
   @Test
-  @DisplayName("Should announce no action to tell when an offer is canceled, withdrawn or expires")
-  void shouldAnnounceNoActionToTellWhenAnOfferIsCanceledWithdrawnOrExpires() {
+  @DisplayName(
+      "Should announce that the offer stopped waiting when an offer is canceled, withdrawn or"
+          + " expires")
+  void shouldAnnounceThatTheOfferStoppedWaitingWhenAnOfferIsCanceledWithdrawnOrExpires() {
+    var offerer = UUID.randomUUID();
     var canceled = shares.save(pending(UUID.randomUUID()).build());
     var invalidated = shares.save(pending(UUID.randomUUID()).build());
     var replaced = shares.save(pending(UUID.randomUUID()).build());
+    var ofTheProfile = shares.save(pending(UUID.randomUUID()).build());
+    var ofTheLeavingManager = shares.save(pending(UUID.randomUUID()).build());
+    var intoTheHousehold = shares.save(pending(UUID.randomUUID()).build());
+    shares.save(pending(offerer).build());
     shares.save(pending(UUID.randomUUID()).expiresAt(NOW.minusSeconds(1)).build());
 
     lifecycle.tryCancelPending(canceled.getId(), NOW);
     lifecycle.tryInvalidatePending(invalidated.getId(), REASON, NOW);
     lifecycle.supersedePending(replaced.getProfileId(), replaced.getHouseholdId(), NOW);
+    lifecycle.invalidatePendingByProfileId(ofTheProfile.getProfileId(), REASON, NOW);
+    lifecycle.invalidatePendingByHouseholdId(intoTheHousehold.getHouseholdId(), REASON, NOW);
+    lifecycle.invalidatePendingOffersByProfileIdAndOffererAccountId(
+        ofTheLeavingManager.getProfileId(),
+        ofTheLeavingManager.getOfferedByAccountId(),
+        REASON,
+        NOW);
+    lifecycle.invalidatePendingOfferedBy(offerer, REASON, NOW);
     lifecycle.expireLapsedOffers(NOW);
 
-    assertThat(actions()).hasSize(4).containsOnly(new ShareAction.Other());
+    assertThat(actions()).hasSize(8).containsOnly(new ShareAction.OfferStoppedWaiting());
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce once that the offer stopped waiting when a Profile is linked home while its"
+          + " offer into that Household waits")
+  void shouldAnnounceOnceThatTheOfferStoppedWaitingWhenAProfileIsLinkedHomeWhileItsOfferWaits() {
+    var waiting = shares.save(pending(UUID.randomUUID()).build());
+
+    lifecycle.ensureActiveMembershipShare(waiting.getProfileId(), waiting.getHouseholdId(), NOW);
+
+    assertThat(actionsByShare())
+        .containsExactly(
+            Map.entry(ChangedShare.of(waiting), List.of(new ShareAction.OfferStoppedWaiting())));
+    assertThat(shares.findById(waiting.getId()))
+        .hasValueSatisfying(
+            share -> assertThat(share.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE));
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce that the lapsed offer stopped waiting and no action to tell for the"
+          + " membership share when a Profile is linked home")
+  void shouldAnnounceThatTheLapsedOfferStoppedWaitingWhenAProfileIsLinkedHome() {
+    var lapsed = shares.save(pending(UUID.randomUUID()).expiresAt(NOW.minusSeconds(1)).build());
+
+    lifecycle.ensureActiveMembershipShare(lapsed.getProfileId(), lapsed.getHouseholdId(), NOW);
+
+    var membership =
+        shares
+            .findByProfileIdAndHouseholdIdAndStatus(
+                lapsed.getProfileId(), lapsed.getHouseholdId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow();
+    assertThat(actionsByShare())
+        .containsOnly(
+            Map.entry(ChangedShare.of(lapsed), List.of(new ShareAction.OfferStoppedWaiting())),
+            Map.entry(ChangedShare.of(membership), List.of(new ShareAction.Other())));
+  }
+
+  private Map<ChangedShare, List<ShareAction>> actionsByShare() {
+    return events.getEventsOfType(ProfileShareChangedEvent.class).stream()
+        .collect(
+            Collectors.groupingBy(
+                ProfileShareChangedEvent::share,
+                Collectors.mapping(ProfileShareChangedEvent::action, Collectors.toList())));
   }
 
   private List<ShareAction> actions() {

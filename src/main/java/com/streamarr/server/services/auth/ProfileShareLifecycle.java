@@ -55,26 +55,27 @@ public class ProfileShareLifecycle {
 
   /** Withdraws the Profile's pending offer to the Household so a new one can be offered. */
   public void supersedePending(UUID profileId, UUID householdId, Instant now) {
-    announce(shareRepository.supersedePending(profileId, householdId, now));
+    announceStoppedWaiting(shareRepository.supersedePending(profileId, householdId, now));
   }
 
   /** Withdraws one pending offer with the reason it will later explain; false when not pending. */
   public boolean tryInvalidatePending(UUID shareId, String reason, Instant now) {
     return announced(
-        shareRepository.tryInvalidatePending(shareId, reason, now), new ShareAction.Other());
+        shareRepository.tryInvalidatePending(shareId, reason, now),
+        new ShareAction.OfferStoppedWaiting());
   }
 
   /** Withdraws every unexpired pending offer the Account made; answers how many. */
   public int invalidatePendingOfferedBy(UUID offererAccountId, String reason, Instant now) {
     var withdrawn = shareRepository.invalidatePendingOfferedBy(offererAccountId, reason, now);
-    announce(withdrawn);
+    announceStoppedWaiting(withdrawn);
     return withdrawn.size();
   }
 
   /** Stores EXPIRED on every offer whose time ran out; answers how many. */
   public int expireLapsedOffers(Instant now) {
     var expired = shareRepository.materializeExpiredPending(now);
-    announce(expired);
+    announceStoppedWaiting(expired);
     return expired.size();
   }
 
@@ -102,7 +103,7 @@ public class ProfileShareLifecycle {
   public boolean tryCancelPending(UUID shareId, Instant now) {
     return announced(
         shareRepository.tryDeclinePending(shareId, ProfileShareStatus.CANCELED, now),
-        new ShareAction.Other());
+        new ShareAction.OfferStoppedWaiting());
   }
 
   /** Ends an active share the way the ending says; false when it was not active. */
@@ -112,17 +113,20 @@ public class ProfileShareLifecycle {
 
   /** Makes the Profile's availability in its Account's Household the structural share. */
   public void ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now) {
-    announce(shareRepository.ensureActiveMembershipShare(profileId, householdId, now));
+    var changes = shareRepository.ensureActiveMembershipShare(profileId, householdId, now);
+    announceStoppedWaiting(changes.offersStoppedWaiting());
+    announce(changes.otherChanges());
   }
 
   /** Withdraws every pending offer of the Profile with the reason. */
   public void invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
-    announce(shareRepository.invalidatePendingByProfileId(profileId, reason, now));
+    announceStoppedWaiting(shareRepository.invalidatePendingByProfileId(profileId, reason, now));
   }
 
   /** Withdraws every pending offer into the Household with the reason. */
   public void invalidatePendingByHouseholdId(UUID householdId, String reason, Instant now) {
-    announce(shareRepository.invalidatePendingByHouseholdId(householdId, reason, now));
+    announceStoppedWaiting(
+        shareRepository.invalidatePendingByHouseholdId(householdId, reason, now));
   }
 
   /** Turns the Profile's structural share into the Household into an ordinary visitor share. */
@@ -133,7 +137,7 @@ public class ProfileShareLifecycle {
   /** Withdraws the leaving manager's own pending offers of the Profile. */
   public void invalidatePendingOffersByProfileIdAndOffererAccountId(
       UUID profileId, UUID offererAccountId, String reason, Instant now) {
-    announce(
+    announceStoppedWaiting(
         shareRepository.invalidatePendingOffersByProfileIdAndOffererAccountId(
             profileId, offererAccountId, reason, now));
   }
@@ -173,6 +177,13 @@ public class ProfileShareLifecycle {
 
   private void announce(List<ChangedShare> changed) {
     changed.forEach(this::announce);
+  }
+
+  private void announceStoppedWaiting(List<ChangedShare> offers) {
+    offers.forEach(
+        offer ->
+            events.publishEvent(
+                new ProfileShareChangedEvent(offer, true, new ShareAction.OfferStoppedWaiting())));
   }
 
   private void announce(ChangedShare changed) {

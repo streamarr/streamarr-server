@@ -65,24 +65,9 @@ class ProfileShareNotifications {
           sidesOf(shareId).ifPresent(sides -> tellEndBySide(shareId, sides, accountId));
       case ShareAction.EndedByServer(var accountId) ->
           sidesOf(shareId).ifPresent(sides -> tellEndByServer(shareId, sides, accountId));
-      case ShareAction.Other() -> {
-        if (change.live()) {
-          sidesOf(shareId)
-              .filter(sides -> withdrawnOrExpired(sides.status()))
-              .ifPresent(_ -> resolveRequests(shareId));
-        }
-      }
-      case ShareAction.EndedWithHousehold() -> {}
+      case ShareAction.OfferStoppedWaiting() -> resolveRequests(shareId);
+      case ShareAction.Other(), ShareAction.EndedWithHousehold() -> {}
     }
-  }
-
-  // A pending offer that was withdrawn, replaced, invalidated or expired resolves its requests. A
-  // live share that another write left active or pending resolved nothing.
-  private static boolean withdrawnOrExpired(ProfileShareStatus status) {
-    return switch (status) {
-      case CANCELED, INVALIDATED, EXPIRED -> true;
-      case PENDING, ACTIVE, REJECTED, ENDED -> false;
-    };
   }
 
   // A request reads its resolution from the share, so resolving it writes nothing: its recipients'
