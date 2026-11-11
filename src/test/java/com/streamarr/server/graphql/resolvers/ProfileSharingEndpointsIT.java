@@ -11,6 +11,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -162,6 +163,60 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.offerProfileShare.share.household.name")
                 .value(host.household().getName()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep naming the code's Household to the offering side and never to the Household's"
+          + " HouseholdAdmin when an offer made with a code is declined")
+  void shouldKeepNamingCodesHouseholdToOfferingSideAndNeverToHouseholdAdminWhenOfferIsDeclined()
+      throws Exception {
+    var shareId = offer(managedOrphan(), host);
+    var hostsList =
+        """
+        query { householdShares(householdId: "%s") {
+          edges { node { id profile { id } household { name } } } } }
+        """
+            .formatted(host.household().getId());
+    graphql(authTestSupport.accountBearer(host), hostsList)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath(offerIn("householdShares", shareId) + ".node.profile.id").isNotEmpty())
+        .andExpect(
+            jsonPath(
+                offerIn("householdShares", shareId) + ".node.household", contains(nullValue())));
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { rejectProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.rejectProfileShare.share.status").value("REJECTED"));
+
+    graphql(authTestSupport.accountBearer(host), hostsList)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath(offerIn("householdShares", shareId)).isEmpty());
+    var offered = shareRepository.findById(UUID.fromString(shareId)).orElseThrow();
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            query { profileShares(profileId: "%s", statuses: [REJECTED]) {
+              edges { node { id household { name } } } } }
+            """
+                .formatted(offered.getProfileId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath(
+                offerIn("profileShares", shareId) + ".node.household.name",
+                contains(host.household().getName())));
+  }
+
+  private static String offerIn(String list, String shareId) {
+    return "$.data.%s.edges[?(@.node.id == '%s')]".formatted(list, shareId);
   }
 
   @Test
