@@ -77,24 +77,7 @@ class ShareCodeServiceTest {
                 .displayName("Household Admin")
                 .build());
     authorization = new FakeAuthorizationService(this::identity);
-    service =
-        new ShareCodeService(
-            authorization,
-            shareCodes,
-            households,
-            accounts,
-            new MutationTransactions(
-                new FakeTransactionManager(), new ConstraintViolationTranslator()),
-            attempts.gate(Clock.fixed(NOW, ZoneOffset.UTC)),
-            new HouseholdShareCodesList(shareCodes, Clock.fixed(NOW, ZoneOffset.UTC)),
-            codes,
-            CredentialCodeProperties.builder()
-                .invitationTtl(Duration.ofDays(7))
-                .passwordResetTtl(Duration.ofHours(1))
-                .shareCodeTtl(SHARE_CODE_TTL)
-                .replacementLockTimeout(Duration.ofSeconds(5))
-                .build(),
-            Clock.fixed(NOW, ZoneOffset.UTC));
+    service = serviceDrawingFrom(codes);
   }
 
   @Test
@@ -120,6 +103,22 @@ class ShareCodeServiceTest {
     var second = accepted(service.issueShareCode(identity(), householdId));
 
     assertThat(second.code()).isNotEqualTo(first.code());
+    assertThat(shareCodes.findAll())
+        .hasSize(2)
+        .allSatisfy(stored -> assertThat(stored.isLiveAt(NOW)).isTrue());
+  }
+
+  @Test
+  @DisplayName("Should issue another code when the first drawn code matches a stored one")
+  void shouldIssueAnotherCodeWhenFirstDrawnCodeMatchesStoredOne() {
+    var colliding =
+        serviceDrawingFrom(ShareCodesFixture.drawing("BBBBBBBB", "BBBBBBBB", "CCCCCCCC"));
+
+    var first = accepted(colliding.issueShareCode(identity(), householdId));
+    var second = accepted(colliding.issueShareCode(identity(), householdId));
+
+    assertThat(first.code()).isEqualTo("BBBB-BBBB");
+    assertThat(second.code()).isEqualTo("CCCC-CCCC");
     assertThat(shareCodes.findAll())
         .hasSize(2)
         .allSatisfy(stored -> assertThat(stored.isLiveAt(NOW)).isTrue());
@@ -466,6 +465,25 @@ class ShareCodeServiceTest {
     return intent instanceof Intent.ViewShareCodes
         ? new Decision.Failed<>(Decision.FailureCause.EVALUATION_ERROR)
         : new Decision.Denied<>(Decision.DenialReason.POLICY);
+  }
+
+  private ShareCodeService serviceDrawingFrom(ShareCodes drawn) {
+    return new ShareCodeService(
+        authorization,
+        shareCodes,
+        households,
+        accounts,
+        new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
+        attempts.gate(Clock.fixed(NOW, ZoneOffset.UTC)),
+        new HouseholdShareCodesList(shareCodes, Clock.fixed(NOW, ZoneOffset.UTC)),
+        drawn,
+        CredentialCodeProperties.builder()
+            .invitationTtl(Duration.ofDays(7))
+            .passwordResetTtl(Duration.ofHours(1))
+            .shareCodeTtl(SHARE_CODE_TTL)
+            .replacementLockTimeout(Duration.ofSeconds(5))
+            .build(),
+        Clock.fixed(NOW, ZoneOffset.UTC));
   }
 
   private static ShareCodeCommand command(String code) {

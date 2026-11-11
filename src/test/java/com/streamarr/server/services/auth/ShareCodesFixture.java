@@ -1,6 +1,8 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.properties.CredentialCodeProperties;
+import java.util.ArrayDeque;
+import java.util.List;
 
 /** Share codes made as the application makes them, for unit tests in any package. */
 public final class ShareCodesFixture {
@@ -15,8 +17,24 @@ public final class ShareCodesFixture {
   }
 
   public static ShareCodes keyedBy(String configuredKey) {
+    return drawnBy(new UserCodeGenerator(), configuredKey);
+  }
+
+  /** Share codes that draw the given codes in turn, so a test can make a drawn code collide. */
+  public static ShareCodes drawing(String... codes) {
+    var draws = new ArrayDeque<>(List.of(codes));
+    return drawnBy(
+        new UserCodeGenerator() {
+          @Override
+          public String generate() {
+            return draws.removeFirst();
+          }
+        },
+        KEY);
+  }
+
+  private static ShareCodes drawnBy(UserCodeGenerator generator, String configuredKey) {
     return new ShareCodes(
-        new UserCodeGenerator(),
-        CredentialCodeProperties.builder().shareCodeKey(configuredKey).build());
+        generator, CredentialCodeProperties.builder().shareCodeKey(configuredKey).build());
   }
 }
