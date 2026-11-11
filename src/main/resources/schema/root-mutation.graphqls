@@ -236,16 +236,18 @@ type Mutation {
     passes to an Account that takes the address later. A newer invitation to the same address, in
     any case, replaces a pending one. At most ten invitations wait for one Profile
     (ManagerInvitationLimitReachedError), those that nobody can accept included. The invitation
-    waits for the invitation lifetime that a ServerAdmin sets. The code appears once, in this answer. A caller who may read
-    profileAdministration of the Profile but may not invite gets FORBIDDEN; everyone else, a
-    device-bound session included, gets ProfileNotFoundError.
+    waits for the invitation lifetime that a ServerAdmin sets. The code appears once, in this
+    answer. A caller who may read profileAdministration of the Profile but may not invite gets
+    FORBIDDEN; everyone else, a device-bound session included, gets ProfileNotFoundError.
     """
     inviteProfileManager(input: InviteProfileManagerInput!): InviteProfileManagerPayload
     """
-    Withdraws a pending invitation to manage a Profile. The Account that sent it, or a ServerAdmin.
-    A caller who may see the invitation (its named Account, or one who may read the Profile's
-    administration) but may not withdraw it gets FORBIDDEN; everyone else, a device-bound session
-    included, gets ManagerInvitationNotFoundError.
+    Withdraws a pending invitation to manage a Profile, one that nobody can accept included. The
+    Account that sent it, or a ServerAdmin. An invitation that was already decided, canceled or
+    withdrawn, or that expired, gets InvitationNotPendingError. A caller who may see the invitation
+    (its named Account, or one who may read the Profile's administration) but may not withdraw it
+    gets FORBIDDEN; everyone else, a device-bound session included, gets
+    ManagerInvitationNotFoundError.
     """
     cancelManagerInvitation(input: CancelManagerInvitationInput!): CancelManagerInvitationPayload
     """
