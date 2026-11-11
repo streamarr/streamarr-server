@@ -91,6 +91,7 @@ class ReadDecisionsInReadOnlyTransactionIT extends AbstractIntegrationTest {
       case VIEW_PROFILE_SHARE_CHANGES -> new Intent.ViewProfileShareChanges();
       case VIEW_ACCOUNT_INVITATIONS -> new Intent.ViewAccountInvitations();
       case VIEW_DEVICE_ADMINISTRATION -> new Intent.ViewDeviceAdministration(householdId);
+      case VIEW_SHARE_CODES -> new Intent.ViewShareCodes(householdId);
       case VIEW_SERVER_DEVICE_ADMINISTRATION -> new Intent.ViewServerDeviceAdministration();
       case VIEW_SECURITY_AUDIT -> new Intent.ViewSecurityAudit();
       case VIEW_ENCODER_PRESET -> new Intent.ViewEncoderPreset();

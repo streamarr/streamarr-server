@@ -3,7 +3,9 @@ package com.streamarr.server.graphql.mutation.sharing;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
+import com.streamarr.server.services.identity.ShareCodeRejections;
 import com.streamarr.server.services.identity.ShareRejections;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,13 @@ class ShareErrorsTest {
               .assertThat(ShareErrors.toOfferError(new ShareRejections.AlreadyShared()))
               .isExactlyInstanceOf(ProfileAlreadySharedError.class);
         });
+  }
+
+  @Test
+  @DisplayName("Should name the Household input when issuing a share code fails")
+  void shouldNameHouseholdInputWhenIssuingShareCodeFails() {
+    assertThat(ShareErrors.toIssueShareCodeError(new ShareCodeRejections.HouseholdNotFound()))
+        .isEqualTo(new HouseholdNotFoundError("No such Household.", List.of("householdId")));
   }
 
   @Test
