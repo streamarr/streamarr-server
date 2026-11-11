@@ -9,14 +9,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.notification.NotificationDraft;
+import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.ProfileShareAnswer;
+import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import jakarta.persistence.EntityManagerFactory;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import org.hibernate.SessionFactory;
@@ -65,6 +73,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private EntityManagerFactory entityManagerFactory;
+  @Autowired private NotificationRepository notificationRepository;
 
   private final List<TestIdentity> identities = new ArrayList<>();
   private TestIdentity sam;
@@ -272,6 +281,103 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
     var many = statementsWhile(() -> mockMvc.perform(graphqlRequest(bearer, NOTIFICATIONS)));
 
     assertThat(many).isEqualTo(few);
+  }
+
+  @Test
+  @DisplayName(
+      "Should read a page in as many statements when many of the reader's Notifications are hidden"
+          + " from it as when few are")
+  void shouldReadAPageInAsManyStatementsWhenManyOfTheReadersNotificationsAreHiddenAsWhenFewAre()
+      throws Exception {
+    var bearer = authTestSupport.accountBearer(riversideAdmin);
+    var kai = track(authTestSupport.createIdentity());
+    steps.offer(sam, steps.profileManagedBy("Ollie", sam, sam), riverside);
+    hideFromRiversideAdmin(2, kai);
+    var few = statementsWhile(() -> mockMvc.perform(graphqlRequest(bearer, NOTIFICATIONS)));
+    hideFromRiversideAdmin(24, kai);
+
+    var many = statementsWhile(() -> mockMvc.perform(graphqlRequest(bearer, NOTIFICATIONS)));
+
+    assertThat(many).isEqualTo(few);
+  }
+
+  @Test
+  @DisplayName(
+      "Should list and count the request again when its recipient administers the Household again")
+  void shouldListAndCountTheRequestAgainWhenItsRecipientAdministersTheHouseholdAgain()
+      throws Exception {
+    var bearer = authTestSupport.accountBearer(riversideAdmin);
+    steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    transactionTemplate.executeWithoutResult(
+        _ -> userAccountRepository.tryDemoteToHouseholdMember(riversideAdmin.account().getId()));
+    mockMvc
+        .perform(graphqlRequest(bearer, NOTIFICATIONS))
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0));
+
+    steps.promoted(riversideAdmin);
+
+    mockMvc
+        .perform(graphqlRequest(bearer, NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(1))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should show news about a share to a HouseholdAdmin of a Household the Profile is shared"
+          + " into")
+  void shouldShowNewsAboutAShareToAHouseholdAdminOfAHouseholdTheProfileIsSharedInto()
+      throws Exception {
+    var kai = track(authTestSupport.createIdentity());
+    var ollie = steps.profileManagedBy("Ollie", sam, sam);
+    steps.accept(riverside, steps.offer(sam, ollie, riverside));
+    var intoKai = steps.offer(sam, ollie, kai);
+    insertNewsFor(riversideAdmin, intoKai);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath(
+                "$.data.notifications.edges[?(@.node.share.id == '%s')]".formatted(intoKai.getId()),
+                hasSize(1)));
+  }
+
+  // Requests to Riverside's HouseholdAdmin about offers into Kai's Household, each of its own
+  // Profile and newer than the rest; Riverside's HouseholdAdmin may read none of them.
+  private void hideFromRiversideAdmin(int count, TestIdentity kai) {
+    for (var made = 0; made < count; made++) {
+      offeredProfiles++;
+      var offer =
+          steps.offer(sam, steps.profileManagedBy("Hidden " + offeredProfiles, sam, sam), kai);
+      var at = Instant.now().plus(Duration.ofMinutes(offeredProfiles));
+      transactionTemplate.executeWithoutResult(
+          _ ->
+              notificationRepository.insert(
+                  NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
+                      .recipientAccountId(riversideAdmin.account().getId())
+                      .kind(NotificationKind.PROFILE_SHARE_OFFERED)
+                      .subjectId(offer.getId())
+                      .facts(ProfileShareFacts.offered("Hidden"))
+                      .at(at)
+                      .build()));
+    }
+  }
+
+  private void insertNewsFor(TestIdentity recipient, ProfileHouseholdShare share) {
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            notificationRepository.insert(
+                NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
+                    .recipientAccountId(recipient.account().getId())
+                    .kind(NotificationKind.PROFILE_SHARE_ANSWERED)
+                    .subjectId(share.getId())
+                    .facts(ProfileShareFacts.answered("Ollie", ProfileShareAnswer.REJECTED))
+                    .at(Instant.now())
+                    .build()));
   }
 
   private void offerProfiles(int count) {

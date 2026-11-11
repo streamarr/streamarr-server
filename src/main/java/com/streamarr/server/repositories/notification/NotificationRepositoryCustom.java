@@ -15,12 +15,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/** The writes and the retention of Notifications about a Profile share (ADR 0063). */
+/**
+ * The reads, the writes and the retention of Notifications (ADR 0063). The recipient's list, its
+ * unread count and its live changes leave out the Notifications that no read rule of their subject
+ * could let the recipient see; the guard decides the rest.
+ */
 public interface NotificationRepositoryCustom {
 
   /**
-   * Up to the seek's limit of the recipient's Notifications beyond its position, newest latest
-   * event first and ties by id in the same direction, nearest first.
+   * Up to the seek's limit of the recipient's Notifications beyond its position that the guard
+   * could show it, newest latest event first and ties by id in the same direction, nearest first.
    */
   List<Row<Notification>> rowsOfRecipient(UUID recipientAccountId, Seek seek);
 

@@ -28,6 +28,7 @@ import com.streamarr.server.jooq.generated.enums.ProfileShareEndedBy;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
+import com.streamarr.server.repositories.auth.ProfileShareReaders;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -71,7 +72,7 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
     var query =
         NEWEST_FIRST.rowsBeyond(
             NEWEST_FIRST.selectFrom(dsl, NOTIFICATION),
-            NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId),
+            NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId).and(mayBeShown()),
             seek);
     return JooqQueryHelper.nativeRows(entityManager, query, Notification.class, NEWEST_FIRST);
   }
@@ -87,7 +88,8 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
         NEWEST_FIRST
             .selectFrom(dsl, NOTIFICATION)
             .where(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
-            .and(NOTIFICATION.ID.in(notificationIds));
+            .and(NOTIFICATION.ID.in(notificationIds))
+            .and(mayBeShown());
     return JooqQueryHelper.nativeRows(entityManager, query, Notification.class, NEWEST_FIRST);
   }
 
@@ -162,6 +164,7 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
             .where(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
             .and(NOTIFICATION.READ_AT.isNull())
             .and(NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).or(requestWaitsAt(now)))
+            .and(mayBeShown())
             .and(among);
     return JooqQueryHelper.nativeQuery(entityManager, query, Notification.class);
   }
@@ -287,6 +290,33 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
                   .from(PROFILE_HOUSEHOLD_SHARE)
                   .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
                   .and(waitingAt(now)));
+    };
+  }
+
+  /**
+   * The Notifications whose subject's read rule could let the recipient see them. The guard still
+   * decides each one; this keeps those no rule can allow from being read and decided at all, so a
+   * recipient's hidden Notifications cost the list and the count nothing.
+   */
+  private static Condition mayBeShown() {
+    return DSL.or(
+        Arrays.stream(NotificationSubject.values())
+            .map(subject -> kindAbout(subject).and(subjectMayBeShown(subject)))
+            .toList());
+  }
+
+  private static Condition subjectMayBeShown(NotificationSubject subject) {
+    return switch (subject) {
+      case PROFILE_SHARE ->
+          DSL.exists(
+              DSL.selectOne()
+                  .from(PROFILE_HOUSEHOLD_SHARE)
+                  .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
+                  .and(
+                      ProfileShareReaders.couldRead(
+                          NOTIFICATION.RECIPIENT_ACCOUNT_ID,
+                          PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
+                          PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)));
     };
   }
 
