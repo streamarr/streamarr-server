@@ -36,7 +36,11 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://prometheus:9090/api/v1/otlp
     volumes:
       - ${STREAMARR_MEDIA_PATH:-/srv/media}:/media:ro
+    # Compose stops a service only after the services that depend on it. Without postgres here,
+    # `docker compose down` stops PostgreSQL together with the worker, and the server's shutdown
+    # then waits for connections that the pool can no longer make.
     depends_on:
+      - postgres
       - prometheus
 
   prometheus:
