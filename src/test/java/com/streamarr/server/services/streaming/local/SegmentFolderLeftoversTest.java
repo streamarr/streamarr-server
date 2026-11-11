@@ -87,6 +87,40 @@ class SegmentFolderLeftoversTest {
                 !entry.equals(directoryNamedLikeASession) && !entry.equals(fileNamedLikeAnUpload));
   }
 
+  // A process that ends between creating the mark and writing it leaves an empty mark.
+  @Test
+  @DisplayName(
+      "Should delete leftovers when an earlier process ended before it wrote the folder's mark")
+  void shouldDeleteLeftoversWhenAnEarlierProcessEndedBeforeItWroteTheFoldersMark()
+      throws IOException {
+    Files.createFile(segmentFolder.resolve(MARK_NAME));
+    new SegmentFolderLeftovers(segmentFolder).delete();
+    var sessionId = UUID.randomUUID();
+    earlierStore().getOutputDirectory(sessionId);
+
+    new SegmentFolderLeftovers(segmentFolder).delete();
+
+    assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the file that a soft link in the mark's place points to when it marks the"
+          + " folder")
+  void shouldKeepTheFileThatASoftLinkInTheMarksPlacePointsToWhenItMarksTheFolder()
+      throws IOException {
+    var outsideFile = Files.write(outside.resolve("movie.mkv"), "media".getBytes());
+    Files.createSymbolicLink(segmentFolder.resolve(MARK_NAME), outsideFile);
+    new SegmentFolderLeftovers(segmentFolder).delete();
+    var sessionId = UUID.randomUUID();
+    earlierStore().getOutputDirectory(sessionId);
+
+    new SegmentFolderLeftovers(segmentFolder).delete();
+
+    assertThat(outsideFile).hasBinaryContent("media".getBytes());
+    assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
+  }
+
   // Copying a segment folder's entries into another folder brings the mark along.
   @Test
   @DisplayName(
