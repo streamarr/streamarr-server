@@ -21,8 +21,8 @@ import lombok.NonNull;
  * encoders. An encode plans no format in {@code excludedEncodeFormats}. {@code directPlayRefusals}
  * names why the format attempt does not direct-play the source file, and the decision names them
  * before its own reasons. {@code softwareContinuation} names the encode that the decision continues
- * with the software encoder after a hardware encoder failed, and the decision may encode its codec
- * family alone (ADR 0044).
+ * with the software encoder after a hardware encoder failed. The decision may encode its codec
+ * family alone (ADR 0044), in its format alone (ADR 0013).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecisionRequest(

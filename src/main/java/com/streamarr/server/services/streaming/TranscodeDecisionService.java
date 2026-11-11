@@ -1004,13 +1004,21 @@ public class TranscodeDecisionService {
   }
 
   // Any format beyond 8-bit SDR needs one encoder of the codec family that lists every feature the
-  // format needs. A format that failed earlier in the playback session stays out.
+  // format needs. A format that failed earlier in the playback session stays out. A software
+  // continuation keeps the failed encode's range and bit depth, so every other format stays out of
+  // it (ADR 0013).
   private static List<EncodeFormat> encodeFormats(
       TranscodeDecisionRequest request,
       EncodeCodecProfile profile,
       List<WorkerVerifiedEncoder> encoders) {
     return permittedEncodeFormats(encodeFitting(request), profile).stream()
         .filter(format -> !request.excludedEncodeFormats().contains(format))
+        .filter(
+            format ->
+                request
+                    .softwareContinuation()
+                    .map(continuation -> continuation.format().equals(format))
+                    .orElse(true))
         .filter(
             format ->
                 isWrittenByAnEncoder(
