@@ -114,8 +114,8 @@ public class PlaybackSessionService implements AutoCloseable {
     @Builder.Default private int formatAttemptCount = 1;
     @Builder.Default private int startedFormatAttempts = 1;
 
-    // The constraint of the last format attempt that a failure reserved, which an audio encode
-    // after it keeps while that attempt is still pending.
+    // The constraint of the last format attempt that a failure reserved. An audio encode that
+    // follows a copy keeps it.
     @Builder.Default
     private VideoFormatConstraint videoFormatConstraint =
         VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE;
@@ -654,7 +654,8 @@ public class PlaybackSessionService implements AutoCloseable {
     var failedId = event.streamSessionId();
     switch (event.failure()) {
       case COPIED_AUDIO_RAN_SHORT ->
-          handleJobFailure(failedId, playback -> reserveAudioEncode(playback, failedId));
+          handleJobFailure(
+              failedId, playback -> reserveAudioEncode(playback, failedId, event.copiedVideo()));
       case OUTPUT_MISMATCH ->
           failWithoutFormatAttempt(failedId, new PlaybackSessionFailure.OutputMismatch());
       case INVALID_SPECIFICATION ->
@@ -668,7 +669,7 @@ public class PlaybackSessionService implements AutoCloseable {
   }
 
   private Optional<FormatAttemptReservation> reserveAudioEncode(
-      PlaybackSession playback, UUID failedId) {
+      PlaybackSession playback, UUID failedId, boolean copiedVideo) {
     if (!isCurrentAttempt(playback, failedId) || endedNormally(playback)) {
       return Optional.empty();
     }
@@ -678,31 +679,44 @@ public class PlaybackSessionService implements AutoCloseable {
           failPlayback(playback, failedId, new PlaybackSessionFailure.AttemptsExhausted()));
     }
 
+    var next = audioEncodeBesideAnEncodedVideo(playback);
+    if (copiedVideo) {
+      next = audioEncodeBesideACopiedVideo(playback);
+    }
+
+    playback.audioFormatConstraint = AudioFormatConstraint.ENCODE_ONLY;
+    playback.pendingAttemptCause = Optional.of(DecisionReason.AUDIO_ENDS_EARLY);
+    return Optional.of(reserveNextFormatAttempt(playback, failedId, next));
+  }
+
+  // The video may stay copied, under the constraint of the copy that failed. Original changes to
+  // Auto only when the new decision encodes the video.
+  private static ReservedFormatAttempt.ReservedFormatAttemptBuilder audioEncodeBesideACopiedVideo(
+      PlaybackSession playback) {
     var videoConstraint = playback.videoFormatConstraint;
     if (videoConstraint == VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE) {
       videoConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
     }
 
-    if (playback.current instanceof PlaybackFormatAttempt.Ready(var session)
-        && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
-      videoConstraint = VideoFormatConstraint.ENCODE_ONLY;
+    return ReservedFormatAttempt.builder()
+        .videoFormatConstraint(videoConstraint)
+        .choice(playback.choice)
+        .choiceWhenEncoding(FormatRecoveryPolicy.choiceWhenEncodingAfterACopy(playback.choice));
+  }
+
+  // The video stays encoded in the playback choice that its encode plays. A format attempt that
+  // failed while pending had not taken that choice yet.
+  private static ReservedFormatAttempt.ReservedFormatAttemptBuilder audioEncodeBesideAnEncodedVideo(
+      PlaybackSession playback) {
+    var choice = playback.choice;
+    if (playback.current instanceof PlaybackFormatAttempt.Pending) {
+      choice = playback.choiceWhenEncoding;
     }
 
-    var choiceWhenEncoding = FormatRecoveryPolicy.choiceWhenEncodingAfterACopy(playback.choice);
-    if (videoConstraint == VideoFormatConstraint.ENCODE_ONLY) {
-      choiceWhenEncoding = playback.choice;
-    }
-
-    playback.audioFormatConstraint = AudioFormatConstraint.ENCODE_ONLY;
-    playback.pendingAttemptCause = Optional.of(DecisionReason.AUDIO_ENDS_EARLY);
-    return Optional.of(
-        reserveNextFormatAttempt(
-            playback,
-            failedId,
-            ReservedFormatAttempt.builder()
-                .videoFormatConstraint(videoConstraint)
-                .choice(playback.choice)
-                .choiceWhenEncoding(choiceWhenEncoding)));
+    return ReservedFormatAttempt.builder()
+        .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+        .choice(choice)
+        .choiceWhenEncoding(choice);
   }
 
   private void failWithoutFormatAttempt(UUID failedId, PlaybackSessionFailure reason) {

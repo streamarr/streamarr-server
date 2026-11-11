@@ -807,6 +807,7 @@ final class LiveWorkerConnectionRegistry {
             .jobAttemptId(jobAttemptId)
             .variantLabel(variantLabel)
             .failure(failure.get())
+            .copiedVideo(copiesVideo(job.getDecision()))
             .build());
   }
 

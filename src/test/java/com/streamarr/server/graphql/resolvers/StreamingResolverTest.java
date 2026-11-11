@@ -1028,6 +1028,44 @@ class StreamingResolverTest {
         .isEqualTo(message);
   }
 
+  // ADR 0058: copied audio that ran short beside an encoded video recovers with an audio encode,
+  // and the video's encode is unchanged, so the playback session names no format change. A worker
+  // can report the failure before the mutation that starts playback has returned.
+  @Test
+  @DisplayName(
+      "Should expose no format change when a fixed quality's encode recovers from copied audio that"
+          + " ran short before playback started")
+  void
+      shouldExposeNoFormatChangeWhenAFixedQualitysEncodeRecoversFromCopiedAudioThatRanShortEarly() {
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(UUID.randomUUID(), fullTranscodeDecision("h264")));
+    STUB_SERVICE.duringNextCreate(
+        command ->
+            playbackSessions.onTerminalTranscodeFailure(
+                TerminalTranscodeFailureEvent.builder()
+                    .streamSessionId(command.streamSessionId())
+                    .jobAttemptId(UUID.randomUUID())
+                    .variantLabel("default")
+                    .failure(TranscodeFailure.COPIED_AUDIO_RAN_SHORT)
+                    .copiedVideo(false)
+                    .build()));
+    var created = startPlaybackReadingChoices(VideoQuality.HIGH_720P);
+    STUB_SERVICE.setNextResult(
+        buildSessionDeciding(UUID.randomUUID(), fullTranscodeDecision("h264")));
+
+    REPLACEMENT_TASKS.remove().run();
+
+    var recovered = playbackStatus(created.read(CREATED_PLAYBACK + ".id", String.class));
+    assertThat(
+            recovered.read("data.playbackSession.currentFormatAttempt['__typename']", String.class))
+        .isEqualTo("ReadyPlaybackFormatAttempt");
+    assertThat(recovered.read("data.playbackSession.formatAttemptCount", Integer.class))
+        .isEqualTo(2);
+    assertThat(recovered.read("data.playbackSession.playbackChoice", String.class))
+        .isEqualTo("HIGH_720P");
+    assertThat(recovered.read("data.playbackSession.formatChange", Object.class)).isNull();
+  }
+
   @Test
   @DisplayName("Should expose the typed attempt limit when the replacement format also fails")
   void shouldExposeTheTypedAttemptLimitWhenTheReplacementFormatAlsoFails() {
