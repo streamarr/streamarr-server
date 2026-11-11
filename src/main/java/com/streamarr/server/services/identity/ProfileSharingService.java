@@ -146,64 +146,72 @@ public class ProfileSharingService {
       AuthenticatedIdentity identity, UUID shareId) {
     return endInTransaction(
         shareId,
-        () -> {
-          Optional<ShareRejections.End> refusal =
-              refusalOf(
-                  identity,
-                  new Intent.EndProfileShare(shareId),
-                  () -> mayViewShare(identity, shareId),
-                  Refusals.<ShareRejections.End>hiddenAs(ShareRejections.ShareNotFound::new)
-                      .visibleAs(
-                          () ->
-                              structuralRefusal(
-                                  shareId, ShareRejections.StructuralShareCannotEnd::new)));
-          refusal.ifPresent(
-              rejection -> {
-                throw new MutationRejection(rejection);
-              });
-        },
-        _ -> {},
-        new EndRefusals<>(
-            ShareRejections.ShareNotActive::new, ShareRejections.StructuralShareCannotEnd::new));
+        EndSteps.<ShareRejections.End>builder()
+            .authorize(
+                () -> {
+                  Optional<ShareRejections.End> refusal =
+                      refusalOf(
+                          identity,
+                          new Intent.EndProfileShare(shareId),
+                          () -> mayViewShare(identity, shareId),
+                          Refusals.<ShareRejections.End>hiddenAs(ShareRejections.ShareNotFound::new)
+                              .visibleAs(
+                                  () ->
+                                      structuralRefusal(
+                                          shareId, ShareRejections.StructuralShareCannotEnd::new)));
+                  refusal.ifPresent(
+                      rejection -> {
+                        throw new MutationRejection(rejection);
+                      });
+                })
+            .afterEnd(_ -> {})
+            .notActive(ShareRejections.ShareNotActive::new)
+            .structural(ShareRejections.StructuralShareCannotEnd::new)
+            .build());
   }
 
   public Outcome<ProfileHouseholdShare, ShareRejections.AdministrativelyEnd>
       administrativelyEndProfileShare(AuthenticatedIdentity identity, UUID shareId, String reason) {
     return endInTransaction(
         shareId,
-        () -> {
-          Optional<ShareRejections.AdministrativelyEnd> refusal =
-              refusalOf(
-                  identity,
-                  new Intent.AdministrativelyEndProfileShare(shareId),
-                  () -> mayViewShare(identity, shareId),
-                  Refusals.<ShareRejections.AdministrativelyEnd>hiddenAs(
-                          ShareRejections.ShareNotFound::new)
-                      .visibleAs(
-                          () ->
-                              structuralRefusal(
-                                  shareId, ShareRejections.StructuralShareCannotEnd::new))
-                      .reauthenticatedAs(ShareRejections.ReauthenticationRequired::new));
-          refusal.ifPresent(
-              rejection -> {
-                throw new MutationRejection(rejection);
-              });
-          // Authority first, input second: an unauthorized caller learns nothing from the reason.
-          if (reason == null || reason.isBlank()) {
-            throw new MutationRejection(new ShareRejections.ReasonRequired());
-          }
-        },
-        share ->
-            securityAuditEventRepository.append(
-                SecurityAuditEntry.builder()
-                    .operation("administrativelyEndProfileShare")
-                    .actorAccountId(identity.accountId())
-                    .reason(reason)
-                    .resource("profileId", share.getProfileId())
-                    .resource("householdId", share.getHouseholdId())
-                    .build()),
-        new EndRefusals<>(
-            ShareRejections.ShareNotActive::new, ShareRejections.StructuralShareCannotEnd::new));
+        EndSteps.<ShareRejections.AdministrativelyEnd>builder()
+            .authorize(
+                () -> {
+                  Optional<ShareRejections.AdministrativelyEnd> refusal =
+                      refusalOf(
+                          identity,
+                          new Intent.AdministrativelyEndProfileShare(shareId),
+                          () -> mayViewShare(identity, shareId),
+                          Refusals.<ShareRejections.AdministrativelyEnd>hiddenAs(
+                                  ShareRejections.ShareNotFound::new)
+                              .visibleAs(
+                                  () ->
+                                      structuralRefusal(
+                                          shareId, ShareRejections.StructuralShareCannotEnd::new))
+                              .reauthenticatedAs(ShareRejections.ReauthenticationRequired::new));
+                  refusal.ifPresent(
+                      rejection -> {
+                        throw new MutationRejection(rejection);
+                      });
+                  // Authority first, input second: an unauthorized caller learns nothing from the
+                  // reason.
+                  if (reason == null || reason.isBlank()) {
+                    throw new MutationRejection(new ShareRejections.ReasonRequired());
+                  }
+                })
+            .afterEnd(
+                share ->
+                    securityAuditEventRepository.append(
+                        SecurityAuditEntry.builder()
+                            .operation("administrativelyEndProfileShare")
+                            .actorAccountId(identity.accountId())
+                            .reason(reason)
+                            .resource("profileId", share.getProfileId())
+                            .resource("householdId", share.getHouseholdId())
+                            .build()))
+            .notActive(ShareRejections.ShareNotActive::new)
+            .structural(ShareRejections.StructuralShareCannotEnd::new)
+            .build());
   }
 
   /**
@@ -322,23 +330,26 @@ public class ProfileSharingService {
         new ShareRejections.OfferInvalidated(share.getInvalidationReason().orElse("withdrawn")));
   }
 
-  /** The lifecycle refusals an end can meet, typed for the verb that asked. */
-  private record EndRefusals<R>(
-      Supplier<? extends R> notActive, Supplier<? extends R> structural) {}
-
-  private <R> Outcome<ProfileHouseholdShare, R> endInTransaction(
-      UUID shareId,
+  /**
+   * What one way of ending a share does around the end itself: its authorization, its work after
+   * the end, and the lifecycle refusals it can meet, typed for the verb that asked.
+   */
+  @Builder
+  private record EndSteps<R>(
       Runnable authorize,
       Consumer<ProfileHouseholdShare> afterEnd,
-      EndRefusals<R> refusals) {
+      Supplier<? extends R> notActive,
+      Supplier<? extends R> structural) {}
+
+  private <R> Outcome<ProfileHouseholdShare, R> endInTransaction(UUID shareId, EndSteps<R> steps) {
     return mutationTransactions.write(
         () -> {
           requireShare(shareId);
           profileRepository.lockSharedByShareId(shareId);
-          authorize.run();
+          steps.authorize().run();
           var now = clock.instant();
           if (!shareLifecycle.tryEndActive(shareId, now)) {
-            throw new MutationRejection(refusals.notActive().get());
+            throw new MutationRejection(steps.notActive().get());
           }
 
           var share = shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
@@ -355,12 +366,12 @@ public class ProfileSharingService {
                     registrationLifecycle.revokeAllByAccountAndHousehold(
                         visitor.getId(), share.getHouseholdId(), "share ended", now);
                   });
-          afterEnd.accept(share);
+          steps.afterEnd().accept(share);
           return share;
         },
         constraint -> {
           if (CHK_STRUCTURAL.equals(constraint)) {
-            return Optional.of(refusals.structural().get());
+            return Optional.of(steps.structural().get());
           }
 
           return Optional.empty();
