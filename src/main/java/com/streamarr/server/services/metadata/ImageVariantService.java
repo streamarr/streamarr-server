@@ -177,8 +177,12 @@ public class ImageVariantService {
   }
 
   private BufferedImage resize(BufferedImage source, int targetWidth) {
+    return render(Thumbnails.of(source).width(targetWidth));
+  }
+
+  private static BufferedImage render(Thumbnails.Builder<BufferedImage> thumbnail) {
     try {
-      return Thumbnails.of(source).width(targetWidth).asBufferedImage();
+      return thumbnail.asBufferedImage();
     } catch (IOException e) {
       throw new ImageProcessingException(e);
     }
