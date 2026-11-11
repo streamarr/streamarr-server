@@ -198,6 +198,10 @@ class NotificationMarksIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
     mockMvc
+        .perform(graphqlRequest(bearer, MARK_ONE.formatted("not-an-id")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+    mockMvc
         .perform(graphqlRequest(bearer, MARK_ALL.formatted("anything")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));

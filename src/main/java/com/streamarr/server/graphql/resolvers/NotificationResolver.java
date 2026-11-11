@@ -103,13 +103,15 @@ public class NotificationResolver {
   @DgsMutation
   public MarkNotificationReadPayload markNotificationRead(
       @InputArgument MarkNotificationReadInput input) {
+    var identity = authorizationService.currentIdentity();
+    notificationService.requireMarkNotificationsRead(identity);
     return MutationPayloads.withUuid(
         input.notificationId(),
         notificationId -> {
           var now = clock.instant();
           return MutationPayloads.payload(
               notificationService
-                  .markNotificationRead(authorizationService.currentIdentity(), notificationId)
+                  .markNotificationRead(identity, notificationId)
                   .map(
                       read ->
                           new MarkNotificationReadPayload.MarkedNotification(
