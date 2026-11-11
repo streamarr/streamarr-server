@@ -1011,19 +1011,16 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should refuse the invitation when an Account's email differs from it only in case")
   void shouldRefuseInvitationWhenAccountEmailDiffersFromItOnlyInCase(
       String storedEmail, String recipientEmail) throws Exception {
-    var existing = authTestSupport.createAccount(builder -> builder.email(storedEmail));
-    try {
-      requestInvitation(recipientEmail)
-          .andExpect(status().isOk())
-          .andExpect(jsonPath("$.errors").doesNotExist())
-          .andExpect(
-              jsonPath("$.data.issueAccountInvitationWithNewProfile.userErrors[0].__typename")
-                  .value("EmailAlreadyUsedError"));
+    authTestSupport.createAccount(builder -> builder.email(storedEmail));
 
-      assertThat(invitationRepository.findAll()).isEmpty();
-    } finally {
-      authTestSupport.deleteAccount(existing.getId());
-    }
+    requestInvitation(recipientEmail)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.issueAccountInvitationWithNewProfile.userErrors[0].__typename")
+                .value("EmailAlreadyUsedError"));
+
+    assertThat(invitationRepository.findAll()).isEmpty();
   }
 
   // U+0131, a dotless i, stays itself under lower(): the address is not invitee@example.com.
@@ -1031,17 +1028,14 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should issue the invitation when the email differs from an Account's by a dotless i")
   void shouldIssueInvitationWhenEmailDiffersFromAccountByDotlessI() throws Exception {
-    var existing = authTestSupport.createAccount(builder -> builder.email("invitee@example.com"));
-    try {
-      requestInvitation("\u0131nvitee@example.com")
-          .andExpect(status().isOk())
-          .andExpect(jsonPath("$.errors").doesNotExist())
-          .andExpect(jsonPath("$.data.issueAccountInvitationWithNewProfile.userErrors").isEmpty())
-          .andExpect(
-              jsonPath("$.data.issueAccountInvitationWithNewProfile.issued.code").isNotEmpty());
-    } finally {
-      authTestSupport.deleteAccount(existing.getId());
-    }
+    authTestSupport.createAccount(builder -> builder.email("invitee@example.com"));
+
+    requestInvitation("\u0131nvitee@example.com")
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.issueAccountInvitationWithNewProfile.userErrors").isEmpty())
+        .andExpect(
+            jsonPath("$.data.issueAccountInvitationWithNewProfile.issued.code").isNotEmpty());
   }
 
   @Test
