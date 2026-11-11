@@ -79,6 +79,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -111,6 +112,9 @@ final class LiveWorkerConnectionRegistry {
   private static final Duration DEFERRAL_WARNING_INTERVAL = Duration.ofMinutes(1);
   private static final Executor PROBE_DEADLINE_CALLBACKS =
       command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
+  // Ends the open report call of a probe attempt that ended with its worker session.
+  private static final Status WORKER_SESSION_ENDED =
+      Status.PERMISSION_DENIED.withDescription("Worker session ended");
   private final long probeTimeoutNanos;
   private final long keyframeScanTimeoutNanos;
   private final long bitrateScanChunkTimeoutNanos;
@@ -416,11 +420,13 @@ final class LiveWorkerConnectionRegistry {
   /**
    * Decides whether a report call may report the probe attempt that its first message names: an
    * attempt that the authenticated worker's live session runs and that no other report call
-   * reports. {@code endReportCall} ends the admitted call when the attempt ends without it. Takes
-   * no monitor, so a report call never waits for a publication or a dispatch.
+   * reports. {@code endReportCall} ends the admitted call with a status when the attempt ends
+   * without it. Takes no monitor, so a report call never waits for a publication or a dispatch.
    */
   ProbeReportAdmission admitProbeReport(
-      UUID authenticatedWorkerId, ProbeAttemptReportMetadata metadata, Runnable endReportCall) {
+      UUID authenticatedWorkerId,
+      ProbeAttemptReportMetadata metadata,
+      Consumer<Status> endReportCall) {
     var connection = connections.get(authenticatedWorkerId);
     if (connection == null
         || !connection.isThisWorkerSession(metadata.getWorkerSessionId(), metadata.getWorker())) {
@@ -1306,7 +1312,7 @@ final class LiveWorkerConnectionRegistry {
       }
 
       pendingProbes.remove(attemptId, pending.result());
-      pending.endReportCall();
+      pending.endReportCall(WORKER_SESSION_ENDED);
       var workerId = fromProto(worker.getWorkerId());
       if (!connections.remove(workerId, this)) {
         return;
@@ -1333,10 +1339,10 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private void abandonProbe(UUID attemptId) {
-      failProbe(attemptId, "Worker disconnected during probe dispatch");
+      failProbe(attemptId, "Worker disconnected during probe dispatch", WORKER_SESSION_ENDED);
     }
 
-    private void failProbe(UUID attemptId, String reason) {
+    private void failProbe(UUID attemptId, String reason, Status reportCallEnd) {
       var pending = activeProbes.remove(attemptId);
       if (pending == null) {
         return;
@@ -1344,10 +1350,10 @@ final class LiveWorkerConnectionRegistry {
 
       pending.failForRetry(reason);
       pendingProbes.remove(attemptId, pending.result());
-      pending.endReportCall();
+      pending.endReportCall(reportCallEnd);
     }
 
-    private ProbeReportAdmission admitProbeReport(UUID attemptId, Runnable endReportCall) {
+    private ProbeReportAdmission admitProbeReport(UUID attemptId, Consumer<Status> endReportCall) {
       var pending = activeProbes.get(attemptId);
       if (pending == null) {
         return new ProbeReportAdmission.NotOwned();
@@ -1978,7 +1984,9 @@ final class LiveWorkerConnectionRegistry {
       activeVariants.clear();
       drained.forEach(this::wakeHeldRequests);
       List.copyOf(encodeAttempts.keySet()).forEach(this::forgetEncodeAttempt);
-      activeProbes.keySet().forEach(attemptId -> failProbe(attemptId, "Worker session ended"));
+      activeProbes
+          .keySet()
+          .forEach(attemptId -> failProbe(attemptId, "Worker session ended", WORKER_SESSION_ENDED));
       return drained;
     }
 

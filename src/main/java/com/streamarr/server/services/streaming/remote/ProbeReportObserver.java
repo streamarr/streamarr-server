@@ -129,7 +129,7 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
     var metadata = request.getMetadata();
     var admission =
         workerConnections.admitProbeReport(
-            authenticatedWorkerId, metadata, this::endForEndedWorkerSession);
+            authenticatedWorkerId, metadata, this::endForEndedAttempt);
     switch (admission) {
       case ProbeReportAdmission.NotOwned _ ->
           end(
@@ -266,13 +266,13 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
     }
   }
 
-  // The worker connections have already failed the attempt.
-  private synchronized void endForEndedWorkerSession() {
+  // The worker connections have already ended the attempt.
+  private synchronized void endForEndedAttempt(Status status) {
     if (closed) {
       return;
     }
 
-    end(Status.PERMISSION_DENIED.withDescription("Worker session ended"));
+    end(status);
   }
 
   private void breakContract(String rule) {

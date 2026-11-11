@@ -6,9 +6,11 @@ import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeRequest;
+import io.grpc.Status;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * One probe attempt that a worker session runs, from its start command until the worker's probe
@@ -19,8 +21,9 @@ final class PendingProbe {
   private final ProbeRequest request;
   private final CompletableFuture<ProbeAttemptReport> result = new CompletableFuture<>();
   private final CompletableFuture<Void> terminated = new CompletableFuture<>();
-  // How to end the one report call that reports the attempt. Unset until that call names it.
-  private final AtomicReference<Runnable> reportCallEnd = new AtomicReference<>();
+  // How to end the one report call that reports the attempt, with a status. Unset until that call
+  // names it.
+  private final AtomicReference<Consumer<Status>> reportCallEnd = new AtomicReference<>();
 
   PendingProbe(ProbeRequest request) {
     this.request = request;
@@ -104,15 +107,18 @@ final class PendingProbe {
    * Gives the attempt its one report call. Returns false, and keeps the earlier call, when a report
    * call already reports the attempt.
    */
-  boolean tryStartReportCall(Runnable endReportCall) {
+  boolean tryStartReportCall(Consumer<Status> endReportCall) {
     return reportCallEnd.compareAndSet(null, endReportCall);
   }
 
-  /** Ends the attempt's report call, when one reports it, because the attempt ended without it. */
-  void endReportCall() {
+  /**
+   * Ends the attempt's report call with the status, when one reports it, because the attempt ended
+   * without it.
+   */
+  void endReportCall(Status status) {
     var end = reportCallEnd.get();
     if (end != null) {
-      end.run();
+      end.accept(status);
     }
   }
 }
