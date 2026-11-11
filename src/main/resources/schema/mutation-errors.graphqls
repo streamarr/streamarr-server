@@ -485,14 +485,8 @@ type NoEligibleVideoFormatError implements MutationError {
     message: String!
 }
 
-"No Notification of the signed-in Account that it may see has the given ID."
-type NotificationNotFoundError implements InputMutationError & MutationError {
-    message: String!
-    inputPath: [String!]!
-}
-
-"GraphQL accepted the cursor, but the server cannot read it as a position in this list."
-type InvalidCursorError implements InputMutationError & MutationError {
+"The input names fewer than 1 or more than 100 Notification ids."
+type NotificationIdCountOutOfRangeError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }

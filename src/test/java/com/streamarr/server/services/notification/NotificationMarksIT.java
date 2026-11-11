@@ -1,5 +1,6 @@
 package com.streamarr.server.services.notification;
 
+import static com.streamarr.server.jooq.generated.tables.Notification.NOTIFICATION;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
@@ -10,8 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
@@ -28,12 +29,15 @@ import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
@@ -42,6 +46,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
@@ -52,17 +58,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Notification Marks Integration Tests")
 class NotificationMarksIT extends AbstractIntegrationTest {
 
-  private static final String MARK_ONE =
+  private static final String MARK =
       """
-      mutation { markNotificationRead(input: {notificationId: "%s"}) {
-        notification { id unread ... on RequestNotification { resolution } }
-        unreadNotificationCount
-        userErrors { __typename ... on InputMutationError { message inputPath } } } }
-      """;
-
-  private static final String MARK_ALL =
-      """
-      mutation { markAllNotificationsRead(input: {through: "%s"}) {
+      mutation { markNotificationsRead(input: {ids: [%s]}) {
         unreadNotificationCount
         userErrors { __typename ... on InputMutationError { message inputPath } } } }
       """;
@@ -112,32 +110,92 @@ class NotificationMarksIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should mark the news read and lower the count when its recipient marks it")
-  void shouldMarkTheNewsReadAndLowerTheCountWhenItsRecipientMarksIt() throws Exception {
-    var news = acceptedNewsFor(theo);
+  @DisplayName(
+      "Should mark read exactly the Notifications given and leave unread one the client did not"
+          + " show when its recipient marks them")
+  void shouldMarkReadExactlyTheNotificationsGivenAndLeaveUnreadOneTheClientDidNotShow()
+      throws Exception {
+    var shown = acceptedNewsFor(theo, "Kai");
+    var alsoShown = acceptedNewsFor(theo, "Ollie");
+    var notShown = acceptedNewsFor(theo, "Ash");
+    happenedBefore(notShown, shown);
 
-    markOne(theo, news.getId())
+    mark(theo, shown.getId(), alsoShown.getId())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(
-            jsonPath("$.data.markNotificationRead.notification.id").value(news.getId().toString()))
-        .andExpect(jsonPath("$.data.markNotificationRead.notification.unread").value(false))
-        .andExpect(jsonPath("$.data.markNotificationRead.unreadNotificationCount").value(0))
-        .andExpect(jsonPath("$.data.markNotificationRead.userErrors").isEmpty());
+        .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(1))
+        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
+
+    assertThat(stored(shown).getReadAt()).isPresent();
+    assertThat(stored(alsoShown).getReadAt()).isPresent();
+    assertThat(stored(notShown).getReadAt()).isEmpty();
+  }
+
+  @ParameterizedTest(name = "{0} ids")
+  @ValueSource(ints = {1, 100})
+  @DisplayName("Should mark the Notification read when the ids number one or a hundred")
+  void shouldMarkTheNotificationReadWhenTheIdsNumberOneOrAHundred(int count) throws Exception {
+    var news = acceptedNewsFor(theo, "Kai");
+
+    mark(theo, idsWith(news, count))
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
 
     assertThat(stored(news).getReadAt()).isPresent();
   }
 
+  @ParameterizedTest(name = "{0} ids")
+  @ValueSource(ints = {0, 101})
+  @DisplayName("Should refuse the mark and mark nothing when the ids number none or over a hundred")
+  void shouldRefuseTheMarkAndMarkNothingWhenTheIdsNumberNoneOrOverAHundred(int count)
+      throws Exception {
+    var news = acceptedNewsFor(theo, "Kai");
+
+    mark(theo, idsWith(news, count))
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.markNotificationsRead.userErrors[0].__typename")
+                .value("NotificationIdCountOutOfRangeError"))
+        .andExpect(
+            jsonPath("$.data.markNotificationsRead.userErrors[0].inputPath[0]").value("ids"));
+
+    assertThat(stored(news).getReadAt()).isEmpty();
+  }
+
   @Test
-  @DisplayName("Should return the read news unchanged when its recipient marks it again")
-  void shouldReturnTheReadNewsUnchangedWhenItsRecipientMarksItAgain() throws Exception {
-    var news = acceptedNewsFor(theo);
-    markOne(theo, news.getId());
+  @DisplayName(
+      "Should skip another Account's id and an unknown id alike and mark neither when they are"
+          + " given")
+  void shouldSkipAnotherAccountsIdAndAnUnknownIdAlikeWhenTheyAreGiven() throws Exception {
+    var theos = acceptedNewsFor(theo, "Kai");
+    var sams = newsAboutTheSameShare(sam, theos);
+
+    var forAnotherAccounts = bodyOf(mark(theo, sams.getId()));
+    var forAnUnknownId = bodyOf(mark(theo, UUID.randomUUID()));
+
+    assertThat(forAnotherAccounts).isEqualTo(forAnUnknownId);
+    assertThat(
+            JsonPath.<Integer>read(
+                forAnUnknownId, "$.data.markNotificationsRead.unreadNotificationCount"))
+        .isOne();
+    assertThat(JsonPath.<List<?>>read(forAnUnknownId, "$.data.markNotificationsRead.userErrors"))
+        .isEmpty();
+    assertThat(stored(sams).getReadAt()).isEmpty();
+    assertThat(stored(theos).getReadAt()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should keep when it was read when an id given is already read")
+  void shouldKeepWhenItWasReadWhenAnIdGivenIsAlreadyRead() throws Exception {
+    var news = acceptedNewsFor(theo, "Kai");
+    mark(theo, news.getId());
     var firstRead = stored(news).getReadAt();
 
-    markOne(theo, news.getId())
+    mark(theo, news.getId())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.markNotificationRead.notification.unread").value(false))
-        .andExpect(jsonPath("$.data.markNotificationRead.userErrors").isEmpty());
+        .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
 
     assertThat(stored(news).getReadAt()).isEqualTo(firstRead);
   }
@@ -146,131 +204,52 @@ class NotificationMarksIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should mark a waiting request read and leave it waiting when its recipient marks it")
   void shouldMarkAWaitingRequestReadAndLeaveItWaitingWhenItsRecipientMarksIt() throws Exception {
-    var request = requestFor(riversideAdmin, steps.offer(sam, kai(), riverside));
+    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    var request = notificationFor(riversideAdmin, offer);
 
-    markOne(riversideAdmin, request.getId())
+    mark(riversideAdmin, request.getId())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.markNotificationRead.notification.unread").value(false))
-        .andExpect(jsonPath("$.data.markNotificationRead.notification.resolution").doesNotExist())
-        .andExpect(jsonPath("$.data.markNotificationRead.unreadNotificationCount").value(0));
+        .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
+
+    assertThat(stored(request).getReadAt()).isPresent();
+    assertThat(shareRepository.findById(offer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.PENDING);
   }
 
   @Test
   @DisplayName(
-      "Should answer as missing and change nothing when the Notification is another Account's")
-  void shouldAnswerAsMissingAndChangeNothingWhenTheNotificationIsAnotherAccounts()
-      throws Exception {
-    var news = acceptedNewsFor(theo);
-
-    markOne(sam, news.getId())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.markNotificationRead.notification").doesNotExist())
-        .andExpect(jsonPath("$.data.markNotificationRead.unreadNotificationCount").doesNotExist())
-        .andExpect(
-            jsonPath("$.data.markNotificationRead.userErrors[0].__typename")
-                .value("NotificationNotFoundError"))
-        .andExpect(
-            jsonPath("$.data.markNotificationRead.userErrors[0].inputPath[0]")
-                .value("notificationId"));
-
-    assertThat(stored(news).getReadAt()).isEmpty();
-  }
-
-  @Test
-  @DisplayName(
-      "Should answer as missing and leave it unread when the guard hides the Notification from its"
-          + " recipient")
-  void shouldAnswerAsMissingAndLeaveItUnreadWhenTheGuardHidesTheNotification() throws Exception {
-    var request = requestFor(riversideAdmin, steps.offer(sam, kai(), riverside));
+      "Should leave unread the Notification that the guard hides from its recipient when its id"
+          + " is given")
+  void shouldLeaveUnreadTheNotificationThatTheGuardHidesWhenItsIdIsGiven() throws Exception {
+    var request =
+        notificationFor(
+            riversideAdmin, steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside));
     demote(riversideAdmin);
 
-    markOne(riversideAdmin, request.getId())
+    mark(riversideAdmin, request.getId())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(
-            jsonPath("$.data.markNotificationRead.userErrors[0].__typename")
-                .value("NotificationNotFoundError"));
+        .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
 
     assertThat(stored(request).getReadAt()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should answer that the ID is invalid when it is not one")
-  void shouldAnswerThatTheIdIsInvalidWhenItIsNotOne() throws Exception {
-    mockMvc
-        .perform(graphqlRequest(authTestSupport.accountBearer(theo), MARK_ONE.formatted("Kai")))
+  @DisplayName("Should answer that the id is invalid and mark nothing when one given is not an id")
+  void shouldAnswerThatTheIdIsInvalidAndMarkNothingWhenOneGivenIsNotAnId() throws Exception {
+    var news = acceptedNewsFor(theo, "Kai");
+
+    mark(theo, news.getId(), "Kai")
         .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").doesNotExist())
         .andExpect(
-            jsonPath("$.data.markNotificationRead.userErrors[0].__typename")
+            jsonPath("$.data.markNotificationsRead.userErrors[0].__typename")
                 .value("InvalidIdError"))
-        .andExpect(
-            jsonPath("$.data.markNotificationRead.userErrors[0].inputPath[0]")
-                .value("notificationId"));
-  }
-
-  @Test
-  @DisplayName("Should refuse both marks when the session is device-bound")
-  void shouldRefuseBothMarksWhenTheSessionIsDeviceBound() throws Exception {
-    var news = acceptedNewsFor(theo);
-    var bearer = authTestSupport.deviceBoundProfileBearer(theo);
-
-    mockMvc
-        .perform(graphqlRequest(bearer, MARK_ONE.formatted(news.getId())))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
-    mockMvc
-        .perform(graphqlRequest(bearer, MARK_ONE.formatted("not-an-id")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
-    mockMvc
-        .perform(graphqlRequest(bearer, MARK_ALL.formatted("anything")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors[0].inputPath[0]").value("ids"))
+        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors[0].inputPath[1]").value("1"));
 
     assertThat(stored(news).getReadAt()).isEmpty();
-  }
-
-  @Test
-  @DisplayName(
-      "Should mark read every Notification at or below the cursor and leave a newer one unread"
-          + " when the list is marked read through a cursor")
-  void shouldMarkReadEveryNotificationAtOrBelowTheCursorWhenTheListIsMarkedReadThroughACursor()
-      throws Exception {
-    var oldest = requestFor(riversideAdmin, steps.offer(sam, kai(), riverside));
-    var through = requestFor(riversideAdmin, steps.offer(sam, ollie(), riverside));
-    var cursor = cursorOf(riversideAdmin, through);
-    var newer =
-        requestFor(
-            riversideAdmin, steps.offer(sam, steps.profileManagedBy("Ash", sam, sam), riverside));
-
-    markAll(riversideAdmin, cursor)
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.markAllNotificationsRead.unreadNotificationCount").value(1))
-        .andExpect(jsonPath("$.data.markAllNotificationsRead.userErrors").isEmpty());
-
-    assertThat(stored(oldest).getReadAt()).isPresent();
-    assertThat(stored(through).getReadAt()).isPresent();
-    assertThat(stored(newer).getReadAt()).isEmpty();
-  }
-
-  @Test
-  @DisplayName(
-      "Should leave a Notification unread when an update in place moved it above the cursor before"
-          + " its recipient marked all read")
-  void shouldLeaveANotificationUnreadWhenAnUpdateInPlaceMovedItAboveTheCursor() throws Exception {
-    var moved = acceptedNewsFor(theo, "Kai");
-    var through = acceptedNewsFor(theo, "Ollie");
-    var cursor = cursorOf(theo, through);
-    transactionTemplate.executeWithoutResult(
-        _ ->
-            notificationRepository.upsertUnreadNews(
-                answeredAgain(moved, moved.getLatestEventAt().plusSeconds(60))));
-
-    markAll(theo, cursor)
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.markAllNotificationsRead.unreadNotificationCount").value(1));
-
-    assertThat(stored(through).getReadAt()).isPresent();
-    assertThat(stored(moved).getReadAt()).isEmpty();
   }
 
   @Test
@@ -279,7 +258,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
           + " it")
   void shouldKeepWhatAnUpdateInPlaceStoredWhenTheMarkOfTheNotificationWaitedBehindIt()
       throws Exception {
-    var news = acceptedNewsFor(theo);
+    var news = acceptedNewsFor(theo, "Kai");
     var later = news.getLatestEventAt().plusSeconds(60);
     var updateHolds = new CountDownLatch(1);
     var releaseUpdate = new CountDownLatch(1);
@@ -307,8 +286,8 @@ class NotificationMarksIT extends AbstractIntegrationTest {
       var mark =
           executor.submit(
               () ->
-                  notificationService.markNotificationRead(
-                      authTestSupport.identityOf(theo), news.getId()));
+                  notificationService.markNotificationsRead(
+                      authTestSupport.identityOf(theo), List.of(news.getId())));
       await()
           .atMost(Duration.ofSeconds(10))
           .until(() -> waitersBehind(jdbcTemplate, updatePid.get(), "update%notification%") == 1);
@@ -325,115 +304,51 @@ class NotificationMarksIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should leave unread the Notifications that the guard hides when its recipient marks all"
-          + " read")
-  void shouldLeaveUnreadTheNotificationsThatTheGuardHidesWhenItsRecipientMarksAllRead()
-      throws Exception {
-    var hidden = requestFor(riversideAdmin, steps.offer(sam, kai(), riverside));
-    var cursor = cursorOf(riversideAdmin, hidden);
-    demote(riversideAdmin);
+  @DisplayName("Should refuse the mark whatever its ids when the session is device-bound")
+  void shouldRefuseTheMarkWhateverItsIdsWhenTheSessionIsDeviceBound() throws Exception {
+    var news = acceptedNewsFor(theo, "Kai");
+    var bearer = authTestSupport.deviceBoundProfileBearer(theo);
 
-    markAll(riversideAdmin, cursor)
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.markAllNotificationsRead.unreadNotificationCount").value(0));
+    for (var ids : List.of(quoted(news.getId()), quoted("not-an-id"), "")) {
+      mockMvc
+          .perform(graphqlRequest(bearer, MARK.formatted(ids)))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+    }
 
-    assertThat(stored(hidden).getReadAt()).isEmpty();
+    assertThat(stored(news).getReadAt()).isEmpty();
   }
 
-  @Test
-  @DisplayName("Should answer that the cursor is invalid when the server cannot read it")
-  void shouldAnswerThatTheCursorIsInvalidWhenTheServerCannotReadIt() throws Exception {
-    markAll(theo, "not-a-cursor")
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(
-            jsonPath("$.data.markAllNotificationsRead.unreadNotificationCount").doesNotExist())
-        .andExpect(
-            jsonPath("$.data.markAllNotificationsRead.userErrors[0].__typename")
-                .value("InvalidCursorError"))
-        .andExpect(
-            jsonPath("$.data.markAllNotificationsRead.userErrors[0].inputPath[0]")
-                .value("through"));
-  }
-
-  @Test
-  @DisplayName(
-      "Should answer that the cursor is invalid and mark nothing when it comes from another"
-          + " Account's list")
-  void shouldAnswerThatTheCursorIsInvalidWhenItComesFromAnotherAccountsList() throws Exception {
-    var offer = steps.offer(sam, kai(), riverside);
-    var othersCursor = cursorOf(riversideAdmin, requestFor(riversideAdmin, offer));
-
-    markAll(riverside, othersCursor)
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(
-            jsonPath("$.data.markAllNotificationsRead.userErrors[0].__typename")
-                .value("InvalidCursorError"));
-
-    assertThat(stored(requestFor(riverside, offer)).getReadAt()).isEmpty();
-  }
-
-  private ResultActions markOne(TestIdentity reader, UUID notificationId) throws Exception {
+  private ResultActions mark(TestIdentity reader, Object... ids) throws Exception {
+    var listed = Stream.of(ids).map(NotificationMarksIT::quoted).collect(Collectors.joining(", "));
     return mockMvc
-        .perform(
-            graphqlRequest(
-                authTestSupport.accountBearer(reader), MARK_ONE.formatted(notificationId)))
+        .perform(graphqlRequest(authTestSupport.accountBearer(reader), MARK.formatted(listed)))
         .andExpect(status().isOk());
   }
 
-  private ResultActions markAll(TestIdentity reader, String through) throws Exception {
-    return mockMvc
-        .perform(graphqlRequest(authTestSupport.accountBearer(reader), MARK_ALL.formatted(through)))
-        .andExpect(status().isOk());
+  private static String bodyOf(ResultActions response) throws Exception {
+    return response.andReturn().getResponse().getContentAsString();
   }
 
-  private String cursorOf(TestIdentity reader, Notification notification) throws Exception {
-    var response =
-        mockMvc
-            .perform(
-                graphqlRequest(
-                    authTestSupport.accountBearer(reader),
-                    "query { notifications(first: 50) { edges { cursor node { id } } } }"))
-            .andExpect(jsonPath("$.errors").doesNotExist())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    List<String> cursors =
-        JsonPath.read(
-            response,
-            "$.data.notifications.edges[?(@.node.id == '%s')].cursor"
-                .formatted(notification.getId()));
-    return cursors.getFirst();
+  // The news's id, and unknown ids after it until there are as many ids as the count.
+  private static Object[] idsWith(Notification news, int count) {
+    return Stream.concat(Stream.of(news.getId()), Stream.generate(UUID::randomUUID))
+        .limit(count)
+        .toArray();
   }
 
-  private Notification acceptedNewsFor(TestIdentity recipient) {
-    return acceptedNewsFor(recipient, "Kai");
+  private static String quoted(Object id) {
+    return "\"%s\"".formatted(id);
   }
 
-  private Notification acceptedNewsFor(TestIdentity recipient, String profileName) {
-    var offer = steps.offer(sam, steps.profileManagedBy(profileName, sam, sam, theo), riverside);
-    steps.accept(riverside, offer);
-    return notificationRepository.findAll().stream()
-        .filter(notification -> notification.getShareId().equals(offer.getId()))
-        .filter(
-            notification ->
-                notification.getRecipientAccountId().equals(recipient.account().getId()))
-        .findFirst()
-        .orElseThrow();
-  }
-
-  private Notification requestFor(TestIdentity recipient, ProfileHouseholdShare offer) {
-    return notificationRepository.findAll().stream()
-        .filter(notification -> notification.getShareId().equals(offer.getId()))
-        .filter(
-            notification ->
-                notification.getRecipientAccountId().equals(recipient.account().getId()))
-        .findFirst()
-        .orElseThrow();
-  }
-
-  private Notification stored(Notification notification) {
-    return notificationRepository.findById(notification.getId()).orElseThrow();
+  private void happenedBefore(Notification earlier, Notification later) {
+    var before = stored(later).getLatestEventAt().minusSeconds(60).atOffset(ZoneOffset.UTC);
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.update(NOTIFICATION)
+                .set(NOTIFICATION.LATEST_EVENT_AT, before)
+                .where(NOTIFICATION.ID.eq(earlier.getId()))
+                .execute());
   }
 
   /** A later answer of the news's kind about its share, which updates the unread news in place. */
@@ -448,12 +363,28 @@ class NotificationMarksIT extends AbstractIntegrationTest {
         .build();
   }
 
-  private Profile kai() {
-    return steps.profileManagedBy("Kai", sam, sam);
+  private Notification acceptedNewsFor(TestIdentity recipient, String profileName) {
+    var offer = steps.offer(sam, steps.profileManagedBy(profileName, sam, sam, theo), riverside);
+    steps.accept(riverside, offer);
+    return notificationFor(recipient, offer);
   }
 
-  private Profile ollie() {
-    return steps.profileManagedBy("Ollie", sam, sam);
+  private Notification newsAboutTheSameShare(TestIdentity recipient, Notification news) {
+    return notificationFor(recipient, shareRepository.findById(news.getShareId()).orElseThrow());
+  }
+
+  private Notification notificationFor(TestIdentity recipient, ProfileHouseholdShare share) {
+    return notificationRepository.findAll().stream()
+        .filter(notification -> notification.getShareId().equals(share.getId()))
+        .filter(
+            notification ->
+                notification.getRecipientAccountId().equals(recipient.account().getId()))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private Notification stored(Notification notification) {
+    return notificationRepository.findById(notification.getId()).orElseThrow();
   }
 
   private void demote(TestIdentity householdAdmin) {

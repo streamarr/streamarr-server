@@ -114,14 +114,14 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   }
 
   @Override
-  public List<Notification> findUnreadOfRecipientThrough(
-      UUID recipientAccountId, Seek through, Instant now) {
-    return unreadOf(recipientAccountId, NEWEST_FIRST.beyond(through), now);
+  public List<Notification> findUnreadOfRecipientWithIds(
+      UUID recipientAccountId, Collection<UUID> notificationIds, Instant now) {
+    return unreadOf(recipientAccountId, NOTIFICATION.ID.in(notificationIds), now);
   }
 
   @Override
-  public List<UUID> markReadThrough(
-      Collection<UUID> notificationIds, UUID recipientAccountId, Seek through, Instant now) {
+  public List<UUID> markRead(
+      Collection<UUID> notificationIds, UUID recipientAccountId, Instant now) {
     if (notificationIds.isEmpty()) {
       return List.of();
     }
@@ -131,31 +131,8 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
         .where(NOTIFICATION.ID.in(notificationIds))
         .and(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
         .and(NOTIFICATION.READ_AT.isNull())
-        .and(NEWEST_FIRST.beyond(through))
         .returning(NOTIFICATION.ID)
         .fetch(NOTIFICATION.ID);
-  }
-
-  @Override
-  public boolean markRead(UUID notificationId, UUID recipientAccountId, Instant now) {
-    return dsl.update(NOTIFICATION)
-            .set(NOTIFICATION.READ_AT, now.atOffset(ZoneOffset.UTC))
-            .where(NOTIFICATION.ID.eq(notificationId))
-            .and(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
-            .and(NOTIFICATION.READ_AT.isNull())
-            .execute()
-        > 0;
-  }
-
-  @Override
-  public Optional<Notification> findByIdAndReloadFromDatabase(UUID notificationId) {
-    var entity = entityManager.find(Notification.class, notificationId);
-    if (entity == null) {
-      return Optional.empty();
-    }
-
-    entityManager.refresh(entity);
-    return Optional.of(entity);
   }
 
   private List<Notification> unreadOf(UUID recipientAccountId, Condition among, Instant now) {

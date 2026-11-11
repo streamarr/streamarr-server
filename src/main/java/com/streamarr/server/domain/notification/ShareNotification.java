@@ -19,11 +19,6 @@ public record ShareNotification(
     return notification.getReadAt().isEmpty() && resolutionAt(now).isEmpty();
   }
 
-  @Override
-  public ShareNotification withNotification(Notification stored) {
-    return new ShareNotification(stored, share);
-  }
-
   /** How the request resolved at the instant; empty while it waits, and always for news. */
   public Optional<RequestResolution> resolutionAt(Instant now) {
     return switch (notification.getForm()) {

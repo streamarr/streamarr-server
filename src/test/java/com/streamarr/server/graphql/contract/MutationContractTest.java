@@ -44,10 +44,6 @@ class MutationContractTest {
 
   private static final Set<String> INPUT_ERROR_UNIONS = Set.of("AddLibraryError");
 
-  // ADR 0063 returns the signed-in Account's unread count beside the marked Notification, so a
-  // client updates its badge without a second read.
-  private static final Set<String> PAYLOADS_WITH_UNREAD_COUNT = Set.of("markNotificationRead");
-
   private static final TypeDefinitionRegistry SCHEMA = loadSchema();
 
   @Test
@@ -470,8 +466,7 @@ class MutationContractTest {
       violations.add(name + ": payload must declare userErrors: [" + capitalize(name) + "Error!]!");
     }
 
-    var resultFields = PAYLOADS_WITH_UNREAD_COUNT.contains(name) ? 3 : 2;
-    if (payload.get().getFieldDefinitions().size() != resultFields) {
+    if (payload.get().getFieldDefinitions().size() != 2) {
       violations.add(name + ": payload must expose exactly one result position plus userErrors");
     }
 

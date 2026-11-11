@@ -3,6 +3,7 @@ package com.streamarr.server.services.notification;
 import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
@@ -36,6 +37,8 @@ import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -96,6 +99,11 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
           }
         }
       }
+      """;
+
+  private static final String MARK =
+      """
+      mutation { markNotificationsRead(input: {ids: [%s]}) { userErrors { __typename } } }
       """;
 
   private static final ObjectMapper JSON = new ObjectMapper();
@@ -614,7 +622,8 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     var phone = subscribedSocket(authTestSupport.accountBearer(theo));
     var laptop = subscribedSocket(authTestSupport.accountBearer(theo));
 
-    notificationService.markNotificationRead(authTestSupport.identityOf(theo), news.getId());
+    notificationService.markNotificationsRead(
+        authTestSupport.identityOf(theo), List.of(news.getId()));
 
     var onPhone = nextChange(phone);
     var onLaptop = nextChange(laptop);
@@ -630,6 +639,67 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
             });
     assertMatchesAFreshQuery(onPhone, theo);
     assertMatchesAFreshQuery(onLaptop, theo);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver one change with every Notification marked when its recipient marks several"
+          + " read")
+  void shouldDeliverOneChangeWithEveryNotificationMarkedWhenItsRecipientMarksSeveralRead()
+      throws Exception {
+    var kai = newsFor(theo, "Kai");
+    var ollie = newsFor(theo, "Ollie");
+    var socket = subscribedSocket(authTestSupport.accountBearer(theo));
+
+    markRead(theo, kai, ollie);
+
+    var marked = nextChange(socket);
+    assertThat(
+            marked
+                .path("notifications")
+                .valueStream()
+                .map(change -> change.path("notificationId").asString()))
+        .containsExactlyInAnyOrder(kai.getId().toString(), ollie.getId().toString());
+    assertThat(marked.path("unreadNotificationCount").asInt()).isZero();
+    assertMatchesAFreshQuery(marked, theo);
+    var sentinel = newsFor(theo, "Ash");
+    assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
+        .isEqualTo(sentinel.getId().toString());
+  }
+
+  @Test
+  @DisplayName("Should deliver nothing when no Notification among the ids becomes read")
+  void shouldDeliverNothingWhenNoNotificationAmongTheIdsBecomesRead() throws Exception {
+    var kai = newsFor(theo, "Kai");
+    var socket = subscribedSocket(authTestSupport.accountBearer(theo));
+    markRead(theo, kai);
+    assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
+        .isEqualTo(kai.getId().toString());
+
+    markRead(theo, kai, requestFor(sam, shareRepository.findById(kai.getShareId()).orElseThrow()));
+    var sentinel = newsFor(theo, "Ash");
+
+    assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
+        .isEqualTo(sentinel.getId().toString());
+  }
+
+  @Test
+  @DisplayName("Should deliver nothing and leave the news unread when the mark rolls back")
+  void shouldDeliverNothingAndLeaveTheNewsUnreadWhenTheMarkRollsBack() {
+    var kai = newsFor(theo, "Kai");
+    var socket = subscribedSocket(authTestSupport.accountBearer(theo));
+
+    transactionTemplate.executeWithoutResult(
+        status -> {
+          notificationService.markNotificationsRead(
+              authTestSupport.identityOf(theo), List.of(kai.getId()));
+          status.setRollbackOnly();
+        });
+    var sentinel = newsFor(theo, "Ash");
+
+    assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
+        .isEqualTo(sentinel.getId().toString());
+    assertThat(notificationRepository.findById(kai.getId()).orElseThrow().getReadAt()).isEmpty();
   }
 
   @Test
@@ -687,6 +757,23 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   private Profile kai() {
     return steps.profileManagedBy("Kai", sam, sam);
+  }
+
+  /** The recipient's news that Riverside accepted an offer of a new Profile that Theo manages. */
+  private Notification newsFor(TestIdentity recipient, String profileName) {
+    var offer = steps.offer(sam, steps.profileManagedBy(profileName, sam, sam, theo), riverside);
+    return requestFor(recipient, steps.accept(riverside, offer));
+  }
+
+  private void markRead(TestIdentity reader, Notification... notifications) throws Exception {
+    var ids =
+        Stream.of(notifications)
+            .map(notification -> "\"%s\"".formatted(notification.getId()))
+            .collect(Collectors.joining(", "));
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(reader), MARK.formatted(ids)))
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
   }
 
   private Notification requestFor(TestIdentity recipient, ProfileHouseholdShare share) {
