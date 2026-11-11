@@ -7,6 +7,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.ProbeAttemptEndedWithoutReport;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
@@ -47,6 +48,8 @@ final class ReportingWorker {
           .build();
   private SessionCommands commands;
   private StreamObserver<EstablishWorkerSessionRequest> session;
+  // The worker session that the last reconnect replaced.
+  private StreamObserver<EstablishWorkerSessionRequest> earlierSession;
 
   private ReportingWorker(
       LiveWorkerConnectionRegistry registry,
@@ -119,6 +122,7 @@ final class ReportingWorker {
    */
   Uuid reconnect() throws Exception {
     var earlier = sessionId();
+    earlierSession = session;
     register(capacities());
     return earlier;
   }
@@ -192,6 +196,24 @@ final class ReportingWorker {
     session.onNext(event);
   }
 
+  /** Sends the event on the worker session that the reconnect replaced, as a late message of it. */
+  void sendOnEarlierSession(EstablishWorkerSessionRequest event) {
+    earlierSession.onNext(event);
+  }
+
+  /** Tells the server that the probe attempt has ended on the worker without a probe report. */
+  void endWithoutReport(ProbeRequest request) {
+    send(endedWithoutReport(request.getProbeAttemptId()));
+  }
+
+  /** The event that ends the probe attempt on the worker without a probe report. */
+  static EstablishWorkerSessionRequest endedWithoutReport(Uuid probeAttemptId) {
+    return EstablishWorkerSessionRequest.newBuilder()
+        .setProbeAttemptEndedWithoutReport(
+            ProbeAttemptEndedWithoutReport.newBuilder().setProbeAttemptId(probeAttemptId))
+        .build();
+  }
+
   /** Ends the worker session as gRPC does when the worker's connection is lost. */
   void disconnect() {
     session.onError(Status.UNAVAILABLE.asRuntimeException());
@@ -205,6 +227,14 @@ final class ReportingWorker {
   /** Completes with the status that the server ended the worker session with. */
   CompletableFuture<Status> sessionEnd() {
     return commands.end;
+  }
+
+  /** The probe attempts that the server told the worker to cancel, in the order of the commands. */
+  List<Uuid> canceledProbeAttempts() {
+    return commands.responses.stream()
+        .filter(EstablishWorkerSessionResponse::hasCancelProbe)
+        .map(command -> command.getCancelProbe().getProbeAttemptId())
+        .toList();
   }
 
   boolean isConnected() {

@@ -115,6 +115,11 @@ final class LiveWorkerConnectionRegistry {
   // Ends the open report call of a probe attempt that ended with its worker session.
   private static final Status WORKER_SESSION_ENDED =
       Status.PERMISSION_DENIED.withDescription("Worker session ended");
+  // Ends the open report call of a probe attempt that its worker ended without a probe report. A
+  // report call whose first message arrives after that end gets the same code.
+  private static final Status ENDED_WITHOUT_REPORT =
+      Status.PERMISSION_DENIED.withDescription(
+          "Worker ended the probe attempt without a probe report");
   private final long probeTimeoutNanos;
   private final long keyframeScanTimeoutNanos;
   private final long bitrateScanChunkTimeoutNanos;
@@ -434,6 +439,18 @@ final class LiveWorkerConnectionRegistry {
     }
 
     return connection.admitProbeReport(fromProto(metadata.getProbeAttemptId()), endReportCall);
+  }
+
+  /**
+   * Ends the probe attempt that a worker reports ended without a probe report. The worker session
+   * stops counting the probe, the wait that follows a cancel command ends, and an open report call
+   * for the attempt ends. A probe whose probe report the server still waited for fails for a retry,
+   * as when its worker is lost. Returns false, and changes nothing, when the worker session that
+   * sent the event did not start the attempt, or when the attempt has already ended.
+   */
+  boolean endProbeAttemptWithoutReport(UUID workerId, UUID workerSessionId, UUID probeAttemptId) {
+    var connection = currentConnection(workerId, workerSessionId);
+    return connection.isPresent() && connection.get().endProbeWithoutReport(probeAttemptId);
   }
 
   Optional<VariantDispatch> dispatchTo(ExecutionTargetId target, VariantJob job) {
@@ -1342,15 +1359,24 @@ final class LiveWorkerConnectionRegistry {
       failProbe(attemptId, "Worker disconnected during probe dispatch", WORKER_SESSION_ENDED);
     }
 
-    private void failProbe(UUID attemptId, String reason, Status reportCallEnd) {
+    // Removing the attempt decides that it has not ended and claims its end in one step, as every
+    // other end of a probe attempt does. Takes no monitor: a publication holds the monitor through
+    // its file I/O, and the wait that follows a cancel command must not outlast the publication.
+    private boolean endProbeWithoutReport(UUID attemptId) {
+      return failProbe(
+          attemptId, "Worker ended the probe attempt without a probe report", ENDED_WITHOUT_REPORT);
+    }
+
+    private boolean failProbe(UUID attemptId, String reason, Status reportCallEnd) {
       var pending = activeProbes.remove(attemptId);
       if (pending == null) {
-        return;
+        return false;
       }
 
       pending.failForRetry(reason);
       pendingProbes.remove(attemptId, pending.result());
       pending.endReportCall(reportCallEnd);
+      return true;
     }
 
     private ProbeReportAdmission admitProbeReport(UUID attemptId, Consumer<Status> endReportCall) {

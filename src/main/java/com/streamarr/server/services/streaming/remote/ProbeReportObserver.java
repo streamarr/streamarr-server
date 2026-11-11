@@ -22,9 +22,9 @@ import lombok.extern.slf4j.Slf4j;
  * probe report, one message at a time. At the half-close it checks the report, completes the probe
  * attempt and answers once.
  *
- * <p>The monitor orders gRPC's callbacks with the end of the worker session, the grant of room in
- * the memory budget and the idle timeout, which arrive on other threads. A method that holds the
- * monitor never takes a monitor of the worker connections.
+ * <p>The monitor orders gRPC's callbacks with an end of the probe attempt that the call did not
+ * cause, the grant of room in the memory budget and the idle timeout, which arrive on other
+ * threads. A method that holds the monitor never takes a monitor of the worker connections.
  */
 @Slf4j
 final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequest> {

@@ -9,11 +9,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.transcode.v1.BackgroundProbeCapacityControl;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
+import com.streamarr.transcode.v1.ProbeAttemptEndedWithoutReport;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ReportProbeAttemptResponse;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
+import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -162,6 +164,15 @@ public final class LoopbackProbeWorker implements AutoCloseable {
                 ProbeCapacityChanged.newBuilder()
                     .setBackgroundProbeCapacity(backgroundProbeCapacity)
                     .setKeyframePacketScanCapacity(keyframePacketScanCapacity))
+            .build());
+  }
+
+  /** Tells the server that the probe attempt has ended on the worker without a probe report. */
+  public void endWithoutReport(Uuid probeAttemptId) {
+    requests.onNext(
+        EstablishWorkerSessionRequest.newBuilder()
+            .setProbeAttemptEndedWithoutReport(
+                ProbeAttemptEndedWithoutReport.newBuilder().setProbeAttemptId(probeAttemptId))
             .build());
   }
 

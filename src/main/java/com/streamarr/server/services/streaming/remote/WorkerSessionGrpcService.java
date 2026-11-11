@@ -9,6 +9,7 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptStarted;
+import com.streamarr.transcode.v1.ProbeAttemptEndedWithoutReport;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ReportProbeAttemptRequest;
 import com.streamarr.transcode.v1.ReportProbeAttemptResponse;
@@ -216,6 +217,8 @@ final class WorkerSessionGrpcService
         case JOB_ATTEMPT_STOPPED ->
             finishOrWarn(request.getJobAttemptStopped().getJobAttemptId(), "stopped");
         case PROBE_CAPACITY_CHANGED -> changeProbeCapacity(request.getProbeCapacityChanged());
+        case PROBE_ATTEMPT_ENDED_WITHOUT_REPORT ->
+            endProbeAttemptWithoutReport(request.getProbeAttemptEndedWithoutReport());
         case VIDEO_ENCODERS_CHANGED -> changeVideoEncoders(request.getVideoEncodersChanged());
         case JOB_ATTEMPT_PROGRESS ->
             workerConnections.reportProgress(
@@ -255,6 +258,24 @@ final class WorkerSessionGrpcService
           "Ignoring the probe capacity that worker {} reported on a session that is no longer"
               + " current",
           authenticatedWorkerId);
+    }
+
+    private void endProbeAttemptWithoutReport(ProbeAttemptEndedWithoutReport ended) {
+      var probeAttemptId = fromProto(ended.getProbeAttemptId());
+      if (workerConnections.endProbeAttemptWithoutReport(
+          authenticatedWorkerId, workerSessionId, probeAttemptId)) {
+        log.debug(
+            "Worker {} ended probe attempt {} without a probe report",
+            authenticatedWorkerId,
+            probeAttemptId);
+        return;
+      }
+
+      log.debug(
+          "Ignoring that worker {} ended probe attempt {} without a probe report: its worker"
+              + " session did not start the attempt, or the attempt has already ended",
+          authenticatedWorkerId,
+          probeAttemptId);
     }
 
     private void startJobAttempt(JobAttemptStarted started) {

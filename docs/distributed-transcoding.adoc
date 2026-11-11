@@ -183,9 +183,12 @@ The worker learns of a timeout only from this reason.
 The worker may lower its background probe capacity when probes reach the timeout, but not when a packet scan or a bitrate scan chunk does (https://github.com/streamarr/streamarr-adr/blob/main/adr/0032-media-file-probe-results-are-persisted.adoc[ADR 0032]).
 Each of the three timeouts runs from the start command until the first message of the probe's report call reaches the server.
 The time that a probe report waits on the worker for a free report call counts toward the timeout. The time that the worker takes to send the rest of the probe report does not, so the server never cancels a probe whose probe report is arriving.
-`STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` after a cancel command for the first message of the probe's report call.
-The server reads the report call of a canceled probe or of a probe that reached its timeout like any other, and the probe report changes nothing.
-Until then, the probe keeps its unit of the worker's probe capacity.
+A canceled probe attempt has no probe report.
+The worker answers every cancel command with the event `ProbeAttemptEndedWithoutReport` on the worker session, once the probe has ended on the worker.
+`STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` after a cancel command for that event.
+The first message of a report call that the worker opened before the cancel command arrived also ends the wait.
+The server reads such a report call like any other, and the probe report changes nothing.
+Until the event arrives or that report call ends, the probe keeps its unit of the worker's probe capacity.
 A worker that misses this deadline is disconnected and fenced. Its other active jobs are abandoned and recover through the existing playback recovery path.
 Closing a worker connection cancels its probes and waits for their native processes to terminate.
 The server publishes no segment of an encode until the worker's start report names the encoder backend that the worker advertised.
@@ -227,7 +230,10 @@ A probe report breaks the worker contract when it exceeds a stated limit, when i
 The server then ends that report call with `INVALID_ARGUMENT`, and the violation counts toward the three consecutive contract violations that end a probe's retries. The worker session and its other probes continue.
 A probe report of another probe version than the server asked for fails its probe as misconfigured, and its report call ends with `FAILED_PRECONDITION`.
 When a report call ends without the server's answer and without a contract violation, the probe fails as on a lost worker and runs again. A message of a report call above the 128 KiB limit of one message ends only that report call, in this way.
-A probe attempt keeps its unit of the worker's probe capacity until its report call ends.
+A worker also sends `ProbeAttemptEndedWithoutReport` when a report call ended without the server's answer.
+A probe attempt keeps its unit of the worker's probe capacity until its report call ends or that event names the attempt.
+When the event names a probe attempt whose probe report the server still waits for, the probe fails as on a lost worker and runs again, and the server ends an open report call for the attempt with `PERMISSION_DENIED`.
+The server ignores the event when the attempt has already ended, or when the worker session that sent the event did not start the attempt.
 The server reads a probe report only from a report call.
 It ignores a probe result that a worker built for an earlier contract sends on the worker session, as it ignores any session event that the contract does not define, and that worker's probe ends at its probe timeout.
 

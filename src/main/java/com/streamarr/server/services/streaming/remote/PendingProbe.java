@@ -14,7 +14,8 @@ import java.util.function.Consumer;
 
 /**
  * One probe attempt that a worker session runs, from its start command until the worker's probe
- * report or the end of the worker session ends it.
+ * report, the worker's event that the attempt ended without a probe report, or the end of the
+ * worker session ends it.
  */
 final class PendingProbe {
 
@@ -40,7 +41,8 @@ final class PendingProbe {
 
   /**
    * Completes when the probe has ended on the worker, or when the attempt ends without it. The
-   * probe has ended on the worker when the first message of its report call arrives.
+   * probe has ended on the worker when the first message of its report call arrives, or when the
+   * worker's event ends the attempt without a probe report.
    */
   CompletableFuture<Void> terminated() {
     return terminated;

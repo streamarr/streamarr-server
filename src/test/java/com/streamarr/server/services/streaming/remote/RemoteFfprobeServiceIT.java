@@ -615,6 +615,38 @@ class RemoteFfprobeServiceIT {
   }
 
   @Test
+  @DisplayName(
+      "Should fail for persisted retry and keep the worker session when the worker ends the probe"
+          + " attempt without a probe report")
+  void shouldFailForPersistedRetryAndKeepWorkerSessionWhenWorkerEndsAttemptWithoutProbeReport()
+      throws Exception {
+    try (var server = server();
+        var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+      server.start();
+      try (var worker = worker(server.port(), 1)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().build();
+        var result = calls.submit(() -> service.probe(request));
+        try {
+          var started = worker.nextResponse().getStartProbe().getRequest();
+
+          worker.endWithoutReport(started.getProbeAttemptId());
+
+          assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
+              .cause()
+              .isInstanceOfSatisfying(
+                  ProbeExecutionException.class,
+                  failure -> assertThat(failure.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
+          assertThat(worker.terminated()).isNotDone();
+          assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
+        } finally {
+          result.cancel(true);
+        }
+      }
+    }
+  }
+
+  @Test
   @DisplayName("Should defer the probe without a failure when no worker is available")
   void shouldDeferTheProbeWithoutAFailureWhenNoWorkerIsAvailable() throws Exception {
     try (var server = server()) {

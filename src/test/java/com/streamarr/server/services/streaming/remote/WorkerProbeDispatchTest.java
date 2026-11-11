@@ -5,10 +5,12 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.services.streaming.remote.LiveWorkerConnectionRegistryFixture.report;
 import static com.streamarr.server.services.streaming.remote.LiveWorkerConnectionRegistryFixture.reportingSession;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Named.named;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
@@ -700,6 +702,69 @@ class WorkerProbeDispatchTest {
 
       assertThat(publishing.get(5, TimeUnit.SECONDS)).contains(SegmentPublication.PUBLISHED);
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should end a canceled probe attempt on the worker's event, and send no cancel command for"
+          + " it afterwards, when the cancel command waits for a concurrent segment publication")
+  void shouldEndCanceledAttemptOnWorkersEventWhenCancelCommandWaitsForConcurrentPublication()
+      throws Exception {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var registration = registration().setAvailableSlots(2);
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    var responses = new CapturingResponses();
+    var sessionId = registry.register(WORKER_ID, registration.build(), responses);
+    var request = probe().build();
+    var attempt = dispatched(registry.dispatchProbe(request));
+    var job =
+        VariantJob.newBuilder()
+            .setJobAttemptId(toProto(UUID.randomUUID()))
+            .setSource(source())
+            .build();
+    assertThat(registry.dispatch(job)).isPresent();
+    var metadata =
+        SegmentUploadMetadata.newBuilder()
+            .setWorker(registration.getWorker())
+            .setWorkerSessionId(toProto(sessionId))
+            .setJobAttemptId(job.getJobAttemptId())
+            .build();
+    var entered = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publishing =
+          executor.submit(
+              () ->
+                  registry.publishIfAuthorized(
+                      WORKER_ID, metadata, () -> holdPublication(entered, release)));
+      try {
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        // The cancel command needs the connection's monitor, which the publication holds.
+        var canceling = executor.submit(() -> attempt.cancel(true));
+        await().atMost(5, TimeUnit.SECONDS).until(attempt::isCancelled);
+
+        var ended =
+            executor
+                .submit(
+                    () ->
+                        registry.endProbeAttemptWithoutReport(
+                            WORKER_ID, sessionId, fromProto(request.getProbeAttemptId())))
+                .get(5, TimeUnit.SECONDS);
+
+        assertThat(ended).isTrue();
+        release.countDown();
+        assertThat(canceling.get(5, TimeUnit.SECONDS)).isTrue();
+      } finally {
+        release.countDown();
+      }
+
+      assertThat(publishing.get(5, TimeUnit.SECONDS)).contains(SegmentPublication.PUBLISHED);
+    }
+
+    assertThat(responses.values).noneMatch(EstablishWorkerSessionResponse::hasCancelProbe);
+    assertThat(responses.errors).isEmpty();
+    assertThat(runningProbes(registry, 1)).isZero();
   }
 
   @Test
