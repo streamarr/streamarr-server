@@ -57,9 +57,9 @@ class NotificationRetentionSettingIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should save the retention, read it back under the same id, and record the ServerAdmin who"
-          + " changed it")
-  void shouldSaveTheRetentionReadItBackAndRecordTheServerAdminWhoChangedIt() throws Exception {
+      "Should save the retention, read it back under the same id, and record the ServerAdmin when"
+          + " a ServerAdmin changes it")
+  void shouldSaveTheRetentionAndRecordTheServerAdminWhenAServerAdminChangesIt() throws Exception {
     var bearer = authTestSupport.accountBearer(serverAdmin);
     var settingId = dsl.selectFrom(SERVER_SETTINGS).fetchSingle().getId().toString();
 

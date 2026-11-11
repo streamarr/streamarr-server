@@ -72,15 +72,15 @@ final class ShareSteps {
         });
   }
 
-  /** A Profile of the owner's Household, available there, with the given direct managers. */
-  Profile profileManagedBy(String name, TestIdentity owner, TestIdentity... directManagers) {
+  /** A Profile of the member's Household, available there, with the given direct managers. */
+  Profile profileManagedBy(String name, TestIdentity member, TestIdentity... directManagers) {
     return transactions.execute(
         _ -> {
           var profile =
               profiles.saveAndFlush(
                   ProfileFixture.defaultProfileBuilder()
                       .name(name)
-                      .householdId(owner.household().getId())
+                      .householdId(member.household().getId())
                       .build());
           for (var manager : directManagers) {
             managers.saveAndFlush(
@@ -93,7 +93,7 @@ final class ShareSteps {
           shares.saveAndFlush(
               ProfileHouseholdShare.builder()
                   .profileId(profile.getId())
-                  .householdId(owner.household().getId())
+                  .householdId(member.household().getId())
                   .status(ProfileShareStatus.ACTIVE)
                   .build());
           return profile;

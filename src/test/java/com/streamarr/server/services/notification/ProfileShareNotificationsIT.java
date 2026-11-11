@@ -139,8 +139,8 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should give no request to a HouseholdAdmin who was promoted after the offer")
-  void shouldGiveNoRequestToAHouseholdAdminWhoWasPromotedAfterTheOffer() {
+  @DisplayName("Should give no request to a HouseholdAdmin when it was promoted after the offer")
+  void shouldGiveNoRequestToAHouseholdAdminWhenItWasPromotedAfterTheOffer() {
     var member = track(authTestSupport.createHouseholdMemberIdentity(riverside));
     var offer = steps.offer(sam, sam.profile(), riverside);
 
@@ -152,8 +152,8 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should still give a request to a HouseholdAdmin whose Account is disabled")
-  void shouldStillGiveARequestToAHouseholdAdminWhoseAccountIsDisabled() {
+  @DisplayName("Should still give a request to a HouseholdAdmin when its Account is disabled")
+  void shouldStillGiveARequestToAHouseholdAdminWhenItsAccountIsDisabled() {
     transactionTemplate.executeWithoutResult(
         _ -> userAccountRepository.tryDisable(riversideAdmin.account().getId()));
 
@@ -204,9 +204,9 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should tell the Account that made the offer when a ServerAdmin offered for a Profile")
   void shouldTellTheAccountThatMadeTheOfferWhenAServerAdminOfferedForAProfile() {
-    var admin = track(authTestSupport.createAdminIdentity());
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
     var ollie = steps.profileManagedBy("Ollie", sam, sam);
-    var offer = steps.offer(admin, ollie, riverside);
+    var offer = steps.offer(serverAdmin, ollie, riverside);
 
     sharing.rejectProfileShare(authTestSupport.identityOf(riverside), offer.getId());
 
@@ -216,7 +216,7 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
                 assertThat(notification.getFacts())
                     .isEqualTo(ProfileShareFacts.answered("Ollie", ProfileShareAnswer.REJECTED)))
         .extracting(Notification::getRecipientAccountId)
-        .containsExactlyInAnyOrder(sam.account().getId(), admin.account().getId());
+        .containsExactlyInAnyOrder(sam.account().getId(), serverAdmin.account().getId());
   }
 
   @Test
@@ -318,13 +318,13 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should tell both sides once each, except the ServerAdmin, when a ServerAdmin ends the share")
   void shouldTellBothSidesOnceEachExceptTheServerAdminWhenAServerAdminEndsTheShare() {
-    var admin = track(authTestSupport.createAdminIdentity());
-    var ollie = steps.profileManagedBy("Ollie", sam, sam, riversideAdmin, admin);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, riversideAdmin, serverAdmin);
     var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
 
     var outcome =
         sharing.administrativelyEndProfileShare(
-            authTestSupport.freshIdentityOf(admin), share.getId(), "requested by Sam");
+            authTestSupport.freshIdentityOf(serverAdmin), share.getId(), "requested by Sam");
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(endingsAbout(share))
@@ -356,13 +356,13 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
           + " the Household it leaves")
   void
       shouldTellBothSidesExceptTheServerAdminWhenAnAccountTransferEndsTheShareIntoTheHouseholdItLeaves() {
-    var admin = track(authTestSupport.createAdminIdentity());
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
     var ben = track(authTestSupport.createHouseholdMemberIdentity(riverside));
     var home = shareOf(ben.profile(), riverside);
 
     var outcome =
         accountLifecycle.transferAccount(
-            authTestSupport.freshIdentityOf(admin),
+            authTestSupport.freshIdentityOf(serverAdmin),
             TransferAccountCommand.builder()
                 .accountId(ben.account().getId())
                 .destinationHouseholdId(sam.household().getId())
@@ -459,11 +459,11 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
    * Profile.
    */
   private UUID connect(Profile profile, AuthTestSupport.TestIdentity reofferedTo) {
-    var admin = track(authTestSupport.createAdminIdentity());
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
     var issued =
         credentialIssuance
             .issueAccountInvitationForProfile(
-                authTestSupport.identityOf(admin),
+                authTestSupport.identityOf(serverAdmin),
                 IssueInvitationForProfileCommand.builder()
                     .recipientEmail(CONNECTED_EMAIL)
                     .householdRole(HouseholdRole.MEMBER)
