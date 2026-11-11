@@ -94,6 +94,11 @@ public class StreamController {
       responseCode = "200",
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(
+      responseCode = "206",
+      description = "The requested byte range",
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   public ResponseEntity<Resource> getInitSegment(@PathVariable UUID sessionId) {
@@ -110,6 +115,11 @@ public class StreamController {
   @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
   @ApiResponse(
       responseCode = "200",
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(
+      responseCode = "206",
+      description = "The requested byte range",
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
@@ -152,6 +162,11 @@ public class StreamController {
       responseCode = "200",
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(
+      responseCode = "206",
+      description = "The requested byte range",
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
@@ -179,6 +194,11 @@ public class StreamController {
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   @ApiResponse(
       responseCode = "200",
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(
+      responseCode = "206",
+      description = "The requested byte range",
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)

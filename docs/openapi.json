@@ -1249,6 +1249,17 @@
             },
             "description": "OK"
           },
+          "206": {
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The requested byte range"
+          },
           "404": {
             "description": "Stream resource not found"
           },
@@ -1591,6 +1602,17 @@
             },
             "description": "OK"
           },
+          "206": {
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The requested byte range"
+          },
           "400": {
             "description": "Invalid segment path"
           },
@@ -1665,6 +1687,17 @@
               }
             },
             "description": "OK"
+          },
+          "206": {
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The requested byte range"
           },
           "400": {
             "description": "Invalid segment path"
@@ -1819,6 +1852,17 @@
               }
             },
             "description": "OK"
+          },
+          "206": {
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The requested byte range"
           },
           "400": {
             "description": "Invalid segment path"
