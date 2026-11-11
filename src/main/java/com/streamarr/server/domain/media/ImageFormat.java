@@ -6,16 +6,10 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
-/**
- * The encoding of a stored image file, as the file's own bytes name it. The image endpoint answers
- * with this format's media type and the file's name carries its extension, so neither is guessed
- * from the image's source or from the name of its file.
- */
+/** An image format that the server stores, recognised by the first bytes of a file. */
 @RequiredArgsConstructor
 public enum ImageFormat {
-  /** A file that starts with the start-of-image marker and the first byte of its next marker. */
   JPEG("jpg", "image/jpeg", new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF}),
-  /** A file that starts with the eight-byte PNG signature. */
   PNG("png", "image/png", new byte[] {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'});
 
   @Getter private final String extension;
