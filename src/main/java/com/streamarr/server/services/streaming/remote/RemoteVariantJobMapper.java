@@ -365,6 +365,10 @@ final class RemoteVariantJobMapper {
         .keyframeSeekPosition()
         .ifPresent(position -> execution.setSeekPosition(protobufDuration(position)));
     request
+        .readFromLastKeyframePresentingAtOrBefore()
+        .ifPresent(
+            time -> execution.setReadFromLastKeyframePresentingAtOrBefore(protobufDuration(time)));
+    request
         .exactSegmentStarts()
         .ifPresent(
             starts ->
@@ -394,8 +398,9 @@ final class RemoteVariantJobMapper {
         .build();
   }
 
-  // A keyframe seek position and an advertised end are never negative, so their seconds and
-  // nanoseconds share a sign as protobuf's Duration requires.
+  // A keyframe seek position, the time that a keyframe search reads before and an advertised end
+  // are never negative, so their seconds and nanoseconds share a sign as protobuf's Duration
+  // requires.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static com.google.protobuf.Duration protobufDuration(Duration duration) {
     return com.google.protobuf.Duration.newBuilder()

@@ -636,8 +636,11 @@ message TranscodeExecution {
   uint32 media_segment_count = 5;
   // This field holds where the attempt starts reading, on the zero-based
   // timeline of ProbeKeyframePositionsPart. When it is set, the worker uses it
-  // instead of seek_position_seconds. ADR 0037 (early ends) decides when the
-  // server sets it.
+  // instead of seek_position_seconds. The server sets it on every stream copy
+  // attempt after segment 0. The server sets it on an attempt that encodes
+  // video from a later segment only when the source's keyframe positions are
+  // stored. A job carries at most one of this field and
+  // read_from_last_keyframe_presenting_at_or_before (ADR 0037, seek).
   google.protobuf.Duration seek_position = 6;
   // This field holds the encode's exact output frame rate. Every encode sets
   // it. A copy leaves it out.
@@ -661,6 +664,17 @@ message TranscodeExecution {
   // variant copies, else 1/1 (whole seconds). The server sets it exactly when
   // segment_start_ticks is not empty.
   Fraction segment_start_time_base = 11;
+  // The attempt reads the source from the last keyframe of the chosen video
+  // stream that presents at or before this time. The time is media time, on
+  // the timeline of the segment starts. When no keyframe presents that early,
+  // the attempt reads from the source's start. The worker finds that keyframe
+  // in the source. The server sets this field on an attempt that encodes video
+  // from a segment after the first when the source's keyframe positions are
+  // not stored, and leaves seek_position out. The worker refuses a job that
+  // sets this field and seek_position, or sets it on any other attempt, as an
+  // invalid specification. The worker also refuses an attempt that encodes
+  // video from a later segment and sets neither field (ADR 0037, seek).
+  google.protobuf.Duration read_from_last_keyframe_presenting_at_or_before = 12;
 }
 
 message VariantJob {
@@ -803,9 +817,10 @@ message JobAttemptProgress {
   // growing while FFmpeg writes audio alone after the video's end. The worker
   // leaves it out until it reads the first sample.
   google.protobuf.Duration output_end = 2;
-  // When the job holds the last frame, the worker searches the source for the
-  // video's last keyframe. This field counts the source bytes that the search
-  // has read. It stays 0 when the attempt runs no search.
+  // When the job carries read_from_last_keyframe_presenting_at_or_before, the
+  // worker searches the source for that keyframe before FFmpeg starts. This
+  // field counts the source bytes that the search has read. It stays 0 when
+  // the attempt runs no search.
   uint64 keyframe_search_bytes_read = 3;
 }
 

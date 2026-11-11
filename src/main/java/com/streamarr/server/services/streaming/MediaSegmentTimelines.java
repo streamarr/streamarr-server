@@ -62,7 +62,7 @@ final class MediaSegmentTimelines {
     return Optional.of(copy.exactStartsIn(positions));
   }
 
-  // Without the keyframes, the worker reads from one period before the attempt's first segment.
+  // Without the keyframes, the worker finds the keyframe that an attempt reads from in the source.
   private static MediaSegmentTimeline encodeOf(MediaProbe probe, StreamingProperties properties) {
     var grid = of(probe, properties);
     if (!(probe.keyframes() instanceof KeyframeKnowledge.Known(var positions))) {

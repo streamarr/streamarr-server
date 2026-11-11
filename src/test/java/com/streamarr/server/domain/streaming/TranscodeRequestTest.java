@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.UUID;
@@ -55,6 +56,20 @@ class TranscodeRequestTest {
     assertThatThrownBy(() -> builder.keyframeSeekPosition(null))
         .isInstanceOf(NullPointerException.class)
         .hasMessageContaining("keyframeSeekPosition");
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse an attempt that both seeks to a keyframe position and searches for its"
+          + " keyframe")
+  void shouldRefuseAnAttemptThatBothSeeksToAKeyframePositionAndSearchesForItsKeyframe() {
+    var builder =
+        requestWithoutEncoderPreset()
+            .encoderPreset(EncoderPreset.FAST)
+            .keyframeSeekPosition(Optional.of(Duration.ofSeconds(12)))
+            .readFromLastKeyframePresentingAtOrBefore(Optional.of(Duration.ofMillis(17_500)));
+
+    assertThatThrownBy(builder::build).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
@@ -199,6 +214,7 @@ class TranscodeRequestTest {
         request.sourcePath(),
         request.seekPosition(),
         request.keyframeSeekPosition(),
+        request.readFromLastKeyframePresentingAtOrBefore(),
         request.exactSegmentStarts(),
         request.targetSegmentDuration(),
         request.framerate(),
