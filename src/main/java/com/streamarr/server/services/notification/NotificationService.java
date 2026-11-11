@@ -46,6 +46,14 @@ public class NotificationService {
     authorizationService.requireAllowed(identity, new Intent.ViewNotifications());
   }
 
+  /**
+   * Refuses a session that may not mark the Account's Notifications read, before anything it sent
+   * is read, so a refused session learns nothing from its input.
+   */
+  public void requireMarkNotificationsRead(@NonNull AuthenticatedIdentity identity) {
+    authorizationService.requireAllowed(identity, new Intent.MarkNotificationsRead());
+  }
+
   /** The Account's Notifications, newest latest event first. */
   @Transactional(readOnly = true)
   public ListPage<ShareNotification> notifications(
