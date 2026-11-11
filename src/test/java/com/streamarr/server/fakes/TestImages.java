@@ -245,6 +245,11 @@ public final class TestImages {
     return write(new BufferedImage(colorModel, raster, false, null), "tiff");
   }
 
+  /** A PNG with one 8-bit grey sample for each pixel and no alpha channel. */
+  public static byte[] createGrayscalePngImage() {
+    return writePng(new BufferedImage(600, 900, BufferedImage.TYPE_BYTE_GRAY));
+  }
+
   /** A PNG with one 16-bit grey sample for each pixel, which no JPEG encoder accepts. */
   public static byte[] createSixteenBitGrayscalePngImage() {
     return writePng(new BufferedImage(600, 900, BufferedImage.TYPE_USHORT_GRAY));
@@ -269,6 +274,11 @@ public final class TestImages {
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
+  }
+
+  /** The number of color samples that each pixel has, without alpha: 1 for grey, 3 for RGB. */
+  public static int colorComponentCountOf(byte[] imageData) {
+    return decode(imageData).getColorModel().getNumColorComponents();
   }
 
   public static int alphaOfCornerPixel(byte[] imageData) {
