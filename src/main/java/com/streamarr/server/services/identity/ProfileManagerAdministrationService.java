@@ -156,7 +156,8 @@ public class ProfileManagerAdministrationService {
 
     return mutationTransactions.write(
         () -> {
-          if (!invitationLifecycle.tryCancelPending(invitationId, clock.instant())) {
+          if (!invitationLifecycle.tryCancelPending(
+              invitationId, identity.accountId(), clock.instant())) {
             throw new MutationRejection(new ManagerRejections.InvitationNotPending());
           }
 
@@ -194,7 +195,8 @@ public class ProfileManagerAdministrationService {
                 return Optional.empty();
               }
 
-              if (!invitationLifecycle.tryAcceptPending(invitation.getId(), now)) {
+              if (!invitationLifecycle.tryAcceptPending(
+                  invitation.getId(), identity.accountId(), now)) {
                 throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
               }
 
@@ -258,7 +260,8 @@ public class ProfileManagerAdministrationService {
 
     return mutationTransactions.write(
         () -> {
-          if (!invitationLifecycle.tryDeclinePending(invitation.getId(), clock.instant())) {
+          if (!invitationLifecycle.tryDeclinePending(
+              invitation.getId(), identity.accountId(), clock.instant())) {
             throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
           }
 
