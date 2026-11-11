@@ -56,6 +56,7 @@ import org.springframework.security.access.AccessDeniedException;
 class ProfileManagerAdministrationServiceTest {
 
   private static final Instant NOW = Instant.parse("2026-08-19T12:00:00Z");
+  private static final Duration INVITATION_LIFETIME = Duration.ofDays(2);
 
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
@@ -82,7 +83,7 @@ class ProfileManagerAdministrationServiceTest {
           audit,
           new OpaqueOneTimeCodes(),
           credentialAttempts.gate(clock),
-          () -> Duration.ofDays(7),
+          () -> INVITATION_LIFETIME,
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           new ProfileManagerInvitationsList(invitations, clock),
@@ -115,6 +116,17 @@ class ProfileManagerAdministrationServiceTest {
     assertThat(invitations.findById(first.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(second.invitation().getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName(
+      "Should expire the invitation after the invitation lifetime when a manager is invited")
+  void shouldExpireInvitationAfterInvitationLifetimeWhenManagerIsInvited() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+
+    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getExpiresAt())
+        .isEqualTo(NOW.plus(INVITATION_LIFETIME));
   }
 
   @Test
