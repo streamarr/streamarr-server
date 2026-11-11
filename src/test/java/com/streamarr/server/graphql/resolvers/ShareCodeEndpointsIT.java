@@ -415,6 +415,42 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
     assertThat(forbidden.path("extensions").path("code").asString()).isEqualTo("FORBIDDEN");
   }
 
+  @Test
+  @DisplayName("Should keep the code out of the answer when a lookup names a field the input lacks")
+  void shouldKeepCodeOutOfAnswerWhenLookupNamesFieldInputLacks() throws Exception {
+    var code = issuedCode(issue(authTestSupport.accountBearer(host), host.household().getId()));
+
+    var response =
+        executeAllowingErrors(
+            authTestSupport.accountBearer(identity()),
+            """
+            mutation { lookUpShareCode(input: { code: "%s", household: "Home" }) { householdName } }
+            """
+                .formatted(code),
+            Map.of());
+
+    assertThat(errors(response).path("message").asString()).contains("household");
+    assertThat(response.toString()).doesNotContain(code);
+  }
+
+  @Test
+  @DisplayName("Should keep the code out of the answer when an offer leaves out the Profile")
+  void shouldKeepCodeOutOfAnswerWhenOfferLeavesOutProfile() throws Exception {
+    var code = issuedCode(issue(authTestSupport.accountBearer(host), host.household().getId()));
+
+    var response =
+        executeAllowingErrors(
+            authTestSupport.accountBearer(identity()),
+            """
+            mutation { offerProfileShare(input: { shareCode: "%s" }) { share { id } } }
+            """
+                .formatted(code),
+            Map.of());
+
+    assertThat(errors(response).path("message").asString()).contains("profileId");
+    assertThat(response.toString()).doesNotContain(code);
+  }
+
   private static String issuedCode(JsonNode payload) {
     return payload.path("issued").path("code").asString();
   }
