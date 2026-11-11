@@ -104,9 +104,14 @@ extend type Subscription {
     To build current state, subscribe first, then query householdShares or profileShares, and
     apply each change by shareId. The lists put the newest share first, so a share created after
     the client subscribed goes first; a change to a share on a page the client has not loaded can
-    wait for that page. Keep a share in a list while its status is one of the list's statuses
-    and, in a list kept to visitorsOnly, while visitor is true; remove it when share is null
-    without errors. A null share with errors is not a
+    wait for that page. Keep a share in a profileShares list while its status is one of the list's
+    statuses. Keep it in a householdShares list on the same terms when the reader is a ServerAdmin
+    (me.serverAdmin); for anyone else, that list holds only offers that are PENDING and before
+    their expiresAt, and ACTIVE shares, whatever its statuses, so keep a share there only while it
+    is one of those. A HouseholdAdmin who also manages the Profile still gets the share's later
+    changes through the Profile's side, and still drops it from their householdShares list once it
+    is over. In a list kept to visitorsOnly, keep a share only while visitor is true. Remove a
+    share when share is null without errors. A null share with errors is not a
     removal: keep the share and run the queries again. The server reads the share when it delivers
     the change and delivers one operation's changes in order, so the last change for a share
     carries its latest state. A share that stops being readable to the subscriber does not arrive
