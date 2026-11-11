@@ -14,7 +14,6 @@ public record ProfileAdministration(
     String picture,
     boolean pinConfigured,
     boolean restricted,
-    UUID householdId,
     boolean linked) {
 
   public static ProfileAdministration from(Profile profile, boolean linked) {
@@ -26,7 +25,6 @@ public record ProfileAdministration(
         .picture(profile.getPicture())
         .pinConfigured(profile.hasEffectivePin())
         .restricted(profile.isRestricted())
-        .householdId(profile.getHouseholdId())
         .linked(linked)
         .build();
   }
