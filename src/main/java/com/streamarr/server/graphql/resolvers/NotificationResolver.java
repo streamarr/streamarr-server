@@ -2,13 +2,16 @@ package com.streamarr.server.graphql.resolvers;
 
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
+import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.DgsTypeResolver;
+import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareLine;
 import com.streamarr.server.domain.pagination.OrderMediaBy;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.SortDirection;
+import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dataloaders.ReaderLoaderKey;
@@ -17,6 +20,12 @@ import com.streamarr.server.graphql.dataloaders.ShareOffererNameDataLoader;
 import com.streamarr.server.graphql.dataloaders.ShareProfileDataLoader;
 import com.streamarr.server.graphql.dto.HouseholdSummary;
 import com.streamarr.server.graphql.dto.NotificationDetails;
+import com.streamarr.server.graphql.inputs.MarkAllNotificationsReadInput;
+import com.streamarr.server.graphql.inputs.MarkNotificationReadInput;
+import com.streamarr.server.graphql.mutation.MutationPayloads;
+import com.streamarr.server.graphql.mutation.notification.MarkAllNotificationsReadPayload;
+import com.streamarr.server.graphql.mutation.notification.MarkNotificationReadPayload;
+import com.streamarr.server.graphql.mutation.notification.NotificationErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ShareReference;
 import com.streamarr.server.services.identity.SharedProfile;
@@ -68,6 +77,50 @@ public class NotificationResolver {
   @DgsQuery
   public int unreadNotificationCount() {
     return notificationService.unreadNotificationCount(authorizationService.currentIdentity());
+  }
+
+  @DgsMutation
+  public MarkNotificationReadPayload markNotificationRead(
+      @InputArgument MarkNotificationReadInput input) {
+    return MutationPayloads.withUuid(
+        input.notificationId(),
+        notificationId -> {
+          var now = clock.instant();
+          return MutationPayloads.payload(
+              notificationService
+                  .markNotificationRead(authorizationService.currentIdentity(), notificationId)
+                  .map(
+                      read ->
+                          new MarkNotificationReadPayload.MarkedNotification(
+                              NotificationDetails.from(read.notification(), now),
+                              read.unreadCount())),
+              NotificationErrors::toMarkReadError,
+              MarkNotificationReadPayload::of);
+        },
+        () ->
+            MutationPayloads.inputError(
+                NotificationErrors.invalidNotificationId(), MarkNotificationReadPayload::of));
+  }
+
+  @DgsMutation
+  public MarkAllNotificationsReadPayload markAllNotificationsRead(
+      @InputArgument MarkAllNotificationsReadInput input) {
+    var identity = authorizationService.currentIdentity();
+    return MutationPayloads.payload(
+        notificationService.markAllNotificationsRead(
+            identity, positionOf(listOf(identity.accountId()), input.through())),
+        NotificationErrors::toMarkAllReadError,
+        MarkAllNotificationsReadPayload::of);
+  }
+
+  // A cursor that GraphQL accepts but that names no position in this Account's list is a value
+  // the server cannot use, which the mutation answers as InvalidCursorError.
+  private Optional<Position> positionOf(ListIdentity list, String cursor) {
+    try {
+      return Optional.of(cursors.decode(list, cursor));
+    } catch (InvalidCursorException _) {
+      return Optional.empty();
+    }
   }
 
   @DgsTypeResolver(name = "Notification")

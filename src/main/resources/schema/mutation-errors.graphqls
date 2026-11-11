@@ -484,3 +484,15 @@ type NotificationRetentionOutOfRangeError implements InputMutationError & Mutati
 type NoEligibleVideoFormatError implements MutationError {
     message: String!
 }
+
+"No Notification of the signed-in Account that it may see has the given ID."
+type NotificationNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+"GraphQL accepted the cursor, but the server cannot read it as a position in this list."
+type InvalidCursorError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}

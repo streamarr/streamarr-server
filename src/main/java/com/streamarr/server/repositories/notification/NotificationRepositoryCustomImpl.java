@@ -76,6 +76,33 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
 
   @Override
   public List<Notification> findUnreadOfRecipient(UUID recipientAccountId, Instant now) {
+    return unreadOf(recipientAccountId, DSL.noCondition(), now);
+  }
+
+  @Override
+  public List<Notification> findUnreadOfRecipientThrough(
+      UUID recipientAccountId, Seek through, Instant now) {
+    return unreadOf(recipientAccountId, NEWEST_FIRST.beyond(through), now);
+  }
+
+  @Override
+  public List<UUID> markReadThrough(
+      Collection<UUID> notificationIds, UUID recipientAccountId, Seek through, Instant now) {
+    if (notificationIds.isEmpty()) {
+      return List.of();
+    }
+
+    return dsl.update(NOTIFICATION)
+        .set(NOTIFICATION.READ_AT, now.atOffset(ZoneOffset.UTC))
+        .where(NOTIFICATION.ID.in(notificationIds))
+        .and(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
+        .and(NOTIFICATION.READ_AT.isNull())
+        .and(NEWEST_FIRST.beyond(through))
+        .returning(NOTIFICATION.ID)
+        .fetch(NOTIFICATION.ID);
+  }
+
+  private List<Notification> unreadOf(UUID recipientAccountId, Condition among, Instant now) {
     var query =
         dsl.select(NOTIFICATION.asterisk())
             .from(NOTIFICATION)
@@ -83,7 +110,8 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
             .on(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
             .where(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
             .and(NOTIFICATION.READ_AT.isNull())
-            .and(NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).or(waitingAt(now)));
+            .and(NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).or(waitingAt(now)))
+            .and(among);
     return JooqQueryHelper.nativeQuery(entityManager, query, Notification.class);
   }
 

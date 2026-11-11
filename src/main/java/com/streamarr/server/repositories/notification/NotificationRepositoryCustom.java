@@ -30,6 +30,18 @@ public interface NotificationRepositoryCustom {
    */
   List<Notification> findUnreadOfRecipient(UUID recipientAccountId, Instant now);
 
+  /** As {@link #findUnreadOfRecipient}, among the Notifications that the seek reads. */
+  List<Notification> findUnreadOfRecipientThrough(
+      UUID recipientAccountId, Seek through, Instant now);
+
+  /**
+   * Marks read, at the instant, those of the given Notifications that are still unread and still
+   * among the ones the seek reads, and answers their ids. One that moved above the seek's position
+   * meanwhile stays unread.
+   */
+  List<UUID> markReadThrough(
+      Collection<UUID> notificationIds, UUID recipientAccountId, Seek through, Instant now);
+
   /** Stores a new Notification for its recipient, unread, and answers its id. */
   UUID insert(NotificationDraft<NotificationKind, ProfileShareFacts> draft);
 
