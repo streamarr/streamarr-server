@@ -298,6 +298,38 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should refuse the page as INVALID_CURSOR when the cursor is not one the list gave or is"
+          + " another Account's")
+  void shouldRefuseThePageAsInvalidCursorWhenTheCursorIsNotOneTheListGaveOrIsAnotherAccounts()
+      throws Exception {
+    steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    var others =
+        mockMvc
+            .perform(
+                graphqlRequest(
+                    authTestSupport.accountBearer(riverside),
+                    "query { notifications(first: 1) { edges { cursor } } }"))
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn();
+    String othersCursor =
+        JsonPath.read(
+            others.getResponse().getContentAsString(), "$.data.notifications.edges[0].cursor");
+    var bearer = authTestSupport.accountBearer(riversideAdmin);
+
+    for (var cursor : List.of("not-a-cursor", othersCursor)) {
+      mockMvc
+          .perform(
+              graphqlRequest(
+                  bearer,
+                  "query { notifications(first: 1, after: \"%s\") { edges { cursor } } }"
+                      .formatted(cursor)))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+    }
+  }
+
+  @Test
+  @DisplayName(
       "Should read a page of many Notifications in as many statements as a page of a few when"
           + " they name different Profiles")
   void shouldReadAPageOfManyNotificationsInAsManyStatementsAsAPageOfAFew() throws Exception {
