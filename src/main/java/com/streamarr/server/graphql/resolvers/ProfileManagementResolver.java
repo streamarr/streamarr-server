@@ -83,6 +83,20 @@ public class ProfileManagementResolver {
         .orElse(null);
   }
 
+  @DgsQuery
+  public ProfileLockPreview profileCreationPreview(
+      @InputArgument String householdId,
+      @InputArgument ProfileKind kind,
+      @InputArgument Integer maximumAllowedRatingAge) {
+    return profileLockPreviewService
+        .creationPreview(
+            authorizationService.currentIdentity(),
+            Ids.parseUuid(householdId),
+            new ProfilePolicyTarget(kind, maximumAllowedRatingAge))
+        .map(ProfileLockPreview::from)
+        .orElse(null);
+  }
+
   private PageRequest pageRequest(ListIdentity list, DataFetchingEnvironment dfe) {
     return positionCursors.pageRequest(
         list, ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE));
