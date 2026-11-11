@@ -145,6 +145,7 @@ public class ProfileSharingService {
   public Outcome<ProfileHouseholdShare, ShareRejections.End> endProfileShare(
       AuthenticatedIdentity identity, UUID shareId) {
     return endInTransaction(
+        identity,
         shareId,
         EndSteps.<ShareRejections.End>builder()
             .authorize(
@@ -173,6 +174,7 @@ public class ProfileSharingService {
   public Outcome<ProfileHouseholdShare, ShareRejections.AdministrativelyEnd>
       administrativelyEndProfileShare(AuthenticatedIdentity identity, UUID shareId, String reason) {
     return endInTransaction(
+        identity,
         shareId,
         EndSteps.<ShareRejections.AdministrativelyEnd>builder()
             .authorize(
@@ -251,7 +253,7 @@ public class ProfileSharingService {
       ProfileShareStatus target) {
     return mutationTransactions.write(
         () -> {
-          requireShare(shareId);
+          requireShare(identity, shareId);
           Optional<ShareRejections.Decline> refusal =
               refusalOf(
                   identity,
@@ -272,7 +274,7 @@ public class ProfileSharingService {
   }
 
   private ProfileHouseholdShare acceptInTransaction(AuthenticatedIdentity identity, UUID shareId) {
-    var offer = requireShare(shareId);
+    var offer = requireShare(identity, shareId);
     if (!profileRepository.lockByShareId(shareId)) {
       throw new MutationRejection(new ShareRejections.ShareNotPending());
     }
@@ -340,10 +342,11 @@ public class ProfileSharingService {
       Supplier<? extends R> notActive,
       Supplier<? extends R> structural) {}
 
-  private <R> Outcome<ProfileHouseholdShare, R> endInTransaction(UUID shareId, EndSteps<R> steps) {
+  private <R> Outcome<ProfileHouseholdShare, R> endInTransaction(
+      AuthenticatedIdentity identity, UUID shareId, EndSteps<R> steps) {
     return mutationTransactions.write(
         () -> {
-          requireShare(shareId);
+          requireShare(identity, shareId);
           profileRepository.lockSharedByShareId(shareId);
           steps.authorize().run();
           var now = clock.instant();
@@ -377,11 +380,22 @@ public class ProfileSharingService {
         });
   }
 
-  /** A share nobody can find answers the same way for everyone: there is nothing to protect. */
-  private ProfileHouseholdShare requireShare(UUID shareId) {
+  /**
+   * A share nobody can find answers the same way for everyone: there is nothing to protect. A share
+   * that is over is found only by those who may still read it, the Profile's side and readers of
+   * the Household's share history, so its Household's HouseholdAdmins cannot tell it from a share
+   * deleted with its Profile.
+   */
+  private ProfileHouseholdShare requireShare(AuthenticatedIdentity identity, UUID shareId) {
     return shareRepository
         .findById(shareId)
+        .filter(share -> share.statusAt(clock.instant()).isLive() || maySeeOver(identity, share))
         .orElseThrow(() -> new MutationRejection(new ShareRejections.ShareNotFound()));
+  }
+
+  private boolean maySeeOver(AuthenticatedIdentity identity, ProfileHouseholdShare share) {
+    return mayViewHouseholdShareHistory(identity, share.getHouseholdId())
+        || mayViewProfileShares(identity, share.getProfileId());
   }
 
   /**

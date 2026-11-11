@@ -231,6 +231,43 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should answer not-found when a reader who only administers the target Household decides a"
+          + " share that is over")
+  void shouldAnswerNotFoundWhenReaderWhoOnlyAdministersTargetHouseholdDecidesShareThatIsOver() {
+    var declined = shareOver(ProfileShareStatus.REJECTED);
+    var lapsed = pendingShare();
+    lapsed.setExpiresAt(NOW.minusSeconds(1));
+    var ended = shareOver(ProfileShareStatus.ENDED);
+    authorization.decideUnitWith(intent -> readsSharesThatAreOver(intent) ? denied() : allowed());
+
+    assertThat(rejectionOf(service.rejectProfileShare(identity(), declined.getId())))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
+    assertThat(rejectionOf(service.acceptProfileShare(identity(), lapsed.getId())))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
+    assertThat(rejectionOf(service.endProfileShare(identity(), ended.getId())))
+        .isInstanceOf(ShareRejections.ShareNotFound.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer not-pending when the Profile's side or a reader of the Household's share"
+          + " history decides a share that is over")
+  void shouldAnswerNotPendingWhenProfileSideOrShareHistoryReaderDecidesShareThatIsOver() {
+    var declined = shareOver(ProfileShareStatus.REJECTED);
+
+    authorization.decideUnitWith(
+        intent -> intent instanceof Intent.ViewHouseholdShareHistory ? denied() : allowed());
+    var forProfileSide = rejectionOf(service.cancelProfileShare(identity(), declined.getId()));
+    authorization.decideUnitWith(
+        intent -> intent instanceof Intent.ViewProfileShareHouseholds ? denied() : allowed());
+    var forHistoryReader = rejectionOf(service.rejectProfileShare(identity(), declined.getId()));
+
+    assertThat(forProfileSide).isInstanceOf(ShareRejections.ShareNotPending.class);
+    assertThat(forHistoryReader).isInstanceOf(ShareRejections.ShareNotPending.class);
+  }
+
+  @Test
   @DisplayName("Should set canceled status when an offerer cancels a pending offer")
   void shouldSetCanceledStatusWhenOffererCancelsPendingOffer() {
     var offer = pendingShare();
@@ -968,6 +1005,22 @@ class ProfileSharingServiceTest {
   private ProfileHouseholdShare activeShare() {
     return shares.save(
         activeShareBuilder().profileId(profile.getId()).householdId(household.getId()).build());
+  }
+
+  private ProfileHouseholdShare shareOver(ProfileShareStatus status) {
+    return shares.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(household.getId())
+            .status(status)
+            .offeredByAccountId(identity().accountId())
+            .build());
+  }
+
+  // The two authorities that still read a share once it is over (ADR 0024 §Read authorization).
+  private static boolean readsSharesThatAreOver(Intent.UnitIntent intent) {
+    return intent instanceof Intent.ViewHouseholdShareHistory
+        || intent instanceof Intent.ViewProfileShareHouseholds;
   }
 
   @Test

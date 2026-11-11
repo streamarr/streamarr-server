@@ -358,9 +358,11 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
                   .formatted(shareId))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.errors").doesNotExist())
+          // An offer past its expiry is over, so the Household it was offered to no longer finds
+          // it.
           .andExpect(
               jsonPath("$.data.acceptProfileShare.userErrors[0].__typename")
-                  .value("ShareNotPendingError"));
+                  .value("ShareNotFoundError"));
 
       var stored = shareRepository.findById(shareId).orElseThrow();
       assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
@@ -441,6 +443,75 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.acceptProfileShare.userErrors[0].__typename")
                 .value("ShareNameConflictError"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer a declined offer as missing to the Household it was offered to, before and"
+          + " after its Profile is deleted")
+  void shouldAnswerDeclinedOfferAsMissingToTargetHouseholdBeforeAndAfterItsProfileIsDeleted()
+      throws Exception {
+    var orphan = unsharedManagedProfile();
+    var shareId = offer(orphan, host.household().getId());
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { rejectProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.rejectProfileShare.share.status").value("REJECTED"));
+
+    var whileKept = hostAnswersFor(shareId);
+    graphql(
+            authTestSupport.freshAccountBearer(owner),
+            """
+            mutation { deleteProfile(input: {profileId: "%s"}) {
+              deletedProfileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.deleteProfile.deletedProfileId").value(orphan.getId().toString()));
+    var afterDeletion = hostAnswersFor(shareId);
+
+    // The Household no longer sees the share, so nothing it asks tells whether the Profile is gone.
+    assertThat(whileKept)
+        .containsOnly(
+            "ShareNotFoundError", "ShareNotFoundError", "ShareNotFoundError", "ShareNotFoundError");
+    assertThat(afterDeletion).isEqualTo(whileKept);
+  }
+
+  /** What the host's HouseholdAdmin gets from every verb on the share, in one fixed order. */
+  private List<String> hostAnswersFor(String shareId) throws Exception {
+    var answers = new ArrayList<String>();
+    for (var verb :
+        List.of(
+            "acceptProfileShare", "rejectProfileShare", "cancelProfileShare", "endProfileShare")) {
+      var response =
+          graphql(
+                  authTestSupport.accountBearer(host),
+                  """
+                  mutation { %s(input: {shareId: "%s"}) { userErrors { __typename } } }
+                  """
+                      .formatted(verb, shareId))
+              .andExpect(status().isOk())
+              .andReturn()
+              .getResponse()
+              .getContentAsString();
+      answers.add(
+          objectMapper
+              .readTree(response)
+              .path("data")
+              .path(verb)
+              .path("userErrors")
+              .path(0)
+              .path("__typename")
+              .asString("FORBIDDEN"));
+    }
+
+    return answers;
   }
 
   @Test
