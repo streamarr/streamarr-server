@@ -233,7 +233,6 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
     try {
       discardPrepared();
     } catch (RuntimeException e) {
-      workerConnections.countUploadDiscardFailure();
       log.warn("Failed to discard the upload of segment {}", metadata.getSegmentName(), e);
     }
   }
@@ -242,8 +241,15 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   private void discardPrepared() {
     var discarded = prepared;
     prepared = null;
-    if (discarded != null) {
+    if (discarded == null) {
+      return;
+    }
+
+    try {
       discarded.close();
+    } catch (RuntimeException e) {
+      workerConnections.countUploadDiscardFailure();
+      throw e;
     }
   }
 }

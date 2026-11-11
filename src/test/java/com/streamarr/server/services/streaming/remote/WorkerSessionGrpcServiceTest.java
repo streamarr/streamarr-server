@@ -1879,6 +1879,8 @@ class WorkerSessionGrpcServiceTest {
     assertThat(result.response().errorCount()).isEqualTo(1);
     assertThat(Status.fromThrowable(result.response().error()).getCode())
         .isEqualTo(Status.Code.INTERNAL);
+    assertThat(result.meterRegistry().get(UPLOAD_DISCARD_FAILURES_METRIC).counter().count())
+        .isEqualTo(1);
   }
 
   private static OwnershipLossResult uploadThatLosesOwnership(BlockingSegmentStore segmentStore)
