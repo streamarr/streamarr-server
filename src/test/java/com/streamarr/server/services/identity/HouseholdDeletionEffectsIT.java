@@ -19,6 +19,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.auth.ShareCode;
 import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.media.MediaFile;
@@ -437,7 +438,7 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
     assertThat(shareCodeRepository.findById(issuedByDoomed)).isEmpty();
     assertThat(shareCodeRepository.findById(unrelated))
         .get()
-        .extracting(shareCode -> shareCode.getStatus())
+        .extracting(ShareCode::getStatus)
         .isEqualTo(ShareCodeStatus.LIVE);
   }
 

@@ -429,13 +429,13 @@ class ShareCodeIssuerAuthorityIT extends AbstractIntegrationTest {
 
   /** Demotes the Account on the given connection and holds its row until that transaction ends. */
   private void demote(Connection connection, UUID accountId) throws SQLException {
-    try (var actor =
+    try (var nameActor =
             connection.prepareStatement("SELECT set_config('streamarr.actor_id', ?, true)");
         var update =
             connection.prepareStatement(
                 "UPDATE user_account SET household_role = 'MEMBER' WHERE id = ?")) {
-      actor.setString(1, this.actor.account().getId().toString());
-      actor.execute();
+      nameActor.setString(1, actor.account().getId().toString());
+      nameActor.execute();
       update.setObject(1, accountId);
       assertThat(update.executeUpdate()).isOne();
     }
