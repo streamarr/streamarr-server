@@ -722,10 +722,10 @@ class StreamControllerTest {
   @DisplayName("Should hand the whole segment file to Tomcat when the connection supports sendfile")
   void shouldHandWholeSegmentFileToTomcatWhenConnectionSupportsSendfile(@TempDir Path segmentFolder)
       throws Exception {
-    var segmentFile = storeSegmentFile(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+    var segmentFile = storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
 
     var result =
-        overSegmentFiles(segmentFolder)
+        overLocalStore(segmentFolder)
             .perform(segmentRequest().requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
             .andExpect(status().isOk())
             .andReturn();
@@ -743,10 +743,10 @@ class StreamControllerTest {
   @DisplayName("Should hand one byte range of the segment file to Tomcat when a range is requested")
   void shouldHandOneByteRangeOfSegmentFileToTomcatWhenRangeIsRequested(@TempDir Path segmentFolder)
       throws Exception {
-    storeSegmentFile(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+    storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
 
     var result =
-        overSegmentFiles(segmentFolder)
+        overLocalStore(segmentFolder)
             .perform(
                 segmentRequest()
                     .header(HttpHeaders.RANGE, "bytes=1-3")
@@ -766,10 +766,10 @@ class StreamControllerTest {
   void shouldWriteSegmentItselfWhenConnectionDoesNotSupportSendfile(@TempDir Path segmentFolder)
       throws Exception {
     var segmentData = new byte[] {1, 2, 3, 4, 5};
-    storeSegmentFile(segmentFolder, segmentData);
+    storeSegmentLocally(segmentFolder, segmentData);
 
     var result =
-        overSegmentFiles(segmentFolder)
+        overLocalStore(segmentFolder)
             .perform(segmentRequest())
             .andExpect(status().isOk())
             .andReturn();
@@ -782,10 +782,10 @@ class StreamControllerTest {
   @DisplayName("Should write the ranges itself when several byte ranges are requested")
   void shouldWriteRangesItselfWhenSeveralByteRangesAreRequested(@TempDir Path segmentFolder)
       throws Exception {
-    storeSegmentFile(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+    storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
 
     var result =
-        overSegmentFiles(segmentFolder)
+        overLocalStore(segmentFolder)
             .perform(
                 segmentRequest()
                     .header(HttpHeaders.RANGE, "bytes=0-0,2-2")
@@ -801,10 +801,10 @@ class StreamControllerTest {
   @DisplayName("Should send no segment file when the segment is requested with HEAD")
   void shouldSendNoSegmentFileWhenSegmentIsRequestedWithHead(@TempDir Path segmentFolder)
       throws Exception {
-    storeSegmentFile(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+    storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
 
     var result =
-        overSegmentFiles(segmentFolder)
+        overLocalStore(segmentFolder)
             .perform(
                 request(HttpMethod.HEAD, "/api/stream/{sessionId}/segment0.m4s", SESSION_ID)
                     .requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
@@ -818,10 +818,10 @@ class StreamControllerTest {
   @DisplayName("Should write the empty segment itself when the stored segment has no bytes")
   void shouldWriteEmptySegmentItselfWhenStoredSegmentHasNoBytes(@TempDir Path segmentFolder)
       throws Exception {
-    storeSegmentFile(segmentFolder, new byte[0]);
+    storeSegmentLocally(segmentFolder, new byte[0]);
 
     var result =
-        overSegmentFiles(segmentFolder)
+        overLocalStore(segmentFolder)
             .perform(segmentRequest().requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
             .andExpect(status().isOk())
             .andReturn();
@@ -833,10 +833,10 @@ class StreamControllerTest {
   @DisplayName("Should answer 416 without a body when the requested range starts past the segment")
   void shouldAnswer416WithoutBodyWhenRequestedRangeStartsPastSegment(@TempDir Path segmentFolder)
       throws Exception {
-    storeSegmentFile(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+    storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
 
     var result =
-        overSegmentFiles(segmentFolder)
+        overLocalStore(segmentFolder)
             .perform(
                 segmentRequest()
                     .header(HttpHeaders.RANGE, "bytes=9-")
@@ -853,13 +853,13 @@ class StreamControllerTest {
     return get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID);
   }
 
-  private Path storeSegmentFile(Path segmentFolder, byte[] segmentData) {
+  private Path storeSegmentLocally(Path segmentFolder, byte[] segmentData) {
     streamingService.setSession(buildSession());
     new LocalSegmentStore(segmentFolder).storeSegment(SESSION_ID, "segment0.m4s", segmentData);
     return segmentFolder.resolve(SESSION_ID.toString()).resolve("segment0.m4s");
   }
 
-  private MockMvc overSegmentFiles(Path segmentFolder) {
+  private MockMvc overLocalStore(Path segmentFolder) {
     var segmentFiles = new LocalSegmentStore(segmentFolder);
     segmentFiles.getOutputDirectory(SESSION_ID);
     return MockMvcBuilders.standaloneSetup(

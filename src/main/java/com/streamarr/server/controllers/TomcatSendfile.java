@@ -1,7 +1,7 @@
 package com.streamarr.server.controllers;
 
+import com.streamarr.server.services.streaming.FileBackedStoredSegment;
 import com.streamarr.server.services.streaming.StoredSegment;
-import com.streamarr.server.services.streaming.StoredSegmentFile;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Optional;
 import org.apache.catalina.Globals;
@@ -35,7 +35,7 @@ final class TomcatSendfile {
    */
   static Optional<ResponseEntity<Resource>> answer(
       HttpServletRequest request, StoredSegment segment, MediaType mediaType) {
-    if (!(segment instanceof StoredSegmentFile file) || !acceptsSendfile(request, file)) {
+    if (!(segment instanceof FileBackedStoredSegment file) || !acceptsSendfile(request, file)) {
       return Optional.empty();
     }
 
@@ -68,7 +68,7 @@ final class TomcatSendfile {
   }
 
   // Tomcat would send the file after the headers of a HEAD answer, and fails an empty file.
-  private static boolean acceptsSendfile(HttpServletRequest request, StoredSegmentFile file) {
+  private static boolean acceptsSendfile(HttpServletRequest request, FileBackedStoredSegment file) {
     return HttpMethod.GET.matches(request.getMethod())
         && file.length() > 0
         && Boolean.TRUE.equals(request.getAttribute(Globals.SENDFILE_SUPPORTED_ATTR));
