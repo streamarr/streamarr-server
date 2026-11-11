@@ -27,8 +27,11 @@ import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -190,6 +193,80 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should give the time of the first event and the time of the latest when news is told again")
+  void shouldGiveTheTimeOfTheFirstEventAndTheTimeOfTheLatestWhenNewsIsToldAgain() throws Exception {
+    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    var firstEvent = Instant.now().plus(Duration.ofMinutes(1)).truncatedTo(ChronoUnit.MICROS);
+    var latestEvent = firstEvent.plus(Duration.ofMinutes(1));
+    var news = tellNews(riversideAdmin, offer, firstEvent);
+    var madeAt = notificationRepository.findById(news).orElseThrow().getCreatedOn();
+    tellNews(riversideAdmin, offer, latestEvent);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.id").value(news.toString()))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.createdAt").value(madeAt.toString()))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.latestEventAt")
+                .value(latestEvent.toString()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should give a newer Notification an order key that sorts before an older one's, and order"
+          + " equal times by id")
+  void shouldGiveANewerNotificationAnOrderKeyThatSortsBeforeAnOlderOnesAndOrderEqualTimesById()
+      throws Exception {
+    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    var later = Instant.now().plus(Duration.ofMinutes(1));
+    requestAgain(riversideAdmin, offer, later);
+    requestAgain(riversideAdmin, offer, later.plus(Duration.ofMinutes(1)));
+    requestAgain(riversideAdmin, offer, later.plus(Duration.ofMinutes(1)));
+
+    var page =
+        mockMvc
+            .perform(
+                graphqlRequest(
+                    authTestSupport.accountBearer(riversideAdmin),
+                    "query { notifications(first: 10) { edges { orderKey } } }"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(jsonPath("$.data.notifications.edges", hasSize(4)))
+            .andReturn();
+    List<String> keys =
+        JsonPath.read(
+            page.getResponse().getContentAsString(), "$.data.notifications.edges[*].orderKey");
+
+    assertThat(keys).doesNotHaveDuplicates().isSortedAccordingTo(Comparator.naturalOrder());
+  }
+
+  @Test
+  @DisplayName(
+      "Should return twenty Notifications and say more follow when first is not given and the"
+          + " Account has twenty-one")
+  void shouldReturnTwentyNotificationsAndSayMoreFollowWhenFirstIsNotGivenAndTheAccountHasMore()
+      throws Exception {
+    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    for (var made = 1; made <= 20; made++) {
+      requestAgain(riversideAdmin, offer, Instant.now().plus(Duration.ofMinutes(made)));
+    }
+
+    mockMvc
+        .perform(
+            graphqlRequest(
+                authTestSupport.accountBearer(riversideAdmin),
+                "query { notifications { edges { cursor } pageInfo { hasNextPage } } }"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(20)))
+        .andExpect(jsonPath("$.data.notifications.pageInfo.hasNextPage").value(true));
+  }
+
+  @Test
+  @DisplayName(
       "Should read the resolved request as read under the kept name when its offer was rejected"
           + " and the Profile was renamed")
   void shouldReadTheResolvedRequestAsReadUnderTheKeptNameWhenItsOfferWasRejected()
@@ -261,6 +338,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.__typename")
                 .value("ProfileShareEndedNotification"))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.endedBy").value("SERVER"))
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.message")
                 .value(
@@ -518,6 +596,36 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
             jsonPath(
                 "$.data.notifications.edges[0].node.message",
                 containsString("“%s”".formatted(profileName))));
+  }
+
+  /** News to the recipient that the offer was accepted, stored as the writer stores news. */
+  private UUID tellNews(TestIdentity recipient, ProfileHouseholdShare offer, Instant at) {
+    return transactionTemplate.execute(
+        _ ->
+            notificationRepository
+                .upsertUnreadNews(
+                    NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
+                        .recipientAccountId(recipient.account().getId())
+                        .kind(NotificationKind.PROFILE_SHARE_ANSWERED)
+                        .subjectId(offer.getId())
+                        .facts(ProfileShareFacts.answered("Kai", ProfileShareAnswer.ACCEPTED))
+                        .at(at)
+                        .build())
+                .notificationId());
+  }
+
+  /** One more request to the recipient about the offer, its event at the instant. */
+  private void requestAgain(TestIdentity recipient, ProfileHouseholdShare offer, Instant at) {
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            notificationRepository.insert(
+                NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
+                    .recipientAccountId(recipient.account().getId())
+                    .kind(NotificationKind.PROFILE_SHARE_OFFERED)
+                    .subjectId(offer.getId())
+                    .facts(ProfileShareFacts.offered("Kai"))
+                    .at(at)
+                    .build()));
   }
 
   private void insertNewsFor(TestIdentity recipient, ProfileHouseholdShare share) {
