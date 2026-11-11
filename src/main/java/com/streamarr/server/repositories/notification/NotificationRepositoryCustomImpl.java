@@ -5,8 +5,10 @@ import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.ProfileManager.PROFILE_MANAGER;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
+import static com.streamarr.server.repositories.auth.ProfileShareStatusReads.readsAs;
 import static org.jooq.impl.DSL.greatest;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.val;
 
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.notification.NotificationDraft;
@@ -14,21 +16,27 @@ import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.domain.notification.UnreadNews;
+import com.streamarr.server.domain.notification.UnreadShareNews;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.enums.NotificationForm;
 import com.streamarr.server.jooq.generated.enums.ProfileShareAnswer;
 import com.streamarr.server.jooq.generated.enums.ProfileShareEndedBy;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
+import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.InsertSetMoreStep;
 import org.jooq.Record1;
+import org.jooq.Records;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 
@@ -113,6 +121,62 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
                     .offeringSide(offeringSide(share.value2(), share.value4()))
                     .householdSide(householdAdmins(share.value3()))
                     .build());
+  }
+
+  @Override
+  public int deleteHistoryBefore(Instant cutoff, Instant now) {
+    var stillWaiting =
+        DSL.exists(
+            DSL.selectOne()
+                .from(PROFILE_HOUSEHOLD_SHARE)
+                .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
+                .and(waitingAt(now)));
+    var readNews =
+        NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).and(NOTIFICATION.READ_AT.isNotNull());
+    var resolvedRequest =
+        NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)).andNot(stillWaiting);
+    return dsl.deleteFrom(NOTIFICATION)
+        .where(NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)))
+        .and(readNews.or(resolvedRequest))
+        .execute();
+  }
+
+  @Override
+  public List<UnreadShareNews> findUnreadNewsBefore(Instant cutoff) {
+    return dsl.select(
+            NOTIFICATION.ID,
+            NOTIFICATION.RECIPIENT_ACCOUNT_ID,
+            PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
+            PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
+        .from(NOTIFICATION)
+        .join(PROFILE_HOUSEHOLD_SHARE)
+        .on(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
+        .where(unreadNewsBefore(cutoff))
+        .fetch(Records.mapping(UnreadShareNews::new));
+  }
+
+  @Override
+  public int deleteUnreadNewsBefore(Collection<UUID> notificationIds, Instant cutoff) {
+    return dsl.deleteFrom(NOTIFICATION)
+        .where(NOTIFICATION.ID.in(notificationIds))
+        .and(unreadNewsBefore(cutoff))
+        .execute();
+  }
+
+  // A pending offer whose time ran out no longer waits, before the expiry sweep stores it.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static Condition waitingAt(Instant now) {
+    return readsAs(
+        com.streamarr.server.jooq.generated.enums.ProfileShareStatus.PENDING,
+        val(now.atOffset(ZoneOffset.UTC)));
+  }
+
+  private static Condition unreadNewsBefore(Instant cutoff) {
+    return NOTIFICATION
+        .FORM
+        .eq(inline(NotificationForm.NEWS))
+        .and(NOTIFICATION.READ_AT.isNull())
+        .and(NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)));
   }
 
   // The Profile's direct managers, its own Account while it is an unrestricted Adult Personal
