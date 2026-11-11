@@ -1,11 +1,11 @@
 package com.streamarr.server.services.notification;
 
-import com.streamarr.server.domain.notification.GuardedNotification;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -42,9 +42,9 @@ class NotificationRetentionSweeper {
     var cutoff = now.minus(serverSettingsService.notificationRetention());
     transactionTemplate.executeWithoutResult(_ -> deleteHistory(cutoff, now));
     var hidden =
-        notificationRepository.findUnreadNewsBefore(cutoff).stream()
-            .filter(this::isHidden)
-            .map(GuardedNotification::notificationId)
+        guard.visibilities(notificationRepository.findUnreadNewsBefore(cutoff)).entrySet().stream()
+            .filter(decided -> decided.getValue() == NotificationVisibility.HIDDEN)
+            .map(Map.Entry::getKey)
             .toList();
     if (hidden.isEmpty()) {
       return;
@@ -60,10 +60,5 @@ class NotificationRetentionSweeper {
   private void deleteHistory(Instant cutoff, Instant now) {
     var deleted = notificationRepository.deleteHistoryBefore(cutoff, now);
     log.info("Deleted {} read or resolved Notifications older than {}.", deleted, cutoff);
-  }
-
-  private boolean isHidden(GuardedNotification news) {
-    return guard.visibility(news.recipientAccountId(), news.profileId(), news.householdId())
-        == NotificationVisibility.HIDDEN;
   }
 }
