@@ -72,3 +72,16 @@ type WithdrawShareCodePayload {
 }
 
 union WithdrawShareCodeError = ShareCodeNotFoundError | ShareCodeNotLiveError
+
+input LookUpShareCodeInput {
+    "The code as the person typed it. Case, spaces and the hyphen do not matter."
+    code: String!
+}
+
+type LookUpShareCodePayload {
+    "The name of the Household the code was issued for. Null when the code is refused."
+    householdName: String
+    userErrors: [LookUpShareCodeError!]!
+}
+
+union LookUpShareCodeError = ShareCodeRefusedError

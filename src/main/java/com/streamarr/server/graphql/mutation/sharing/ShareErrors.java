@@ -43,6 +43,15 @@ public final class ShareErrors {
     };
   }
 
+  public static LookUpShareCodeError toLookUpShareCodeError(ShareCodeRejections.LookUp rejection) {
+    return switch (rejection) {
+      case ShareCodeRejections.ShareCodeRefused _ ->
+          new ShareCodeRefusedError(
+              "This share code does not work. Ask the Household for a new one.",
+              InputPath.of("code"));
+    };
+  }
+
   public static AcceptProfileShareError toAcceptError(ShareRejections.Accept rejection) {
     return switch (rejection) {
       case ShareRejections.ShareNotFound _ -> shareNotFound();

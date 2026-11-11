@@ -76,6 +76,17 @@ type Mutation {
     code that no longer works gets ShareCodeNotLiveError. Everyone else gets ShareCodeNotFoundError.
     """
     withdrawShareCode(input: WithdrawShareCodeInput!): WithdrawShareCodePayload
+    """
+    Look a share code up before offering a Profile with it. A live code answers with the name of
+    the Household it was issued for, and nothing else about that Household. Every other code gets
+    ShareCodeRefusedError, which names no Household. Any signed-in Account may look a code up; a
+    device-bound session and a disabled Account get FORBIDDEN. Every lookup counts as a credential
+    attempt by the Account that presents the code, and a lookup that succeeds does not clear its
+    failures. After too many failures the request ends with TOO_MANY_CREDENTIAL_ATTEMPTS and
+    retryAfterSeconds. It is a mutation because each lookup is recorded, and so that the code never
+    travels in a URL.
+    """
+    lookUpShareCode(input: LookUpShareCodeInput!): LookUpShareCodePayload
     inviteProfileManager(input: InviteProfileManagerInput!): InviteProfileManagerPayload
     cancelManagerInvitation(input: CancelManagerInvitationInput!): CancelManagerInvitationPayload
     acceptManagerInvitation(input: AcceptManagerInvitationInput!): AcceptManagerInvitationPayload

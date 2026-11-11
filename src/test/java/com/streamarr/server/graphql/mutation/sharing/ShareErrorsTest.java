@@ -57,6 +57,16 @@ class ShareErrorsTest {
   }
 
   @Test
+  @DisplayName("Should refuse in plain words naming no Household when a looked-up code fails")
+  void shouldRefuseInPlainWordsNamingNoHouseholdWhenLookedUpCodeFails() {
+    assertThat(ShareErrors.toLookUpShareCodeError(new ShareCodeRejections.ShareCodeRefused()))
+        .isEqualTo(
+            new ShareCodeRefusedError(
+                "This share code does not work. Ask the Household for a new one.",
+                List.of("code")));
+  }
+
+  @Test
   @DisplayName("Should map every acceptance rejection when acceptance fails")
   void shouldMapEveryAcceptanceRejectionWhenAcceptanceFails() {
     assertSoftly(

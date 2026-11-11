@@ -1,13 +1,18 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
+import com.streamarr.server.domain.auth.CredentialKind;
+import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.ShareCode;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ShareCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.CredentialAttemptGate;
 import com.streamarr.server.services.auth.ShareCodes;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
@@ -33,9 +38,9 @@ import org.springframework.stereotype.Service;
 
 /**
  * Share codes (ADR 0024 §Share codes): a Household's live HouseholdAdmin, or a ServerAdmin, issues
- * share codes for the Household, lists them, and withdraws any of them. Only the answer to issuing
- * a code carries the code; the row keeps its digest. Issuing invites an offer and consents to
- * nothing.
+ * share codes for the Household, lists them, and withdraws any of them, and any signed-in Account
+ * may look a code up. Only the answer to issuing a code carries the code; the row keeps its digest.
+ * Issuing invites an offer and consents to nothing.
  */
 @Service
 @RequiredArgsConstructor
@@ -52,6 +57,7 @@ public class ShareCodeService {
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
   private final MutationTransactions mutationTransactions;
+  private final CredentialAttemptGate credentialAttempts;
   private final HouseholdShareCodesList householdShareCodesList;
   private final ShareCodes shareCodes;
   private final CredentialCodeProperties credentialCodeProperties;
@@ -107,6 +113,55 @@ public class ShareCodeService {
               shareCodeRepository.findByIdAndReloadFromDatabase(shareCodeId).orElseThrow());
         },
         _ -> Optional.empty());
+  }
+
+  /**
+   * The name of the Household a live code names, and nothing else about it. Every other code gets
+   * one refusal that names no Household. Each lookup is a credential attempt by the presenting
+   * Account, so guessing is throttled (ADR 0024 §Share codes, ADR 0028).
+   */
+  public Outcome<String, ShareCodeRejections.LookUp> lookUpShareCode(
+      AuthenticatedIdentity identity, ShareCodeCommand command) {
+    authorizationService.requireAllowed(identity, new Intent.ViewShareCodeHousehold());
+    try {
+      return Outcome.accepted(
+          credentialAttempts.attempt(
+              presentedBy(identity, command),
+              () -> householdNameOf(liveShareCode(command.code()))));
+    } catch (InvalidOneTimeCodeException _) {
+      return Outcome.rejected(new ShareCodeRejections.ShareCodeRefused());
+    }
+  }
+
+  /**
+   * The live code that the typed text names, for a verification run through the credential attempt
+   * gate. A malformed, unknown, spent, withdrawn, expired or invalidated code throws the same
+   * refusal.
+   */
+  ShareCode liveShareCode(String typed) {
+    var now = clock.instant();
+    return shareCodes
+        .digestOf(typed)
+        .flatMap(shareCodeRepository::findByCodeDigest)
+        .filter(shareCode -> shareCode.isLiveAt(now))
+        .orElseThrow(InvalidOneTimeCodeException::new);
+  }
+
+  /** A presentation counts against the Account that presents the code, never against the code. */
+  static CredentialAttemptMetadata presentedBy(
+      AuthenticatedIdentity identity, ShareCodeCommand command) {
+    return CredentialAttemptMetadata.builder()
+        .kind(CredentialKind.SHARE_CODE)
+        .accountId(identity.accountId())
+        .ipAddress(command.ipAddress())
+        .build();
+  }
+
+  private String householdNameOf(ShareCode shareCode) {
+    return householdRepository
+        .findById(shareCode.getHouseholdId())
+        .map(Household::getName)
+        .orElseThrow(InvalidOneTimeCodeException::new);
   }
 
   /**

@@ -138,3 +138,17 @@ when {
     principal has liveMembershipHousehold && principal.liveMembershipHousehold == resource) ||
    (principal has serverAdmin && principal.serverAdmin))
 };
+
+// Any enabled Account may look a share code up to learn the name of the Household it names, and
+// nothing else about it. The code alone decides which Household that is, so the decision reads no
+// Household, and every lookup is a throttled credential attempt outside Cedar (ADR 0028). A
+// device-bound session looks none up (devices.cedar).
+@id("view-share-code-household-as-enabled-account")
+permit (
+  principal,
+  action == Streamarr::Action::"viewShareCodeHousehold",
+  resource
+)
+when {
+  principal has enabled && principal.enabled
+};
