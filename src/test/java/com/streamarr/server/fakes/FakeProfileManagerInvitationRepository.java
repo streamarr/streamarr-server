@@ -156,6 +156,11 @@ public class FakeProfileManagerInvitationRepository
         .toList();
   }
 
+  @Override
+  public List<ChangedManagerInvitation> materializeExpiredPending(Instant now) {
+    return materializeExpiredPending(_ -> true, now);
+  }
+
   private List<ChangedManagerInvitation> invalidate(
       Predicate<ProfileManagerInvitation> scope, String reason, Instant now) {
     var expired = materializeExpiredPending(scope, now);

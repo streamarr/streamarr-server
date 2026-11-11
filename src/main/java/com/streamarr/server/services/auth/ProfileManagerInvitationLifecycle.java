@@ -115,6 +115,13 @@ public class ProfileManagerInvitationLifecycle {
             recipientAccountId, reason, now));
   }
 
+  /** Stores EXPIRED on every pending invitation whose time ran out; answers how many. */
+  public int expireLapsed(Instant now) {
+    var expired = invitationRepository.materializeExpiredPending(now);
+    announceStoppedWaiting(expired);
+    return expired.size();
+  }
+
   private boolean announced(
       Optional<ChangedManagerInvitation> changed, ManagerInvitationAction action) {
     changed.ifPresent(
