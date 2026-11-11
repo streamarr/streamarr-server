@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.data.Offset.offset;
 import static org.junit.jupiter.api.Named.named;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
@@ -467,9 +467,8 @@ class ImageVariantServiceTest {
     var imageData = createTestImage(600, 900);
 
     try (var mockedThumbnails = mockStatic(Thumbnails.class)) {
-      var mockBuilder = mock(Thumbnails.Builder.class);
+      var mockBuilder = mock(Thumbnails.Builder.class, RETURNS_SELF);
       mockedThumbnails.when(() -> Thumbnails.of(any(BufferedImage.class))).thenReturn(mockBuilder);
-      when(mockBuilder.width(anyInt())).thenReturn(mockBuilder);
       when(mockBuilder.asBufferedImage()).thenThrow(new IOException("resize failed"));
 
       assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
