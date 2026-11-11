@@ -50,19 +50,23 @@ public class ProfileManagementQueryService {
   /**
    * A page of a Household's Profiles for Household settings, by name, then ID. Its HouseholdAdmins
    * and ServerAdmins get every Profile available there, the visitors shared in among them, and the
-   * Profiles they manage that belong there but are not available there. Each row says whether the
-   * Profile is a visitor and whether the Household's PIN safety rule locks it there, and never
-   * where a visitor comes from.
+   * Profiles they manage that belong there but are not available there. Any other Account gets the
+   * Profiles it manages that belong there, and a device-bound session or a disabled Account gets
+   * none. Each row says whether the Profile is a visitor and whether the Household's PIN safety
+   * rule locks it there, and never where a visitor comes from.
    */
   @Transactional(readOnly = true)
   public ListPage<HouseholdProfileDetails> householdProfiles(
       AuthenticatedIdentity identity, UUID householdId, PageRequest request) {
-    if (!authorizationService.isAllowed(
-        identity, new Intent.ViewHouseholdAdministration(householdId))) {
+    var administers =
+        authorizationService.isAllowed(
+            identity, new Intent.ViewHouseholdAdministration(householdId));
+    if (!administers
+        && !authorizationService.isAllowed(identity, new Intent.ViewManagedProfiles())) {
       return ListPage.empty();
     }
 
-    var filter = new HouseholdProfilesFilter(householdId, identity.accountId(), true);
+    var filter = new HouseholdProfilesFilter(householdId, identity.accountId(), administers);
     return describedIn(householdId, Pager.page(householdProfilesList, filter, request));
   }
 

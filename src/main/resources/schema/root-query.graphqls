@@ -33,9 +33,10 @@ type Query {
     """
     A Household's Profiles for Household settings, by name. Its HouseholdAdmins and ServerAdmins
     get every Profile available there, both those that belong there and the visitors shared in,
-    and also the Profiles they manage that belong there but are not available there. A visitor's
-    row never says where it comes from. Everyone else gets an empty list, and so do a
-    device-bound session and a disabled Account.
+    and also the Profiles they manage that belong there but are not available there. Any other
+    Account gets the Profiles it manages that belong there; an Account whose own Personal Profile
+    is supervised manages none, so its list is empty. A visitor's row never says where it comes
+    from. A device-bound session and a disabled Account get an empty list.
     """
     householdProfiles(householdId: ID!, first: Int, after: String, last: Int, before: String): HouseholdProfileConnection!
     accountInvitations(first: Int, after: String, last: Int, before: String): AccountInvitationConnection!
