@@ -86,15 +86,19 @@ public class NotificationService {
       return Outcome.rejected(new MarkNotificationReadRejection.NotFound());
     }
 
-    var notification = shown.orElseThrow().notification();
-    if (notification.getReadAt().isEmpty()) {
-      notification.setReadAt(clock.instant());
-      notificationRepository.saveAndFlush(notification);
+    if (notificationRepository.markRead(notificationId, identity.accountId(), clock.instant())) {
       publishMarked(identity.accountId(), List.of(notificationId));
     }
 
-    return Outcome.accepted(
-        new NotificationRead(shown.orElseThrow(), unreadCountOf(identity.accountId())));
+    var share = shown.orElseThrow().share();
+    return notificationRepository
+        .findByIdAndReloadFromDatabase(notificationId)
+        .<Outcome<NotificationRead, MarkNotificationReadRejection>>map(
+            marked ->
+                Outcome.accepted(
+                    new NotificationRead(
+                        new ShareNotification(marked, share), unreadCountOf(identity.accountId()))))
+        .orElseGet(() -> Outcome.rejected(new MarkNotificationReadRejection.NotFound()));
   }
 
   /**

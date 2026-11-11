@@ -132,6 +132,28 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
         .fetch(NOTIFICATION.ID);
   }
 
+  @Override
+  public boolean markRead(UUID notificationId, UUID recipientAccountId, Instant now) {
+    return dsl.update(NOTIFICATION)
+            .set(NOTIFICATION.READ_AT, now.atOffset(ZoneOffset.UTC))
+            .where(NOTIFICATION.ID.eq(notificationId))
+            .and(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
+            .and(NOTIFICATION.READ_AT.isNull())
+            .execute()
+        > 0;
+  }
+
+  @Override
+  public Optional<Notification> findByIdAndReloadFromDatabase(UUID notificationId) {
+    var entity = entityManager.find(Notification.class, notificationId);
+    if (entity == null) {
+      return Optional.empty();
+    }
+
+    entityManager.refresh(entity);
+    return Optional.of(entity);
+  }
+
   private List<Notification> unreadOf(UUID recipientAccountId, Condition among, Instant now) {
     var query =
         dsl.select(NOTIFICATION.asterisk())
