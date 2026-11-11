@@ -143,6 +143,10 @@ public final class TestImages {
     return writePng(new BufferedImage(600, 900, BufferedImage.TYPE_USHORT_GRAY));
   }
 
+  public static byte[] createGifImage() {
+    return write(new BufferedImage(600, 900, BufferedImage.TYPE_INT_RGB), "gif");
+  }
+
   public static BufferedImage decode(byte[] imageData) {
     try {
       return ImageIO.read(new ByteArrayInputStream(imageData));

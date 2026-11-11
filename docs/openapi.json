@@ -1168,14 +1168,26 @@
         "responses": {
           "200": {
             "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
               "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
                 }
               }
             },
-            "description": "OK"
+            "description": "The image. Its media type is read from its bytes, and is application/octet-stream when they are neither JPEG nor PNG."
           },
           "304": {
             "description": "Not modified"
