@@ -395,13 +395,14 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should store one of the two serial outcomes when a new probe and a scan publication of the"
-          + " same file wait for its row together")
-  void shouldStoreOneOfTwoSerialOutcomesWhenNewProbeAndScanPublicationWaitForTheFileTogether()
+      "Should finish both writes in one serial order without a deadlock when a new probe and a scan"
+          + " publication of the same file wait for its row together")
+  void shouldFinishBothWritesInOneSerialOrderWithoutDeadlockWhenNewProbeAndScanWaitTogether()
       throws Exception {
     var file = createMediaFile();
     repository.publish(
         publicationOf(file.getId(), unscanned()).probeVersion(EARLIER_VERSION).build());
+    var scanned = new KeyframeKnowledge.Known(scannedPositions());
     boolean scanPublished;
 
     try (var writers = Executors.newVirtualThreadPerTaskExecutor();
@@ -410,11 +411,7 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
           writers.submit(
               () ->
                   repository.publishKeyframePacketScan(
-                      packetScan(
-                              file.getId(),
-                              SNAPSHOT_A,
-                              new KeyframeKnowledge.Known(scannedPositions()))
-                          .toBuilder()
+                      packetScan(file.getId(), SNAPSHOT_A, scanned).toBuilder()
                           .probeVersion(EARLIER_VERSION)
                           .build()));
       var probe =
@@ -431,18 +428,49 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
       assertThat(probe.get(10, TimeUnit.SECONDS)).isTrue();
     }
 
-    var keyframes = repository.findKeyframeKnowledge(file.getId());
+    // A published scan comes first in the serial order, so the new probe keeps its positions. A
+    // refused scan comes after the new probe.
+    var serialKeyframes = unscanned().keyframes();
     if (scanPublished) {
-      assertThat(keyframes)
-          .as("The scan published first, and the new probe kept its positions")
-          .contains(new KeyframeKnowledge.Known(scannedPositions()));
-    } else {
-      assertThat(keyframes)
-          .as("The new probe published first, and the earlier version's scan was refused")
-          .contains(unscanned().keyframes());
-      assertThat(positionsRowCount(file.getId())).isZero();
+      serialKeyframes = scanned;
     }
 
+    assertThat(repository.findKeyframeKnowledge(file.getId())).contains(serialKeyframes);
+    assertThat(owedPacketScanInputs(file.getId()))
+        .contains(new ProbeInputs(SNAPSHOT_A, ProbeVersion.CURRENT));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse the earlier probe version's scan publication when it waits behind a new probe"
+          + " that has not committed")
+  void shouldRefuseEarlierVersionsScanPublicationWhenItWaitsBehindUncommittedNewProbe()
+      throws Exception {
+    var file = createMediaFile();
+    repository.publish(
+        publicationOf(file.getId(), unscanned()).probeVersion(EARLIER_VERSION).build());
+    var scanned = new KeyframeKnowledge.Known(scannedPositions());
+
+    try (var writers = Executors.newVirtualThreadPerTaskExecutor()) {
+      var scan =
+          publishBehindUncommitted(
+              () ->
+                  repository.publish(
+                      publicationOf(file.getId(), unscanned())
+                          .probeVersion(ProbeVersion.CURRENT)
+                          .build()),
+              () ->
+                  writers.submit(
+                      () ->
+                          repository.publishKeyframePacketScan(
+                              packetScan(file.getId(), SNAPSHOT_A, scanned).toBuilder()
+                                  .probeVersion(EARLIER_VERSION)
+                                  .build())));
+
+      assertThat(scan.get(10, TimeUnit.SECONDS)).isFalse();
+    }
+
+    assertThat(repository.findKeyframeKnowledge(file.getId())).contains(unscanned().keyframes());
     assertThat(owedPacketScanInputs(file.getId()))
         .contains(new ProbeInputs(SNAPSHOT_A, ProbeVersion.CURRENT));
   }
