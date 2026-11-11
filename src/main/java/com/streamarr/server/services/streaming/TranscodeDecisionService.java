@@ -968,6 +968,11 @@ public class TranscodeDecisionService {
   // that a worker encodes in hardware keeps its place before it. Then the codec preference and,
   // within a codec family, 10-bit SDR before 8-bit SDR.
   private static Optional<EncodeChoice> selectEncode(TranscodeDecisionRequest request) {
+    return fittingEncodes(request).reduce(TranscodeDecisionService::preferredEncode);
+  }
+
+  // Every encode that the request permits and an entry fits, in the order of the codec preference.
+  private static Stream<EncodeChoice> fittingEncodes(TranscodeDecisionRequest request) {
     return codecPreference(request).stream()
         .filter(
             profile -> request.encodableVideoCodecFamilies().contains(profile.codecFamilyName()))
@@ -979,8 +984,7 @@ public class TranscodeDecisionService {
                     .softwareEncodeCodecFamily()
                     .map(profile.codecFamilyName()::equals)
                     .orElse(true))
-        .flatMap(profile -> fittingEncodes(request, profile))
-        .reduce(TranscodeDecisionService::preferredEncode);
+        .flatMap(profile -> fittingEncodes(request, profile));
   }
 
   private static EncodeChoice preferredEncode(EncodeChoice preferred, EncodeChoice next) {
