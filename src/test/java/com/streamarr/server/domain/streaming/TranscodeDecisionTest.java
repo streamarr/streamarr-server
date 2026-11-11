@@ -277,6 +277,26 @@ class TranscodeDecisionTest {
             pq));
   }
 
+  // ADR 0050: a player moves down and back up only between variants of one codec family, so no
+  // decision pairs a copy with lower variants in another one, even in the copy's range and bit
+  // depth.
+  @Test
+  @DisplayName(
+      "Should refuse a copy decision when its lower variants leave the copy's codec family")
+  void shouldRefuseACopyDecisionWhenItsLowerVariantsLeaveTheCopysCodecFamily() {
+    var decision =
+        decisionBuilder(TranscodeMode.REMUX)
+            .videoCodecFamily("h264")
+            .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
+            .lowerVariantEncode(
+                Optional.of(
+                    new LowerVariantEncode(EncodeCodecProfile.AV1_MAIN, EncodeFormat.SDR_8_BIT)));
+
+    assertThatThrownBy(decision::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must stay in the copy's codec family");
+  }
+
   // A lower variant beside a PQ copy is a 10-bit PQ encode of the same video stream with the
   // source's static metadata, and it keeps neither the copy's rewrites nor its Dolby Vision.
   @Test

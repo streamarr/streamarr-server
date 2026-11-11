@@ -548,14 +548,14 @@ class PlaybackSessionServiceTest {
             });
   }
 
-  // Auto can play an AV1 lower variant beside an H.264 copy. When the player cannot decode the
-  // lower variant it plays, the replacement must not encode AV1 again.
+  // Auto can play an encoded lower variant beside a copy. When the player cannot decode the lower
+  // variant it plays, the replacement must not encode that codec family again.
   @Test
   @DisplayName(
       "Should keep the lower variant's codec out of the replacement when the player fails on the"
           + " lower variant it plays beside a copy")
   void shouldKeepTheLowerVariantsCodecOutOfTheReplacementWhenThePlayerFailsOnTheLowerVariant() {
-    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.AV1_MAIN);
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
     var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
     var initial = accepted(service.start(command));
     streams.playedVariants.put(initial.currentFormatAttempt().streamSessionId(), "720p");
@@ -563,7 +563,7 @@ class PlaybackSessionServiceTest {
     service.reportFormatFailure(report(initial, command).build()).orElseThrow();
 
     assertThat(streams.createdCommands.getLast().excludedEncodeCodecFamilies())
-        .containsExactly("av1");
+        .containsExactly("h264");
   }
 
   // A segment over the cap fails the segment list, not the codec: the replacement encodes on the
@@ -1201,14 +1201,14 @@ class PlaybackSessionServiceTest {
     assertThat(current.currentFormatAttempt()).isEqualTo(initial.currentFormatAttempt());
   }
 
-  // In Auto, an AV1 lower variant encodes beside an H.264 copy. Its hardware encoder failing must
-  // continue that lower variant's encode in software, although the stream session copies.
+  // In Auto, a lower variant encodes beside a copy. Its hardware encoder failing must continue that
+  // lower variant's encode in software, although the stream session copies.
   @Test
   @DisplayName(
       "Should continue the encode in software when the hardware encoder of a lower variant beside a"
           + " copy fails")
   void shouldContinueTheEncodeInSoftwareWhenTheHardwareEncoderOfALowerVariantBesideACopyFails() {
-    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.AV1_MAIN);
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
     var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
     var initial = accepted(service.start(command));
 
@@ -1221,7 +1221,7 @@ class PlaybackSessionServiceTest {
     var continued = service.access(request(initial, command)).orElseThrow();
     assertThat(continued.formatAttemptCount()).isEqualTo(1);
     assertThat(continued.currentFormatAttempt()).isNotEqualTo(initial.currentFormatAttempt());
-    assertThat(streams.createdCommands.getLast().softwareEncodeCodecFamily()).contains("av1");
+    assertThat(streams.createdCommands.getLast().softwareEncodeCodecFamily()).contains("h264");
   }
 
   private static RequestedVariantHardwareEncoderFailedEvent hardwareEncoderFailure(

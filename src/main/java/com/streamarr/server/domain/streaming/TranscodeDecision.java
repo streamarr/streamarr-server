@@ -25,7 +25,8 @@ import lombok.NonNull;
  * (ADR 0044). {@code videoEncodeFormat} is the range and bit depth that the decision's encode
  * writes, and a decision that copies the video holds 8-bit SDR (#397). {@code lowerVariantEncode}
  * is the encode that the lower variants beside a copy run in Auto, so only a decision that copies
- * the video holds one, and it writes the copy's range at the copy's bit depth (ADR 0050).
+ * the video holds one, and it writes the copy's range at the copy's bit depth in the copy's codec
+ * family (ADR 0050).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -74,6 +75,7 @@ public record TranscodeDecision(
 
     requireLowerVariantsInTheCopysFormat(
         lowerVariantEncode, videoSource.filter(_ -> copiesVideo), videoBitstreamRewrites);
+    requireLowerVariantsInTheCopysCodecFamily(lowerVariantEncode, videoCodecFamily);
 
     videoBitstreamRewrites = List.copyOf(videoBitstreamRewrites);
     reasons = List.copyOf(reasons);
@@ -113,6 +115,18 @@ public record TranscodeDecision(
     if (!lowerVariants.map(LowerVariantEncode::format).equals(copyFormat)) {
       throw new IllegalArgumentException(
           "A copy's lower variants must keep the copy's range and bit depth");
+    }
+  }
+
+  // A player moves down and back up only between variants of one codec family, so a copy's lower
+  // variants keep the copy's (ADR 0050).
+  private static void requireLowerVariantsInTheCopysCodecFamily(
+      Optional<LowerVariantEncode> lowerVariants, String copyCodecFamily) {
+    if (lowerVariants
+        .filter(encode -> !encode.codecProfile().codecFamilyName().equals(copyCodecFamily))
+        .isPresent()) {
+      throw new IllegalArgumentException(
+          "A copy's lower variants must stay in the copy's codec family");
     }
   }
 

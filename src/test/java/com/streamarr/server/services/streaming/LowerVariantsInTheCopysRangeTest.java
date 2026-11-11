@@ -39,6 +39,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
+import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoEncodeFeature;
@@ -63,11 +64,11 @@ import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
@@ -80,12 +81,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * The encoded lower variants beside an Auto copy keep the copy's range and bit depth, through the
- * real transcode decision, ladder and playlist (ADR 0050). A bandwidth dip must not move a
- * television between HDR and SDR, so a copy whose range no verified encoder writes, or whose range
- * the client plays in no codec that a worker encodes, lists no lower variants. Neither does a copy
- * that the playlist describes as Dolby Vision, which no encode writes. Auto still gives HDR up for
- * SDR only after an HDR encode fails (#397).
+ * The encoded lower variants beside an Auto copy keep the copy's range, bit depth and codec family,
+ * through the real transcode decision, ladder and playlist (ADR 0050). A bandwidth dip must not
+ * move a television between HDR and SDR, and a player moves only between variants of one codec
+ * family, so a copy lists no lower variants when no verified encoder writes its range in its codec
+ * family, or when no capability entry plays that encode. Neither does a copy that the playlist
+ * describes as Dolby Vision, which no encode writes. Auto still gives HDR up for SDR only after an
+ * HDR encode fails (#397).
  */
 @Tag("UnitTest")
 @DisplayName("Lower Variants In The Copy's Range Tests")
@@ -107,7 +109,7 @@ class LowerVariantsInTheCopysRangeTest {
   private static final ExecutionTargetId SDR_WORKER = new ExecutionTargetId("sdr-worker");
   private static final Pattern VIDEO_RANGE_ATTRIBUTE = Pattern.compile(",VIDEO-RANGE=(\\w+)");
   private static final Pattern CODECS_ATTRIBUTE = Pattern.compile("CODECS=\"([^\",]+)");
-  private static final String TEN_BIT_AV1 = "av01\\.0\\.\\d\\dM\\.10";
+  private static final String MAIN_10_H265 = "hvc1.2.4.";
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeTranscodeExecutor workers = new FakeTranscodeExecutor();
@@ -151,7 +153,7 @@ class LowerVariantsInTheCopysRangeTest {
           + " writes that range and the client plays it")
   void shouldEncodeEveryLowerVariantInTheCopysRangeAndBitDepthWhenAVerifiedEncoderWritesThatRange(
       CopyLadder ladder) {
-    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE)));
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(x265(EVERY_ENCODE_FEATURE)));
     probes.setDefaultProbe(ladder.source());
 
     var copy = accepted(playback.start(startAuto(ladder.client())));
@@ -170,12 +172,12 @@ class LowerVariantsInTheCopysRangeTest {
     assertThat(videoCodecOf(entries.getFirst())).startsWith("hvc1.");
     assertThat(lowerEntries)
         .hasSize(3)
-        .allSatisfy(entry -> assertThat(videoCodecOf(entry)).matches(TEN_BIT_AV1));
+        .allSatisfy(entry -> assertThat(videoCodecOf(entry)).startsWith(MAIN_10_H265));
     assertThat(sessionOf(copy).decisionOf("720p").plannedVideoOutput())
         .isInstanceOfSatisfying(
             PlannedVideoOutput.Encode.class,
             encode -> {
-              assertThat(encode.codecProfile()).contains(EncodeCodecProfile.AV1_MAIN);
+              assertThat(encode.codecProfile()).contains(EncodeCodecProfile.HEVC_MAIN_10);
               assertThat(encode.dynamicRange())
                   .isEqualTo(
                       VideoPlaybackFactsFixture.rangeWithoutEnhancement(
@@ -231,7 +233,7 @@ class LowerVariantsInTheCopysRangeTest {
   @DisplayName("Should list the copy alone when the playlist describes the copy as Dolby Vision")
   void shouldListTheCopyAloneWhenThePlaylistDescribesTheCopyAsDolbyVision(
       DolbyVisionCopy dolbyVision) {
-    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE)));
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(x265(EVERY_ENCODE_FEATURE)));
     probes.setDefaultProbe(dolbyVision.source());
 
     var copy = accepted(playback.start(startAuto(clientThatPlaysEveryRange())));
@@ -279,8 +281,7 @@ class LowerVariantsInTheCopysRangeTest {
           + " variants beside an HDR10 copy encode H.265")
   void shouldPairH265Main10WithATenBitPqEncodeInEveryLowerVariantWhenTheyEncodeH265() {
     workers.setTargetEncoders(
-        ExecutionTargetId.LOCAL,
-        List.of(encoder("hevc", "libx265", EVERY_ENCODE_FEATURE), encoder("h264", "libx264")));
+        ExecutionTargetId.LOCAL, List.of(x265(EVERY_ENCODE_FEATURE), encoder("h264", "libx264")));
     probes.setDefaultProbe(hevc(CompatibleBase.PQ));
 
     var copy =
@@ -306,53 +307,37 @@ class LowerVariantsInTheCopysRangeTest {
         .containsOnly(VideoRange.PQ);
     assertThat(entries.subList(1, entries.size()))
         .isNotEmpty()
-        .allSatisfy(entry -> assertThat(videoCodecOf(entry)).startsWith("hvc1.2.4."));
+        .allSatisfy(entry -> assertThat(videoCodecOf(entry)).startsWith(MAIN_10_H265));
   }
 
   // ADR 0049: an output fits one capability entry. Each lower variant is sized by an entry that
-  // plays the lower variants' own range and bit depth, so an entry that plays 8-bit SDR alone at 60
-  // fps does not give a PQ lower variant its frame rate.
+  // plays the lower variants' own range and bit depth, so a client whose entry for the copy's codec
+  // family plays PQ alone still gets PQ lower variants.
   @Test
   @DisplayName(
-      "Should fit every lower variant to the capability entry that plays the copy's range when"
-          + " another entry of its codec family plays SDR alone at a higher frame rate")
-  void shouldFitEveryLowerVariantToTheEntryThatPlaysTheCopysRangeWhenAnotherPlaysSdrAloneFaster() {
-    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE)));
-    probes.setDefaultProbe(
-        source(
-                hevcFacts()
-                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
-                    .dynamicRange(
-                        VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
-                    .build())
-            .toBuilder()
-            .framerate(OptionalDouble.of(60))
-            .build());
+      "Should fit every lower variant to the capability entry that plays the copy's range when no"
+          + " entry of the copy's codec family plays SDR")
+  void shouldFitEveryLowerVariantToTheEntryThatPlaysTheCopysRangeWhenNoEntryOfItsFamilyPlaysSdr() {
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(x265(EVERY_ENCODE_FEATURE)));
+    probes.setDefaultProbe(hevc(CompatibleBase.PQ));
 
     var copy =
         accepted(
             playback.start(
                 startAuto(
                     clientWith(
-                        hevcEntryBuilder().compatibleBases(EVERY_RANGE).build(),
-                        av1EntryBuilder().build(),
-                        av1EntryBuilder()
-                            .compatibleBases(List.of(CompatibleBase.PQ))
-                            .maxFrameRate(30)
-                            .build()))));
+                        hevcEntryBuilder().compatibleBases(List.of(CompatibleBase.PQ)).build()))));
 
     var session = sessionOf(copy);
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactly("720p", "480p", "360p");
     assertThat(session.decisionOf("720p").videoEncodeFormat())
         .isEqualTo(EncodeFormat.hdr(VideoRange.PQ));
-    assertThat(session.getVariants())
-        .isNotEmpty()
-        .extracting(QualityVariant::frameRate)
-        .containsOnly(new Fraction(30, 1));
-    var entries = streamInfEntries(copy);
-    assertThat(entries.getFirst()).contains("FRAME-RATE=60.000");
-    assertThat(entries.subList(1, entries.size()))
-        .isNotEmpty()
-        .allSatisfy(entry -> assertThat(entry).contains("FRAME-RATE=30.000"));
+    assertThat(streamInfEntries(copy))
+        .hasSize(4)
+        .extracting(LowerVariantsInTheCopysRangeTest::rangeOf)
+        .containsOnly(VideoRange.PQ);
   }
 
   @Test
@@ -360,7 +345,7 @@ class LowerVariantsInTheCopysRangeTest {
       "Should plan the copy's PQ range with the source's static metadata in a lower variant's job"
           + " when the player first requests one of its segments")
   void shouldPlanTheCopysPqRangeInALowerVariantsJobWhenThePlayerFirstRequestsOneOfItsSegments() {
-    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE)));
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(x265(EVERY_ENCODE_FEATURE)));
     probes.setDefaultProbe(
         source(
             hevcFacts()
@@ -382,7 +367,7 @@ class LowerVariantsInTheCopysRangeTest {
               assertThat(lower.transcodeDecision().plannedVideoOutput())
                   .isEqualTo(
                       PlannedVideoOutput.Encode.builder()
-                          .codecProfile(Optional.of(EncodeCodecProfile.AV1_MAIN))
+                          .codecProfile(Optional.of(EncodeCodecProfile.HEVC_MAIN_10))
                           .dynamicRange(
                               VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
                           .bitDepth(10)
@@ -393,6 +378,189 @@ class LowerVariantsInTheCopysRangeTest {
                               Optional.of(VideoPlaybackFactsFixture.CONTENT_LIGHT_LEVEL))
                           .build());
             });
+  }
+
+  // The web player moves only between variants of one codec family and one range, so the lower
+  // variants take the copy's codec family even when the codec preference puts another family
+  // first: here a worker encodes AV1 in hardware, and the client plays AV1 in every range.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesBesideAPreferredAv1Encoder")
+  @DisplayName(
+      "Should encode every lower variant in the copy's codec family when the codec preference puts"
+          + " another codec family first")
+  void shouldEncodeEveryLowerVariantInTheCopysCodecFamilyWhenThePreferencePutsAnotherFamilyFirst(
+      CopyFamily copyFamily) {
+    workerVerifies(hardwareAv1(), x265(EVERY_ENCODE_FEATURE), encoder("h264", "libx264"));
+    probes.setDefaultProbe(copyFamily.source());
+
+    var copy = accepted(playback.start(startAuto(clientThatPlaysEveryRange())));
+
+    var session = sessionOf(copy);
+    var entries = streamInfEntries(copy);
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactly("720p", "480p", "360p");
+    assertThat(session.getVariants())
+        .allSatisfy(
+            variant ->
+                assertThat(session.decisionOf(variant.label()).encodeCodecProfile())
+                    .contains(copyFamily.lowerVariantProfile()));
+    assertThat(entries)
+        .hasSize(4)
+        .allSatisfy(
+            entry -> assertThat(videoCodecOf(entry)).startsWith(copyFamily.sampleEntry() + "."));
+    assertThat(entries)
+        .extracting(LowerVariantsInTheCopysRangeTest::rangeOf)
+        .containsOnly(copyFamily.range());
+  }
+
+  static Stream<CopyFamily> copiesBesideAPreferredAv1Encoder() {
+    return Stream.of(
+        copyFamily("an H.265 HDR10 copy")
+            .source(hevc(CompatibleBase.PQ))
+            .lowerVariantProfile(EncodeCodecProfile.HEVC_MAIN_10)
+            .sampleEntry("hvc1")
+            .range(VideoRange.PQ)
+            .build(),
+        copyFamily("an H.264 SDR copy")
+            .source(defaultProbeBuilder().audioChannels(OptionalInt.of(2)).build())
+            .lowerVariantProfile(EncodeCodecProfile.H264_HIGH)
+            .sampleEntry("avc1")
+            .range(VideoRange.SDR)
+            .build());
+  }
+
+  // The fallback is no lower variants, never ones in another codec family or in SDR: the copy
+  // plays alone, as it does in a fixed quality. The hardware AV1 encoder here writes every range,
+  // and the client plays AV1 in every range.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesWhoseCodecFamilyNoVerifiedEncoderWritesInTheirRange")
+  @DisplayName(
+      "Should list the copy alone when no verified encoder writes the copy's codec family in the"
+          + " copy's range and bit depth")
+  void shouldListTheCopyAloneWhenNoVerifiedEncoderWritesItsCodecFamilyInItsRangeAndBitDepth(
+      CopyAlone copyAlone) {
+    workerVerifies(copyAlone.encoders().toArray(WorkerVerifiedEncoder[]::new));
+    probes.setDefaultProbe(copyAlone.source());
+
+    var copy = accepted(playback.start(startAuto(copyAlone.client())));
+
+    assertThatTheCopyPlaysAlone(copy);
+  }
+
+  static Stream<CopyAlone> copiesWhoseCodecFamilyNoVerifiedEncoderWritesInTheirRange() {
+    return Stream.of(
+        copyAlone("an H.265 HDR10 copy beside AV1 and H.264 encoders")
+            .source(hevc(CompatibleBase.PQ))
+            .encoder(hardwareAv1())
+            .encoder(encoder("h264", "libx264"))
+            .build(),
+        copyAlone("an H.265 HDR10 copy beside an H.265 encoder without PQ")
+            .source(hevc(CompatibleBase.PQ))
+            .encoder(hardwareAv1())
+            .encoder(x265(without(VideoEncodeFeature.PQ)))
+            .build(),
+        copyAlone("an H.265 HLG copy beside an H.265 encoder without HLG")
+            .source(hevc(CompatibleBase.HLG))
+            .encoder(hardwareAv1())
+            .encoder(x265(without(VideoEncodeFeature.HLG)))
+            .build(),
+        copyAlone("a 10-bit SDR H.265 copy beside an H.265 encoder without 10 bits")
+            .source(hevc(CompatibleBase.SDR))
+            .encoder(hardwareAv1())
+            .encoder(x265(without(VideoEncodeFeature.TEN_BIT)))
+            .build(),
+        copyAlone("Dolby Vision 8.1, copied without it, beside an H.265 encoder without PQ")
+            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1))
+            .client(clientThatPlaysNoDolbyVision())
+            .encoder(hardwareAv1())
+            .encoder(x265(without(VideoEncodeFeature.PQ)))
+            .build(),
+        copyAlone("an H.264 SDR copy beside AV1 and H.265 encoders")
+            .source(defaultProbeBuilder().audioChannels(OptionalInt.of(2)).build())
+            .encoder(hardwareAv1())
+            .encoder(x265(EVERY_ENCODE_FEATURE))
+            .build());
+  }
+
+  // An encode forces H.264 High (ADR 0013), which an entry that lists H.264 Main alone refuses,
+  // while it accepts the Main copy. The client plays AV1, which the worker encodes in hardware.
+  @Test
+  @DisplayName(
+      "Should list the copy alone when no capability entry accepts an encode in the copy's codec"
+          + " family")
+  void shouldListTheCopyAloneWhenNoCapabilityEntryAcceptsAnEncodeInTheCopysCodecFamily() {
+    workerVerifies(hardwareAv1(), x265(EVERY_ENCODE_FEATURE), encoder("h264", "libx264"));
+    probes.setDefaultProbe(
+        defaultProbeBuilder()
+            .audioChannels(OptionalInt.of(2))
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .frameRateRule(
+                            VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                        .codecString(Optional.of("avc1.4d4028"))
+                        .videoProperties(
+                            Optional.of(
+                                VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                                    .codecProfile(Optional.of(VideoCodecProfile.H264_MAIN))
+                                    .build()))
+                        .build()))
+            .build());
+    var mainAlone =
+        h264EntryBuilder()
+            .codecProfiles(
+                List.of(
+                    VideoCodecProfileCapability.builder()
+                        .profile(VideoCodecProfile.H264_MAIN)
+                        .maxLevel(52)
+                        .build()))
+            .build();
+
+    var copy =
+        accepted(
+            playback.start(
+                startAuto(
+                    defaultDeclarationBuilder()
+                        .video(
+                            List.of(
+                                mainAlone, av1EntryBuilder().compatibleBases(EVERY_RANGE).build()))
+                        .build())));
+
+    assertThatTheCopyPlaysAlone(copy);
+  }
+
+  // ADR 0009: a stream session without a copy encodes its whole ladder in the codec family that
+  // the codec preference puts first. The client here declares no H.264 entry, so the H.264 source
+  // is not copied.
+  @Test
+  @DisplayName(
+      "Should encode the whole ladder in the preferred codec family when the stream session copies"
+          + " no video")
+  void shouldEncodeTheWholeLadderInThePreferredCodecFamilyWhenTheStreamSessionCopiesNoVideo() {
+    workerVerifies(hardwareAv1(), x265(EVERY_ENCODE_FEATURE), encoder("h264", "libx264"));
+    probes.setDefaultProbe(defaultProbeBuilder().audioChannels(OptionalInt.of(2)).build());
+
+    var encode =
+        accepted(
+            playback.start(
+                startAuto(
+                    defaultDeclarationBuilder()
+                        .video(
+                            List.of(
+                                hevcEntryBuilder().compatibleBases(EVERY_RANGE).build(),
+                                av1EntryBuilder().compatibleBases(EVERY_RANGE).build()))
+                        .build())));
+
+    var session = sessionOf(encode);
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(session.getTranscodeDecision().encodeCodecProfile())
+        .contains(EncodeCodecProfile.AV1_MAIN);
+    assertThat(streamInfEntries(encode))
+        .isNotEmpty()
+        .allSatisfy(entry -> assertThat(videoCodecOf(entry)).startsWith("av01."));
   }
 
   // The fallback is no lower variants, never SDR ones: the copy plays alone, as it does in a fixed
@@ -414,62 +582,10 @@ class LowerVariantsInTheCopysRangeTest {
 
   static Stream<CopyAlone> copiesWhoseRangeNoVerifiedEncoderWrites() {
     return Stream.of(
-        copyAlone("HDR10 beside an AV1 encoder without PQ")
-            .source(hevc(CompatibleBase.PQ))
-            .encoder(svtAv1(without(VideoEncodeFeature.PQ)))
-            .build(),
-        copyAlone("HLG beside an AV1 encoder without HLG")
-            .source(hevc(CompatibleBase.HLG))
-            .encoder(svtAv1(without(VideoEncodeFeature.HLG)))
-            .build(),
-        copyAlone("10-bit SDR beside an AV1 encoder without 10 bits")
-            .source(hevc(CompatibleBase.SDR))
-            .encoder(svtAv1(without(VideoEncodeFeature.TEN_BIT)))
-            .build(),
-        copyAlone("Dolby Vision 8.1, copied without it, beside an AV1 encoder without PQ")
-            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1))
-            .client(clientThatPlaysNoDolbyVision())
-            .encoder(svtAv1(without(VideoEncodeFeature.PQ)))
-            .build(),
         copyAlone("HDR10 beside encoders that list no encode feature")
             .source(hevc(CompatibleBase.PQ))
-            .encoder(svtAv1(Set.of()))
+            .encoder(x265(Set.of()))
             .encoder(encoder("h264", "libx264"))
-            .build());
-  }
-
-  @ParameterizedTest(name = "{0}")
-  @MethodSource("clientsThatPlayNoEncodeInTheCopysRange")
-  @DisplayName(
-      "Should list the copy alone when no capability entry plays an encode in the copy's range and"
-          + " bit depth")
-  void shouldListTheCopyAloneWhenNoCapabilityEntryPlaysAnEncodeInTheCopysRangeAndBitDepth(
-      CopyAlone copyAlone) {
-    workers.setTargetEncoders(
-        ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE), encoder("h264", "libx264")));
-    probes.setDefaultProbe(copyAlone.source());
-
-    var copy = accepted(playback.start(startAuto(copyAlone.client())));
-
-    assertThatTheCopyPlaysAlone(copy);
-  }
-
-  static Stream<CopyAlone> clientsThatPlayNoEncodeInTheCopysRange() {
-    var hdrHevc = hevcEntryBuilder().compatibleBases(EVERY_RANGE).build();
-    return Stream.of(
-        copyAlone("HDR10 on a client whose AV1 entry declares SDR alone")
-            .source(hevc(CompatibleBase.PQ))
-            .client(clientWith(hdrHevc, av1EntryBuilder().build()))
-            .build(),
-        copyAlone("HDR10 on a client whose AV1 entry declares PQ at 8 bits")
-            .source(hevc(CompatibleBase.PQ))
-            .client(
-                clientWith(
-                    hdrHevc, av1EntryBuilder().compatibleBases(EVERY_RANGE).maxBitDepth(8).build()))
-            .build(),
-        copyAlone("10-bit SDR on a client whose AV1 entry declares 8 bits")
-            .source(hevc(CompatibleBase.SDR))
-            .client(clientWith(hdrHevc, av1EntryBuilder().maxBitDepth(8).build()))
             .build());
   }
 
@@ -483,7 +599,7 @@ class LowerVariantsInTheCopysRangeTest {
   void shouldStartABusyWorkersPqLowerVariantOnlyOnThatWorkerWhenTheFreeWorkerWritesSdrAlone() {
     workers.setExecutionTargets(List.of(SDR_WORKER, HDR_WORKER));
     workers.setTargetEncoders(SDR_WORKER, List.of(encoder("h264", "libx264")));
-    workers.setTargetEncoders(HDR_WORKER, List.of(svtAv1(EVERY_ENCODE_FEATURE)));
+    workers.setTargetEncoders(HDR_WORKER, List.of(x265(EVERY_ENCODE_FEATURE)));
     workers.limitJobSlots(HDR_WORKER, 0);
     probes.setDefaultProbe(hevc(CompatibleBase.PQ));
     var copy = accepted(playback.start(startAuto(clientThatPlaysEveryRange())));
@@ -514,7 +630,8 @@ class LowerVariantsInTheCopysRangeTest {
           + " a PQ lower variant")
   void shouldGiveHdrUpForAutosSdrLadderAndKeepTheCodecFamilyWhenThePlayerFailsOnAPqLowerVariant() {
     workers.setTargetEncoders(
-        ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE), encoder("h264", "libx264")));
+        ExecutionTargetId.LOCAL,
+        List.of(x265(EVERY_ENCODE_FEATURE), svtAv1(), encoder("h264", "libx264")));
     probes.setDefaultProbe(hevc(CompatibleBase.PQ));
     var command = startAuto(clientThatPlaysEveryRange());
     var copy = accepted(playback.start(command));
@@ -568,6 +685,25 @@ class LowerVariantsInTheCopysRangeTest {
 
   private static CopyLadder.CopyLadderBuilder ladder(String name) {
     return CopyLadder.copyLadderBuilder().name(name).client(clientThatPlaysEveryRange());
+  }
+
+  /** A copy with the encode that its lower variants run and what each playlist entry announces. */
+  @Builder(builderMethodName = "copyFamilyBuilder")
+  private record CopyFamily(
+      @NonNull String name,
+      @NonNull MediaProbe source,
+      @NonNull EncodeCodecProfile lowerVariantProfile,
+      @NonNull String sampleEntry,
+      @NonNull VideoRange range) {
+
+    @Override
+    public String toString() {
+      return name;
+    }
+  }
+
+  private static CopyFamily.CopyFamilyBuilder copyFamily(String name) {
+    return CopyFamily.copyFamilyBuilder().name(name);
   }
 
   /** A copy that keeps its Dolby Vision, with what its playlist entry announces. */
@@ -759,8 +895,44 @@ class LowerVariantsInTheCopysRangeTest {
     return features;
   }
 
-  private static WorkerVerifiedEncoder svtAv1(Set<VideoEncodeFeature> features) {
-    return encoder("av1", "libsvtav1", features);
+  // Lists these verified encoders on the one connected worker, which encodes no other codec family.
+  private void workerVerifies(WorkerVerifiedEncoder... encoders) {
+    var families =
+        Arrays.stream(encoders)
+            .map(encoder -> encoder.backend().codecFamily())
+            .collect(Collectors.toUnmodifiableSet());
+    workers.setEncodableVideoCodecFamilies(families);
+    workers.setVerifiedVideoCodecFamiliesByWorker(
+        List.of(
+            WorkerVerifiedCodecFamilies.builder()
+                .workerId(UUID.randomUUID())
+                .codecFamilies(families)
+                .build()));
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(encoders));
+  }
+
+  // A software AV1 encoder that lists every encode feature.
+  private static WorkerVerifiedEncoder svtAv1() {
+    return encoder("av1", "libsvtav1", EVERY_ENCODE_FEATURE);
+  }
+
+  private static WorkerVerifiedEncoder x265(Set<VideoEncodeFeature> features) {
+    return encoder("hevc", "libx265", features);
+  }
+
+  // A hardware AV1 encoder that lists every encode feature, which the codec preference puts first
+  // (ADR 0009).
+  private static WorkerVerifiedEncoder hardwareAv1() {
+    return WorkerVerifiedEncoder.builder()
+        .backend(
+            EncoderBackend.builder()
+                .codecFamily("av1")
+                .encoder("av1_nvenc")
+                .kind(EncoderBackend.Kind.HARDWARE)
+                .build())
+        .keyframeVerified(true)
+        .encodeFeatures(EVERY_ENCODE_FEATURE)
+        .build();
   }
 
   // A software encoder that lists no encode feature, so it writes 8-bit SDR alone.

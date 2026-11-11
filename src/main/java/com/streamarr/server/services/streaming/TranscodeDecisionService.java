@@ -271,14 +271,17 @@ public class TranscodeDecisionService {
     return Stream.concat(videoReasons.stream(), undeclared).distinct().toList();
   }
 
-  // In Auto, encoded lower variants sit beside a copy, in the copy's range and at its bit depth: a
-  // bandwidth dip must not move a television between HDR and SDR (ADR 0050). They encode only once
-  // the player switches to one, so a busy worker's verified encoder and its encode features count.
-  // A copy plays alone when no verified encoder writes that format in a codec profile that an entry
-  // fits, when the format failed earlier in the playback session, and when the source has no
-  // encoded variant, such as one without a usable frame rate. So does a copy that the playlist
-  // describes as Dolby Vision: no encode writes Dolby Vision (ADR 0013), so a lower variant would
-  // take a television out of its Dolby Vision mode.
+  // In Auto, encoded lower variants sit beside a copy, in the copy's range, at its bit depth and in
+  // its codec family: a bandwidth dip must not move a television between HDR and SDR, and a player
+  // moves down and back up only between variants of one codec family (ADR 0050). The codec
+  // preference therefore chooses nothing here; it chooses the codec family of a stream session
+  // without a copy. The lower variants encode only once the player switches to one, so a busy
+  // worker's verified encoder and its encode features count. A copy plays alone when no verified
+  // encoder writes that format in a codec profile of the copy's codec family that an entry fits,
+  // when the format or the codec family failed earlier in the playback session, and when the source
+  // has no encoded variant, such as one without a usable frame rate. So does a copy that the
+  // playlist describes as Dolby Vision: no encode writes Dolby Vision (ADR 0013), so a lower
+  // variant would take a television out of its Dolby Vision mode.
   private static Optional<LowerVariantEncode> lowerVariantEncode(
       TranscodeDecisionRequest request, CopyPlan plan) {
     if (request.viewerLimits().quality() != VideoQuality.AUTO
@@ -287,6 +290,7 @@ public class TranscodeDecisionService {
     }
 
     var copyFormat = plannedCopy(request, plan).encodeFormatInItsRangeAndBitDepth();
+    var copyCodecFamily = request.source().videoCodec();
     var withVerifiedEncoders =
         request.toBuilder()
             .encodableVideoCodecFamilies(request.verifiedVideoCodecFamilies())
@@ -294,6 +298,7 @@ public class TranscodeDecisionService {
             .build();
     return fittingEncodes(withVerifiedEncoders)
         .filter(encode -> copyFormat.filter(encode.format()::equals).isPresent())
+        .filter(encode -> encode.codecProfile().codecFamilyName().equals(copyCodecFamily))
         .reduce(TranscodeDecisionService::preferredEncode)
         .filter(
             encode -> encodedVariantRequest(request.source(), encode.codecProfile()).isPresent())

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
@@ -441,7 +442,7 @@ class HlsCopySeekSmokeTest {
             .worker()
             .generateMedia(sourceRoot.resolve("noisy-480p-hdr10.mp4"), NOISY_480P_HDR10);
     storeProbeWithKeyframes(source);
-    var session = createSession(source, h264AndHdrH265Declaration());
+    var session = createSession(source, h264AndHdrH265AndAv1Declaration());
     var sessionId = session.getSessionId();
     var lowerSegment = "360p/" + SegmentNames.mediaSegmentName(1);
 
@@ -696,16 +697,16 @@ class HlsCopySeekSmokeTest {
     return createSession(source, declarationBuilderFor(ProbedCodecFamily.H264).build());
   }
 
-  // H.264 in 8-bit SDR beside H.265 up to 10 bits in SDR, PQ and HLG.
-  private static ClientCapabilityDeclaration h264AndHdrH265Declaration() {
+  // H.264 in 8-bit SDR beside H.265 and AV1 up to 10 bits in SDR, PQ and HLG. The codec preference
+  // puts AV1 before H.265, so only the copy's codec family makes a lower variant H.265.
+  private static ClientCapabilityDeclaration h264AndHdrH265AndAv1Declaration() {
+    var everyRange = List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG);
     return declarationBuilderFor(ProbedCodecFamily.H264)
         .video(
             List.of(
                 h264EntryBuilder().build(),
-                hevcEntryBuilder()
-                    .compatibleBases(
-                        List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
-                    .build()))
+                hevcEntryBuilder().compatibleBases(everyRange).build(),
+                av1EntryBuilder().compatibleBases(everyRange).build()))
         .build();
   }
 

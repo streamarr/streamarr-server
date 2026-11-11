@@ -226,11 +226,15 @@ class TranscodeDecisionServiceTest {
             });
   }
 
+  // ADR 0050: a player moves only between variants of one codec family, so the codec preference,
+  // which puts a hardware AV1 encoder first, does not choose the lower variants' codec family. A
+  // codec family that failed earlier in the playback session stays out, and no other takes its
+  // place.
   @Test
   @DisplayName(
-      "Should encode the lower variants beside an Auto copy in the preferred codec family that is"
-          + " not excluded")
-  void shouldEncodeTheLowerVariantsBesideAnAutoCopyInThePreferredCodecFamilyThatIsNotExcluded() {
+      "Should encode the lower variants beside an Auto copy in the copy's codec family when the"
+          + " codec preference puts another first, and list none once that codec family failed")
+  void shouldEncodeTheLowerVariantsBesideAnAutoCopyInTheCopysCodecFamilyUnlessItFailedEarlier() {
     var request =
         TranscodeDecisionRequest.builder()
             .source(probe("h264", "aac"))
@@ -238,14 +242,14 @@ class TranscodeDecisionServiceTest {
             .encodableVideoCodecFamilies(Set.of("h264", "av1"))
             .hardwareEncodableVideoCodecFamilies(HARDWARE_AV1);
 
-    var preferred = service.decide(request.build()).orElseThrow();
-    var withoutAv1 =
-        service.decide(request.excludedEncodeCodecFamilies(Set.of("av1")).build()).orElseThrow();
+    var inTheCopysFamily = service.decide(request.build()).orElseThrow();
+    var afterH264Failed =
+        service.decide(request.excludedEncodeCodecFamilies(Set.of("h264")).build()).orElseThrow();
 
-    assertThat(preferred.lowerVariantEncode().map(LowerVariantEncode::codecProfile))
-        .contains(EncodeCodecProfile.AV1_MAIN);
-    assertThat(withoutAv1.lowerVariantEncode().map(LowerVariantEncode::codecProfile))
-        .contains(EncodeCodecProfile.H264_HIGH);
+    assertThat(inTheCopysFamily.lowerVariantEncode())
+        .contains(new LowerVariantEncode(EncodeCodecProfile.H264_HIGH, EncodeFormat.SDR_8_BIT));
+    assertThat(afterH264Failed.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(afterH264Failed.lowerVariantEncode()).isEmpty();
   }
 
   // ADR 0050: the lower variants encode only once the player switches to one, so the encode
@@ -260,7 +264,8 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.lowerVariantEncode())
         .contains(
-            new LowerVariantEncode(EncodeCodecProfile.AV1_MAIN, EncodeFormat.hdr(VideoRange.PQ)));
+            new LowerVariantEncode(
+                EncodeCodecProfile.HEVC_MAIN_10, EncodeFormat.hdr(VideoRange.PQ)));
   }
 
   // #397: a format that failed earlier in the playback session stays out of every later encode.
@@ -283,7 +288,7 @@ class TranscodeDecisionServiceTest {
   }
 
   // An Auto request for a 10-bit HDR10 HEVC source from a client that plays PQ in HEVC and AV1.
-  // The only free worker encodes H.264, and a busy worker's SVT-AV1 lists every encode feature.
+  // The only free worker encodes H.264, and a busy worker's libx265 lists every encode feature.
   private TranscodeDecisionRequest.TranscodeDecisionRequestBuilder hdr10CopyBesideABusyPqEncoder() {
     var everyRange = List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG);
     var hdr10 =
@@ -318,14 +323,14 @@ class TranscodeDecisionServiceTest {
                         h264EntryBuilder().build()))
                 .build())
         .encodableVideoCodecFamilies(Set.of("h264"))
-        .verifiedVideoCodecFamilies(Set.of("h264", "av1"))
+        .verifiedVideoCodecFamilies(Set.of("h264", "hevc"))
         .verifiedVideoEncoders(
             List.of(
                 WorkerVerifiedEncoder.builder()
                     .backend(
                         EncoderBackend.builder()
-                            .codecFamily("av1")
-                            .encoder("libsvtav1")
+                            .codecFamily("hevc")
+                            .encoder("libx265")
                             .kind(EncoderBackend.Kind.SOFTWARE)
                             .build())
                     .keyframeVerified(true)
