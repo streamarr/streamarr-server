@@ -48,6 +48,7 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
 
   @Autowired private NotificationRetentionSweeper sweeper;
   @Autowired private NotificationRepository notificationRepository;
+  @Autowired private NotificationService notificationService;
   @Autowired private ProfileSharingService sharing;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private ProfileRepository profileRepository;
@@ -155,6 +156,24 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
     assertThat(notificationsAbout(share))
         .extracting(Notification::getRecipientAccountId)
         .containsExactly(sam.account().getId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a disabled Account's unread news when its latest event is older than the"
+          + " retention period")
+  void shouldKeepADisabledAccountsUnreadNewsWhenItsLatestEventIsOlderThanTheRetentionPeriod() {
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+    transactionTemplate.executeWithoutResult(
+        _ -> userAccountRepository.tryDisable(theo.account().getId()));
+    age(share, PAST_THE_PERIOD);
+
+    sweeper.sweep();
+
+    transactionTemplate.executeWithoutResult(
+        _ -> userAccountRepository.tryEnable(theo.account().getId()));
+    assertThat(notificationService.unreadNotificationCount(authTestSupport.identityOf(theo)))
+        .isOne();
   }
 
   @Test

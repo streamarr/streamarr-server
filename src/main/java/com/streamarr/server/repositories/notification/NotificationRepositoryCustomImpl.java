@@ -266,12 +266,19 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
         val(now.atOffset(ZoneOffset.UTC)));
   }
 
+  // Disabling an Account changes nothing for its Notifications, and the guard denies a disabled
+  // Account everything, so its unread news is never a candidate.
   private static Condition unreadNewsBefore(Instant cutoff) {
     return NOTIFICATION
         .FORM
         .eq(inline(NotificationForm.NEWS))
         .and(NOTIFICATION.READ_AT.isNull())
-        .and(NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)));
+        .and(NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)))
+        .andNotExists(
+            DSL.selectOne()
+                .from(USER_ACCOUNT)
+                .where(USER_ACCOUNT.ID.eq(NOTIFICATION.RECIPIENT_ACCOUNT_ID))
+                .and(USER_ACCOUNT.ENABLED.isFalse()));
   }
 
   // The Profile's direct managers, its own Account while it is an unrestricted Adult Personal
