@@ -33,6 +33,7 @@ import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
+import com.streamarr.server.fakes.FakeShareCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -113,7 +114,8 @@ class AccountLifecycleServiceTest {
               resetCodes,
               sessions,
               new DeviceRegistrationLifecycle(registrations, sessions),
-              Clock.fixed(NOW, ZoneOffset.UTC)),
+              Clock.fixed(NOW, ZoneOffset.UTC),
+              new ShareCodeIssuerAuthority(new FakeShareCodeRepository(), accounts, authorization)),
           accounts,
           profiles,
           households,

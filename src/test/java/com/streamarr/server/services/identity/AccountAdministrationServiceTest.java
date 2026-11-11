@@ -25,6 +25,7 @@ import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
+import com.streamarr.server.fakes.FakeShareCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -53,6 +54,7 @@ import org.springframework.security.access.AccessDeniedException;
 class AccountAdministrationServiceTest {
 
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
+  private final FakeShareCodeRepository shareCodes = new FakeShareCodeRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
   private final FakeDeviceRegistrationRepository registrations =
       new FakeDeviceRegistrationRepository();
@@ -76,6 +78,7 @@ class AccountAdministrationServiceTest {
           resetCodes,
           shares,
           new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
+          new ShareCodeIssuerAuthority(shareCodes, accounts, authorization),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           Clock.systemUTC());
