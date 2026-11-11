@@ -413,12 +413,6 @@ because a refetch on unknown `kid` can be answered with the cached pre-rotation 
 blank signing key generates an ephemeral key pair at startup (tokens die on restart; sessions
 recover through refresh).
 
-Share codes are eight letters, too few for a plain digest to hide them from someone who can read
-the database, so they are stored as an HMAC-SHA-256 under `AUTH_SHARE_CODE_KEY` (base64, at least
-32 bytes; generate with `openssl rand -base64 32`), which is kept outside the database. A blank
-key generates one at startup, and a new key ends every live share code; a HouseholdAdmin issues
-new ones.
-
 ES256 exists because of the transcode split: horizontally scaled transcode workers running
 FFmpeg are the most exposed tier and must never hold a token-minting secret. Signature
 verification alone never authorizes a request, though -- revocation is authoritative state,

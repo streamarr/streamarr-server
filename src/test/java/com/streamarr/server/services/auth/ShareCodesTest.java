@@ -1,7 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Locale;
 import org.junit.jupiter.api.DisplayName;
@@ -15,8 +14,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("Share Codes Tests")
 class ShareCodesTest {
 
-  private static final String OTHER_KEY = "b3RoZXItc2hhcmUtY29kZS10ZXN0LWtleS0zMi1ieXRlcyE=";
-
   private final ShareCodes shareCodes = ShareCodesFixture.shareCodes();
 
   @Test
@@ -28,55 +25,23 @@ class ShareCodesTest {
   }
 
   @Test
-  @DisplayName("Should store no plain digest of the code when a code is issued")
-  void shouldStoreNoPlainDigestOfCodeWhenCodeIsIssued() {
+  @DisplayName(
+      "Should store the SHA-256 digest of the normalised code, as an invitation's code is stored,"
+          + " when a code is issued")
+  void shouldStoreSha256DigestOfNormalisedCodeWhenCodeIsIssued() {
     var issued = shareCodes.issue();
 
     assertThat(issued.digest())
         .hasSize(32)
-        .isNotEqualTo(CredentialDigest.of(UserCode.normalize(issued.code())));
+        .isEqualTo(CredentialDigest.of(UserCode.normalize(issued.code())));
   }
 
   @Test
-  @DisplayName("Should recognise a code under the same key when another server reads it")
-  void shouldRecogniseCodeUnderSameKeyWhenAnotherServerReadsIt() {
-    var issued = shareCodes.issue();
+  @DisplayName("Should recognise a code issued before a restart when the server starts again")
+  void shouldRecogniseCodeIssuedBeforeRestartWhenServerStartsAgain() {
+    var issued = ShareCodesFixture.shareCodes().issue();
 
-    assertThat(ShareCodesFixture.keyedBy(ShareCodesFixture.KEY).digestOf(issued.code()))
-        .contains(issued.digest());
-  }
-
-  @Test
-  @DisplayName("Should recognise no code issued under another key when the key changes")
-  void shouldRecogniseNoCodeIssuedUnderAnotherKeyWhenKeyChanges() {
-    var issued = shareCodes.issue();
-
-    assertThat(ShareCodesFixture.keyedBy(OTHER_KEY).digestOf(issued.code()))
-        .get()
-        .isNotEqualTo(issued.digest());
-  }
-
-  @ParameterizedTest(name = "\"{0}\"")
-  @NullSource
-  @ValueSource(strings = {"", "   "})
-  @DisplayName("Should make a key of its own when no key is configured")
-  void shouldMakeKeyOfItsOwnWhenNoKeyIsConfigured(String configured) {
-    var first = ShareCodesFixture.keyedBy(configured);
-    var second = ShareCodesFixture.keyedBy(configured);
-    var issued = first.issue();
-
-    assertThat(first.digestOf(issued.code())).contains(issued.digest());
-    assertThat(second.digestOf(issued.code())).get().isNotEqualTo(issued.digest());
-  }
-
-  @ParameterizedTest(name = "\"{0}\"")
-  @ValueSource(strings = {"not base64!", "c2hvcnQta2V5"})
-  @DisplayName("Should refuse to start without naming the key when the configured key is unusable")
-  void shouldRefuseToStartWithoutNamingKeyWhenConfiguredKeyIsUnusable(String configured) {
-    assertThatThrownBy(() -> ShareCodesFixture.keyedBy(configured))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("AUTH_SHARE_CODE_KEY")
-        .hasMessageNotContaining(configured);
+    assertThat(ShareCodesFixture.shareCodes().digestOf(issued.code())).contains(issued.digest());
   }
 
   @Test
