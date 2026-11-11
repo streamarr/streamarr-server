@@ -6,21 +6,52 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StoredSegment;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class FakeSegmentStore implements SegmentStore {
 
   private final Map<UUID, Map<String, byte[]>> sessions = new ConcurrentHashMap<>();
+  private final Set<StoredSegment> openSegments = ConcurrentHashMap.newKeySet();
 
   @Override
   public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
     return Optional.ofNullable(sessions.getOrDefault(sessionId, Map.of()).get(segmentName))
-        .map(StoredSegments::inMemory);
+        .map(this::opened);
+  }
+
+  /** The segments that were opened and not yet closed. */
+  public int openSegmentCount() {
+    return openSegments.size();
+  }
+
+  private StoredSegment opened(byte[] data) {
+    var segment = StoredSegments.inMemory(data);
+    var opened =
+        new StoredSegment() {
+          @Override
+          public long length() {
+            return segment.length();
+          }
+
+          @Override
+          public InputStream newInputStream() {
+            return segment.newInputStream();
+          }
+
+          @Override
+          public void close() {
+            openSegments.remove(this);
+          }
+        };
+    openSegments.add(opened);
+    return opened;
   }
 
   @Override

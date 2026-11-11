@@ -133,6 +133,22 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should skip ahead without reading the segment file when a stream skips")
+  void shouldSkipAheadWithoutReadingSegmentFileWhenStreamSkips() throws IOException {
+    var sessionId = UUID.randomUUID();
+    store.storeSegment(sessionId, "segment0.m4s", new byte[] {7, 8, 9, 10});
+
+    try (var opened = store.openSegment(sessionId, "segment0.m4s").orElseThrow();
+        var stream = opened.newInputStream()) {
+      // With the file emptied under the opened segment, a skip that read the bytes it passes
+      // over would find none and skip nothing.
+      Files.write(store.getOutputDirectory(sessionId).resolve("segment0.m4s"), new byte[0]);
+
+      assertThat(stream.skip(3)).isEqualTo(3);
+    }
+  }
+
+  @Test
   @DisplayName("Should skip only the remaining bytes when a stream skips past the segment's end")
   void shouldSkipOnlyRemainingBytesWhenStreamSkipsPastSegmentEnd() throws IOException {
     var sessionId = UUID.randomUUID();

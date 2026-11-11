@@ -48,6 +48,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -274,6 +275,24 @@ class StreamControllerTest {
 
     assertThat(result.getResponse().getContentType()).isEqualTo("video/mp4");
     assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(segmentData);
+  }
+
+  @ParameterizedTest(name = "Range: {0}")
+  @NullSource
+  @ValueSource(strings = {"bytes=1-2", "bytes=0-0,2-3", "bytes=9-"})
+  @DisplayName("Should close the opened segment when its answer ends")
+  void shouldCloseOpenedSegmentWhenItsAnswerEnds(String range) throws Exception {
+    streamingService.setSession(buildSession());
+    segmentStore.addSegment(SESSION_ID, "segment0.m4s", new byte[] {0x00, 0x00, 0x00, 0x1C});
+    var request = get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID);
+    if (range != null) {
+      request.header(HttpHeaders.RANGE, range);
+    }
+
+    var answer = mockMvc.perform(request).andReturn().getResponse();
+
+    assertThat(answer.getStatus()).isIn(200, 206, 416);
+    assertThat(segmentStore.openSegmentCount()).isZero();
   }
 
   @Test
