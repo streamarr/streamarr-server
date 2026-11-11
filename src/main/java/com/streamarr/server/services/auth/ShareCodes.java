@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.exceptions.InvalidUserCodeException;
 import java.util.Arrays;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,9 +16,10 @@ import org.springframework.stereotype.Component;
  *     0024 §Share codes</a>
  */
 @Component
+@RequiredArgsConstructor
 public class ShareCodes {
 
-  private final UserCodeGenerator userCodes = new UserCodeGenerator();
+  private final UserCodeGenerator userCodes;
 
   public IssuedShareCode issue() {
     var code = userCodes.generate();

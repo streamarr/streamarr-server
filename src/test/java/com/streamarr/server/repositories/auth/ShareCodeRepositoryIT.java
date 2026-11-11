@@ -49,8 +49,7 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
-
-  private final ShareCodes shareCodes = new ShareCodes();
+  @Autowired private ShareCodes shareCodes;
 
   private AuthTestSupport.TestIdentity host;
   private Instant now;
