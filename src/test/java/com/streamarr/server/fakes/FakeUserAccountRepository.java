@@ -101,6 +101,12 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
+  public List<Row<UserAccount>> rowsManaging(UUID profileId, Seek seek) {
+    throw new UnsupportedOperationException(
+        "The managers of a Profile are read only from PostgreSQL");
+  }
+
+  @Override
   public Map<UUID, List<Row<UserAccount>>> rowsBeyond(Map<UUID, Seek> seeksByHousehold) {
     var rows = new LinkedHashMap<UUID, List<Row<UserAccount>>>();
     seeksByHousehold.forEach(

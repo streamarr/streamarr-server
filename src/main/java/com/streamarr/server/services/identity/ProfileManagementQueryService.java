@@ -2,6 +2,8 @@ package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.HouseholdProfilesFilter;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileManagerSource;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -30,6 +32,7 @@ public class ProfileManagementQueryService {
   private final AdministrationQueryService administrationQueryService;
   private final ManagedProfilesList managedProfilesList;
   private final HouseholdProfilesList householdProfilesList;
+  private final ProfileManagersList profileManagersList;
   private final ProfileRepository profileRepository;
 
   /**
@@ -68,6 +71,34 @@ public class ProfileManagementQueryService {
 
     var filter = new HouseholdProfilesFilter(householdId, identity.accountId(), administers);
     return describedIn(householdId, Pager.page(householdProfilesList, filter, request));
+  }
+
+  /**
+   * A page of the Accounts that manage the Profile, for the Managers section of its page: the
+   * Account whose own Personal Profile it is first, then its direct managers by display name, then
+   * ID. Only the Profile's managers and ServerAdmins read it; anyone else, a device-bound session,
+   * a disabled Account, and a Profile that does not exist get an empty list.
+   */
+  @Transactional(readOnly = true)
+  public ListPage<ManagingAccountDetails> profileManagers(
+      AuthenticatedIdentity identity, UUID profileId, PageRequest request) {
+    // A decision about a Profile that does not exist fails rather than denies.
+    if (!profileRepository.existsById(profileId)
+        || !authorizationService.isAllowed(identity, new Intent.ViewProfileManagers(profileId))) {
+      return ListPage.empty();
+    }
+
+    return Pager.page(profileManagersList, profileId, request)
+        .map(account -> managerDetails(identity, profileId, account));
+  }
+
+  private static ManagingAccountDetails managerDetails(
+      AuthenticatedIdentity reader, UUID profileId, UserAccount account) {
+    var source =
+        profileId.equals(account.getPersonalProfileId())
+            ? ProfileManagerSource.DERIVED
+            : ProfileManagerSource.DIRECT;
+    return new ManagingAccountDetails(account, source, reader.accountId().equals(account.getId()));
   }
 
   private ListPage<HouseholdProfileDetails> describedIn(UUID householdId, ListPage<Profile> page) {

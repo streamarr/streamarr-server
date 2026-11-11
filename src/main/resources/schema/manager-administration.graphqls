@@ -10,6 +10,33 @@ enum ProfileManagerInvitationStatus {
     INVALIDATED
 }
 
+"Where a manager's authority over a Profile comes from."
+enum ProfileManagerSource {
+    "The Profile is the Account's own Personal Profile, an Adult with no content limit."
+    DERIVED
+    "The Account was granted management, by an accepted invitation or by a ServerAdmin."
+    DIRECT
+}
+
+"An Account that manages a Profile."
+type ProfileManagerDetails {
+    accountId: ID!
+    displayName: String!
+    source: ProfileManagerSource!
+    "Whether this is the reading Account."
+    reader: Boolean!
+}
+
+type ProfileManagerConnection {
+    edges: [ProfileManagerEdge!]!
+    pageInfo: PageInfo!
+}
+
+type ProfileManagerEdge {
+    node: ProfileManagerDetails!
+    cursor: String!
+}
+
 type ManagerInvitationDetails {
     id: ID!
     profileId: ID

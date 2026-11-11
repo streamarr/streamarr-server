@@ -1312,6 +1312,31 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName(
+        "Should let a manager or a ServerAdmin see who manages a Profile when the session is not"
+            + " device-bound")
+    void shouldLetAManagerOrAServerAdminSeeWhoManagesAProfileWhenTheSessionIsNotDeviceBound() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      var view = new Intent.ViewProfileManagers(kid.getId());
+      shares.share(kid.getId(), account.getHouseholdId(), false);
+      assertThat(decide(atHome(), view)).as("supervising HouseholdAdmin").isEqualTo(DENIED);
+
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(kid.getId()).build());
+      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), view)).isEqualTo(DENIED);
+      managers.deleteAll();
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), view)).isEqualTo(DENIED);
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), view)).isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should allow an invitation answer when the caller is the named recipient")
     void shouldAllowInvitationAnswerWhenCallerIsNamedRecipient() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());

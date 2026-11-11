@@ -60,6 +60,12 @@ public sealed interface Intent {
   record ViewManagerInvitations(UUID profileId) implements UnitIntent {}
 
   /**
+   * The Accounts that manage a Profile: its ProfileManagers and live ServerAdmin only, never from a
+   * device-bound session.
+   */
+  record ViewProfileManagers(UUID profileId) implements UnitIntent {}
+
+  /**
    * A Profile's shares into every Household and the name of each: the offering side only, meaning
    * its ProfileManagers and live ServerAdmin. The Account of a self-managed Personal Profile is one
    * of its ProfileManagers; the Account of a supervised one is not.

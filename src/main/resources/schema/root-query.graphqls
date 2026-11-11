@@ -86,6 +86,14 @@ type Query {
     """
     shareCode(shareCodeId: ID!): ShareCode
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
+    """
+    The Accounts that manage a Profile, for the Managers section of its page: the Account whose own
+    Personal Profile it is first, then its direct managers by display name. Only the Profile's
+    managers and ServerAdmins read it. Anyone else, a HouseholdAdmin who only supervises it among
+    them, gets an empty list, as do a device-bound session, a disabled Account and a Profile that
+    does not exist.
+    """
+    profileManagers(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileManagerConnection!
     pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     """
     A Household's active Devices, newest first, for its HouseholdAdmins and for ServerAdmins.

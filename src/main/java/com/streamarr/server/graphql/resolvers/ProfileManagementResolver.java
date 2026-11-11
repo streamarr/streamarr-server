@@ -10,6 +10,7 @@ import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.HouseholdProfile;
 import com.streamarr.server.graphql.dto.ProfileAdministration;
+import com.streamarr.server.graphql.dto.ProfileManagerDetails;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileManagementQueryService;
 import com.streamarr.server.services.pagination.ListIdentity;
@@ -50,6 +51,17 @@ public class ProfileManagementResolver {
         profileManagementQueryService.householdProfiles(
             authorizationService.currentIdentity(), household, pageRequest(list, dfe));
     return relayConnectionAdapter.toConnection(page, list, HouseholdProfile::from);
+  }
+
+  @DgsQuery
+  public Connection<ProfileManagerDetails> profileManagers(
+      @InputArgument String profileId, DataFetchingEnvironment dfe) {
+    var profile = Ids.parseUuid(profileId);
+    var list = new ListIdentity("profile-managers", profile);
+    var page =
+        profileManagementQueryService.profileManagers(
+            authorizationService.currentIdentity(), profile, pageRequest(list, dfe));
+    return relayConnectionAdapter.toConnection(page, list, ProfileManagerDetails::from);
   }
 
   private PageRequest pageRequest(ListIdentity list, DataFetchingEnvironment dfe) {

@@ -84,6 +84,16 @@ public class ProfileCastSupport {
     transactionTemplate.executeWithoutResult(_ -> saveGrant(manager, profile));
   }
 
+  /** Gives the identity's Account the display name. */
+  public void rename(TestIdentity identity, String displayName) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
+          account.setDisplayName(displayName);
+          userAccountRepository.saveAndFlush(account);
+        });
+  }
+
   /** Another HouseholdAdmin of the identity's Household, whose Personal Profile is an Adult. */
   public TestIdentity secondAdminOf(TestIdentity householdOf) {
     var admin = authTestSupport.createHouseholdMemberIdentity(householdOf);

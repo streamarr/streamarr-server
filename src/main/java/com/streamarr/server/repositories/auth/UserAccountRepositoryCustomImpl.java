@@ -7,6 +7,7 @@ import static com.streamarr.server.jooq.generated.tables.HouseholdGuard.HOUSEHOL
 import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
+import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.row;
 
@@ -77,6 +78,26 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
     }
 
     return rows;
+  }
+
+  @Override
+  public List<Row<UserAccount>> rowsManaging(UUID profileId, Seek seek) {
+    var keyset =
+        Keyset.<String>builder()
+            .sortValue(
+                DSL.when(USER_ACCOUNT.PERSONAL_PROFILE_ID.eq(PROFILE.ID), inline(""))
+                    .otherwise(lower(USER_ACCOUNT.DISPLAY_NAME)))
+            .itemId(USER_ACCOUNT.ID)
+            .build();
+    var query =
+        keyset.rowsBeyond(
+            dsl.select(USER_ACCOUNT.asterisk(), keyset.selectedSortValue())
+                .from(USER_ACCOUNT)
+                .join(PROFILE)
+                .on(PROFILE.ID.eq(profileId)),
+            ProfileAuthorityConditions.managedBy(USER_ACCOUNT.ID),
+            seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, UserAccount.class, keyset);
   }
 
   @Override
