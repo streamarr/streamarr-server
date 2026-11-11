@@ -1196,6 +1196,30 @@ class PlaybackSessionServiceTest {
         .isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
   }
 
+  // An audio track switch that reaches an encode names the switch, and the audio encode after it
+  // changes nothing that the viewer chose.
+  @Test
+  @DisplayName(
+      "Should keep the audio track switch change when copied audio runs short beside the encode"
+          + " that the switch reached")
+  void shouldKeepTheAudioTrackSwitchChangeWhenCopiedAudioRunsShortBesideTheSwitchsEncode() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    streams.copiesTheSource = false;
+    var switched = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    service.onTerminalTranscodeFailure(
+        copiedAudioRanShortBesideEncodedVideo(switched.currentFormatAttempt().streamSessionId()));
+
+    var recovered = service.access(request(switched, command)).orElseThrow();
+    assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(recovered.formatChange()).contains(PlaybackFormatChange.AUDIO_TRACK_SWITCHED);
+    assertThat(streams.createdCommands.getLast().videoFormatConstraint())
+        .isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+  }
+
   // A copy that fails before creation returns may still copy beside the audio encode.
   @Test
   @DisplayName(

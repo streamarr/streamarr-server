@@ -96,7 +96,7 @@ public class PlaybackSessionService implements AutoCloseable {
     private final VideoQuality requestedChoice;
     // Every later format attempt follows the playback choice that plays now (ADR 0052).
     private PlayingChoice choice;
-    // What the pending format attempt plays once it turns out to encode the video.
+    // What the current format attempt plays when it encodes the video.
     private PlayingChoice choiceWhenEncoding;
     private PlaybackFormatAttempt current;
     // Every format attempt starts at the start position until playback moves from it.
@@ -431,7 +431,8 @@ public class PlaybackSessionService implements AutoCloseable {
     playback.startedFormatAttempts++;
     playback.lastAccessedAt = clock.instant();
     streamOwners.remove(ended.get().directPlayId(), playback);
-    adopt(playback, session, AUTO_AFTER_AN_AUDIO_TRACK_SWITCH);
+    playback.choiceWhenEncoding = AUTO_AFTER_AN_AUDIO_TRACK_SWITCH;
+    adopt(playback, session);
     return ended;
   }
 
@@ -705,18 +706,14 @@ public class PlaybackSessionService implements AutoCloseable {
   }
 
   // The video stays encoded in the playback choice that its encode plays. A format attempt that
-  // failed while pending had not taken that choice yet.
+  // failed while pending had not taken that choice yet, so it is read from where the attempt
+  // would take it.
   private static ReservedFormatAttempt.ReservedFormatAttemptBuilder audioEncodeBesideAnEncodedVideo(
       PlaybackSession playback) {
-    var choice = playback.choice;
-    if (playback.current instanceof PlaybackFormatAttempt.Pending) {
-      choice = playback.choiceWhenEncoding;
-    }
-
     return ReservedFormatAttempt.builder()
         .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
-        .choice(choice)
-        .choiceWhenEncoding(choice);
+        .choice(playback.choiceWhenEncoding)
+        .choiceWhenEncoding(playback.choiceWhenEncoding);
   }
 
   private void failWithoutFormatAttempt(UUID failedId, PlaybackSessionFailure reason) {
@@ -1215,7 +1212,7 @@ public class PlaybackSessionService implements AutoCloseable {
                 return false;
               }
 
-              adopt(playback, session, playback.choiceWhenEncoding);
+              adopt(playback, session);
               return true;
             });
     if (!accepted) {
@@ -1300,8 +1297,7 @@ public class PlaybackSessionService implements AutoCloseable {
     }
   }
 
-  private static void adopt(
-      PlaybackSession playback, StreamSession session, PlayingChoice choiceWhenEncoding) {
+  private static void adopt(PlaybackSession playback, StreamSession session) {
     playback.current = new PlaybackFormatAttempt.Ready(session);
     playback.readyAttempts.add(session);
     playback.decisions.add(
@@ -1309,7 +1305,7 @@ public class PlaybackSessionService implements AutoCloseable {
     // A direct-play stream session sends the source as it is and holds no transcode decision.
     if (session.getDelivery() == StreamDelivery.HLS
         && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
-      playback.choice = choiceWhenEncoding;
+      playback.choice = playback.choiceWhenEncoding;
     }
   }
 
