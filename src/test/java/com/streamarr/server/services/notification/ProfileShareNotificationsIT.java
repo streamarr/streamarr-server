@@ -186,10 +186,11 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
       "Should tell the offering side, except the Account that answered, when an offer is accepted")
   void shouldTellTheOfferingSideExceptTheAccountThatAnsweredWhenAnOfferIsAccepted() {
     var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
-    var ollie = steps.profileManagedBy("Ollie", sam, sam, theo);
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, theo, riversideAdmin);
     var offer = steps.offer(sam, ollie, riverside);
 
-    assertThat(sharing.acceptProfileShare(authTestSupport.identityOf(riverside), offer.getId()))
+    assertThat(
+            sharing.acceptProfileShare(authTestSupport.identityOf(riversideAdmin), offer.getId()))
         .isInstanceOf(Outcome.Accepted.class);
 
     assertThat(answersAbout(offer))
@@ -294,6 +295,28 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
             notification ->
                 assertThat(notification.getFacts().endedBy())
                     .contains(ProfileShareEndedBy.OFFERING_SIDE))
+        .extracting(Notification::getRecipientAccountId)
+        .containsExactlyInAnyOrder(riverside.account().getId(), riversideAdmin.account().getId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household's side and no other ProfileManager when a ProfileManager ends the"
+          + " share")
+  void shouldTellTheHouseholdsSideAndNoOtherProfileManagerWhenAProfileManagerEndsTheShare() {
+    var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var rowan = track(authTestSupport.createHouseholdMemberIdentity(riverside));
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, theo, rowan);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+
+    var outcome = sharing.endProfileShare(authTestSupport.identityOf(rowan), share.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(endingsAbout(share))
+        .allSatisfy(
+            notification ->
+                assertThat(notification.getFacts())
+                    .isEqualTo(ProfileShareFacts.ended("Ollie", ProfileShareEndedBy.OFFERING_SIDE)))
         .extracting(Notification::getRecipientAccountId)
         .containsExactlyInAnyOrder(riverside.account().getId(), riversideAdmin.account().getId());
   }
