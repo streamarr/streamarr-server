@@ -129,9 +129,11 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
           .findByEmailIgnoreCase(setupEmail)
           .ifPresent(created -> authTestSupport.deleteAccount(created.getId()));
     }
+
     if (emailAccount != null) {
       authTestSupport.deleteAccount(emailAccount.getId());
     }
+
     if (host != null) {
       authTestSupport.deleteIdentity(host);
     }
