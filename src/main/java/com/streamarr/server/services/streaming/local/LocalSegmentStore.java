@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.local;
 import com.google.common.io.MoreFiles;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.exceptions.UnsupportedSegmentFolderException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
@@ -14,6 +15,7 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,7 +29,20 @@ public class LocalSegmentStore implements SegmentStore {
   private final MutexFactory<Path> publicationLocks = new MutexFactory<>();
 
   public LocalSegmentStore(Path baseDir) {
+    if (!deletesWithoutFollowingSoftLinks(baseDir)) {
+      throw new UnsupportedSegmentFolderException(baseDir);
+    }
+
     this.baseDir = baseDir;
+  }
+
+  // MoreFiles.deleteRecursively deletes nothing on a file system without secure directory streams.
+  private static boolean deletesWithoutFollowingSoftLinks(Path segmentFolder) {
+    try (var entries = Files.newDirectoryStream(Files.createDirectories(segmentFolder))) {
+      return entries instanceof SecureDirectoryStream;
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed to open segment folder: " + segmentFolder, e);
+    }
   }
 
   @Override
