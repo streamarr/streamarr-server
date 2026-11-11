@@ -135,6 +135,17 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
         shareRepository.saveAndFlush(offer(profile.getId(), home.getId(), now.minusSeconds(1)));
     var live =
         shareRepository.saveAndFlush(offer(profile.getId(), away.getId(), now.plusSeconds(60)));
+    var elsewhere =
+        householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    // Accepting an offer keeps the expiry it was offered with.
+    var accepted =
+        shareRepository.saveAndFlush(
+            ProfileHouseholdShare.builder()
+                .profileId(profile.getId())
+                .householdId(elsewhere.getId())
+                .status(ProfileShareStatus.ACTIVE)
+                .expiresAt(now.minusSeconds(1))
+                .build());
 
     var expired = shareRepository.materializeExpiredPending(now);
 
@@ -143,20 +154,19 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
             new ChangedShare(
                 lapsed.getId(), profile.getId(), home.getId(), ProfileShareStatus.EXPIRED))
         .extracting(ChangedShare::shareId)
-        .doesNotContain(live.getId());
+        .doesNotContain(live.getId(), accepted.getId());
     assertSoftly(
         softly -> {
           var stored = shareRepository.findByIdAndReloadFromDatabase(lapsed.getId()).orElseThrow();
           softly.assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
           softly.assertThat(stored.getDecidedAt()).isEqualTo(now);
-          softly
-              .assertThat(
-                  shareRepository
-                      .findByIdAndReloadFromDatabase(live.getId())
-                      .orElseThrow()
-                      .getStatus())
-              .isEqualTo(ProfileShareStatus.PENDING);
+          softly.assertThat(statusOf(live)).isEqualTo(ProfileShareStatus.PENDING);
+          softly.assertThat(statusOf(accepted)).isEqualTo(ProfileShareStatus.ACTIVE);
         });
+  }
+
+  private ProfileShareStatus statusOf(ProfileHouseholdShare share) {
+    return shareRepository.findByIdAndReloadFromDatabase(share.getId()).orElseThrow().getStatus();
   }
 
   private static ProfileHouseholdShare offer(UUID profileId, UUID householdId, Instant expiresAt) {
