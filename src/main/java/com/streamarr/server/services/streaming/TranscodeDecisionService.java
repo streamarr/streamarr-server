@@ -224,7 +224,7 @@ public class TranscodeDecisionService {
             .audioStreamIndex(audioStreamIndex(source, audioDecision))
             .dynamicRangeChoice(request.viewerLimits().dynamicRangeChoice())
             .softwareEncoder(
-                encodeCodecProfile.isPresent() && request.softwareEncodeCodecFamily().isPresent())
+                encodeCodecProfile.isPresent() && request.softwareContinuation().isPresent())
             .videoEncodeFormat(encode.map(EncodeChoice::format).orElse(EncodeFormat.SDR_8_BIT))
             .build());
   }
@@ -975,7 +975,8 @@ public class TranscodeDecisionService {
         .filter(
             profile ->
                 request
-                    .softwareEncodeCodecFamily()
+                    .softwareContinuation()
+                    .map(SoftwareContinuation::codecFamily)
                     .map(profile.codecFamilyName()::equals)
                     .orElse(true))
         .flatMap(profile -> fittingEncodes(request, profile))

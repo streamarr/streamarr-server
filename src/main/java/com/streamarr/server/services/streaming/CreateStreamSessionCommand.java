@@ -17,8 +17,8 @@ import lombok.NonNull;
  * stream session starts at {@code startPosition}, at the beginning of the media when it is empty.
  * {@code audioTrackPosition} names the audio track that the viewer chose, by its position, counting
  * from 0, among the file's audio tracks in stream order. When it is empty, the stream session plays
- * its own choice of track. {@code softwareEncodeCodecFamily} names the codec family that the stream
- * session encodes with the software encoder after a hardware encoder failure (ADR 0044).
+ * its own choice of track. {@code softwareContinuation} names the encode that the stream session
+ * continues with the software encoder after a hardware encoder failure (ADR 0044).
  */
 @Builder
 public record CreateStreamSessionCommand(
@@ -32,7 +32,7 @@ public record CreateStreamSessionCommand(
     @NonNull Set<EncodeFormat> excludedEncodeFormats,
     @NonNull Optional<Duration> startPosition,
     @NonNull OptionalInt audioTrackPosition,
-    @NonNull Optional<String> softwareEncodeCodecFamily) {
+    @NonNull Optional<SoftwareContinuation> softwareContinuation) {
   public CreateStreamSessionCommand {
     excludedEncodeCodecFamilies = Set.copyOf(excludedEncodeCodecFamilies);
     excludedEncodeFormats = Set.copyOf(excludedEncodeFormats);
@@ -46,7 +46,7 @@ public record CreateStreamSessionCommand(
     private Set<EncodeFormat> excludedEncodeFormats = Set.of();
     private Optional<Duration> startPosition = Optional.empty();
     private OptionalInt audioTrackPosition = OptionalInt.empty();
-    private Optional<String> softwareEncodeCodecFamily = Optional.empty();
+    private Optional<SoftwareContinuation> softwareContinuation = Optional.empty();
 
     public CreateStreamSessionCommand build() {
       return new CreateStreamSessionCommand(
@@ -60,7 +60,7 @@ public record CreateStreamSessionCommand(
           excludedEncodeFormats,
           startPosition,
           audioTrackPosition,
-          softwareEncodeCodecFamily);
+          softwareContinuation);
     }
   }
 }

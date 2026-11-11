@@ -26,6 +26,7 @@ import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
@@ -1134,7 +1135,8 @@ class TranscodeDecisionServiceTest {
                     .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
-                    .softwareEncodeCodecFamily(Optional.of("h264"))
+                    .softwareContinuation(
+                        Optional.of(new SoftwareContinuation("h264", EncodeFormat.SDR_8_BIT)))
                     .build())
             .orElseThrow();
 
@@ -1152,7 +1154,8 @@ class TranscodeDecisionServiceTest {
                 .capabilityDeclaration(declaring(AV1, H264))
                 .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                 .encodableVideoCodecFamilies(Set.of("av1"))
-                .softwareEncodeCodecFamily(Optional.of("h264"))
+                .softwareContinuation(
+                    Optional.of(new SoftwareContinuation("h264", EncodeFormat.SDR_8_BIT)))
                 .build());
 
     assertThat(decision).isEmpty();

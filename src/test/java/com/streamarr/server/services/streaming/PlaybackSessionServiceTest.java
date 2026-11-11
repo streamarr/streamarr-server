@@ -28,6 +28,7 @@ import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -1093,7 +1094,8 @@ class PlaybackSessionServiceTest {
     assertThat(streams.createdCommands.getLast())
         .satisfies(
             software -> {
-              assertThat(software.softwareEncodeCodecFamily()).contains("h264");
+              assertThat(software.softwareContinuation())
+                  .contains(new SoftwareContinuation("h264", EncodeFormat.SDR_8_BIT));
               assertThat(software.videoFormatConstraint())
                   .isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
               assertThat(software.excludedEncodeCodecFamilies()).isEmpty();
@@ -1119,7 +1121,7 @@ class PlaybackSessionServiceTest {
     assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
     assertThat(streams.createdCommands.getLast().excludedEncodeCodecFamilies())
         .containsExactly("h264");
-    assertThat(streams.createdCommands.getLast().softwareEncodeCodecFamily()).isEmpty();
+    assertThat(streams.createdCommands.getLast().softwareContinuation()).isEmpty();
   }
 
   @Test

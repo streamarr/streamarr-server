@@ -164,10 +164,10 @@ public class HlsStreamingService implements StreamingService {
             .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
             .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
-            .videoEncoders(encodableVideoEncoders(command.softwareEncodeCodecFamily()))
-            .verifiedVideoEncoders(verifiedVideoEncoders(command.softwareEncodeCodecFamily()))
+            .videoEncoders(encodableVideoEncoders(command.softwareContinuation()))
+            .verifiedVideoEncoders(verifiedVideoEncoders(command.softwareContinuation()))
             .directPlayRefusals(directPlay.refusals())
-            .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
+            .softwareContinuation(command.softwareContinuation())
             .build();
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {
@@ -370,15 +370,15 @@ public class HlsStreamingService implements StreamingService {
         .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
         .hardwareEncodableVideoCodecFamilies(
             transcodeExecutor.hardwareEncodableVideoCodecFamilies())
-        .videoEncoders(encodableVideoEncoders(request.softwareEncodeCodecFamily()))
+        .videoEncoders(encodableVideoEncoders(request.softwareContinuation()))
         .build();
   }
 
   // A software encode after a hardware encoder failure runs on the software encoders, which may
   // write less than the hardware encoders of the same codec family (ADR 0044).
   private List<WorkerVerifiedEncoder> encodableVideoEncoders(
-      Optional<String> softwareEncodeCodecFamily) {
-    if (softwareEncodeCodecFamily.isPresent()) {
+      Optional<SoftwareContinuation> softwareContinuation) {
+    if (softwareContinuation.isPresent()) {
       return transcodeExecutor.encodableSoftwareVideoEncoders();
     }
 
@@ -386,8 +386,8 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private List<WorkerVerifiedEncoder> verifiedVideoEncoders(
-      Optional<String> softwareEncodeCodecFamily) {
-    if (softwareEncodeCodecFamily.isPresent()) {
+      Optional<SoftwareContinuation> softwareContinuation) {
+    if (softwareContinuation.isPresent()) {
       return transcodeExecutor.verifiedSoftwareVideoEncoders();
     }
 
