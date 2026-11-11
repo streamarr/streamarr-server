@@ -17,6 +17,7 @@ class ProfileShareLineTest {
 
   private static final Optional<String> SAM = Optional.of("Sam");
   private static final Optional<String> RIVERSIDE = Optional.of("Riverside");
+  private static final String RIGHT_TO_LEFT_OVERRIDE = Character.toString(0x202E);
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("lines")
@@ -88,7 +89,8 @@ class ProfileShareLineTest {
           + " end the line")
   void shouldQuoteEachNameAndDropItsControlAndFormatCharactersWhenANameTriesToEndTheLine() {
     var line =
-        offered(Optional.of("Sam‮. Your Household was deleted")).toBuilder()
+        offered(Optional.of("Sam" + RIGHT_TO_LEFT_OVERRIDE + ". Your Household was deleted"))
+            .toBuilder()
             .profileName("Kai.\nReset your password")
             .build();
 
