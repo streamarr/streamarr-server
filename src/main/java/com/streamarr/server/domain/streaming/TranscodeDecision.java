@@ -72,20 +72,8 @@ public record TranscodeDecision(
           "A decision that encodes the video cannot hold a Dolby Vision output");
     }
 
-    if (!copiesVideo && lowerVariantEncode.isPresent()) {
-      throw new IllegalArgumentException(
-          "A decision that encodes the video cannot hold a lower variant encode");
-    }
-
-    // A bandwidth dip must not move a television between HDR and SDR (ADR 0050).
-    var lowerVariantFormat = lowerVariantEncode.map(LowerVariantEncode::format);
-    if (lowerVariantFormat.isPresent()
-        && !lowerVariantFormat.equals(
-            PlannedVideoOutput.StreamCopy.of(videoSource.orElseThrow(), videoBitstreamRewrites)
-                .encodeFormatInItsRangeAndBitDepth())) {
-      throw new IllegalArgumentException(
-          "A copy's lower variants must keep the copy's range and bit depth");
-    }
+    requireLowerVariantsInTheCopysFormat(
+        lowerVariantEncode, videoSource.filter(_ -> copiesVideo), videoBitstreamRewrites);
 
     videoBitstreamRewrites = List.copyOf(videoBitstreamRewrites);
     reasons = List.copyOf(reasons);
@@ -101,6 +89,30 @@ public record TranscodeDecision(
         .isPresent()) {
       throw new IllegalArgumentException(
           "An encode codec profile must belong to the decision's video codec family");
+    }
+  }
+
+  // Only a copy lists lower variants. A bandwidth dip must not move a television between HDR and
+  // SDR, so they keep the copy's range and bit depth (ADR 0050).
+  private static void requireLowerVariantsInTheCopysFormat(
+      Optional<LowerVariantEncode> lowerVariants,
+      Optional<VideoPlaybackFacts> copiedVideo,
+      List<BitstreamRewrite> rewrites) {
+    if (lowerVariants.isEmpty()) {
+      return;
+    }
+
+    if (copiedVideo.isEmpty()) {
+      throw new IllegalArgumentException(
+          "A decision that encodes the video cannot hold a lower variant encode");
+    }
+
+    var copyFormat =
+        PlannedVideoOutput.StreamCopy.of(copiedVideo.get(), rewrites)
+            .encodeFormatInItsRangeAndBitDepth();
+    if (!lowerVariants.map(LowerVariantEncode::format).equals(copyFormat)) {
+      throw new IllegalArgumentException(
+          "A copy's lower variants must keep the copy's range and bit depth");
     }
   }
 
