@@ -32,6 +32,13 @@ public interface MediaFileContainerInfoRepositoryCustom {
   boolean publishKeyframePacketScan(KeyframePacketScanPublication publication);
 
   /**
+   * Stores that every packet scan of these inputs failed, so the source's keyframes are unavailable
+   * and no further scan runs. Returns {@code false} without writing unless the stored outcome still
+   * needs a packet scan for these inputs.
+   */
+  boolean publishKeyframePacketScanFailure(UUID mediaFileId, ProbeInputs inputs);
+
+  /**
    * Reads the source snapshot and probe version of a stored outcome that needs a packet scan, under
    * the media file lock. Empty when no stored outcome needs one. Requires the caller's transaction.
    */

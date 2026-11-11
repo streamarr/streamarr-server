@@ -119,6 +119,19 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   }
 
   @Override
+  @Transactional
+  public boolean publishKeyframePacketScanFailure(UUID mediaFileId, ProbeInputs inputs) {
+    return publishKeyframePacketScan(
+        KeyframePacketScanPublication.builder()
+            .mediaFileId(mediaFileId)
+            .snapshot(inputs.snapshot())
+            .probeVersion(inputs.probeVersion())
+            .keyframes(
+                new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED))
+            .build());
+  }
+
+  @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public Optional<ProbeInputs> lockPacketScanInputs(UUID mediaFileId) {
     if (!lockMediaFile(mediaFileId)) {

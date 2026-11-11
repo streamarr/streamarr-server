@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
@@ -53,7 +54,7 @@ public class KeyframePacketScanExecution {
   @NonNull private final MeterRegistry meterRegistry;
 
   public KeyframePacketScanResult execute(KeyframePacketScanTaskRequest request) {
-    if (request.probeVersion() != ProbeVersion.CURRENT || !storedOutcomeNeedsScan(request)) {
+    if (request.probeVersion() != ProbeVersion.CURRENT || !storedOutcomeOwesScan(request)) {
       return new KeyframePacketScanResult.Completed();
     }
 
@@ -123,11 +124,11 @@ public class KeyframePacketScanExecution {
     return new KeyframePacketScanResult.Failed();
   }
 
-  private boolean storedOutcomeNeedsScan(KeyframePacketScanTaskRequest request) {
+  private boolean storedOutcomeOwesScan(KeyframePacketScanTaskRequest request) {
     return reader
         .find(request.mediaFileId())
         .filter(stored -> stored.matches(request.snapshot(), request.probeVersion()))
-        .filter(stored -> stored.outcome().needsKeyframePacketScan())
+        .filter(PersistedProbeOutcome::keyframePacketScanOwed)
         .isPresent();
   }
 
