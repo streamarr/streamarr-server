@@ -125,6 +125,8 @@ class WorkerSessionGrpcServiceTest {
   private static final String MISSING_ENCODER_METRIC = "streamarr.streaming.missing_encoder";
   private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
       "streamarr.streaming.unknown_job_attempt_reports";
+  private static final String UPLOAD_DISCARD_FAILURES_METRIC =
+      "streamarr.streaming.segment_upload_discard_failures";
   private static final WorkerVerifiedVideoEncoder LIBX264 =
       softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264");
 
@@ -1737,6 +1739,8 @@ class WorkerSessionGrpcServiceTest {
     assertThat(response.errorCount()).isEqualTo(1);
     assertThat(Status.fromThrowable(response.error()).getCode())
         .isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThat(started.meterRegistry().get(UPLOAD_DISCARD_FAILURES_METRIC).counter().count())
+        .isEqualTo(1);
   }
 
   @Test
@@ -1786,7 +1790,14 @@ class WorkerSessionGrpcServiceTest {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var worker = worker(workerId);
-    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .eventPublisher(new CapturingEventPublisher())
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(meterRegistry)
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .build();
     var workerSessionId =
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
@@ -1799,18 +1810,24 @@ class WorkerSessionGrpcServiceTest {
                 metadataBuilder(workerSessionId, worker, job)
                     .setContentLengthBytes(contentLengthBytes))
             .build());
-    return new StartedUpload(
-        upload,
-        fromProto(job.getStreamSessionId()),
-        job.getVariant().getVariantLabel() + "/segment0.m4s");
+    return StartedUpload.builder()
+        .upload(upload)
+        .streamSessionId(fromProto(job.getStreamSessionId()))
+        .segmentName(job.getVariant().getVariantLabel() + "/segment0.m4s")
+        .meterRegistry(meterRegistry)
+        .build();
   }
 
   private static UploadSegmentRequest dataFrame(byte[] data) {
     return UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(data)).build();
   }
 
+  @Builder
   private record StartedUpload(
-      StreamObserver<UploadSegmentRequest> upload, UUID streamSessionId, String segmentName) {}
+      StreamObserver<UploadSegmentRequest> upload,
+      UUID streamSessionId,
+      String segmentName,
+      SimpleMeterRegistry meterRegistry) {}
 
   private static final class WriteFailingSegmentStore extends FakeSegmentStore {
 
