@@ -96,6 +96,24 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should give an empty list when asked for the pending invitations of a Profile that does not"
+          + " exist")
+  void shouldGiveAnEmptyListWhenAskedForThePendingInvitationsOfAProfileThatDoesNotExist()
+      throws Exception {
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            query { pendingManagerInvitationsForProfile(profileId: "%s") {
+              edges { node { id } } } }
+            """
+                .formatted(UUID.randomUUID()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.pendingManagerInvitationsForProfile.edges").isEmpty());
+  }
+
+  @Test
+  @DisplayName(
       "Should give a device-bound session an empty list when it asks for the invitations it"
           + " received")
   void shouldGiveADeviceBoundSessionAnEmptyListWhenItAsksForTheInvitationsItReceived()

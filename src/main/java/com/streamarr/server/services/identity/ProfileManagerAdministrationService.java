@@ -400,7 +400,10 @@ public class ProfileManagerAdministrationService {
   /** A page of the Profile's pending manager invitations, newest first; hidden reads as empty. */
   public ListPage<ProfileManagerInvitation> pendingManagerInvitationsForProfile(
       AuthenticatedIdentity identity, UUID profileId, PageRequest request) {
-    if (!authorizationService.isAllowed(identity, new Intent.ViewManagerInvitations(profileId))) {
+    // A decision about a Profile that does not exist fails rather than denies.
+    if (!profileRepository.existsById(profileId)
+        || !authorizationService.isAllowed(
+            identity, new Intent.ViewManagerInvitations(profileId))) {
       return ListPage.empty();
     }
 
