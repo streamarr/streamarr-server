@@ -26,19 +26,21 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 @DisplayName("Unmeasured Copy Listener Tests")
 class UnmeasuredCopyListenerTest {
 
-  private static final Duration BOUND = Duration.ofSeconds(10);
   // Half the bound of a held raise, so a listener that waited for the raise would still wait.
   private static final Duration RETURN_BOUND = Duration.ofSeconds(5);
+  private static final Duration BOUND = Duration.ofSeconds(10);
 
   private final RaiseOutcomeMeters meters = new RaiseOutcomeMeters();
   private final Map<UUID, BitrateScanPriority> waitingScans = new ConcurrentHashMap<>();
   private final List<UnmeasuredCopyListener> listeners = new ArrayList<>();
   private final List<HeldRaise> heldRaises = new ArrayList<>();
+  private final List<RaiseThatOutlivesItsInterrupt> stuckRaises = new ArrayList<>();
   private final UUID mediaFileId = UUID.randomUUID();
 
   @AfterEach
   void finishRaises() {
     heldRaises.forEach(HeldRaise::finish);
+    stuckRaises.forEach(RaiseThatOutlivesItsInterrupt::finish);
     listeners.forEach(UnmeasuredCopyListener::close);
   }
 
@@ -107,6 +109,7 @@ class UnmeasuredCopyListenerTest {
     meters.awaitCounted("failed");
 
     assertThat(countOf("failed")).isOne();
+    assertThat(countOf("cancelled")).isZero();
   }
 
   @Test
@@ -178,8 +181,11 @@ class UnmeasuredCopyListenerTest {
   }
 
   @Test
-  @DisplayName("Should finish the waiting raise before it closes when the server shuts down")
-  void shouldFinishTheWaitingRaiseBeforeItClosesWhenTheServerShutsDown() throws Exception {
+  @DisplayName(
+      "Should cancel the waiting raise and close while the scan table still holds it back when"
+          + " the server shuts down")
+  void shouldCancelTheWaitingRaiseAndCloseWhileTheScanTableStillHoldsItBackWhenTheServerShutsDown()
+      throws Exception {
     waitingScans.put(mediaFileId, BitrateScanPriority.UNPROBED_BITRATE);
     var heldRaise = raiseHeldFor(mediaFileId);
     var server = new AnnotationConfigApplicationContext();
@@ -190,22 +196,86 @@ class UnmeasuredCopyListenerTest {
     server.publishEvent(new UnmeasuredCopyStartedEvent(mediaFileId));
     awaitLatch(heldRaise.started);
 
-    try (var shutdown = BoundedTask.start(server::close)) {
-      await().atMost(BOUND).until(shutdown::isWaiting);
-      heldRaise.finish();
-      shutdown.await(BOUND);
-    }
+    BoundedTask.runWithin(RETURN_BOUND, server::close);
 
-    assertThat(waitingScans)
-        .containsEntry(mediaFileId, BitrateScanPriority.COPIED_BY_STREAM_SESSION);
-    assertThat(countOf("moved")).isOne();
+    assertThat(countOf("cancelled")).isOne();
+    assertThat(countOf("failed")).isZero();
+    assertThat(waitingScans).containsEntry(mediaFileId, BitrateScanPriority.UNPROBED_BITRATE);
   }
 
   @Test
   @DisplayName(
-      "Should count a failure for each stream session and let it start when the listener has"
-          + " closed")
-  void shouldCountAFailureForEachStreamSessionAndLetItStartWhenTheListenerHasClosed() {
+      "Should count the cancelled raise before it closes when the raise takes time to end after"
+          + " its interrupt")
+  void shouldCountTheCancelledRaiseBeforeItClosesWhenTheRaiseTakesTimeToEndAfterItsInterrupt()
+      throws Exception {
+    var endingRaise = raiseThatOutlivesItsInterrupt();
+    var listener = listenerOver(endingRaise);
+    listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
+    awaitLatch(endingRaise.started);
+
+    try (var shutdown = BoundedTask.start(listener::close)) {
+      awaitLatch(endingRaise.interrupted);
+      // A thread's state has no signal, and a close that does not wait never reaches this state.
+      await().atMost(BOUND).until(shutdown::isWaiting);
+      endingRaise.finish();
+      shutdown.await(RETURN_BOUND);
+    }
+
+    assertThat(countOf("cancelled")).isOne();
+  }
+
+  @Test
+  @DisplayName(
+      "Should close while the raise still runs when the raise does not end at its interrupt")
+  void shouldCloseWhileTheRaiseStillRunsWhenTheRaiseDoesNotEndAtItsInterrupt() throws Exception {
+    var stuckRaise = raiseThatOutlivesItsInterrupt();
+    var listener = listenerOver(stuckRaise);
+    listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
+    awaitLatch(stuckRaise.started);
+
+    BoundedTask.runWithin(RETURN_BOUND, listener::close);
+    var raiseEndedBeforeCloseReturned = stuckRaise.ended.getCount() == 0;
+    stuckRaise.finish();
+    awaitLatch(stuckRaise.ended);
+
+    assertThat(raiseEndedBeforeCloseReturned).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop waiting for the raise and keep the interrupt when its own close is"
+          + " interrupted")
+  void shouldStopWaitingForTheRaiseAndKeepTheInterruptWhenItsOwnCloseIsInterrupted()
+      throws Exception {
+    var stuckRaise = raiseThatOutlivesItsInterrupt();
+    var listener = listenerOver(stuckRaise);
+    listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
+    awaitLatch(stuckRaise.started);
+    boolean closingThreadKeptItsInterrupt;
+
+    try (var shutdown =
+        BoundedTask.start(
+            () -> {
+              Thread.currentThread().interrupt();
+              listener.close();
+              return Thread.currentThread().isInterrupted();
+            })) {
+      closingThreadKeptItsInterrupt = shutdown.await(RETURN_BOUND);
+    }
+
+    var raiseEndedBeforeCloseReturned = stuckRaise.ended.getCount() == 0;
+    stuckRaise.finish();
+    awaitLatch(stuckRaise.ended);
+    assertThat(closingThreadKeptItsInterrupt).isTrue();
+    assertThat(raiseEndedBeforeCloseReturned).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a cancelled raise for each stream session and let it start when the listener"
+          + " has closed")
+  void shouldCountACancelledRaiseForEachStreamSessionAndLetItStartWhenTheListenerHasClosed() {
     waitingScans.put(mediaFileId, BitrateScanPriority.UNPROBED_BITRATE);
     var listener = listenerOver(this::raiseWaitingScan);
     listener.close();
@@ -213,7 +283,8 @@ class UnmeasuredCopyListenerTest {
     listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
     listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
 
-    assertThat(countOf("failed")).isEqualTo(2);
+    assertThat(countOf("cancelled")).isEqualTo(2);
+    assertThat(countOf("failed")).isZero();
     assertThat(waitingScans).containsEntry(mediaFileId, BitrateScanPriority.UNPROBED_BITRATE);
   }
 
@@ -240,6 +311,12 @@ class UnmeasuredCopyListenerTest {
     return heldRaise;
   }
 
+  private RaiseThatOutlivesItsInterrupt raiseThatOutlivesItsInterrupt() {
+    var stuckRaise = new RaiseThatOutlivesItsInterrupt();
+    stuckRaises.add(stuckRaise);
+    return stuckRaise;
+  }
+
   /** Holds one file's raise until the test finishes it, as another transaction's row lock does. */
   private final class HeldRaise implements BitrateScanPriorityRepository {
 
@@ -263,6 +340,43 @@ class UnmeasuredCopyListenerTest {
       var raised = raiseWaitingScan(file, priority);
       raisedAnotherFile.countDown();
       return raised;
+    }
+
+    private void finish() {
+      finish.countDown();
+    }
+  }
+
+  /**
+   * A raise that runs on after its interrupt until the test finishes it, and then fails as an
+   * interrupted statement does.
+   */
+  private static final class RaiseThatOutlivesItsInterrupt
+      implements BitrateScanPriorityRepository {
+
+    private final CountDownLatch started = new CountDownLatch(1);
+    private final CountDownLatch interrupted = new CountDownLatch(1);
+    private final CountDownLatch finish = new CountDownLatch(1);
+    private final CountDownLatch ended = new CountDownLatch(1);
+
+    @Override
+    public boolean tryRaisePriority(UUID file, BitrateScanPriority priority) {
+      started.countDown();
+      while (finish.getCount() > 0) {
+        try {
+          finish.await();
+        } catch (InterruptedException _) {
+          interrupted.countDown();
+        }
+      }
+
+      ended.countDown();
+      if (interrupted.getCount() > 0) {
+        return false;
+      }
+
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("The statement's connection closed at the interrupt");
     }
 
     private void finish() {
