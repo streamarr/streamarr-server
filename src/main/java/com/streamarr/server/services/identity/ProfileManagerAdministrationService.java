@@ -471,6 +471,24 @@ public class ProfileManagerAdministrationService {
     return Pager.page(receivedManagerInvitationsList, identity.accountId(), request);
   }
 
+  /**
+   * One invitation at any status, for its named Account, the managers of its Profile and
+   * ServerAdmins; empty for everyone else and when no invitation has the id.
+   */
+  public Optional<ProfileManagerInvitation> managerInvitation(
+      AuthenticatedIdentity identity, UUID invitationId) {
+    return invitationRepository
+        .findById(invitationId)
+        .filter(
+            invitation ->
+                authorizationService.isAllowed(
+                        identity, new Intent.ViewReceivedManagerInvitation(invitationId))
+                    || (invitation.getProfileId() != null
+                        && authorizationService.isAllowed(
+                            identity,
+                            new Intent.ViewManagerInvitations(invitation.getProfileId()))));
+  }
+
   private void removeDisputedAuthority(
       AuthenticatedIdentity identity, UUID profileId, UUID managerAccountId, String operation) {
     removeDisputedAuthority(identity, profileId, managerAccountId, operation, null);

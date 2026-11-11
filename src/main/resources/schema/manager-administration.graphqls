@@ -47,14 +47,20 @@ type ManagerInvitationDetails {
     id: ID!
     "The Profile, or null once it is deleted."
     profileId: ID
+    "The Profile's name as it is now; once the Profile is deleted, the name it had at the invitation."
     profileName: String!
     "The manager who sent the invitation, or null once that Account is deleted."
     inviterAccountId: ID
+    """
+    The inviter's display name as it is now; once that Account is deleted, the name it had at the
+    invitation.
+    """
     inviterDisplayName: String!
     "The address the inviter typed, without the spaces around it and with its case kept."
     recipientEmail: String!
     "A pending invitation whose time has run out reads as EXPIRED."
     status: ProfileManagerInvitationStatus!
+    "When the invitation stops waiting for an answer, as an ISO-8601 instant."
     expiresAt: String!
 }
 

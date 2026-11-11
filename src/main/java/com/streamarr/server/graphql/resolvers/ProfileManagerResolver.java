@@ -77,6 +77,14 @@ public class ProfileManagerResolver {
     return relayConnectionAdapter.toConnection(page, list, this::invitationDetails);
   }
 
+  @DgsQuery
+  public ManagerInvitationDetails managerInvitation(@InputArgument String invitationId) {
+    return managerService
+        .managerInvitation(authorizationService.currentIdentity(), Ids.parseUuid(invitationId))
+        .map(this::invitationDetails)
+        .orElse(null);
+  }
+
   @DgsMutation
   public InviteProfileManagerPayload inviteProfileManager(
       @InputArgument InviteProfileManagerInput input) {
