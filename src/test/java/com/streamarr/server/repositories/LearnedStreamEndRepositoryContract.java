@@ -65,6 +65,19 @@ public interface LearnedStreamEndRepositoryContract {
     assertThat(repository().findFor(mediaFileId, SNAPSHOT)).containsExactly(learned);
   }
 
+  // Only a keyframe packet scan publication stores a scanned end time. This method stores a job
+  // attempt's end time, so a caller cannot make one count as scanned.
+  @Test
+  @DisplayName("Should read a stored end time as an attempt's when its record claims a scan")
+  default void shouldReadAStoredEndTimeAsAnAttemptsWhenItsRecordClaimsAScan() {
+    var mediaFileId = createProbedMediaFile();
+    var learned = learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(84));
+
+    repository().store(learned.toBuilder().fromPacketScan(true).build());
+
+    assertThat(repository().findFor(mediaFileId, SNAPSHOT)).containsExactly(learned);
+  }
+
   @Test
   @DisplayName("Should keep the first learned end time when a later attempt learns another one")
   default void shouldKeepTheFirstLearnedEndTimeWhenALaterAttemptLearnsAnotherOne() {

@@ -488,6 +488,64 @@ class HlsPlaylistServiceTest {
             "#EXTINF:6.000000,\n", "#EXTINF:6.000000,\n", "#EXTINF:8.000000,\n", "#EXT-X-ENDLIST");
   }
 
+  // A healthy Matroska file: its container states 14.014 s, and the scan read the audio's last
+  // packet to 14.009 s, where the last decoded sample ends at 14.01356 s. The header is not wrong
+  // by 5 ms, the packet times are, so the playlist must still cover the audio.
+  @Test
+  @DisplayName(
+      "Should end a stream copy's last segment at the container's duration when the scanned end"
+          + " lies less than 1 s before it")
+  void shouldEndAStreamCopysLastSegmentAtTheContainersDurationWhenTheScannedEndLiesJustBeforeIt() {
+    var scanned = scannedEndBuilder();
+    var probe =
+        StreamSessionFixture.defaultProbeBuilder()
+            .duration(Duration.ofMillis(14_014))
+            .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
+            .streams(
+                List.of(
+                    streamEndingAt("video", 0, Duration.ofMillis(14_014)),
+                    streamEndingAt("audio", 1, Duration.ofMillis(14_014))))
+            .build()
+            .withLearnedEndTimes(
+                List.of(
+                    scanned.streamIndex(0).endTime(Duration.ofSeconds(13)).build(),
+                    scanned.streamIndex(1).endTime(Duration.ofMillis(14_009)).build()));
+    var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
+
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
+
+    assertThat(advertisedEnd(playlist)).isEqualByComparingTo("14.014");
+  }
+
+  // The audio's last sample ends at 14.083333333 s. A list that counted down would end at 14.083 s.
+  @Test
+  @DisplayName(
+      "Should end a stream copy's last segment at or after the scanned media end when the end"
+          + " falls between two milliseconds")
+  void shouldEndAStreamCopysLastSegmentAtOrAfterTheScannedMediaEndWhenItFallsBetweenMilliseconds() {
+    var scanned = scannedEndBuilder();
+    var probe =
+        StreamSessionFixture.defaultProbeBuilder()
+            .duration(Duration.ofSeconds(30))
+            .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
+            .streams(
+                List.of(
+                    streamEndingAt("video", 0, Duration.ofSeconds(30)),
+                    streamEndingAt("audio", 1, Duration.ofSeconds(30))))
+            .build()
+            .withLearnedEndTimes(
+                List.of(
+                    scanned.streamIndex(0).endTime(Duration.ofSeconds(12, 83_333_333)).build(),
+                    scanned.streamIndex(1).endTime(Duration.ofSeconds(14, 83_333_333)).build()));
+    var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
+
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
+
+    assertThat(advertisedEnd(playlist)).isEqualByComparingTo("14.084");
+  }
+
   // A copy's segments open at the source keyframes, and an encode's on the plain grid, which merges
   // a final slot shorter than 2 s. The two lists differ in shape, and both must still end at the
   // scanned media end, or a player that changes variant at the tail finds two ends.

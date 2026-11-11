@@ -527,23 +527,27 @@ class MediaProbeTest {
 
   // A header states its duration in microseconds or finer. Counted down to the segment list's
   // whole milliseconds, a healthy file of 5.035042 s would be advertised to 5.035 s, before its
-  // last sample ends, whether or not a scan read its stream ends.
-  @ParameterizedTest
-  @ValueSource(longs = {0, 5_035_000_000L})
+  // last sample ends.
+  @Test
   @DisplayName(
-      "Should count the container's duration up to the next whole millisecond when the media ends"
-          + " there")
-  void shouldCountTheContainersDurationUpToTheNextWholeMillisecondWhenTheMediaEndsThere(
-      long scannedAudioEndNanos) {
-    var healthy = probeLasting(Duration.ofNanos(5_035_042_000L), video(), audio(1));
-    var probe = healthy;
-    if (scannedAudioEndNanos > 0) {
-      probe =
-          healthy.withLearnedEndTimes(
-              List.of(
-                  scannedEnd(0, Duration.ofSeconds(4)),
-                  scannedEnd(1, Duration.ofNanos(scannedAudioEndNanos))));
-    }
+      "Should count the container's duration up to the next whole millisecond when no scan read"
+          + " the stream ends")
+  void shouldCountTheContainersDurationUpToTheNextWholeMillisecondWhenNoScanReadTheStreamEnds() {
+    var probe = probeLasting(Duration.ofNanos(5_035_042_000L), video(), audio(1));
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(5_036));
+  }
+
+  @Test
+  @DisplayName(
+      "Should count the container's duration up to the next whole millisecond when it stands"
+          + " against a scanned end")
+  void shouldCountTheContainersDurationUpToTheNextWholeMillisecondWhenItStandsAgainstAScannedEnd() {
+    var probe =
+        probeLasting(Duration.ofNanos(5_035_042_000L), video(), audio(1))
+            .withLearnedEndTimes(
+                List.of(
+                    scannedEnd(0, Duration.ofSeconds(4)), scannedEnd(1, Duration.ofMillis(5_035))));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(5_036));
   }
