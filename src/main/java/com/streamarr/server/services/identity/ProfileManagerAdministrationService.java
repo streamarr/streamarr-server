@@ -2,6 +2,7 @@ package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
@@ -14,6 +15,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.CredentialAttemptGate;
+import com.streamarr.server.services.auth.EmailAddressValidator;
 import com.streamarr.server.services.auth.InvitationLifetime;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
@@ -71,8 +73,13 @@ public class ProfileManagerAdministrationService {
   private final ReceivedManagerInvitationsList receivedManagerInvitationsList;
   private final Clock clock;
 
+  /**
+   * Invites whoever has the email address to manage the Profile. The answer is the same whether or
+   * not an Account has the address and whether or not that Account may accept: the invitation names
+   * the Account only when it may, and otherwise waits with nobody who can accept it (ADR 0024).
+   */
   public Outcome<IssuedManagerInvitation, ManagerRejections.Invite> inviteProfileManager(
-      AuthenticatedIdentity identity, UUID profileId, UUID recipientAccountId) {
+      AuthenticatedIdentity identity, UUID profileId, String email) {
     var profile = profileRepository.findById(profileId);
     if (profile.isEmpty()) {
       return Outcome.rejected(new ManagerRejections.ProfileNotFound());
@@ -83,19 +90,19 @@ public class ProfileManagerAdministrationService {
       return Outcome.rejected(refusal.get());
     }
 
-    var recipient = userAccountRepository.findById(recipientAccountId);
-    if (recipient.isEmpty()) {
-      return Outcome.rejected(new ManagerRejections.RecipientNotFound());
-    }
+    return switch (EmailAddressValidator.validate(email)) {
+      case EmailAddressValidator.Blank _ -> Outcome.rejected(new ManagerRejections.EmailRequired());
+      case EmailAddressValidator.Malformed _ ->
+          Outcome.rejected(new ManagerRejections.EmailInvalid());
+      case EmailAddressValidator.Valid(var address) -> invite(identity, profile.get(), address);
+    };
+  }
 
-    if (!isEligible(recipient.get())) {
-      return Outcome.rejected(new ManagerRejections.RecipientNotEligible());
-    }
-
-    if (alreadyManages(recipient.get(), profileId)) {
-      return Outcome.rejected(new ManagerRejections.AlreadyManager());
-    }
-
+  // Every address runs the same statements in the same order, whether or not an Account may accept
+  // the invitation, so neither the answer nor its timing tells the inviter who has an Account.
+  private Outcome<IssuedManagerInvitation, ManagerRejections.Invite> invite(
+      AuthenticatedIdentity identity, Profile profile, String address) {
+    var profileId = profile.getId();
     var inviterName =
         userAccountRepository
             .findById(identity.accountId())
@@ -111,17 +118,19 @@ public class ProfileManagerAdministrationService {
             throw new MutationRejection(currentRefusal.get());
           }
 
-          invitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
-              profileId, recipientAccountId, REPLACED_REASON, now);
+          var recipientAccountId =
+              userAccountRepository.lockAccountThatMayAcceptManagement(profileId, address);
+          invitationLifecycle.invalidatePendingByProfileIdAndRecipientEmail(
+              profileId, address, REPLACED_REASON, now);
           var invitation =
               invitationLifecycle.issue(
                   ProfileManagerInvitation.builder()
                       .profileId(profileId)
-                      .profileName(profile.orElseThrow().getName())
+                      .profileName(profile.getName())
                       .inviterAccountId(identity.accountId())
                       .inviterDisplayName(inviterName)
-                      .recipientAccountId(recipientAccountId)
-                      .recipientEmail(recipient.get().getEmail())
+                      .recipientAccountId(recipientAccountId.orElse(null))
+                      .recipientEmail(address)
                       .expiresAt(now.plus(invitationLifetime.invitationLifetime()))
                       .publicId(issued.publicId())
                       .secretDigest(issued.digest())

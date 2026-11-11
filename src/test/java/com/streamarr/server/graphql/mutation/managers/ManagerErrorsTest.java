@@ -32,12 +32,10 @@ class ManagerErrorsTest {
   void shouldMapInvitationRejectionsWhenConvertingToSchemaErrors() {
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.ProfileNotFound()))
         .isInstanceOf(ProfileNotFoundError.class);
-    assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotFound()))
-        .isInstanceOf(AccountNotFoundError.class);
-    assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotEligible()))
-        .isInstanceOf(ProfileManagerNotEligibleError.class);
-    assertThat(ManagerErrors.toInviteError(new ManagerRejections.AlreadyManager()))
-        .isInstanceOf(AlreadyManagerError.class);
+    assertThat(ManagerErrors.toInviteError(new ManagerRejections.EmailRequired()))
+        .isInstanceOf(EmailRequiredError.class);
+    assertThat(ManagerErrors.toInviteError(new ManagerRejections.EmailInvalid()))
+        .isInstanceOf(EmailInvalidError.class);
     assertThat(ManagerErrors.toCancelError(new ManagerRejections.ManagerInvitationNotFound()))
         .isInstanceOf(ManagerInvitationNotFoundError.class);
     assertThat(ManagerErrors.toCancelError(new ManagerRejections.InvitationNotPending()))
@@ -53,20 +51,16 @@ class ManagerErrorsTest {
   }
 
   @Test
-  @DisplayName("Should point at recipientAccountId when an invitation recipient is invalid")
-  void shouldPointAtRecipientAccountIdWhenInvitationRecipientIsInvalid() {
-    assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotFound()))
+  @DisplayName("Should point at the email when an invitation's address is refused")
+  void shouldPointAtTheEmailWhenAnInvitationsAddressIsRefused() {
+    assertThat(ManagerErrors.toInviteError(new ManagerRejections.EmailRequired()))
         .isInstanceOfSatisfying(
-            AccountNotFoundError.class,
-            error -> assertThat(error.inputPath()).containsExactly("recipientAccountId"));
-    assertThat(ManagerErrors.toInviteError(new ManagerRejections.RecipientNotEligible()))
+            EmailRequiredError.class,
+            error -> assertThat(error.inputPath()).containsExactly("email"));
+    assertThat(ManagerErrors.toInviteError(new ManagerRejections.EmailInvalid()))
         .isInstanceOfSatisfying(
-            ProfileManagerNotEligibleError.class,
-            error -> assertThat(error.inputPath()).containsExactly("recipientAccountId"));
-    assertThat(ManagerErrors.toInviteError(new ManagerRejections.AlreadyManager()))
-        .isInstanceOfSatisfying(
-            AlreadyManagerError.class,
-            error -> assertThat(error.inputPath()).containsExactly("recipientAccountId"));
+            EmailInvalidError.class,
+            error -> assertThat(error.inputPath()).containsExactly("email"));
   }
 
   @Test

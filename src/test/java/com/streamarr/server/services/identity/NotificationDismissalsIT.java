@@ -344,7 +344,7 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
     var invitationId =
         profileManagement
             .inviteProfileManager(
-                authTestSupport.identityOf(sam), profile.getId(), invited.account().getId())
+                authTestSupport.identityOf(sam), profile.getId(), invited.account().getEmail())
             .fold(
                 issued -> issued.invitation().getId(),
                 rejection -> {

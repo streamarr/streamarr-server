@@ -102,9 +102,11 @@ type Query {
     shareCode(shareCodeId: ID!): ShareCode
     """
     The pending invitations to manage a Profile, newest first, for its managers and for
-    ServerAdmins. An invitation leaves the list once it is accepted, declined, canceled, replaced,
-    invalidated or expired. Everyone else gets an empty list, a HouseholdAdmin who only supervises
-    the Profile included, as do a device-bound session and a Profile that does not exist.
+    ServerAdmins: the address each was sent to, as typed, who sent it and when it expires. An
+    invitation to an address that no Account can answer for is listed like any other. An invitation
+    leaves the list once it is accepted, declined, canceled, replaced, invalidated or expired.
+    Everyone else gets an empty list, a HouseholdAdmin who only supervises the Profile included, as
+    do a device-bound session and a Profile that does not exist.
     """
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     """

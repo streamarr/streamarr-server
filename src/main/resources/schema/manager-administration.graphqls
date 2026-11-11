@@ -39,15 +39,21 @@ type ProfileManagerEdge {
     cursor: String!
 }
 
-"An invitation to manage a Profile (ADR 0024 §ProfileManager). It never carries its code."
+"""
+An invitation to manage a Profile (ADR 0024 §ProfileManager). It never carries its code, and it
+never says whether an Account has the address it was sent to.
+"""
 type ManagerInvitationDetails {
     id: ID!
+    "The Profile, or null once it is deleted."
     profileId: ID
     profileName: String!
+    "The manager who sent the invitation, or null once that Account is deleted."
     inviterAccountId: ID
     inviterDisplayName: String!
-    recipientAccountId: ID
+    "The address the inviter typed, without the spaces around it and with its case kept."
     recipientEmail: String!
+    "A pending invitation whose time has run out reads as EXPIRED."
     status: ProfileManagerInvitationStatus!
     expiresAt: String!
 }
@@ -66,7 +72,11 @@ type ManagerInvitationEdge {
 
 input InviteProfileManagerInput {
     profileId: ID!
-    recipientAccountId: ID!
+    """
+    The email address of the person to invite. Spaces around it are ignored, and its case does not
+    matter, as at sign-in.
+    """
+    email: String!
 }
 
 "The code appears here once and never again."
@@ -80,11 +90,7 @@ type InviteProfileManagerPayload {
     userErrors: [InviteProfileManagerError!]!
 }
 
-union InviteProfileManagerError =
-    ProfileNotFoundError
-  | AccountNotFoundError
-  | ProfileManagerNotEligibleError
-  | AlreadyManagerError
+union InviteProfileManagerError = ProfileNotFoundError | EmailRequiredError | EmailInvalidError
 
 input CancelManagerInvitationInput {
     invitationId: ID!

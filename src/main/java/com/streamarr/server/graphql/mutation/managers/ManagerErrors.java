@@ -9,7 +9,7 @@ public final class ManagerErrors {
   private static final String PROFILE_ID = "profileId";
   private static final String CODE = "code";
   private static final String ACCOUNT_ID = "accountId";
-  private static final String RECIPIENT_ACCOUNT_ID = "recipientAccountId";
+  private static final String EMAIL = "email";
   private static final String INVITATION_UNAVAILABLE = "That invitation is unavailable.";
 
   private ManagerErrors() {}
@@ -17,9 +17,10 @@ public final class ManagerErrors {
   public static InviteProfileManagerError toInviteError(ManagerRejections.Invite rejection) {
     return switch (rejection) {
       case ManagerRejections.ProfileNotFound _ -> profileNotFound();
-      case ManagerRejections.RecipientNotFound _ -> recipientNotFound(RECIPIENT_ACCOUNT_ID);
-      case ManagerRejections.RecipientNotEligible _ -> recipientNotEligible(RECIPIENT_ACCOUNT_ID);
-      case ManagerRejections.AlreadyManager _ -> alreadyManager(RECIPIENT_ACCOUNT_ID);
+      case ManagerRejections.EmailRequired _ ->
+          new EmailRequiredError("Enter the person's email address.", InputPath.of(EMAIL));
+      case ManagerRejections.EmailInvalid _ ->
+          new EmailInvalidError("Enter a valid email address.", InputPath.of(EMAIL));
     };
   }
 
