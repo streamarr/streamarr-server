@@ -1,5 +1,8 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,6 +16,8 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -56,6 +61,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Builder;
 import org.assertj.core.data.Offset;
@@ -90,13 +97,92 @@ class HlsVariantSwitchSmokeTest {
   private static final String TOKEN = "smoke-token";
   private static final Duration RESPONSE_BOUND = Duration.ofSeconds(90);
 
-  // The arguments of the source's video encoder. libx264's default B-frames give the copy a reorder
-  // delay, as the worker's own encode has.
-  private static final List<String> WITH_B_FRAMES = List.of();
+  private static final Pattern VIDEO_RANGE = Pattern.compile("VIDEO-RANGE=([A-Z]+)");
+
+  // What ffprobe reads of a frame's range and bit depth: its pixel format, its colour description
+  // and, for HDR10, its mastering display and content light level.
+  private static final List<String> RANGE_SIGNALLING =
+      List.of(
+          "pix_fmt",
+          "color_range",
+          "color_space",
+          "color_primaries",
+          "color_transfer",
+          "red_x",
+          "red_y",
+          "green_x",
+          "green_y",
+          "blue_x",
+          "blue_y",
+          "white_point_x",
+          "white_point_y",
+          "min_luminance",
+          "max_luminance",
+          "max_content",
+          "max_average");
+
+  // 854x480 noise at 24 fps keeps the copy's bitrate above the 360p variant's, so Auto lists that
+  // variant beside the copy. The tone lasts as long as the picture, and its last AAC frame ends
+  // after the last picture does.
+  private static final List<String> NOISY_480P_PICTURE_AND_TONE =
+      List.of(
+          "-f",
+          "lavfi",
+          "-i",
+          "testsrc2=size=854x480:duration=36:rate=24,noise=alls=40:allf=t",
+          "-f",
+          "lavfi",
+          "-i",
+          "sine=frequency=440:duration=36");
+
+  private static final List<String> AAC_IN_MATROSKA =
+      List.of("-c:a", "aac", "-shortest", "-f", "matroska");
+
+  // Keyframes lie only at 0, 10, 20 and 30 s: the 6 s slots [12 s, 18 s) and [24 s, 30 s) hold
+  // none, so each joins the segment before it (ADR 0037, segment list). The stream describes its
+  // colours as BT.709, as the worker's 8-bit SDR encode describes its own.
+  private static final List<String> H264_AT_3_MBPS_WITH_KEYFRAMES_TEN_SECONDS_APART =
+      List.of(
+          "-c:v",
+          "libx264",
+          "-pix_fmt",
+          "yuv420p",
+          "-b:v",
+          "3M",
+          "-g",
+          "1000",
+          "-keyint_min",
+          "1000",
+          "-sc_threshold",
+          "0",
+          "-force_key_frames",
+          "0,10,20,30",
+          "-x264-params",
+          "colorprim=bt709:transfer=bt709:colormatrix=bt709");
+
+  // 10-bit PQ H.265 with a mastering display and a content light level, as an HDR10 source carries
+  // them. A closed GOP of 240 frames puts the keyframes at the same 0, 10, 20 and 30 s.
+  private static final String HDR10_X265_PARAMETERS =
+      "keyint=240:min-keyint=240:scenecut=0:open-gop=0:log-level=error"
+          + ":colorprim=bt2020:colormatrix=bt2020nc:transfer=smpte2084"
+          + ":master-display=G(8500,39850)B(6550,2300)R(35400,14600)"
+          + "WP(15635,16450)L(10000000,50)"
+          + ":max-cll=1000,400";
+
+  // libx264's default B-frames give the copy a reorder delay, as the worker's own encode has.
+  private static final SwitchedSource SDR_WITH_B_FRAMES =
+      sdrSource("sdr-with-b-frames.mkv", List.of());
 
   // Without B-frames the copy has no reorder delay and the worker's encode has one, so the two
   // variants agree only when each places its frames by presentation time.
-  private static final List<String> WITHOUT_B_FRAMES = List.of("-bf", "0");
+  private static final SwitchedSource SDR_WITHOUT_B_FRAMES =
+      sdrSource("sdr-without-b-frames.mkv", List.of("-bf", "0"));
+
+  private static final SwitchedSource HDR10_WITH_B_FRAMES =
+      hdr10Source("hdr10-with-b-frames.mkv", HDR10_X265_PARAMETERS);
+
+  private static final SwitchedSource HDR10_WITHOUT_B_FRAMES =
+      hdr10Source("hdr10-without-b-frames.mkv", HDR10_X265_PARAMETERS + ":bframes=0");
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeMediaFileContainerInfoRepository probeOutcomes =
@@ -222,34 +308,36 @@ class HlsVariantSwitchSmokeTest {
   // RFC 8216 §6.2.4: so that a client can switch between variant streams, matching content has
   // matching timestamps and discontinuity sequence numbers, and each media playlist has the same
   // target duration. The keyframes at 0, 10, 20 and 30 s open four segments, and the player changes
-  // variant at each of the three boundaries between them.
+  // variant at each of the three boundaries between them. The two players of a source take each
+  // segment from the other variant, so together they play every segment of both variants.
   @ParameterizedTest(name = "{0}")
   @MethodSource("switchingPlayers")
   @DisplayName(
       "Should present every source frame and audio packet once when a player switches between the"
           + " copied and an encoded variant at each boundary of a merged segment list")
   void shouldPresentEverySourceFrameAndAudioPacketOnceWhenAPlayerSwitchesAtEachMergedBoundary(
-      String description, List<String> encoderArguments, List<Variant> variantOfEachSegment)
+      String description, SwitchedSource switched, List<Variant> variantOfEachSegment)
       throws Exception {
     var source =
         workerFixture
             .worker()
-            .generateMedia(
-                sourceRoot.resolve("keyframes-ten-seconds-apart.mkv"),
-                noisy480pWithKeyframesTenSecondsApart(encoderArguments));
+            .generateMedia(sourceRoot.resolve(switched.fileName()), switched.generatorArguments());
     storeProbeOutcome(source);
 
-    var session = startAutoPlayback(source);
-    var variantPlaylists = variantPlaylistUris();
-    var copied = mediaPlaylist(variantPlaylists.getFirst());
-    var encoded = mediaPlaylist(variantPlaylists.getLast());
+    var session = startAutoPlayback(source, switched.declaration());
+    var multivariant = multivariantPlaylist();
+    var copied = mediaPlaylist(multivariant.variantUris().getFirst());
+    var encoded = mediaPlaylist(multivariant.variantUris().getLast());
 
     assertThat(session.decisionOf(StreamSession.defaultVariant()).transcodeMode().copiesVideo())
         .as("the first-listed variant copies the video")
         .isTrue();
-    assertThat(variantPlaylists)
+    assertThat(multivariant.variantUris())
         .as("the multivariant playlist lists the copy first and one encoded variant below it")
         .containsExactly("stream.m3u8?t=" + TOKEN, "360p/stream.m3u8?t=" + TOKEN);
+    assertThat(multivariant.videoRanges())
+        .as("both variants announce the source's range, so a player treats them as one ladder")
+        .containsExactly(switched.videoRange(), switched.videoRange());
     assertThat(session.decisionOf("360p").transcodeMode().copiesVideo())
         .as("the 360p variant encodes the video")
         .isFalse();
@@ -273,7 +361,7 @@ class HlsVariantSwitchSmokeTest {
       played.add(segment);
     }
 
-    var sourceVideoPackets = videoPackets(List.of(source));
+    var sourcePictures = pictures(List.of(source));
     var sourceFrames = sourceFrames(source);
     var heldToTheAdvertisedEnd = framesFrom(sourceFrames.size(), copied.listing().end());
     var heldFrames = List.<Long>of();
@@ -284,7 +372,7 @@ class HlsVariantSwitchSmokeTest {
     // The source's noise differs in every picture, and a held frame shows the last picture again.
     // The encode is lossy, so the repeated picture still changes a little: against the pinned
     // worker, by about a twelfth of the smallest change between two source pictures of the last
-    // segment.
+    // segment, in 8-bit H.264 and in 10-bit H.265.
     var lastPictureChanges = workerFixture.worker().lumaChangeFromPreviousFrame(played.getLast());
     var firstHeld = lastPictureChanges.size() - heldFrames.size();
     var smallestSourceChange = Collections.min(lastPictureChanges.subList(1, firstHeld));
@@ -292,12 +380,15 @@ class HlsVariantSwitchSmokeTest {
     assertThat(heldToTheAdvertisedEnd)
         .as("the source's last picture ends before the advertised end, so an encode holds it")
         .isNotEmpty();
-    assertThat(videoPackets(playedFrom.get(Variant.COPIED)))
-        .as("the segments played from the copy carry the source's own video packets")
-        .isSubsetOf(sourceVideoPackets);
-    assertThat(videoPackets(playedFrom.get(Variant.ENCODED)))
-        .as("the segments played from the 360p variant carry none of the source's video packets")
-        .doesNotContainAnyElementsOf(sourceVideoPackets);
+    assertThat(pictures(playedFrom.get(Variant.COPIED)))
+        .as("the segments played from the copy decode to the source's own pictures")
+        .isSubsetOf(sourcePictures);
+    assertThat(pictures(playedFrom.get(Variant.ENCODED)))
+        .as("the segments played from the 360p variant decode to none of the source's pictures")
+        .doesNotContainAnyElementsOf(sourcePictures);
+    assertThat(rangeSignallingOfEach(played))
+        .as("each played segment signals the source's range and bit depth")
+        .containsOnly(rangeSignalling(source));
     assertThat(decodedFrameCounts(played))
         .as("each played segment decodes every frame it holds alone, so it opens on a keyframe")
         .isEqualTo(heldFrameCounts(played));
@@ -327,52 +418,86 @@ class HlsVariantSwitchSmokeTest {
     var fromTheEncodedVariant =
         List.of(Variant.ENCODED, Variant.COPIED, Variant.ENCODED, Variant.COPIED);
     return Stream.of(
-        Arguments.of("a source with B-frames, played from the copy", WITH_B_FRAMES, fromTheCopy),
         Arguments.of(
-            "a source with B-frames, played from the encoded variant",
-            WITH_B_FRAMES,
+            "an SDR source with B-frames, played from the copy", SDR_WITH_B_FRAMES, fromTheCopy),
+        Arguments.of(
+            "an SDR source with B-frames, played from the encoded variant",
+            SDR_WITH_B_FRAMES,
             fromTheEncodedVariant),
         Arguments.of(
-            "a source without B-frames, played from the copy", WITHOUT_B_FRAMES, fromTheCopy),
+            "an SDR source without B-frames, played from the copy",
+            SDR_WITHOUT_B_FRAMES,
+            fromTheCopy),
         Arguments.of(
-            "a source without B-frames, played from the encoded variant",
-            WITHOUT_B_FRAMES,
+            "an SDR source without B-frames, played from the encoded variant",
+            SDR_WITHOUT_B_FRAMES,
+            fromTheEncodedVariant),
+        Arguments.of(
+            "an HDR10 source with B-frames, played from the copy",
+            HDR10_WITH_B_FRAMES,
+            fromTheCopy),
+        Arguments.of(
+            "an HDR10 source with B-frames, played from the encoded variant",
+            HDR10_WITH_B_FRAMES,
+            fromTheEncodedVariant),
+        Arguments.of(
+            "an HDR10 source without B-frames, played from the copy",
+            HDR10_WITHOUT_B_FRAMES,
+            fromTheCopy),
+        Arguments.of(
+            "an HDR10 source without B-frames, played from the encoded variant",
+            HDR10_WITHOUT_B_FRAMES,
             fromTheEncodedVariant));
   }
 
-  // 854x480 noise at 24 fps and 3 Mb/s keeps the copy's bitrate above the 360p variant's, so Auto
-  // lists that variant beside the copy. Keyframes lie only at 0, 10, 20 and 30 s: the 6 s slots [12
-  // s, 18 s)
-  // and [24 s, 30 s) hold none, so each joins the segment before it (ADR 0037, segment list).
-  private static List<String> noisy480pWithKeyframesTenSecondsApart(List<String> encoderArguments) {
-    var arguments =
-        new ArrayList<>(
-            List.of(
-                "-f",
-                "lavfi",
-                "-i",
-                "testsrc2=size=854x480:duration=36:rate=24,noise=alls=40:allf=t",
-                "-f",
-                "lavfi",
-                "-i",
-                "sine=frequency=440:duration=36",
-                "-c:v",
-                "libx264",
-                "-pix_fmt",
-                "yuv420p",
-                "-b:v",
-                "3M",
-                "-g",
-                "1000",
-                "-keyint_min",
-                "1000",
-                "-sc_threshold",
-                "0",
-                "-force_key_frames",
-                "0,10,20,30"));
+  // An H.264 player in 8-bit SDR: Auto copies the source and encodes the 360p variant in H.264.
+  private static SwitchedSource sdrSource(String fileName, List<String> encoderArguments) {
+    var arguments = new ArrayList<>(NOISY_480P_PICTURE_AND_TONE);
+    arguments.addAll(H264_AT_3_MBPS_WITH_KEYFRAMES_TEN_SECONDS_APART);
     arguments.addAll(encoderArguments);
-    arguments.addAll(List.of("-c:a", "aac", "-shortest", "-f", "matroska"));
-    return List.copyOf(arguments);
+    arguments.addAll(AAC_IN_MATROSKA);
+    return SwitchedSource.builder()
+        .fileName(fileName)
+        .generatorArguments(List.copyOf(arguments))
+        .declaration(defaultDeclarationBuilder().build())
+        .videoRange("SDR")
+        .build();
+  }
+
+  // A player of H.264 in 8-bit SDR and of H.265 up to 10 bits in SDR, PQ and HLG: Auto copies the
+  // source and encodes the 360p variant in the copy's range and bit depth.
+  private static SwitchedSource hdr10Source(String fileName, String x265Parameters) {
+    var arguments = new ArrayList<>(NOISY_480P_PICTURE_AND_TONE);
+    arguments.addAll(
+        List.of(
+            "-c:v",
+            "libx265",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p10le",
+            "-b:v",
+            "3M",
+            "-x265-params",
+            x265Parameters,
+            "-tag:v",
+            "hvc1"));
+    arguments.addAll(AAC_IN_MATROSKA);
+    return SwitchedSource.builder()
+        .fileName(fileName)
+        .generatorArguments(List.copyOf(arguments))
+        .declaration(
+            defaultDeclarationBuilder()
+                .video(
+                    List.of(
+                        h264EntryBuilder().build(),
+                        hevcEntryBuilder()
+                            .compatibleBases(
+                                List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
+                            .build()))
+                .build())
+        .videoRange("PQ")
+        .build();
   }
 
   // Runs the probe task of the source with the worker, as a library scan requests it.
@@ -411,7 +536,7 @@ class HlsVariantSwitchSmokeTest {
 
   // Starts playback in Auto as the client's mutation does. The playback token that the client then
   // sends to the stream endpoints names the stream session of the format attempt.
-  private StreamSession startAutoPlayback(Path source) {
+  private StreamSession startAutoPlayback(Path source, ClientCapabilityDeclaration declaration) {
     var file = mediaFiles.findFirstByFilepathUri(FilepathCodec.encode(source)).orElseThrow();
     var playback =
         PlaybackSessionFixture.acceptedPlayback(
@@ -419,6 +544,7 @@ class HlsVariantSwitchSmokeTest {
                 PlaybackSessionFixture.startPlaybackBuilder()
                     .mediaFileId(file.getId())
                     .identity(viewer)
+                    .capabilityDeclaration(declaration)
                     .build()));
 
     assertThat(playback.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
@@ -438,12 +564,11 @@ class HlsVariantSwitchSmokeTest {
         .build();
   }
 
-  // The URI of each variant's media playlist, in the multivariant playlist's order.
-  private List<String> variantPlaylistUris() throws Exception {
+  private MultivariantPlaylist multivariantPlaylist() throws Exception {
     var response = responseTo(streamUri("multivariant.m3u8?t=" + TOKEN));
 
     assertThat(response.getStatus()).isEqualTo(HttpStatus.OK.value());
-    return response.getContentAsString().lines().filter(line -> !line.startsWith("#")).toList();
+    return MultivariantPlaylist.parse(response.getContentAsString());
   }
 
   private MediaPlaylist mediaPlaylist(String playlistUri) throws Exception {
@@ -535,6 +660,22 @@ class HlsVariantSwitchSmokeTest {
     return Stream.concat(first.stream(), second.stream()).toList();
   }
 
+  private Map<String, String> rangeSignalling(Path media) throws Exception {
+    var frame = workerFixture.worker().firstVideoFrame(media);
+    return RANGE_SIGNALLING.stream()
+        .filter(frame::containsKey)
+        .collect(Collectors.toMap(field -> field, frame::get));
+  }
+
+  private List<Map<String, String>> rangeSignallingOfEach(List<Path> media) throws Exception {
+    var signalling = new ArrayList<Map<String, String>>();
+    for (var file : media) {
+      signalling.add(rangeSignalling(file));
+    }
+
+    return signalling;
+  }
+
   // How many video frames FFmpeg decodes from each file read alone.
   private List<Long> decodedFrameCounts(List<Path> media) throws Exception {
     var counts = new ArrayList<Long>();
@@ -554,13 +695,16 @@ class HlsVariantSwitchSmokeTest {
     return counts;
   }
 
-  private List<String> videoPackets(List<Path> media) throws Exception {
-    var packets = new ArrayList<String>();
+  // The hash of each picture that FFmpeg decodes from the files. A copy can repackage a keyframe's
+  // sample, as the worker's Annex B filter does for H.265 from Matroska, so the pictures are
+  // compared and not the packets. Decoding is exact, and the noise makes every picture differ.
+  private List<String> pictures(List<Path> media) throws Exception {
+    var pictures = new ArrayList<String>();
     for (var file : media) {
-      packets.addAll(hashesOnly(workerFixture.worker().videoPacketHashes(file)));
+      pictures.addAll(workerFixture.worker().decodedVideoFrameHashes(file));
     }
 
-    return packets;
+    return pictures;
   }
 
   private List<String> audioPackets(List<Path> media) throws Exception {
@@ -608,6 +752,33 @@ class HlsVariantSwitchSmokeTest {
     // The advertised end, where the last listed segment ends.
     double end() {
       return segments.stream().mapToDouble(ListedSegment::seconds).sum();
+    }
+  }
+
+  // A source, the player's declaration, and the range that every variant then announces.
+  @Builder
+  private record SwitchedSource(
+      String fileName,
+      List<String> generatorArguments,
+      ClientCapabilityDeclaration declaration,
+      String videoRange) {}
+
+  // The URI and the VIDEO-RANGE of each variant, in the multivariant playlist's order. A variant
+  // without the attribute is SDR (draft-pantos-hls-rfc8216bis §4.4.6.2).
+  private record MultivariantPlaylist(List<String> variantUris, List<String> videoRanges) {
+
+    static MultivariantPlaylist parse(String playlist) {
+      var variantUris = playlist.lines().filter(line -> !line.startsWith("#")).toList();
+      var videoRanges =
+          playlist
+              .lines()
+              .filter(line -> line.startsWith("#EXT-X-STREAM-INF:"))
+              .map(
+                  line ->
+                      VIDEO_RANGE.matcher(line).results().map(found -> found.group(1)).findFirst())
+              .map(range -> range.orElse("SDR"))
+              .toList();
+      return new MultivariantPlaylist(variantUris, videoRanges);
     }
   }
 
