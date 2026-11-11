@@ -18,6 +18,8 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.streamarr.server.domain.media.LearnedStreamEnd;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.CompletedJobAttempt;
 import com.streamarr.server.domain.streaming.EncoderPreset;
@@ -30,6 +32,7 @@ import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.SourceEndedEarly;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -2400,6 +2403,52 @@ class ProducerLifecycleServiceTest {
             .source(KeyframePositionSource.CONTAINER_INDEX)
             .keyframes(keyframes)
             .build());
+  }
+
+  // The header states 30 s for the container and for each stream. A keyframe packet scan read the
+  // video's end at 14.166 s and the audio's at 14.25 s. An encode pads up to the advertised end
+  // and a copy's playlist lists up to it, so both sessions' job attempts carry the same end.
+  @Test
+  @DisplayName(
+      "Should advertise the same end to a copy's and an encode's job attempt when the container"
+          + " header overstates the source's length")
+  void
+      shouldAdvertiseTheSameEndToACopysAndAnEncodesJobAttemptWhenTheHeaderOverstatesTheSourcesLength() {
+    startedCopySession(truncatedSourceProbe());
+    startedEncodedSession(truncatedSourceProbe());
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .hasSize(2)
+        .extracting(TranscodeRequest::mediaSegmentCount, TranscodeRequest::advertisedEnd)
+        .containsOnly(tuple(3, Optional.of(Duration.ofMillis(14_250))));
+  }
+
+  private static MediaProbe.MediaProbeBuilder truncatedSourceProbe() {
+    var learned =
+        LearnedStreamEnd.builder()
+            .mediaFileId(UUID.randomUUID())
+            .snapshot(new SourceFileSnapshot(1, Instant.EPOCH));
+    return defaultProbeBuilder()
+        .duration(Duration.ofSeconds(30))
+        .keyframes(knownKeyframes(keyframesPresentingAt(0, 6_000, 12_000)))
+        .streams(
+            List.of(
+                StreamInfo.builder()
+                    .index(0)
+                    .codecType("video")
+                    .endTime(Optional.of(Duration.ofSeconds(30)))
+                    .build(),
+                StreamInfo.builder()
+                    .index(1)
+                    .codecType("audio")
+                    .endTime(Optional.of(Duration.ofSeconds(30)))
+                    .build()))
+        .build()
+        .withLearnedEndTimes(
+            List.of(
+                learned.streamIndex(0).endTime(Duration.ofMillis(14_166)).build(),
+                learned.streamIndex(1).endTime(Duration.ofMillis(14_250)).build()))
+        .toBuilder();
   }
 
   @Test

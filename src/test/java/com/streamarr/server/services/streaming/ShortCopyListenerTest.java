@@ -213,17 +213,22 @@ class ShortCopyListenerTest {
   }
 
   // An audio stream that ends just over one target segment duration after the fourth segment.
+  // The audio is stream 1: stream 0 is the default probe's chosen video stream, whose end the
+  // probe does not state, so the media ends at the container's duration.
   private static MediaProbe probeWithMediaAfter24Seconds() {
     return defaultProbeBuilder()
         .streams(
             List.of(
-                audioStreamBuilder("aac").endTime(Optional.of(Duration.ofMillis(30_001))).build()))
+                audioStreamBuilder("aac")
+                    .index(1)
+                    .endTime(Optional.of(Duration.ofMillis(30_001)))
+                    .build()))
         .build();
   }
 
   private static MediaProbe probeWithoutStreamEndTimes() {
     return defaultProbeBuilder()
-        .streams(List.of(audioStreamBuilder("aac").endTime(Optional.empty()).build()))
+        .streams(List.of(audioStreamBuilder("aac").index(1).endTime(Optional.empty()).build()))
         .build();
   }
 
