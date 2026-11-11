@@ -68,6 +68,26 @@ class KeyframePacketScanPublicationTest {
         .withMessageContaining("keyframes");
   }
 
+  @Test
+  @DisplayName("Should reject a publication when its stream ends are missing")
+  void shouldRejectAPublicationWhenItsStreamEndsAreMissing() {
+    var publication = builder().keyframes(UNAVAILABLE);
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> publication.streamEnds(null).build())
+        .withMessageContaining("streamEnds");
+  }
+
+  @Test
+  @DisplayName("Should reject a publication when its stream measurements are missing")
+  void shouldRejectAPublicationWhenItsStreamMeasurementsAreMissing() {
+    var publication = builder().keyframes(UNAVAILABLE);
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> publication.streamMeasurements(null).build())
+        .withMessageContaining("streamMeasurements");
+  }
+
   @ParameterizedTest
   @MethodSource("keyframesThatNoPacketScanReports")
   @DisplayName("Should reject keyframes that a packet scan cannot report")
