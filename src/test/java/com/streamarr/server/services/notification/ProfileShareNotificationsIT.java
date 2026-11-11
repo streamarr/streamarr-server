@@ -3,7 +3,6 @@ package com.streamarr.server.services.notification;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
@@ -22,12 +21,10 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
-import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
 import com.streamarr.server.services.identity.AccountLifecycleService;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
-import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.ShareRejections;
 import com.streamarr.server.services.mutation.Outcome;
@@ -75,6 +72,7 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   private AuthTestSupport.TestIdentity riverside;
   private AuthTestSupport.TestIdentity riversideAdmin;
   private ShareSteps steps;
+  private ProfileConnections connections;
 
   @BeforeEach
   void setUp() {
@@ -88,6 +86,15 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
             .accounts(userAccountRepository)
             .transactions(transactionTemplate)
             .build();
+    connections =
+        ProfileConnections.builder()
+            .credentialIssuance(credentialIssuance)
+            .accountInvitations(accountInvitations)
+            .invitations(invitationRepository)
+            .accounts(userAccountRepository)
+            .auth(authTestSupport)
+            .recipientEmail(CONNECTED_EMAIL)
+            .build();
     sam = track(authTestSupport.createIdentity());
     riverside = track(authTestSupport.createIdentity());
     riversideAdmin =
@@ -96,12 +103,7 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
 
   @AfterEach
   void tearDown() {
-    invitationRepository.findAll().stream()
-        .filter(invitation -> CONNECTED_EMAIL.equalsIgnoreCase(invitation.getRecipientEmail()))
-        .forEach(invitationRepository::delete);
-    userAccountRepository
-        .findByEmailIgnoreCase(CONNECTED_EMAIL)
-        .ifPresent(account -> authTestSupport.deleteAccount(account.getId()));
+    connections.deleteConnected();
     identities.reversed().forEach(authTestSupport::deleteIdentity);
   }
 
@@ -453,40 +455,8 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
         .orElseThrow();
   }
 
-  /**
-   * A ServerAdmin issues an Account invitation for the Profile, which offers it again to the
-   * Household, and the invitation is accepted: the Profile becomes the new Account's Personal
-   * Profile.
-   */
   private UUID connect(Profile profile, AuthTestSupport.TestIdentity reofferedTo) {
-    var serverAdmin = track(authTestSupport.createAdminIdentity());
-    var issued =
-        credentialIssuance
-            .issueAccountInvitationForProfile(
-                authTestSupport.identityOf(serverAdmin),
-                IssueInvitationForProfileCommand.builder()
-                    .recipientEmail(CONNECTED_EMAIL)
-                    .householdRole(HouseholdRole.MEMBER)
-                    .profileId(profile.getId())
-                    .reofferHouseholdIds(List.of(reofferedTo.household().getId()))
-                    .build())
-            .fold(
-                invitation -> invitation,
-                rejection -> {
-                  throw new IllegalStateException("The invitation was refused: " + rejection);
-                });
-
-    return accountInvitations
-        .accept(
-            AcceptInvitationCommand.builder()
-                .code(issued.code())
-                .displayName("Ollie")
-                .password("a strong passphrase")
-                .deviceName("web")
-                .ipAddress(ShareSteps.IP_ADDRESS)
-                .build())
-        .account()
-        .getId();
+    return connections.connect(profile, track(authTestSupport.createAdminIdentity()), reofferedTo);
   }
 
   private ProfileHouseholdShare stored(ProfileHouseholdShare share) {
