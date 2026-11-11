@@ -1,11 +1,14 @@
 package com.streamarr.server.repositories.notification;
 
 import com.streamarr.server.domain.notification.GuardedNotification;
+import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.domain.notification.UnreadNews;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -14,6 +17,12 @@ import java.util.UUID;
 
 /** The writes and the retention of Notifications about a Profile share (ADR 0063). */
 public interface NotificationRepositoryCustom {
+
+  /**
+   * Up to the seek's limit of the recipient's Notifications beyond its position, newest latest
+   * event first and ties by id in the same direction, nearest first.
+   */
+  List<Row<Notification>> rowsOfRecipient(UUID recipientAccountId, Seek seek);
 
   /** Stores a new Notification for its recipient, unread, and answers its id. */
   UUID insert(NotificationDraft<NotificationKind, ProfileShareFacts> draft);

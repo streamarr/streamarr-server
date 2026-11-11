@@ -12,17 +12,24 @@ import static org.jooq.impl.DSL.val;
 
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.notification.GuardedNotification;
+import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.domain.notification.UnreadNews;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.enums.NotificationForm;
 import com.streamarr.server.jooq.generated.enums.ProfileShareAnswer;
 import com.streamarr.server.jooq.generated.enums.ProfileShareEndedBy;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
+import com.streamarr.server.repositories.JooqQueryHelper;
+import com.streamarr.server.repositories.Keyset;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.HashSet;
@@ -48,7 +55,24 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   private static final Field<Boolean> INSERTED =
       DSL.field("(xmax = 0)", SQLDataType.BOOLEAN).as("inserted");
 
+  private static final Keyset<OffsetDateTime> NEWEST_FIRST =
+      Keyset.<OffsetDateTime>builder()
+          .sortValue(NOTIFICATION.LATEST_EVENT_AT)
+          .itemId(NOTIFICATION.ID)
+          .build();
+
   private final DSLContext dsl;
+  private final EntityManager entityManager;
+
+  @Override
+  public List<Row<Notification>> rowsOfRecipient(UUID recipientAccountId, Seek seek) {
+    var query =
+        NEWEST_FIRST.rowsBeyond(
+            NEWEST_FIRST.selectFrom(dsl, NOTIFICATION),
+            NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId),
+            seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, Notification.class, NEWEST_FIRST);
+  }
 
   @Override
   public UUID insert(NotificationDraft<NotificationKind, ProfileShareFacts> draft) {
