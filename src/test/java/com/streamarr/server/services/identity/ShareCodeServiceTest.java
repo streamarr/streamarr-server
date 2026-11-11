@@ -223,8 +223,8 @@ class ShareCodeServiceTest {
   }
 
   @Test
-  @DisplayName("Should list the Household's codes newest first with who issued each")
-  void shouldListHouseholdsCodesNewestFirstWithWhoIssuedEach() {
+  @DisplayName("Should list the codes newest first, without an issuer name, when it is deleted")
+  void shouldListCodesNewestFirstWithoutIssuerNameWhenIssuerIsDeleted() {
     var older = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
     var newer = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
     AuditFieldSetter.setCreatedOn(older, NOW.minusSeconds(60));

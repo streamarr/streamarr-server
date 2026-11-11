@@ -165,8 +165,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a second offer with one code, naming no Household")
-  void shouldRefuseSecondOfferWithOneCodeNamingNoHousehold() throws Exception {
+  @DisplayName("Should refuse an offer, naming no Household, when its code was already spent")
+  void shouldRefuseOfferNamingNoHouseholdWhenItsCodeWasAlreadySpent() throws Exception {
     var code = authTestSupport.shareCodeFor(host);
     offer(managedOrphan(), code);
 

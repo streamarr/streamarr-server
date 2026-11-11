@@ -86,8 +86,8 @@ class ShareCodeIssuerAuthorityIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep the codes while the issuer keeps either role and invalidate them after")
-  void shouldKeepCodesWhileIssuerKeepsEitherRoleAndInvalidateThemAfter() {
+  @DisplayName("Should invalidate the codes only when the issuer has lost both roles")
+  void shouldInvalidateCodesOnlyWhenIssuerHasLostBothRoles() {
     var both = track(authTestSupport.createAdminIdentity());
     secondAdminOf(both);
     var code = issue(both, both.household().getId());
