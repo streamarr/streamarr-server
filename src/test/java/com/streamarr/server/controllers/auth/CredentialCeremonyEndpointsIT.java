@@ -79,8 +79,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -1003,11 +1003,15 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
 
   // U+0130, a capital I with a dot, is i under PostgreSQL's lower().
   @ParameterizedTest
-  @ValueSource(strings = {"Invitee@Example.COM", "\u0130nvitee@example.com"})
+  @CsvSource({
+    "invitee@example.com, Invitee@Example.COM",
+    "invitee@example.com, \u0130nvitee@example.com",
+    "\u0130nvitee@example.com, invitee@example.com"
+  })
   @DisplayName("Should refuse the invitation when an Account's email differs from it only in case")
-  void shouldRefuseInvitationWhenAccountEmailDiffersFromItOnlyInCase(String recipientEmail)
-      throws Exception {
-    var existing = authTestSupport.createAccount(builder -> builder.email("invitee@example.com"));
+  void shouldRefuseInvitationWhenAccountEmailDiffersFromItOnlyInCase(
+      String storedEmail, String recipientEmail) throws Exception {
+    var existing = authTestSupport.createAccount(builder -> builder.email(storedEmail));
     try {
       requestInvitation(recipientEmail)
           .andExpect(status().isOk())

@@ -360,7 +360,11 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
 
   // U+0130, a capital I with a dot, is i under PostgreSQL's lower().
   @ParameterizedTest
-  @CsvSource({"sam@example.com, SAM@Example.COM", "ilker@example.com, \u0130lker@example.com"})
+  @CsvSource({
+    "sam@example.com, SAM@Example.COM",
+    "ilker@example.com, \u0130lker@example.com",
+    "\u0130lker@example.com, ilker@example.com"
+  })
   @DisplayName("Should sign in to the Account when the email differs from it only in case")
   void shouldSignInToAccountWhenEmailDiffersFromItOnlyInCase(String storedEmail, String typedEmail)
       throws Exception {
