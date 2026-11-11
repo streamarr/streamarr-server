@@ -5918,7 +5918,14 @@ class HlsStreamingServiceTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"PT0.001S, 1", "PT3S, 1", "PT12S, 2", "PT12.0004S, 2", "PT2M5.5S, 21"})
+  @CsvSource({
+    "PT0.000999999S, 1",
+    "PT0.001S, 1",
+    "PT3S, 1",
+    "PT12S, 2",
+    "PT12.0004S, 2",
+    "PT2M5.5S, 21"
+  })
   @DisplayName(
       "Should advertise the media playlist's segment count to the job attempt when creating"
           + " session")
@@ -5969,8 +5976,7 @@ class HlsStreamingServiceTest {
             new KeyframeKnowledge.NotReported());
     return Stream.of(
         Arguments.of("missing", withoutDuration),
-        Arguments.of("zero", probeLasting(Duration.ZERO)),
-        Arguments.of("under one millisecond", probeLasting(Duration.ofNanos(999_999))));
+        Arguments.of("zero", probeLasting(Duration.ZERO)));
   }
 
   private static ProbeOutcome.Success probeLasting(Duration duration) {
