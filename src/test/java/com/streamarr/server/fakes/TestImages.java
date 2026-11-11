@@ -150,6 +150,45 @@ public final class TestImages {
     return writePng(new BufferedImage(colorModel, raster, false, null));
   }
 
+  /**
+   * A solid teal PNG with 16 bits for each of red, green, blue and alpha. Every alpha sample is
+   * fully opaque except one, which is one step below: 65534 of 65535. That sample rounds to fully
+   * opaque in 8 bits.
+   */
+  public static byte[] createSixteenBitPngImageWithOneAlphaSampleBelowOpaque() {
+    var image = sixteenBitTealImageWithOpaqueAlphaChannel();
+    image.getRaster().setSample(300, 450, 3, 0xFFFE);
+
+    return writePng(image);
+  }
+
+  /** A solid teal PNG with 16 bits for each of red, green, blue and alpha, all fully opaque. */
+  public static byte[] createSixteenBitOpaquePngImageWithAlphaChannel() {
+    return writePng(sixteenBitTealImageWithOpaqueAlphaChannel());
+  }
+
+  private static BufferedImage sixteenBitTealImageWithOpaqueAlphaChannel() {
+    var colorModel =
+        new ComponentColorModel(
+            ColorSpace.getInstance(ColorSpace.CS_sRGB),
+            true,
+            false,
+            Transparency.TRANSLUCENT,
+            DataBuffer.TYPE_USHORT);
+    var raster = colorModel.createCompatibleWritableRaster(600, 900);
+    var tealRow = new int[raster.getWidth()];
+    var opaqueRow = new int[raster.getWidth()];
+    Arrays.fill(tealRow, 0xA0A0);
+    Arrays.fill(opaqueRow, 0xFFFF);
+    for (var y = 0; y < raster.getHeight(); y++) {
+      raster.setSamples(0, y, raster.getWidth(), 1, 1, tealRow);
+      raster.setSamples(0, y, raster.getWidth(), 1, 2, tealRow);
+      raster.setSamples(0, y, raster.getWidth(), 1, 3, opaqueRow);
+    }
+
+    return new BufferedImage(colorModel, raster, false, null);
+  }
+
   /** A PNG with one 16-bit grey sample for each pixel, which no JPEG encoder accepts. */
   public static byte[] createSixteenBitGrayscalePngImage() {
     return writePng(new BufferedImage(600, 900, BufferedImage.TYPE_USHORT_GRAY));
