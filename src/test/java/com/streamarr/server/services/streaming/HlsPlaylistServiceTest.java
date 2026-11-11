@@ -394,24 +394,33 @@ class HlsPlaylistServiceTest {
         .isEqualByComparingTo("14.25");
   }
 
-  // The picture ends at 14 s and the session's audio at 16 s. A copy cannot pad, so its playlist
-  // lists the audio after the last picture. The second audio track runs to 20 s, as the container
-  // does, but the session does not deliver it.
+  // A keyframe packet scan read that the picture ends at 14 s and the session's audio at 16 s. A
+  // copy cannot pad, so its playlist lists the audio after the last picture. The second audio track
+  // runs to 20 s, as the container does, but the session does not deliver it.
   @Test
   @DisplayName(
       "Should end a stream copy's last segment at the audio's end when the session's audio"
           + " outlasts the video")
   void shouldEndAStreamCopysLastSegmentAtTheAudiosEndWhenTheSessionsAudioOutlastsTheVideo() {
+    var learned =
+        LearnedStreamEnd.builder()
+            .mediaFileId(UUID.randomUUID())
+            .snapshot(new SourceFileSnapshot(1, Instant.EPOCH));
     var probe =
         StreamSessionFixture.defaultProbeBuilder()
             .duration(Duration.ofSeconds(20))
             .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
             .streams(
                 List.of(
-                    streamEndingAt("video", 0, Duration.ofSeconds(14)),
-                    streamEndingAt("audio", 1, Duration.ofSeconds(16)),
+                    streamEndingAt("video", 0, Duration.ofSeconds(20)),
+                    streamEndingAt("audio", 1, Duration.ofSeconds(20)),
                     streamEndingAt("audio", 2, Duration.ofSeconds(20))))
-            .build();
+            .build()
+            .withLearnedEndTimes(
+                List.of(
+                    learned.streamIndex(0).endTime(Duration.ofSeconds(14)).build(),
+                    learned.streamIndex(1).endTime(Duration.ofSeconds(16)).build(),
+                    learned.streamIndex(2).endTime(Duration.ofSeconds(20)).build()));
     var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
 
     var playlist =
@@ -423,17 +432,21 @@ class HlsPlaylistServiceTest {
         .contains("#EXT-X-TARGETDURATION:6\n");
   }
 
-  // A worker of an earlier probe version reports no stream end with its packet scan, and an
-  // unknown end is never read as zero.
+  // A worker of an earlier probe version reports no stream end with its packet scan. The header's
+  // own stream ends never move the media's end, and an unknown end is never read as zero.
   @Test
   @DisplayName(
-      "Should end a stream copy's last segment at the container's duration when no stream's end"
-          + " is known")
-  void shouldEndAStreamCopysLastSegmentAtTheContainersDurationWhenNoStreamsEndIsKnown() {
+      "Should end a stream copy's last segment at the container's duration when the server"
+          + " learned no stream's end")
+  void shouldEndAStreamCopysLastSegmentAtTheContainersDurationWhenTheServerLearnedNoStreamsEnd() {
     var probe =
         StreamSessionFixture.defaultProbeBuilder()
             .duration(Duration.ofSeconds(30))
             .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
+            .streams(
+                List.of(
+                    streamEndingAt("video", 0, Duration.ofSeconds(14)),
+                    streamEndingAt("audio", 1, Duration.ofSeconds(16))))
             .build();
     var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
 

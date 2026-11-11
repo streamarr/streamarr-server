@@ -367,7 +367,9 @@ class MediaProbeTest {
   @DisplayName(
       "Should end the media at the audio's end when the session's audio outlasts the video")
   void shouldEndTheMediaAtTheAudiosEndWhenTheSessionsAudioOutlastsTheVideo() {
-    var probe = probeEndingAt(Duration.ofSeconds(20), video(14_000), audioEndingAt(1, 16_000));
+    var probe =
+        probeLasting(Duration.ofSeconds(20), video(), audio(1))
+            .withLearnedEndTimes(List.of(learnedEnd(0, 14_000), learnedEnd(1, 16_000)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(16));
   }
@@ -376,7 +378,9 @@ class MediaProbeTest {
   @DisplayName(
       "Should end the media at the video's end when the video outlasts the session's audio")
   void shouldEndTheMediaAtTheVideosEndWhenTheVideoOutlastsTheSessionsAudio() {
-    var probe = probeEndingAt(Duration.ofSeconds(20), video(14_167), audioEndingAt(1, 14_101));
+    var probe =
+        probeLasting(Duration.ofSeconds(20), video(), audio(1))
+            .withLearnedEndTimes(List.of(learnedEnd(0, 14_167), learnedEnd(1, 14_101)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(14_167));
   }
@@ -385,34 +389,28 @@ class MediaProbeTest {
   @DisplayName("Should end the media at the video's end when the file has no audio stream")
   void shouldEndTheMediaAtTheVideosEndWhenTheFileHasNoAudioStream() {
     var probe =
-        probeEndingAt(
-            Duration.ofSeconds(20),
-            video(14_167),
-            subtitle("subrip", "eng")
-                .index(1)
-                .endTime(Optional.of(Duration.ofSeconds(19)))
-                .build());
+        probeLasting(
+                Duration.ofSeconds(20),
+                video(),
+                subtitle("subrip", "eng")
+                    .index(1)
+                    .endTime(Optional.of(Duration.ofSeconds(19)))
+                    .build())
+            .withLearnedEndTimes(List.of(learnedEnd(0, 14_167)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(14_167));
   }
 
-  // The session delivers its own audio track only. A commentary track that runs on, or a late
-  // subtitle cue, would otherwise make every copy advertise time that it holds no media for.
+  // The session delivers its own audio track only. A commentary track that runs on would otherwise
+  // make every copy advertise time that it holds no media for.
   @Test
   @DisplayName(
-      "Should end the media at the session's own streams when another audio track and a subtitle"
-          + " end later")
-  void shouldEndTheMediaAtTheSessionsOwnStreamsWhenAnotherAudioTrackAndASubtitleEndLater() {
+      "Should end the media at the session's own streams when another audio track ends later")
+  void shouldEndTheMediaAtTheSessionsOwnStreamsWhenAnotherAudioTrackEndsLater() {
     var probe =
-        probeEndingAt(
-            Duration.ofSeconds(30),
-            video(14_000),
-            audioEndingAt(1, 16_000),
-            audioEndingAt(2, 25_000),
-            subtitle("subrip", "eng")
-                .index(3)
-                .endTime(Optional.of(Duration.ofSeconds(30)))
-                .build());
+        probeLasting(Duration.ofSeconds(30), video(), audio(1), audio(2))
+            .withLearnedEndTimes(
+                List.of(learnedEnd(0, 14_000), learnedEnd(1, 16_000), learnedEnd(2, 25_000)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(16));
     assertThat(probe.withSessionAudioTrackAt(1).mediaEnd()).isEqualTo(Duration.ofSeconds(25));
@@ -420,25 +418,43 @@ class MediaProbeTest {
 
   @Test
   @DisplayName(
-      "Should end the media at the container's duration when the session's audio states no end")
-  void shouldEndTheMediaAtTheContainersDurationWhenTheSessionsAudioStatesNoEnd() {
+      "Should end the media at the container's duration when the server learned no end of the"
+          + " session's audio")
+  void shouldEndTheMediaAtTheContainersDurationWhenTheServerLearnedNoEndOfTheSessionsAudio() {
     var probe =
-        probeEndingAt(
-            Duration.ofSeconds(20), video(14_000), audioStreamBuilder("aac").index(1).build());
+        probeLasting(Duration.ofSeconds(20), video(), audio(1))
+            .withLearnedEndTimes(List.of(learnedEnd(0, 14_000)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(20));
   }
 
   @Test
-  @DisplayName("Should end the media at the container's duration when the video states no end")
-  void shouldEndTheMediaAtTheContainersDurationWhenTheVideoStatesNoEnd() {
+  @DisplayName(
+      "Should end the media at the container's duration when the server learned no end of the"
+          + " video")
+  void shouldEndTheMediaAtTheContainersDurationWhenTheServerLearnedNoEndOfTheVideo() {
     var probe =
-        probeEndingAt(
-            Duration.ofSeconds(20),
-            StreamInfo.builder().index(0).codecType("video").build(),
-            audioEndingAt(1, 16_000));
+        probeLasting(Duration.ofSeconds(20), video(), audio(1))
+            .withLearnedEndTimes(List.of(learnedEnd(1, 16_000)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(20));
+  }
+
+  // A header's stream end is no better evidence than the header's duration. Only an end that the
+  // server read from the stream's packets moves the media's end, so a stale stream header never
+  // cuts a healthy file short.
+  @Test
+  @DisplayName(
+      "Should end the media at the container's duration when only the container header states"
+          + " where each stream ends")
+  void
+      shouldEndTheMediaAtTheContainersDurationWhenOnlyTheContainerHeaderStatesWhereEachStreamEnds() {
+    var probe =
+        probeLasting(
+            Duration.ofSeconds(24), videoStatedToEndAt(4_000), audioStatedToEndAt(1, 4_000));
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(24));
+    assertThat(probe.videoEndTime()).contains(Duration.ofSeconds(4));
   }
 
   // The header of a file cut near 14 s states 30 s for each stream. A keyframe packet scan read
@@ -448,45 +464,44 @@ class MediaProbeTest {
       "Should end the media at the learned ends when the container header overstates each stream's"
           + " end")
   void shouldEndTheMediaAtTheLearnedEndsWhenTheContainerHeaderOverstatesEachStreamsEnd() {
-    var stated = probeEndingAt(Duration.ofSeconds(30), video(30_000), audioEndingAt(1, 30_000));
+    var stated =
+        probeLasting(
+            Duration.ofSeconds(30), videoStatedToEndAt(30_000), audioStatedToEndAt(1, 30_000));
 
-    var learned =
-        stated.withLearnedEndTimes(
-            List.of(
-                learnedEnd(0, Duration.ofMillis(14_167)),
-                learnedEnd(1, Duration.ofMillis(14_250))));
+    var learned = stated.withLearnedEndTimes(List.of(learnedEnd(0, 14_167), learnedEnd(1, 14_250)));
 
     assertThat(stated.mediaEnd()).isEqualTo(Duration.ofSeconds(30));
     assertThat(learned.mediaEnd()).isEqualTo(Duration.ofMillis(14_250));
     assertThat(learned.videoEndTime()).contains(Duration.ofMillis(14_167));
   }
 
-  private static LearnedStreamEnd learnedEnd(int streamIndex, Duration endTime) {
+  private static LearnedStreamEnd learnedEnd(int streamIndex, long endMillis) {
     return LearnedStreamEnd.builder()
         .mediaFileId(UUID.randomUUID())
         .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
         .streamIndex(streamIndex)
-        .endTime(endTime)
+        .endTime(Duration.ofMillis(endMillis))
         .build();
   }
 
   // The default probe's chosen video stream is stream 0.
-  private static StreamInfo video(long endMillis) {
-    return StreamInfo.builder()
-        .index(0)
-        .codecType("video")
-        .endTime(Optional.of(Duration.ofMillis(endMillis)))
-        .build();
+  private static StreamInfo video() {
+    return StreamInfo.builder().index(0).codecType("video").build();
   }
 
-  private static StreamInfo audioEndingAt(int index, long endMillis) {
-    return audioStreamBuilder("aac")
-        .index(index)
-        .endTime(Optional.of(Duration.ofMillis(endMillis)))
-        .build();
+  private static StreamInfo audio(int index) {
+    return audioStreamBuilder("aac").index(index).build();
   }
 
-  private static MediaProbe probeEndingAt(Duration containerDuration, StreamInfo... streams) {
+  private static StreamInfo videoStatedToEndAt(long endMillis) {
+    return video().toBuilder().endTime(Optional.of(Duration.ofMillis(endMillis))).build();
+  }
+
+  private static StreamInfo audioStatedToEndAt(int index, long endMillis) {
+    return audio(index).toBuilder().endTime(Optional.of(Duration.ofMillis(endMillis))).build();
+  }
+
+  private static MediaProbe probeLasting(Duration containerDuration, StreamInfo... streams) {
     return StreamSessionFixture.defaultProbeBuilder()
         .duration(containerDuration)
         .streams(List.of(streams))

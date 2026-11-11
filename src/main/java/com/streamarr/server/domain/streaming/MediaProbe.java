@@ -25,7 +25,8 @@ import lombok.NonNull;
  * names one. {@code audioChannelLayout} is the first audio stream's channel layout as ffprobe names
  * it, and is empty when the probe stored none, which every version before 7 does. {@code
  * sourceSnapshot} names the source file that the stored outcome describes, and is empty for a probe
- * that playback did not read from a stored outcome.
+ * that playback did not read from a stored outcome. {@code learnedEndTimes} holds, by stream index,
+ * each end time that the server learned from the stream's packets.
  */
 @Builder(toBuilder = true)
 public record MediaProbe(
@@ -45,7 +46,8 @@ public record MediaProbe(
     @NonNull KeyframeKnowledge keyframes,
     @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts,
     @NonNull Optional<StreamMeasurements> streamMeasurements,
-    @NonNull Optional<SourceFileSnapshot> sourceSnapshot) {
+    @NonNull Optional<SourceFileSnapshot> sourceSnapshot,
+    @NonNull Map<Integer, Duration> learnedEndTimes) {
 
   // ffprobe's names for PGS, VobSub and DVB subtitles.
   private static final Set<String> IMAGE_SUBTITLE_CODECS =
@@ -66,6 +68,8 @@ public record MediaProbe(
     if (streams == null) {
       streams = List.of();
     }
+
+    learnedEndTimes = Map.copyOf(learnedEndTimes);
   }
 
   // Lombok builder defaults — its generated setters assign them
@@ -78,6 +82,7 @@ public record MediaProbe(
     private Optional<VideoPlaybackFacts> videoPlaybackFacts = Optional.empty();
     private Optional<StreamMeasurements> streamMeasurements = Optional.empty();
     private Optional<SourceFileSnapshot> sourceSnapshot = Optional.empty();
+    private Map<Integer, Duration> learnedEndTimes = Map.of();
   }
 
   /**
@@ -325,25 +330,28 @@ public record MediaProbe(
   }
 
   /**
-   * Where the media that a stream session delivers ends: the later end time of the chosen video
-   * stream and the session's audio stream, or the video's alone in a file without audio (ADR 0037,
-   * early ends). Every variant's media playlist, every job attempt and the session's watch progress
-   * end there, so a stream that ends first is held or padded up to it, and no copy is advertised
-   * past it. While the end time of one of those streams is unknown, the media ends at the
-   * container's duration.
+   * Where the media that a stream session delivers ends: the later of the end times that the server
+   * learned from the packets of the chosen video stream and of the session's audio stream, or the
+   * video's alone in a file without audio (ADR 0037, early ends). Every variant's media playlist
+   * and every job attempt end there, so a stream that ends first is held or padded up to it, and no
+   * copy is advertised past it. While the server has learned no end time of one of those streams,
+   * the media ends at the container's duration: an end time that only the container header states
+   * for a stream never moves the media's end.
    */
   public Duration mediaEnd() {
-    var videoEnd = videoEndTime();
+    var videoEnd = chosenVideoStream().flatMap(this::learnedEndTimeOf);
     var sessionAudio = audioStreams().stream().findFirst();
     if (videoEnd.isEmpty() || sessionAudio.isEmpty()) {
       return videoEnd.orElse(duration);
     }
 
-    return sessionAudio
-        .get()
-        .endTime()
+    return learnedEndTimeOf(sessionAudio.get())
         .map(audioEnd -> audioEnd.compareTo(videoEnd.get()) > 0 ? audioEnd : videoEnd.get())
         .orElse(duration);
+  }
+
+  private Optional<Duration> learnedEndTimeOf(StreamInfo stream) {
+    return Optional.ofNullable(learnedEndTimes.get(stream.index()));
   }
 
   /**
@@ -389,7 +397,7 @@ public record MediaProbe(
             .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, LearnedStreamEnd::endTime));
     var withLearned =
         streams.stream().map(stream -> withLearnedEndTime(stream, learnedByIndex)).toList();
-    return toBuilder().streams(withLearned).build();
+    return toBuilder().streams(withLearned).learnedEndTimes(learnedByIndex).build();
   }
 
   private static StreamInfo withLearnedEndTime(
