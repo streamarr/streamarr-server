@@ -220,7 +220,9 @@ class AuthorizationParityTest {
           VIEW_NOTIFICATION_RETENTION,
           CHANGE_NOTIFICATION_RETENTION,
           VIEW_SHARE_CODE_LIFETIME,
-          CHANGE_SHARE_CODE_LIFETIME ->
+          CHANGE_SHARE_CODE_LIFETIME,
+          VIEW_INVITATION_LIFETIME,
+          CHANGE_INVITATION_LIFETIME ->
           "serverAdministration";
       case VIEW_PROFILE_PICKER,
           SELECT_PROFILE,
@@ -388,6 +390,8 @@ class AuthorizationParityTest {
         new Intent.ViewNotificationRetention(),
         new Intent.ChangeNotificationRetention(),
         new Intent.ViewShareCodeLifetime(),
-        new Intent.ChangeShareCodeLifetime());
+        new Intent.ChangeShareCodeLifetime(),
+        new Intent.ViewInvitationLifetime(),
+        new Intent.ChangeInvitationLifetime());
   }
 }

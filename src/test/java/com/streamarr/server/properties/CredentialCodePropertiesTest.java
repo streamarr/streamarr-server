@@ -23,17 +23,7 @@ class CredentialCodePropertiesTest {
 
     assertThat(VALIDATOR.validate(properties))
         .extracting(violation -> violation.getPropertyPath().toString())
-        .containsExactlyInAnyOrder("invitationTtl", "passwordResetTtl", "replacementLockTimeout");
-  }
-
-  @Test
-  @DisplayName("Should reject an invitation lifetime shorter than five minutes")
-  void shouldRejectInvitationLifetimeWhenShorterThanFiveMinutes() {
-    var properties = validProperties().invitationTtl(Duration.ofMinutes(5).minusNanos(1)).build();
-
-    assertThat(VALIDATOR.validate(properties))
-        .extracting(violation -> violation.getPropertyPath().toString())
-        .containsExactly("invitationTtl");
+        .containsExactlyInAnyOrder("passwordResetTtl", "replacementLockTimeout");
   }
 
   @Test
@@ -48,13 +38,9 @@ class CredentialCodePropertiesTest {
   }
 
   @Test
-  @DisplayName("Should accept credential lifetimes when they are five minutes")
-  void shouldAcceptCredentialLifetimesWhenTheyAreFiveMinutes() {
-    var properties =
-        validProperties()
-            .invitationTtl(Duration.ofMinutes(5))
-            .passwordResetTtl(Duration.ofMinutes(5))
-            .build();
+  @DisplayName("Should accept a password reset lifetime when it is five minutes")
+  void shouldAcceptPasswordResetLifetimeWhenItIsFiveMinutes() {
+    var properties = validProperties().passwordResetTtl(Duration.ofMinutes(5)).build();
 
     assertThat(VALIDATOR.validate(properties)).isEmpty();
   }
@@ -79,7 +65,6 @@ class CredentialCodePropertiesTest {
 
   private static CredentialCodeProperties.CredentialCodePropertiesBuilder validProperties() {
     return CredentialCodeProperties.builder()
-        .invitationTtl(Duration.ofDays(7))
         .passwordResetTtl(Duration.ofHours(1))
         .replacementLockTimeout(Duration.ofSeconds(5));
   }

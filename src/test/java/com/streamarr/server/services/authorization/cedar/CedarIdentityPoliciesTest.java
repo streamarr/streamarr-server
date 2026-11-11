@@ -1562,7 +1562,9 @@ class CedarIdentityPoliciesTest {
             new Intent.ViewNotificationRetention(),
             new Intent.ChangeNotificationRetention(),
             new Intent.ViewShareCodeLifetime(),
-            new Intent.ChangeShareCodeLifetime());
+            new Intent.ChangeShareCodeLifetime(),
+            new Intent.ViewInvitationLifetime(),
+            new Intent.ChangeInvitationLifetime());
 
     @Test
     @DisplayName("Should allow reading and changing server settings when the caller is ServerAdmin")

@@ -96,4 +96,6 @@ type Query {
     notificationRetentionSetting: NotificationRetentionSetting!
     "How long a share code stays live after it is issued. Requires a ServerAdmin."
     shareCodeLifetimeSetting: ShareCodeLifetimeSetting!
+    "How long an invitation or an offer of a Profile waits for its answer. Requires a ServerAdmin."
+    invitationLifetimeSetting: InvitationLifetimeSetting!
 }

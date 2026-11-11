@@ -131,6 +131,11 @@ type Mutation {
     changeNotificationRetention(input: ChangeNotificationRetentionInput!): ChangeNotificationRetentionPayload
     "Changes how long a share code issued from now on stays live. Requires a ServerAdmin."
     changeShareCodeLifetime(input: ChangeShareCodeLifetimeInput!): ChangeShareCodeLifetimePayload
+    """
+    Changes how long an invitation or an offer of a Profile made from now on waits for its answer.
+    Requires a ServerAdmin.
+    """
+    changeInvitationLifetime(input: ChangeInvitationLifetimeInput!): ChangeInvitationLifetimePayload
 }
 
 enum ImageRefreshMode {
