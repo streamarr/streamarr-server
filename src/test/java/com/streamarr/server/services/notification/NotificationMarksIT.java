@@ -258,6 +258,23 @@ class NotificationMarksIT extends AbstractIntegrationTest {
                 .value("through"));
   }
 
+  @Test
+  @DisplayName(
+      "Should answer that the cursor is invalid and mark nothing when it comes from another"
+          + " Account's list")
+  void shouldAnswerThatTheCursorIsInvalidWhenItComesFromAnotherAccountsList() throws Exception {
+    var offer = steps.offer(sam, kai(), riverside);
+    var othersCursor = cursorOf(riversideAdmin, requestFor(riversideAdmin, offer));
+
+    markAll(riverside, othersCursor)
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.markAllNotificationsRead.userErrors[0].__typename")
+                .value("InvalidCursorError"));
+
+    assertThat(stored(requestFor(riverside, offer)).getReadAt()).isEmpty();
+  }
+
   private ResultActions markOne(TestIdentity reader, UUID notificationId) throws Exception {
     return mockMvc
         .perform(
