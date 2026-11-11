@@ -54,6 +54,22 @@ class HouseholdDeletionServiceIT extends AbstractIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
 
   @Test
+  @DisplayName("Should give an empty activity list when the Profile does not exist")
+  void shouldGiveAnEmptyActivityListWhenTheProfileDoesNotExist() {
+    var admin = authTestSupport.createAdminIdentity();
+    try {
+      assertThat(
+              service
+                  .profileActivity(
+                      authTestSupport.identityOf(admin), UUID.randomUUID(), firstRows(10))
+                  .rows())
+          .isEmpty();
+    } finally {
+      authTestSupport.deleteIdentity(admin);
+    }
+  }
+
+  @Test
   @DisplayName(
       "Should return only the requested Profile's activity when another Profile has history")
   void shouldReturnOnlyRequestedProfileActivityWhenAnotherProfileHasHistory() {
