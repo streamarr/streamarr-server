@@ -168,6 +168,7 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
       var target = track(authTestSupport.createIdentity());
       aged.add(steps.accept(target, steps.offer(sam, ollie, target)));
     }
+
     stopManaging(theo, ollie);
     aged.forEach(share -> age(share, PAST_THE_PERIOD));
 
