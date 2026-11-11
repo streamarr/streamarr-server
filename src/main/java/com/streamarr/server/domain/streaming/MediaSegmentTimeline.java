@@ -31,6 +31,14 @@ public sealed interface MediaSegmentTimeline {
   Optional<Duration> keyframeSeekPosition(int index);
 
   /**
+   * The time at or before which the source keyframe presents that an encoded job attempt starting
+   * at this segment reads from, when the worker must find that keyframe in the source because the
+   * source's keyframes are not stored; empty when the attempt starts at segment 0 or seeks to a
+   * stored keyframe (ADR 0037, seek).
+   */
+  Optional<Duration> lastKeyframeReadTime(int index);
+
+  /**
    * The latest presentation time of the keyframe that an encoded attempt reads from when its first
    * segment starts at this second: half a second before that start, so that the attempt decodes the
    * pictures before it (streamarr/streamarr-server#502).
@@ -170,6 +178,16 @@ public sealed interface MediaSegmentTimeline {
       return Optional.empty();
     }
 
+    @Override
+    public Optional<Duration> lastKeyframeReadTime(int index) {
+      if (index == 0) {
+        return Optional.empty();
+      }
+
+      return Optional.of(
+          MediaSegmentTimeline.latestReadKeyframePresentation(mediaSegmentStartSeconds(index)));
+    }
+
     /**
      * This grid's segments as a stream copy cuts them at the source keyframes that open each one. A
      * keyframe that presents at or after the media end opens no segment, and neither does a later
@@ -266,6 +284,11 @@ public sealed interface MediaSegmentTimeline {
               .filter(time -> !time.isNegative())
               .orElse(Duration.ZERO);
       return Optional.of(position);
+    }
+
+    @Override
+    public Optional<Duration> lastKeyframeReadTime(int index) {
+      return Optional.empty();
     }
 
     // Rounding up keeps out a keyframe that presents a fraction of a nanosecond after the time.
@@ -407,6 +430,11 @@ public sealed interface MediaSegmentTimeline {
       }
 
       return Optional.of(decodeTime);
+    }
+
+    @Override
+    public Optional<Duration> lastKeyframeReadTime(int index) {
+      return Optional.empty();
     }
 
     private Duration openingTime(int index) {

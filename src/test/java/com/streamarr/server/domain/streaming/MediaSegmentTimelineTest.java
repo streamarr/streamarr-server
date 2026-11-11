@@ -409,6 +409,47 @@ class MediaSegmentTimelineTest {
     assertThat(timeline.keyframeSeekPosition(5)).isEmpty();
   }
 
+  @ParameterizedTest(name = "segment {0}")
+  @CsvSource({"1, PT5.5S", "5, PT29.5S", "9, PT53.5S"})
+  @DisplayName(
+      "Should have a plain grid attempt after segment 0 read from the last keyframe that presents"
+          + " 0.5 s before its first segment")
+  void shouldHaveAPlainGridAttemptReadFromTheLastKeyframePresentingHalfASecondBeforeItsStart(
+      int index, Duration expectedTime) {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(60), SIX_SECONDS);
+
+    assertThat(timeline.lastKeyframeReadTime(index)).hasValue(expectedTime);
+  }
+
+  @Test
+  @DisplayName("Should have a plain grid attempt at segment 0 read from the source's start")
+  void shouldHaveAPlainGridAttemptAtSegment0ReadFromTheSourcesStart() {
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(60), SIX_SECONDS);
+
+    assertThat(timeline.lastKeyframeReadTime(0)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the keyframe search to no attempt when the timeline seeks to stored keyframes")
+  void shouldLeaveTheKeyframeSearchToNoAttemptWhenTheTimelineSeeksToStoredKeyframes() {
+    var positions =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1000)
+            .source(KeyframePositionSource.CONTAINER_INDEX)
+            .keyframes(List.of(new KeyframePosition(0, 0), new KeyframePosition(6000, 6000)))
+            .build();
+    var grid = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(12), SIX_SECONDS);
+    var seeking =
+        new MediaSegmentTimeline.KeyframeSeekingGrid(grid, positions, DemuxerSeekTime.DECODE_TIME);
+    var copy = grid.openedAt(positions, everyKeyframeOf(positions));
+
+    assertThat(seeking.lastKeyframeReadTime(1)).isEmpty();
+    assertThat(copy.lastKeyframeReadTime(1)).isEmpty();
+  }
+
   @Test
   @DisplayName("Should keep the opening keyframes it was given when the caller's list changes")
   void shouldKeepTheOpeningKeyframesItWasGivenWhenTheCallersListChanges() {
