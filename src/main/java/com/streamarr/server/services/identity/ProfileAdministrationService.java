@@ -452,7 +452,7 @@ public class ProfileAdministrationService {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
-          invalidateRecipientProposalsWhenRestricted(profileId, transition);
+          invalidateProposalsWhenRestricted(profileId, transition);
 
           // The decision above JPA-loaded this row in this transaction; re-read past the
           // first-level cache or the payload would show the pre-transition state.
@@ -475,7 +475,7 @@ public class ProfileAdministrationService {
    * manager invitation naming them must not outlive it and later restore authority forbidden to
    * restricted Accounts.
    */
-  private void invalidateRecipientProposalsWhenRestricted(
+  private void invalidateProposalsWhenRestricted(
       UUID profileId, ProfilePolicyTransition transition) {
     var restricted =
         transition.targetKind() == ProfileKind.KID || transition.targetCeiling() != null;
