@@ -85,7 +85,7 @@ class ProfileLifecycleServiceTest {
           accounts,
           households,
           managers,
-          new ProfileManagerInvitationLifecycle(managerInvitations),
+          new ProfileManagerInvitationLifecycle(managerInvitations, new CapturingEventPublisher()),
           accountInvitations,
           shares,
           new ProfileShareLifecycle(shares, shareEvents),

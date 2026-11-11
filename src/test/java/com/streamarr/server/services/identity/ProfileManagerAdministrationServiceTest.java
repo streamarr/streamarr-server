@@ -77,7 +77,7 @@ class ProfileManagerAdministrationServiceTest {
       new ProfileManagerAdministrationService(
           authorization,
           invitations,
-          new ProfileManagerInvitationLifecycle(invitations),
+          new ProfileManagerInvitationLifecycle(invitations, new CapturingEventPublisher()),
           managers,
           profiles,
           accounts,
