@@ -98,6 +98,23 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   @Override
   @Transactional
   public boolean publishKeyframePacketScan(KeyframePacketScanPublication publication) {
+    return storeKeyframePacketScan(publication);
+  }
+
+  @Override
+  @Transactional
+  public boolean publishKeyframePacketScanFailure(UUID mediaFileId, ProbeInputs inputs) {
+    return storeKeyframePacketScan(
+        KeyframePacketScanPublication.builder()
+            .mediaFileId(mediaFileId)
+            .snapshot(inputs.snapshot())
+            .probeVersion(inputs.probeVersion())
+            .keyframes(
+                new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED))
+            .build());
+  }
+
+  private boolean storeKeyframePacketScan(KeyframePacketScanPublication publication) {
     var mediaFileId = publication.mediaFileId();
     if (!lockOwedPacketScan(
         mediaFileId, new ProbeInputs(publication.snapshot(), publication.probeVersion()))) {
@@ -117,19 +134,6 @@ public class MediaFileContainerInfoRepositoryCustomImpl
                 measurementRows.replace(
                     publication.mediaFileId(), snapshotMatches(publication.snapshot()), measured));
     return true;
-  }
-
-  @Override
-  @Transactional
-  public boolean publishKeyframePacketScanFailure(UUID mediaFileId, ProbeInputs inputs) {
-    return publishKeyframePacketScan(
-        KeyframePacketScanPublication.builder()
-            .mediaFileId(mediaFileId)
-            .snapshot(inputs.snapshot())
-            .probeVersion(inputs.probeVersion())
-            .keyframes(
-                new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED))
-            .build());
   }
 
   private static boolean isFailedPacketScan(KeyframeKnowledge keyframes) {
@@ -153,7 +157,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   // and a new probe of the same file are therefore stored one after the other, and the later one
   // reads what the earlier one committed.
   private boolean lockOwedPacketScan(UUID mediaFileId, ProbeInputs inputs) {
-    return lockPacketScanInputs(mediaFileId).filter(inputs::equals).isPresent();
+    return lockedPacketScanInputs(mediaFileId).filter(inputs::equals).isPresent();
   }
 
   // The caller holds the media file's row lock. Positions kept from an earlier probe version's
@@ -179,6 +183,10 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public Optional<ProbeInputs> lockPacketScanInputs(UUID mediaFileId) {
+    return lockedPacketScanInputs(mediaFileId);
+  }
+
+  private Optional<ProbeInputs> lockedPacketScanInputs(UUID mediaFileId) {
     if (!lockMediaFile(mediaFileId)) {
       return Optional.empty();
     }
