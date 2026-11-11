@@ -25,8 +25,8 @@ import lombok.NonNull;
  * names one. {@code audioChannelLayout} is the first audio stream's channel layout as ffprobe names
  * it, and is empty when the probe stored none, which every version before 7 does. {@code
  * sourceSnapshot} names the source file that the stored outcome describes, and is empty for a probe
- * that playback did not read from a stored outcome. {@code learnedEndTimes} holds, by stream index,
- * each end time that the server learned from the stream's packets.
+ * that playback did not read from a stored outcome. {@code scannedEndTimes} holds, by stream index,
+ * each end time that a keyframe packet scan read from the stream's packets.
  */
 @Builder(toBuilder = true)
 public record MediaProbe(
@@ -47,7 +47,7 @@ public record MediaProbe(
     @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts,
     @NonNull Optional<StreamMeasurements> streamMeasurements,
     @NonNull Optional<SourceFileSnapshot> sourceSnapshot,
-    @NonNull Map<Integer, Duration> learnedEndTimes) {
+    @NonNull Map<Integer, Duration> scannedEndTimes) {
 
   // ffprobe's names for PGS, VobSub and DVB subtitles.
   private static final Set<String> IMAGE_SUBTITLE_CODECS =
@@ -69,7 +69,7 @@ public record MediaProbe(
       streams = List.of();
     }
 
-    learnedEndTimes = Map.copyOf(learnedEndTimes);
+    scannedEndTimes = Map.copyOf(scannedEndTimes);
   }
 
   // Lombok builder defaults — its generated setters assign them
@@ -82,7 +82,7 @@ public record MediaProbe(
     private Optional<VideoPlaybackFacts> videoPlaybackFacts = Optional.empty();
     private Optional<StreamMeasurements> streamMeasurements = Optional.empty();
     private Optional<SourceFileSnapshot> sourceSnapshot = Optional.empty();
-    private Map<Integer, Duration> learnedEndTimes = Map.of();
+    private Map<Integer, Duration> scannedEndTimes = Map.of();
   }
 
   /**
@@ -330,28 +330,39 @@ public record MediaProbe(
   }
 
   /**
-   * Where the media that a stream session delivers ends: the later of the end times that the server
-   * learned from the packets of the chosen video stream and of the session's audio stream, or the
-   * video's alone in a file without audio (ADR 0037, early ends). Every variant's media playlist
-   * and every job attempt end there, so a stream that ends first is held or padded up to it, and no
-   * copy is advertised past it. While the server has learned no end time of one of those streams,
-   * the media ends at the container's duration: an end time that only the container header states
-   * for a stream never moves the media's end.
+   * Where the media that a stream session delivers ends: the later of the end times that a keyframe
+   * packet scan read from the packets of the chosen video stream and of the session's audio stream,
+   * or the video's alone in a file without audio (ADR 0037, early ends). Every variant's media
+   * playlist and every job attempt end there, so a stream that ends first is held or padded up to
+   * it, and no copy is advertised past it. While no scan has read the end time of one of those
+   * streams, the media ends at the container's duration. An end time that only the container header
+   * states for a stream never moves the media's end, and neither does one that a job attempt
+   * reported: an attempt's FFmpeg can stop at a read error and still complete, where a scan fails.
    */
   public Duration mediaEnd() {
-    var videoEnd = chosenVideoStream().flatMap(this::learnedEndTimeOf);
-    var sessionAudio = audioStreams().stream().findFirst();
-    if (videoEnd.isEmpty() || sessionAudio.isEmpty()) {
-      return videoEnd.orElse(duration);
-    }
-
-    return learnedEndTimeOf(sessionAudio.get())
-        .map(audioEnd -> audioEnd.compareTo(videoEnd.get()) > 0 ? audioEnd : videoEnd.get())
-        .orElse(duration);
+    return scannedMediaEnd().orElse(duration);
   }
 
-  private Optional<Duration> learnedEndTimeOf(StreamInfo stream) {
-    return Optional.ofNullable(learnedEndTimes.get(stream.index()));
+  private Optional<Duration> scannedMediaEnd() {
+    var videoEnd = chosenVideoStream().flatMap(this::scannedEndTimeOf);
+    var sessionAudio = audioStreams().stream().findFirst();
+    if (videoEnd.isEmpty() || sessionAudio.isEmpty()) {
+      return videoEnd;
+    }
+
+    return scannedEndTimeOf(sessionAudio.get()).map(audioEnd -> laterOf(audioEnd, videoEnd.get()));
+  }
+
+  private static Duration laterOf(Duration first, Duration second) {
+    if (first.compareTo(second) > 0) {
+      return first;
+    }
+
+    return second;
+  }
+
+  private Optional<Duration> scannedEndTimeOf(StreamInfo stream) {
+    return Optional.ofNullable(scannedEndTimes.get(stream.index()));
   }
 
   /**
@@ -390,14 +401,19 @@ public record MediaProbe(
    * This probe with each learned end time as its stream's end time (ADR 0037, early ends). A
    * learned end time was read from the stream's packets, so it replaces the end time that the
    * container header states: the header of a truncated file states the length of the whole file.
+   * Only the end times that a keyframe packet scan read count toward {@link #mediaEnd}.
    */
   public MediaProbe withLearnedEndTimes(@NonNull List<LearnedStreamEnd> learned) {
     var learnedByIndex =
         learned.stream()
             .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, LearnedStreamEnd::endTime));
+    var scannedByIndex =
+        learned.stream()
+            .filter(LearnedStreamEnd::fromPacketScan)
+            .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, LearnedStreamEnd::endTime));
     var withLearned =
         streams.stream().map(stream -> withLearnedEndTime(stream, learnedByIndex)).toList();
-    return toBuilder().streams(withLearned).learnedEndTimes(learnedByIndex).build();
+    return toBuilder().streams(withLearned).scannedEndTimes(scannedByIndex).build();
   }
 
   private static StreamInfo withLearnedEndTime(

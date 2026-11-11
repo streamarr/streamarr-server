@@ -2427,7 +2427,8 @@ class ProducerLifecycleServiceTest {
     var learned =
         LearnedStreamEnd.builder()
             .mediaFileId(UUID.randomUUID())
-            .snapshot(new SourceFileSnapshot(1, Instant.EPOCH));
+            .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+            .fromPacketScan(true);
     return defaultProbeBuilder()
         .duration(Duration.ofSeconds(30))
         .keyframes(knownKeyframes(keyframesPresentingAt(0, 6_000, 12_000)))

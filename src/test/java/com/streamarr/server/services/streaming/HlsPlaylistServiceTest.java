@@ -402,10 +402,7 @@ class HlsPlaylistServiceTest {
       "Should end a stream copy's last segment at the audio's end when the session's audio"
           + " outlasts the video")
   void shouldEndAStreamCopysLastSegmentAtTheAudiosEndWhenTheSessionsAudioOutlastsTheVideo() {
-    var learned =
-        LearnedStreamEnd.builder()
-            .mediaFileId(UUID.randomUUID())
-            .snapshot(new SourceFileSnapshot(1, Instant.EPOCH));
+    var scanned = scannedEndBuilder();
     var probe =
         StreamSessionFixture.defaultProbeBuilder()
             .duration(Duration.ofSeconds(20))
@@ -418,9 +415,9 @@ class HlsPlaylistServiceTest {
             .build()
             .withLearnedEndTimes(
                 List.of(
-                    learned.streamIndex(0).endTime(Duration.ofSeconds(14)).build(),
-                    learned.streamIndex(1).endTime(Duration.ofSeconds(16)).build(),
-                    learned.streamIndex(2).endTime(Duration.ofSeconds(20)).build()));
+                    scanned.streamIndex(0).endTime(Duration.ofSeconds(14)).build(),
+                    scanned.streamIndex(1).endTime(Duration.ofSeconds(16)).build(),
+                    scanned.streamIndex(2).endTime(Duration.ofSeconds(20)).build()));
     var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
 
     var playlist =
@@ -459,6 +456,44 @@ class HlsPlaylistServiceTest {
         .contains("#EXT-X-TARGETDURATION:18\n");
   }
 
+  // A job attempt whose FFmpeg stopped at a read error reported 12.291 s and 12.251 s as the ends
+  // of a 20 s source. The source is whole, so its playlist must still list all of it.
+  @Test
+  @DisplayName(
+      "Should end a stream copy's last segment at the container's duration when only a job attempt"
+          + " learned where the streams end")
+  void shouldEndAStreamCopysLastSegmentAtTheContainersDurationWhenOnlyAJobAttemptLearnedTheEnds() {
+    var attemptLearned = scannedEndBuilder().fromPacketScan(false);
+    var probe =
+        StreamSessionFixture.defaultProbeBuilder()
+            .duration(Duration.ofSeconds(20))
+            .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
+            .streams(
+                List.of(
+                    StreamInfo.builder().index(0).codecType("video").build(),
+                    StreamInfo.builder().index(1).codecType("audio").build()))
+            .build()
+            .withLearnedEndTimes(
+                List.of(
+                    attemptLearned.streamIndex(0).endTime(Duration.ofMillis(12_291)).build(),
+                    attemptLearned.streamIndex(1).endTime(Duration.ofMillis(12_251)).build()));
+    var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
+
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
+
+    assertThat(playlist)
+        .containsSubsequence(
+            "#EXTINF:6.000000,\n", "#EXTINF:6.000000,\n", "#EXTINF:8.000000,\n", "#EXT-X-ENDLIST");
+  }
+
+  private static LearnedStreamEnd.LearnedStreamEndBuilder scannedEndBuilder() {
+    return LearnedStreamEnd.builder()
+        .mediaFileId(UUID.randomUUID())
+        .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+        .fromPacketScan(true);
+  }
+
   // The sum of a media playlist's EXTINF durations, which is where its last segment ends.
   private static BigDecimal advertisedEnd(String playlist) {
     return playlist
@@ -472,10 +507,7 @@ class HlsPlaylistServiceTest {
   // keyframe packet scan read where the packets of each stream end: the video at 14.166 s and the
   // audio at 14.25 s.
   private static MediaProbe truncatedSource() {
-    var learned =
-        LearnedStreamEnd.builder()
-            .mediaFileId(UUID.randomUUID())
-            .snapshot(new SourceFileSnapshot(1, Instant.EPOCH));
+    var scanned = scannedEndBuilder();
     return StreamSessionFixture.defaultProbeBuilder()
         .duration(Duration.ofSeconds(30))
         .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
@@ -486,8 +518,8 @@ class HlsPlaylistServiceTest {
         .build()
         .withLearnedEndTimes(
             List.of(
-                learned.streamIndex(0).endTime(Duration.ofMillis(14_166)).build(),
-                learned.streamIndex(1).endTime(Duration.ofMillis(14_250)).build()));
+                scanned.streamIndex(0).endTime(Duration.ofMillis(14_166)).build(),
+                scanned.streamIndex(1).endTime(Duration.ofMillis(14_250)).build()));
   }
 
   private static StreamInfo streamEndingAt(String codecType, int index, Duration endTime) {

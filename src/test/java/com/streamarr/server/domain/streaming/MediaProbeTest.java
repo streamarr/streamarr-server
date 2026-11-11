@@ -369,7 +369,7 @@ class MediaProbeTest {
   void shouldEndTheMediaAtTheAudiosEndWhenTheSessionsAudioOutlastsTheVideo() {
     var probe =
         probeLasting(Duration.ofSeconds(20), video(), audio(1))
-            .withLearnedEndTimes(List.of(learnedEnd(0, 14_000), learnedEnd(1, 16_000)));
+            .withLearnedEndTimes(List.of(scannedEnd(0, 14_000), scannedEnd(1, 16_000)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(16));
   }
@@ -380,7 +380,7 @@ class MediaProbeTest {
   void shouldEndTheMediaAtTheVideosEndWhenTheVideoOutlastsTheSessionsAudio() {
     var probe =
         probeLasting(Duration.ofSeconds(20), video(), audio(1))
-            .withLearnedEndTimes(List.of(learnedEnd(0, 14_167), learnedEnd(1, 14_101)));
+            .withLearnedEndTimes(List.of(scannedEnd(0, 14_167), scannedEnd(1, 14_101)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(14_167));
   }
@@ -396,7 +396,7 @@ class MediaProbeTest {
                     .index(1)
                     .endTime(Optional.of(Duration.ofSeconds(19)))
                     .build())
-            .withLearnedEndTimes(List.of(learnedEnd(0, 14_167)));
+            .withLearnedEndTimes(List.of(scannedEnd(0, 14_167)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(14_167));
   }
@@ -410,7 +410,7 @@ class MediaProbeTest {
     var probe =
         probeLasting(Duration.ofSeconds(30), video(), audio(1), audio(2))
             .withLearnedEndTimes(
-                List.of(learnedEnd(0, 14_000), learnedEnd(1, 16_000), learnedEnd(2, 25_000)));
+                List.of(scannedEnd(0, 14_000), scannedEnd(1, 16_000), scannedEnd(2, 25_000)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(16));
     assertThat(probe.withSessionAudioTrackAt(1).mediaEnd()).isEqualTo(Duration.ofSeconds(25));
@@ -423,7 +423,7 @@ class MediaProbeTest {
   void shouldEndTheMediaAtTheContainersDurationWhenTheServerLearnedNoEndOfTheSessionsAudio() {
     var probe =
         probeLasting(Duration.ofSeconds(20), video(), audio(1))
-            .withLearnedEndTimes(List.of(learnedEnd(0, 14_000)));
+            .withLearnedEndTimes(List.of(scannedEnd(0, 14_000)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(20));
   }
@@ -435,7 +435,7 @@ class MediaProbeTest {
   void shouldEndTheMediaAtTheContainersDurationWhenTheServerLearnedNoEndOfTheVideo() {
     var probe =
         probeLasting(Duration.ofSeconds(20), video(), audio(1))
-            .withLearnedEndTimes(List.of(learnedEnd(1, 16_000)));
+            .withLearnedEndTimes(List.of(scannedEnd(1, 16_000)));
 
     assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(20));
   }
@@ -457,6 +457,25 @@ class MediaProbeTest {
     assertThat(probe.videoEndTime()).contains(Duration.ofSeconds(4));
   }
 
+  // A job attempt's FFmpeg can stop at a read error and still exit with status 0, so the end that
+  // the attempt reports can lie before the real end: 12.291 s and 12.251 s of 20 s here. Such an
+  // end fills a stream end that the header does not state, and never moves the media's end.
+  @Test
+  @DisplayName(
+      "Should end the media at the container's duration when only a job attempt learned where each"
+          + " stream ends")
+  void shouldEndTheMediaAtTheContainersDurationWhenOnlyAJobAttemptLearnedWhereEachStreamEnds() {
+    var probe =
+        probeLasting(Duration.ofSeconds(20), video(), audio(1))
+            .withLearnedEndTimes(
+                List.of(
+                    attemptLearnedEnd(0, Duration.ofMillis(12_291)),
+                    attemptLearnedEnd(1, Duration.ofMillis(12_251))));
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(20));
+    assertThat(probe.videoEndTime()).contains(Duration.ofMillis(12_291));
+  }
+
   // The header of a file cut near 14 s states 30 s for each stream. A keyframe packet scan read
   // where each stream's packets end.
   @Test
@@ -468,19 +487,27 @@ class MediaProbeTest {
         probeLasting(
             Duration.ofSeconds(30), videoStatedToEndAt(30_000), audioStatedToEndAt(1, 30_000));
 
-    var learned = stated.withLearnedEndTimes(List.of(learnedEnd(0, 14_167), learnedEnd(1, 14_250)));
+    var learned = stated.withLearnedEndTimes(List.of(scannedEnd(0, 14_167), scannedEnd(1, 14_250)));
 
     assertThat(stated.mediaEnd()).isEqualTo(Duration.ofSeconds(30));
     assertThat(learned.mediaEnd()).isEqualTo(Duration.ofMillis(14_250));
     assertThat(learned.videoEndTime()).contains(Duration.ofMillis(14_167));
   }
 
-  private static LearnedStreamEnd learnedEnd(int streamIndex, long endMillis) {
+  private static LearnedStreamEnd scannedEnd(int streamIndex, long endMillis) {
+    return scannedEnd(streamIndex, Duration.ofMillis(endMillis));
+  }
+
+  private static LearnedStreamEnd scannedEnd(int streamIndex, Duration end) {
+    return attemptLearnedEnd(streamIndex, end).toBuilder().fromPacketScan(true).build();
+  }
+
+  private static LearnedStreamEnd attemptLearnedEnd(int streamIndex, Duration end) {
     return LearnedStreamEnd.builder()
         .mediaFileId(UUID.randomUUID())
         .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
         .streamIndex(streamIndex)
-        .endTime(Duration.ofMillis(endMillis))
+        .endTime(end)
         .build();
   }
 
