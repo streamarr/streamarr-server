@@ -1482,8 +1482,11 @@ enum StreamMeasurementSource {
   // The probe read the sample tables of an MP4 or MOV file that is not
   // fragmented. Only KeyframePositions of a CONTAINER_INDEX allow this value.
   STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE = 1;
-  // A keyframe packet scan listed every packet. Only KeyframePositions of a
-  // PACKET_SCAN allow this value.
+  // A keyframe packet scan listed every packet, on the keyframes of its own
+  // result. Only KeyframePositions of a PACKET_SCAN allow this value. A packet
+  // without a presentation time counts at its decode time. The scan reports no
+  // measurement when a measured packet has neither time, or when a stream copy
+  // would change a measured stream's packets (ADR 0054).
   STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN = 2;
   // A bitrate scan listed every packet. The worker never reports this value: a
   // bitrate scan answers with BitrateScanChunkResult, and the server names the
@@ -1516,11 +1519,6 @@ message MeasuredStream {
 // packet in the interval of its presentation time. Packets before the first
 // keyframe fall in the first interval. The last interval runs to the end of
 // the file. The worker leaves the message out when it cannot measure a stream.
-// A keyframe packet scan measures the packets that it reads, on the keyframes
-// of its own result. It places a packet without a presentation time at its
-// decode time, as BitrateScanChunk says. It leaves the message out when a
-// measured packet has neither time, or when a stream copy would change a
-// measured stream's packets (ADR 0054).
 message StreamMeasurements {
   StreamMeasurementSource source = 1;
   // This field lists the chosen video stream and every audio stream, each
