@@ -87,6 +87,14 @@ type Query {
     shareCode(shareCodeId: ID!): ShareCode
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     """
+    Which Profiles giving this Profile the kind and content limit given would lock, before the
+    change is made; maximumAllowedRatingAge null means no content limit, and a limit the change
+    would refuse is previewed as given. For whoever may read profileAdministration of the Profile.
+    Null for everyone else, for a device-bound session and when no Profile has the id. It lists
+    only the Households whose Profile picker the asking Account may see.
+    """
+    profilePolicyChangePreview(profileId: ID!, kind: ProfileKind!, maximumAllowedRatingAge: Int): ProfileLockPreview
+    """
     The Accounts that manage a Profile, for the Managers section of its page: the Account whose own
     Personal Profile it is first, then its direct managers by display name. Only the Profile's
     managers and ServerAdmins read it. Anyone else, a HouseholdAdmin who only supervises it among
