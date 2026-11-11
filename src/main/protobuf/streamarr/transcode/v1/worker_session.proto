@@ -1536,12 +1536,12 @@ message ProbeMediaInfo {
   bool stream_titles_omitted = 6;
   // The worker leaves this field out when it measured no stream (ADR 0054).
   StreamMeasurements stream_measurements = 7;
-  // This field lists where the chosen video stream and each audio stream ends,
-  // as a keyframe packet scan read their packets (ADR 0037, early ends). Probe
-  // version 9 and later report it, beside KeyframePositions of a PACKET_SCAN. A
-  // packet without a presentation time counts at its decode time. The worker
-  // leaves out a stream whose end it could not read. The server fails the probe
-  // attempt when the chosen video stream ends before a keyframe presents.
+  // This field lists, at most once each, where the chosen video stream and each
+  // audio stream ends, as a keyframe packet scan read their packets. Probe
+  // version 9 and later report it, only beside KeyframePositions of a
+  // PACKET_SCAN. A packet without a presentation time counts at its decode
+  // time. The worker leaves out a stream whose end it could not read or whose
+  // end is not above zero. ADR 0037, early ends, lists what the server refuses.
   repeated SourceStreamEnd stream_ends = 8;
 }
 
