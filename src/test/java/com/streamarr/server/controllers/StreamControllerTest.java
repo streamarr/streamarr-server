@@ -41,6 +41,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -48,7 +50,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -66,6 +68,8 @@ class StreamControllerTest {
   private static final UUID SESSION_ID = UUID.randomUUID();
   private static final String VALIDATED_TOKEN = "validated-context-token";
   private static final String SPOOFED_PARAM = "spoofed<script>-param";
+  // Bytes outside ASCII cannot match a multipart answer's part headers.
+  private static final byte[] SEGMENT_BYTES = {(byte) 0xA1, (byte) 0xB2, (byte) 0xC3, (byte) 0xD4};
 
   private MockMvc mockMvc;
   private final AtomicReference<UUID> boundStreamSession = new AtomicReference<>(SESSION_ID);
@@ -277,22 +281,49 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(segmentData);
   }
 
-  @ParameterizedTest(name = "Range: {0}")
-  @NullSource
-  @ValueSource(strings = {"bytes=1-2", "bytes=0-0,2-3", "bytes=9-"})
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("segmentAnswers")
   @DisplayName("Should close the opened segment when its answer ends")
-  void shouldCloseOpenedSegmentWhenItsAnswerEnds(String range) throws Exception {
+  void shouldCloseOpenedSegmentWhenItsAnswerEnds(SegmentAnswer expected) throws Exception {
     streamingService.setSession(buildSession());
-    segmentStore.addSegment(SESSION_ID, "segment0.m4s", new byte[] {0x00, 0x00, 0x00, 0x1C});
+    segmentStore.addSegment(SESSION_ID, "segment0.m4s", SEGMENT_BYTES);
     var request = get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID);
-    if (range != null) {
-      request.header(HttpHeaders.RANGE, range);
+    if (expected.range() != null) {
+      request.header(HttpHeaders.RANGE, expected.range());
     }
 
     var answer = mockMvc.perform(request).andReturn().getResponse();
 
-    assertThat(answer.getStatus()).isIn(200, 206, 416);
+    assertThat(answer.getStatus()).isEqualTo(expected.status());
+    assertThat(expected.servedRanges())
+        .allSatisfy(served -> assertThat(answer.getContentAsByteArray()).containsSequence(served));
     assertThat(segmentStore.openSegmentCount()).isZero();
+  }
+
+  private static Stream<SegmentAnswer> segmentAnswers() {
+    return Stream.of(
+        SegmentAnswer.builder().status(200).servedRanges(List.of(SEGMENT_BYTES)).build(),
+        SegmentAnswer.builder()
+            .range("bytes=1-2")
+            .status(206)
+            .servedRanges(List.of(new byte[] {(byte) 0xB2, (byte) 0xC3}))
+            .build(),
+        SegmentAnswer.builder()
+            .range("bytes=0-0,2-3")
+            .status(206)
+            .servedRanges(List.of(new byte[] {(byte) 0xA1}, new byte[] {(byte) 0xC3, (byte) 0xD4}))
+            .build(),
+        SegmentAnswer.builder().range("bytes=9-").status(416).servedRanges(List.of()).build());
+  }
+
+  // The bytes of each range that the answer's body must hold.
+  @Builder
+  private record SegmentAnswer(String range, int status, List<byte[]> servedRanges) {
+
+    @Override
+    public String toString() {
+      return "Range " + range + " answers " + status;
+    }
   }
 
   @Test

@@ -1,11 +1,13 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StoredSegment;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FilterInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -14,6 +16,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FakeSegmentStore implements SegmentStore {
 
@@ -31,27 +34,63 @@ public class FakeSegmentStore implements SegmentStore {
     return openSegments.size();
   }
 
+  // Like a file opened for one request, the segment reads nothing once it is closed.
   private StoredSegment opened(byte[] data) {
-    var segment = StoredSegments.inMemory(data);
+    var closed = new AtomicBoolean();
     var opened =
         new StoredSegment() {
           @Override
           public long length() {
-            return segment.length();
+            return data.length;
           }
 
           @Override
           public InputStream newInputStream() {
-            return segment.newInputStream();
+            return new OpenedSegmentStream(new ByteArrayInputStream(data), closed);
           }
 
           @Override
           public void close() {
+            closed.set(true);
             openSegments.remove(this);
           }
         };
     openSegments.add(opened);
     return opened;
+  }
+
+  private static final class OpenedSegmentStream extends FilterInputStream {
+
+    private final AtomicBoolean segmentClosed;
+
+    private OpenedSegmentStream(InputStream bytes, AtomicBoolean segmentClosed) {
+      super(bytes);
+      this.segmentClosed = segmentClosed;
+    }
+
+    @Override
+    public int read() throws IOException {
+      requireOpenSegment();
+      return super.read();
+    }
+
+    @Override
+    public int read(byte[] buffer, int offset, int length) throws IOException {
+      requireOpenSegment();
+      return super.read(buffer, offset, length);
+    }
+
+    @Override
+    public long skip(long count) throws IOException {
+      requireOpenSegment();
+      return super.skip(count);
+    }
+
+    private void requireOpenSegment() throws IOException {
+      if (segmentClosed.get()) {
+        throw new IOException("The segment was closed before its stream was read");
+      }
+    }
   }
 
   @Override
