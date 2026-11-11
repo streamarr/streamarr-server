@@ -160,6 +160,29 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should delete every unread news that the guard hides, and keep what it shows, when there is"
+          + " more of it than one batch")
+  void shouldDeleteEveryHiddenUnreadNewsAndKeepTheShownWhenThereIsMoreOfItThanOneBatch() {
+    var aged = new ArrayList<ProfileHouseholdShare>();
+    for (var made = 0; made < 3; made++) {
+      var target = track(authTestSupport.createIdentity());
+      aged.add(steps.accept(target, steps.offer(sam, ollie, target)));
+    }
+    stopManaging(theo, ollie);
+    aged.forEach(share -> age(share, PAST_THE_PERIOD));
+
+    sweeper.sweep();
+
+    assertThat(aged)
+        .allSatisfy(
+            share ->
+                assertThat(notificationsAbout(share))
+                    .extracting(Notification::getRecipientAccountId)
+                    .containsExactly(sam.account().getId()));
+  }
+
+  @Test
+  @DisplayName(
       "Should keep a disabled Account's unread news when its latest event is older than the"
           + " retention period")
   void shouldKeepADisabledAccountsUnreadNewsWhenItsLatestEventIsOlderThanTheRetentionPeriod() {

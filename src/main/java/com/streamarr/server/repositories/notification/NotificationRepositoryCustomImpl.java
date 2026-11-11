@@ -255,11 +255,14 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   }
 
   @Override
-  public List<Notification> findUnreadNewsBefore(Instant cutoff) {
-    return JooqQueryHelper.nativeQuery(
-        entityManager,
-        dsl.selectFrom(NOTIFICATION).where(unreadNewsBefore(cutoff)),
-        Notification.class);
+  public List<Notification> findUnreadNewsBefore(Instant cutoff, Optional<UUID> after, int limit) {
+    var query =
+        dsl.selectFrom(NOTIFICATION)
+            .where(unreadNewsBefore(cutoff))
+            .and(after.map(NOTIFICATION.ID::gt).orElse(DSL.noCondition()))
+            .orderBy(NOTIFICATION.ID)
+            .limit(limit);
+    return JooqQueryHelper.nativeQuery(entityManager, query, Notification.class);
   }
 
   @Override

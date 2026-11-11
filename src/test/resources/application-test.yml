@@ -30,6 +30,8 @@ notifications:
   # Tests run the retention sweep themselves.
   retention-sweep-initial-delay: 365d
   retention-sweep-interval: 365d
+  # Small, so a test with a few aged Notifications sweeps them in more than one batch.
+  retention-sweep-batch-size: 2
 
 streamarr:
   # Set on the shared test profile rather than per-test: a @TestPropertySource here would fork
