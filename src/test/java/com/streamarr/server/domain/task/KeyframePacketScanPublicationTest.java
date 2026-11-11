@@ -41,31 +41,30 @@ class KeyframePacketScanPublicationTest {
   @Test
   @DisplayName("Should reject a publication when its media file is missing")
   void shouldRejectAPublicationWhenItsMediaFileIsMissing() {
+    var publication = builder().keyframes(UNAVAILABLE);
+
     assertThatNullPointerException()
-        .isThrownBy(
-            () -> new KeyframePacketScanPublication(null, SNAPSHOT, 3, UNAVAILABLE, List.of()))
+        .isThrownBy(() -> publication.mediaFileId(null).build())
         .withMessageContaining("mediaFileId");
   }
 
   @Test
   @DisplayName("Should reject a publication when its snapshot is missing")
   void shouldRejectAPublicationWhenItsSnapshotIsMissing() {
-    var mediaFileId = UUID.randomUUID();
+    var publication = builder().keyframes(UNAVAILABLE);
 
     assertThatNullPointerException()
-        .isThrownBy(
-            () -> new KeyframePacketScanPublication(mediaFileId, null, 3, UNAVAILABLE, List.of()))
+        .isThrownBy(() -> publication.snapshot(null).build())
         .withMessageContaining("snapshot");
   }
 
   @Test
   @DisplayName("Should reject a publication when its keyframes are missing")
   void shouldRejectAPublicationWhenItsKeyframesAreMissing() {
-    var mediaFileId = UUID.randomUUID();
+    var publication = builder();
 
     assertThatNullPointerException()
-        .isThrownBy(
-            () -> new KeyframePacketScanPublication(mediaFileId, SNAPSHOT, 3, null, List.of()))
+        .isThrownBy(() -> publication.keyframes(null).build())
         .withMessageContaining("keyframes");
   }
 
