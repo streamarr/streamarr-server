@@ -1,6 +1,7 @@
 package com.streamarr.server.services.metadata;
 
 import com.streamarr.server.domain.media.AmbientColors;
+import com.streamarr.server.domain.media.ImageFormat;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.exceptions.ImageProcessingException;
@@ -103,6 +104,10 @@ public class ImageVariantService {
   public List<GeneratedVariant> generateVariants(byte[] originalImageData, ImageType imageType) {
     if (originalImageData == null) {
       throw new ImageProcessingException("Image input data must not be null.");
+    }
+
+    if (ImageFormat.ofBytes(originalImageData).isEmpty()) {
+      throw new ImageProcessingException("Image data is neither JPEG nor PNG.");
     }
 
     var sourceImage = decodeImage(originalImageData);

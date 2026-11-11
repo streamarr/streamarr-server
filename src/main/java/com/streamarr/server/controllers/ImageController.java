@@ -41,8 +41,9 @@ public class ImageController {
   @ApiResponse(
       responseCode = "200",
       description =
-          "The image. Its media type is read from its bytes, and is application/octet-stream"
-              + " when they are neither JPEG nor PNG.",
+          "The image. Its media type is read from its bytes. Artwork is stored as JPEG or PNG. A"
+              + " file stored before that rule can hold other bytes, such as an empty file, and"
+              + " is answered as application/octet-stream.",
       content = {
         @Content(
             mediaType = MediaType.IMAGE_JPEG_VALUE,

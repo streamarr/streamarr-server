@@ -1,5 +1,6 @@
 package com.streamarr.server.services.metadata;
 
+import static com.streamarr.server.fakes.TestImages.createGifImage;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
@@ -23,6 +24,7 @@ import com.streamarr.server.exceptions.ImageProcessingException;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.stream.Stream;
 import javax.imageio.ImageIO;
@@ -359,17 +361,41 @@ class ImageVariantServiceTest {
   }
 
   @Test
+  @DisplayName("Should throw when image data is neither JPEG nor PNG")
+  void shouldThrowWhenImageDataIsNeitherJpegNorPng() {
+    var imageData = createGifImage();
+
+    assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
+        .isInstanceOf(ImageProcessingException.class);
+  }
+
+  @Test
   @DisplayName("Should throw when image data is corrupt")
   void shouldThrowWhenImageDataIsCorrupt() {
+    var pngCutAfterItsSignature = Arrays.copyOf(createSolidPngImage(600, 900, 0x00A0A0), 16);
+
     assertThatThrownBy(
-            () -> imageVariantService.generateVariants(new byte[] {0, 1, 2}, ImageType.POSTER))
+            () -> imageVariantService.generateVariants(pngCutAfterItsSignature, ImageType.POSTER))
         .isInstanceOf(ImageProcessingException.class);
+  }
+
+  @Test
+  @DisplayName("Should throw when no reader decodes the image data")
+  void shouldThrowWhenNoReaderDecodesImageData() {
+    var imageData = createTestImage(600, 900);
+
+    try (var mockedImageIO = mockStatic(ImageIO.class)) {
+      mockedImageIO.when(() -> ImageIO.read(any(InputStream.class))).thenReturn(null);
+
+      assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
+          .isInstanceOf(ImageProcessingException.class);
+    }
   }
 
   @Test
   @DisplayName("Should wrap IOException when image reading fails")
   void shouldWrapIOExceptionWhenImageReadingFails() {
-    var imageData = new byte[] {1, 2, 3};
+    var imageData = createTestImage(600, 900);
 
     try (var mockedImageIO = mockStatic(ImageIO.class)) {
       mockedImageIO

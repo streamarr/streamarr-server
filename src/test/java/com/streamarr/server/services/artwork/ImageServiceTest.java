@@ -4,9 +4,6 @@ import static com.streamarr.server.fakes.TestImages.OPAQUE_TEAL;
 import static com.streamarr.server.fakes.TestImages.alphaOfCornerPixel;
 import static com.streamarr.server.fakes.TestImages.centrePixelOf;
 import static com.streamarr.server.fakes.TestImages.colorComponentCountOf;
-import static com.streamarr.server.fakes.TestImages.createFloatingPointOpaqueTiffImageWithAlphaChannel;
-import static com.streamarr.server.fakes.TestImages.createFloatingPointTiffImageWithHalfTransparentPixels;
-import static com.streamarr.server.fakes.TestImages.createGifImage;
 import static com.streamarr.server.fakes.TestImages.createGrayscalePngImage;
 import static com.streamarr.server.fakes.TestImages.createOpaquePngImageWithAlphaChannel;
 import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithOneTranslucentPixel;
@@ -222,17 +219,6 @@ class ImageServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should store resized variants as half-transparent PNG when floating-point alpha is one half")
-  void shouldStoreResizedVariantsAsHalfTransparentPngWhenFloatingPointAlphaIsOneHalf() {
-    var result = processPoster(createFloatingPointTiffImageWithHalfTransparentPixels());
-
-    assertThat(resizedVariantFilesOf(result))
-        .hasSize(3)
-        .allSatisfy(ImageServiceTest::assertHalfTransparentPng);
-  }
-
-  @Test
   @DisplayName("Should omit BlurHash when image has transparent pixels")
   void shouldOmitBlurHashWhenImageHasTransparentPixels() {
     var result = processLogo(createPngImageWithTransparentBorder());
@@ -270,10 +256,7 @@ class ImageServiceTest {
         named("16-bit color samples without an alpha channel", createSixteenBitOpaquePngImage()),
         named(
             "16-bit color samples with a fully opaque alpha channel",
-            createSixteenBitOpaquePngImageWithAlphaChannel()),
-        named(
-            "floating-point samples with a fully opaque alpha channel",
-            createFloatingPointOpaqueTiffImageWithAlphaChannel()));
+            createSixteenBitOpaquePngImageWithAlphaChannel()));
   }
 
   @Test
@@ -336,17 +319,6 @@ class ImageServiceTest {
     assertThat(result.images())
         .extracting(image -> image.getVariant() + extensionOf(image))
         .containsExactlyInAnyOrder("SMALL.jpg", "MEDIUM.jpg", "LARGE.jpg", "ORIGINAL.png");
-  }
-
-  @Test
-  @DisplayName(
-      "Should name the original file without an extension when its format is neither JPEG nor PNG")
-  void shouldNameOriginalFileWithoutExtensionWhenItsFormatIsNeitherJpegNorPng() {
-    var result = processPoster(createGifImage());
-
-    assertThat(result.images())
-        .extracting(image -> image.getVariant() + extensionOf(image))
-        .containsExactlyInAnyOrder("SMALL.jpg", "MEDIUM.jpg", "LARGE.jpg", "ORIGINAL");
   }
 
   @Test
@@ -912,11 +884,6 @@ class ImageServiceTest {
     assertThat(formatNameOf(imageData)).isEqualTo("png");
     assertThat(alphaOfCornerPixel(imageData)).as("corner alpha").isZero();
     assertThat(centrePixelOf(imageData)).as("centre pixel").isEqualTo(OPAQUE_TEAL);
-  }
-
-  private static void assertHalfTransparentPng(byte[] imageData) {
-    assertThat(formatNameOf(imageData)).isEqualTo("png");
-    assertThat(alphaOfCornerPixel(imageData)).as("corner alpha").isCloseTo(0x80, within(1));
   }
 
   private static void assertGrayscaleJpeg(byte[] imageData) {
