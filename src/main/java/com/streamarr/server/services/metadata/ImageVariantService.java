@@ -22,6 +22,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.IntPredicate;
 import javax.imageio.ImageIO;
+import lombok.Builder;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.stereotype.Service;
 
@@ -46,6 +47,7 @@ public class ImageVariantService {
               Map.of(ImageSize.SMALL, 300, ImageSize.MEDIUM, 780, ImageSize.LARGE, 1280),
           ImageType.LOGO, Map.of(ImageSize.SMALL, 92, ImageSize.MEDIUM, 185, ImageSize.LARGE, 500));
 
+  @Builder
   public record GeneratedVariant(
       ImageSize variant,
       byte[] data,
@@ -129,13 +131,13 @@ public class ImageVariantService {
       var resized = resize(sourceImage, targetWidth);
       if (transparent) {
         variants.add(
-            new GeneratedVariant(
-                size,
-                toPngBytes(resized),
-                resized.getWidth(),
-                resized.getHeight(),
-                null,
-                Optional.empty()));
+            GeneratedVariant.builder()
+                .variant(size)
+                .data(toPngBytes(resized))
+                .width(resized.getWidth())
+                .height(resized.getHeight())
+                .ambientColors(Optional.empty())
+                .build());
         continue;
       }
 
@@ -146,18 +148,24 @@ public class ImageVariantService {
               : Optional.<AmbientColors>empty();
       var data = toJpegBytes(resized);
       variants.add(
-          new GeneratedVariant(
-              size, data, resized.getWidth(), resized.getHeight(), blurHash, ambientColors));
+          GeneratedVariant.builder()
+              .variant(size)
+              .data(data)
+              .width(resized.getWidth())
+              .height(resized.getHeight())
+              .blurHash(blurHash)
+              .ambientColors(ambientColors)
+              .build());
     }
 
     variants.add(
-        new GeneratedVariant(
-            ImageSize.ORIGINAL,
-            originalImageData,
-            sourceImage.getWidth(),
-            sourceImage.getHeight(),
-            null,
-            Optional.empty()));
+        GeneratedVariant.builder()
+            .variant(ImageSize.ORIGINAL)
+            .data(originalImageData)
+            .width(sourceImage.getWidth())
+            .height(sourceImage.getHeight())
+            .ambientColors(Optional.empty())
+            .build());
 
     return variants;
   }
