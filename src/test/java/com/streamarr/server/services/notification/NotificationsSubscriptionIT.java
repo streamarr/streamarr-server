@@ -1,11 +1,13 @@
 package com.streamarr.server.services.notification;
 
 import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
+import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -13,7 +15,11 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
+import com.streamarr.server.services.identity.AccountAdministrationService;
+import com.streamarr.server.services.identity.AccountLifecycleService;
+import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.identity.ProfileSharingService;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
@@ -29,8 +35,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Each committed change to an Account's Notifications reaches every open socket of that Account,
@@ -63,8 +71,31 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
       }
       """;
 
+  // The same edge fields as SUBSCRIPTION, read through the notifications query.
+  private static final String FRESH_QUERY =
+      """
+      query {
+        unreadNotificationCount
+        notifications(first: 50) {
+          edges {
+            cursor orderKey
+            node {
+              __typename id unread message
+              ... on RequestNotification { resolution }
+              ... on ProfileShareAnsweredNotification { answer }
+            }
+          }
+        }
+      }
+      """;
+
+  private static final ObjectMapper JSON = new ObjectMapper();
+
   @LocalServerPort private int port;
+  @Autowired private MockMvc mockMvc;
   @Autowired private ProfileSharingService sharing;
+  @Autowired private AccountLifecycleService accountLifecycle;
+  @Autowired private AccountAdministrationService accountAdministration;
   @Autowired private NotificationService notificationService;
   @Autowired private ProfileShareExpirySweeper expirySweeper;
   @Autowired private ProfileRepository profileRepository;
@@ -134,6 +165,144 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     assertThat(resolved.path("unreadNotificationCount").asInt()).isZero();
     assertThat(nodeOf(resolved).path("unread").asBoolean()).isFalse();
     assertThat(nodeOf(resolved).path("resolution").asString()).isEqualTo("DECIDED");
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the answer to the offering side and the decision to the Household's side"
+          + " when an offer is accepted")
+  void shouldDeliverTheAnswerAndTheDecisionWhenAnOfferIsAccepted() throws Exception {
+    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam, theo), riverside);
+    var offeringSide = subscribedSocket(authTestSupport.accountBearer(theo));
+    var householdSide = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    steps.accept(riverside, offer);
+
+    var answered = nextChange(offeringSide);
+    assertThat(nodeOf(answered).path("answer").asString()).isEqualTo("ACCEPTED");
+    assertMatchesAFreshQuery(answered, theo);
+    var decided = nextChange(householdSide);
+    assertThat(nodeOf(decided).path("resolution").asString()).isEqualTo("DECIDED");
+    assertMatchesAFreshQuery(decided, riversideAdmin);
+  }
+
+  @Test
+  @DisplayName("Should deliver the request's withdrawal when its offer is canceled")
+  void shouldDeliverTheRequestsWithdrawalWhenItsOfferIsCanceled() throws Exception {
+    var offer = steps.offer(sam, kai(), riverside);
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    sharing.cancelProfileShare(authTestSupport.identityOf(sam), offer.getId());
+
+    var withdrawn = nextChange(socket);
+    assertThat(nodeOf(withdrawn).path("resolution").asString()).isEqualTo("WITHDRAWN");
+    assertMatchesAFreshQuery(withdrawn, riversideAdmin);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the older request's withdrawal and then the new request when a new offer"
+          + " replaces it")
+  void shouldDeliverTheOlderRequestsWithdrawalAndThenTheNewRequestWhenANewOfferReplacesIt()
+      throws Exception {
+    var kai = kai();
+    var older = steps.offer(sam, kai, riverside);
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    var newer = steps.offer(sam, kai, riverside);
+
+    var withdrawn = nextChange(socket);
+    assertThat(onlyChange(withdrawn).path("notificationId").asString())
+        .isEqualTo(requestFor(riversideAdmin, older).getId().toString());
+    assertThat(nodeOf(withdrawn).path("resolution").asString()).isEqualTo("WITHDRAWN");
+    var made = nextChange(socket);
+    assertThat(onlyChange(made).path("notificationId").asString())
+        .isEqualTo(requestFor(riversideAdmin, newer).getId().toString());
+    assertMatchesAFreshQuery(made, riversideAdmin);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the end to the offering side when the Household's side ends the share")
+  void shouldDeliverTheEndToTheOfferingSideWhenTheHouseholdsSideEndsTheShare() throws Exception {
+    var share =
+        steps.accept(
+            riverside, steps.offer(sam, steps.profileManagedBy("Kai", sam, sam, theo), riverside));
+    var socket = subscribedSocket(authTestSupport.accountBearer(theo));
+
+    sharing.endProfileShare(authTestSupport.identityOf(riversideAdmin), share.getId());
+
+    var ended = nextChange(socket);
+    assertThat(nodeOf(ended).path("__typename").asString())
+        .isEqualTo("ProfileShareEndedNotification");
+    assertMatchesAFreshQuery(ended, theo);
+  }
+
+  @Test
+  @DisplayName("Should deliver the end to both sides when a ServerAdmin ends the share")
+  void shouldDeliverTheEndToBothSidesWhenAServerAdminEndsTheShare() throws Exception {
+    var share = steps.accept(riverside, steps.offer(sam, kai(), riverside));
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var offeringSide = subscribedSocket(authTestSupport.accountBearer(sam));
+    var householdSide = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    sharing.administrativelyEndProfileShare(
+        authTestSupport.freshIdentityOf(serverAdmin), share.getId(), "a mistaken share");
+
+    var toldOffering = nextChange(offeringSide);
+    assertThat(nodeOf(toldOffering).path("__typename").asString())
+        .isEqualTo("ProfileShareEndedNotification");
+    assertMatchesAFreshQuery(toldOffering, sam);
+    var toldHousehold = nextChange(householdSide);
+    assertThat(nodeOf(toldHousehold).path("__typename").asString())
+        .isEqualTo("ProfileShareEndedNotification");
+    assertMatchesAFreshQuery(toldHousehold, riversideAdmin);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the request's withdrawal when the Account that made the offer is disabled")
+  void shouldDeliverTheRequestsWithdrawalWhenTheAccountThatMadeTheOfferIsDisabled()
+      throws Exception {
+    steps.offer(sam, kai(), riverside);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    accountAdministration.disableAccount(
+        authTestSupport.freshIdentityOf(serverAdmin), sam.account().getId());
+
+    var withdrawn = nextChange(socket);
+    assertThat(nodeOf(withdrawn).path("resolution").asString()).isEqualTo("WITHDRAWN");
+    assertMatchesAFreshQuery(withdrawn, riversideAdmin);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the request's resolution when an Account transfer takes the offer into the"
+          + " Profile's new home")
+  void shouldDeliverTheRequestsResolutionWhenAnAccountTransferTakesTheOfferIntoItsNewHome()
+      throws Exception {
+    var ben = track(authTestSupport.createHouseholdMemberIdentity(riverside));
+    var offer = steps.offer(ben, ben.profile(), sam);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(sam));
+
+    var outcome =
+        accountLifecycle.transferAccount(
+            authTestSupport.freshIdentityOf(serverAdmin),
+            TransferAccountCommand.builder()
+                .accountId(ben.account().getId())
+                .destinationHouseholdId(sam.household().getId())
+                .sourceHouseholdAccess(SourceHouseholdAccess.END)
+                .reason("moved in with Sam")
+                .build());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var resolved = nextChange(socket);
+    assertThat(onlyChange(resolved).path("notificationId").asString())
+        .isEqualTo(requestFor(sam, offer).getId().toString());
+    assertThat(nodeOf(resolved).path("resolution").asString()).isEqualTo("DECIDED");
+    assertMatchesAFreshQuery(resolved, sam);
   }
 
   @Test
@@ -242,6 +411,31 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
                 notification.getRecipientAccountId().equals(recipient.account().getId()))
         .findFirst()
         .orElseThrow();
+  }
+
+  /** Each pushed edge, and the pushed unread count, are the ones a fresh query reads. */
+  private void assertMatchesAFreshQuery(JsonNode change, TestIdentity reader) throws Exception {
+    var response =
+        mockMvc
+            .perform(graphqlRequest(authTestSupport.accountBearer(reader), FRESH_QUERY))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var fresh = JSON.readTree(response).path("data");
+    assertThat(change.path("unreadNotificationCount"))
+        .isEqualTo(fresh.path("unreadNotificationCount"));
+    for (var pushed : change.path("notifications")) {
+      var id = pushed.path("notificationId").asString();
+      var freshEdge =
+          fresh
+              .path("notifications")
+              .path("edges")
+              .valueStream()
+              .filter(edge -> edge.path("node").path("id").asString().equals(id))
+              .findFirst()
+              .orElseThrow();
+      assertThat(pushed.path("edge")).isEqualTo(freshEdge);
+    }
   }
 
   private static JsonNode onlyChange(JsonNode change) {

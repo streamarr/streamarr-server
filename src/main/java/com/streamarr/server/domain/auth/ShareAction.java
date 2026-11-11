@@ -35,8 +35,15 @@ public sealed interface ShareAction {
   record EndedWithHousehold() implements Ending {}
 
   /**
-   * Any other write: an offer withdrawn, replaced, invalidated or expired, a share made or unmade
-   * structural, moved, or about to be deleted with its Profile or its Household.
+   * A pending offer stopped waiting without an answer: it was canceled, replaced, invalidated or
+   * expired, or it became the Profile's structural share when the Profile was linked into that
+   * Household. Its requests resolve, and nobody is told anything new.
+   */
+  record OfferStoppedWaiting() implements ShareAction {}
+
+  /**
+   * Any other write: a share made or unmade structural, moved, or about to be deleted with its
+   * Profile or its Household.
    */
   record Other() implements ShareAction {}
 }
