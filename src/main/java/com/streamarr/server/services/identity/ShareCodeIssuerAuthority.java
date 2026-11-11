@@ -23,8 +23,9 @@ import org.springframework.stereotype.Component;
  * was issued under.
  *
  * <p>Provisional (issue #870, decision 10): the rule lives only here, and every change that can
- * take the authority away calls it inside the changing transaction, after the change, so reversing
- * the rule means removing this class and its calls.
+ * take the authority away calls it inside the changing transaction, after the change, or before a
+ * deletion once it holds the issuer's row, so reversing the rule means removing this class and its
+ * calls.
  */
 @Component
 @RequiredArgsConstructor
@@ -47,6 +48,9 @@ class ShareCodeIssuerAuthority {
 
   /** Invalidates every live code of an issuer about to be deleted; answers how many. */
   int beforeIssuerDeleted(UUID issuerAccountId, Instant now) {
+    // An issue holds the issuer's row while it decides and stores, so once this lock is granted
+    // every code it stored has committed and is read below, and a later issue finds no Account.
+    userAccountRepository.lockById(issuerAccountId);
     return invalidateLiveCodesIssuedBy(issuerAccountId, now, _ -> true);
   }
 
