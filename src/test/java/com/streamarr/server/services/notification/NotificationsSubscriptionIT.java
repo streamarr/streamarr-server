@@ -21,6 +21,7 @@ import com.streamarr.server.services.identity.AccountAdministrationService;
 import com.streamarr.server.services.identity.AccountLifecycleService;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
+import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.ShareRejections;
 import com.streamarr.server.services.mutation.Outcome;
@@ -104,6 +105,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private CredentialIssuanceService credentialIssuance;
   @Autowired private AccountInvitationService accountInvitations;
   @Autowired private AccountInvitationRepository invitationRepository;
+  @Autowired private ProfileManagerAdministrationService profileManagement;
   @Autowired private NotificationService notificationService;
   @Autowired private ProfileShareExpirySweeper expirySweeper;
   @Autowired private ProfileRepository profileRepository;
@@ -315,6 +317,46 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     var withdrawn = nextChange(socket);
     assertThat(nodeOf(withdrawn).path("resolution").asString()).isEqualTo("WITHDRAWN");
     assertMatchesAFreshQuery(withdrawn, riversideAdmin);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the request's withdrawal when the manager that made the offer relinquishes"
+          + " management")
+  void shouldDeliverTheRequestsWithdrawalWhenTheManagerThatMadeTheOfferRelinquishesManagement()
+      throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam, theo);
+    var offer = steps.offer(theo, kai, riverside);
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    var outcome =
+        profileManagement.relinquishProfileManagement(
+            authTestSupport.identityOf(theo), kai.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertWithdrawn(nextChange(socket), riversideAdmin, offer);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the request's withdrawal when the manager that made the offer loses"
+          + " management")
+  void shouldDeliverTheRequestsWithdrawalWhenTheManagerThatMadeTheOfferLosesManagement()
+      throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam, theo);
+    var offer = steps.offer(theo, kai, riverside);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    var outcome =
+        profileManagement.administrativelyRemoveProfileManager(
+            authTestSupport.freshIdentityOf(serverAdmin),
+            kai.getId(),
+            theo.account().getId(),
+            "no longer looks after Kai");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertWithdrawn(nextChange(socket), riversideAdmin, offer);
   }
 
   @Test
