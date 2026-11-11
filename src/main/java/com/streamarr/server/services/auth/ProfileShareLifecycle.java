@@ -29,9 +29,9 @@ import org.springframework.stereotype.Service;
 public class ProfileShareLifecycle {
 
   /**
-   * Why the system withdrew an offer whose offerer may no longer make it. The target Household's
-   * HouseholdAdmins read it, so it says nothing about the offerer's Account, such as whether that
-   * Account was disabled or held ServerAdmin.
+   * Why the system withdrew an offer whose offerer may no longer make it. The Profile's other
+   * managers read it, so it says nothing about the offerer's Account, such as whether that Account
+   * was disabled or held ServerAdmin.
    */
   public static final String OFFERER_NO_LONGER_AUTHORIZED = "offerer no longer authorized";
 

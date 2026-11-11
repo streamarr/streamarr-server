@@ -9,7 +9,8 @@ import lombok.Builder;
 
 /**
  * A share as the schema shows it. {@code parties} is not a schema field: the share's Profile,
- * offerer and Household load from it, each for the readers who may see that party.
+ * offerer and Household load from it, each for the readers who may see that party. {@code
+ * invalidationReason} is shown only to the readers who see the Household.
  */
 @Builder
 public record ProfileShareDetails(

@@ -41,7 +41,7 @@ class ShareErrorsTest {
               .assertThat(ShareErrors.toAcceptError(new ShareRejections.ShareNotPending()))
               .isExactlyInstanceOf(ShareNotPendingError.class);
           softly
-              .assertThat(ShareErrors.toAcceptError(new ShareRejections.OfferInvalidated("gone")))
+              .assertThat(ShareErrors.toAcceptError(new ShareRejections.OfferInvalidated()))
               .isExactlyInstanceOf(OfferInvalidatedError.class);
           softly
               .assertThat(ShareErrors.toAcceptError(new ShareRejections.NoEligibleAdmin()))
@@ -85,8 +85,7 @@ class ShareErrorsTest {
       "Should say the share invitation was withdrawn without the stored reason when Accept finds"
           + " it withdrawn")
   void shouldSayShareInvitationWasWithdrawnWithoutStoredReasonWhenAcceptFindsItWithdrawn() {
-    var error =
-        ShareErrors.toAcceptError(new ShareRejections.OfferInvalidated("offering manager deleted"));
+    var error = ShareErrors.toAcceptError(new ShareRejections.OfferInvalidated());
 
     assertThat(error.message())
         .isEqualTo(

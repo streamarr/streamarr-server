@@ -293,7 +293,7 @@ type ShareNotPendingError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The system withdrew the offer — its offerer lost the authority to make it — so it cannot be accepted; the offer's invalidationReason says why."
+"The system withdrew the offer, so it cannot be accepted. The message does not say why: the share's invalidationReason says why to the Profile's managers and ServerAdmins."
 type OfferInvalidatedError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
