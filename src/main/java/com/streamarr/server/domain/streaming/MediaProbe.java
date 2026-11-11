@@ -49,6 +49,16 @@ public record MediaProbe(
     @NonNull Optional<SourceFileSnapshot> sourceSnapshot,
     @NonNull Map<Integer, Duration> scannedEndTimes) {
 
+  /**
+   * The least time by which a container's duration must run past the scanned media end before the
+   * server reads the file as cut short. A healthy file's packets can end a little before its last
+   * sample does: a Matroska file counts packet times in whole milliseconds, and a track's last
+   * packet can state less time than its frame decodes to. The differences measured with the pinned
+   * FFmpeg were 0.7 ms (FLAC) and 4.56 ms (AC-3), so 1 s is far more than any audio frame, and far
+   * less than the error that a cut file's header makes.
+   */
+  static final Duration LEAST_HEADER_OVERSTATEMENT = Duration.ofSeconds(1);
+
   // ffprobe's names for PGS, VobSub and DVB subtitles.
   private static final Set<String> IMAGE_SUBTITLE_CODECS =
       Set.of("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle");
@@ -338,9 +348,18 @@ public record MediaProbe(
    * streams, the media ends at the container's duration. An end time that only the container header
    * states for a stream never moves the media's end, and neither does one that a job attempt
    * reported: an attempt's FFmpeg can stop at a read error and still complete, where a scan fails.
+   * The container's duration also stands while it runs less than {@link
+   * #LEAST_HEADER_OVERSTATEMENT} past the scanned end, so a healthy file is never advertised
+   * shorter than its header states.
    */
   public Duration mediaEnd() {
-    return scannedMediaEnd().orElse(duration);
+    return scannedMediaEnd().filter(scannedEnd -> !headerAgreesWith(scannedEnd)).orElse(duration);
+  }
+
+  // A scanned end past the container's duration replaces it: that header understates the file.
+  private boolean headerAgreesWith(Duration scannedEnd) {
+    var overstatement = duration.minus(scannedEnd);
+    return !overstatement.isNegative() && overstatement.compareTo(LEAST_HEADER_OVERSTATEMENT) < 0;
   }
 
   private Optional<Duration> scannedMediaEnd() {
