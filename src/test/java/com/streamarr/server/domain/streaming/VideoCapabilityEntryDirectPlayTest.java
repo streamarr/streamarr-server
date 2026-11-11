@@ -2,6 +2,7 @@ package com.streamarr.server.domain.streaming;
 
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.upToLevel;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.videoEntryBuilderFor;
 import static com.streamarr.server.fixtures.VideoPlaybackFactsFixture.dolbyVisionProfile5;
 import static com.streamarr.server.fixtures.VideoPlaybackFactsFixture.dolbyVisionProfile82;
@@ -438,10 +439,6 @@ class VideoCapabilityEntryDirectPlayTest {
         .dynamicRange(dolbyVisionProfile9())
         .sampleEntry(Optional.of(sampleEntry))
         .build();
-  }
-
-  private static VideoCodecProfileCapability upToLevel(VideoCodecProfile profile, int maxLevel) {
-    return VideoCodecProfileCapability.builder().profile(profile).maxLevel(maxLevel).build();
   }
 
   private static VideoCapabilityEntry pqEntryListing(DolbyVisionProfile profile, int maxLevel) {

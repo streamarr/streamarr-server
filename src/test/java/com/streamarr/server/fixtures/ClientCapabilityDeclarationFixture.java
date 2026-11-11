@@ -72,6 +72,11 @@ public class ClientCapabilityDeclarationFixture {
         .codecProfiles(List.of(upToLevel(VideoCodecProfile.AV1_MAIN, 51)));
   }
 
+  /** A codec profile capability that accepts the codec profile up to the codec level. */
+  public static VideoCodecProfileCapability upToLevel(VideoCodecProfile profile, int maxLevel) {
+    return VideoCodecProfileCapability.builder().profile(profile).maxLevel(maxLevel).build();
+  }
+
   /** A stereo AAC audio capability entry that applies to HLS. */
   public static AudioCapabilityEntry.AudioCapabilityEntryBuilder aacEntryBuilder() {
     return audioEntryBuilder(AudioCodec.AAC);
@@ -95,9 +100,5 @@ public class ClientCapabilityDeclarationFixture {
         .dolbyVisionProfiles(List.of())
         .hdr10Plus(false)
         .hls(true);
-  }
-
-  private static VideoCodecProfileCapability upToLevel(VideoCodecProfile profile, int maxLevel) {
-    return VideoCodecProfileCapability.builder().profile(profile).maxLevel(maxLevel).build();
   }
 }
