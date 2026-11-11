@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.BitrateScanChunkFixture.measured;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
@@ -8,15 +9,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
-import com.streamarr.server.domain.streaming.BitrateScanChunkOutcome;
 import com.streamarr.server.domain.streaming.BitrateScanChunkRequest;
-import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
-import com.streamarr.server.domain.streaming.MeasuredChunkStream;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -40,9 +38,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
@@ -323,7 +319,7 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
                         chunk -> {
                           startedScans.add(new StartedScan(BITRATE_SCAN_CHUNK, chunk.sourcePath()));
                           duringChunk.accept(chunk);
-                          return measured(chunk);
+                          return measured(chunk, _ -> VIDEO_BYTES_PER_INTERVAL);
                         })
                     .fileSystem(FileSystems.getDefault())
                     .meterRegistry(meters)
@@ -354,37 +350,6 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
     return dsl.fetchCount(
         DSL.table(DSL.name(KeyframePacketScanScheduler.TABLE_NAME)),
         DSL.field(DSL.name("picked"), Boolean.class).isFalse());
-  }
-
-  private static BitrateScanChunkOutcome measured(BitrateScanChunkRequest chunk) {
-    var intervals = chunk.keyframes().size();
-    var first = chunk.keyframes().getFirst().presentationTime();
-    var end =
-        chunk
-            .end()
-            .map(KeyframePosition::presentationTime)
-            .orElse(chunk.keyframes().getLast().presentationTime() + TICKS_PER_KEYFRAME);
-    return new BitrateScanChunkOutcome.Measured(
-        chunk.measuredStreamIndexes().stream()
-            .map(
-                index ->
-                    MeasuredChunkStream.builder()
-                        .streamIndex(index)
-                        .measuredBytes(VIDEO_BYTES_PER_INTERVAL * intervals)
-                        .packetCount(intervals)
-                        .timeBaseNumerator(1)
-                        .timeBaseDenominator(90_000)
-                        .packetTimes(Optional.of(new MeasuredChunkStream.PacketTimes(first, end)))
-                        .keyframeIntervalBytes(repeated(VIDEO_BYTES_PER_INTERVAL, intervals))
-                        .keyframeIntervalPacketCounts(repeated(1, intervals))
-                        .build())
-            .toList());
-  }
-
-  private static KeyframeIntervalCounts repeated(long count, int intervals) {
-    var counts = new long[intervals];
-    Arrays.fill(counts, count);
-    return KeyframeIntervalCounts.of(counts);
   }
 
   /**
