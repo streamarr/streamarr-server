@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.auth.ChangedManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.pagination.Row;
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 import org.jspecify.annotations.NonNull;
 
 public class FakeProfileManagerInvitationRepository
@@ -47,42 +49,43 @@ public class FakeProfileManagerInvitationRepository
         .findFirst();
   }
 
-  private boolean tryTransitionPending(
+  private Optional<ChangedManagerInvitation> tryTransitionPending(
       UUID invitationId, ProfileManagerInvitationStatus target, Instant now) {
     var invitation = database.get(invitationId);
     if (invitation == null
         || invitation.getStatus() != ProfileManagerInvitationStatus.PENDING
         || !invitation.getExpiresAt().isAfter(now)) {
-      return false;
+      return Optional.empty();
     }
 
     invitation.setStatus(target);
     invitation.setDecidedAt(now);
-    return true;
+    return Optional.of(ChangedManagerInvitation.of(invitation));
   }
 
   @Override
-  public boolean tryCancelPending(UUID invitationId, Instant now) {
+  public Optional<ChangedManagerInvitation> tryCancelPending(UUID invitationId, Instant now) {
     return tryTransitionPending(invitationId, ProfileManagerInvitationStatus.CANCELED, now);
   }
 
   @Override
-  public boolean tryAcceptPending(UUID invitationId, Instant now) {
+  public Optional<ChangedManagerInvitation> tryAcceptPending(UUID invitationId, Instant now) {
     return tryTransitionPending(invitationId, ProfileManagerInvitationStatus.ACCEPTED, now);
   }
 
   @Override
-  public boolean tryDeclinePending(UUID invitationId, Instant now) {
+  public Optional<ChangedManagerInvitation> tryDeclinePending(UUID invitationId, Instant now) {
     return tryTransitionPending(invitationId, ProfileManagerInvitationStatus.DECLINED, now);
   }
 
   @Override
-  public boolean tryInvalidatePending(UUID invitationId, String reason, Instant now) {
-    return invalidate(invitation -> invitationId.equals(invitation.getId()), reason, now) > 0;
+  public List<ChangedManagerInvitation> tryInvalidatePending(
+      UUID invitationId, String reason, Instant now) {
+    return invalidate(invitation -> invitationId.equals(invitation.getId()), reason, now);
   }
 
   @Override
-  public int invalidatePendingByProfileIdAndRecipientAccountId(
+  public List<ChangedManagerInvitation> invalidatePendingByProfileIdAndRecipientAccountId(
       UUID profileId, UUID recipientAccountId, String reason, Instant now) {
     return invalidate(
         invitation ->
@@ -93,12 +96,13 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
-  public int invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
+  public List<ChangedManagerInvitation> invalidatePendingByProfileId(
+      UUID profileId, String reason, Instant now) {
     return invalidate(invitation -> profileId.equals(invitation.getProfileId()), reason, now);
   }
 
   @Override
-  public int invalidatePendingInvitationsByInviterAccountIdAndProfileId(
+  public List<ChangedManagerInvitation> invalidatePendingInvitationsByInviterAccountIdAndProfileId(
       UUID inviterAccountId, UUID profileId, String reason, Instant now) {
     return invalidate(
         invitation ->
@@ -109,13 +113,14 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
-  public int invalidatePendingInvitedBy(UUID inviterAccountId, String reason, Instant now) {
+  public List<ChangedManagerInvitation> invalidatePendingInvitedBy(
+      UUID inviterAccountId, String reason, Instant now) {
     return invalidate(
         invitation -> inviterAccountId.equals(invitation.getInviterAccountId()), reason, now);
   }
 
   @Override
-  public int invalidatePendingByRecipientAccountId(
+  public List<ChangedManagerInvitation> invalidatePendingByRecipientAccountId(
       UUID recipientAccountId, String reason, Instant now) {
     return invalidate(
         invitation -> recipientAccountId.equals(invitation.getRecipientAccountId()), reason, now);
@@ -129,16 +134,9 @@ public class FakeProfileManagerInvitationRepository
         .toList();
   }
 
-  private int invalidate(Predicate<ProfileManagerInvitation> scope, String reason, Instant now) {
-    database.values().stream()
-        .filter(invitation -> invitation.getStatus() == ProfileManagerInvitationStatus.PENDING)
-        .filter(scope)
-        .filter(invitation -> invitation.statusAt(now) == ProfileManagerInvitationStatus.EXPIRED)
-        .forEach(
-            invitation -> {
-              invitation.setStatus(ProfileManagerInvitationStatus.EXPIRED);
-              invitation.setDecidedAt(now);
-            });
+  private List<ChangedManagerInvitation> invalidate(
+      Predicate<ProfileManagerInvitation> scope, String reason, Instant now) {
+    var expired = materializeExpiredPending(scope, now);
     var pending =
         database.values().stream()
             .filter(scope)
@@ -151,6 +149,24 @@ public class FakeProfileManagerInvitationRepository
           invitation.setInvalidationReason(reason);
           invitation.setDecidedAt(now);
         });
-    return pending.size();
+    return Stream.concat(expired.stream(), pending.stream().map(ChangedManagerInvitation::of))
+        .toList();
+  }
+
+  private List<ChangedManagerInvitation> materializeExpiredPending(
+      Predicate<ProfileManagerInvitation> scope, Instant now) {
+    var lapsed =
+        database.values().stream()
+            .filter(invitation -> invitation.getStatus() == ProfileManagerInvitationStatus.PENDING)
+            .filter(scope)
+            .filter(
+                invitation -> invitation.statusAt(now) == ProfileManagerInvitationStatus.EXPIRED)
+            .toList();
+    lapsed.forEach(
+        invitation -> {
+          invitation.setStatus(ProfileManagerInvitationStatus.EXPIRED);
+          invitation.setDecidedAt(now);
+        });
+    return lapsed.stream().map(ChangedManagerInvitation::of).toList();
   }
 }

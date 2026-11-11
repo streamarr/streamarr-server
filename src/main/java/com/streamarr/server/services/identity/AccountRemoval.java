@@ -11,11 +11,11 @@ import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
-import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import java.time.Clock;
 import java.time.Instant;
@@ -43,7 +43,7 @@ class AccountRemoval {
   private final ProfileShareLifecycle shareLifecycle;
   private final NotificationDismissals notificationDismissals;
   private final ProfileManagerRepository profileManagerRepository;
-  private final ProfileManagerInvitationRepository managerInvitationRepository;
+  private final ProfileManagerInvitationLifecycle managerInvitationLifecycle;
   private final AccountInvitationRepository accountInvitationRepository;
   private final PasswordResetCodeRepository passwordResetCodeRepository;
   private final AuthSessionRepository authSessionRepository;
@@ -109,9 +109,9 @@ class AccountRemoval {
         account.getId(), "issuer deleted", now);
     passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
         account.getId(), "issuer deleted", now);
-    managerInvitationRepository.invalidatePendingByRecipientAccountId(
+    managerInvitationLifecycle.invalidatePendingByRecipientAccountId(
         account.getId(), "recipient deleted", now);
-    managerInvitationRepository.invalidatePendingInvitedBy(
+    managerInvitationLifecycle.invalidatePendingInvitedBy(
         account.getId(), "inviting manager deleted", now);
     // A share write holds its Profile and then the Accounts it tells, so the removal holds the
     // Personal Profile before it holds the Account, in the same order.
@@ -161,7 +161,7 @@ class AccountRemoval {
     // Locked before its shares are read, so none ends unseen before they are announced.
     profileRepository.lockById(profileId);
     accountInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
-    managerInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
+    managerInvitationLifecycle.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
     // Read after any wait above, so an offer whose time ran out meanwhile is stored as expired.
     shareLifecycle.invalidatePendingByProfileId(profileId, PROFILE_DELETED, clock.instant());
     shareRepository

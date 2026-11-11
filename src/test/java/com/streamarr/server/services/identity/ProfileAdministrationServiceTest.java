@@ -32,6 +32,7 @@ import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfilePinHasher;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
@@ -99,7 +100,7 @@ class ProfileAdministrationServiceTest {
           households,
           accounts,
           invitations,
-          managerInvitations,
+          new ProfileManagerInvitationLifecycle(managerInvitations),
           audit,
           new ProfilePinHasher(encoder),
           new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),
@@ -1184,7 +1185,7 @@ class ProfileAdministrationServiceTest {
         households,
         accounts,
         invitations,
-        managerInvitations,
+        new ProfileManagerInvitationLifecycle(managerInvitations),
         audit,
         new ProfilePinHasher(encoder),
         new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),

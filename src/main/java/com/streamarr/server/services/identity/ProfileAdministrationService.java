@@ -13,12 +13,12 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
-import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfilePinHasher;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -64,7 +64,7 @@ public class ProfileAdministrationService {
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
   private final AccountInvitationRepository accountInvitationRepository;
-  private final ProfileManagerInvitationRepository profileManagerInvitationRepository;
+  private final ProfileManagerInvitationLifecycle managerInvitationLifecycle;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final ProfilePinHasher profilePinHasher;
   private final MutationTransactions mutationTransactions;
@@ -418,7 +418,7 @@ public class ProfileAdministrationService {
           profileRepository.lockProfileDeletionAcrossHouseholds(profileId);
           accountInvitationRepository.invalidatePendingByProfileId(
               profileId, "Profile deleted", clock.instant());
-          profileManagerInvitationRepository.invalidatePendingByProfileId(
+          managerInvitationLifecycle.invalidatePendingByProfileId(
               profileId, "Profile deleted", clock.instant());
           shareLifecycle.announceDeletionWithProfile(profileId, clock.instant());
           notificationDismissals.profileDeleted(profileId);
@@ -487,7 +487,7 @@ public class ProfileAdministrationService {
         .findByPersonalProfileId(profileId)
         .ifPresent(
             linked ->
-                profileManagerInvitationRepository.invalidatePendingByRecipientAccountId(
+                managerInvitationLifecycle.invalidatePendingByRecipientAccountId(
                     linked.getId(), "recipient became ineligible", clock.instant()));
   }
 

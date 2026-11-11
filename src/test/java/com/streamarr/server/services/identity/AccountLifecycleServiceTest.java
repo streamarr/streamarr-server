@@ -42,6 +42,7 @@ import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -110,7 +111,7 @@ class AccountLifecycleServiceTest {
               new ProfileShareLifecycle(shares, shareEvents),
               new NotificationDismissals(shares, managerInvitations, shareEvents),
               managers,
-              managerInvitations,
+              new ProfileManagerInvitationLifecycle(managerInvitations),
               accountInvitations,
               resetCodes,
               sessions,
