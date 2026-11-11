@@ -154,9 +154,9 @@ class ProfileSharePartiesServiceTest {
   @ParameterizedTest(name = "{0}")
   @EnumSource(ProfileShareStatus.class)
   @DisplayName(
-      "Should show the offering side the Profile and the Household but not the offerer at every"
-          + " status")
-  void shouldShowOfferingSideProfileAndHouseholdButNotOffererAtEveryStatus(
+      "Should show the Profile and the Household but not the offerer at every status when the"
+          + " reader is on the offering side")
+  void shouldShowProfileAndHouseholdButNotOffererAtEveryStatusWhenReaderIsOnOfferingSide(
       ProfileShareStatus status) {
     allowOnly(this::offeringSide);
     var any = shareIn(status);
@@ -168,8 +168,8 @@ class ProfileSharePartiesServiceTest {
 
   @ParameterizedTest(name = "{0}")
   @EnumSource(ProfileShareStatus.class)
-  @DisplayName("Should show a ServerAdmin every party at every status")
-  void shouldShowServerAdminEveryPartyAtEveryStatus(ProfileShareStatus status) {
+  @DisplayName("Should show every party at every status when the reader is a ServerAdmin")
+  void shouldShowEveryPartyAtEveryStatusWhenReaderIsServerAdmin(ProfileShareStatus status) {
     // A ServerAdmin is allowed each of these reads.
     allowOnly(
         intent ->

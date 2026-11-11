@@ -954,8 +954,10 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
-    @DisplayName("Should let only a live ServerAdmin view the share history of a Household")
-    void shouldLetOnlyLiveServerAdminViewTheShareHistoryOfHousehold() {
+    @DisplayName(
+        "Should let a principal view a Household's share history only when it is a live"
+            + " ServerAdmin")
+    void shouldLetPrincipalViewHouseholdsShareHistoryOnlyWhenItIsLiveServerAdmin() {
       var home = new Intent.ViewHouseholdShareHistory(account.getHouseholdId());
       var elsewhere = new Intent.ViewHouseholdShareHistory(visitedHouseholdId);
 

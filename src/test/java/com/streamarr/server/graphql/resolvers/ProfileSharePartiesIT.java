@@ -349,9 +349,9 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
       value = ProfileShareStatus.class,
       names = {"REJECTED", "CANCELED", "EXPIRED", "INVALIDATED", "ENDED"})
   @DisplayName(
-      "Should keep an offer or a share that is over from the target HouseholdAdmin and show it"
-          + " whole to a ServerAdmin")
-  void shouldKeepOfferOrShareThatIsOverFromTargetHouseholdAdminAndShowItWholeToServerAdmin(
+      "Should hide the share from the target HouseholdAdmin and show it whole to a ServerAdmin"
+          + " when the offer or the share is over")
+  void shouldHideShareFromTargetHouseholdAdminAndShowItWholeToServerAdminWhenOfferOrShareIsOver(
       ProfileShareStatus status) throws Exception {
     var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
     var shareId = shareAt(status, orphan);
