@@ -16,11 +16,13 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * ADR 0063 specifies two library kinds that no build has made yet: "Scan or refresh finished" and
- * "Unmatched items". Both are news about one library for every ServerAdmin, and a later event of
- * each adds its figures to the unread one. They are defined here, in test code alone, to show that
- * the writer, its noise rule and its recipients rule take them without a change: their recipients
- * rule, their subject, their form and their one unread key fit the shape the sharing kinds use.
+ * ADR 0063 specifies kinds that no build makes yet. The two library kinds, "Scan or refresh
+ * finished" and "Unmatched items", are news about one library for every ServerAdmin, and a later
+ * event of each adds its figures to the unread one. The two ProfileManager invitation kinds are a
+ * request for the invitation's named Account, "Invitation received", and news for the Account that
+ * issued it, "Invitation answered". They are defined here, in test code alone, to show that the
+ * writer, its noise rule and its recipients rule take them without a change: their recipients rule,
+ * their subject, their form and their one unread key fit the shape the sharing kinds use.
  */
 @Tag("UnitTest")
 @DisplayName("Specified-Only Kinds Fit Tests")
@@ -31,11 +33,18 @@ class SpecifiedOnlyKindsFitTest {
   private static final UUID SAM = UUID.randomUUID();
   private static final UUID KAI = UUID.randomUUID();
   private static final Set<UUID> SERVER_ADMINS = Set.of(SAM, KAI);
+  private static final UUID OLDER_INVITATION = UUID.randomUUID();
+  private static final UUID NEWER_INVITATION = UUID.randomUUID();
 
   private final InMemoryNotificationStore<LibraryKind, LibraryFacts> store =
       new InMemoryNotificationStore<>(LibraryKind::getForm);
   private final NotificationWriter<LibraryKind, LibraryFacts> writer =
       new NotificationWriter<>(new LibraryKinds(), store, new CapturingEventPublisher());
+  private final InMemoryNotificationStore<InvitationKind, InvitationFacts> invitationStore =
+      new InMemoryNotificationStore<>(InvitationKind::getForm);
+  private final NotificationWriter<InvitationKind, InvitationFacts> invitations =
+      new NotificationWriter<>(
+          new InvitationKinds(), invitationStore, new CapturingEventPublisher());
 
   @Test
   @DisplayName(
@@ -107,6 +116,61 @@ class SpecifiedOnlyKindsFitTest {
         .containsExactly(new UnmatchedItems(20));
   }
 
+  @Test
+  @DisplayName(
+      "Should give the named Account a new request when a newer invitation replaces an older one")
+  void shouldGiveTheNamedAccountANewRequestWhenANewerInvitationReplacesAnOlderOne() {
+    invitations.tell(received(OLDER_INVITATION, NOW));
+
+    invitations.tell(received(NEWER_INVITATION, NOW.plusSeconds(60)));
+
+    assertThat(invitationStore.rowsOf(KAI))
+        .extracting(InMemoryNotificationStore.Stored::subjectId)
+        .containsExactly(OLDER_INVITATION, NEWER_INVITATION);
+    assertThat(invitationStore.rowsOf(SAM)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should tell the Account that issued the invitation when the named Account answers")
+  void shouldTellTheAccountThatIssuedTheInvitationWhenTheNamedAccountAnswers() {
+    invitations.tell(received(NEWER_INVITATION, NOW));
+
+    invitations.tell(
+        NotificationEvent.<InvitationKind, InvitationFacts>builder()
+            .kind(InvitationKind.ANSWERED)
+            .subjectId(NEWER_INVITATION)
+            .facts(new InvitationAnswer(true))
+            .recipients(Set.of(SAM))
+            .actingAccountId(Optional.of(KAI))
+            .at(NOW.plusSeconds(60))
+            .build());
+
+    assertThat(invitationStore.rowsOf(SAM))
+        .singleElement()
+        .satisfies(
+            stored -> {
+              assertThat(stored.kind()).isEqualTo(InvitationKind.ANSWERED);
+              assertThat(stored.facts()).isEqualTo(new InvitationAnswer(true));
+            });
+    assertThat(invitationStore.rowsOf(KAI))
+        .extracting(InMemoryNotificationStore.Stored::kind)
+        .containsExactly(InvitationKind.RECEIVED);
+  }
+
+  // Issuing an invitation makes a request for its named Account alone; the request carries
+  // nothing beyond the invitation, and never its code.
+  private static NotificationEvent<InvitationKind, InvitationFacts> received(
+      UUID invitationId, Instant at) {
+    return NotificationEvent.<InvitationKind, InvitationFacts>builder()
+        .kind(InvitationKind.RECEIVED)
+        .subjectId(invitationId)
+        .facts(new InvitationWaiting())
+        .recipients(Set.of(KAI))
+        .actingAccountId(Optional.of(SAM))
+        .at(at)
+        .build();
+  }
+
   // The end of a scan is nobody's action, so no Account is left out.
   private static NotificationEvent<LibraryKind, LibraryFacts> scanFinished(
       ScanFigures figures, Instant at) {
@@ -173,6 +237,39 @@ class SpecifiedOnlyKindsFitTest {
             new UnmatchedItems(earlier + added);
         default -> throw new IllegalArgumentException("A kind's facts combine with their own.");
       };
+    }
+  }
+
+  @Getter
+  @RequiredArgsConstructor
+  private enum InvitationKind {
+    RECEIVED(NotificationForm.REQUEST),
+    ANSWERED(NotificationForm.NEWS);
+
+    private final NotificationForm form;
+  }
+
+  private sealed interface InvitationFacts permits InvitationWaiting, InvitationAnswer {}
+
+  /** Nothing beyond the invitation, which the request reads its state from. */
+  private record InvitationWaiting() implements InvitationFacts {}
+
+  private record InvitationAnswer(boolean accepted) implements InvitationFacts {}
+
+  // An invitation has one answer, so its news never updates in place; a later event replaces the
+  // facts as the sharing kinds' do.
+  private static final class InvitationKinds
+      implements NotificationKinds<InvitationKind, InvitationFacts> {
+
+    @Override
+    public NotificationForm formOf(InvitationKind kind) {
+      return kind.getForm();
+    }
+
+    @Override
+    public InvitationFacts combine(
+        InvitationKind kind, InvitationFacts stored, InvitationFacts later) {
+      return later;
     }
   }
 }
