@@ -9,6 +9,7 @@ import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.BitrateScanChunkRequest;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.Fraction;
@@ -27,20 +28,26 @@ import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.server.repositories.media.BitrateScanRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
+import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
+import com.streamarr.transcode.v1.MeasuredStream;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
+import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementSource;
+import com.streamarr.transcode.v1.StreamMeasurements;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystems;
@@ -55,6 +62,8 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.LongStream;
+import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -76,10 +85,16 @@ class KeyframePacketScanMeasurementIT extends AbstractProbeSchedulerIntegrationT
   private static final int AUDIO = 1;
   private static final int KEYFRAME_COUNT = 6;
   private static final long TICKS_PER_KEYFRAME_INTERVAL = 180_000;
+  private static final int VIDEO_BYTES_PER_INTERVAL = 300_000;
+  private static final int VIDEO_PACKETS_PER_INTERVAL = 48;
+  private static final int AUDIO_BYTES_PER_INTERVAL = 16_000;
+  private static final int AUDIO_PACKETS_PER_INTERVAL = 94;
 
   @Autowired private KeyframePacketScanExecution keyframePacketScanExecution;
   @Autowired private BitrateScanRepository bitrateScans;
   @Autowired private MediaFileContainerInfoRepository outcomes;
+  @Autowired private HlsPlaylistService playlists;
+  @Autowired private DSLContext dsl;
 
   private final BlockingQueue<ExecutionComplete> keyframeScanCompletions =
       new LinkedBlockingQueue<>();
@@ -93,6 +108,30 @@ class KeyframePacketScanMeasurementIT extends AbstractProbeSchedulerIntegrationT
     if (scanScheduler != null) {
       scanScheduler.stop();
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should cost the file's copy at the measured average when its keyframe packet scan reported"
+          + " a measurement")
+  void shouldCostTheFilesCopyAtTheMeasuredAverageWhenItsKeyframePacketScanReportedAMeasurement()
+      throws Exception {
+    var request = scanKeyframePackets(KeyframePacketScanMeasurementIT::replyWithMeasurement);
+
+    // ADR 0054: 1,800,000 video bytes, plus 96 bytes of framing for each of the 2 segments and 16
+    // bytes for each of the 288 video samples, over 12 s. The probed video bitrate is 8,000,000.
+    assertThat(copyPlaylist(request)).contains("AVERAGE-BANDWIDTH=1203200,");
+  }
+
+  @Test
+  @DisplayName(
+      "Should request no bitrate scan of the file when its keyframe packet scan reported a"
+          + " measurement")
+  void shouldRequestNoBitrateScanOfTheFileWhenItsKeyframePacketScanReportedAMeasurement()
+      throws Exception {
+    var request = scanKeyframePackets(KeyframePacketScanMeasurementIT::replyWithMeasurement);
+
+    assertThat(requestedBitrateScans(request)).isZero();
   }
 
   @Test
@@ -235,6 +274,40 @@ class KeyframePacketScanMeasurementIT extends AbstractProbeSchedulerIntegrationT
     };
   }
 
+  private static void replyWithMeasurement(LoopbackProbeWorker worker, ProbeRequest scan) {
+    sendKeyframes(worker, scan);
+    worker.sendStreamMeasurementPart(
+        measurementPart(scan, VIDEO)
+            .addAllKeyframeIntervalBytes(inEveryInterval(VIDEO_BYTES_PER_INTERVAL))
+            .addAllKeyframeIntervalPacketCounts(inEveryInterval(VIDEO_PACKETS_PER_INTERVAL))
+            .build());
+    worker.sendStreamMeasurementPart(
+        measurementPart(scan, AUDIO)
+            .addAllKeyframeIntervalBytes(inEveryInterval(AUDIO_BYTES_PER_INTERVAL))
+            .addAllKeyframeIntervalPacketCounts(inEveryInterval(AUDIO_PACKETS_PER_INTERVAL))
+            .build());
+    var measurement =
+        StreamMeasurements.newBuilder()
+            .setSource(StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN)
+            .addStreams(
+                MeasuredStream.newBuilder()
+                    .setStreamIndex(VIDEO)
+                    .setMeasuredBytes((long) VIDEO_BYTES_PER_INTERVAL * KEYFRAME_COUNT)
+                    .setPacketCount((long) VIDEO_PACKETS_PER_INTERVAL * KEYFRAME_COUNT)
+                    .setTimeBaseNumerator(1)
+                    .setTimeBaseDenominator(90_000)
+                    .setMeasuredDuration(TICKS_PER_KEYFRAME_INTERVAL * KEYFRAME_COUNT))
+            .addStreams(
+                MeasuredStream.newBuilder()
+                    .setStreamIndex(AUDIO)
+                    .setMeasuredBytes((long) AUDIO_BYTES_PER_INTERVAL * KEYFRAME_COUNT)
+                    .setPacketCount((long) AUDIO_PACKETS_PER_INTERVAL * KEYFRAME_COUNT)
+                    .setTimeBaseNumerator(1)
+                    .setTimeBaseDenominator(48_000)
+                    .setMeasuredDuration(1_024L * AUDIO_PACKETS_PER_INTERVAL * KEYFRAME_COUNT));
+    worker.reply(answer(scan, scannedMedia().setStreamMeasurements(measurement)));
+  }
+
   private static void replyWithoutMeasurement(LoopbackProbeWorker worker, ProbeRequest scan) {
     sendKeyframes(worker, scan);
     worker.reply(answer(scan, scannedMedia()));
@@ -249,6 +322,13 @@ class KeyframePacketScanMeasurementIT extends AbstractProbeSchedulerIntegrationT
             .addAllPresentationTimeDeltas(deltas)
             .addAllDecodeTimeDeltas(deltas)
             .build());
+  }
+
+  private static ProbeStreamMeasurementPart.Builder measurementPart(
+      ProbeRequest scan, int streamIndex) {
+    return ProbeStreamMeasurementPart.newBuilder()
+        .setProbeAttemptId(scan.getProbeAttemptId())
+        .setStreamIndex(streamIndex);
   }
 
   private static <T> List<T> inEveryInterval(T value) {
@@ -316,5 +396,30 @@ class KeyframePacketScanMeasurementIT extends AbstractProbeSchedulerIntegrationT
                 new ChosenVideoStream(
                     VIDEO, VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))))
         .build();
+  }
+
+  private String copyPlaylist(ProbeTaskRequest request) {
+    var persisted = reader.find(request.mediaFileId()).orElseThrow();
+    assertThat(persisted.outcome()).isInstanceOf(ProbeOutcome.Success.class);
+    var probe = ((ProbeOutcome.Success) persisted.outcome()).mediaProbe();
+    var session =
+        StreamSessionFixture.defaultSessionBuilder()
+            .mediaFileId(request.mediaFileId())
+            .mediaProbe(probe)
+            .transcodeDecision(
+                StreamSessionFixture.remuxDecisionBuilder()
+                    .videoSource(probe.videoPlaybackFacts())
+                    .audioDecision(AudioDecision.none())
+                    .build())
+            .build();
+    return playlists.generateMultivariantPlaylist(session, "test-token");
+  }
+
+  private int requestedBitrateScans(ProbeTaskRequest request) {
+    return dsl.fetchCount(
+        DSL.table(KeyframePacketScanScheduler.TABLE_NAME),
+        DSL.field("task_name", String.class)
+            .eq(BitrateScanTask.NAME)
+            .and(DSL.field("task_instance", String.class).eq(request.mediaFileId().toString())));
   }
 }

@@ -1511,6 +1511,11 @@ message MeasuredStream {
 // packet in the interval of its presentation time. Packets before the first
 // keyframe fall in the first interval. The last interval runs to the end of
 // the file. The worker leaves the message out when it cannot measure a stream.
+// A keyframe packet scan measures the packets that it reads, on the keyframes
+// of its own result. It places a packet without a presentation time at its
+// decode time, as BitrateScanChunk says. It leaves the message out when a
+// measured packet has neither time, or when a stream copy would change a
+// measured stream's packets (ADR 0054).
 message StreamMeasurements {
   StreamMeasurementSource source = 1;
   // This field lists the chosen video stream and every audio stream, each
@@ -1535,6 +1540,10 @@ message ProbeMediaInfo {
   // later set it.
   bool stream_titles_omitted = 6;
   // The worker leaves this field out when it measured no stream (ADR 0054).
+  // The server stores the measurement of a keyframe packet scan with the
+  // scan's keyframe positions, and the file then gets no bitrate scan. A
+  // keyframe packet scan that leaves the field out is followed by a bitrate
+  // scan when the server could copy the file's chosen video stream.
   StreamMeasurements stream_measurements = 7;
   // This field lists, at most once each, where the chosen video stream and each
   // audio stream ends, as a keyframe packet scan read their packets. Probe

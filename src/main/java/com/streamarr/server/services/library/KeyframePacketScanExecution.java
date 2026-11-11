@@ -9,6 +9,7 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.SourceStreamEnd;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
@@ -123,6 +124,7 @@ public class KeyframePacketScanExecution {
             .probeVersion(request.probeVersion())
             .keyframes(keyframes.get())
             .streamEnds(scannedStreamEnds(outcome))
+            .streamMeasurements(scannedStreamMeasurements(outcome))
             .build();
     // The event's listeners run in the publication's transaction, so stored keyframe positions
     // that need a bitrate scan always have one (ADR 0054).
@@ -167,6 +169,13 @@ public class KeyframePacketScanExecution {
     return switch (outcome) {
       case ProbeOutcome.Failure _ -> List.of();
       case ProbeOutcome.Success success -> success.scannedStreamEnds();
+    };
+  }
+
+  private static Optional<StreamMeasurements> scannedStreamMeasurements(ProbeOutcome outcome) {
+    return switch (outcome) {
+      case ProbeOutcome.Failure _ -> Optional.empty();
+      case ProbeOutcome.Success success -> success.streamMeasurements();
     };
   }
 

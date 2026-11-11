@@ -129,13 +129,11 @@ class KeyframePacketScanExecutionTest {
     assertThat(storedKeyframes()).isEqualTo(known());
   }
 
-  // worker_session.proto: until streamarr/streamarr-server#690 the server drops the measurement
-  // that a keyframe packet scan reports.
   @Test
   @DisplayName(
-      "Should store the scanned keyframe positions without the scan's measurement when the scan"
+      "Should store the scan's measurement with the scanned keyframe positions when the scan"
           + " measures the streams")
-  void shouldStoreScannedKeyframePositionsWithoutScansMeasurementWhenScanMeasuresStreams() {
+  void shouldStoreScansMeasurementWithScannedKeyframePositionsWhenScanMeasuresStreams() {
     var request = storePacketScanRequired();
     var measurement =
         new StreamMeasurements(
@@ -149,7 +147,7 @@ class KeyframePacketScanExecutionTest {
 
     assertThat(result).isEqualTo(new KeyframePacketScanResult.Completed());
     assertThat(storedKeyframes()).isEqualTo(known());
-    assertThat(outcomes.findStreamMeasurements(mediaFile.getId())).isEmpty();
+    assertThat(outcomes.findStreamMeasurements(mediaFile.getId())).contains(measurement);
   }
 
   @Test
