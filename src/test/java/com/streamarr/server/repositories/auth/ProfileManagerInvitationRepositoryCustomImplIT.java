@@ -54,7 +54,7 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
     var expired = saveInvitation(inviter, recipients.get(1), now.minusSeconds(1));
     var accepted = saveInvitation(inviter, recipients.get(2), now.plusSeconds(3600));
     transactionTemplate.executeWithoutResult(
-        _ -> assertThat(invitationRepository.tryAcceptPending(accepted.getId(), now)).isTrue());
+        _ -> assertThat(invitationRepository.tryAcceptPending(accepted.getId(), now)).isPresent());
 
     try {
       assertThat(

@@ -24,7 +24,6 @@ import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
-import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -65,7 +64,7 @@ public class AccountInvitationService {
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
   private final ProfileManagerRepository profileManagerRepository;
-  private final ProfileManagerInvitationRepository profileManagerInvitationRepository;
+  private final ProfileManagerInvitationLifecycle managerInvitationLifecycle;
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileShareLifecycle shareLifecycle;
   private final AccountInvitationReofferRepository reofferRepository;
@@ -354,8 +353,7 @@ public class AccountInvitationService {
                 .build());
     var now = clock.instant();
     invitationRepository.invalidatePendingByProfileId(profileId, PROFILE_LINKED_REASON, now);
-    profileManagerInvitationRepository.invalidatePendingByProfileId(
-        profileId, PROFILE_LINKED_REASON, now);
+    managerInvitationLifecycle.invalidatePendingByProfileId(profileId, PROFILE_LINKED_REASON, now);
     shareLifecycle.ensureActiveMembershipShare(profileId, householdId, now);
     endCurrentVisits(account, now);
     shareLifecycle.invalidatePendingByProfileId(profileId, PROFILE_LINKED_REASON, now);

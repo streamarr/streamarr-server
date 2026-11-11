@@ -343,7 +343,7 @@ class AccountInvitationServiceTest {
         accountRepository,
         profiles,
         managers,
-        managerInvitations,
+        new ProfileManagerInvitationLifecycle(managerInvitations),
         shares,
         new ProfileShareLifecycle(shares, shareEvents),
         reoffers,
