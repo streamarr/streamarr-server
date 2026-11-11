@@ -187,6 +187,7 @@ class ImageVariantServiceTest {
     // JPEG keeps a flat color within a few levels; a resize that draws nothing leaves black.
     assertThat(variants)
         .filteredOn(v -> v.variant() != ImageSize.ORIGINAL)
+        .hasSize(3)
         .allSatisfy(
             v ->
                 assertThat(largestChannelDifference(v.data(), red))
