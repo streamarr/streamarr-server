@@ -357,8 +357,9 @@ public record MediaProbe(
   }
 
   /**
-   * This probe with each learned end time in place of the end time that a stream's container header
-   * does not state (ADR 0037, early ends). A stated end time stays.
+   * This probe with each learned end time as its stream's end time (ADR 0037, early ends). A
+   * learned end time was read from the stream's packets, so it replaces the end time that the
+   * container header states: the header of a truncated file states the length of the whole file.
    */
   public MediaProbe withLearnedEndTimes(@NonNull List<LearnedStreamEnd> learned) {
     var learnedByIndex =
@@ -372,7 +373,7 @@ public record MediaProbe(
   private static StreamInfo withLearnedEndTime(
       StreamInfo stream, Map<Integer, Duration> learnedByIndex) {
     var learned = learnedByIndex.get(stream.index());
-    if (stream.endTime().isPresent() || learned == null) {
+    if (learned == null) {
       return stream;
     }
 
