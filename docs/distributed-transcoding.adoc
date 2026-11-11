@@ -162,6 +162,8 @@ When the wait reaches the limit, `createStreamSession` returns `MediaFileProbeNo
 A packet scan reads every packet of the source's video stream, which takes longer than a probe on network storage.
 A timeout requests worker cancellation and lets the scheduler retry.
 After three packet scans of a source time out, report no keyframes, or get a worker reply that breaks the worker contract, the server stores its keyframes as unavailable, so playback encodes the source.
+A new probe of an unchanged source keeps the keyframe positions that an earlier packet scan read, until the packet scan of the new probe version stores its own, so playback goes on copying the source in between.
+When those three packet scans fail instead, or one of them ends in a media error, the kept positions stand and no further packet scan runs.
 Packet scans run on a scheduler of their own, so they never take the threads that run probes.
 `STREAMING_WORKER_SESSION_BITRATE_SCAN_CHUNK_TIMEOUT` bounds each chunk of a bitrate scan on the server. It defaults to `5m`.
 A bitrate scan measures every packet of a source's video and audio streams in chunks of keyframe intervals (https://github.com/streamarr/streamarr-adr/blob/main/adr/0054-workers-measure-each-stream-bitrate-and-a-copy-advertises-its-measured-peak.adoc[ADR 0054]).

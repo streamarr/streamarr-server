@@ -26,8 +26,9 @@ public class PersistedProbeReader {
 
   private final MediaFileContainerInfoRepository repository;
 
-  // Repeatable read gives the outcome row, its keyframe positions and its stream measurements one
-  // snapshot, so a publication between the reads cannot pair one outcome with another's keyframes.
+  // Repeatable read gives the outcome row, its keyframe positions, its owed packet scan and its
+  // stream measurements one snapshot, so a publication between the reads cannot pair one outcome
+  // with another's keyframes.
   @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public Optional<PersistedProbeOutcome> find(UUID mediaFileId) {
     try {
@@ -41,7 +42,8 @@ public class PersistedProbeReader {
                       row.getOutcome(
                           () -> repository.findKeyframeKnowledge(mediaFileId).orElseThrow(),
                           () -> chapterKnowledge(mediaFileId),
-                          () -> streamMeasurements(mediaFileId))))
+                          () -> streamMeasurements(mediaFileId)),
+                      repository.owesKeyframePacketScan(mediaFileId)))
           .filter(outcome -> outcome.isCompatibleWith(ProbeVersion.CURRENT));
     } catch (MalformedKeyframePositionsException | ContradictoryDynamicRangeException _) {
       // Without an outcome, the scheduler requests a probe, and its publication replaces the row.

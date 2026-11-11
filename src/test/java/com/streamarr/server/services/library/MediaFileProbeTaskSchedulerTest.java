@@ -11,12 +11,18 @@ import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ChosenVideoStream;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -26,6 +32,7 @@ import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.events.library.MediaFileProbeTaskRequested;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.library.MediaFileProbeTaskScheduler.MediaFileProbeTaskSchedulerBuilder;
@@ -37,6 +44,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -189,6 +197,69 @@ class MediaFileProbeTaskSchedulerTest {
                 .snapshot(snapshot)
                 .probeVersion(ProbeVersion.CURRENT)
                 .build());
+  }
+
+  @Test
+  @DisplayName(
+      "Should request a packet scan when the matching outcome keeps the positions that an earlier"
+          + " probe version's scan read")
+  void shouldRequestPacketScanWhenMatchingOutcomeKeepsPositionsThatEarlierVersionsScanRead() {
+    var snapshot = new SourceFileSnapshot(5, MODIFIED_AT);
+    var scanned =
+        new KeyframeKnowledge.Known(
+            KeyframePositions.builder()
+                .streamIndex(0)
+                .timeBaseNumerator(1)
+                .timeBaseDenominator(90_000)
+                .source(KeyframePositionSource.PACKET_SCAN)
+                .keyframes(List.of(new KeyframePosition(0, 0)))
+                .build());
+    outcomes.publish(unscannedPublication(snapshot, ProbeVersion.CURRENT - 1));
+    outcomes.publishKeyframePacketScan(
+        KeyframePacketScanPublication.builder()
+            .mediaFileId(mediaFile.getId())
+            .snapshot(snapshot)
+            .probeVersion(ProbeVersion.CURRENT - 1)
+            .keyframes(scanned)
+            .build());
+    outcomes.publish(unscannedPublication(snapshot, ProbeVersion.CURRENT));
+    assertThat(outcomes.findKeyframeKnowledge(mediaFile.getId()))
+        .as("The new probe kept the earlier scan's positions")
+        .contains(scanned);
+    var scheduler = schedulerBuilder().build();
+
+    scheduler.schedule(mediaFile.getId());
+
+    assertThat(requests.requests()).isEmpty();
+    assertThat(packetScans.requests())
+        .containsExactly(
+            KeyframePacketScanTaskRequest.builder()
+                .mediaFileId(mediaFile.getId())
+                .filepathUri(mediaFile.getFilepathUri())
+                .snapshot(snapshot)
+                .probeVersion(ProbeVersion.CURRENT)
+                .build());
+  }
+
+  // A probe of a file without a container index, which names its chosen video stream.
+  private ProbePublication unscannedPublication(SourceFileSnapshot snapshot, int probeVersion) {
+    return ProbePublication.builder()
+        .mediaFileId(mediaFile.getId())
+        .snapshot(snapshot)
+        .probeVersion(probeVersion)
+        .outcome(
+            ProbeOutcome.Success.builder()
+                .container(ProbeContainer.builder().build())
+                .streams(List.of(StreamInfo.builder().index(0).codecType("video").build()))
+                .keyframes(
+                    new KeyframeKnowledge.PacketScanRequired(
+                        KeyframePacketScanReason.NO_CONTAINER_INDEX))
+                .chosenVideoStream(
+                    Optional.of(
+                        new ChosenVideoStream(
+                            0, VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))))
+                .build())
+        .build();
   }
 
   @Test

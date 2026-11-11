@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
@@ -10,6 +11,7 @@ import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.config.ProbeSchedulingProperties;
+import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
@@ -23,6 +25,8 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
+import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
@@ -33,6 +37,7 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.BitrateScanRequesters;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
+import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
@@ -93,6 +98,23 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
               .timeBaseDenominator(90_000)
               .source(KeyframePositionSource.PACKET_SCAN)
               .keyframes(List.of(new KeyframePosition(0, 0)))
+              .build());
+
+  // What a probe of the current version reports for a file without a container index: every
+  // playback fact, and no keyframe positions.
+  private static final ProbeOutcome.Success UNSCANNED =
+      ProbeFixture.completeProbeBuilder(defaultProbeBuilder().build())
+          .keyframes(PACKET_SCAN_REQUIRED.keyframes())
+          .build();
+  private static final KeyframeKnowledge SCANNED_AGAIN =
+      new KeyframeKnowledge.Known(
+          KeyframePositions.builder()
+              .streamIndex(0)
+              .timeBaseNumerator(1)
+              .timeBaseDenominator(90_000)
+              .source(KeyframePositionSource.PACKET_SCAN)
+              .keyframes(
+                  List.of(new KeyframePosition(0, 0), new KeyframePosition(180_000, 180_000)))
               .build());
 
   @Autowired private ProbeTaskRequests scheduling;
@@ -415,6 +437,138 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
     assertThat(reader.find(request.mediaFileId())).isEmpty();
     assertThat(outcomes.findKeyframeKnowledge(request.mediaFileId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the scanned positions and schedule a new scan when the unchanged file is probed"
+          + " again")
+  void shouldKeepScannedPositionsAndScheduleNewScanWhenUnchangedFileIsProbedAgain()
+      throws Exception {
+    var request = requestFileScannedAt(ProbeVersion.CURRENT - 1);
+
+    unscannedProbe().execute(request, ProbePriority.BACKGROUND);
+
+    assertThat(reader.find(request.mediaFileId()))
+        .hasValueSatisfying(
+            stored -> {
+              assertThat(stored.probeVersion()).isEqualTo(ProbeVersion.CURRENT);
+              assertThat(stored.outcome())
+                  .isInstanceOfSatisfying(
+                      ProbeOutcome.Success.class,
+                      success -> assertThat(success.keyframes()).isEqualTo(SCANNED));
+              assertThat(stored.keyframePacketScanOwed()).isTrue();
+            });
+    assertThat(scheduledScans()).isOne();
+  }
+
+  @Test
+  @DisplayName("Should replace the kept positions when the new scan publishes")
+  void shouldReplaceKeptPositionsWhenNewScanPublishes() throws Exception {
+    var request = requestFileScannedAt(ProbeVersion.CURRENT - 1);
+    unscannedProbe().execute(request, ProbePriority.BACKGROUND);
+    var scans = new AtomicInteger();
+
+    startScanScheduler(
+        _ -> {
+          scans.incrementAndGet();
+          return success(SCANNED_AGAIN);
+        },
+        Clock.systemUTC());
+
+    assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
+    assertThat(scans).as("Kept positions do not stand in for the new scan").hasValue(1);
+    assertThat(storedKeyframes(request)).isEqualTo(SCANNED_AGAIN);
+    assertThat(reader.find(request.mediaFileId()))
+        .map(PersistedProbeOutcome::keyframePacketScanOwed)
+        .contains(false);
+    assertThat(scheduledScans()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should drop the scanned positions at once when the file changes")
+  void shouldDropScannedPositionsAtOnceWhenFileChanges() throws Exception {
+    var request = requestFileScannedAt(ProbeVersion.CURRENT - 1);
+
+    var changed = changeSource(request);
+    scheduling.request(changed);
+
+    assertThat(outcomes.findKeyframeKnowledge(request.mediaFileId())).isEmpty();
+    unscannedProbe().execute(changed, ProbePriority.BACKGROUND);
+    assertThat(storedKeyframes(request)).isEqualTo(UNSCANNED.keyframes());
+    assertThat(scheduledScans()).isOne();
+  }
+
+  @Test
+  @DisplayName(
+      "Should drop the scanned positions when the unchanged file is probed again across the"
+          + " keyframe timeline's first version")
+  void shouldDropScannedPositionsWhenUnchangedFileIsProbedAgainAcrossKeyframeTimelinesFirstVersion()
+      throws Exception {
+    var request = requestFileScannedAt(ProbeVersion.FIRST_ON_CURRENT_KEYFRAME_TIMELINE - 1);
+
+    unscannedProbe().execute(request, ProbePriority.BACKGROUND);
+
+    assertThat(storedKeyframes(request)).isEqualTo(UNSCANNED.keyframes());
+    assertThat(scheduledScans()).isOne();
+  }
+
+  @Test
+  @DisplayName("Should let the kept positions stand and stop scanning when every new scan fails")
+  void shouldLetKeptPositionsStandAndStopScanningWhenEveryNewScanFails() throws Exception {
+    var request = requestFileScannedAt(ProbeVersion.CURRENT - 1);
+    unscannedProbe().execute(request, ProbePriority.BACKGROUND);
+    var scans = new AtomicInteger();
+    startScanScheduler(
+        _ -> {
+          scans.incrementAndGet();
+          throw new ProbeTimedOutException(new TimeoutException());
+        },
+        Clock.systemUTC());
+
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
+      retryPendingScansNow();
+    }
+
+    assertThat(scans).hasValue(3);
+    assertThat(storedKeyframes(request)).isEqualTo(SCANNED);
+    assertThat(reader.find(request.mediaFileId()))
+        .map(PersistedProbeOutcome::keyframePacketScanOwed)
+        .contains(false);
+    assertThat(scheduledScans()).isZero();
+  }
+
+  // A file whose stored outcome of the given probe version holds positions that its packet scan
+  // read, with a request for the current version, as a scan after an upgrade makes it.
+  private ProbeTaskRequest requestFileScannedAt(int probeVersion) throws IOException {
+    var request = createUnchangedFiles(1).getFirst();
+    assertThat(
+            outcomes.publish(
+                ProbePublication.builder()
+                    .mediaFileId(request.mediaFileId())
+                    .snapshot(request.snapshot())
+                    .probeVersion(probeVersion)
+                    .outcome(UNSCANNED)
+                    .build()))
+        .isTrue();
+    assertThat(
+            outcomes.publishKeyframePacketScan(
+                KeyframePacketScanPublication.builder()
+                    .mediaFileId(request.mediaFileId())
+                    .snapshot(request.snapshot())
+                    .probeVersion(probeVersion)
+                    .keyframes(SCANNED)
+                    .build()))
+        .isTrue();
+    scheduling.request(request);
+    return request;
+  }
+
+  private ProbeExecution unscannedProbe() {
+    var producer = new FakeFfprobeService();
+    producer.answerWith(UNSCANNED);
+    return probeExecution.toBuilder().producer(producer).build();
   }
 
   private ProbeExecution packetScanRequiredProbe() {
