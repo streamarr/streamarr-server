@@ -2,6 +2,7 @@ package com.streamarr.server.services.notification;
 
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -141,6 +142,50 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.notifications.edges[0].node.share.status").value("PENDING"))
         .andExpect(jsonPath("$.data.notifications.edges[0].orderKey").isString())
         .andExpect(jsonPath("$.data.notifications.pageInfo.hasNextPage").value(false));
+  }
+
+  @Test
+  @DisplayName(
+      "Should give the Household's side the Profile's current name when the Profile is renamed"
+          + " while its offer waits")
+  void shouldGiveTheHouseholdsSideTheCurrentNameWhenTheProfileIsRenamedWhileItsOfferWaits()
+      throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam);
+    steps.offer(sam, kai, riverside);
+    rename(kai, "Kai Renamed");
+
+    assertRequestNamed("Kai Renamed");
+  }
+
+  @Test
+  @DisplayName(
+      "Should give the Household's side the Profile's current name when the Profile is renamed"
+          + " while it is shared")
+  void shouldGiveTheHouseholdsSideTheCurrentNameWhenTheProfileIsRenamedWhileItIsShared()
+      throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam);
+    steps.accept(riverside, steps.offer(sam, kai, riverside));
+    rename(kai, "Kai Renamed");
+
+    assertRequestNamed("Kai Renamed");
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave a request out of the count and read it as expired when its offer's time ran out"
+          + " and the sweep has not stored it")
+  void shouldLeaveARequestOutOfTheCountAndReadItAsExpiredWhenItsOffersTimeRanOutBeforeTheSweep()
+      throws Exception {
+    steps.lapse(steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside));
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(false))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("EXPIRED"));
   }
 
   @Test
@@ -459,6 +504,20 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
                       .at(at)
                       .build()));
     }
+  }
+
+  /** Riverside's HouseholdAdmin reads its request about the offer under the name. */
+  private void assertRequestNamed(String profileName) throws Exception {
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value(profileName))
+        .andExpect(
+            jsonPath(
+                "$.data.notifications.edges[0].node.message",
+                containsString("“%s”".formatted(profileName))));
   }
 
   private void insertNewsFor(TestIdentity recipient, ProfileHouseholdShare share) {
