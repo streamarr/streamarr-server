@@ -289,6 +289,18 @@ enum Action {
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.SHARE_FACTS),
+  ISSUE_SHARE_CODE(
+      "issueShareCode",
+      ResourceKind.HOUSEHOLD,
+      Authorizes.WRITE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD),
+  VIEW_SHARE_CODES(
+      "viewShareCodes",
+      ResourceKind.HOUSEHOLD,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD),
   INVITE_PROFILE_MANAGER(
       "inviteProfileManager",
       ResourceKind.PROFILE,

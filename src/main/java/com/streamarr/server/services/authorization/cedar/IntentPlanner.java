@@ -122,6 +122,10 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onShare(Action.END_PROFILE_SHARE, shareId));
       case Intent.AdministrativelyEndProfileShare(var shareId) ->
           unitPlan(AuthorizationCheck.onShare(Action.ADMINISTRATIVELY_END_PROFILE_SHARE, shareId));
+      case Intent.IssueShareCode(var householdId) ->
+          unitPlan(AuthorizationCheck.onHousehold(Action.ISSUE_SHARE_CODE, householdId));
+      case Intent.ViewShareCodes(var householdId) ->
+          unitPlan(AuthorizationCheck.onHousehold(Action.VIEW_SHARE_CODES, householdId));
       case Intent.InviteProfileManager(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.INVITE_PROFILE_MANAGER, profileId));
       case Intent.CancelManagerInvitation(var invitationId) ->

@@ -304,6 +304,16 @@ namespace Streamarr {
     resource: Share,
     context: { freshReauthentication: Bool },
   };
+  action issueShareCode in shareAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
+  };
+  action viewShareCodes in shareAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
+  };
   action managerAdministration;
   action inviteProfileManager in managerAdministration appliesTo {
     principal: Account,

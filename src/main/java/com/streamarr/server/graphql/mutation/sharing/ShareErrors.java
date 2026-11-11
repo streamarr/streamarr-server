@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.mutation.sharing;
 
 import com.streamarr.server.graphql.mutation.InputPath;
+import com.streamarr.server.services.identity.ShareCodeRejections;
 import com.streamarr.server.services.identity.ShareRejections;
 
 /** The exhaustive mappings from service rejection to schema error type, one per union. */
@@ -19,6 +20,13 @@ public final class ShareErrors {
       case ShareRejections.AlreadyShared _ ->
           new ProfileAlreadySharedError(
               "That Profile is already available in that Household.", InputPath.of("householdId"));
+    };
+  }
+
+  public static IssueShareCodeError toIssueShareCodeError(ShareCodeRejections.Issue rejection) {
+    return switch (rejection) {
+      case ShareCodeRejections.HouseholdNotFound _ ->
+          new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
     };
   }
 
