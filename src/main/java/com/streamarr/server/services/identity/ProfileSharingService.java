@@ -8,7 +8,6 @@ import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.domain.auth.ShareCode;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
-import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -18,6 +17,7 @@ import com.streamarr.server.repositories.auth.ShareCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.InvitationLifetime;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
@@ -73,7 +73,7 @@ public class ProfileSharingService {
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final MutationTransactions mutationTransactions;
-  private final CredentialCodeProperties credentialCodeProperties;
+  private final InvitationLifetime invitationLifetime;
   private final HouseholdSharesList householdSharesList;
   private final ProfileSharesList profileSharesList;
   private final ShareCodeService shareCodeService;
@@ -138,7 +138,7 @@ public class ProfileSharingService {
             .householdId(householdId)
             .status(ProfileShareStatus.PENDING)
             .offeredByAccountId(identity.accountId())
-            .expiresAt(now.plus(credentialCodeProperties.invitationTtl()))
+            .expiresAt(now.plus(invitationLifetime.invitationLifetime()))
             .build(),
         now);
   }

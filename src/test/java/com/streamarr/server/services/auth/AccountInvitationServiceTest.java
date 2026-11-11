@@ -368,6 +368,7 @@ class AccountInvitationServiceTest {
             .passwordResetTtl(Duration.ofHours(1))
             .replacementLockTimeout(Duration.ofSeconds(5))
             .build(),
+        () -> Duration.ofDays(7),
         clock);
   }
 
