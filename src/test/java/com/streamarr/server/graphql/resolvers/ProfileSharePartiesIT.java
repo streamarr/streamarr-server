@@ -683,8 +683,8 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
 
   // The change the share's last write announced, as a subscriber would be handed it.
   private ProfileShareChangedEvent changeOf(UUID shareId) {
-    return new ProfileShareChangedEvent(
-        ChangedShare.of(shareRepository.findById(shareId).orElseThrow()));
+    var share = shareRepository.findById(shareId).orElseThrow();
+    return new ProfileShareChangedEvent(ChangedShare.of(share), share.getStatus().isLive());
   }
 
   private AuthTestSupport.TestIdentity adminIdentity() {

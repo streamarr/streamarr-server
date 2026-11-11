@@ -9,9 +9,12 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -52,6 +55,91 @@ class ProfileShareLifecycleTest {
     change.accept(lifecycle, share);
 
     assertThat(announced()).containsExactly(ChangedShare.of(share));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("singleShareWrites")
+  @DisplayName("Should announce the change of a live share when one write changes it")
+  void shouldAnnounceTheChangeOfALiveShareWhenOneWriteChangesIt(
+      String write,
+      ProfileShareStatus before,
+      BiConsumer<ProfileShareLifecycle, ProfileHouseholdShare> change) {
+    var share = shares.save(pending(UUID.randomUUID()).status(before).build());
+
+    change.accept(lifecycle, share);
+
+    // The share was pending or active until this change, so its Household hears this one.
+    assertThat(liveness()).containsExactly(Map.entry(ChangedShare.of(share), true));
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce the change of a live share when a share is created or an offer expires")
+  void shouldAnnounceTheChangeOfALiveShareWhenAShareIsCreatedOrAnOfferExpires() {
+    var created = lifecycle.create(pending(UUID.randomUUID()).build());
+    var lapsed = shares.save(pending(UUID.randomUUID()).expiresAt(NOW.minusSeconds(1)).build());
+
+    lifecycle.expireLapsedOffers(NOW);
+
+    assertThat(liveness())
+        .containsOnly(
+            Map.entry(ChangedShare.of(created), true), Map.entry(ChangedShare.of(lapsed), true));
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce only the pending and active shares as live when the Profile is about to be"
+          + " deleted")
+  void shouldAnnounceOnlyPendingAndActiveSharesAsLiveWhenTheProfileIsAboutToBeDeleted() {
+    var profileId = UUID.randomUUID();
+    var expected = new HashMap<ChangedShare, Boolean>();
+    for (var status : ProfileShareStatus.values()) {
+      var share =
+          shares.save(pending(UUID.randomUUID()).profileId(profileId).status(status).build());
+      expected.put(ChangedShare.of(share), status.isLive());
+    }
+
+    // An offer past its expiry that the sweep has not reached is announced as it is stored.
+    var lapsed =
+        shares.save(
+            pending(UUID.randomUUID()).profileId(profileId).expiresAt(NOW.minusSeconds(1)).build());
+    expected.put(ChangedShare.of(lapsed), true);
+
+    lifecycle.announceDeletionWithProfile(profileId);
+
+    assertThat(liveness()).containsExactlyInAnyOrderEntriesOf(expected);
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce only the pending and active shares as live when the Household is about to"
+          + " be deleted or a Profile moves")
+  void
+      shouldAnnounceOnlyPendingAndActiveSharesAsLiveWhenHouseholdIsAboutToBeDeletedOrProfileMoves() {
+    var offer = shares.save(pending(UUID.randomUUID()).build());
+    var rejected =
+        shares.save(
+            pending(UUID.randomUUID())
+                .householdId(offer.getHouseholdId())
+                .status(ProfileShareStatus.REJECTED)
+                .build());
+    var left = shares.save(pending(UUID.randomUUID()).status(ProfileShareStatus.ACTIVE).build());
+    var ended =
+        shares.save(
+            pending(UUID.randomUUID())
+                .profileId(left.getProfileId())
+                .status(ProfileShareStatus.ENDED)
+                .build());
+
+    lifecycle.announceDeletionWithHousehold(offer.getHouseholdId());
+    lifecycle.announceMove(left.getProfileId(), left.getHouseholdId(), ended.getHouseholdId());
+
+    assertThat(liveness())
+        .containsOnly(
+            Map.entry(ChangedShare.of(offer), true),
+            Map.entry(ChangedShare.of(rejected), false),
+            Map.entry(ChangedShare.of(left), true),
+            Map.entry(ChangedShare.of(ended), false));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -227,6 +315,11 @@ class ProfileShareLifecycleTest {
 
     assertThat(announced())
         .containsExactlyInAnyOrder(ChangedShare.of(left), ChangedShare.of(joined));
+  }
+
+  private Map<ChangedShare, Boolean> liveness() {
+    return events.getEventsOfType(ProfileShareChangedEvent.class).stream()
+        .collect(Collectors.toMap(ProfileShareChangedEvent::share, ProfileShareChangedEvent::live));
   }
 
   private List<ChangedShare> announced() {

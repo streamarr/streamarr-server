@@ -276,29 +276,28 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should deliver the share's removal to its Household when its Profile is deleted")
-  void shouldDeliverTheSharesRemovalToItsHouseholdWhenItsProfileIsDeleted() {
+  @DisplayName(
+      "Should deliver the removal of an active share to its Household when its Profile is deleted")
+  void shouldDeliverTheRemovalOfAnActiveShareToItsHouseholdWhenItsProfileIsDeleted() {
+    var orphan = managedProfile();
+    var shareId = offer(orphan);
+    decide("acceptProfileShare", shareId);
     var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
     var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
     var stranger = identity();
     var strangerSocket = subscribedSocket(authTestSupport.accountBearer(stranger));
-    // Only a Profile with no active or pending share may be deleted.
-    var orphan = unsharedManagedProfile();
-    var shareId = offer(orphan);
-    decide("rejectProfileShare", shareId);
-    nextShareWithStatus(hostSocket, shareId, "REJECTED");
-    // Each change is read as it is delivered, so the decline reaches both sides before the delete.
-    nextShareWithStatus(ownerSocket, shareId, "REJECTED");
+    var serverAdmin = adminIdentity();
 
+    // A ServerAdmin may delete a Profile that is still shared; its shares go with it.
     var deleted =
         http.execute(
-            authTestSupport.freshAccountBearer(owner),
+            authTestSupport.freshAccountBearer(serverAdmin),
             """
-            mutation { deleteProfile(input: {profileId: "%s"}) {
-              deletedProfileId userErrors { __typename } } }
+            mutation { administrativelyDeleteProfile(input: {profileId: "%s", reason: "closing"}) {
+              profileId userErrors { __typename } } }
             """
                 .formatted(orphan.getId()));
-    assertThat(deleted.at("/data/deleteProfile/deletedProfileId").asString())
+    assertThat(deleted.at("/data/administrativelyDeleteProfile/profileId").asString())
         .as("deletion in %s", deleted)
         .isEqualTo(orphan.getId().toString());
     var removal = nextRemoval(hostSocket, shareId);
@@ -315,6 +314,61 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
         .extracting(change -> change.path("shareId").asString())
         .isNotEmpty()
         .doesNotContain(shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver nothing more to the Household after the change that ends an offer, and"
+          + " everything to a ServerAdmin")
+  void shouldDeliverNothingMoreToHouseholdAfterChangeThatEndsOfferAndEverythingToServerAdmin() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
+    var serverAdmin = adminIdentity();
+    var serverAdminSocket = subscribedSocket(authTestSupport.accountBearer(serverAdmin));
+    // Only a Profile with no active or pending share may be deleted.
+    var orphan = unsharedManagedProfile();
+    var shareId = offer(orphan);
+    // Each change is read as it is delivered, so every side hears each step before the next one.
+    var sides = List.of(hostSocket, ownerSocket, serverAdminSocket);
+    sides.forEach(socket -> nextShare(socket, shareId));
+    decide("rejectProfileShare", shareId);
+    var declinedForHost = nextShare(hostSocket, shareId);
+    nextShare(ownerSocket, shareId);
+    var declinedForServerAdmin = nextShare(serverAdminSocket, shareId);
+    assertThat(List.of(declinedForHost, declinedForServerAdmin))
+        .extracting(share -> share.path("status").asString())
+        .containsOnly("REJECTED");
+
+    var deleted =
+        http.execute(
+            authTestSupport.freshAccountBearer(owner),
+            """
+            mutation { deleteProfile(input: {profileId: "%s"}) {
+              deletedProfileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()));
+    assertThat(deleted.at("/data/deleteProfile/deletedProfileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    var removal = nextRemoval(serverAdminSocket, shareId);
+    var laterId = offer(managedProfile());
+
+    // The decline was the Household's last change of the offer: it hears no removal after it.
+    assertPartiesHidden(declinedForHost);
+    assertThat(changesUntil(hostSocket, laterId))
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(shareId);
+    assertThat(declinedForServerAdmin.path("profile").path("name").asString())
+        .isEqualTo(orphan.getName());
+    assertThat(declinedForServerAdmin.path("offeredByDisplayName").asString())
+        .isEqualTo(owner.account().getDisplayName());
+    assertThat(removal.path("shareId").asString()).isEqualTo(shareId);
+    assertThat(changesUntil(ownerSocket, laterId))
+        .extracting(
+            change -> change.path("shareId").asString(), change -> change.path("share").isNull())
+        .isNotEmpty()
+        .doesNotContain(tuple(shareId, true));
   }
 
   @Test
