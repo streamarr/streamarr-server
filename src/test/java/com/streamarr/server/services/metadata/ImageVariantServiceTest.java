@@ -6,6 +6,7 @@ import static com.streamarr.server.fakes.TestImages.createQuadrantPngImage;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
+import static com.streamarr.server.fakes.TestImages.createVerticalBandsPngImage;
 import static com.streamarr.server.fakes.TestImages.decode;
 import static com.streamarr.server.fakes.TestImages.formatNameOf;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -159,27 +160,29 @@ class ImageVariantServiceTest {
   @Test
   @DisplayName("Should hash a thumbnail fitted within 128 pixels when the small variant is wider")
   void shouldHashThumbnailFittedWithin128PixelsWhenSmallVariantIsWider() {
-    var imageData = createQuadrantPngImage(300, 169);
+    var imageData = createVerticalBandsPngImage(300, 169);
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
 
     // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the 128x72
-    // Thumbnailator thumbnail of the 300x169 small variant, and L=Iq#w|DjsJ.MoNFfQofa#ayfQfQ for
-    // the small variant itself.
-    assertThat(smallVariant(variants).blurHash()).isEqualTo("L=Iq#w|DjsJ.MoNFayofa#ayfQfQ");
+    // Thumbnailator thumbnail of the 300x169 small variant, and LQI#MwvKQX#2j[fPf7fRfQfQfQfQ for
+    // the small variant itself. Thumbnails squashed to 128x128 or scaled to 128 pixels high hash
+    // differently.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("LRIq$8znQX#LofjZf7jbfQfQfQfQ");
   }
 
   @Test
   @DisplayName("Should hash a thumbnail fitted within 128 pixels when the small variant is taller")
   void shouldHashThumbnailFittedWithin128PixelsWhenSmallVariantIsTaller() {
-    var imageData = createQuadrantPngImage(185, 278);
+    var imageData = createVerticalBandsPngImage(185, 278);
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
     // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the 85x128
-    // Thumbnailator thumbnail of the 185x278 small variant, and L=Iq#x|DjsJ.MoNFayoff8fQfQfQ for
-    // the small variant itself.
-    assertThat(smallVariant(variants).blurHash()).isEqualTo("L=Iq#x|Do0J.MoNFayofa#ayfQfQ");
+    // Thumbnailator thumbnail of the 185x278 small variant, and LRI#MvznQX#2j[fQf7fRfQfQfQfQ for
+    // the small variant itself. Thumbnails squashed to 128x128 or scaled to 128 pixels wide hash
+    // differently.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("LTIqy0z.QX#LoLfPf7fRfQfQfQfQ");
   }
 
   @Test
