@@ -466,11 +466,44 @@ class RemoteFormatFailureIT {
   }
 
   @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"VIDEO_TRANSCODE", "FULL_TRANSCODE"})
+  @DisplayName(
+      "Should treat a first segment that opened late as terminal, and count it, when an encoded"
+          + " attempt reports it")
+  void shouldTreatAFirstSegmentThatOpenedLateAsTerminalWhenAnEncodedAttemptReportsIt(
+      TranscodeMode mode) throws Exception {
+    var events = new CapturingEventPublisher();
+    try (var rig = new FailureRig(events);
+        var worker = new TestWorker(rig.server)) {
+      rig.executor.start(rig.requestBuilder().transcodeDecision(rig.decision(mode)).build());
+      var job = worker.nextJob();
+      worker.fail(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_FIRST_SEGMENT_OPENED_LATE);
+      worker.awaitProcessed(rig.server);
+
+      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+          .contains(TranscodeFailure.FIRST_SEGMENT_OPENED_LATE);
+      assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
+          .containsExactly(terminalEventFor(job, TranscodeFailure.FIRST_SEGMENT_OPENED_LATE));
+      assertThat(
+              rig.meters
+                  .counter(
+                      "streamarr.streaming.terminal_job_attempt_failures",
+                      "reason",
+                      "first_segment_opened_late")
+                  .count())
+          .isEqualTo(1);
+    }
+  }
+
+  @ParameterizedTest
   @CsvSource({
     "REMUX,JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION",
     "VIDEO_TRANSCODE,JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH",
     "VIDEO_TRANSCODE,JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION",
-    "FULL_TRANSCODE,JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH"
+    "FULL_TRANSCODE,JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH",
+    "FULL_TRANSCODE,JOB_ATTEMPT_FAILURE_FIRST_SEGMENT_OPENED_LATE"
   })
   @DisplayName("Should send no replacement attempt when a segment request follows a final failure")
   void shouldSendNoReplacementAttemptWhenSegmentRequestFollowsFinalFailure(
@@ -567,6 +600,7 @@ class RemoteFormatFailureIT {
     private final WorkerSessionServer server;
     private final RemoteTranscodeExecutor executor;
     private final StreamingRigFixture.StreamingRig streaming;
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
 
     private FailureRig(ApplicationEventPublisher events) throws Exception {
       this(events, defaultSessionBuilder().build());
@@ -577,7 +611,7 @@ class RemoteFormatFailureIT {
       server =
           WorkerSessionServer.builder()
               .configuration(serverConfigurationBuilder().build())
-              .meterRegistry(new SimpleMeterRegistry())
+              .meterRegistry(meters)
               .segmentStore(segments)
               .eventPublisher(events)
               .build();
