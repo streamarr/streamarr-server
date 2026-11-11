@@ -126,6 +126,7 @@ class KeyframePacketScanWorkerIT extends AbstractIntegrationTest {
       var result =
           keyframePacketScanExecution.toBuilder()
               .scanner(remote::scanKeyframePackets)
+              .eventPublisher(new CapturingEventPublisher())
               .meterRegistry(new SimpleMeterRegistry())
               .build()
               .execute(packetScans.requests().getFirst());

@@ -32,6 +32,7 @@ import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeLearnedStreamEndRepository;
@@ -41,6 +42,7 @@ import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.BitrateScanRequesters;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.library.events.KeyframePacketScanPublishedEvent;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
@@ -91,6 +93,7 @@ class KeyframePacketScanExecutionTest {
       new FakeLearnedStreamEndRepository(outcomes);
   private final List<ProbeExecutionRequest> scanRequests = new ArrayList<>();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+  private final CapturingEventPublisher events = new CapturingEventPublisher();
   private KeyframePacketScanner scanner = scanAnswering(success(known()));
   private Path source;
   private MediaFile mediaFile;
@@ -166,6 +169,43 @@ class KeyframePacketScanExecutionTest {
         .extracting(LearnedStreamEnd::streamIndex, LearnedStreamEnd::endTime)
         .containsExactlyInAnyOrder(
             tuple(0, Duration.ofMillis(14_167)), tuple(1, Duration.ofMillis(14_250)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce the file's stored scan with its path when the packet scan stores its"
+          + " keyframe positions")
+  void shouldAnnounceFilesStoredScanWithItsPathWhenPacketScanStoresItsKeyframePositions() {
+    var request = storePacketScanRequired();
+
+    execution().execute(request);
+
+    assertThat(events.getEventsOfType(KeyframePacketScanPublishedEvent.class))
+        .containsExactly(
+            new KeyframePacketScanPublishedEvent(mediaFile.getId(), mediaFile.getFilepathUri()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce no stored scan when the stored outcome stopped needing the scan during it")
+  void shouldAnnounceNoStoredScanWhenStoredOutcomeStoppedNeedingScanDuringIt() {
+    var request = storePacketScanRequired();
+    scanner =
+        _ -> {
+          outcomes.publishKeyframePacketScan(
+              KeyframePacketScanPublication.builder()
+                  .mediaFileId(mediaFile.getId())
+                  .snapshot(request.snapshot())
+                  .probeVersion(request.probeVersion())
+                  .keyframes(known())
+                  .build());
+          return success(known());
+        };
+
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new KeyframePacketScanResult.Completed());
+    assertThat(events.getEventsOfType(KeyframePacketScanPublishedEvent.class)).isEmpty();
   }
 
   @Test
@@ -359,6 +399,8 @@ class KeyframePacketScanExecutionTest {
             })
         .fileSystem(FileSystems.getDefault())
         .outcomes(outcomes)
+        .eventPublisher(events)
+        .transactionManager(new FakeTransactionManager())
         .meterRegistry(meterRegistry)
         .build();
   }
