@@ -193,3 +193,35 @@ type MarkAllNotificationsReadPayload {
 }
 
 union MarkAllNotificationsReadError = InvalidCursorError
+
+extend type Subscription {
+    """
+    The signed-in Account's Notifications changed: one was made or updated in place, a request
+    resolved because its subject was decided, canceled, replaced, invalidated or expired, or one
+    was marked read. An expiry arrives when the server stores it, within about a minute of the
+    request's expiresAt. A deletion and a change of what the guard hides are not pushed: read the
+    list or the count again. The Account comes from the access token that opened the socket,
+    and no argument names it. The same access as notifications; the field authorizes when it
+    opens, and each change is guarded from the Account's live relationships. Every open socket of
+    the Account receives the change, including the socket of the client that made it.
+    """
+    notificationsChanged: NotificationsChange
+}
+
+"One committed change to the signed-in Account's Notifications."
+type NotificationsChange {
+    "Each Notification that the change touched, once."
+    notifications: [NotificationChange]!
+    "The Account's unread count after the change. Null when the count could not be read."
+    unreadNotificationCount: Int
+}
+
+"One Notification that a change touched."
+type NotificationChange {
+    notificationId: ID!
+    """
+    The same edge that the notifications query returns, or null when the Notification left the
+    list. Remove it only for a null edge with no error at this change's path.
+    """
+    edge: NotificationEdge
+}

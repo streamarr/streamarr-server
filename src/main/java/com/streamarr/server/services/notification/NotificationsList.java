@@ -55,7 +55,8 @@ class NotificationsList implements PagedList<ShareNotification, UUID> {
     }
   }
 
-  private List<Row<ShareNotification>> shownOf(List<Row<Notification>> rows) {
+  /** The rows that the guard shows their recipients, in the order read. */
+  List<Row<ShareNotification>> shownOf(List<Row<Notification>> rows) {
     Map<UUID, Position> positions =
         rows.stream().collect(Collectors.toMap(row -> row.item().getId(), Row::position));
     return shareNotifications.shown(rows.stream().map(Row::item).toList()).stream()

@@ -24,6 +24,13 @@ public interface NotificationRepositoryCustom {
    */
   List<Row<Notification>> rowsOfRecipient(UUID recipientAccountId, Seek seek);
 
+  /** Those of the given Notifications that the recipient has, each at its place in the list. */
+  List<Row<Notification>> rowsOfRecipientWithIds(
+      UUID recipientAccountId, Collection<UUID> notificationIds);
+
+  /** The requests about the share, each with its recipient. */
+  List<GuardedNotification> findRequestsAbout(UUID shareId);
+
   /**
    * The recipient's unread Notifications at the instant, before the guard decides them: news its
    * recipient has not read, and requests not read whose offers still wait.
