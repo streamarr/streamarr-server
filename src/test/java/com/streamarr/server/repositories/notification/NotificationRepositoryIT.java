@@ -111,6 +111,26 @@ class NotificationRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep the later time when an earlier event of the kind is stored after a later one")
+  void shouldKeepTheLaterTimeWhenAnEarlierEventOfTheKindIsStoredAfterALaterOne() {
+    var share = offerOf(managedProfile("Ollie"), sam);
+    var later = upsert(answered(sam, share).at(EVENT.plusSeconds(60)).build());
+
+    var earlier = upsert(answered(sam, share).at(EVENT).build());
+
+    assertThat(earlier)
+        .isEqualTo(
+            new UnreadNews.Moved<>(
+                later.notificationId(),
+                ProfileShareFacts.answered("Ollie", ProfileShareAnswer.ACCEPTED)));
+    assertThat(notificationsOf(sam))
+        .singleElement()
+        .extracting(Notification::getLatestEventAt)
+        .isEqualTo(EVENT.plusSeconds(60));
+  }
+
+  @Test
   @DisplayName("Should make new news when the recipient read the earlier news of the kind")
   void shouldMakeNewNewsWhenTheRecipientReadTheEarlierNewsOfTheKind() {
     var share = offerOf(managedProfile("Ollie"), sam);
