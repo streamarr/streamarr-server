@@ -748,6 +748,12 @@ enum JobAttemptFailure {
   // worker refuses the segment before upload. Playback needs a new stream
   // session that encodes audio, without excluding the valid video format.
   JOB_ATTEMPT_FAILURE_COPIED_AUDIO_RAN_SHORT = 11;
+  // An attempt that encodes video read the source from a seek, and its first
+  // media segment's opening keyframe presents after the first output frame at
+  // or after that segment's start. Pictures before that keyframe are missing.
+  // The worker uploads no media segment of the attempt. Another attempt that
+  // reads the source the same way misses the same pictures (ADR 0037, seek).
+  JOB_ATTEMPT_FAILURE_FIRST_SEGMENT_OPENED_LATE = 12;
 }
 
 message JobAttemptFailed {

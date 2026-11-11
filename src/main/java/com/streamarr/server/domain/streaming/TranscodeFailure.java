@@ -18,5 +18,11 @@ public enum TranscodeFailure {
    * it cannot convert. Every attempt with the same decision meets the same picture, so only the
    * copy with Dolby Vision stripped, or an encode, avoids it (streamarr/streamarr-server#651).
    */
-  DOLBY_VISION_CONVERSION_FAILED
+  DOLBY_VISION_CONVERSION_FAILED,
+  /**
+   * An encoded attempt that read the source from a seek opened its first segment after the first
+   * output frame at or after that segment's start, so pictures before its opening keyframe are
+   * missing. Every attempt that reads the source the same way misses them too (ADR 0037, seek).
+   */
+  FIRST_SEGMENT_OPENED_LATE
 }

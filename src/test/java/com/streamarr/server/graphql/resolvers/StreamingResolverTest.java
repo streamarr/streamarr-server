@@ -999,7 +999,9 @@ class StreamingResolverTest {
             + " now. Ask your server admin to check the server logs.",
         "DOLBY_VISION_CONVERSION_FAILED|PlaybackOutputMismatchError|This video's Dolby Vision"
             + " can't be converted for this device. Set Quality to Auto and try again. If Quality"
-            + " is already Auto, ask your server admin to check the file."
+            + " is already Auto, ask your server admin to check the file.",
+        "FIRST_SEGMENT_OPENED_LATE|PlaybackInvalidSpecificationError|This video can't be played"
+            + " from this point. Ask your server admin to check the server logs."
       })
   @DisplayName("Should expose the typed worker failure when a job attempt fails finally")
   void shouldExposeTheTypedWorkerFailureWhenAJobAttemptFailsFinally(

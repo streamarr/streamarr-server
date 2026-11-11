@@ -1004,6 +1004,26 @@ class TranscodeWorkerContractTest {
   }
 
   @Test
+  @DisplayName(
+      "Should tell a first segment that opened late apart from a generic transcode failure when an"
+          + " attempt fails")
+  void shouldTellAFirstSegmentThatOpenedLateApartFromAGenericTranscodeFailureWhenAttemptFails()
+      throws Exception {
+    var failure =
+        JobAttemptFailed.newBuilder()
+            .setJobAttemptId(uuid(UUID.randomUUID()))
+            .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_FIRST_SEGMENT_OPENED_LATE)
+            .build();
+
+    var parsed = JobAttemptFailed.parseFrom(failure.toByteArray());
+
+    assertThat(parsed.getFailure())
+        .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_FIRST_SEGMENT_OPENED_LATE)
+        .isNotEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+    assertThat(parsed.getFailureValue()).isEqualTo(12);
+  }
+
+  @Test
   @DisplayName("Should distinguish short copied audio from failed video when an attempt fails")
   void shouldDistinguishShortCopiedAudioFromFailedVideoWhenAnAttemptFails() throws Exception {
     var failure =
