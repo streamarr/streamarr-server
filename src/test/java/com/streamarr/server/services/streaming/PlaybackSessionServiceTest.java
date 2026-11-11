@@ -85,6 +85,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -1144,6 +1145,30 @@ class PlaybackSessionServiceTest {
                 assertThat(attempt.reason())
                     .isEqualTo(new PlaybackSessionFailure.CreationRejected(streams.rejection)));
     assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  // A fixed quality never gives its range up, so the rejected continuation ends playback, and the
+  // playback session's listeners hear of that end.
+  @Test
+  @DisplayName(
+      "Should announce the end of playback when no stream session can continue a fixed quality's"
+          + " PQ encode in software")
+  void shouldAnnounceTheEndOfPlaybackWhenNoStreamSessionCanContinueAFixedQualitysPqEncode() {
+    streams.copiesTheSource = false;
+    streams.encodeFormat = EncodeFormat.hdr(VideoRange.PQ);
+    var command = startCommand().options(qualityOptions(VideoQuality.HIGH_720P)).build();
+    var initial = accepted(service.start(command));
+    streams.rejection = new CreateStreamSessionRejection.NoEligibleVideoFormat();
+    var changesWhenTheContinuationStarted = new AtomicLong();
+    streams.beforeNextCreation = _ -> changesWhenTheContinuationStarted.set(changesOf(initial));
+
+    service.onRequestedVariantHardwareEncoderFailed(
+        hardwareEncoderFailure(initial.currentFormatAttempt().streamSessionId()));
+
+    var changesAfterTheRejection = changesOf(initial);
+    var failed = service.access(request(initial, command)).orElseThrow();
+    assertThat(failed.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Failed.class);
+    assertThat(changesAfterTheRejection).isEqualTo(changesWhenTheContinuationStarted.get() + 1);
   }
 
   // A playback session that closed while its software continuation started reserves nothing more.
