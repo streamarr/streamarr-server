@@ -118,6 +118,18 @@ public final class TestImages {
     return writePng(image);
   }
 
+  /** An opaque teal PNG in which exactly one pixel, at the centre, is one step short of opaque. */
+  public static byte[] createPngImageWithOneTranslucentPixel() {
+    var image = new BufferedImage(600, 900, BufferedImage.TYPE_INT_ARGB);
+    var graphics = image.createGraphics();
+    graphics.setColor(new Color(OPAQUE_TEAL, true));
+    graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+    graphics.dispose();
+    image.setRGB(300, 450, 0xFE00A0A0);
+
+    return writePng(image);
+  }
+
   /** A solid teal PNG with 16 bits for each of red, green and blue, and no alpha channel. */
   public static byte[] createSixteenBitOpaquePngImage() {
     var colorModel =
