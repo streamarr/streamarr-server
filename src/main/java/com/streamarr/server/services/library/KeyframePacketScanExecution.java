@@ -40,7 +40,7 @@ import org.springframework.stereotype.Service;
  * KeyframePacketScanResult.Failed}, which its completion counts.
  */
 @Service
-@Builder
+@Builder(toBuilder = true)
 @RequiredArgsConstructor
 @Slf4j
 public class KeyframePacketScanExecution {
