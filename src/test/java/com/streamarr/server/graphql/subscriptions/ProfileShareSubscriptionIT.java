@@ -405,6 +405,43 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should deliver the withdrawn offer to its Household and nothing after it when the Profile of"
+          + " a pending offer is deleted")
+  void
+      shouldDeliverWithdrawnOfferToItsHouseholdAndNothingAfterWhenProfileOfPendingOfferIsDeleted() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var orphan = managedProfile();
+    var shareId = offer(orphan);
+    nextShare(hostSocket, shareId);
+    var serverAdmin = adminIdentity();
+
+    var deleted =
+        http.execute(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { administrativelyDeleteProfile(input: {profileId: "%s", reason: "closing"}) {
+              profileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()));
+    assertThat(deleted.at("/data/administrativelyDeleteProfile/profileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    var withdrawn = changesUntil(hostSocket, shareId).getLast();
+    var laterId = offer(managedProfile());
+
+    // The deletion withdrew the offer first; the Household hears that, and not the deletion.
+    assertThat(withdrawn.path("share").path("status").asString())
+        .as("change in %s", withdrawn)
+        .isEqualTo("INVALIDATED");
+    assertPartiesHidden(withdrawn.path("share"));
+    assertThat(changesUntil(hostSocket, laterId))
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(shareId);
+  }
+
+  @Test
+  @DisplayName(
       "Should deliver the share's removal to the Profile's managers when its Household is deleted")
   void shouldDeliverTheSharesRemovalToTheProfilesManagersWhenItsHouseholdIsDeleted() {
     var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));

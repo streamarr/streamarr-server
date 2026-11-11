@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
@@ -572,21 +573,37 @@ public class ProfileSharingService {
    * gets it when they may read the shares into its Household or the shares of its Profile, as
    * {@link #householdShares} and {@link #profileShares} decide; it then carries the share as it
    * stands now, or no share once the share was deleted. The Household's HouseholdAdmins get the
-   * changes of a live share, the change that ends it included, and none after; a reader of its
-   * share history, a ServerAdmin, gets them all. A share deleted with its Profile is decided by its
-   * Household alone. Refuses a reader who may no longer follow share changes at all.
+   * changes of a live share and none after it ends. The change that ends it reaches them as it was
+   * made, with nothing read later, unless they also read the share from the Profile's side or the
+   * Household's share history, as a ServerAdmin does, and get every change as it stands. A share
+   * deleted with its Profile is decided by its Household alone. Refuses a reader who may no longer
+   * follow share changes at all.
    */
   public Optional<ShareChange> shareChange(
       AuthenticatedIdentity identity, ProfileShareChangedEvent change) {
     requireViewProfileShareChanges(identity);
     var changed = change.share();
-    if (!householdSideFollows(identity, change)
-        && !mayViewProfileShares(identity, changed.profileId())) {
-      return Optional.empty();
+    if (householdSideFollows(identity, change)) {
+      return Optional.of(
+          change.ended() && !followsEveryChange(identity, changed)
+              ? ShareChange.endedAs(changed)
+              : asItStands(changed));
     }
 
-    return Optional.of(
-        new ShareChange(changed.shareId(), shareRepository.findById(changed.shareId())));
+    if (mayViewProfileShares(identity, changed.profileId())) {
+      return Optional.of(asItStands(changed));
+    }
+
+    return Optional.empty();
+  }
+
+  private boolean followsEveryChange(AuthenticatedIdentity identity, ChangedShare changed) {
+    return mayViewHouseholdShareHistory(identity, changed.householdId())
+        || mayViewProfileShares(identity, changed.profileId());
+  }
+
+  private ShareChange asItStands(ChangedShare changed) {
+    return new ShareChange(changed.shareId(), shareRepository.findById(changed.shareId()));
   }
 
   /** The offerer's whole preflight: nothing else about the target Household leaks. */

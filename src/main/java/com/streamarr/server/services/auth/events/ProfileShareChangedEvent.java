@@ -10,4 +10,10 @@ import lombok.NonNull;
  * still is, or was until this change. The target Household's HouseholdAdmins follow a share only
  * while it is live, so they hear the change that ends it and none after.
  */
-public record ProfileShareChangedEvent(@NonNull ChangedShare share, boolean live) {}
+public record ProfileShareChangedEvent(@NonNull ChangedShare share, boolean live) {
+
+  /** Whether this change ended the share: it was pending or active until this change. */
+  public boolean ended() {
+    return live && !share.status().isLive();
+  }
+}

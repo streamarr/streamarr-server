@@ -785,7 +785,7 @@ class ProfileSharingServiceTest {
     var change = service.shareChange(identity(), changeOf(share)).orElseThrow();
 
     assertThat(change.shareId()).isEqualTo(share.getId());
-    assertThat(change.share()).contains(share);
+    assertThat(change.share()).containsSame(share);
   }
 
   @Test
@@ -808,6 +808,74 @@ class ProfileSharingServiceTest {
 
     assertThat(ending).hasValueSatisfying(change -> assertThat(change.share()).contains(share));
     assertThat(after).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should give the change that ended a share as it was made when the share is gone at its"
+          + " delivery to the Household's HouseholdAdmin")
+  void shouldGiveChangeThatEndedShareAsItWasMadeWhenShareIsGoneAtDeliveryToItsHouseholdAdmin() {
+    var share = pendingShare();
+    share.setStatus(ProfileShareStatus.INVALIDATED);
+    share.setInvalidationReason("profile deleted");
+    var withdrawal = changeOf(share);
+    shares.deleteById(share.getId());
+    authorization.decideUnitWith(
+        intent ->
+            switch (intent) {
+              case Intent.ViewProfileShareChanges _ -> allowed();
+              case Intent.ViewHouseholdAdministration(var id) when id.equals(household.getId()) ->
+                  allowed();
+              default -> denied();
+            });
+
+    var delivered = service.shareChange(identity(), withdrawal).orElseThrow().share();
+
+    assertThat(delivered)
+        .hasValueSatisfying(
+            ended -> {
+              assertThat(ended.getId()).isEqualTo(share.getId());
+              assertThat(ended.getProfileId()).isEqualTo(profile.getId());
+              assertThat(ended.getHouseholdId()).isEqualTo(household.getId());
+              assertThat(ended.getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
+              assertThat(ended.getOfferedByAccountId()).isNull();
+              assertThat(ended.getInvalidationReason()).isEmpty();
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should give the share as it stands with the change that ends it when the reader also reads"
+          + " it from the Profile's side or the Household's share history")
+  void shouldGiveShareAsItStandsWithChangeThatEndsItWhenReaderAlsoReadsItFromProfileOrHistory() {
+    var share = pendingShare();
+    share.setStatus(ProfileShareStatus.INVALIDATED);
+    share.setInvalidationReason("offerer no longer authorized");
+    var withdrawal = changeOf(share);
+    var reasons = new ArrayList<Optional<String>>();
+
+    for (var alsoReads :
+        List.of(
+            new Intent.ViewProfileShareHouseholds(profile.getId()),
+            new Intent.ViewHouseholdShareHistory(household.getId()))) {
+      authorization.decideUnitWith(
+          intent ->
+              intent instanceof Intent.ViewProfileShareChanges
+                      || intent.equals(new Intent.ViewHouseholdAdministration(household.getId()))
+                      || intent.equals(alsoReads)
+                  ? allowed()
+                  : denied());
+      reasons.add(
+          service
+              .shareChange(identity(), withdrawal)
+              .flatMap(ShareChange::share)
+              .flatMap(ProfileHouseholdShare::getInvalidationReason));
+    }
+
+    assertThat(reasons)
+        .containsExactly(
+            Optional.of("offerer no longer authorized"),
+            Optional.of("offerer no longer authorized"));
   }
 
   @Test

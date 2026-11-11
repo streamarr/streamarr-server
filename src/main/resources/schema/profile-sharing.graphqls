@@ -93,10 +93,12 @@ extend type Subscription {
 
     The target Household's HouseholdAdmins follow a share while the offer is PENDING or the share
     is ACTIVE. They also get the change that ends it: the offer declined, canceled, expired or
-    invalidated, or the share ended. That last change carries the share's own fields, such as its
-    status, with profile, visitor, offeredByDisplayName, household and invalidationReason null,
-    so the client can take the share out of its lists. No change of that share reaches them after
-    it, not even its removal. ServerAdmins and the Profile's managers get every change.
+    invalidated, or the share ended. That last change carries the share as that change left it,
+    taken when the change was made: its id, profileId, householdId and status, with
+    requiredByAccountMembership false and every other field null, so the client can take the share
+    out of its lists. It carries that status even when the share is deleted, with its Profile,
+    before the change is delivered. No change of that share reaches them after it, not even its
+    removal. ServerAdmins and the Profile's managers get every change.
     A share deleted with its Profile reaches only those who may read its Household's shares, and
     a share deleted with its Household reaches only those who may read its Profile's shares.
     An operation whose Account may no longer follow share changes ends with FORBIDDEN.
@@ -112,9 +114,10 @@ extend type Subscription {
     changes through the Profile's side, and still drops it from their householdShares list once it
     is over. In a list kept to visitorsOnly, keep a share only while visitor is true. Remove a
     share when share is null without errors. A null share with errors is not a
-    removal: keep the share and run the queries again. The server reads the share when it delivers
-    the change and delivers one operation's changes in order, so the last change for a share
-    carries its latest state. A share that stops being readable to the subscriber does not arrive
+    removal: keep the share and run the queries again. Except for that last change to the target
+    Household's HouseholdAdmins, the server reads the share when it delivers the change, and it
+    delivers one operation's changes in order, so the last change for a share carries its latest
+    state. A share that stops being readable to the subscriber does not arrive
     as removed; the queries stop listing it. The operation does not complete while the server runs.
     """
     profileShareChanged: ProfileShareChange
@@ -125,7 +128,9 @@ type ProfileShareChange {
     shareId: ID!
     """
     The share as the server reads it on delivery, or null once the share no longer exists, as when
-    it was deleted with its Profile or its Household.
+    it was deleted with its Profile or its Household. The change that ends a share reaches a
+    HouseholdAdmin who reads the share only from its Household as that change left it, never as
+    null.
     """
     share: ProfileShare
 }
