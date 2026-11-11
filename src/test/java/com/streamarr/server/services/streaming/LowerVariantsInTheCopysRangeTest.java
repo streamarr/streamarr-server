@@ -63,6 +63,7 @@ import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
@@ -306,6 +307,52 @@ class LowerVariantsInTheCopysRangeTest {
     assertThat(entries.subList(1, entries.size()))
         .isNotEmpty()
         .allSatisfy(entry -> assertThat(videoCodecOf(entry)).startsWith("hvc1.2.4."));
+  }
+
+  // ADR 0049: an output fits one capability entry. Each lower variant is sized by an entry that
+  // plays the lower variants' own range and bit depth, so an entry that plays 8-bit SDR alone at 60
+  // fps does not give a PQ lower variant its frame rate.
+  @Test
+  @DisplayName(
+      "Should fit every lower variant to the capability entry that plays the copy's range when"
+          + " another entry of its codec family plays SDR alone at a higher frame rate")
+  void shouldFitEveryLowerVariantToTheEntryThatPlaysTheCopysRangeWhenAnotherPlaysSdrAloneFaster() {
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE)));
+    probes.setDefaultProbe(
+        source(
+                hevcFacts()
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(60, 1)))
+                    .dynamicRange(
+                        VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+                    .build())
+            .toBuilder()
+            .framerate(OptionalDouble.of(60))
+            .build());
+
+    var copy =
+        accepted(
+            playback.start(
+                startAuto(
+                    clientWith(
+                        hevcEntryBuilder().compatibleBases(EVERY_RANGE).build(),
+                        av1EntryBuilder().build(),
+                        av1EntryBuilder()
+                            .compatibleBases(List.of(CompatibleBase.PQ))
+                            .maxFrameRate(30)
+                            .build()))));
+
+    var session = sessionOf(copy);
+    assertThat(session.decisionOf("720p").videoEncodeFormat())
+        .isEqualTo(EncodeFormat.hdr(VideoRange.PQ));
+    assertThat(session.getVariants())
+        .isNotEmpty()
+        .extracting(QualityVariant::frameRate)
+        .containsOnly(new Fraction(30, 1));
+    var entries = streamInfEntries(copy);
+    assertThat(entries.getFirst()).contains("FRAME-RATE=60.000");
+    assertThat(entries.subList(1, entries.size()))
+        .isNotEmpty()
+        .allSatisfy(entry -> assertThat(entry).contains("FRAME-RATE=30.000"));
   }
 
   @Test
