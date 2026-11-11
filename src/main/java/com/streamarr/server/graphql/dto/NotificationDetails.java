@@ -5,6 +5,7 @@ import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.domain.notification.ShareNotification;
+import com.streamarr.server.domain.notification.SubjectNotification;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
@@ -28,7 +29,13 @@ public record NotificationDetails(
     ProfileShareDetails share,
     String keptProfileName) {
 
-  public static NotificationDetails from(ShareNotification shareNotification, Instant now) {
+  public static NotificationDetails from(SubjectNotification read, Instant now) {
+    return switch (read) {
+      case ShareNotification shareNotification -> fromShare(shareNotification, now);
+    };
+  }
+
+  private static NotificationDetails fromShare(ShareNotification shareNotification, Instant now) {
     var notification = shareNotification.notification();
     var share = shareNotification.share();
     return NotificationDetails.builder()
