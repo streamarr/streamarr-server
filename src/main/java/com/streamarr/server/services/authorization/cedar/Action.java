@@ -478,6 +478,16 @@ enum Action {
       ResourceKind.SERVER,
       Authorizes.READ,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_NOTIFICATION_RETENTION(
+      "viewNotificationRetention",
+      ResourceKind.SERVER,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  CHANGE_NOTIFICATION_RETENTION(
+      "changeNotificationRetention",
+      ResourceKind.SERVER,
+      Authorizes.WRITE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   VIEW_NOTIFICATIONS(
       "viewNotifications",
       ResourceKind.ACCOUNT,

@@ -1,0 +1,27 @@
+# Notifications (ADR 0063; ADR 0026 shapes).
+
+"""
+How long the server keeps read news and resolved requests (ADR 0063). It also deletes unread news
+that a recipient may no longer see, once its latest event is older than the same period. Unread
+news that the recipient may see, and requests that still wait, stay.
+"""
+type NotificationRetentionSetting {
+    "The same for every read and change, so a client cache can update the setting in place."
+    id: ID!
+    days: Int!
+    "The shortest retention a ServerAdmin can choose."
+    minimumDays: Int!
+    "The longest retention a ServerAdmin can choose."
+    maximumDays: Int!
+}
+
+input ChangeNotificationRetentionInput {
+    days: Int!
+}
+
+type ChangeNotificationRetentionPayload {
+    notificationRetentionSetting: NotificationRetentionSetting
+    userErrors: [ChangeNotificationRetentionError!]!
+}
+
+union ChangeNotificationRetentionError = NotificationRetentionOutOfRangeError

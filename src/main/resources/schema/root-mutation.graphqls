@@ -122,6 +122,8 @@ type Mutation {
     deleteLastAccountAndHouseholdPreservingPersonalProfile(input: DeleteLastAccountAndHouseholdPreservingPersonalProfileInput!): DeleteLastAccountAndHouseholdPreservingPersonalProfilePayload
     changeEncoderPreset(input: ChangeEncoderPresetInput!): ChangeEncoderPresetPayload
     changeIdleSegmentRetention(input: ChangeIdleSegmentRetentionInput!): ChangeIdleSegmentRetentionPayload
+    "Changes how long the server keeps read news and resolved requests. Requires a ServerAdmin."
+    changeNotificationRetention(input: ChangeNotificationRetentionInput!): ChangeNotificationRetentionPayload
 }
 
 enum ImageRefreshMode {

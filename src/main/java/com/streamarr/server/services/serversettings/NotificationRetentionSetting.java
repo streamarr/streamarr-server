@@ -25,4 +25,8 @@ public record NotificationRetentionSetting(@NonNull UUID id, int days) {
   Duration duration() {
     return Duration.ofDays(days);
   }
+
+  static boolean allows(int days) {
+    return days >= MINIMUM_DAYS && days <= MAXIMUM_DAYS;
+  }
 }
