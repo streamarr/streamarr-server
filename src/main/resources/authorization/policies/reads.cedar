@@ -16,6 +16,8 @@ when {
 };
 
 // HouseholdAdmins read their own Household's administration; ServerAdmin reads every Household.
+// With view-profile-administration below, this is a share's read rule for its Notifications, which
+// ProfileShareReaders mirrors in SQL: widen it with either permit.
 @id("view-household-administration-as-household-admin-or-server-admin")
 permit (
   principal,
@@ -43,7 +45,7 @@ when {
 };
 
 // Profile administrative details: its managers; HouseholdAdmins while it is available in their
-// Household; ServerAdmin.
+// Household; ServerAdmin. ProfileShareReaders mirrors this permit in SQL: widen it with this one.
 @id("view-profile-administration-as-manager-hosting-admin-or-server-admin")
 permit (
   principal,
