@@ -451,6 +451,77 @@ class ServerSettingsServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should let a Household hold ten live share codes when no ServerAdmin has changed the limit")
+  void shouldLetAHouseholdHoldTenLiveShareCodesWhenNoServerAdminHasChangedTheLimit() {
+    assertThat(serverSettingsService.shareCodeLimit()).isEqualTo(10);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report ten codes and the allowed range when a ServerAdmin reads the share code limit")
+  void shouldReportTenCodesAndTheAllowedRangeWhenAServerAdminReadsTheShareCodeLimit() {
+    var settingsId = serverSettingsRepository.findAll().getFirst().getId();
+
+    var setting = serverSettingsService.readShareCodeLimitSetting(identity);
+
+    assertThat(setting.id()).isEqualTo(settingsId);
+    assertThat(setting.codes()).isEqualTo(10);
+    assertThat(setting.minimumCodes()).isEqualTo(1);
+    assertThat(setting.maximumCodes()).isEqualTo(100);
+    assertThat(authorizationService.recordedIntents())
+        .containsExactly(new Intent.ViewShareCodeLimit());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 50, 100})
+  @DisplayName(
+      "Should let a Household hold the new number of live codes when a ServerAdmin changes the"
+          + " limit")
+  void shouldLetAHouseholdHoldTheNewNumberOfLiveCodesWhenAServerAdminChangesTheLimit(int codes) {
+    var setting = accepted(serverSettingsService.changeShareCodeLimit(identity, codes));
+
+    assertThat(setting.codes()).isEqualTo(codes);
+    assertThat(setting.id()).isEqualTo(serverSettingsRepository.findAll().getFirst().getId());
+    assertThat(serverSettingsService.shareCodeLimit()).isEqualTo(codes);
+    assertThat(authorizationService.recordedIntents())
+        .startsWith(new Intent.ChangeShareCodeLimit());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {Integer.MIN_VALUE, -1, 0, 101, Integer.MAX_VALUE})
+  @DisplayName(
+      "Should reject the change and keep ten codes when the share code limit is out of range")
+  void shouldRejectTheChangeAndKeepTenCodesWhenTheShareCodeLimitIsOutOfRange(int codes) {
+    var outcome = serverSettingsService.changeShareCodeLimit(identity, codes);
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new ChangeShareCodeLimitRejection.OutOfRange());
+    assertThat(serverSettingsService.shareCodeLimit()).isEqualTo(10);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {5, 0})
+  @DisplayName(
+      "Should refuse a caller who is not a ServerAdmin and keep ten codes when the caller changes"
+          + " the share code limit")
+  void shouldRefuseACallerWhoIsNotAServerAdminWhenTheCallerChangesTheShareCodeLimit(int codes) {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> serverSettingsService.changeShareCodeLimit(identity, codes))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(serverSettingsService.shareCodeLimit()).isEqualTo(10);
+  }
+
+  @Test
+  @DisplayName("Should refuse the share code limit read when the caller is not a ServerAdmin")
+  void shouldRefuseTheShareCodeLimitReadWhenTheCallerIsNotAServerAdmin() {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> serverSettingsService.readShareCodeLimitSetting(identity))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
   @DisplayName("Should fail with a missing-settings error when the settings row is absent")
   void shouldFailWithMissingSettingsErrorWhenSettingsRowIsAbsent() {
     serverSettingsRepository.deleteAll();

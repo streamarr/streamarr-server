@@ -139,6 +139,11 @@ type Mutation {
     Requires a ServerAdmin.
     """
     changeInvitationLifetime(input: ChangeInvitationLifetimeInput!): ChangeInvitationLifetimePayload
+    """
+    Changes how many live share codes a Household may hold at once. A lower limit ends no live
+    code. Requires a ServerAdmin.
+    """
+    changeShareCodeLimit(input: ChangeShareCodeLimitInput!): ChangeShareCodeLimitPayload
 }
 
 enum ImageRefreshMode {

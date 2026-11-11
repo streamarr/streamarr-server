@@ -222,7 +222,9 @@ class AuthorizationParityTest {
           VIEW_SHARE_CODE_LIFETIME,
           CHANGE_SHARE_CODE_LIFETIME,
           VIEW_INVITATION_LIFETIME,
-          CHANGE_INVITATION_LIFETIME ->
+          CHANGE_INVITATION_LIFETIME,
+          VIEW_SHARE_CODE_LIMIT,
+          CHANGE_SHARE_CODE_LIMIT ->
           "serverAdministration";
       case VIEW_PROFILE_PICKER,
           SELECT_PROFILE,
@@ -392,6 +394,8 @@ class AuthorizationParityTest {
         new Intent.ViewShareCodeLifetime(),
         new Intent.ChangeShareCodeLifetime(),
         new Intent.ViewInvitationLifetime(),
-        new Intent.ChangeInvitationLifetime());
+        new Intent.ChangeInvitationLifetime(),
+        new Intent.ViewShareCodeLimit(),
+        new Intent.ChangeShareCodeLimit());
   }
 }

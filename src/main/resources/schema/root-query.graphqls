@@ -98,4 +98,6 @@ type Query {
     shareCodeLifetimeSetting: ShareCodeLifetimeSetting!
     "How long an invitation or an offer of a Profile waits for its answer. Requires a ServerAdmin."
     invitationLifetimeSetting: InvitationLifetimeSetting!
+    "How many live share codes a Household may hold at once. Requires a ServerAdmin."
+    shareCodeLimitSetting: ShareCodeLimitSetting!
 }
