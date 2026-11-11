@@ -94,4 +94,6 @@ type Query {
     idleSegmentRetentionSetting: IdleSegmentRetentionSetting!
     "How long the server keeps read news and resolved requests. Requires a ServerAdmin."
     notificationRetentionSetting: NotificationRetentionSetting!
+    "How long a share code stays live after it is issued. Requires a ServerAdmin."
+    shareCodeLifetimeSetting: ShareCodeLifetimeSetting!
 }

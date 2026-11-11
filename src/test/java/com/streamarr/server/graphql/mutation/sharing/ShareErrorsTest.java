@@ -5,6 +5,7 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.streamarr.server.services.identity.ShareCodeRejections;
 import com.streamarr.server.services.identity.ShareRejections;
+import com.streamarr.server.services.serversettings.ChangeLifetimeRejection;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -49,6 +50,13 @@ class ShareErrorsTest {
         .isEqualTo(
             new ProfileAlreadySharedError(
                 "That Profile is already available in that Household.", List.of("profileId")));
+  }
+
+  @Test
+  @DisplayName("Should name the hours input and the allowed range when a lifetime is out of range")
+  void shouldNameHoursInputAndAllowedRangeWhenLifetimeIsOutOfRange() {
+    assertThat(ShareErrors.toLifetimeError(new ChangeLifetimeRejection.OutOfRange()))
+        .isEqualTo(new LifetimeOutOfRangeError("Choose from 1 to 720 hours.", List.of("hours")));
   }
 
   @Test

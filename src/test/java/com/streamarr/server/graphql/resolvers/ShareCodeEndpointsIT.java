@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.jooq.generated.tables.ShareCode.SHARE_CODE;
+import static com.streamarr.server.support.ServerSettingsTestSupport.resetServerSettings;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -130,12 +131,37 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    resetServerSettings(dsl);
     host = identity();
   }
 
   @AfterEach
   void tearDown() {
+    resetServerSettings(dsl);
     identities.reversed().forEach(authTestSupport::deleteIdentity);
+  }
+
+  @Test
+  @DisplayName(
+      "Should issue a code that lasts the new lifetime when a ServerAdmin changed it before")
+  void shouldIssueCodeThatLastsTheNewLifetimeWhenServerAdminChangedItBefore() throws Exception {
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    identities.add(serverAdmin);
+    execute(
+        authTestSupport.accountBearer(serverAdmin),
+        "mutation { changeShareCodeLifetime(input: {hours: 2}) { userErrors { __typename } } }",
+        Map.of());
+
+    var shareCode =
+        issue(authTestSupport.accountBearer(host), host.household().getId())
+            .path("issued")
+            .path("shareCode");
+
+    assertThat(
+            Duration.between(
+                Instant.parse(shareCode.path("issuedAt").asString()),
+                Instant.parse(shareCode.path("expiresAt").asString())))
+        .isBetween(Duration.ofHours(2), Duration.ofHours(2).plusMinutes(1));
   }
 
   @Test

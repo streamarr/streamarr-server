@@ -1,0 +1,31 @@
+# The Server settings section "Sharing and invitations" (ADR 0024 §Share codes, §Invitations; ADR
+# 0026 shapes). Only a ServerAdmin reads or changes these settings, and never from a session on a
+# TV. A change applies to what is issued after it.
+
+"""
+How long a share code stays live after it is issued, unless an offer spends it or it is withdrawn
+first. Only a ServerAdmin reads or changes it. A change applies to codes issued after it.
+"""
+type ShareCodeLifetimeSetting {
+    "The same for every read and change, so a client cache can update the setting in place."
+    id: ID!
+    hours: Int!
+    "The shortest lifetime a ServerAdmin can choose."
+    minimumHours: Int!
+    "The longest lifetime a ServerAdmin can choose."
+    maximumHours: Int!
+}
+
+"Only a ServerAdmin may change the share code lifetime."
+input ChangeShareCodeLifetimeInput {
+    "How long a code issued from now on stays live, from minimumHours to maximumHours."
+    hours: Int!
+}
+
+type ChangeShareCodeLifetimePayload {
+    "The setting as changed. Null when the change is refused."
+    shareCodeLifetimeSetting: ShareCodeLifetimeSetting
+    userErrors: [ChangeShareCodeLifetimeError!]!
+}
+
+union ChangeShareCodeLifetimeError = LifetimeOutOfRangeError

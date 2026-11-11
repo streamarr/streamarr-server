@@ -23,8 +23,7 @@ class CredentialCodePropertiesTest {
 
     assertThat(VALIDATOR.validate(properties))
         .extracting(violation -> violation.getPropertyPath().toString())
-        .containsExactlyInAnyOrder(
-            "invitationTtl", "passwordResetTtl", "shareCodeTtl", "replacementLockTimeout");
+        .containsExactlyInAnyOrder("invitationTtl", "passwordResetTtl", "replacementLockTimeout");
   }
 
   @Test
@@ -49,41 +48,12 @@ class CredentialCodePropertiesTest {
   }
 
   @Test
-  @DisplayName("Should reject a share code lifetime when it is shorter than five minutes")
-  void shouldRejectShareCodeLifetimeWhenShorterThanFiveMinutes() {
-    var properties = validProperties().shareCodeTtl(Duration.ofMinutes(5).minusNanos(1)).build();
-
-    assertThat(VALIDATOR.validate(properties))
-        .extracting(violation -> violation.getPropertyPath().toString())
-        .containsExactly("shareCodeTtl");
-  }
-
-  @Test
-  @DisplayName("Should reject a share code lifetime when it is longer than thirty days")
-  void shouldRejectShareCodeLifetimeWhenLongerThanThirtyDays() {
-    var properties = validProperties().shareCodeTtl(Duration.ofDays(30).plusNanos(1)).build();
-
-    assertThat(VALIDATOR.validate(properties))
-        .extracting(violation -> violation.getPropertyPath().toString())
-        .containsExactly("shareCodeTtl");
-  }
-
-  @Test
-  @DisplayName("Should accept a share code lifetime when it is thirty days")
-  void shouldAcceptShareCodeLifetimeWhenItIsThirtyDays() {
-    var properties = validProperties().shareCodeTtl(Duration.ofDays(30)).build();
-
-    assertThat(VALIDATOR.validate(properties)).isEmpty();
-  }
-
-  @Test
   @DisplayName("Should accept credential lifetimes when they are five minutes")
   void shouldAcceptCredentialLifetimesWhenTheyAreFiveMinutes() {
     var properties =
         validProperties()
             .invitationTtl(Duration.ofMinutes(5))
             .passwordResetTtl(Duration.ofMinutes(5))
-            .shareCodeTtl(Duration.ofMinutes(5))
             .build();
 
     assertThat(VALIDATOR.validate(properties)).isEmpty();
@@ -111,7 +81,6 @@ class CredentialCodePropertiesTest {
     return CredentialCodeProperties.builder()
         .invitationTtl(Duration.ofDays(7))
         .passwordResetTtl(Duration.ofHours(1))
-        .shareCodeTtl(Duration.ofDays(7))
         .replacementLockTimeout(Duration.ofSeconds(5));
   }
 }
