@@ -8,6 +8,7 @@ news that the recipient may see, and requests that still wait, stay.
 type NotificationRetentionSetting {
     "The same for every read and change, so a client cache can update the setting in place."
     id: ID!
+    "How many days the server keeps them after their latest event."
     days: Int!
     "The shortest retention a ServerAdmin can choose."
     minimumDays: Int!
@@ -15,15 +16,20 @@ type NotificationRetentionSetting {
     maximumDays: Int!
 }
 
+"A ServerAdmin's new retention for Notifications."
 input ChangeNotificationRetentionInput {
+    "Between minimumDays and maximumDays of the setting, inclusive."
     days: Int!
 }
 
+"The retention after a change, or why the server refused it."
 type ChangeNotificationRetentionPayload {
+    "The setting as stored. Null when userErrors is not empty."
     notificationRetentionSetting: NotificationRetentionSetting
     userErrors: [ChangeNotificationRetentionError!]!
 }
 
+"Why the server refused a change of the retention."
 union ChangeNotificationRetentionError = NotificationRetentionOutOfRangeError
 
 """
@@ -31,6 +37,7 @@ A stored note to the signed-in Account that something happened to a subject (ADR
 The concrete type names the kind and holds the subject.
 """
 interface Notification {
+    "Stable for the Notification's whole life; marks and live changes name it."
     id: ID!
     """
     The Notification's line, in English, for a client that shows this type but handles it no
@@ -165,10 +172,13 @@ type NotificationEdge implements OrderedEdge {
     orderKey: String!
 }
 
+"One of the signed-in Account's Notifications to mark read."
 input MarkNotificationReadInput {
+    "The id of a Notification from the list or a live change."
     notificationId: ID!
 }
 
+"The Notification after it was marked read, or why the server could not mark it."
 type MarkNotificationReadPayload {
     "The Notification in its resulting state. Null when userErrors is not empty."
     notification: Notification
@@ -177,8 +187,10 @@ type MarkNotificationReadPayload {
     userErrors: [MarkNotificationReadError!]!
 }
 
+"Why the server could not mark the Notification read."
 union MarkNotificationReadError = NotificationNotFoundError | InvalidIdError
 
+"Where the signed-in Account's list is read through."
 input MarkAllNotificationsReadInput {
     """
     The cursor of the newest Notification that the client shows. Every unread Notification at
@@ -187,12 +199,14 @@ input MarkAllNotificationsReadInput {
     through: String!
 }
 
+"The unread count after every Notification through the cursor was marked read."
 type MarkAllNotificationsReadPayload {
     "The signed-in Account's unread count after the change."
     unreadNotificationCount: Int
     userErrors: [MarkAllNotificationsReadError!]!
 }
 
+"Why the server could not mark the list read."
 union MarkAllNotificationsReadError = InvalidCursorError
 
 extend type Subscription {
@@ -219,6 +233,7 @@ type NotificationsChange {
 
 "One Notification that a change touched."
 type NotificationChange {
+    "The Notification's id, also when its edge is null."
     notificationId: ID!
     """
     The same edge that the notifications query returns, or null when the Notification left the
