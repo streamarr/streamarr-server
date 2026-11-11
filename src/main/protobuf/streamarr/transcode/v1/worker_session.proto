@@ -826,9 +826,9 @@ message ProbeCapacityChanged {
 }
 
 // The worker sends this message when a probe attempt has ended on the worker
-// and the worker sends nothing more for the attempt. The worker sends it
-// after every CancelProbeCommand, and after a ReportProbeAttempt call that
-// ended without the server's answer (ADR 0062).
+// and the worker sends no further message of a ProbeAttemptReport for the
+// attempt. The worker sends it after every CancelProbeCommand, and after a
+// ReportProbeAttempt call that ended without the server's answer (ADR 0062).
 message ProbeAttemptEndedWithoutReport {
   Uuid probe_attempt_id = 1;
 }
