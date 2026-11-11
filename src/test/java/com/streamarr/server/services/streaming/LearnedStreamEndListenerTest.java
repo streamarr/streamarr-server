@@ -176,16 +176,12 @@ class LearnedStreamEndListenerTest {
           + " write")
   void shouldReturnToTheWorkersReportBeforeTheEndIsStoredWhenTheDatabaseHoldsTheWrite() {
     var session = savedSession(probeOf(Optional.of(probedSnapshot)));
-    var writeReleased = new CountDownLatch(1);
-    var holding =
-        new LearnedStreamEndListener(
-            runtimeRegistry,
-            new HeldLearnedStreamEndRepository(learnedStreamEnds, writeReleased),
-            meterRegistry);
+    var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
+    var holding = new LearnedStreamEndListener(runtimeRegistry, held, meterRegistry);
 
     assertTimeoutPreemptively(
         Duration.ofSeconds(5), () -> holding.onJobAttemptCompleted(completion(session, AUDIO_END)));
-    writeReleased.countDown();
+    held.release();
     holding.close();
 
     assertThat(learnedStreamEnds.findFor(session.getMediaFileId(), probedSnapshot)).hasSize(1);
@@ -236,18 +232,27 @@ class LearnedStreamEndListenerTest {
     listener.close();
   }
 
-  // Holds each write until the test releases it, as a database lock would.
-  private record HeldLearnedStreamEndRepository(
-      LearnedStreamEndRepository delegate, CountDownLatch writeReleased)
-      implements LearnedStreamEndRepository {
+  /**
+   * Holds each write until the test releases it, as a database lock does. A write that is
+   * interrupted fails as a JDBC statement does when its thread is interrupted.
+   */
+  private static final class HeldLearnedStreamEndRepository implements LearnedStreamEndRepository {
+
+    private final LearnedStreamEndRepository delegate;
+    private final CountDownLatch writeReleased = new CountDownLatch(1);
+
+    private HeldLearnedStreamEndRepository(LearnedStreamEndRepository delegate) {
+      this.delegate = delegate;
+    }
 
     @Override
     public boolean store(LearnedStreamEnd learned) {
       try {
         writeReleased.await();
-      } catch (InterruptedException _) {
+      } catch (InterruptedException interrupted) {
         Thread.currentThread().interrupt();
-        return false;
+        throw new DataAccessResourceFailureException(
+            "The connection closed at the interrupt.", interrupted);
       }
 
       return delegate.store(learned);
@@ -256,6 +261,10 @@ class LearnedStreamEndListenerTest {
     @Override
     public List<LearnedStreamEnd> findFor(UUID mediaFileId, SourceFileSnapshot snapshot) {
       return delegate.findFor(mediaFileId, snapshot);
+    }
+
+    private void release() {
+      writeReleased.countDown();
     }
   }
 
