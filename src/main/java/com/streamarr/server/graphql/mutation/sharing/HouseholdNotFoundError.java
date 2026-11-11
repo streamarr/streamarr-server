@@ -4,4 +4,4 @@ import com.streamarr.server.graphql.mutation.InputMutationError;
 import java.util.List;
 
 public record HouseholdNotFoundError(String message, List<String> inputPath)
-    implements OfferProfileShareError, IssueShareCodeError, InputMutationError {}
+    implements IssueShareCodeError, InputMutationError {}

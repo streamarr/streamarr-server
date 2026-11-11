@@ -751,7 +751,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     var visitor = authTestSupport.createHouseholdMemberIdentity(owner);
     identities.add(visitor);
     var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
-    var shareId = offer(visitor, visitor.profile(), host.household().getId());
+    var shareId = offer(visitor, visitor.profile(), authTestSupport.shareCodeFor(host));
     nextShare(hostSocket, shareId);
     // The deletion revokes the Account's sessions before it withdraws the offers it made.
     var sessionId = sessionSelecting(visitor, visitor.profile());
@@ -780,9 +780,9 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
                 householdRepository.saveAndFlush(
                     HouseholdFixture.defaultHouseholdBuilder().build()));
     households.add(empty.getId());
-    var shareId = offer(managedProfile(), empty.getId());
-    nextShare(ownerSocket, shareId);
     var serverAdmin = adminIdentity();
+    var shareId = offer(managedProfile(), authTestSupport.shareCodeFor(serverAdmin, empty.getId()));
+    nextShare(ownerSocket, shareId);
 
     var deleted =
         http.execute(
@@ -1107,23 +1107,24 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     return offer(profile, host);
   }
 
+  /** The owner offers the Profile with a code that the target HouseholdAdmin issues for it. */
   private String offer(Profile profile, AuthTestSupport.TestIdentity target) {
-    return offer(profile, target.household().getId());
+    return offer(profile, authTestSupport.shareCodeFor(target));
   }
 
-  private String offer(Profile profile, UUID householdId) {
-    return offer(owner, profile, householdId);
+  private String offer(Profile profile, String shareCode) {
+    return offer(owner, profile, shareCode);
   }
 
-  private String offer(AuthTestSupport.TestIdentity offerer, Profile profile, UUID householdId) {
+  private String offer(AuthTestSupport.TestIdentity offerer, Profile profile, String shareCode) {
     var response =
         http.execute(
             authTestSupport.accountBearer(offerer),
             """
-            mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+            mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
               share { id status } userErrors { __typename } } }
             """
-                .formatted(profile.getId(), householdId));
+                .formatted(profile.getId(), shareCode));
     var share = response.at("/data/offerProfileShare/share");
     assertThat(share.path("status").asString()).as("offer in %s", response).isEqualTo("PENDING");
     return share.path("id").asString();

@@ -22,7 +22,7 @@ public final class ShareCodeRejections {
 
   /**
    * The presented code is wrong, spent, withdrawn, expired or invalidated: one refusal for each,
-   * naming no Household.
+   * naming no Household, whether the code was looked up or offered with.
    */
-  public record ShareCodeRefused() implements LookUp {}
+  public record ShareCodeRefused() implements LookUp, ShareRejections.Offer {}
 }

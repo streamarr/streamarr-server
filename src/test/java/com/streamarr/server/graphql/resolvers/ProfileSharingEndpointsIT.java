@@ -97,7 +97,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   void shouldMakeProfileAvailableWhenShareOfferIsAccepted() throws Exception {
     var orphan = managedOrphan();
 
-    var shareId = offer(orphan, host.household().getId());
+    var shareId = offer(orphan, host);
 
     graphql(
             authTestSupport.accountBearer(host),
@@ -124,32 +124,114 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     assertThat(shareRepository.isActivelyShared(orphan.getId(), host.household().getId())).isTrue();
 
     // A Profile can have only one pending or active share per Household.
+    var code = authTestSupport.shareCodeFor(host);
     graphql(
             authTestSupport.accountBearer(owner),
             """
-            mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
-              share { id } userErrors { __typename } } }
+            mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
+              share { id } userErrors { __typename ... on InputMutationError { inputPath } } } }
             """
-                .formatted(orphan.getId(), host.household().getId()))
+                .formatted(orphan.getId(), code))
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.data.offerProfileShare.userErrors[0].__typename")
-                .value("ProfileAlreadySharedError"));
+                .value("ProfileAlreadySharedError"))
+        .andExpect(
+            jsonPath("$.data.offerProfileShare.userErrors[0].inputPath[0]").value("profileId"));
+
+    // The refused offer rolled back, so it spent nothing: the code still makes another offer.
+    offer(managedOrphan(), code);
+  }
+
+  @Test
+  @DisplayName("Should name the code's Household to the offering side when an offer is made")
+  void shouldNameCodesHouseholdToOfferingSideWhenOfferIsMade() throws Exception {
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
+              share { status householdId household { id name } } userErrors { __typename } } }
+            """
+                .formatted(managedOrphan().getId(), authTestSupport.shareCodeFor(host)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"))
+        .andExpect(
+            jsonPath("$.data.offerProfileShare.share.householdId")
+                .value(host.household().getId().toString()))
+        .andExpect(
+            jsonPath("$.data.offerProfileShare.share.household.name")
+                .value(host.household().getName()));
+  }
+
+  @Test
+  @DisplayName("Should refuse a second offer with one code, naming no Household")
+  void shouldRefuseSecondOfferWithOneCodeNamingNoHousehold() throws Exception {
+    var code = authTestSupport.shareCodeFor(host);
+    offer(managedOrphan(), code);
+
+    var refused =
+        graphql(
+                authTestSupport.accountBearer(owner),
+                """
+                mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
+                  share { id }
+                  userErrors {
+                    __typename ... on InputMutationError { message inputPath } } } }
+                """
+                    .formatted(managedOrphan().getId(), code))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(jsonPath("$.data.offerProfileShare.share").doesNotExist())
+            .andExpect(
+                jsonPath("$.data.offerProfileShare.userErrors[0].__typename")
+                    .value("ShareCodeRefusedError"))
+            .andExpect(
+                jsonPath("$.data.offerProfileShare.userErrors[0].inputPath[0]").value("shareCode"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(refused)
+        .doesNotContain(host.household().getName())
+        .doesNotContain(host.household().getId().toString());
+    assertThat(shareRepository.findAll())
+        .filteredOn(share -> share.getHouseholdId().equals(host.household().getId()))
+        .filteredOn(share -> share.getStatus() == ProfileShareStatus.PENDING)
+        .hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should refuse an offer as forbidden when a device-bound session makes it")
+  void shouldRefuseOfferAsForbiddenWhenDeviceBoundSessionMakesIt() throws Exception {
+    var code = authTestSupport.shareCodeFor(host);
+    graphql(
+            authTestSupport.deviceBoundProfileBearer(owner),
+            """
+            mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
+              share { id } userErrors { __typename } } }
+            """
+                .formatted(owner.profile().getId(), code))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
+
+    // Nothing was presented, so the code still makes the offer.
+    offer(managedOrphan(), code);
   }
 
   @Test
   @DisplayName("Should cancel the older offer when a pending offer is replaced")
   void shouldCancelOlderOfferWhenPendingOfferIsReplaced() throws Exception {
     var orphan = managedOrphan();
-    var firstShareId = offer(orphan, host.household().getId());
+    var firstShareId = offer(orphan, host);
 
     graphql(
             authTestSupport.accountBearer(owner),
             """
-            mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+            mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
               share { id status } userErrors { __typename } } }
             """
-                .formatted(orphan.getId(), host.household().getId()))
+                .formatted(orphan.getId(), authTestSupport.shareCodeFor(host)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"));
@@ -162,7 +244,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should expire the older offer when an expired offer is replaced")
   void shouldExpireOlderOfferWhenExpiredOfferIsReplaced() throws Exception {
     var orphan = managedOrphan();
-    var firstShareId = UUID.fromString(offer(orphan, host.household().getId()));
+    var firstShareId = UUID.fromString(offer(orphan, host));
     transactionTemplate.executeWithoutResult(
         _ -> {
           var expired = shareRepository.findById(firstShareId).orElseThrow();
@@ -173,10 +255,10 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(owner),
             """
-            mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+            mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
               share { id status } userErrors { __typename } } }
             """
-                .formatted(orphan.getId(), host.household().getId()))
+                .formatted(orphan.getId(), authTestSupport.shareCodeFor(host)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"));
@@ -195,10 +277,10 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           graphql(
                   authTestSupport.accountBearer(serverAdmin),
                   """
-                  mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+                  mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
                     share { id status } userErrors { __typename } } }
                   """
-                      .formatted(orphan.getId(), host.household().getId()))
+                      .formatted(orphan.getId(), authTestSupport.shareCodeFor(host)))
               .andExpect(status().isOk())
               .andExpect(jsonPath("$.errors").doesNotExist())
               .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"))
@@ -278,7 +360,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
               transactionTemplate.<Boolean>execute(
                   _ -> userAccountRepository.tryGrantServerAdmin(owner.account().getId())))
           .isTrue();
-      var shareId = offer(orphan, host.household().getId());
+      var shareId = offer(orphan, host);
 
       graphql(
               authTestSupport.freshAccountBearer(revoker),
@@ -320,10 +402,10 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           graphql(
                   authTestSupport.accountBearer(offerer),
                   """
-                  mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+                  mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
                     share { id status } userErrors { __typename } } }
                   """
-                      .formatted(orphan.getId(), host.household().getId()))
+                      .formatted(orphan.getId(), authTestSupport.shareCodeFor(host)))
               .andExpect(status().isOk())
               .andExpect(jsonPath("$.errors").doesNotExist())
               .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"))
@@ -376,12 +458,12 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     var empty =
         householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
     try {
-      var shareId = offer(kid, empty.getId());
-
-      // ServerAdmin may accept on the Household's behalf, but the Household still needs an
-      // eligible HouseholdAdmin.
+      // ServerAdmin may issue the code and accept on the Household's behalf, but the Household
+      // still needs an eligible HouseholdAdmin.
       var serverAdmin = authTestSupport.createAdminIdentity();
       try {
+        var shareId = offer(kid, authTestSupport.shareCodeFor(serverAdmin, empty.getId()));
+
         graphql(
                 authTestSupport.accountBearer(serverAdmin),
                 """
@@ -427,7 +509,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
                       .build());
               return profile;
             });
-    var shareId = offer(twin, host.household().getId());
+    var shareId = offer(twin, host);
 
     graphql(
             authTestSupport.accountBearer(host),
@@ -449,7 +531,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   void shouldAnswerDeclinedOfferAsMissingWhenTargetHouseholdAsksBeforeAndAfterItsProfileIsDeleted()
       throws Exception {
     var orphan = unsharedManagedProfile();
-    var shareId = offer(orphan, host.household().getId());
+    var shareId = offer(orphan, host);
     graphql(
             authTestSupport.accountBearer(host),
             """
@@ -544,9 +626,9 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
                       .accountId(coManager.account().getId())
                       .profileId(orphan.getId())
                       .build()));
-      var active = offer(orphan, host.household().getId());
+      var active = offer(orphan, host);
       accept(host, UUID.fromString(active));
-      var ended = offer(orphan, elsewhere.household().getId());
+      var ended = offer(orphan, elsewhere);
       accept(elsewhere, UUID.fromString(ended));
       graphql(
               authTestSupport.accountBearer(elsewhere),
@@ -631,7 +713,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should return not-pending when another decision has already won")
   void shouldReturnNotPendingWhenAnotherDecisionAlreadyWon() throws Exception {
     var orphan = managedOrphan();
-    var shareId = offer(orphan, host.household().getId());
+    var shareId = offer(orphan, host);
 
     graphql(
             authTestSupport.accountBearer(host),
@@ -665,7 +747,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should allow one decision when acceptance and rejection race")
   void shouldAllowOneDecisionWhenAcceptanceAndRejectionRace() throws Exception {
     var orphan = managedOrphan();
-    var shareId = UUID.fromString(offer(orphan, host.household().getId()));
+    var shareId = UUID.fromString(offer(orphan, host));
     var bearer = authTestSupport.accountBearer(host);
 
     var responses =
@@ -718,7 +800,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           + " share")
   void shouldAnswerShareNotFoundWhenHouseholdAdminsEndLosesToAnotherEnd() throws Exception {
     var orphan = managedOrphan();
-    var shareId = UUID.fromString(offer(orphan, host.household().getId()));
+    var shareId = UUID.fromString(offer(orphan, host));
     accept(host, shareId);
     var bearer = authTestSupport.accountBearer(host);
     Callable<String> end =
@@ -755,7 +837,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   void shouldAnswerShareNotFoundWhenHouseholdAdminsRejectionWaitsWhileOfferIsDeleted()
       throws Exception {
     var orphan = managedOrphan();
-    var shareId = UUID.fromString(offer(orphan, host.household().getId()));
+    var shareId = UUID.fromString(offer(orphan, host));
     var bearer = authTestSupport.accountBearer(host);
 
     var response =
@@ -787,7 +869,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   void shouldAnswerShareNotFoundWhenUnrelatedAccountsAcceptanceWaitsWhileProfileIsDeleted()
       throws Exception {
     var orphan = managedOrphan();
-    var shareId = offer(orphan, host.household().getId());
+    var shareId = offer(orphan, host);
     var stranger = authTestSupport.createIdentity();
     try {
       var bearer = authTestSupport.accountBearer(stranger);
@@ -884,7 +966,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should forbid an unrelated ServerAdmin from ordinarily ending a share")
   void shouldForbidUnrelatedServerAdminFromOrdinarilyEndingShare() throws Exception {
     var orphan = managedOrphan();
-    var shareId = offer(orphan, host.household().getId());
+    var shareId = offer(orphan, host);
     graphql(
             authTestSupport.accountBearer(host),
             """
@@ -916,7 +998,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
       "Should require a fresh ServerAdmin and audit when a share is administratively ended")
   void shouldRequireFreshServerAdminAndAuditWhenShareIsAdministrativelyEnded() throws Exception {
     var orphan = managedOrphan();
-    var shareId = offer(orphan, host.household().getId());
+    var shareId = offer(orphan, host);
     graphql(
             authTestSupport.accountBearer(host),
             """
@@ -965,7 +1047,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should audit one winner when two administrative-end requests race")
   void shouldAuditOneWinnerWhenTwoAdministrativelyEndRequestsRace() throws Exception {
     var orphan = managedOrphan();
-    var shareId = UUID.fromString(offer(orphan, host.household().getId()));
+    var shareId = UUID.fromString(offer(orphan, host));
     graphql(
             authTestSupport.accountBearer(host),
             """
@@ -1026,7 +1108,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should expose only lock and name facts when the offerer requests a preview")
   void shouldExposeOnlyLockAndNameFactsWhenOffererRequestsPreview() throws Exception {
     var kid = managedKid();
-    var shareId = offer(kid, host.household().getId());
+    var shareId = offer(kid, host);
     graphql(
             authTestSupport.accountBearer(host),
             """
@@ -1096,7 +1178,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should return the final share when last is supplied without before")
   void shouldReturnFinalShareWhenLastIsSuppliedWithoutBefore() throws Exception {
     var orphan = managedOrphan();
-    offer(orphan, host.household().getId());
+    offer(orphan, host);
     var expectedId = orderedShareIds(orphan.getId()).getLast();
 
     graphql(
@@ -1120,7 +1202,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should apply the default page size when before is supplied without last")
   void shouldApplyDefaultPageSizeWhenBeforeIsSuppliedWithoutLast() throws Exception {
     var orphan = managedOrphan();
-    offer(orphan, host.household().getId());
+    offer(orphan, host);
     var endedShares = new ArrayList<ProfileHouseholdShare>();
     for (var index = 0; index < 105; index++) {
       endedShares.add(
@@ -1229,7 +1311,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject a Household share cursor when it continues other statuses")
   void shouldRejectHouseholdShareCursorWhenItContinuesOtherStatuses() throws Exception {
-    offer(managedOrphan(), host.household().getId());
+    offer(managedOrphan(), host);
     var pendingPage =
         graphql(
                 authTestSupport.accountBearer(host),
@@ -1267,7 +1349,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should keep only visitors' shares when a Household's shares are kept to visitors")
   void shouldKeepOnlyVisitorsSharesWhenHouseholdsSharesAreKeptToVisitors() throws Exception {
-    var visitId = offer(managedOrphan(), host.household().getId());
+    var visitId = offer(managedOrphan(), host);
     var hostsOwnId =
         shareRepository
             .findByProfileIdAndHouseholdIdAndStatus(
@@ -1309,7 +1391,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           + " filter")
   void shouldRejectHouseholdShareCursorWhenItContinuesListWithoutItsVisitorFilter()
       throws Exception {
-    offer(managedOrphan(), host.household().getId());
+    offer(managedOrphan(), host);
     var visitorsPage =
         graphql(
                 authTestSupport.accountBearer(host),
@@ -1340,10 +1422,10 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should keep only the live shares when a Profile's shares are listed as live")
   void shouldKeepOnlyLiveSharesWhenProfileSharesAreListedAsLive() throws Exception {
     var orphan = managedOrphan();
-    var offered = offer(orphan, host.household().getId());
+    var offered = offer(orphan, host);
     var declinedHost = authTestSupport.createIdentity();
     try {
-      var declined = offer(orphan, declinedHost.household().getId());
+      var declined = offer(orphan, declinedHost);
       graphql(
               authTestSupport.accountBearer(declinedHost),
               """
@@ -1385,7 +1467,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           + " when they list its shares in every status")
   void shouldKeepDeclinedOfferForServerAdminAndNotForHouseholdAdminWhenTheyListEveryStatus()
       throws Exception {
-    var shareId = offer(managedOrphan(), host.household().getId());
+    var shareId = offer(managedOrphan(), host);
     graphql(
             authTestSupport.accountBearer(host),
             """
@@ -1435,7 +1517,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should answer an empty list when a member of the Household lists its shares")
   void shouldAnswerEmptyListWhenMemberOfHouseholdListsItsShares() throws Exception {
-    offer(managedOrphan(), host.household().getId());
+    offer(managedOrphan(), host);
     var member = authTestSupport.createHouseholdMemberIdentity(host);
 
     graphql(
@@ -1453,7 +1535,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should return the next share when an after cursor is supplied")
   void shouldReturnNextShareWhenAfterCursorIsSupplied() throws Exception {
     var orphan = managedOrphan();
-    offer(orphan, host.household().getId());
+    offer(orphan, host);
     var orderedIds = orderedShareIds(orphan.getId());
     var firstPage =
         graphql(
@@ -1649,15 +1731,20 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     return new MutationResult(accepted, errorType);
   }
 
-  private String offer(Profile profile, UUID householdId) throws Exception {
+  /** The owner offers the Profile with a code that the target HouseholdAdmin issues for it. */
+  private String offer(Profile profile, AuthTestSupport.TestIdentity target) throws Exception {
+    return offer(profile, authTestSupport.shareCodeFor(target));
+  }
+
+  private String offer(Profile profile, String shareCode) throws Exception {
     var response =
         graphql(
                 authTestSupport.accountBearer(owner),
                 """
-                mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+                mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
                   share { id status } userErrors { __typename } } }
                 """
-                    .formatted(profile.getId(), householdId))
+                    .formatted(profile.getId(), shareCode))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"))
@@ -1764,10 +1851,10 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
       graphql(
               authTestSupport.accountBearer(serverAdmin),
               """
-              mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+              mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
                 share { id } userErrors { __typename } } }
               """
-                  .formatted(UUID.randomUUID(), host.household().getId()))
+                  .formatted(UUID.randomUUID(), authTestSupport.shareCodeFor(host)))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.errors").doesNotExist())
           .andExpect(
@@ -1828,10 +1915,10 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           graphql(
                   authTestSupport.accountBearer(offerer),
                   """
-                  mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+                  mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
                     share { id status } userErrors { __typename } } }
                   """
-                      .formatted(orphan.getId(), host.household().getId()))
+                      .formatted(orphan.getId(), authTestSupport.shareCodeFor(host)))
               .andExpect(status().isOk())
               .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"))
               .andReturn()
@@ -1876,7 +1963,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   void shouldListExpiredOfferAsExpiredForServerAdminAndNotForHouseholdAdminWhenTheyListItsShares()
       throws Exception {
     var orphan = managedOrphan();
-    var shareId = offer(orphan, host.household().getId());
+    var shareId = offer(orphan, host);
     expire(UUID.fromString(shareId));
     var lists =
         """
@@ -1979,7 +2066,9 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
     var serverAdmin = authTestSupport.createAdminIdentity();
     try {
-      accept(serverAdmin, UUID.fromString(offer(orphan, empty.getId())));
+      accept(
+          serverAdmin,
+          UUID.fromString(offer(orphan, authTestSupport.shareCodeFor(serverAdmin, empty.getId()))));
 
       graphql(
               authTestSupport.accountBearer(owner),
