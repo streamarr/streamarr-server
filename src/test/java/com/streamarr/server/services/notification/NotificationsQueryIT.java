@@ -3,6 +3,7 @@ package com.streamarr.server.services.notification;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -163,6 +164,34 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.message")
                 .value("The Profile “Kai” was offered to your Household."));
+  }
+
+  @Test
+  @DisplayName(
+      "Should give the kept name while the share hides its Profile when the reader may no longer"
+          + " see the Profile")
+  void shouldGiveTheKeptNameWhileTheShareHidesItsProfileWhenTheReaderMayNoLongerSeeTheProfile()
+      throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam);
+    var offer = steps.offer(sam, kai, riverside);
+    sharing.rejectProfileShare(authTestSupport.identityOf(riverside), offer.getId());
+    rename(kai, "Kai Renamed");
+
+    mockMvc
+        .perform(
+            graphqlRequest(
+                authTestSupport.accountBearer(riversideAdmin),
+                """
+                query { notifications { edges { node {
+                  ... on ProfileShareOfferedNotification { profileName share { id profile { id } } }
+                } } } }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.share.id").value(offer.getId().toString()))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.share.profile").value(nullValue()));
   }
 
   @Test
