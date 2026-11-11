@@ -17,9 +17,11 @@ import org.springframework.stereotype.Component;
 
 /**
  * The guard of the sharing kinds (ADR 0063 §The sharing kinds): the share's read rule, that the
- * recipient may view the Profile's administration or the target Household's administration. Cedar
- * decides it for the recipient Account from the Account's stored relationships, never from a
- * token's claims.
+ * recipient may view the Profile's shares, as its ProfileManagers and ServerAdmins may, or the
+ * target Household's administration. These are the questions that decide who may see one share (ADR
+ * 0024). Viewing the Profile's administration is not enough: a HouseholdAdmin of any Household that
+ * hosts the Profile may, and a share into another Household is not theirs. Cedar decides it for the
+ * recipient Account from the Account's stored relationships, never from a token's claims.
  *
  * <p>A batch asks each recipient's question about one Profile or one Household once. The side with
  * fewer distinct values among a recipient's Notifications is asked first, so a page of requests
@@ -63,7 +65,7 @@ class ProfileShareGuard {
     }
 
     NotificationVisibility visibility(GuardedNotification notification) {
-      Intent.UnitIntent profile = new Intent.ViewProfileAdministration(notification.profileId());
+      Intent.UnitIntent profile = new Intent.ViewProfileShareHouseholds(notification.profileId());
       Intent.UnitIntent household =
           new Intent.ViewHouseholdAdministration(notification.householdId());
       var first = decide(householdFirst ? household : profile);

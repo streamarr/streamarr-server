@@ -18,7 +18,9 @@ when {
 // The offering side sees every share of the Profile and the name of each Household it is into: its
 // managers and ServerAdmin. The Account of a self-managed Personal Profile manages it; the Account
 // of a supervised one does not. A HouseholdAdmin who only hosts the Profile sees only the share
-// into their own Household, from that Household's side (ADR 0024).
+// into their own Household, from that Household's side (ADR 0024). With
+// view-household-administration (reads.cedar), this is a share's read rule for its Notifications,
+// which ProfileShareReaders mirrors in SQL: widen it with either permit.
 @id("view-profile-share-households-as-manager-or-server-admin")
 permit (
   principal,

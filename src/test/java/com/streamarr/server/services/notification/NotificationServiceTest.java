@@ -67,7 +67,7 @@ class NotificationServiceTest {
               case Intent.ViewHouseholdAdministration(var householdId)
                   when householdId.equals(HIDDEN_HOUSEHOLD) ->
                   new Decision.Denied<>(Decision.DenialReason.POLICY);
-              case Intent.ViewProfileAdministration _ ->
+              case Intent.ViewProfileShareHouseholds _ ->
                   new Decision.Denied<>(Decision.DenialReason.POLICY);
               default -> new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
             });
