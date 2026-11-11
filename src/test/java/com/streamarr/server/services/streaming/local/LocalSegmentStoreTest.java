@@ -119,6 +119,34 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should read from the byte after the skipped ones when a stream skips ahead")
+  void shouldReadFromByteAfterSkippedOnesWhenStreamSkipsAhead() throws IOException {
+    var sessionId = UUID.randomUUID();
+    store.storeSegment(sessionId, "segment0.m4s", new byte[] {7, 8, 9, 10});
+
+    try (var opened = store.openSegment(sessionId, "segment0.m4s").orElseThrow();
+        var stream = opened.newInputStream()) {
+      assertThat(stream.skip(-1)).isZero();
+      assertThat(stream.skip(2)).isEqualTo(2);
+      assertThat(stream.read()).isEqualTo(9);
+    }
+  }
+
+  @Test
+  @DisplayName("Should skip only the remaining bytes when a stream skips past the segment's end")
+  void shouldSkipOnlyRemainingBytesWhenStreamSkipsPastSegmentEnd() throws IOException {
+    var sessionId = UUID.randomUUID();
+    store.storeSegment(sessionId, "segment0.m4s", new byte[] {7, 8, 9, 10});
+
+    try (var opened = store.openSegment(sessionId, "segment0.m4s").orElseThrow();
+        var stream = opened.newInputStream()) {
+      assertThat(stream.skip(1)).isEqualTo(1);
+      assertThat(stream.skip(Long.MAX_VALUE)).isEqualTo(3);
+      assertThat(stream.read()).isEqualTo(-1);
+    }
+  }
+
+  @Test
   @DisplayName("Should keep an opened segment readable when its session is deleted")
   void shouldKeepOpenedSegmentReadableWhenItsSessionIsDeleted() {
     var sessionId = UUID.randomUUID();

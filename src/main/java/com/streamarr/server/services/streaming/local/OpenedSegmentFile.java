@@ -81,5 +81,14 @@ final class OpenedSegmentFile implements StoredSegment {
 
       return read;
     }
+
+    // InputStream.skip reads the bytes it passes over; a byte range near the end of a segment
+    // would read the whole file before its first byte.
+    @Override
+    public long skip(long count) {
+      var skipped = Math.clamp(count, 0, Math.max(0, length - position));
+      position += skipped;
+      return skipped;
+    }
   }
 }
