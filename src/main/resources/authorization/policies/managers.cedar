@@ -42,6 +42,15 @@ when {
    (principal has serverAdmin && principal.serverAdmin))
 };
 
+// The invitations addressed to an Account are its own to read, where it may answer them.
+@id("view-received-manager-invitations-as-enabled-account")
+permit (
+  principal,
+  action == Streamarr::Action::"viewReceivedManagerInvitations",
+  resource
+)
+when { principal has enabled && principal.enabled && principal == resource };
+
 // Only the named recipient answers an invitation addressed to them.
 @id("decide-manager-invitation-as-named-recipient")
 permit (

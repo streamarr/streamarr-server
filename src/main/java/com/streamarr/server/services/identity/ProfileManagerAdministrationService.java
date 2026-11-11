@@ -408,11 +408,15 @@ public class ProfileManagerAdministrationService {
   }
 
   /**
-   * A page of the caller's own pending manager invitations, newest first; holding the seat is the
-   * visibility.
+   * A page of the caller's own pending manager invitations, newest first. Empty for a device-bound
+   * session and a disabled Account, which may not answer them.
    */
   public ListPage<ProfileManagerInvitation> pendingManagerInvitations(
       AuthenticatedIdentity identity, PageRequest request) {
+    if (!authorizationService.isAllowed(identity, new Intent.ViewReceivedManagerInvitations())) {
+      return ListPage.empty();
+    }
+
     return Pager.page(receivedManagerInvitationsList, identity.accountId(), request);
   }
 

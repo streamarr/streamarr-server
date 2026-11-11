@@ -1337,6 +1337,21 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName(
+        "Should let an enabled Account read the invitations it received only when its session is"
+            + " not device-bound")
+    void shouldLetAnEnabledAccountReadTheInvitationsItReceivedOnlyWhenItsSessionIsNotDeviceBound() {
+      var received = new Intent.ViewReceivedManagerInvitations();
+      assertThat(decide(atHome(), received)).isEqualTo(ALLOWED);
+      assertThat(decide(member(), received)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), received)).isEqualTo(DENIED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), received)).isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should allow an invitation answer when the caller is the named recipient")
     void shouldAllowInvitationAnswerWhenCallerIsNamedRecipient() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());

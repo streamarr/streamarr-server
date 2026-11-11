@@ -95,6 +95,22 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should give a device-bound session an empty list when it asks for the invitations it"
+          + " received")
+  void shouldGiveADeviceBoundSessionAnEmptyListWhenItAsksForTheInvitationsItReceived()
+      throws Exception {
+    issueManagerInvitation(managedOrphan());
+
+    graphql(
+            authTestSupport.deviceBoundProfileBearer(recipient),
+            "query { pendingManagerInvitations { edges { node { id } } } }")
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.pendingManagerInvitations.edges").isEmpty());
+  }
+
+  @Test
   @DisplayName("Should grant management when the named recipient accepts an invitation")
   void shouldGrantManagementWhenNamedRecipientAcceptsInvitation() throws Exception {
     var orphan = managedOrphan();

@@ -88,6 +88,7 @@ class ReadDecisionsInReadOnlyTransactionIT extends AbstractIntegrationTest {
       case VIEW_MANAGED_PROFILES -> new Intent.ViewManagedProfiles();
       case VIEW_MANAGER_INVITATIONS -> new Intent.ViewManagerInvitations(profileId);
       case VIEW_PROFILE_MANAGERS -> new Intent.ViewProfileManagers(profileId);
+      case VIEW_RECEIVED_MANAGER_INVITATIONS -> new Intent.ViewReceivedManagerInvitations();
       case VIEW_PROFILE_SHARE_HOUSEHOLDS -> new Intent.ViewProfileShareHouseholds(profileId);
       case VIEW_HOUSEHOLD_SHARE_HISTORY -> new Intent.ViewHouseholdShareHistory(householdId);
       case VIEW_PROFILE_SHARE_CHANGES -> new Intent.ViewProfileShareChanges();
