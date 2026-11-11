@@ -36,6 +36,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -142,8 +143,9 @@ class ShareCodeServiceTest {
             intent instanceof Intent.ViewShareCodes
                 ? new Decision.Allowed<>(AuthorizationUnit.INSTANCE)
                 : new Decision.Denied<>(Decision.DenialReason.POLICY));
+    var caller = identity();
 
-    assertThatThrownBy(() -> service.issueShareCode(identity(), householdId))
+    assertThatThrownBy(() -> service.issueShareCode(caller, householdId))
         .isInstanceOf(AccessDeniedException.class);
     assertThat(shareCodes.findAll()).isEmpty();
   }
@@ -160,8 +162,9 @@ class ShareCodeServiceTest {
   @DisplayName("Should fail closed when authorization is unavailable")
   void shouldFailClosedWhenAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.EVALUATION_ERROR);
+    var caller = identity();
 
-    assertThatThrownBy(() -> service.issueShareCode(identity(), householdId))
+    assertThatThrownBy(() -> service.issueShareCode(caller, householdId))
         .isInstanceOf(AuthorizationUnavailableException.class);
     assertThat(shareCodes.findAll()).isEmpty();
   }
@@ -170,8 +173,9 @@ class ShareCodeServiceTest {
   @DisplayName("Should fail closed when the view decision is unavailable after a refused issue")
   void shouldFailClosedWhenViewDecisionIsUnavailableAfterRefusedIssue() {
     authorization.decideUnitWith(ShareCodeServiceTest::viewUnavailableOtherwiseDenied);
+    var caller = identity();
 
-    assertThatThrownBy(() -> service.issueShareCode(identity(), householdId))
+    assertThatThrownBy(() -> service.issueShareCode(caller, householdId))
         .isInstanceOf(AuthorizationUnavailableException.class);
     assertThat(shareCodes.findAll()).isEmpty();
   }
@@ -181,8 +185,10 @@ class ShareCodeServiceTest {
   void shouldFailClosedWhenViewDecisionIsUnavailableAfterRefusedWithdraw() {
     var issued = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
     authorization.decideUnitWith(ShareCodeServiceTest::viewUnavailableOtherwiseDenied);
+    var caller = identity();
+    var issuedId = issued.getId();
 
-    assertThatThrownBy(() -> service.withdrawShareCode(identity(), issued.getId()))
+    assertThatThrownBy(() -> service.withdrawShareCode(caller, issuedId))
         .isInstanceOf(AuthorizationUnavailableException.class);
     assertThat(issued.isLiveAt(NOW)).isTrue();
   }
@@ -296,11 +302,10 @@ class ShareCodeServiceTest {
   @DisplayName("Should fail closed when authorization is unavailable for the list")
   void shouldFailClosedWhenAuthorizationIsUnavailableForList() {
     authorization.failWith(Decision.FailureCause.EVALUATION_ERROR);
+    var caller = identity();
+    var firstPage = PaginationFixture.firstRows(10);
 
-    assertThatThrownBy(
-            () ->
-                service.householdShareCodes(
-                    identity(), householdId, PaginationFixture.firstRows(10)))
+    assertThatThrownBy(() -> service.householdShareCodes(caller, householdId, firstPage))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -349,8 +354,10 @@ class ShareCodeServiceTest {
   void shouldRefuseToLookUpWithRetryDelayWhenPresenterIsThrottled() {
     var issued = accepted(service.issueShareCode(identity(), householdId));
     attempts.rejectReservations(Duration.ofMinutes(3));
+    var presenter = presenter();
+    var presented = command(issued.code());
 
-    assertThatThrownBy(() -> service.lookUpShareCode(presenter(), command(issued.code())))
+    assertThatThrownBy(() -> service.lookUpShareCode(presenter, presented))
         .isInstanceOf(TooManyCredentialAttemptsException.class)
         .extracting(failure -> ((RetryAfterAware) failure).retryAfter())
         .isEqualTo(Duration.ofMinutes(3));
@@ -361,8 +368,10 @@ class ShareCodeServiceTest {
   void shouldRefuseBeforeCountingAttemptWhenPresenterMayNotLookCodesUp() {
     var issued = accepted(service.issueShareCode(identity(), householdId));
     authorization.denyAll();
+    var presenter = presenter();
+    var presented = command(issued.code());
 
-    assertThatThrownBy(() -> service.lookUpShareCode(presenter(), command(issued.code())))
+    assertThatThrownBy(() -> service.lookUpShareCode(presenter, presented))
         .isInstanceOf(AccessDeniedException.class);
     assertThat(attempts.attempts()).isEmpty();
   }
@@ -489,6 +498,6 @@ class ShareCodeServiceTest {
         result -> {
           throw new AssertionError("accepted: " + result);
         },
-        rejections -> rejections.getFirst());
+        List::getFirst);
   }
 }

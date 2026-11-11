@@ -266,8 +266,9 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should refuse a digest when it is not 32 bytes long")
   void shouldRefuseDigestWhenItIsNotThirtyTwoBytesLong() {
     var shortDigest = new byte[31];
+    var expiresAt = now.plusSeconds(60);
 
-    assertThatThrownBy(() -> insert(shortDigest, now.plusSeconds(60)))
+    assertThatThrownBy(() -> insert(shortDigest, expiresAt))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("chk_share_code_code_digest_length");
   }
