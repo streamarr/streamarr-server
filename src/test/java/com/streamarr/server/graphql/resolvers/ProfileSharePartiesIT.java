@@ -17,10 +17,12 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.persistence.EntityManagerFactory;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,6 +34,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -65,6 +69,7 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private ProfileSharingService profileSharingService;
+  @Autowired private ProfileShareLifecycle shareLifecycle;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private EntityManagerFactory entityManagerFactory;
 
@@ -285,13 +290,12 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should not tell the target HouseholdAdmin how the offerer lost authority when a"
-          + " ServerAdmin disables the offerer")
-  void shouldNotTellTargetHouseholdAdminHowOffererLostAuthorityWhenServerAdminDisablesOfferer()
-      throws Exception {
+      "Should not say how the offerer lost authority when a ServerAdmin disables the offerer")
+  void shouldNotSayHowOffererLostAuthorityWhenServerAdminDisablesOfferer() throws Exception {
     var shareId = offer(owner, managedProfile(ProfileFixture.defaultProfileBuilder()), host);
+    var serverAdmin = adminIdentity();
     graphql(
-            authTestSupport.freshAccountBearer(adminIdentity()),
+            authTestSupport.freshAccountBearer(serverAdmin),
             """
             mutation { disableAccount(input: {accountId: "%s"}) {
               account { enabled } userErrors { __typename } } }
@@ -300,24 +304,80 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.disableAccount.account.enabled").value(false));
+    var withdrawnQuery =
+        """
+        query { householdShares(householdId: "%s", statuses: [INVALIDATED]) {
+          edges { node { id invalidationReason offeredByDisplayName } } } }
+        """
+            .formatted(host.household().getId());
 
-    var withdrawn =
-        shareWithId(
-            query(
-                host,
-                """
-                query { householdShares(householdId: "%s", statuses: [INVALIDATED]) {
-                  edges { node { id invalidationReason offeredByDisplayName } } } }
-                """
-                    .formatted(host.household().getId()),
-                "householdShares"),
-            shareId);
+    var withdrawn = shareWithId(query(serverAdmin, withdrawnQuery, "householdShares"), shareId);
 
     // Account status and roles are for the Account's own HouseholdAdmins and ServerAdmins.
-    assertThat(withdrawn.path("offeredByDisplayName").asString())
-        .isEqualTo(owner.account().getDisplayName());
     assertThat(withdrawn.path("invalidationReason").asString())
         .isEqualTo("offerer no longer authorized");
+    assertThat(withdrawn.path("offeredByDisplayName").asString())
+        .isEqualTo(owner.account().getDisplayName());
+    // The target Household's HouseholdAdmins list only live shares; the change told them.
+    assertThat(edges(query(host, withdrawnQuery, "householdShares"))).isEmpty();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = ProfileShareStatus.class,
+      names = {"PENDING", "ACTIVE"})
+  @DisplayName(
+      "Should show the target HouseholdAdmin the Profile and the offerer but not the Household"
+          + " when the offer is pending or the share is active")
+  void shouldShowTargetHouseholdAdminProfileAndOffererButNotHouseholdWhenOfferIsPendingOrActive(
+      ProfileShareStatus status) throws Exception {
+    var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
+    var shareId = shareAt(status, orphan);
+
+    var share = shareWithId(householdShares(host, host, "[]"), shareId);
+
+    assertThat(share.path("status").asString()).isEqualTo(status.name());
+    assertThat(share.path("profile").path("name").asString()).isEqualTo(orphan.getName());
+    assertThat(share.path("visitor").asBoolean()).isTrue();
+    assertThat(share.path("offeredByDisplayName").asString())
+        .isEqualTo(owner.account().getDisplayName());
+    assertThat(share.path("household").isNull()).isTrue();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = ProfileShareStatus.class,
+      names = {"REJECTED", "CANCELED", "EXPIRED", "INVALIDATED", "ENDED"})
+  @DisplayName(
+      "Should keep an offer or a share that is over from the target HouseholdAdmin and show it"
+          + " whole to a ServerAdmin")
+  void shouldKeepOfferOrShareThatIsOverFromTargetHouseholdAdminAndShowItWholeToServerAdmin(
+      ProfileShareStatus status) throws Exception {
+    var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
+    var shareId = shareAt(status, orphan);
+    var serverAdmin = adminIdentity();
+    var named = "[%s]".formatted(status);
+
+    var forHost = householdShares(host, host, "[]");
+    var forHostByStatus = householdShares(host, host, named);
+    var forServerAdmin = shareWithId(householdShares(serverAdmin, host, named), shareId);
+    var forManager = shareWithId(profileShares(owner, orphan, named), shareId);
+
+    // ADR 0024: a Household that turned someone down, or that a person left, sees none of them.
+    assertThat(edges(forHost))
+        .extracting(node -> node.path("id").asString())
+        .doesNotContain(shareId);
+    assertThat(edges(forHostByStatus)).isEmpty();
+    assertThat(forServerAdmin.path("status").asString()).isEqualTo(status.name());
+    assertThat(forServerAdmin.path("profile").path("name").asString()).isEqualTo(orphan.getName());
+    assertThat(forServerAdmin.path("offeredByDisplayName").asString())
+        .isEqualTo(owner.account().getDisplayName());
+    assertThat(forServerAdmin.path("household").path("name").asString())
+        .isEqualTo(host.household().getName());
+    assertThat(forManager.path("profile").path("name").asString()).isEqualTo(orphan.getName());
+    assertThat(forManager.path("household").path("name").asString())
+        .isEqualTo(host.household().getName());
+    assertThat(forManager.path("offeredByDisplayName").isNull()).isTrue();
   }
 
   @Test
@@ -585,6 +645,40 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
           profileRepository.saveAndFlush(profile);
         });
     return member;
+  }
+
+  /**
+   * The owner's offer of the Profile to the host, taken to the status by the share's own writes.
+   */
+  private String shareAt(ProfileShareStatus status, Profile profile) throws Exception {
+    var shareId = offer(owner, profile, host);
+    var id = UUID.fromString(shareId);
+    var now = Instant.now();
+    Runnable move =
+        switch (status) {
+          case PENDING -> () -> {};
+          case ACTIVE -> () -> shareLifecycle.tryActivatePending(id, now);
+          case REJECTED, CANCELED -> () -> shareLifecycle.tryDeclinePending(id, status, now);
+          case EXPIRED -> () -> lapse(id, now);
+          case INVALIDATED ->
+              () ->
+                  shareLifecycle.tryInvalidatePending(
+                      id, ProfileShareLifecycle.OFFERER_NO_LONGER_AUTHORIZED, now);
+          case ENDED ->
+              () -> {
+                shareLifecycle.tryActivatePending(id, now);
+                shareLifecycle.tryEndActive(id, now);
+              };
+        };
+    transactionTemplate.executeWithoutResult(_ -> move.run());
+    return shareId;
+  }
+
+  // An offer past its expiry reads as EXPIRED before the sweep stores it.
+  private void lapse(UUID shareId, Instant now) {
+    var lapsed = shareRepository.findById(shareId).orElseThrow();
+    lapsed.setExpiresAt(now.minusSeconds(1));
+    shareRepository.saveAndFlush(lapsed);
   }
 
   // The change the share's last write announced, as a subscriber would be handed it.

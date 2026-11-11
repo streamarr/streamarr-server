@@ -127,15 +127,26 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     assertThat(List.of(offeredToOwner, acceptedForOwner, endedForOwner))
         .extracting(share -> share.path("status").asString())
         .containsExactly("PENDING", "ACTIVE", "ENDED");
-    assertThat(offeredToHost.path("profile").path("name").asString()).isEqualTo(orphan.getName());
-    assertThat(offeredToHost.path("offeredByDisplayName").asString())
-        .isEqualTo(owner.account().getDisplayName());
+    assertThat(List.of(offeredToHost, acceptedForHost))
+        .allSatisfy(
+            share -> {
+              assertThat(share.path("profile").path("name").asString()).isEqualTo(orphan.getName());
+              assertThat(share.path("offeredByDisplayName").asString())
+                  .isEqualTo(owner.account().getDisplayName());
+            });
     // The Household's name belongs to the Profile's managers and ServerAdmins.
     assertThat(offeredToHost.path("household").isNull()).isTrue();
-    assertThat(offeredToOwner.path("household").path("name").asString())
-        .isEqualTo(host.household().getName());
-    // The offerer's name belongs to the target side, as in the share queries.
-    assertThat(offeredToOwner.path("offeredByDisplayName").isNull()).isTrue();
+    // Once the share has ended, its Household no longer sees the Profile or who offered it.
+    assertPartiesHidden(endedForHost);
+    assertThat(List.of(offeredToOwner, endedForOwner))
+        .allSatisfy(
+            share -> {
+              assertThat(share.path("profile").path("name").asString()).isEqualTo(orphan.getName());
+              assertThat(share.path("household").path("name").asString())
+                  .isEqualTo(host.household().getName());
+              // The offerer's name belongs to the target side, as in the share queries.
+              assertThat(share.path("offeredByDisplayName").isNull()).isTrue();
+            });
   }
 
   @Test
@@ -170,14 +181,23 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
     var declinedId = offer(orphan);
     decide("rejectProfileShare", declinedId);
-    var declined = nextShareWithStatus(ownerSocket, declinedId, "REJECTED");
+    var declinedForOwner = nextShareWithStatus(ownerSocket, declinedId, "REJECTED");
+    var declinedForHost = nextShareWithStatus(hostSocket, declinedId, "REJECTED");
     var canceledId = offer(orphan);
     cancel(canceledId);
-    var canceled = nextShareWithStatus(hostSocket, canceledId, "CANCELED");
+    var canceledForHost = nextShareWithStatus(hostSocket, canceledId, "CANCELED");
+    var canceledForOwner = nextShareWithStatus(ownerSocket, canceledId, "CANCELED");
 
-    assertThat(declined.path("household").path("name").asString())
-        .isEqualTo(host.household().getName());
-    assertThat(canceled.path("profile").path("name").asString()).isEqualTo(orphan.getName());
+    assertThat(List.of(declinedForOwner, canceledForOwner))
+        .allSatisfy(
+            share -> {
+              assertThat(share.path("profile").path("name").asString()).isEqualTo(orphan.getName());
+              assertThat(share.path("household").path("name").asString())
+                  .isEqualTo(host.household().getName());
+            });
+    // The Household still hears that the offer is over, so its client can take the row away.
+    assertPartiesHidden(declinedForHost);
+    assertPartiesHidden(canceledForHost);
   }
 
   @Test
@@ -199,8 +219,10 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
     assertThat(disabled.path("errors").isMissingNode()).as("errors in %s", disabled).isTrue();
     assertThat(invalidated.path("status").asString()).isEqualTo("INVALIDATED");
+    // The reason says nothing about what happened to the offerer's Account.
     assertThat(invalidated.path("invalidationReason").asString())
         .isEqualTo("offerer no longer authorized");
+    assertPartiesHidden(invalidated);
   }
 
   @Test
@@ -231,6 +253,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     assertThat(withdrawn.path("status").asString()).isEqualTo("INVALIDATED");
     assertThat(withdrawn.path("invalidationReason").asString())
         .isEqualTo("offerer no longer authorized");
+    assertPartiesHidden(withdrawn);
   }
 
   @Test
@@ -245,7 +268,9 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
     expirySweeper.sweep();
 
-    assertThat(nextShare(hostSocket, shareId).path("status").asString()).isEqualTo("EXPIRED");
+    var expired = nextShare(hostSocket, shareId);
+    assertThat(expired.path("status").asString()).isEqualTo("EXPIRED");
+    assertPartiesHidden(expired);
     assertThat(shareRepository.findById(offer.getId()).orElseThrow().getLastModifiedBy())
         .isEqualTo(SystemActor.ID);
   }
@@ -262,6 +287,8 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     var shareId = offer(orphan);
     decide("rejectProfileShare", shareId);
     nextShareWithStatus(hostSocket, shareId, "REJECTED");
+    // Each change is read as it is delivered, so the decline reaches both sides before the delete.
+    nextShareWithStatus(ownerSocket, shareId, "REJECTED");
 
     var deleted =
         http.execute(
@@ -611,6 +638,16 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     var socket = GraphQlTransportWsTestClient.connectWithBearer(port, bearer);
     sockets.add(socket);
     return socket;
+  }
+
+  // What the target Household's HouseholdAdmins still get once the offer or the share is over: the
+  // share's own fields, and none of the Profile's details or the offerer's name (ADR 0024).
+  private static void assertPartiesHidden(JsonNode share) {
+    assertThat(share.path("id").asString()).as("id in %s", share).isNotEmpty();
+    assertThat(share.path("profile").isNull()).as("profile in %s", share).isTrue();
+    assertThat(share.path("visitor").isNull()).as("visitor in %s", share).isTrue();
+    assertThat(share.path("offeredByDisplayName").isNull()).as("offerer in %s", share).isTrue();
+    assertThat(share.path("household").isNull()).as("household in %s", share).isTrue();
   }
 
   private static JsonNode nextChange(GraphQlTransportWsTestClient socket) {

@@ -23,9 +23,12 @@ type Query {
     profileSharePreview(profileId: ID!, householdId: ID!): ProfileSharePreview
     """
     The Profiles offered or shared to a Household, newest first, for its HouseholdAdmins and for
-    ServerAdmins. Everyone else gets an empty list. statuses keeps only shares in those statuses,
-    and an offer past its expiry counts as EXPIRED. Leave statuses out, or pass an empty list, to
-    get every share. Pass [PENDING] for the offers waiting for a decision. visitorsOnly: true keeps
+    ServerAdmins. Everyone else gets an empty list. The HouseholdAdmins get only the offers still
+    waiting for a decision and the active shares: once an offer is declined, canceled, expired or
+    withdrawn, or a share has ended, it leaves their list. ServerAdmins get every status.
+    statuses keeps only shares in those statuses, and an offer past its expiry counts as EXPIRED.
+    Leave statuses out, or pass an empty list, to get every share the reader may list. Pass
+    [PENDING] for the offers waiting for a decision. visitorsOnly: true keeps
     only shares of visitors: Profiles that belong to another Household, so the Household's own
     Profiles are left out. Leave it out, or pass false, to get both. Pass visitorsOnly: true with
     [PENDING, ACTIVE] for the Profiles shared with the Household, or waiting for its decision.

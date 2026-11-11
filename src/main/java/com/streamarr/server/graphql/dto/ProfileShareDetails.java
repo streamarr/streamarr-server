@@ -33,7 +33,7 @@ public record ProfileShareDetails(
         .expiresAt(share.getExpiresAt() == null ? null : share.getExpiresAt().toString())
         .endedAt(share.getEndedAt() == null ? null : share.getEndedAt().toString())
         .invalidationReason(share.getInvalidationReason().orElse(null))
-        .parties(ShareReference.of(share))
+        .parties(ShareReference.of(share, now))
         .build();
   }
 }

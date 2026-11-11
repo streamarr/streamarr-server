@@ -476,6 +476,11 @@ public class ProfileSharingService {
         authorizationService.decide(identity, new Intent.ViewHouseholdAdministration(householdId)));
   }
 
+  private boolean mayViewHouseholdShareHistory(AuthenticatedIdentity identity, UUID householdId) {
+    return isAllowed(
+        authorizationService.decide(identity, new Intent.ViewHouseholdShareHistory(householdId)));
+  }
+
   private static boolean isAllowed(Decision<AuthorizationUnit> decision) {
     return switch (decision) {
       case Decision.Allowed<AuthorizationUnit> _ -> true;
@@ -486,7 +491,8 @@ public class ProfileSharingService {
 
   /**
    * A page of the shares into one Household that the scope keeps, newest first; hidden reads as
-   * empty.
+   * empty. Its HouseholdAdmins get only the offers still pending and the active shares; a reader of
+   * the Household's share history, a ServerAdmin, gets every status the scope keeps.
    */
   public ListPage<ProfileHouseholdShare> householdShares(
       AuthenticatedIdentity identity, HouseholdSharesScope household, PageRequest request) {
@@ -494,7 +500,14 @@ public class ProfileSharingService {
       return ListPage.empty();
     }
 
-    return Pager.page(householdSharesList, household, request);
+    if (mayViewHouseholdShareHistory(identity, household.householdId())) {
+      return Pager.page(householdSharesList, household, request);
+    }
+
+    return household
+        .keptToLive()
+        .map(live -> Pager.page(householdSharesList, live, request))
+        .orElseGet(ListPage::empty);
   }
 
   /**
