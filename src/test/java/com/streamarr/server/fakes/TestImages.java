@@ -138,6 +138,11 @@ public final class TestImages {
     return writePng(new BufferedImage(colorModel, raster, false, null));
   }
 
+  /** A PNG with one 16-bit grey sample for each pixel, which no JPEG encoder accepts. */
+  public static byte[] createSixteenBitGrayscalePngImage() {
+    return writePng(new BufferedImage(600, 900, BufferedImage.TYPE_USHORT_GRAY));
+  }
+
   public static BufferedImage decode(byte[] imageData) {
     try {
       return ImageIO.read(new ByteArrayInputStream(imageData));

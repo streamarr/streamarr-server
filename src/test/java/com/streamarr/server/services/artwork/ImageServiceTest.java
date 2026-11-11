@@ -6,6 +6,7 @@ import static com.streamarr.server.fakes.TestImages.centrePixelOf;
 import static com.streamarr.server.fakes.TestImages.createOpaquePngImageWithAlphaChannel;
 import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitGrayscalePngImage;
 import static com.streamarr.server.fakes.TestImages.createSixteenBitOpaquePngImage;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
@@ -25,6 +26,7 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.exceptions.ImageStorageException;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
@@ -238,6 +240,16 @@ class ImageServiceTest {
 
     assertThat(smallOf(result).getAmbientColors())
         .hasValueSatisfying(colors -> assertThat(colors.primary()).isEqualTo("#00a0a0"));
+  }
+
+  @Test
+  @DisplayName("Should fail without storing files when no encoder accepts a resized variant")
+  void shouldFailWithoutStoringFilesWhenNoEncoderAcceptsResizedVariant() {
+    var imageData = createSixteenBitGrayscalePngImage();
+
+    assertThatThrownBy(() -> processPoster(imageData)).isInstanceOf(ImageProcessingException.class);
+
+    assertThat(fileSystem.getPath("/data/images")).doesNotExist();
   }
 
   @Test
