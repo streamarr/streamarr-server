@@ -359,7 +359,7 @@ class LowerVariantsInTheCopysRangeTest {
   @DisplayName(
       "Should plan the copy's PQ range with the source's static metadata in a lower variant's job"
           + " when the player first requests one of its segments")
-  void shouldPlanTheCopysPqRangeWithTheSourcesStaticMetadataInALowerVariantsJob() {
+  void shouldPlanTheCopysPqRangeInALowerVariantsJobWhenThePlayerFirstRequestsOneOfItsSegments() {
     workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE)));
     probes.setDefaultProbe(
         source(
@@ -480,7 +480,7 @@ class LowerVariantsInTheCopysRangeTest {
   @DisplayName(
       "Should list a busy worker's PQ lower variants and start one only on that worker when the"
           + " free worker's encoder writes 8-bit SDR alone")
-  void shouldListABusyWorkersPqLowerVariantsAndStartOneOnlyOnThatWorker() {
+  void shouldStartABusyWorkersPqLowerVariantOnlyOnThatWorkerWhenTheFreeWorkerWritesSdrAlone() {
     workers.setExecutionTargets(List.of(SDR_WORKER, HDR_WORKER));
     workers.setTargetEncoders(SDR_WORKER, List.of(encoder("h264", "libx264")));
     workers.setTargetEncoders(HDR_WORKER, List.of(svtAv1(EVERY_ENCODE_FEATURE)));

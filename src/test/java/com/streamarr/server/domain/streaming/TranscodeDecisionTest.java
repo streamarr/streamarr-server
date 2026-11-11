@@ -283,7 +283,7 @@ class TranscodeDecisionTest {
   @DisplayName(
       "Should plan each lower variant as an encode in the lower variant encode's codec profile and"
           + " format when a copy holds one")
-  void shouldPlanEachLowerVariantAsAnEncodeInTheLowerVariantEncodesCodecProfileAndFormat() {
+  void shouldPlanEachLowerVariantAsAnEncodeInItsCodecProfileAndFormatWhenACopyHoldsOne() {
     var copied =
         tenBitFactsBuilder(CompatibleBase.PQ)
             .masteringDisplay(Optional.of(VideoPlaybackFactsFixture.MASTERING_DISPLAY))
