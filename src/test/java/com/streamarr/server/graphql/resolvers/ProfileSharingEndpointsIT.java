@@ -20,19 +20,14 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
-import com.streamarr.server.domain.pagination.Position;
-import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.services.identity.ShareListScope;
-import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
@@ -76,7 +71,6 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
-  @Autowired private PositionCursorCodec positionCursors;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
 
@@ -972,35 +966,46 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should reject a share cursor when it continues another Profile's or Household's list")
   void shouldRejectAShareCursorWhenItContinuesAnotherProfilesOrHouseholdsList() throws Exception {
-    var otherProfile =
-        positionCursors
-            .encode(
-                new ListIdentity(
-                    "profile-shares", new ShareListScope(UUID.randomUUID(), List.of())),
-                new Position(new SortValue.OfInstant(Instant.now()), UUID.randomUUID()))
-            .getValue();
-    var profileList =
-        positionCursors
-            .encode(
-                new ListIdentity(
-                    "profile-shares", new ShareListScope(owner.profile().getId(), List.of())),
-                new Position(new SortValue.OfInstant(Instant.now()), UUID.randomUUID()))
-            .getValue();
+    var profileCursor =
+        firstCursor(owner, "profileShares(profileId: \"%s\")".formatted(managedOrphan().getId()));
+    var householdCursor =
+        firstCursor(
+            owner, "householdShares(householdId: \"%s\")".formatted(owner.household().getId()));
 
+    assertCursorRefused(
+        owner,
+        "profileShares(profileId: \"%s\", after: \"%s\")"
+            .formatted(managedOrphan().getId(), profileCursor));
+    assertCursorRefused(
+        host,
+        "householdShares(householdId: \"%s\", after: \"%s\")"
+            .formatted(host.household().getId(), profileCursor));
+    assertCursorRefused(
+        host,
+        "householdShares(householdId: \"%s\", after: \"%s\")"
+            .formatted(host.household().getId(), householdCursor));
+  }
+
+  private String firstCursor(AuthTestSupport.TestIdentity reader, String list) throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(reader),
+                "query { list: %s { edges { cursor } } }".formatted(list))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var cursor = objectMapper.readTree(response).at("/data/list/edges/0/cursor").asString("");
+    assertThat(cursor).as("first cursor of %s", list).isNotEmpty();
+    return cursor;
+  }
+
+  private void assertCursorRefused(AuthTestSupport.TestIdentity reader, String list)
+      throws Exception {
     graphql(
-            authTestSupport.accountBearer(owner),
-            """
-            query { profileShares(profileId: "%s", after: "%s") { edges { node { id } } } }
-            """
-                .formatted(owner.profile().getId(), otherProfile))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
-    graphql(
-            authTestSupport.accountBearer(host),
-            """
-            query { householdShares(householdId: "%s", after: "%s") { edges { node { id } } } }
-            """
-                .formatted(host.household().getId(), profileList))
+            authTestSupport.accountBearer(reader),
+            "query { %s { edges { node { id } } } }".formatted(list))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
   }
