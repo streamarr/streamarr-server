@@ -832,8 +832,6 @@ class RemotePlaybackIT {
         .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()));
   }
 
-  // A copy that encodes its audio reads from one 4 s period earlier, so that its audio encoder has
-  // its lead before the first segment's start.
   // The controller closes an opened segment when its request ends, so a direct call needs one.
   private static byte[] segmentBody(Supplier<ResponseEntity<Resource>> request) throws IOException {
     var attributes = new ServletRequestAttributes(new MockHttpServletRequest());
@@ -849,6 +847,8 @@ class RemotePlaybackIT {
     }
   }
 
+  // A copy that encodes its audio reads from one 4 s period earlier, so that its audio encoder has
+  // its lead before the first segment's start.
   private static double copySeekOf(TranscodeDecision decision) {
     if (decision.transcodeMode() == TranscodeMode.AUDIO_TRANSCODE) {
       return 8;
