@@ -681,6 +681,11 @@ public class PlaybackSessionService implements AutoCloseable {
       videoConstraint = VideoFormatConstraint.ENCODE_ONLY;
     }
 
+    var choiceWhenEncoding = FormatRecoveryPolicy.choiceWhenEncodingAfterACopy(playback.choice);
+    if (videoConstraint == VideoFormatConstraint.ENCODE_ONLY) {
+      choiceWhenEncoding = playback.choice;
+    }
+
     playback.audioFormatConstraint = AudioFormatConstraint.ENCODE_ONLY;
     playback.pendingAttemptCause = Optional.of(DecisionReason.AUDIO_ENDS_EARLY);
     return Optional.of(
@@ -690,10 +695,7 @@ public class PlaybackSessionService implements AutoCloseable {
             ReservedFormatAttempt.builder()
                 .videoFormatConstraint(videoConstraint)
                 .choice(playback.choice)
-                .choiceWhenEncoding(
-                    videoConstraint == VideoFormatConstraint.ENCODE_ONLY
-                        ? playback.choice
-                        : FormatRecoveryPolicy.choiceWhenEncodingAfterACopy(playback.choice))));
+                .choiceWhenEncoding(choiceWhenEncoding)));
   }
 
   private void failWithoutFormatAttempt(UUID failedId, PlaybackSessionFailure reason) {

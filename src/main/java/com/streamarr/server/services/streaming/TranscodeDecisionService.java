@@ -178,7 +178,6 @@ public class TranscodeDecisionService {
    */
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
-    var declaration = request.capabilityDeclaration();
     var sessionAudio = decideAudio(request);
     var videoCopy = videoCopy(request, sessionAudio.decision());
     var copy =

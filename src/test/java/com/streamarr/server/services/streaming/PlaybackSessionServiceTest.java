@@ -86,6 +86,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Named;
@@ -1157,17 +1158,19 @@ class PlaybackSessionServiceTest {
     assertThat(streams.createdCommands).hasSize(2);
   }
 
-  @Test
+  @ParameterizedTest(name = "{0} reports")
+  @ValueSource(ints = {1, 2})
   @DisplayName("Should stop at the format budget when copied audio runs short")
-  void shouldStopAtTheFormatBudgetWhenCopiedAudioRunsShort() {
+  void shouldStopAtTheFormatBudgetWhenCopiedAudioRunsShort(int reports) {
     var playback = serviceRunning(Runnable::run).maximumFormatAttempts(1).build();
     var command = startCommand().build();
     var initial = accepted(playback.start(command));
-
-    playback.onTerminalTranscodeFailure(
+    var failure =
         terminalFailure(
             initial.currentFormatAttempt().streamSessionId(),
-            TranscodeFailure.COPIED_AUDIO_RAN_SHORT));
+            TranscodeFailure.COPIED_AUDIO_RAN_SHORT);
+
+    IntStream.range(0, reports).forEach(_ -> playback.onTerminalTranscodeFailure(failure));
 
     var failed = playback.access(request(initial, command)).orElseThrow();
     assertThat(failed.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Failed.class);
@@ -2772,7 +2775,13 @@ class PlaybackSessionServiceTest {
                 "invalid specification",
                 (playback, streamId) ->
                     playback.onTerminalTranscodeFailure(
-                        terminalFailure(streamId, TranscodeFailure.INVALID_SPECIFICATION)))));
+                        terminalFailure(streamId, TranscodeFailure.INVALID_SPECIFICATION)))),
+        Arguments.of(
+            Named.<BiConsumer<PlaybackSessionService, UUID>>of(
+                "copied audio that ran short",
+                (playback, streamId) ->
+                    playback.onTerminalTranscodeFailure(
+                        terminalFailure(streamId, TranscodeFailure.COPIED_AUDIO_RAN_SHORT)))));
   }
 
   private static StreamSession endNormally(PlaybackSessionSnapshot snapshot) {
