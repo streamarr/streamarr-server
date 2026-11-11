@@ -7,10 +7,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration.WorkerSessionServerConfigurationBuilder;
 import com.streamarr.transcode.v1.BitrateScanChunk;
-import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.ProbePriority;
 import com.streamarr.transcode.v1.ProbeRequest;
-import com.streamarr.transcode.v1.Uuid;
 import io.grpc.Status;
 import java.time.Duration;
 import java.util.List;
@@ -55,7 +53,7 @@ class ProbeReportDeadlineTest {
     call.halfClose();
 
     assertThat(reported.outcome().get(1, TimeUnit.SECONDS)).isEqualTo(report);
-    assertThat(cancelledProbeAttempts(worker))
+    assertThat(worker.canceledProbeAttempts())
         .doesNotContain(reported.request().getProbeAttemptId());
   }
 
@@ -164,9 +162,10 @@ class ProbeReportDeadlineTest {
 
   @Test
   @DisplayName(
-      "Should read the report call of a timed-out probe, keep the timeout as its outcome and free"
-          + " its unit of capacity when the report call ends")
-  void shouldReadReportCallOfTimedOutProbeKeepTimeoutAsItsOutcomeAndFreeItsUnitWhenCallEnds()
+      "Should read a report call, keep the timeout as its probe's outcome and free the probe's"
+          + " unit of capacity when the report call crossed the cancel command of a timed-out"
+          + " probe")
+  void shouldReadReportCallAndKeepTimeoutAsOutcomeWhenItCrossedCancelCommandOfTimedOutProbe()
       throws Exception {
     var worker =
         ReportingWorker.connectedTo(
@@ -178,6 +177,7 @@ class ProbeReportDeadlineTest {
     var whileTheWorkerStopsTheProbe = worker.tryDispatch();
     var report = invalidMedia(probe.request()).build();
 
+    // The worker opened the report call before the cancel command reached it.
     var call = worker.report(probe.request(), report);
 
     assertThat(whileTheWorkerStopsTheProbe)
@@ -192,10 +192,10 @@ class ProbeReportDeadlineTest {
 
   @Test
   @DisplayName(
-      "Should keep the worker session when the first message of a cancelled probe's report call"
-          + " arrives within the cancellation timeout, and end the session of a worker that"
-          + " sends none")
-  void shouldKeepWorkerSessionWhenFirstMessageOfCancelledProbesReportCallArrivesInTime()
+      "Should keep the worker session when the first message of a report call that crossed the"
+          + " cancel command arrives within the cancellation timeout, and end the session of a"
+          + " worker that answers with nothing")
+  void shouldKeepWorkerSessionWhenFirstMessageOfReportCallThatCrossedCancelCommandArrivesInTime()
       throws Exception {
     var worker =
         ReportingWorker.connectedTo(
@@ -207,10 +207,11 @@ class ProbeReportDeadlineTest {
     var bytes = report.toByteString();
     probe.outcome().cancel(true);
     ignored.outcome().cancel(true);
+    // The worker opened the report call before the cancel command reached it.
     var call = worker.openReportCall();
     call.sendMetadata(worker.metadata(probe.request()).setReportLengthBytes(bytes.size()));
 
-    // The silent worker's probe was cancelled later, so the wait for the first worker has passed
+    // The silent worker's probe was canceled later, so the wait for the first worker has passed
     // as well.
     var silentWorkersSessionEnd = silentWorker.sessionEnd().get(5, TimeUnit.SECONDS);
     call.sendData(bytes);
@@ -222,12 +223,5 @@ class ProbeReportDeadlineTest {
         .isEqualTo(bytes.size());
     assertThat(worker.sessionEnd()).isNotDone();
     assertThat(worker.isConnected()).isTrue();
-  }
-
-  private static List<Uuid> cancelledProbeAttempts(ReportingWorker worker) {
-    return worker.commands().stream()
-        .filter(EstablishWorkerSessionResponse::hasCancelProbe)
-        .map(command -> command.getCancelProbe().getProbeAttemptId())
-        .toList();
   }
 }

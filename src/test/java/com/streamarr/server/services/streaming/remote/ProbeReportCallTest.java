@@ -700,9 +700,9 @@ class ProbeReportCallTest {
 
   @Test
   @DisplayName(
-      "Should read the report call of a cancelled probe and change nothing by its content when the"
-          + " worker reports the attempt")
-  void shouldReadReportCallOfCancelledProbeAndChangeNothingByItsContentWhenWorkerReportsAttempt()
+      "Should read a report call and change nothing by its content when the report call crossed"
+          + " the cancel command of its probe")
+  void shouldReadReportCallAndChangeNothingByItsContentWhenItCrossedCancelCommandOfItsProbe()
       throws Exception {
     var worker =
         ReportingWorker.connectedTo(
@@ -713,6 +713,7 @@ class ProbeReportCallTest {
     var whileTheWorkerStopsTheProbe = worker.tryDispatch();
     var report = invalidMedia(probe.request()).build();
 
+    // The worker opened the report call before the cancel command reached it.
     var call = worker.report(probe.request(), report);
 
     assertThat(whileTheWorkerStopsTheProbe)

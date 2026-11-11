@@ -642,16 +642,10 @@ class WorkerProbeDispatchTest {
     assertThat(runningProbes(registry, 1)).isEqualTo(1);
     assertThat(registry.dispatchProbe(probe().build()))
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
-    var reply =
-        ProbeAttemptResult.newBuilder()
-            .setProbeAttemptId(request.getProbeAttemptId())
-            .setProbeVersion(1)
-            .setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED)
-            .build();
 
     assertThat(
-            report(registry, reportingSession(sessionId, registration.getWorker()), reply)
-                .isAnswered())
+            registry.endProbeAttemptWithoutReport(
+                WORKER_ID, sessionId, fromProto(request.getProbeAttemptId())))
         .isTrue();
 
     assertThat(attempt).isCancelled();
@@ -948,7 +942,6 @@ class WorkerProbeDispatchTest {
     var sessionId = registry.register(WORKER_ID, registration.build(), new CapturingResponses());
     var request = probe().build();
     var attempt = dispatched(registry.dispatchProbe(request));
-    var cancellingWorker = registration.getWorker();
     var otherWorker = UUID.randomUUID();
     registration.getWorkerBuilder().setWorkerId(toProto(otherWorker));
     registry.register(otherWorker, registration.build(), new CapturingResponses());
@@ -958,15 +951,9 @@ class WorkerProbeDispatchTest {
     assertThat(registry.dispatchProbe(request))
         .as("A free worker must not start an attempt another worker is still cancelling")
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.ATTEMPT_IN_PROGRESS));
-    var acknowledgement =
-        ProbeAttemptResult.newBuilder()
-            .setProbeAttemptId(request.getProbeAttemptId())
-            .setProbeVersion(1)
-            .setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED)
-            .build();
     assertThat(
-            report(registry, reportingSession(sessionId, cancellingWorker), acknowledgement)
-                .isAnswered())
+            registry.endProbeAttemptWithoutReport(
+                WORKER_ID, sessionId, fromProto(request.getProbeAttemptId())))
         .isTrue();
     assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Dispatched.class);
   }
