@@ -119,10 +119,11 @@ when {
   context.freshReauthentication
 };
 
-// A Household's live HouseholdAdmin issues share codes for it, lists them, and withdraws any of them,
-// whoever issued it; ServerAdmin may for any Household (ADR 0024 §Share codes). Issuing invites an offer and consents to nothing: who may offer
-// which Profile, and who accepts, stay with the rules above. The live role decides, never the
-// signed one, so a code is never issued on authority its issuer has already lost.
+// A Household's live HouseholdAdmin issues share codes for it, lists them, and withdraws any of
+// them, whoever issued it; ServerAdmin may for any Household (ADR 0024 §Share codes). Issuing
+// invites an offer and consents to nothing: who may offer which Profile, and who accepts, stay
+// with the rules above. The live role decides, never the signed one, so a code is never issued on
+// authority its issuer has already lost.
 @id("administer-household-share-codes-as-local-admin-or-server-admin")
 permit (
   principal,

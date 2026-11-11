@@ -5,7 +5,6 @@ import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.ShareCode;
 import com.streamarr.server.domain.auth.UserAccount;
-import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
@@ -47,7 +46,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ShareCodeService {
 
-  static final String FK_SHARE_CODE_HOUSEHOLD = "fk_share_code_household";
+  private static final String FK_SHARE_CODE_HOUSEHOLD = "fk_share_code_household";
 
   // Eight letters of twenty make 25.6 billion codes, so a draw that matches a stored digest is
   // rare; a few draws keep one such match from failing the request.
@@ -75,8 +74,8 @@ public class ShareCodeService {
           refusal(
                   identity,
                   new Intent.IssueShareCode(householdId),
-                  householdId,
-                  ShareCodeRejections.HouseholdNotFound::new)
+                  hiddenUnlessViewer(
+                      identity, householdId, ShareCodeRejections.HouseholdNotFound::new))
               .ifPresent(ShareCodeService::reject);
           if (householdRepository.findById(householdId).isEmpty()) {
             reject(new ShareCodeRejections.HouseholdNotFound());
@@ -103,8 +102,10 @@ public class ShareCodeService {
           refusal(
                   identity,
                   new Intent.WithdrawShareCode(shareCode.getHouseholdId()),
-                  shareCode.getHouseholdId(),
-                  ShareCodeRejections.ShareCodeNotFound::new)
+                  hiddenUnlessViewer(
+                      identity,
+                      shareCode.getHouseholdId(),
+                      ShareCodeRejections.ShareCodeNotFound::new))
               .ifPresent(ShareCodeService::reject);
           if (!shareCodeRepository.tryWithdraw(shareCodeId, clock.instant())) {
             reject(new ShareCodeRejections.ShareCodeNotLive());
@@ -190,7 +191,8 @@ public class ShareCodeService {
    */
   public ListPage<ShareCodeWithIssuer> householdShareCodes(
       AuthenticatedIdentity identity, HouseholdShareCodesScope household, PageRequest request) {
-    if (!mayReadShareCodes(identity, household.householdId())) {
+    if (!authorizationService.isAllowed(
+        identity, new Intent.ViewShareCodes(household.householdId()))) {
       return ListPage.empty();
     }
 
@@ -240,29 +242,23 @@ public class ShareCodeService {
         .collect(Collectors.toMap(UserAccount::getId, UserAccount::getDisplayName));
   }
 
-  /** A caller who may not see the Household's share codes learns nothing about the Household. */
   private <R> Optional<R> refusal(
       AuthenticatedIdentity identity,
       Intent.UnitIntent intent,
-      UUID householdId,
-      Supplier<? extends R> hidden) {
-    return AuthorizationRefusal.from(
-        authorizationService.decide(identity, intent),
-        new AuthorizationRefusal.Response<>(
-            () -> mayViewShareCodes(identity, householdId), hidden, Optional.empty()));
+      AuthorizationRefusal.Response<R> response) {
+    return AuthorizationRefusal.from(authorizationService.decide(identity, intent), response);
+  }
+
+  /** A caller who may not see the Household's share codes learns nothing about the Household. */
+  private <R> AuthorizationRefusal.Response<R> hiddenUnlessViewer(
+      AuthenticatedIdentity identity, UUID householdId, Supplier<? extends R> hidden) {
+    return new AuthorizationRefusal.Response<>(
+        () -> mayViewShareCodes(identity, householdId), hidden, Optional.empty());
   }
 
   private boolean mayViewShareCodes(AuthenticatedIdentity identity, UUID householdId) {
     return authorizationService.decide(identity, new Intent.ViewShareCodes(householdId))
         instanceof Decision.Allowed<AuthorizationUnit>;
-  }
-
-  private boolean mayReadShareCodes(AuthenticatedIdentity identity, UUID householdId) {
-    return switch (authorizationService.decide(identity, new Intent.ViewShareCodes(householdId))) {
-      case Decision.Allowed<AuthorizationUnit> _ -> true;
-      case Decision.Denied<AuthorizationUnit> _ -> false;
-      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
-    };
   }
 
   private static void reject(Object rejection) {

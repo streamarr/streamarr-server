@@ -11,6 +11,7 @@ import com.streamarr.server.fakes.FakeShareCodeRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.services.auth.ShareCodes;
+import com.streamarr.server.services.auth.ShareCodesFixture;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -42,7 +43,7 @@ class ShareCodeIssuerAuthorityTest {
                       : new Decision.Denied<>(Decision.DenialReason.POLICY));
   private final ShareCodeIssuerAuthority issuerAuthority =
       new ShareCodeIssuerAuthority(shareCodes, new FakeUserAccountRepository(), authorization);
-  private final ShareCodes codes = new ShareCodes();
+  private final ShareCodes codes = ShareCodesFixture.shareCodes();
 
   @Test
   @DisplayName(

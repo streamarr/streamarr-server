@@ -37,6 +37,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.auth.ShareCodes;
+import com.streamarr.server.services.auth.ShareCodesFixture;
 import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -87,7 +88,7 @@ class ProfileSharingServiceTest {
 
   private final FakeShareCodeRepository shareCodes = new FakeShareCodeRepository();
   private final FakeCredentialAttemptRepository attempts = new FakeCredentialAttemptRepository();
-  private final ShareCodes codes = new ShareCodes();
+  private final ShareCodes codes = ShareCodesFixture.shareCodes();
 
   private Household household;
   private Profile profile;

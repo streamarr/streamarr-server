@@ -24,6 +24,7 @@ import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ShareCodes;
+import com.streamarr.server.services.auth.ShareCodesFixture;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -59,7 +60,7 @@ class ShareCodeServiceTest {
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeShareCodeRepository shareCodes = new FakeShareCodeRepository();
   private final FakeCredentialAttemptRepository attempts = new FakeCredentialAttemptRepository();
-  private final ShareCodes codes = new ShareCodes();
+  private final ShareCodes codes = ShareCodesFixture.shareCodes();
 
   private UserAccount issuer;
   private FakeAuthorizationService authorization;

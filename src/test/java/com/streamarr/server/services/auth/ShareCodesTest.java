@@ -14,7 +14,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("Share Codes Tests")
 class ShareCodesTest {
 
-  private final ShareCodes shareCodes = new ShareCodes();
+  private final ShareCodes shareCodes = ShareCodesFixture.shareCodes();
 
   @Test
   @DisplayName("Should issue the letters and groups of a Device linking code when a code is issued")

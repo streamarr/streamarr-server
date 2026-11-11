@@ -86,6 +86,7 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private ShareCodeRepository shareCodeRepository;
+  @Autowired private ShareCodes shareCodes;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
 
@@ -131,7 +132,7 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
             .findById(UUID.fromString(shareCode.path("id").asString()))
             .orElseThrow();
     assertThat(stored.getCodeDigest())
-        .isEqualTo(new ShareCodes().digestOf(code).orElseThrow())
+        .isEqualTo(shareCodes.digestOf(code).orElseThrow())
         .hasSize(32);
   }
 
