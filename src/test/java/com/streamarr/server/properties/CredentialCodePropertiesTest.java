@@ -59,6 +59,24 @@ class CredentialCodePropertiesTest {
   }
 
   @Test
+  @DisplayName("Should reject a share code lifetime when it is longer than thirty days")
+  void shouldRejectShareCodeLifetimeWhenLongerThanThirtyDays() {
+    var properties = validProperties().shareCodeTtl(Duration.ofDays(30).plusNanos(1)).build();
+
+    assertThat(VALIDATOR.validate(properties))
+        .extracting(violation -> violation.getPropertyPath().toString())
+        .containsExactly("shareCodeTtl");
+  }
+
+  @Test
+  @DisplayName("Should accept a share code lifetime when it is thirty days")
+  void shouldAcceptShareCodeLifetimeWhenItIsThirtyDays() {
+    var properties = validProperties().shareCodeTtl(Duration.ofDays(30)).build();
+
+    assertThat(VALIDATOR.validate(properties)).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should accept credential lifetimes when they are five minutes")
   void shouldAcceptCredentialLifetimesWhenTheyAreFiveMinutes() {
     var properties =

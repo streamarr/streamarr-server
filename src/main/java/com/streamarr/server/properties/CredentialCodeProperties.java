@@ -3,6 +3,7 @@ package com.streamarr.server.properties;
 import jakarta.validation.constraints.NotNull;
 import java.time.Duration;
 import lombok.Builder;
+import org.hibernate.validator.constraints.time.DurationMax;
 import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -19,7 +20,8 @@ import org.springframework.validation.annotation.Validated;
 public record CredentialCodeProperties(
     @NotNull @DurationMin(minutes = 5) Duration invitationTtl,
     @NotNull @DurationMin(minutes = 5) Duration passwordResetTtl,
-    @NotNull @DurationMin(minutes = 5) Duration shareCodeTtl,
+    // At most 30 days, so a mistaken setting cannot leave a code open to guessing for months.
+    @NotNull @DurationMin(minutes = 5) @DurationMax(days = 30) Duration shareCodeTtl,
     // Base64; blank makes a key for the run, so live share codes stop working on restart.
     String shareCodeKey,
     @NotNull @DurationMin(millis = 1) Duration replacementLockTimeout) {
