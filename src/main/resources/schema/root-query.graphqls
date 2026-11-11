@@ -20,7 +20,15 @@ type Query {
     profileAdministration(profileId: ID!): ProfileAdministration
     accountInvitations(first: Int, after: String, last: Int, before: String): AccountInvitationConnection!
     accountInvitationProfilePreview(profileId: ID!): AccountInvitationProfilePreview
-    profileSharePreview(profileId: ID!, householdId: ID!): ProfileSharePreview
+    """
+    What offering this Profile to the Household a share code names would mean: whether the Profile
+    would lock there, and whether its name conflicts with a Profile already there. Nothing else
+    about the Household. The code stays live. Each request is a credential attempt by the Account
+    that presents the code, counted as lookUpShareCode counts it. Null when the code does not work,
+    when the Profile does not exist, and when the caller may not offer it. A device-bound session
+    and a disabled Account get FORBIDDEN.
+    """
+    profileSharePreview(profileId: ID!, shareCode: String!): ProfileSharePreview
     """
     The Profiles offered or shared to a Household, newest first, for its HouseholdAdmins and for
     ServerAdmins. Everyone else gets an empty list. The HouseholdAdmins get only the offers still

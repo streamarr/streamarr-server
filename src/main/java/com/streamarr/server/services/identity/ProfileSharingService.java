@@ -73,6 +73,7 @@ public class ProfileSharingService {
   private final CredentialCodeProperties credentialCodeProperties;
   private final HouseholdSharesList householdSharesList;
   private final ProfileSharesList profileSharesList;
+  private final ShareCodeService shareCodeService;
   private final Clock clock;
 
   public Outcome<ProfileHouseholdShare, ShareRejections.Offer> offerProfileShare(
@@ -221,13 +222,16 @@ public class ProfileSharingService {
   }
 
   /**
-   * ADR 0024 §PIN safety: the offerer learns only whether their Profile would lock in the target
-   * Household and whether a name conflict exists — nothing else about that Household.
+   * ADR 0024 §Share codes: the preflight names its target Household by a share code, and the
+   * offerer learns only whether their Profile would lock there and whether a name conflict exists —
+   * nothing else about that Household. A code that does not work, a missing Profile, and a Profile
+   * the caller may not offer all answer nothing. The code stays live.
    */
   public Optional<SharePreflight> sharePreflight(
-      AuthenticatedIdentity identity, UUID profileId, UUID householdId) {
+      AuthenticatedIdentity identity, UUID profileId, ShareCodeCommand shareCode) {
+    var target = shareCodeService.presentedShareCode(identity, shareCode);
     var profile = profileRepository.findById(profileId);
-    if (profile.isEmpty() || householdRepository.findById(householdId).isEmpty()) {
+    if (target.isEmpty() || profile.isEmpty()) {
       return Optional.empty();
     }
 
@@ -240,7 +244,8 @@ public class ProfileSharingService {
       return Optional.empty();
     }
 
-    var available = new ArrayList<>(profileRepository.findAvailableInHousehold(householdId));
+    var available =
+        new ArrayList<>(profileRepository.findAvailableInHousehold(target.get().getHouseholdId()));
     available.removeIf(other -> other.getId().equals(profileId));
     var nameConflict =
         available.stream()

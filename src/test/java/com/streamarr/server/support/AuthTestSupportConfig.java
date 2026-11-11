@@ -9,6 +9,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
+import com.streamarr.server.services.identity.ShareCodeService;
 import org.jooq.DSLContext;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -34,7 +35,8 @@ public class AuthTestSupportConfig {
       PlaybackTokenIssuer playbackTokenIssuer,
       AuthTokenProperties tokenProperties,
       PasswordEncoder passwordEncoder,
-      PlatformTransactionManager transactionManager) {
+      PlatformTransactionManager transactionManager,
+      ShareCodeService shareCodeService) {
     return new AuthTestSupport(
         dsl,
         userAccountRepository,
@@ -48,6 +50,7 @@ public class AuthTestSupportConfig {
         jwtDecoder,
         playbackTokenIssuer,
         passwordEncoder,
-        new TransactionTemplate(transactionManager));
+        new TransactionTemplate(transactionManager),
+        shareCodeService);
   }
 }

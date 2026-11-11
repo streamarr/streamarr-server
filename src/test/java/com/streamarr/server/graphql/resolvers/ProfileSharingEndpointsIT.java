@@ -1038,15 +1038,58 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist());
 
     // The owner's unpinned Adult Personal Profile would lock next to the Kid; its name is unique.
+    var code = authTestSupport.shareCodeFor(host);
     graphql(
             authTestSupport.accountBearer(owner),
             """
-            query { profileSharePreview(profileId: "%s", householdId: "%s") { wouldLock nameConflict } }
+            query { profileSharePreview(profileId: "%s", shareCode: "%s") { wouldLock nameConflict } }
             """
-                .formatted(owner.profile().getId(), host.household().getId()))
+                .formatted(owner.profile().getId(), code))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.profileSharePreview.wouldLock").value(true))
         .andExpect(jsonPath("$.data.profileSharePreview.nameConflict").value(false));
+
+    // The preview spends nothing: the same code still names the Household.
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { lookUpShareCode(input: {code: "%s"}) { householdName userErrors { __typename } } }
+            """
+                .formatted(code))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.lookUpShareCode.householdName").value(host.household().getName()));
+  }
+
+  @Test
+  @DisplayName("Should answer no preview and name no Household when the share code does not work")
+  void shouldAnswerNoPreviewAndNameNoHouseholdWhenShareCodeDoesNotWork() throws Exception {
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            query { profileSharePreview(profileId: "%s", shareCode: "BCDF-GHJK") {
+              wouldLock nameConflict } }
+            """
+                .formatted(owner.profile().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.profileSharePreview").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("Should refuse a preview as forbidden when a device-bound session asks for one")
+  void shouldRefusePreviewAsForbiddenWhenDeviceBoundSessionAsksForOne() throws Exception {
+    graphql(
+            authTestSupport.deviceBoundProfileBearer(owner),
+            """
+            query { profileSharePreview(profileId: "%s", shareCode: "%s") {
+              wouldLock nameConflict } }
+            """
+                .formatted(owner.profile().getId(), authTestSupport.shareCodeFor(host)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"))
+        .andExpect(jsonPath("$.data.profileSharePreview").doesNotExist());
   }
 
   @Test
@@ -1743,10 +1786,10 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
       graphql(
               authTestSupport.accountBearer(serverAdmin),
               """
-              query { profileSharePreview(profileId: "%s", householdId: "%s") {
+              query { profileSharePreview(profileId: "%s", shareCode: "%s") {
                 wouldLock nameConflict } }
               """
-                  .formatted(UUID.randomUUID(), host.household().getId()))
+                  .formatted(UUID.randomUUID(), authTestSupport.shareCodeFor(host)))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.errors").doesNotExist())
           .andExpect(jsonPath("$.data.profileSharePreview").doesNotExist());
