@@ -3,6 +3,7 @@ package com.streamarr.server.services.artwork;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageFormat;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.ItemOutcome;
@@ -14,6 +15,7 @@ import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.services.events.library.CollectablesChangedEvent;
 import com.streamarr.server.services.metadata.ImageVariantService;
+import com.streamarr.server.services.metadata.ImageVariantService.GeneratedVariant;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -78,7 +80,7 @@ public class ImageService {
       for (var variant : variants) {
         var imageId = UUID.randomUUID();
         var relativePath =
-            buildRelativePath(entityType, entityId, imageType, variant.variant(), imageId);
+            buildRelativePath(entityType, entityId, imageType, fileNameOf(variant, imageId));
         var absolutePath = resolveAbsolutePath(relativePath);
 
         Files.createDirectories(absolutePath.getParent());
@@ -331,17 +333,22 @@ public class ImageService {
   }
 
   private String buildRelativePath(
-      ImageEntityType entityType,
-      UUID entityId,
-      ImageType imageType,
-      ImageSize variant,
-      UUID imageId) {
+      ImageEntityType entityType, UUID entityId, ImageType imageType, String fileName) {
     return String.join(
         "/",
         entityType.name().toLowerCase(),
         entityId.toString(),
         imageType.name().toLowerCase(),
-        variant.name().toLowerCase() + "-" + imageId + ".jpg");
+        fileName);
+  }
+
+  // The extension names the format of the variant's bytes. A variant that is neither JPEG nor PNG
+  // gets no extension.
+  private static String fileNameOf(GeneratedVariant variant, UUID imageId) {
+    var name = variant.variant().name().toLowerCase() + "-" + imageId;
+    return ImageFormat.ofBytes(variant.data())
+        .map(format -> name + "." + format.getExtension())
+        .orElse(name);
   }
 
   private Path resolveAbsolutePath(String relativePath) {

@@ -3,6 +3,7 @@ package com.streamarr.server.services.artwork;
 import static com.streamarr.server.fakes.TestImages.OPAQUE_TEAL;
 import static com.streamarr.server.fakes.TestImages.alphaOfCornerPixel;
 import static com.streamarr.server.fakes.TestImages.centrePixelOf;
+import static com.streamarr.server.fakes.TestImages.createGifImage;
 import static com.streamarr.server.fakes.TestImages.createOpaquePngImageWithAlphaChannel;
 import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
@@ -250,6 +251,37 @@ class ImageServiceTest {
     assertThatThrownBy(() -> processPoster(imageData)).isInstanceOf(ImageProcessingException.class);
 
     assertThat(fileSystem.getPath("/data/images")).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should name every variant file as PNG when image has transparent pixels")
+  void shouldNameEveryVariantFileAsPngWhenImageHasTransparentPixels() {
+    var result = processLogo(createPngImageWithTransparentBorder());
+
+    assertThat(result.images())
+        .hasSize(4)
+        .allSatisfy(image -> assertThat(image.getPath()).endsWith("-" + image.getId() + ".png"));
+  }
+
+  @Test
+  @DisplayName("Should name the original file by its own format when resized variants are JPEG")
+  void shouldNameOriginalFileByItsOwnFormatWhenResizedVariantsAreJpeg() {
+    var result = processPoster(createSolidPngImage(600, 900, 0x00A0A0));
+
+    assertThat(result.images())
+        .extracting(image -> image.getVariant() + extensionOf(image))
+        .containsExactlyInAnyOrder("SMALL.jpg", "MEDIUM.jpg", "LARGE.jpg", "ORIGINAL.png");
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the original file without an extension when its format is neither JPEG nor PNG")
+  void shouldNameOriginalFileWithoutExtensionWhenItsFormatIsNeitherJpegNorPng() {
+    var result = processPoster(createGifImage());
+
+    assertThat(result.images())
+        .extracting(image -> image.getVariant() + extensionOf(image))
+        .containsExactlyInAnyOrder("SMALL.jpg", "MEDIUM.jpg", "LARGE.jpg", "ORIGINAL");
   }
 
   @Test
@@ -803,6 +835,12 @@ class ImageServiceTest {
         .filter(image -> image.getVariant() == ImageSize.SMALL)
         .findFirst()
         .orElseThrow();
+  }
+
+  // The part of the stored file's name after the image id.
+  private static String extensionOf(Image image) {
+    var imageId = image.getId().toString();
+    return image.getPath().substring(image.getPath().indexOf(imageId) + imageId.length());
   }
 
   private static void assertPngWithTransparentBorder(byte[] imageData) {

@@ -1,5 +1,6 @@
 package com.streamarr.server.controllers;
 
+import com.streamarr.server.domain.media.ImageFormat;
 import com.streamarr.server.services.artwork.ImageService;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -39,10 +40,20 @@ public class ImageController {
   @GetMapping("/{imageId}")
   @ApiResponse(
       responseCode = "200",
-      content =
-          @Content(
-              mediaType = MediaType.IMAGE_JPEG_VALUE,
-              schema = @Schema(type = "string", format = "binary")))
+      description =
+          "The image. Its media type is read from its bytes, and is application/octet-stream"
+              + " when they are neither JPEG nor PNG.",
+      content = {
+        @Content(
+            mediaType = MediaType.IMAGE_JPEG_VALUE,
+            schema = @Schema(type = "string", format = "binary")),
+        @Content(
+            mediaType = MediaType.IMAGE_PNG_VALUE,
+            schema = @Schema(type = "string", format = "binary")),
+        @Content(
+            mediaType = MediaType.APPLICATION_OCTET_STREAM_VALUE,
+            schema = @Schema(type = "string", format = "binary"))
+      })
   @ApiResponse(responseCode = "304", description = "Not modified", content = @Content)
   @ApiResponse(responseCode = "404", description = "Image not found", content = @Content)
   @ApiResponse(responseCode = "500", description = "Image could not be read", content = @Content)
@@ -61,7 +72,7 @@ public class ImageController {
       var imageData = imageService.readImageFile(imageOpt.get());
 
       return ResponseEntity.ok()
-          .contentType(MediaType.IMAGE_JPEG)
+          .contentType(mediaTypeOf(imageData))
           .cacheControl(PRIVATE_IMMUTABLE)
           .eTag(imageId.toString())
           .body(imageData);
@@ -69,5 +80,11 @@ public class ImageController {
       log.error("Failed to read image file for id: {}", imageId, e);
       return ResponseEntity.internalServerError().build();
     }
+  }
+
+  private static MediaType mediaTypeOf(byte[] imageData) {
+    return ImageFormat.ofBytes(imageData)
+        .map(format -> MediaType.parseMediaType(format.getMediaType()))
+        .orElse(MediaType.APPLICATION_OCTET_STREAM);
   }
 }
