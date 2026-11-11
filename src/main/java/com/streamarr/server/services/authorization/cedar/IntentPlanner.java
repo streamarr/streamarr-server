@@ -58,6 +58,9 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onAccount(Action.VIEW_ACCOUNT_ADMINISTRATION, accountId));
       case Intent.ViewProfileAdministration(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.VIEW_PROFILE_ADMINISTRATION, profileId));
+      case Intent.ViewManagedProfiles _ ->
+          unitPlan(
+              AuthorizationCheck.onAccount(Action.VIEW_MANAGED_PROFILES, identity.accountId()));
       case Intent.ViewManagerInvitations(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.VIEW_MANAGER_INVITATIONS, profileId));
       case Intent.ViewProfileShareHouseholds(var profileId) ->

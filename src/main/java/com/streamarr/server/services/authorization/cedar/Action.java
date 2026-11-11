@@ -98,6 +98,11 @@ enum Action {
       FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.PROFILE_MANAGEMENT),
+  VIEW_MANAGED_PROFILES(
+      "viewManagedProfiles",
+      ResourceKind.ACCOUNT,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   VIEW_MANAGER_INVITATIONS(
       "viewManagerInvitations",
       ResourceKind.PROFILE,

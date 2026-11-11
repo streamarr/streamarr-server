@@ -51,6 +51,22 @@ public class ProfileCastSupport {
         });
   }
 
+  /**
+   * A Profile that belongs to the manager's Household, with the manager's direct grant, and is
+   * available nowhere, as a Profile is once a HouseholdAdmin removes it from its Household.
+   */
+  public Profile unavailableProfileManagedBy(
+      TestIdentity manager, Profile.ProfileBuilder<?, ?> profile) {
+    return transactionTemplate.execute(
+        _ -> {
+          var saved =
+              profileRepository.saveAndFlush(
+                  profile.householdId(manager.household().getId()).build());
+          saveGrant(manager, saved);
+          return saved;
+        });
+  }
+
   /** Makes the Profile available in the host's Household, as an accepted offer does. */
   public void makeAvailable(Profile profile, TestIdentity host) {
     transactionTemplate.executeWithoutResult(

@@ -50,6 +50,12 @@ public sealed interface Intent {
 
   record ViewProfileAdministration(UUID profileId) implements UnitIntent {}
 
+  /**
+   * The Profiles the signed-in Account manages, across Households: its own, while it is enabled,
+   * never from a device-bound session.
+   */
+  record ViewManagedProfiles() implements UnitIntent {}
+
   /** Pending direct-manager invitations: ProfileManagers and live ServerAdmin only. */
   record ViewManagerInvitations(UUID profileId) implements UnitIntent {}
 

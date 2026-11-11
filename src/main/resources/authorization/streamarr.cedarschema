@@ -516,6 +516,12 @@ namespace Streamarr {
     resource: Profile,
     context: {},
   };
+  // The Profiles the signed-in Account manages; the resource is the Account itself.
+  action viewManagedProfiles in profileAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
 
   // The signed-in Account's own Notifications (ADR 0063); the resource is the Account itself.
   action notifications;

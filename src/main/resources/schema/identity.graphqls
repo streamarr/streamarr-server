@@ -20,6 +20,15 @@ type Me {
     languagePreferences: ProfileLanguagePreferences
     "True for a session bound to a registered Device; it cannot switch Household or administer."
     deviceBound: Boolean!
+    """
+    The Profiles this Account manages, in every Household, by name: its own Personal Profile while
+    that Profile is an unrestricted Adult, and every Profile it holds a direct ProfileManager grant
+    for. Each one names the Household it belongs to, so these Households and the Account's own are
+    the ones Household settings lets it switch between. An Account whose own Personal Profile is
+    supervised manages none, and being a HouseholdAdmin or a ServerAdmin adds none. Empty for a
+    device-bound session and for a disabled Account.
+    """
+    managedProfiles(first: Int, after: String, last: Int, before: String): ProfileAdministrationConnection!
 }
 
 enum HouseholdRole {

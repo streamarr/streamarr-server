@@ -1639,6 +1639,43 @@ class CedarIdentityPoliciesTest {
   }
 
   @Nested
+  @DisplayName("The Profiles an Account manages")
+  class ManagedProfiles {
+
+    private final Intent.UnitIntent viewManagedProfiles = new Intent.ViewManagedProfiles();
+
+    @Test
+    @DisplayName(
+        "Should let an enabled Account list the Profiles it manages when its session is not"
+            + " device-bound, whatever its Household role")
+    void shouldLetAnEnabledAccountListTheProfilesItManagesWhenItsSessionIsNotDeviceBound() {
+      assertThat(decide(atHome(), viewManagedProfiles)).isEqualTo(ALLOWED);
+      assertThat(decide(member(), viewManagedProfiles)).isEqualTo(ALLOWED);
+      assertThat(decide(visiting(), viewManagedProfiles)).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should refuse the Profiles an Account manages when the session is device-bound, a"
+            + " ServerAdmin's included")
+    void shouldRefuseTheProfilesAnAccountManagesWhenTheSessionIsDeviceBound() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(decide(onDevice(atHome()), viewManagedProfiles)).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should refuse the Profiles an Account manages when the Account is disabled")
+    void shouldRefuseTheProfilesAnAccountManagesWhenTheAccountIsDisabled() {
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(decide(atHome(), viewManagedProfiles)).isEqualTo(DENIED);
+    }
+  }
+
+  @Nested
   @DisplayName("Notifications")
   class Notifications {
 

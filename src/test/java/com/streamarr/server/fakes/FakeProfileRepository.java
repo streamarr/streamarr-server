@@ -211,4 +211,9 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   public List<ProfileReaderRelation> relationsTo(UUID accountId, Collection<UUID> profileIds) {
     throw new UnsupportedOperationException("Reader relations are read only from PostgreSQL");
   }
+
+  @Override
+  public List<Row<Profile>> rowsManagedBy(UUID accountId, Seek seek) {
+    throw new UnsupportedOperationException("Managed Profiles are read only from PostgreSQL");
+  }
 }
