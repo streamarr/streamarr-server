@@ -13,7 +13,6 @@ import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.DeviceAuthorization.DeviceAuthorizationPath;
 import com.streamarr.server.jooq.generated.tables.DeviceRegistration.DeviceRegistrationPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
-import com.streamarr.server.jooq.generated.tables.Notification.NotificationPath;
 import com.streamarr.server.jooq.generated.tables.PasswordResetCode.PasswordResetCodePath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
@@ -331,19 +330,6 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
             _fkDeviceRegistrationRevokedBy = new DeviceRegistrationPath(this, null, Keys.DEVICE_REGISTRATION__FK_DEVICE_REGISTRATION_REVOKED_BY.getInverseKey());
 
         return _fkDeviceRegistrationRevokedBy;
-    }
-
-    private transient NotificationPath _notification;
-
-    /**
-     * Get the implicit to-many join path to the
-     * <code>public.notification</code> table
-     */
-    public NotificationPath notification() {
-        if (_notification == null)
-            _notification = new NotificationPath(this, null, Keys.NOTIFICATION__FK_NOTIFICATION_RECIPIENT.getInverseKey());
-
-        return _notification;
     }
 
     private transient PasswordResetCodePath _fkPasswordResetCodeAccount;
