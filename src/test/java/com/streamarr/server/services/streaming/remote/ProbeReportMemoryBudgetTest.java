@@ -122,7 +122,127 @@ class ProbeReportMemoryBudgetTest {
     assertThatIllegalArgumentException().isThrownBy(() -> reserve("unfit", bytes));
   }
 
+  @Test
+  @DisplayName(
+      "Should give a playback probe's report its room at once when it fits and only a larger"
+          + " background probe's report waits")
+  void shouldGivePlaybackProbesReportItsRoomAtOnceWhenItFitsAndOnlyLargerBackgroundReportWaits() {
+    reserve("holder", 6);
+    reserve("earlier background", 8);
+
+    var playback = reserve(ProbeKind.PLAYBACK, "playback", 4);
+
+    assertThat(playback.isGrantedAtOnce()).isTrue();
+    assertThat(grantedLater).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should give a waiting playback probe's report its room before a background probe's report"
+          + " that asked earlier when room is released")
+  void shouldGiveWaitingPlaybackProbesReportItsRoomBeforeBackgroundReportThatAskedEarlier() {
+    var holder = reserve("holder", 6);
+    reserve("earlier background", 5);
+    reserve(ProbeKind.PLAYBACK, "later playback", 5);
+
+    holder.close();
+
+    assertThat(grantedLater).containsExactly("later playback", "earlier background");
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a background probe's report waiting when released room fits it and not the"
+          + " playback probe's report that waits")
+  void shouldKeepBackgroundProbesReportWaitingWhenReleasedRoomFitsItAndNotWaitingPlaybackReport() {
+    var first = reserve("first holder", 5);
+    reserve("second holder", 5);
+    reserve("earlier background", 5);
+    reserve(ProbeKind.PLAYBACK, "playback", 6);
+
+    first.close();
+
+    assertThat(grantedLater).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should make a background probe's report wait when it fits while a playback probe's report"
+          + " waits")
+  void shouldMakeBackgroundProbesReportWaitWhenItFitsWhilePlaybackProbesReportWaits() {
+    var holder = reserve("holder", 6);
+    reserve(ProbeKind.PLAYBACK, "playback", 8);
+
+    var background = reserve("background", 2);
+    holder.close();
+
+    assertThat(background.isGrantedAtOnce()).isFalse();
+    assertThat(grantedLater).containsExactly("playback", "background");
+  }
+
+  @Test
+  @DisplayName(
+      "Should make a later playback probe's report wait behind an earlier one when only the later"
+          + " one fits")
+  void shouldMakeLaterPlaybackProbesReportWaitBehindEarlierOneWhenOnlyLaterOneFits() {
+    var holder = reserve("holder", 6);
+    reserve(ProbeKind.PLAYBACK, "earlier", 8);
+
+    var later = reserve(ProbeKind.PLAYBACK, "later", 2);
+    holder.close();
+
+    assertThat(later.isGrantedAtOnce()).isFalse();
+    assertThat(grantedLater).containsExactly("earlier", "later");
+  }
+
+  @Test
+  @DisplayName(
+      "Should give the reports of background probes and keyframe packet scans their room in the"
+          + " order in which they asked")
+  void shouldGiveReportsOfBackgroundProbesAndKeyframePacketScansTheirRoomInOrderInWhichTheyAsked() {
+    var holder = reserve("holder", 10);
+    reserve(ProbeKind.KEYFRAME_PACKET_SCAN, "earlier scan", 4);
+    reserve(ProbeKind.BACKGROUND, "background", 4);
+    reserve(ProbeKind.KEYFRAME_PACKET_SCAN, "later scan", 2);
+
+    holder.close();
+
+    assertThat(grantedLater).containsExactly("earlier scan", "background", "later scan");
+  }
+
+  @Test
+  @DisplayName(
+      "Should make a playback probe's report wait when a background probe's report holds the room"
+          + " that it needs")
+  void shouldMakePlaybackProbesReportWaitWhenBackgroundProbesReportHoldsRoomThatItNeeds() {
+    reserve("holder", 6);
+
+    var playback = reserve(ProbeKind.PLAYBACK, "playback", 5);
+
+    assertThat(playback.isGrantedAtOnce()).isFalse();
+    assertThat(grantedLater).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should give a background probe's report its room when the playback probe's report ahead of"
+          + " it stops waiting")
+  void shouldGiveBackgroundProbesReportItsRoomWhenPlaybackProbesReportAheadOfItStopsWaiting() {
+    reserve("holder", 6);
+    var playback = reserve(ProbeKind.PLAYBACK, "playback", 8);
+    reserve("background", 4);
+
+    playback.close();
+
+    assertThat(grantedLater).containsExactly("background");
+  }
+
+  /** Reserves room for the probe report of a background probe. */
   private ProbeReportMemoryBudget.Reservation reserve(String name, long bytes) {
-    return budget.reserve(bytes, () -> grantedLater.add(name));
+    return reserve(ProbeKind.BACKGROUND, name, bytes);
+  }
+
+  private ProbeReportMemoryBudget.Reservation reserve(ProbeKind kind, String name, long bytes) {
+    return budget.reserve(kind, bytes, () -> grantedLater.add(name));
   }
 }

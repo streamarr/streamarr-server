@@ -156,7 +156,9 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
 
     reportLengthBytes = statedLength;
     // The server reads no byte of the report before the whole report has room.
-    room = memoryBudget.reserve(statedLength, this::readOnceRoomIsFree);
+    room =
+        memoryBudget.reserve(
+            ProbeKind.of(admitted.request()), statedLength, this::readOnceRoomIsFree);
     if (room.isGrantedAtOnce()) {
       requestMessage();
     }

@@ -12,6 +12,7 @@ import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
+import com.streamarr.transcode.v1.ProbePriority;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ReportProbeAttemptRequest;
 import com.streamarr.transcode.v1.ReportProbeAttemptResponse;
@@ -836,6 +837,28 @@ class ProbeReportCallTest {
     assertThat(later.unreadDemand()).isEqualTo(1);
   }
 
+  @Test
+  @DisplayName(
+      "Should read the waiting report call of a playback probe before the report call of a"
+          + " background probe that asked for room earlier when room is released")
+  void shouldReadWaitingReportCallOfPlaybackProbeBeforeEarlierOneOfBackgroundProbe()
+      throws Exception {
+    var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
+    var holder = holdRoomForLargeReport(worker);
+    var background = waitForRoom(worker, 120_000);
+    var playbackProbe = worker.probe().setPriority(ProbePriority.PROBE_PRIORITY_PLAYBACK);
+    var playback = waitForRoom(worker, playbackProbe, 120_000);
+
+    holder.cancel();
+    var demandOfPlaybackAfterRelease = playback.unreadDemand();
+    var demandOfBackgroundBehindPlayback = background.unreadDemand();
+    playback.cancel();
+
+    assertThat(demandOfPlaybackAfterRelease).isEqualTo(1);
+    assertThat(demandOfBackgroundBehindPlayback).isZero();
+    assertThat(background.unreadDemand()).isEqualTo(1);
+  }
+
   @ParameterizedTest(name = "{0}")
   @EnumSource(Progress.class)
   @DisplayName(
@@ -956,12 +979,18 @@ class ProbeReportCallTest {
     return call;
   }
 
-  /** A report call whose metadata states a probe report of this length. */
+  /** A report call of a background probe whose metadata states a probe report of this length. */
   private static ReportCall waitForRoom(ReportingWorker worker, long reportLengthBytes)
       throws Exception {
+    return waitForRoom(worker, worker.probe(), reportLengthBytes);
+  }
+
+  /** A report call of the probe whose metadata states a probe report of this length. */
+  private static ReportCall waitForRoom(
+      ReportingWorker worker, ProbeRequest.Builder probe, long reportLengthBytes) throws Exception {
     var call = worker.openReportCall();
     call.sendMetadata(
-        worker.metadata(worker.dispatch().request()).setReportLengthBytes(reportLengthBytes));
+        worker.metadata(worker.dispatch(probe).request()).setReportLengthBytes(reportLengthBytes));
     return call;
   }
 

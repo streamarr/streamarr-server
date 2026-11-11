@@ -7,13 +7,17 @@ import java.util.List;
 
 /**
  * The bytes of probe reports that the server reads at once, apart from the byte budget of segment
- * uploads. A probe report that does not fit waits, and the waiting probe reports get room in the
- * order in which they asked, so a small probe report never overtakes a large one.
+ * uploads. A probe report that does not fit waits. The waiting probe reports of playback probes get
+ * room before the waiting probe reports of other probes, and within each of the two groups the
+ * probe reports get room in the order in which they asked. A small probe report therefore overtakes
+ * a large one only when it is the probe report of a playback probe and the large one is not. A
+ * probe report keeps the room that it holds until its reservation closes.
  */
 final class ProbeReportMemoryBudget {
 
   private final long budgetBytes;
-  private final Deque<Reservation> waiting = new ArrayDeque<>();
+  private final Deque<Reservation> waitingReportsOfPlaybackProbes = new ArrayDeque<>();
+  private final Deque<Reservation> waitingReportsOfOtherProbes = new ArrayDeque<>();
   private long reservedBytes;
 
   ProbeReportMemoryBudget(long budgetBytes) {
@@ -21,25 +25,31 @@ final class ProbeReportMemoryBudget {
   }
 
   /**
-   * Reserves room for a probe report of this length. The reservation holds its room at once when
-   * the bytes fit and no earlier probe report waits. Otherwise it waits its turn, and {@code
+   * Reserves room for a probe report of this length, of a probe of this kind. The reservation holds
+   * its room at once when the bytes fit and no probe report that goes before it waits: none of a
+   * playback probe, and none of its own group. Otherwise it waits its turn, and {@code
    * whenGrantedLater} runs once it holds its room, on the thread that released the room.
    */
-  synchronized Reservation reserve(long bytes, Runnable whenGrantedLater) {
+  synchronized Reservation reserve(ProbeKind kind, long bytes, Runnable whenGrantedLater) {
     if (bytes <= 0 || bytes > budgetBytes) {
       throw new IllegalArgumentException(
           "A probe report of %d bytes can never fit the budget of %d"
               .formatted(bytes, budgetBytes));
     }
 
-    var grantedAtOnce = waiting.isEmpty() && fits(bytes);
+    var waitingReportsOfItsGroup =
+        kind == ProbeKind.PLAYBACK ? waitingReportsOfPlaybackProbes : waitingReportsOfOtherProbes;
+    var grantedAtOnce =
+        waitingReportsOfPlaybackProbes.isEmpty()
+            && waitingReportsOfItsGroup.isEmpty()
+            && fits(bytes);
     var reservation = new Reservation(bytes, whenGrantedLater, grantedAtOnce);
     if (grantedAtOnce) {
       reservedBytes += bytes;
       return reservation;
     }
 
-    waiting.add(reservation);
+    waitingReportsOfItsGroup.add(reservation);
     return reservation;
   }
 
@@ -47,7 +57,7 @@ final class ProbeReportMemoryBudget {
     return reservedBytes <= budgetBytes - bytes;
   }
 
-  // A reservation that leaves the queue can let the one behind it fit, as released room can.
+  // A reservation that stops waiting can let the one behind it fit, as released room can.
   private synchronized List<Reservation> closeAndGrantWaiting(Reservation closing) {
     if (closing.closed) {
       return List.of();
@@ -57,18 +67,28 @@ final class ProbeReportMemoryBudget {
     if (closing.granted) {
       reservedBytes -= closing.bytes;
     } else {
-      waiting.remove(closing);
+      // It waits in one of the two groups.
+      waitingReportsOfPlaybackProbes.remove(closing);
+      waitingReportsOfOtherProbes.remove(closing);
     }
 
     var granted = new ArrayList<Reservation>();
+    grantWhileFirstFits(waitingReportsOfPlaybackProbes, granted);
+    // While the probe report of a playback probe waits, no other probe report gets room.
+    if (waitingReportsOfPlaybackProbes.isEmpty()) {
+      grantWhileFirstFits(waitingReportsOfOtherProbes, granted);
+    }
+
+    return granted;
+  }
+
+  private void grantWhileFirstFits(Deque<Reservation> waiting, List<Reservation> granted) {
     while (!waiting.isEmpty() && fits(waiting.peek().bytes)) {
       var next = waiting.remove();
       next.granted = true;
       reservedBytes += next.bytes;
       granted.add(next);
     }
-
-    return granted;
   }
 
   /** The room of one probe report, or its place among the probe reports that wait for room. */
@@ -94,8 +114,9 @@ final class ProbeReportMemoryBudget {
     }
 
     /**
-     * Releases the room, or leaves the queue, and gives room to the probe reports that now fit.
-     * Their callbacks run outside the budget's monitor. Closing again changes nothing.
+     * Releases the room, or stops waiting, and gives room to the probe reports whose turn it is and
+     * that now fit. Their callbacks run outside the budget's monitor. Closing again changes
+     * nothing.
      */
     @Override
     public void close() {
