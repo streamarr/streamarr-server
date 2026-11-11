@@ -494,6 +494,38 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName(
+      "Should escalate an I/O failure when a media segment's stored state cannot be determined")
+  void shouldEscalateIoFailureWhenMediaSegmentStoredStateCannotBeDetermined() throws Exception {
+    var sessionId = UUID.randomUUID();
+    plantUnresolvableLink(sessionId, "segment0.m4s");
+
+    assertThatThrownBy(() -> store.storeSegment(sessionId, "segment0.m4s", new byte[] {0x47}))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessageContaining("segment0.m4s");
+  }
+
+  @Test
+  @DisplayName(
+      "Should escalate an I/O failure when an initialization segment's stored state cannot be determined")
+  void shouldEscalateIoFailureWhenInitializationSegmentStoredStateCannotBeDetermined()
+      throws Exception {
+    var sessionId = UUID.randomUUID();
+    plantUnresolvableLink(sessionId, "init.mp4");
+
+    assertThatThrownBy(() -> store.storeSegment(sessionId, "init.mp4", new byte[] {0x47}))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessageContaining("init.mp4");
+  }
+
+  // A soft link that names itself: looking the name up fails, so the file system can say neither
+  // that a segment is stored there nor that none is.
+  private void plantUnresolvableLink(UUID sessionId, String segmentName) throws IOException {
+    var link = store.getOutputDirectory(sessionId).resolve(segmentName);
+    Files.createSymbolicLink(link, link.getFileName());
+  }
+
+  @Test
   @DisplayName("Should escalate an I/O failure when the session path is not a directory")
   void shouldEscalateIoFailureWhenSessionPathIsNotDirectory() throws Exception {
     var sessionId = UUID.randomUUID();

@@ -6,9 +6,11 @@ import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import lombok.NonNull;
 
 final class PreparedSegmentFile implements AutoCloseable {
@@ -22,7 +24,8 @@ final class PreparedSegmentFile implements AutoCloseable {
 
     void moveReplacing(Path source, Path target) throws IOException;
 
-    boolean notExists(Path path);
+    /** Fails when the file system cannot say whether a file is at {@code path}. */
+    boolean notExists(Path path) throws IOException;
 
     boolean hasSameContent(Path first, Path second) throws IOException;
 
@@ -54,8 +57,14 @@ final class PreparedSegmentFile implements AutoCloseable {
     }
 
     @Override
-    public boolean notExists(Path path) {
-      return Files.notExists(path);
+    public boolean notExists(Path path) throws IOException {
+      // Files.notExists answers false for a failed lookup as well as for a stored file.
+      try {
+        Files.readAttributes(path, BasicFileAttributes.class);
+        return false;
+      } catch (NoSuchFileException _) {
+        return true;
+      }
     }
 
     @Override
