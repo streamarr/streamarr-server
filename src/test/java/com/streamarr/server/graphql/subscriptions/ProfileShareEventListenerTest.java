@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.UUID;

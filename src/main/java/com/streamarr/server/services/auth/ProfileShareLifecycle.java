@@ -5,7 +5,7 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;

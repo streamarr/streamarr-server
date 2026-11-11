@@ -8,7 +8,7 @@ import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.repositories.notification.NotificationRepository;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.notification.events.NotificationsReadEvent;
 import com.streamarr.server.services.notification.events.ReadNotification;
 import java.time.Clock;
