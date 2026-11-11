@@ -195,6 +195,18 @@ class ImageVariantServiceTest {
   }
 
   @Test
+  @DisplayName("Should hash the small variant itself when it is one pixel high")
+  void shouldHashSmallVariantItselfWhenItIsOnePixelHigh() {
+    var imageData = createSolidPngImage(300, 1, 0xC0392B);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the fixture's
+    // own 300x1 red pixels, and L00000fQfQfQfQfQfQfQfQfQfQfQ for a black 128x1 strip.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("L~M2rujtfQjt}YjtfQjt}YjtfQjt");
+  }
+
+  @Test
   @DisplayName("Should return null BlurHash when variant is not small")
   void shouldReturnNullBlurHashWhenVariantIsNotSmall() {
     var imageData = createTestImage(600, 900);
