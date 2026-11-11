@@ -112,9 +112,6 @@ public class ImageVariantService {
 
     var sourceImage = decodeImage(originalImageData);
     var transparent = hasTransparentPixel(sourceImage);
-    if (transparent) {
-      sourceImage = withAlphaThatSurvivesResizing(sourceImage);
-    }
 
     var widths = WIDTH_TABLE.get(imageType);
     if (widths == null) {
@@ -128,8 +125,8 @@ public class ImageVariantService {
         throw new ImageProcessingException(
             "No width configuration for image size: " + size + " on image type: " + imageType);
       }
-      var resized = resize(sourceImage, targetWidth);
       if (transparent) {
+        var resized = resizeIntoArgb(sourceImage, targetWidth);
         variants.add(
             GeneratedVariant.builder()
                 .variant(size)
@@ -141,6 +138,7 @@ public class ImageVariantService {
         continue;
       }
 
+      var resized = resize(sourceImage, targetWidth);
       var blurHash = size == ImageSize.SMALL ? computeBlurHash(resized) : null;
       var ambientColors =
           size == ImageSize.SMALL
@@ -188,6 +186,12 @@ public class ImageVariantService {
     return render(Thumbnails.of(source).width(targetWidth));
   }
 
+  // Thumbnailator resizes into a new image of its source's type unless it is given another. A new
+  // palette image has an opaque palette, so an image with transparency is resized into ARGB.
+  private static BufferedImage resizeIntoArgb(BufferedImage source, int targetWidth) {
+    return render(Thumbnails.of(source).imageType(BufferedImage.TYPE_INT_ARGB).width(targetWidth));
+  }
+
   private static BufferedImage render(Thumbnails.Builder<BufferedImage> thumbnail) {
     try {
       return thumbnail.asBufferedImage();
@@ -227,16 +231,6 @@ public class ImageVariantService {
     }
 
     return false;
-  }
-
-  // Thumbnailator resizes into a new image of its source's type, and a new palette image has an
-  // opaque palette. A transparent palette image is therefore resized from an ARGB copy.
-  private static BufferedImage withAlphaThatSurvivesResizing(BufferedImage transparentImage) {
-    if (transparentImage.getColorModel() instanceof IndexColorModel) {
-      return copy(transparentImage, BufferedImage.TYPE_INT_ARGB);
-    }
-
-    return transparentImage;
   }
 
   private static BufferedImage copy(BufferedImage image, int imageType) {
