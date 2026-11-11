@@ -102,8 +102,7 @@ class TranscodeDecisionReasonTest {
     assertThat(decision.reasons()).isEmpty();
   }
 
-  // ADR 0049: a capability entry gives no codec tier. hvc1.2.4.H153.90 is HEVC Main 10 in the High
-  // tier at level 5.1.
+  // hvc1.2.4.H153.90 is HEVC Main 10 in the High tier at level 5.1.
   @Test
   @DisplayName(
       "Should copy a High tier HEVC source with no reason when an HEVC entry accepts its codec"
