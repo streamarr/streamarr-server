@@ -46,6 +46,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -408,6 +409,36 @@ class ProfileSharingServiceTest {
         intent -> intent instanceof Intent.EndProfileShare ? denied() : allowed());
     assertThatThrownBy(() -> service.endProfileShare(identity, shareId))
         .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer not-found to every verb when the reader only hosts the Profile of a share into"
+          + " another Household")
+  void shouldAnswerNotFoundToEveryVerbWhenReaderOnlyHostsProfileOfShareIntoAnotherHousehold() {
+    var offered = pendingShare();
+    var active = activeShare();
+    var home = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var structural = shares.share(profile.getId(), home.getId(), true);
+    authorization.decideUnitWith(
+        intent ->
+            intent.equals(new Intent.ViewProfileAdministration(profile.getId()))
+                ? allowed()
+                : denied());
+    var reader = identity();
+
+    assertThat(
+            List.of(
+                answerOf(() -> service.acceptProfileShare(reader, offered.getId())),
+                answerOf(() -> service.rejectProfileShare(reader, offered.getId())),
+                answerOf(() -> service.cancelProfileShare(reader, offered.getId())),
+                answerOf(() -> service.endProfileShare(reader, active.getId())),
+                answerOf(() -> service.endProfileShare(reader, structural.getId())),
+                answerOf(
+                    () ->
+                        service.administrativelyEndProfileShare(
+                            reader, structural.getId(), "closing"))))
+        .containsOnly("ShareNotFound");
   }
 
   @Test
@@ -1094,6 +1125,15 @@ class ProfileSharingServiceTest {
       case Outcome.Accepted<?, ?> accepted ->
           throw new AssertionError("expected a rejection but got " + accepted);
     };
+  }
+
+  /** What a verb answers: the name of its rejection, or FORBIDDEN when it is refused outright. */
+  private static String answerOf(Supplier<Outcome<?, ?>> verb) {
+    try {
+      return rejectionOf(verb.get()).getClass().getSimpleName();
+    } catch (AccessDeniedException _) {
+      return "FORBIDDEN";
+    }
   }
 
   private static Decision<AuthorizationUnit> allowed() {

@@ -470,12 +470,16 @@ public class ProfileSharingService {
         Refusals.<ShareRejections.Accept>hiddenAs(ShareRejections.ShareNotFound::new));
   }
 
+  // A refusal names a share only to those who may read it, as the share queries decide: the
+  // Profile's offering side, and the HouseholdAdmins of the Household it is into. requireShare has
+  // already answered a share that is over as missing to those HouseholdAdmins. Hosting the Profile
+  // elsewhere is not enough.
   private boolean mayViewShare(AuthenticatedIdentity identity, UUID shareId) {
     return shareRepository
         .findById(shareId)
         .map(
             share ->
-                mayViewProfile(identity, share.getProfileId())
+                mayViewProfileShares(identity, share.getProfileId())
                     || mayViewHousehold(identity, share.getHouseholdId()))
         .orElse(false);
   }

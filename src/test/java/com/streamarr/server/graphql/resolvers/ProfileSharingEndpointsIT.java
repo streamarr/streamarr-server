@@ -483,6 +483,61 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     assertThat(afterDeletion).isEqualTo(whileKept);
   }
 
+  @Test
+  @DisplayName(
+      "Should answer a share as missing when a HouseholdAdmin who only hosts its Profile changes"
+          + " it, whether it is live, over, structural or not there at all")
+  void shouldAnswerShareAsMissingWhenHouseholdAdminWhoOnlyHostsItsProfileChangesIt()
+      throws Exception {
+    var visitor = owner.profile().getId();
+    var elsewhere = authTestSupport.createIdentity();
+    try {
+      var offered =
+          savedShare(
+              ProfileHouseholdShare.builder()
+                  .profileId(visitor)
+                  .householdId(elsewhere.household().getId())
+                  .status(ProfileShareStatus.PENDING)
+                  .offeredByAccountId(owner.account().getId())
+                  .expiresAt(Instant.now().plus(Duration.ofDays(1))));
+      var declined =
+          savedShare(
+              ProfileHouseholdShare.builder()
+                  .profileId(visitor)
+                  .householdId(elsewhere.household().getId())
+                  .status(ProfileShareStatus.REJECTED)
+                  .offeredByAccountId(owner.account().getId()));
+      savedShare(
+          ProfileHouseholdShare.builder()
+              .profileId(visitor)
+              .householdId(host.household().getId())
+              .status(ProfileShareStatus.ACTIVE));
+      var membership =
+          shareRepository
+              .findByProfileIdAndHouseholdIdAndStatus(
+                  visitor, owner.household().getId(), ProfileShareStatus.ACTIVE)
+              .orElseThrow()
+              .getId()
+              .toString();
+      var missing = hostAnswersFor(UUID.randomUUID().toString());
+
+      assertThat(missing).containsOnly("ShareNotFoundError");
+      assertThat(
+              List.of(
+                  hostAnswersFor(offered), hostAnswersFor(declined), hostAnswersFor(membership)))
+          .containsOnly(missing);
+    } finally {
+      authTestSupport.deleteIdentity(elsewhere);
+    }
+  }
+
+  private String savedShare(ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> share) {
+    return transactionTemplate
+        .execute(_ -> shareRepository.saveAndFlush(share.build()))
+        .getId()
+        .toString();
+  }
+
   /** What the host's HouseholdAdmin gets from every verb on the share, in one fixed order. */
   private List<String> hostAnswersFor(String shareId) throws Exception {
     var answers = new ArrayList<String>();
