@@ -214,8 +214,16 @@ public final class WorkerContainerFixture implements AutoCloseable {
   }
 
   public List<Double> packetTimestamps(Path media) throws Exception {
+    return packetTimestamps(media, "v");
+  }
+
+  public List<Double> audioPacketTimestamps(Path media) throws Exception {
+    return packetTimestamps(media, "a");
+  }
+
+  private List<Double> packetTimestamps(Path media, String streamSelector) throws Exception {
     var timestamps =
-        probePackets(media, "v", List.of("-show_entries", "packet=pts_time")).stream()
+        probePackets(media, streamSelector, List.of("-show_entries", "packet=pts_time")).stream()
             .filter(line -> !line.equals("N/A"))
             .map(line -> line.replace(",", ""))
             .map(Double::parseDouble)
