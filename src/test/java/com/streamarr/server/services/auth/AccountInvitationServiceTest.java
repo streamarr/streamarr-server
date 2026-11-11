@@ -493,10 +493,9 @@ class AccountInvitationServiceTest {
   @DisplayName("Should announce every share that LINK changes when it wins")
   void shouldAnnounceEveryShareThatLinkChangesWhenItWins() {
     var fixture = linkAcceptanceFixture();
-    var changedBefore =
+    var sharesBefore =
         shares.findAll().stream()
             .filter(share -> share.getProfileId().equals(fixture.profileId()))
-            .map(ChangedShare::of)
             .toList();
 
     service.accept(acceptCommand(fixture.code()));
@@ -505,12 +504,14 @@ class AccountInvitationServiceTest {
         shares.findAll().stream()
             .filter(share -> fixture.reofferHouseholdIds().contains(share.getHouseholdId()))
             .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
-            .map(ChangedShare::of)
             .toList();
-    // The home share, both visits and both pending offers change, and both reoffers are new.
+    // The home share, both visits and both pending offers change, and both reoffers are new; each
+    // is announced with the status the link left it in.
     assertThat(announcedShares())
         .containsExactlyInAnyOrderElementsOf(
-            Stream.concat(changedBefore.stream(), reoffered.stream()).toList());
+            Stream.concat(sharesBefore.stream(), reoffered.stream())
+                .map(ChangedShare::of)
+                .toList());
     assertThat(reoffered).hasSize(fixture.reofferHouseholdIds().size());
   }
 

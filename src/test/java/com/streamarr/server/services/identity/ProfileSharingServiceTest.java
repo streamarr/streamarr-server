@@ -895,7 +895,9 @@ class ProfileSharingServiceTest {
   void shouldDecideAChangeByItsHouseholdAloneWhenItsProfileNoLongerExists() {
     var removed =
         new ProfileShareChangedEvent(
-            new ChangedShare(UUID.randomUUID(), UUID.randomUUID(), household.getId()), true);
+            new ChangedShare(
+                UUID.randomUUID(), UUID.randomUUID(), household.getId(), ProfileShareStatus.ACTIVE),
+            true);
     authorization.decideUnitWith(
         intent ->
             switch (intent) {

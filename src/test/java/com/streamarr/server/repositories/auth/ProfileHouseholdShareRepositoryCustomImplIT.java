@@ -138,7 +138,12 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
 
     var expired = shareRepository.materializeExpiredPending(now);
 
-    assertThat(expired).contains(ChangedShare.of(lapsed)).doesNotContain(ChangedShare.of(live));
+    assertThat(expired)
+        .contains(
+            new ChangedShare(
+                lapsed.getId(), profile.getId(), home.getId(), ProfileShareStatus.EXPIRED))
+        .extracting(ChangedShare::shareId)
+        .doesNotContain(live.getId());
     assertSoftly(
         softly -> {
           var stored = shareRepository.findByIdAndReloadFromDatabase(lapsed.getId()).orElseThrow();

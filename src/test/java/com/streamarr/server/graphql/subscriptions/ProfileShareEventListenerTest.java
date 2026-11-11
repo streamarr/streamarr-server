@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.subscriptions;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.auth.ChangedShare;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
@@ -31,7 +32,12 @@ class ProfileShareEventListenerTest {
   void shouldPassEachShareChangeToEveryOperationWhenAShareChangeCommits() {
     var change =
         new ProfileShareChangedEvent(
-            new ChangedShare(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()), true);
+            new ChangedShare(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                ProfileShareStatus.PENDING),
+            true);
     var first = subscribe();
     var second = subscribe();
 
