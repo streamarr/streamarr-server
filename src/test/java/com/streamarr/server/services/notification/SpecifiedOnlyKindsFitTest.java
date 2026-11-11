@@ -50,7 +50,16 @@ class SpecifiedOnlyKindsFitTest {
   @DisplayName(
       "Should tell every ServerAdmin, the one that started it included, when a scan finishes")
   void shouldTellEveryServerAdminTheOneThatStartedItIncludedWhenAScanFinishes() {
-    writer.tell(scanFinished(new ScanFigures(14, 0, 2, NOW), NOW));
+    // Sam started the scan, but its end is nobody's action, so the event names no acting Account.
+    writer.tell(
+        NotificationEvent.<LibraryKind, LibraryFacts>builder()
+            .kind(LibraryKind.SCAN_OR_REFRESH_FINISHED)
+            .subjectId(MOVIES)
+            .facts(new ScanFigures(14, 0, 2, NOW))
+            .recipients(SERVER_ADMINS)
+            .actingAccountId(Optional.empty())
+            .at(NOW)
+            .build());
 
     assertThat(store.rows())
         .extracting(InMemoryNotificationStore.Stored::recipientAccountId)
@@ -59,8 +68,7 @@ class SpecifiedOnlyKindsFitTest {
         .allSatisfy(
             stored -> {
               assertThat(stored.subjectId()).isEqualTo(MOVIES);
-              assertThat(LibraryKind.SCAN_OR_REFRESH_FINISHED.getForm())
-                  .isEqualTo(NotificationForm.NEWS);
+              assertThat(stored.kind()).isEqualTo(LibraryKind.SCAN_OR_REFRESH_FINISHED);
             });
   }
 
