@@ -34,15 +34,15 @@ class ProfileShareGuardTest {
   @ParameterizedTest(name = "Profile {0}, Household {1} -> {2}")
   @MethodSource("decisions")
   @DisplayName(
-      "Should show the Notification when the recipient may view either the Profile's or the"
+      "Should show the Notification when the recipient may view either the Profile's shares or the"
           + " Household's administration")
-  void
-      shouldShowTheNotificationWhenTheRecipientMayViewEitherTheProfilesOrTheHouseholdsAdministration(
-          Answer profile, Answer household, NotificationVisibility expected) {
+  void shouldShowTheNotificationWhenTheRecipientMayViewEitherTheProfilesSharesOrTheHouseholds(
+      Answer profile, Answer household, NotificationVisibility expected) {
     authorization.decideUnitWith(
         intent ->
             switch (intent) {
-              case Intent.ViewProfileAdministration(var profileId) when profileId.equals(PROFILE) ->
+              case Intent.ViewProfileShareHouseholds(var profileId)
+                  when profileId.equals(PROFILE) ->
                   profile.decision();
               case Intent.ViewHouseholdAdministration(var householdId)
                   when householdId.equals(HOUSEHOLD) ->
@@ -53,6 +53,22 @@ class ProfileShareGuardTest {
 
     assertThat(guard.visibilities(List.of(notification)))
         .containsExactly(Map.entry(notification.notificationId(), expected));
+  }
+
+  @Test
+  @DisplayName(
+      "Should hide the Notification when the recipient may view the Profile's administration but"
+          + " neither its shares nor the Household's administration")
+  void shouldHideTheNotificationWhenTheRecipientMayViewOnlyTheProfilesAdministration() {
+    authorization.decideUnitWith(
+        intent ->
+            intent.equals(new Intent.ViewProfileAdministration(PROFILE))
+                ? Answer.ALLOWED.decision()
+                : Answer.DENIED.decision());
+    var notification = guarded(RECIPIENT, PROFILE, HOUSEHOLD);
+
+    assertThat(guard.visibilities(List.of(notification)))
+        .containsExactly(Map.entry(notification.notificationId(), NotificationVisibility.HIDDEN));
   }
 
   @Test

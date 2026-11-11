@@ -2,6 +2,7 @@ package com.streamarr.server.services.notification;
 
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
@@ -21,7 +22,9 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import jakarta.persistence.EntityManagerFactory;
@@ -71,6 +74,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private ProfileSharingService sharing;
+  @Autowired private ProfileManagerAdministrationService profileManagement;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
@@ -543,24 +547,28 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should show news about a share to a HouseholdAdmin when the Profile is shared into its"
-          + " Household")
-  void shouldShowNewsAboutAShareToAHouseholdAdminWhenTheProfileIsSharedIntoItsHousehold()
+      "Should neither list nor count news about a share when its offerer stopped managing the"
+          + " Profile and only administers another Household that hosts it")
+  void shouldNeitherListNorCountNewsAboutAShareWhenItsOffererStoppedManagingTheProfile()
       throws Exception {
-    var kai = track(authTestSupport.createIdentity());
-    var ollie = steps.profileManagedBy("Ollie", sam, sam);
-    steps.accept(riverside, steps.offer(sam, ollie, riverside));
-    var intoKai = steps.offer(sam, ollie, kai);
-    insertNewsFor(riversideAdmin, intoKai);
+    var brook = track(authTestSupport.createIdentity());
+    var kai = steps.profileManagedBy("Kai", sam, sam, brook);
+    var intoBrook = steps.accept(brook, steps.offer(sam, kai, brook));
+    steps.accept(riverside, steps.offer(brook, kai, riverside));
+    assertThat(
+            profileManagement.relinquishProfileManagement(
+                authTestSupport.identityOf(brook), kai.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
 
     mockMvc
-        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .perform(graphqlRequest(authTestSupport.accountBearer(brook), NOTIFICATIONS))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
         .andExpect(
             jsonPath(
-                "$.data.notifications.edges[?(@.node.share.id == '%s')]".formatted(intoKai.getId()),
-                hasSize(1)));
+                "$.data.notifications.edges[*].node.share.id",
+                contains(intoBrook.getId().toString())));
   }
 
   // Requests to Riverside's HouseholdAdmin about offers into Kai's Household, each of its own
@@ -635,19 +643,6 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
                     .subjectId(offer.getId())
                     .facts(ProfileShareFacts.offered("Kai"))
                     .at(at)
-                    .build()));
-  }
-
-  private void insertNewsFor(TestIdentity recipient, ProfileHouseholdShare share) {
-    transactionTemplate.executeWithoutResult(
-        _ ->
-            notificationRepository.insert(
-                NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
-                    .recipientAccountId(recipient.account().getId())
-                    .kind(NotificationKind.PROFILE_SHARE_ANSWERED)
-                    .subjectId(share.getId())
-                    .facts(ProfileShareFacts.answered("Ollie", ProfileShareAnswer.REJECTED))
-                    .at(Instant.now())
                     .build()));
   }
 

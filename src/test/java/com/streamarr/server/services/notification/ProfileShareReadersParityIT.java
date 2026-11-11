@@ -40,11 +40,13 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * The list and the count leave out, in SQL, the Notifications about a share that no read permit
  * could show their reader (ProfileShareReaders), and so state the share's read rule a second time
- * beside reads.cedar (ADR 0063 §Consequences). For every kind of reader that the permits allow, the
- * filter keeps the reader's Notification, so the guard can show it. The filter may keep one that
- * the permits refuse, because the guard still decides it; for those readers this only shows that
- * the permits refuse them, so a permit that comes to allow one moves it to the readers the filter
- * must keep.
+ * beside the Cedar permits (ADR 0063 §Consequences). For every kind of reader that the permits
+ * allow, the filter keeps the reader's Notification, so the guard can show it. The filter may keep
+ * one that the permits refuse, because the guard still decides it; for those readers this only
+ * shows that the permits refuse them, so a permit that comes to allow one moves it to the readers
+ * the filter must keep. A reader whose only tie is administering another Household that hosts the
+ * Profile is left out by both, so neither can come to show such a reader a share into a Household
+ * it does not administer.
  */
 @Tag("IntegrationTest")
 @DisplayName("Profile Share Readers Parity Integration Tests")
@@ -122,6 +124,26 @@ class ProfileShareReadersParityIT extends AbstractIntegrationTest {
     assertThat(guardOf(notification)).isEqualTo(NotificationVisibility.HIDDEN);
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("readersWhoOnlyHostTheProfile")
+  @DisplayName(
+      "Should leave the reader's Notification out of the list and the count when the reader only"
+          + " administers another Household that hosts the Profile")
+  void shouldLeaveTheReadersNotificationOutWhenTheReaderOnlyAdministersAnotherHostingHousehold(
+      String reader, Arrangement arrangement) {
+    var reading = arrangement.arrange(this);
+    var notification = newsAbout(reading);
+
+    assertThat(guardOf(notification)).isEqualTo(NotificationVisibility.HIDDEN);
+    assertThat(
+            notificationRepository.rowsOfRecipientWithIds(
+                reading.readerId(), List.of(notification.getId())))
+        .isEmpty();
+    assertThat(notificationRepository.findUnreadOfRecipient(reading.readerId(), Instant.now()))
+        .extracting(Notification::getId)
+        .doesNotContain(notification.getId());
+  }
+
   static Stream<Arguments> readersThePermitsAllow() {
     return Stream.of(
         reader(
@@ -130,12 +152,6 @@ class ProfileShareReadersParityIT extends AbstractIntegrationTest {
         reader(
             "a HouseholdAdmin of the target Household once the share has ended",
             ProfileShareReadersParityIT::targetHouseholdAdminOnceTheShareEnded),
-        reader(
-            "a HouseholdAdmin of the Profile's home Household",
-            ProfileShareReadersParityIT::homeHouseholdAdmin),
-        reader(
-            "a HouseholdAdmin of another Household the Profile is shared into",
-            ProfileShareReadersParityIT::hostingHouseholdAdmin),
         reader("a direct ProfileManager", ProfileShareReadersParityIT::directManager),
         reader(
             "the Account of a self-managed Personal Profile",
@@ -179,6 +195,20 @@ class ProfileShareReadersParityIT extends AbstractIntegrationTest {
         reader(
             "a disabled HouseholdAdmin of the target Household",
             ProfileShareReadersParityIT::disabledTargetHouseholdAdmin));
+  }
+
+  static Stream<Arguments> readersWhoOnlyHostTheProfile() {
+    return Stream.of(
+        reader(
+            "a HouseholdAdmin of the Profile's home Household",
+            ProfileShareReadersParityIT::homeHouseholdAdmin),
+        reader(
+            "a HouseholdAdmin of another Household the Profile is shared into",
+            ProfileShareReadersParityIT::hostingHouseholdAdmin),
+        reader(
+            "the Account that made the offer once it stopped managing the Profile, while it"
+                + " administers another Household the Profile is shared into",
+            ProfileShareReadersParityIT::offererOnceItStoppedManagingWhileItHostsTheProfile));
   }
 
   private static Arguments reader(String description, Arrangement arrangement) {
@@ -233,6 +263,19 @@ class ProfileShareReadersParityIT extends AbstractIntegrationTest {
     var brook = track(authTestSupport.createIdentity());
     steps.accept(brook, steps.offer(sam, kai, brook));
     return new Reading(brook.account().getId(), share);
+  }
+
+  private Reading offererOnceItStoppedManagingWhileItHostsTheProfile() {
+    var brook = track(authTestSupport.createIdentity());
+    grantManagementOfKai(brook);
+    steps.accept(brook, steps.offer(sam, kai, brook));
+    var willow = track(authTestSupport.createIdentity());
+    var offered = steps.accept(willow, steps.offer(brook, kai, willow));
+    assertThat(
+            profileManagement.relinquishProfileManagement(
+                authTestSupport.identityOf(brook), kai.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    return new Reading(brook.account().getId(), offered);
   }
 
   private Reading hostingHouseholdAdminOnceItsShareEnded() {

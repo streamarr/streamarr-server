@@ -724,6 +724,31 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should deliver nothing about a share when its offerer stopped managing the Profile and only"
+          + " administers another Household that hosts it")
+  void shouldDeliverNothingAboutAShareWhenItsOffererStoppedManagingTheProfile() {
+    var brook = track(authTestSupport.createIdentity());
+    var kai = steps.profileManagedBy("Kai", sam, sam, brook);
+    steps.accept(brook, steps.offer(sam, kai, brook));
+    var intoRiverside = steps.accept(riverside, steps.offer(brook, kai, riverside));
+    assertThat(
+            profileManagement.relinquishProfileManagement(
+                authTestSupport.identityOf(brook), kai.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    var socket = subscribedSocket(authTestSupport.accountBearer(brook));
+
+    assertThat(
+            sharing.endProfileShare(
+                authTestSupport.identityOf(riversideAdmin), intoRiverside.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    var shown = steps.offer(sam, steps.profileManagedBy("Ash", sam, sam), brook);
+
+    assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
+        .isEqualTo(requestFor(brook, shown).getId().toString());
+  }
+
+  @Test
+  @DisplayName(
       "Should end notificationsChanged with FORBIDDEN at the next change when the Account is"
           + " disabled after subscribing")
   void shouldEndNotificationsChangedWithForbiddenWhenTheAccountIsDisabledAfterSubscribing() {
