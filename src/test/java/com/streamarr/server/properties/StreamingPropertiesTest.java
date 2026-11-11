@@ -2,10 +2,12 @@ package com.streamarr.server.properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -303,6 +305,23 @@ class StreamingPropertiesTest {
     var properties = StreamingProperties.builder().segmentBasePath(link.toString()).build();
 
     assertThat(properties.ownedSegmentFolder()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should own no segment folder when the server cannot tell it from the shared one")
+  void shouldOwnNoSegmentFolderWhenTheServerCannotTellItFromTheSharedOne(@TempDir Path temp)
+      throws IOException {
+    var closed = Files.createDirectory(temp.resolve("closed"));
+    var configured = Files.createDirectory(closed.resolve("segments"));
+    var properties = StreamingProperties.builder().segmentBasePath(configured.toString()).build();
+    Files.setPosixFilePermissions(closed, PosixFilePermissions.fromString("---------"));
+    try {
+      assumeFalse(Files.isExecutable(closed), "folder permissions apply to the test user");
+
+      assertThat(properties.ownedSegmentFolder()).isEmpty();
+    } finally {
+      Files.setPosixFilePermissions(closed, PosixFilePermissions.fromString("rwx------"));
+    }
   }
 
   @Test
