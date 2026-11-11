@@ -234,13 +234,13 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should cost the next stream session the measured average and keep the first stream"
-          + " session's cost when the file's bitrate scan finishes")
+      "Should cost the next stream session the measured average when the file's bitrate scan"
+          + " finishes")
   void shouldCostTheNextStreamSessionTheMeasuredAverageWhenTheFilesBitrateScanFinishes()
       throws Exception {
     var copied = requestUnchangedFiles(1).getFirst();
     store(copied, copyableOutcome(OptionalLong.of(PROBED_VIDEO_BITRATE), TWO_CHUNKS));
-    var first = createCopySession(copied);
+    createCopySession(copied);
 
     startScanScheduler();
     awaitCompletedScans(2);
@@ -249,6 +249,24 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
     // 4,100,000 payload bytes, 4,100 sample entries of 16 bytes and 684 fragments with 96 bytes of
     // headers each, over 4,100 s.
     assertThat(multivariantPlaylist(next)).contains("AVERAGE-BANDWIDTH=8257,");
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the first stream session at the unmeasured cost when the file's bitrate scan"
+          + " finishes")
+  void shouldKeepTheFirstStreamSessionAtTheUnmeasuredCostWhenTheFilesBitrateScanFinishes()
+      throws Exception {
+    var copied = requestUnchangedFiles(1).getFirst();
+    store(copied, copyableOutcome(OptionalLong.of(PROBED_VIDEO_BITRATE), TWO_CHUNKS));
+    var first = createCopySession(copied);
+
+    startScanScheduler();
+    awaitCompletedScans(2);
+
+    assertThat(outcomes.findStreamMeasurements(copied.mediaFileId()))
+        .as("The file's bitrate scan published its measurement")
+        .isPresent();
     assertThat(multivariantPlaylist(first)).contains("AVERAGE-BANDWIDTH=8000000,");
   }
 
