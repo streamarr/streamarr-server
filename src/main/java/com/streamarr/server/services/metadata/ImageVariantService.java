@@ -6,7 +6,9 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.services.metadata.color.AmbientColorExtractor;
 import io.trbl.blurhash.BlurHash;
+import java.awt.AlphaComposite;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -100,6 +102,9 @@ public class ImageVariantService {
     }
 
     var sourceImage = decodeImage(originalImageData);
+    var transparentImage = argbCopyWhenTransparent(sourceImage);
+    var transparent = transparentImage.isPresent();
+    sourceImage = transparentImage.orElse(sourceImage);
 
     var widths = WIDTH_TABLE.get(imageType);
     if (widths == null) {
@@ -114,6 +119,18 @@ public class ImageVariantService {
             "No width configuration for image size: " + size + " on image type: " + imageType);
       }
       var resized = resize(sourceImage, targetWidth);
+      if (transparent) {
+        variants.add(
+            new GeneratedVariant(
+                size,
+                toPngBytes(resized),
+                resized.getWidth(),
+                resized.getHeight(),
+                null,
+                Optional.empty()));
+        continue;
+      }
+
       var blurHash = size == ImageSize.SMALL ? computeBlurHash(resized) : null;
       var ambientColors =
           size == ImageSize.SMALL
@@ -163,9 +180,51 @@ public class ImageVariantService {
     return BlurHash.encode(image, BLUR_HASH_COMPONENT_X, BLUR_HASH_COMPONENT_Y);
   }
 
+  // A copy that stores alpha for every pixel, when at least one pixel is not fully opaque.
+  // Thumbnailator resizes into a new image of its source's type, and a new palette image has an
+  // opaque palette, so only this copy carries a palette image's transparency through a resize.
+  private static Optional<BufferedImage> argbCopyWhenTransparent(BufferedImage image) {
+    if (!image.getColorModel().hasAlpha()) {
+      return Optional.empty();
+    }
+
+    var argbCopy = copy(image, BufferedImage.TYPE_INT_ARGB);
+    // A TYPE_INT_ARGB image always stores its pixels in a DataBufferInt.
+    var pixels = ((DataBufferInt) argbCopy.getRaster().getDataBuffer()).getData();
+    if (Arrays.stream(pixels).allMatch(pixel -> pixel >>> 24 == 0xFF)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(argbCopy);
+  }
+
+  private static BufferedImage copy(BufferedImage image, int imageType) {
+    var copy = new BufferedImage(image.getWidth(), image.getHeight(), imageType);
+    var graphics = copy.createGraphics();
+    graphics.setComposite(AlphaComposite.Src);
+    graphics.drawImage(image, 0, 0, null);
+    graphics.dispose();
+    return copy;
+  }
+
   private byte[] toJpegBytes(BufferedImage image) {
+    var opaqueImage = image;
+    // The JPEG encoder accepts no alpha channel. Every pixel is opaque here, so the copy loses
+    // nothing.
+    if (image.getColorModel().hasAlpha()) {
+      opaqueImage = copy(image, BufferedImage.TYPE_INT_RGB);
+    }
+
+    return encode(opaqueImage, "jpg");
+  }
+
+  private byte[] toPngBytes(BufferedImage image) {
+    return encode(image, "png");
+  }
+
+  private byte[] encode(BufferedImage image, String formatName) {
     try (var outputStream = new ByteArrayOutputStream()) {
-      ImageIO.write(image, "jpg", outputStream);
+      ImageIO.write(image, formatName, outputStream);
       return outputStream.toByteArray();
     } catch (IOException e) {
       throw new ImageProcessingException(e);
