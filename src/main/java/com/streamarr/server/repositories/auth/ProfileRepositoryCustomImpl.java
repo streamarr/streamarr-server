@@ -270,7 +270,7 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
 
   @Override
   public List<Row<Profile>> rowsAvailableInHousehold(UUID householdId, Seek seek) {
-    var keyset = Keyset.<String>builder().sortValue(lower(PROFILE.NAME)).itemId(PROFILE.ID).build();
+    var keyset = byName();
     var query =
         keyset.rowsBeyond(
             dsl.select(PROFILE.asterisk(), keyset.selectedSortValue())
@@ -280,6 +280,21 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
             availableIn(householdId),
             seek);
     return JooqQueryHelper.nativeRows(entityManager, query, Profile.class, keyset);
+  }
+
+  @Override
+  public List<Row<Profile>> rowsManagedBy(UUID accountId, Seek seek) {
+    var keyset = byName();
+    var query =
+        keyset.rowsBeyond(
+            dsl.select(PROFILE.asterisk(), keyset.selectedSortValue()).from(PROFILE),
+            ProfileAuthorityConditions.managedBy(DSL.val(accountId)),
+            seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, Profile.class, keyset);
+  }
+
+  private static Keyset<String> byName() {
+    return Keyset.<String>builder().sortValue(lower(PROFILE.NAME)).itemId(PROFILE.ID).build();
   }
 
   @Override

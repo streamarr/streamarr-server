@@ -22,6 +22,13 @@ public interface ProfileRepositoryCustom {
    */
   List<Row<Profile>> rowsAvailableInHousehold(UUID householdId, Seek seek);
 
+  /**
+   * The Profiles the Account manages beyond the seek, in every Household, ordered by lowercased
+   * name, then ID: its own Personal Profile while that is an unrestricted Adult, and every Profile
+   * it holds a direct grant for.
+   */
+  List<Row<Profile>> rowsManagedBy(UUID accountId, Seek seek);
+
   /** The Kid Profiles actively shared into the Household, which decide its PIN safety rule. */
   List<Profile> findAvailableKidsInHousehold(UUID householdId);
 

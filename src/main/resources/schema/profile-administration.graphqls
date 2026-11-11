@@ -25,6 +25,18 @@ type ProfileAdministration {
     readerAuthority: ProfileAuthority
 }
 
+"A page of Profiles' administrative details."
+type ProfileAdministrationConnection {
+    edges: [ProfileAdministrationEdge!]!
+    pageInfo: PageInfo!
+}
+
+"One Profile's administrative details and where it sits in its list."
+type ProfileAdministrationEdge {
+    node: ProfileAdministration!
+    cursor: String!
+}
+
 "What an Account is to a Profile (ADR 0024)."
 enum ProfileAuthority {
     "A ProfileManager: edits the Profile and its policy, manages its PIN, invites managers and offers it to Households."
