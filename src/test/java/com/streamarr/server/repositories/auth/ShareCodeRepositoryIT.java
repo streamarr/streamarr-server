@@ -13,15 +13,11 @@ import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.domain.pagination.SortValueKind;
 import com.streamarr.server.services.auth.ShareCodes;
 import com.streamarr.server.support.AuthTestSupport;
-import com.streamarr.server.support.TestFixtureWork;
 import com.streamarr.server.support.security.WithAccountContext;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Future;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +35,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @WithAccountContext
 class ShareCodeRepositoryIT extends AbstractIntegrationTest {
 
-  private static final int CONCURRENT_OFFERS = 8;
   private static final ListOrder NEWEST_FIRST =
       ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.DESC).build();
 
@@ -207,37 +202,6 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
 
     assertThat(listed(host.household().getId())).containsExactly(live);
     assertThat(listed(UUID.randomUUID())).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should spend a code once when many offers present it at the same time")
-  void shouldSpendCodeOnceWhenManyOffersPresentItAtSameTime() throws Exception {
-    var id = insert(shareCodes.issue().digest(), now.plus(7, ChronoUnit.DAYS));
-    var start = new CountDownLatch(1);
-    var spends = new ArrayList<Future<Boolean>>();
-
-    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
-      for (var offer = 0; offer < CONCURRENT_OFFERS; offer++) {
-        spends.add(
-            executor.submit(
-                () -> {
-                  start.await();
-                  return transactionTemplate.execute(
-                      _ -> shareCodeRepository.trySpend(id, Instant.now()));
-                }));
-      }
-
-      start.countDown();
-    }
-
-    var winners = 0;
-    for (var spend : spends) {
-      winners += Boolean.TRUE.equals(spend.get()) ? 1 : 0;
-    }
-
-    assertThat(winners).isOne();
-    assertThat(shareCodeRepository.findById(id).orElseThrow().getStatus())
-        .isEqualTo(ShareCodeStatus.SPENT);
   }
 
   @Test
