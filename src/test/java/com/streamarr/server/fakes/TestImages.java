@@ -24,6 +24,7 @@ public final class TestImages {
   public static final int OPAQUE_TEAL = 0xFF00A0A0;
 
   private static final int TRANSPARENT = 0;
+  private static final int TEAL_ONE_STEP_SHORT_OF_OPAQUE = 0xFE00A0A0;
   private static final int BORDERED_WIDTH = 400;
   private static final int BORDERED_HEIGHT = 200;
 
@@ -125,7 +126,27 @@ public final class TestImages {
     graphics.setColor(new Color(OPAQUE_TEAL, true));
     graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
     graphics.dispose();
-    image.setRGB(300, 450, 0xFE00A0A0);
+    image.setRGB(300, 450, TEAL_ONE_STEP_SHORT_OF_OPAQUE);
+
+    return writePng(image);
+  }
+
+  /**
+   * A teal palette PNG in which exactly one pixel, at the centre, uses a palette entry that is one
+   * step short of opaque. Every other pixel uses the opaque entry.
+   */
+  public static byte[] createPalettePngImageWithOneTranslucentPixel() {
+    var palette =
+        new IndexColorModel(
+            1,
+            2,
+            new int[] {OPAQUE_TEAL, TEAL_ONE_STEP_SHORT_OF_OPAQUE},
+            0,
+            true,
+            -1,
+            DataBuffer.TYPE_BYTE);
+    var image = new BufferedImage(600, 900, BufferedImage.TYPE_BYTE_BINARY, palette);
+    image.getRaster().setSample(300, 450, 0, 1);
 
     return writePng(image);
   }
