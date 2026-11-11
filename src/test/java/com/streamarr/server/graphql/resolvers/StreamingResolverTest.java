@@ -25,6 +25,8 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.media.LearnedStreamEnd;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
@@ -47,6 +49,7 @@ import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamDelivery;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -2083,6 +2086,50 @@ class StreamingResolverTest {
                 + STUB_SERVICE.getAllSessions().iterator().next().getSessionId()
                 + "/multivariant.m3u8?t=");
     assertThat(streamUrl.substring(streamUrl.indexOf("?t=") + 3)).matches("[A-Za-z0-9._-]+");
+  }
+
+  // A file that was written to a pipe states no duration, so its header reads as zero. A token
+  // that lasted only the idle retention would expire while the player still reads the playlist.
+  @Test
+  @DisplayName(
+      "Should keep a playback token valid through the scanned media end when the container header"
+          + " states no duration")
+  void shouldKeepAPlaybackTokenValidThroughTheScannedMediaEndWhenTheHeaderStatesNoDuration() {
+    // The session's probe names stream 1 as its chosen video stream.
+    var session = buildSession(UUID.randomUUID());
+    var scanned =
+        LearnedStreamEnd.builder()
+            .mediaFileId(session.getMediaFileId())
+            .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+            .fromPacketScan(true);
+    var probe =
+        session.getMediaProbe().toBuilder()
+            .duration(Duration.ZERO)
+            .streams(List.of(StreamInfo.builder().index(1).codecType("video").build()))
+            .build()
+            .withLearnedEndTimes(
+                List.of(scanned.streamIndex(1).endTime(Duration.ofMinutes(95)).build()));
+    STUB_SERVICE.setNextResult(sessionBuilderLike(session).mediaProbe(probe).build());
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+                playbackSession { currentFormatAttempt { ... on ReadyPlaybackFormatAttempt { streamSession { streamUrl } } } }
+              }
+            }
+            """,
+            UUID.randomUUID(), CAPABILITIES);
+
+    String streamUrl =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            mutation,
+            "data.createPlaybackSession.playbackSession.currentFormatAttempt.streamSession.streamUrl");
+
+    var decoded = decodeToken(streamUrl.substring(streamUrl.indexOf("?t=") + 3));
+    assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
+        .isEqualTo(Duration.ofMinutes(95).plus(Duration.ofHours(1)));
   }
 
   private static Jwt decodeToken(String token) {

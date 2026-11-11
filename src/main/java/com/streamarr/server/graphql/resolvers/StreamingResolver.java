@@ -529,8 +529,10 @@ public class StreamingResolver {
     return "/api/stream/" + session.getSessionId() + "/" + resource + "?t=" + token.value();
   }
 
+  // The token lasts through the media end, where the stream session's playlists end, and not the
+  // duration that the container header states, which can be shorter or missing.
   private Duration playbackTokenValidity(StreamSession session) {
-    return session.getMediaProbe().duration().plus(serverSettingsService.idleSegmentRetention());
+    return session.getMediaProbe().mediaEnd().plus(serverSettingsService.idleSegmentRetention());
   }
 
   private UUID parseUuid(String id) {
