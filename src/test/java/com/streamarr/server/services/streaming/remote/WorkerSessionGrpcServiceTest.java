@@ -1791,13 +1791,7 @@ class WorkerSessionGrpcServiceTest {
     var sourceNamespaceId = UUID.randomUUID();
     var worker = worker(workerId);
     var meterRegistry = new SimpleMeterRegistry();
-    var registry =
-        LiveWorkerConnectionRegistry.builder()
-            .eventPublisher(new CapturingEventPublisher())
-            .configuration(WorkerSessionServerConfiguration.builder().build())
-            .meterRegistry(meterRegistry)
-            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
-            .build();
+    var registry = LiveWorkerConnectionRegistryFixture.registryMeteredBy(meterRegistry);
     var workerSessionId =
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
@@ -1892,7 +1886,8 @@ class WorkerSessionGrpcServiceTest {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var worker = worker(workerId);
-    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.registryMeteredBy(meterRegistry);
     var workerSessionId =
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
@@ -1927,14 +1922,20 @@ class WorkerSessionGrpcServiceTest {
       }
     }
 
-    return new OwnershipLossResult(
-        response,
-        fromProto(job.getStreamSessionId()),
-        job.getVariant().getVariantLabel() + "/segment0.m4s");
+    return OwnershipLossResult.builder()
+        .response(response)
+        .streamSessionId(fromProto(job.getStreamSessionId()))
+        .segmentName(job.getVariant().getVariantLabel() + "/segment0.m4s")
+        .meterRegistry(meterRegistry)
+        .build();
   }
 
+  @Builder
   private record OwnershipLossResult(
-      RecordingUploadResponseObserver response, UUID streamSessionId, String segmentName) {}
+      RecordingUploadResponseObserver response,
+      UUID streamSessionId,
+      String segmentName,
+      SimpleMeterRegistry meterRegistry) {}
 
   private enum ReportedEncoderBackend {
     DIFFERENT(
