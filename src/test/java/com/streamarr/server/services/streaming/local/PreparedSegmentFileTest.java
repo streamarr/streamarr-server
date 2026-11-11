@@ -90,16 +90,30 @@ class PreparedSegmentFileTest {
   }
 
   @Test
-  @DisplayName("Should delete the temporary file when it is closed after a failed write")
-  void shouldDeleteTemporaryFileWhenClosedAfterFailedWrite() throws Exception {
+  @DisplayName("Should delete the temporary file when it cannot be opened for writing")
+  void shouldDeleteTemporaryFileWhenItCannotBeOpenedForWriting() {
+    var files = new InMemoryFileOperations();
+    files.failOpen = true;
+
+    assertThatThrownBy(() -> PreparedSegmentFile.create(files, DIRECTORY))
+        .isInstanceOf(IOException.class);
+
+    assertThat(files.hasTemporaryFile()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should delete the temporary file when closing its failed channel fails after a failed write")
+  void shouldDeleteTemporaryFileWhenClosingItsFailedChannelFailsAfterFailedWrite()
+      throws Exception {
     var files = new InMemoryFileOperations();
     var prepared = PreparedSegmentFile.create(files, DIRECTORY);
     files.failWrite = true;
-
+    files.failClose = true;
     assertThatThrownBy(() -> prepared.append(ByteBuffer.wrap(new byte[] {0x47})))
-        .isInstanceOf(IOException.class)
-        .hasMessage("temporary write failed");
-    prepared.close();
+        .isInstanceOf(IOException.class);
+
+    assertThatThrownBy(prepared::close).isInstanceOf(IOException.class);
 
     assertThat(files.hasTemporaryFile()).isFalse();
   }
@@ -117,6 +131,7 @@ class PreparedSegmentFileTest {
     private final Map<Path, byte[]> contents = new HashMap<>();
     private boolean failOpen;
     private boolean failWrite;
+    private boolean failClose;
     private boolean failDelete;
 
     @Override
@@ -152,8 +167,11 @@ class PreparedSegmentFileTest {
         }
 
         @Override
-        public void close() {
+        public void close() throws IOException {
           open = false;
+          if (failClose) {
+            throw new IOException("temporary close failed");
+          }
         }
       };
     }
