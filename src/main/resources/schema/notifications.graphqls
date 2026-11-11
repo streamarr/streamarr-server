@@ -25,3 +25,141 @@ type ChangeNotificationRetentionPayload {
 }
 
 union ChangeNotificationRetentionError = NotificationRetentionOutOfRangeError
+
+"""
+A stored note to the signed-in Account that something happened to a subject (ADR 0063).
+The concrete type names the kind and holds the subject.
+"""
+interface Notification {
+    id: ID!
+    """
+    The Notification's line, in English, for a client that shows this type but handles it no
+    further. A client may word its own line from the typed fields. Never parse this one.
+    """
+    message: String!
+    "When the first event made the Notification, as an ISO-8601 instant."
+    createdAt: String!
+    "When its latest event happened, as an ISO-8601 instant. The list orders by it, newest first."
+    latestEventAt: String!
+    """
+    True until the recipient marks the Notification read. A request also becomes read once it
+    resolves, and it never becomes unread again.
+    """
+    unread: Boolean!
+}
+
+"A Notification that waits for a decision on its subject. Its state is its subject's state."
+interface RequestNotification implements Notification {
+    id: ID!
+    message: String!
+    createdAt: String!
+    latestEventAt: String!
+    unread: Boolean!
+    "When the subject expires unless someone decides it first. Null when the subject has no expiry."
+    expiresAt: String
+    "How the request resolved. Null while its subject waits."
+    resolution: RequestResolution
+}
+
+"How a request resolved."
+enum RequestResolution {
+    "Someone with the authority accepted, rejected or declined the subject."
+    DECIDED
+    "The proposer canceled the subject, a newer proposal replaced it, or the server invalidated it."
+    WITHDRAWN
+    "The subject's expiry passed with no decision."
+    EXPIRED
+}
+
+"""
+A Profile is offered to a Household that the recipient administers. Recipients: the Household's
+HouseholdAdmins, except the Account that made the offer.
+"""
+type ProfileShareOfferedNotification implements RequestNotification & Notification {
+    id: ID!
+    message: String!
+    createdAt: String!
+    latestEventAt: String!
+    unread: Boolean!
+    expiresAt: String
+    resolution: RequestResolution
+    """
+    The offer. Its names follow the share's own read rules. Once the request resolves as DECIDED,
+    the share's status shows whether it was accepted.
+    """
+    share: ProfileShare!
+    """
+    The Profile's name for this recipient's line: its current name while the recipient may see the
+    Profile, and otherwise its name when the offer was made, as the recipient was told it then.
+    """
+    profileName: String!
+}
+
+"A Household accepted or rejected an offer of a Profile that the recipient manages or offered."
+type ProfileShareAnsweredNotification implements Notification {
+    id: ID!
+    message: String!
+    createdAt: String!
+    latestEventAt: String!
+    unread: Boolean!
+    "The answered offer. Its names follow the share's own read rules."
+    share: ProfileShare!
+    """
+    The Profile's name for this recipient's line: its current name while the recipient may see the
+    Profile, and otherwise its name when the offer was answered, as the recipient was told it then.
+    """
+    profileName: String!
+    "How the Household answered. The share's status moves on after an acceptance; this does not."
+    answer: ProfileShareAnswer!
+}
+
+"How a Household answered an offer of a Profile."
+enum ProfileShareAnswer {
+    "The Household accepted the offer, and the share became active."
+    ACCEPTED
+    "The Household rejected the offer."
+    REJECTED
+}
+
+"An active share ended, and the recipient is on a side that did not end it."
+type ProfileShareEndedNotification implements Notification {
+    id: ID!
+    message: String!
+    createdAt: String!
+    latestEventAt: String!
+    unread: Boolean!
+    "The ended share. Its names follow the share's own read rules."
+    share: ProfileShare!
+    """
+    The Profile's name for this recipient's line: its current name while the recipient may see the
+    Profile, and otherwise its name when the share ended, as the recipient was told it then.
+    """
+    profileName: String!
+    "Which side ended the share."
+    endedBy: ProfileShareEndedBy!
+}
+
+"Which side ended a share."
+enum ProfileShareEndedBy {
+    "A ProfileManager of the Profile ended the share. The Profile's own Account counts as one."
+    OFFERING_SIDE
+    "A HouseholdAdmin of the Household ended the share."
+    HOUSEHOLD_SIDE
+    "A ServerAdmin ended the share, or another operation ended it, such as an Account transfer."
+    SERVER
+}
+
+"A page of the signed-in Account's Notifications."
+type NotificationConnection {
+    edges: [NotificationEdge]!
+    pageInfo: PageInfo!
+}
+
+"Membership and ordering in the Notifications list, shared by queries and change payloads."
+type NotificationEdge implements OrderedEdge {
+    "Null when the Notification failed to resolve."
+    node: Notification
+    cursor: String!
+    "Compare as ascending ASCII strings. Includes latestEventAt descending and the ID tie-breaker."
+    orderKey: String!
+}

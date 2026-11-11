@@ -24,6 +24,12 @@ public interface NotificationRepositoryCustom {
    */
   List<Row<Notification>> rowsOfRecipient(UUID recipientAccountId, Seek seek);
 
+  /**
+   * The recipient's unread Notifications at the instant, before the guard decides them: news its
+   * recipient has not read, and requests not read whose offers still wait.
+   */
+  List<Notification> findUnreadOfRecipient(UUID recipientAccountId, Instant now);
+
   /** Stores a new Notification for its recipient, unread, and answers its id. */
   UUID insert(NotificationDraft<NotificationKind, ProfileShareFacts> draft);
 
