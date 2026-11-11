@@ -294,13 +294,15 @@ class HlsCopyPlaylistApiSmokeTest {
 
   // The index lists every keyframe of the 30 s source, but the file's data ends near 14 s. The
   // source has a keyframe every 2 s, so every 6 s slot that starts before the real end opens a
-  // segment, and the plain grid's later slots open none.
+  // segment, and the plain grid's later slots open none. ADR 0037, segment list: the last
+  // segment's interval runs to the end of the media, and each EXTINF gives a segment's real
+  // duration.
   @ParameterizedTest(name = "{0}")
   @MethodSource("indexFirstSources")
   @DisplayName(
-      "Should advertise no segment past the real end when the packet scan places the keyframes of"
-          + " a truncated source")
-  void shouldAdvertiseNoSegmentPastTheRealEndWhenThePacketScanPlacesTheKeyframesOfATruncatedSource(
+      "Should advertise no segment and no time past the real end when the packet scan places the"
+          + " keyframes of a truncated source")
+  void shouldAdvertiseNoSegmentAndNoTimePastRealEndWhenPacketScanPlacesKeyframesOfTruncatedSource(
       String fileName, List<String> mediaArguments) throws Exception {
     var source = generateSource(fileName, mediaArguments);
     truncateToHalf(source);
@@ -338,6 +340,12 @@ class HlsCopyPlaylistApiSmokeTest {
         .zipSatisfy(
             playlist.segmentStarts(),
             (opening, advertised) -> assertThat(opening).isCloseTo(advertised, HALF_A_FRAME));
+    assertThat(playlist.segmentStarts().getLast() + playlist.segments().getLast().seconds())
+        .as("the last segment ends where the source's last video frame ends")
+        .isCloseTo(realEnd + FRAME_SECONDS, HALF_A_FRAME);
+    assertThat(playlist.targetDurationSeconds())
+        .as("no EXTINF exceeds the 6 s period, so the target duration stays at the period")
+        .isEqualTo(SEGMENT_SECONDS);
   }
 
   static Stream<Arguments> indexFirstSources() {
