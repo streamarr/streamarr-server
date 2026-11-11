@@ -59,7 +59,9 @@ public class StreamingConfig {
     // Before the store exists, so the folder holds nothing of a running store.
     properties
         .ownedSegmentFolder()
-        .ifPresent(segmentFolder -> new SegmentFolderLeftovers(segmentFolder).delete());
+        .ifPresent(
+            segmentFolder ->
+                SegmentFolderLeftovers.builder().segmentFolder(segmentFolder).build().delete());
     return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
   }
 

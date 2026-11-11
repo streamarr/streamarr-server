@@ -13,8 +13,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Pattern;
+import lombok.Builder;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -23,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
  * process, so no segment store deletes them.
  */
 @Slf4j
-@RequiredArgsConstructor
+@Builder
 public class SegmentFolderLeftovers {
 
   private static final String MARK_NAME = ".streamarr-segment-folder";
