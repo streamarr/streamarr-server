@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.EnumDescriptor;
+import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor.Type;
+import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.KeyframesUnavailableReason;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
@@ -149,6 +151,31 @@ class ProbeReportWorkerContractTest {
             tuple("KEYFRAMES_UNAVAILABLE_REASON_KEYFRAME_WITHOUT_TIMESTAMP", 1),
             tuple("KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES", 2),
             tuple("KEYFRAMES_UNAVAILABLE_REASON_TOO_MANY_KEYFRAMES", 3));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field numbers and types that workers build against when a probe attempt"
+          + " ends without a report")
+  void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenProbeAttemptEndsWithoutReport() {
+    var event =
+        EstablishWorkerSessionRequest.getDescriptor()
+            .findFieldByName("probe_attempt_ended_without_report");
+
+    assertThat(event).isNotNull();
+    assertThat(fields(event.getContainingType(), "probe_attempt_ended_without_report"))
+        .containsExactly(
+            tuple("probe_attempt_ended_without_report", 12, Type.MESSAGE, true, false));
+    assertThat(event.getContainingOneof().getName()).isEqualTo("event");
+    var ended = event.getMessageType();
+    assertThat(ended.getName()).isEqualTo("ProbeAttemptEndedWithoutReport");
+    assertThat(ended.getFields())
+        .extracting(FieldDescriptor::getName)
+        .containsExactly("probe_attempt_id");
+    assertThat(fields(ended, "probe_attempt_id"))
+        .containsExactly(tuple("probe_attempt_id", 1, Type.MESSAGE, true, false));
+    assertThat(messageTypes(ended, "probe_attempt_id"))
+        .containsExactly(Uuid.getDescriptor().getFullName());
   }
 
   // Each tuple holds a field's name, number, type, presence and repeatedness. A scalar that turns

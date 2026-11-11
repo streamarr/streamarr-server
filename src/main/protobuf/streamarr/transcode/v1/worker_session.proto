@@ -825,6 +825,14 @@ message ProbeCapacityChanged {
   uint32 keyframe_packet_scan_capacity = 2;
 }
 
+// The worker sends this message when a probe attempt has ended on the worker
+// and the worker sends nothing more for the attempt. The worker sends it
+// after every CancelProbeCommand, and after a ReportProbeAttempt call that
+// ended without the server's answer (ADR 0062).
+message ProbeAttemptEndedWithoutReport {
+  Uuid probe_attempt_id = 1;
+}
+
 // The worker sends this message on its session. The server accepts at most
 // 131,072 encoded bytes (128 KiB) in one message. A larger message ends the
 // session.
@@ -841,6 +849,7 @@ message EstablishWorkerSessionRequest {
     ProbeStreamMeasurementPart probe_stream_measurement_part = 9;
     JobAttemptProgress job_attempt_progress = 10;
     VideoEncodersChanged video_encoders_changed = 11;
+    ProbeAttemptEndedWithoutReport probe_attempt_ended_without_report = 12;
   }
 }
 
@@ -1604,6 +1613,8 @@ enum ProbeFailure {
   PROBE_FAILURE_SOURCE_UNAVAILABLE = 3;
   PROBE_FAILURE_EXECUTION_FAILED = 4;
   PROBE_FAILURE_UNSUPPORTED_VERSION = 5;
+  // A current worker never sends this value, because a canceled attempt has no
+  // ProbeAttemptReport (ADR 0062).
   PROBE_FAILURE_CANCELLED = 6;
   // The result would exceed the session message limit. The server stores this
   // outcome until the file or the probe version changes.
@@ -1618,8 +1629,8 @@ message StartProbeCommand {
   ProbeRequest request = 2;
 }
 
-// After the probe ends, the worker still returns a terminal ProbeAttemptResult
-// for the attempt.
+// The worker answers with ProbeAttemptEndedWithoutReport once the probe has
+// ended, and sends no ProbeAttemptReport for the attempt (ADR 0062).
 message CancelProbeCommand {
   WorkerIdentity target = 1;
   Uuid probe_attempt_id = 2;
