@@ -1,11 +1,14 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.fakes.TestImages.createGifImage;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitGrayscalePngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.junit.jupiter.api.Named.named;
 
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.ArtworkTarget;
@@ -48,6 +51,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -146,6 +150,31 @@ class ArtworkRequestServiceTest {
           .isEqualTo(FinishedImageCounts.builder().saved(1).failed(1).build());
       assertThat(failureReasonOf(movieId, ImageType.POSTER))
           .isEqualTo(ItemFailureReason.DOWNLOAD_FAILED);
+      assertThat(artwork.scheduling().pendingTargets()).isEmpty();
+    }
+
+    static Stream<Named<byte[]>> imagesThatCannotBeStored() {
+      return Stream.of(
+          named("an image that is neither JPEG nor PNG", createGifImage()),
+          named("a resized image that no encoder accepts", createSixteenBitGrayscalePngImage()));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("imagesThatCannotBeStored")
+    @DisplayName(
+        "Should finish the step as invalid media and store nothing when the image cannot be stored")
+    void shouldFinishTheStepAsInvalidMediaAndStoreNothingWhenTheImageCannotBeStored(
+        byte[] imageData) {
+      var movieId = UUID.randomUUID();
+      imageDownloader.setImageData(imageData);
+
+      requestPrimaryArtwork(movieArtwork(movieId, POSTER));
+
+      assertThat(failureReasonOf(movieId, ImageType.POSTER))
+          .isEqualTo(ItemFailureReason.INVALID_MEDIA);
+      assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
+          .isEmpty();
+      assertThat(artwork.fileSystem().getPath("/data/images")).doesNotExist();
       assertThat(artwork.scheduling().pendingTargets()).isEmpty();
     }
 
