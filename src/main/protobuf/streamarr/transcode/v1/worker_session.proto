@@ -1474,15 +1474,20 @@ message ProbeKeyframes {
   }
 }
 
-// This value names the step that measured a file's streams (ADR 0054).
+// This value names the step that measured a file's streams (ADR 0054). The
+// server fails a probe attempt whose StreamMeasurements names a step that the
+// source of its KeyframePositions does not allow.
 enum StreamMeasurementSource {
   STREAM_MEASUREMENT_SOURCE_UNSPECIFIED = 0;
   // The probe read the sample tables of an MP4 or MOV file that is not
-  // fragmented.
+  // fragmented. Only KeyframePositions of a CONTAINER_INDEX allow this value.
   STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE = 1;
-  // A keyframe packet scan listed every packet.
+  // A keyframe packet scan listed every packet. Only KeyframePositions of a
+  // PACKET_SCAN allow this value.
   STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN = 2;
-  // A bitrate scan listed every packet.
+  // A bitrate scan listed every packet. The worker never reports this value: a
+  // bitrate scan answers with BitrateScanChunkResult, and the server names the
+  // step when every chunk has a result.
   STREAM_MEASUREMENT_SOURCE_BITRATE_SCAN = 3;
 }
 

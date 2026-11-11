@@ -121,14 +121,18 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
 
   // The contract and the domain share this type name.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  @ParameterizedTest(name = "{0}")
-  @MethodSource("namedSources")
-  @DisplayName("Should keep the measurement's source when the worker names one")
-  void shouldKeepMeasurementsSourceWhenWorkerNamesOne(
+  @ParameterizedTest(name = "{1} beside {0}")
+  @MethodSource("stepsThatTheKeyframePositionsAllow")
+  @DisplayName(
+      "Should keep the measurement's source when the worker names the step that read the"
+          + " keyframe positions")
+  void shouldKeepMeasurementsSourceWhenWorkerNamesStepThatReadKeyframePositions(
+      KeyframePositionSource keyframes,
       StreamMeasurementSource reported,
       com.streamarr.server.domain.streaming.StreamMeasurementSource expected) {
     var report =
         report(
+            keyframesFrom(keyframes),
             measurements(video(30), audio(3)).setSource(reported),
             List.of(intervals(VIDEO, 10, 20), intervals(AUDIO, 1, 2)));
 
@@ -138,17 +142,52 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  static Stream<Arguments> namedSources() {
+  static Stream<Arguments> stepsThatTheKeyframePositionsAllow() {
     return Stream.of(
         arguments(
+            KeyframePositionSource.KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX,
             StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE,
             com.streamarr.server.domain.streaming.StreamMeasurementSource.SAMPLE_TABLE),
         arguments(
+            KeyframePositionSource.KEYFRAME_POSITION_SOURCE_PACKET_SCAN,
             StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN,
-            com.streamarr.server.domain.streaming.StreamMeasurementSource.KEYFRAME_PACKET_SCAN),
+            com.streamarr.server.domain.streaming.StreamMeasurementSource.KEYFRAME_PACKET_SCAN));
+  }
+
+  @ParameterizedTest(name = "{1} beside {0}")
+  @MethodSource("stepsThatTheKeyframePositionsDoNotAllow")
+  @DisplayName(
+      "Should fail the probe as a contract violation when the measurement names a step that did"
+          + " not read the keyframe positions")
+  void shouldFailProbeAsContractViolationWhenMeasurementNamesStepThatDidNotReadKeyframePositions(
+      KeyframePositionSource keyframes, StreamMeasurementSource reported) {
+    var report =
+        report(
+            keyframesFrom(keyframes),
+            measurements(video(30), audio(3)).setSource(reported),
+            List.of(intervals(VIDEO, 10, 20), intervals(AUDIO, 1, 2)));
+    var mapper = new RemoteProbeResultMapper();
+
+    assertThatThrownBy(() -> mapper.map(report))
+        .isInstanceOf(ProbeContractViolationException.class)
+        .hasMessage(
+            "Worker probe measurement names a step that its keyframe positions do not allow");
+  }
+
+  static Stream<Arguments> stepsThatTheKeyframePositionsDoNotAllow() {
+    return Stream.of(
         arguments(
-            StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_BITRATE_SCAN,
-            com.streamarr.server.domain.streaming.StreamMeasurementSource.BITRATE_SCAN));
+            KeyframePositionSource.KEYFRAME_POSITION_SOURCE_PACKET_SCAN,
+            StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE),
+        arguments(
+            KeyframePositionSource.KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX,
+            StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN),
+        arguments(
+            KeyframePositionSource.KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX,
+            StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_BITRATE_SCAN),
+        arguments(
+            KeyframePositionSource.KEYFRAME_POSITION_SOURCE_PACKET_SCAN,
+            StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_BITRATE_SCAN));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -284,8 +323,15 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
 
   private static ProbeAttemptReport report(
       StreamMeasurements.Builder measurements, List<StreamMeasurementIntervals> intervals) {
+    return report(knownKeyframes(), measurements, intervals);
+  }
+
+  private static ProbeAttemptReport report(
+      ProbeKeyframes.Builder keyframes,
+      StreamMeasurements.Builder measurements,
+      List<StreamMeasurementIntervals> intervals) {
     return report(
-        result(media().setKeyframes(knownKeyframes()).setStreamMeasurements(measurements)),
+        result(media().setKeyframes(keyframes).setStreamMeasurements(measurements)),
         intervals);
   }
 
@@ -312,13 +358,17 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
   }
 
   private static ProbeKeyframes.Builder knownKeyframes() {
+    return keyframesFrom(KeyframePositionSource.KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX);
+  }
+
+  private static ProbeKeyframes.Builder keyframesFrom(KeyframePositionSource source) {
     return ProbeKeyframes.newBuilder()
         .setPositions(
             KeyframePositions.newBuilder()
                 .setStreamIndex(VIDEO)
                 .setTimeBaseNumerator(1)
                 .setTimeBaseDenominator(90_000)
-                .setSource(KeyframePositionSource.KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX)
+                .setSource(source)
                 .setKeyframeCount(2));
   }
 

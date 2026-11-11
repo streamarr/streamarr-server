@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
@@ -36,6 +37,11 @@ final class RemoteStreamMeasurementsMapper {
 
     var reported = media.getStreamMeasurements();
     var source = source(reported);
+    if (source != stepThatReads(positions.source())) {
+      throw violation(
+          "Worker probe measurement names a step that its keyframe positions do not allow");
+    }
+
     var intervalsByStream =
         intervals.stream()
             .collect(
@@ -153,6 +159,15 @@ final class RemoteStreamMeasurementsMapper {
       case STREAM_MEASUREMENT_SOURCE_BITRATE_SCAN -> StreamMeasurementSource.BITRATE_SCAN;
       case STREAM_MEASUREMENT_SOURCE_UNSPECIFIED, UNRECOGNIZED ->
           throw violation("Worker probe measurement names no source");
+    };
+  }
+
+  // A probe measures a file in the step that read its keyframe positions (ADR 0054). A bitrate scan
+  // answers with chunk results, so no probe result names it.
+  private static StreamMeasurementSource stepThatReads(KeyframePositionSource keyframes) {
+    return switch (keyframes) {
+      case CONTAINER_INDEX -> StreamMeasurementSource.SAMPLE_TABLE;
+      case PACKET_SCAN -> StreamMeasurementSource.KEYFRAME_PACKET_SCAN;
     };
   }
 
