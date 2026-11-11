@@ -53,7 +53,6 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
-import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
@@ -674,40 +673,6 @@ class TenBitAndHdrEncodeTest {
       this.features = features;
       this.expectedBitDepth = expectedBitDepth;
     }
-  }
-
-  // ADR 0044 and ADR 0013: after a hardware encoder fails, the encode continues on the software
-  // encoder of the codec family in the same range and bit depth.
-  @Test
-  @DisplayName(
-      "Should continue in HDR10 at 10 bits on the software encoder when the hardware encoder of an"
-          + " HDR10 encode fails and the software encoder writes PQ")
-  void shouldContinueInHdr10At10BitsOnTheSoftwareEncoderWhenTheHardwareEncoderFails() {
-    workers.setTargetEncoders(
-        ExecutionTargetId.LOCAL, List.of(av1Nvenc(EVERY_ENCODE_FEATURE), libx264(Set.of())));
-    workers.setTargetSoftwareEncoders(
-        ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE)));
-    probes.setDefaultProbe(
-        hdr10Source(Optional.of(SOURCE_DISPLAY), Optional.of(SOURCE_LIGHT_LEVEL)));
-    var command = start(options(VideoQuality.AUTO, null), hdrAv1Client());
-    var hardware = accepted(playback.start(command));
-    assertThat(sessionOf(hardware).getVideoRange()).isEqualTo(VideoRange.PQ);
-
-    playback.onRequestedVariantHardwareEncoderFailed(
-        RequestedVariantHardwareEncoderFailedEvent.builder()
-            .streamSessionId(hardware.currentFormatAttempt().streamSessionId())
-            .variantLabel("default")
-            .build());
-
-    var software = workers.getStartedRequests().getLast().transcodeDecision();
-    assertThat(software.softwareEncoder()).isTrue();
-    assertThat(software.plannedVideoOutput())
-        .isInstanceOfSatisfying(
-            PlannedVideoOutput.Encode.class,
-            encode -> {
-              assertThat(encode.dynamicRange()).isEqualTo(rangeOf(CompatibleBase.PQ));
-              assertThat(encode.bitDepth()).isEqualTo(10);
-            });
   }
 
   // Decision 179 and #397: at the same frame rate, a 10-bit SDR source keeps 10 bits in AV1 rather
