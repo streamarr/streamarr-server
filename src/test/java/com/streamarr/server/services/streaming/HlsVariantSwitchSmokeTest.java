@@ -49,6 +49,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -273,7 +274,24 @@ class HlsVariantSwitchSmokeTest {
     }
 
     var sourceVideoPackets = videoPackets(List.of(source));
+    var sourceFrames = sourceFrames(source);
+    var heldToTheAdvertisedEnd = framesFrom(sourceFrames.size(), copied.listing().end());
+    var heldFrames = List.<Long>of();
+    if (variantOfEachSegment.getLast() == Variant.ENCODED) {
+      heldFrames = heldToTheAdvertisedEnd;
+    }
 
+    // The source's noise differs in every picture, and a held frame shows the last picture again.
+    // The encode is lossy, so the repeated picture still changes a little: against the pinned
+    // worker, by about a twelfth of the smallest change between two source pictures of the last
+    // segment.
+    var lastPictureChanges = workerFixture.worker().lumaChangeFromPreviousFrame(played.getLast());
+    var firstHeld = lastPictureChanges.size() - heldFrames.size();
+    var smallestSourceChange = Collections.min(lastPictureChanges.subList(1, firstHeld));
+
+    assertThat(heldToTheAdvertisedEnd)
+        .as("the source's last picture ends before the advertised end, so an encode holds it")
+        .isNotEmpty();
     assertThat(videoPackets(playedFrom.get(Variant.COPIED)))
         .as("the segments played from the copy carry the source's own video packets")
         .isSubsetOf(sourceVideoPackets);
@@ -284,8 +302,16 @@ class HlsVariantSwitchSmokeTest {
         .as("each played segment decodes every frame it holds alone, so it opens on a keyframe")
         .isEqualTo(heldFrameCounts(played));
     assertThat(presentedFrames(played))
-        .as("the video frames that the player presents across its switches at 10, 20 and 30 s")
-        .isEqualTo(sourceFrames(source));
+        .as(
+            "the video frames that the player presents across its switches at 10, 20 and 30 s:"
+                + " every source frame once, then the frames that an encoded last segment holds")
+        .containsExactlyElementsOf(concat(sourceFrames, heldFrames));
+    assertThat(lastPictureChanges.subList(firstHeld, lastPictureChanges.size()))
+        .as(
+            "each held frame repeats the picture before it, where the smallest change between two"
+                + " source pictures of that segment is %s",
+            smallestSourceChange)
+        .allSatisfy(change -> assertThat(change).isLessThan(smallestSourceChange / 4));
     assertThat(audioPackets(played))
         .as("the audio packets that the player plays across its switches at 10, 20 and 30 s")
         .isEqualTo(audioPackets(List.of(source)));
@@ -496,6 +522,19 @@ class HlsVariantSwitchSmokeTest {
     return Math.round(seconds * FRAMES_PER_SECOND);
   }
 
+  // ADR 0037, early ends: an encode repeats its last picture at the output frame rate up to the
+  // advertised end. No held frame starts at or after that end, and the last one keeps its full
+  // duration, so it can end less than one frame after it. A copy is never padded.
+  private static List<Long> framesFrom(long firstFrame, double advertisedEnd) {
+    return Stream.iterate(firstFrame, frame -> frame + 1)
+        .takeWhile(frame -> (double) frame / FRAMES_PER_SECOND < advertisedEnd)
+        .toList();
+  }
+
+  private static List<Long> concat(List<Long> first, List<Long> second) {
+    return Stream.concat(first.stream(), second.stream()).toList();
+  }
+
   // How many video frames FFmpeg decodes from each file read alone.
   private List<Long> decodedFrameCounts(List<Path> media) throws Exception {
     var counts = new ArrayList<Long>();
@@ -564,7 +603,13 @@ class HlsVariantSwitchSmokeTest {
       Optional<String> playlistType,
       int mediaSequence,
       int discontinuitySequence,
-      List<ListedSegment> segments) {}
+      List<ListedSegment> segments) {
+
+    // The advertised end, where the last listed segment ends.
+    double end() {
+      return segments.stream().mapToDouble(ListedSegment::seconds).sum();
+    }
+  }
 
   // What a client reads from a media playlist (RFC 8216 §4.1 and §4.3).
   @Builder
