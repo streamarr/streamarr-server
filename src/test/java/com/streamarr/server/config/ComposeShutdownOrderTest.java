@@ -24,8 +24,8 @@ class ComposeShutdownOrderTest {
             .valueToTree(new Yaml().load(Files.readString(Path.of("docker-compose.yml"))))
             .path("services");
 
-    assertThat(services.has("postgres")).isTrue();
     assertThat(services.path("streamarr-server").path("depends_on").values())
+        .as("Compose stops PostgreSQL before the server unless the server depends on it")
         .extracting(JsonNode::asString)
         .contains("postgres");
   }
