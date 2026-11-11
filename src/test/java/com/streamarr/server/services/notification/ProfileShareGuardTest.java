@@ -3,10 +3,13 @@ package com.streamarr.server.services.notification;
 import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.defaultIdentityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.notification.GuardedNotification;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -46,8 +49,10 @@ class ProfileShareGuardTest {
                   household.decision();
               default -> Answer.DENIED.decision();
             });
+    var notification = guarded(RECIPIENT, PROFILE, HOUSEHOLD);
 
-    assertThat(guard.visibility(RECIPIENT, PROFILE, HOUSEHOLD)).isEqualTo(expected);
+    assertThat(guard.visibilities(List.of(notification)))
+        .containsExactly(Map.entry(notification.notificationId(), expected));
   }
 
   @Test
@@ -55,9 +60,49 @@ class ProfileShareGuardTest {
   void shouldDecideForTheRecipientAccountWhenAnotherAccountMayViewTheShare() {
     authorization.decideForAccountWith(
         accountId -> accountId.equals(RECIPIENT) ? Answer.DENIED.decision() : null);
+    var notification = guarded(RECIPIENT, PROFILE, HOUSEHOLD);
 
-    assertThat(guard.visibility(RECIPIENT, PROFILE, HOUSEHOLD))
-        .isEqualTo(NotificationVisibility.HIDDEN);
+    assertThat(guard.visibilities(List.of(notification)))
+        .containsExactly(Map.entry(notification.notificationId(), NotificationVisibility.HIDDEN));
+  }
+
+  @Test
+  @DisplayName(
+      "Should decide each Notification of a batch on its own when they name different shares and"
+          + " recipients")
+  void shouldDecideEachNotificationOfABatchOnItsOwnWhenTheyNameDifferentSharesAndRecipients() {
+    var otherRecipient = UUID.randomUUID();
+    authorization
+        .decideForAccountWith(
+            accountId -> accountId.equals(otherRecipient) ? Answer.DENIED.decision() : null)
+        .decideUnitWith(
+            intent ->
+                intent.equals(new Intent.ViewHouseholdAdministration(HOUSEHOLD))
+                    ? Answer.ALLOWED.decision()
+                    : Answer.DENIED.decision());
+    var shown = guarded(RECIPIENT, PROFILE, HOUSEHOLD);
+    var sameShareOtherRecipient = guarded(otherRecipient, PROFILE, HOUSEHOLD);
+    var otherHousehold = guarded(RECIPIENT, UUID.randomUUID(), UUID.randomUUID());
+    var sameHouseholdOtherProfile = guarded(RECIPIENT, UUID.randomUUID(), HOUSEHOLD);
+
+    assertThat(
+            guard.visibilities(
+                List.of(shown, sameShareOtherRecipient, otherHousehold, sameHouseholdOtherProfile)))
+        .containsOnly(
+            Map.entry(shown.notificationId(), NotificationVisibility.SHOWN),
+            Map.entry(sameShareOtherRecipient.notificationId(), NotificationVisibility.HIDDEN),
+            Map.entry(otherHousehold.notificationId(), NotificationVisibility.HIDDEN),
+            Map.entry(sameHouseholdOtherProfile.notificationId(), NotificationVisibility.SHOWN));
+  }
+
+  @Test
+  @DisplayName("Should answer nothing when the batch holds no Notification")
+  void shouldAnswerNothingWhenTheBatchHoldsNoNotification() {
+    assertThat(guard.visibilities(List.of())).isEmpty();
+  }
+
+  private static GuardedNotification guarded(UUID recipient, UUID profileId, UUID householdId) {
+    return new GuardedNotification(UUID.randomUUID(), recipient, profileId, householdId);
   }
 
   private static Stream<Arguments> decisions() {
