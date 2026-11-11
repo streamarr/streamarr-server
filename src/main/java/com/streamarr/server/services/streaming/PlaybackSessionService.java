@@ -112,10 +112,13 @@ public class PlaybackSessionService implements AutoCloseable {
     @Builder.Default private int formatAttemptCount = 1;
     @Builder.Default private int startedFormatAttempts = 1;
 
+    // The constraint of the last format attempt that a failure reserved, which an audio encode
+    // after it keeps while that attempt is still pending.
     @Builder.Default
     private VideoFormatConstraint videoFormatConstraint =
         VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE;
 
+    // Encode-only from the first copied audio that ran short, for every later format attempt.
     @Builder.Default
     private AudioFormatConstraint audioFormatConstraint = AudioFormatConstraint.COPY_OR_ENCODE;
 
@@ -640,7 +643,8 @@ public class PlaybackSessionService implements AutoCloseable {
   /**
    * Fails the playback session without another format attempt, which would fail the same way. A
    * segment over the cap on the segment list starts a new format attempt instead, as a failed copy
-   * does, because that attempt's stream session encodes on the plain grid (ADR 0037).
+   * does, because that attempt's stream session encodes on the plain grid (ADR 0037). Copied audio
+   * that ran short starts a new format attempt that encodes the audio (ADR 0058).
    */
   @EventListener
   public void onTerminalTranscodeFailure(@NonNull TerminalTranscodeFailureEvent event) {

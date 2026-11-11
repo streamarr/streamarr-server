@@ -1082,6 +1082,7 @@ class PlaybackSessionServiceTest {
     assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
     assertThat(recovered.formatAttemptCount()).isEqualTo(2);
     assertThat(recovered.playbackChoice()).isEqualTo(quality);
+    assertThat(recovered.formatChange()).isEmpty();
     assertThat(streams.createdCommands.getLast())
         .satisfies(
             next -> {
@@ -1173,9 +1174,36 @@ class PlaybackSessionServiceTest {
     IntStream.range(0, reports).forEach(_ -> playback.onTerminalTranscodeFailure(failure));
 
     var failed = playback.access(request(initial, command)).orElseThrow();
-    assertThat(failed.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Failed.class);
+    assertThat(failed.currentFormatAttempt())
+        .isEqualTo(
+            new PlaybackFormatAttempt.Failed(
+                initial.currentFormatAttempt().streamSessionId(),
+                new PlaybackSessionFailure.AttemptsExhausted()));
     assertThat(failed.formatAttemptCount()).isOne();
     assertThat(streams.createdCommands).hasSize(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep encoding the audio when a later format attempt follows copied audio that ran"
+          + " short")
+  void shouldKeepEncodingTheAudioWhenALaterFormatAttemptFollowsCopiedAudioThatRanShort() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(3).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var initial = accepted(playback.start(command));
+    playback.onTerminalTranscodeFailure(
+        terminalFailure(
+            initial.currentFormatAttempt().streamSessionId(),
+            TranscodeFailure.COPIED_AUDIO_RAN_SHORT));
+    var second = playback.access(request(initial, command)).orElseThrow();
+
+    playback.onVideoCopyOutputMismatch(
+        new VideoCopyOutputMismatchEvent(
+            second.currentFormatAttempt().streamSessionId(), UUID.randomUUID(), "default"));
+
+    assertThat(streams.createdCommands).hasSize(3);
+    assertThat(streams.createdCommands.getLast().audioFormatConstraint())
+        .isEqualTo(AudioFormatConstraint.ENCODE_ONLY);
   }
 
   // ADR 0044: the requested variant whose hardware encoder fails continues on the software encoder

@@ -465,6 +465,7 @@ class RemoteFormatFailureIT {
       assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
       assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
           .containsExactly(terminalEventFor(job, TranscodeFailure.COPIED_AUDIO_RAN_SHORT));
+      assertThat(rig.deliver()).isInstanceOf(SegmentDelivery.Unrecoverable.class);
       assertThat(worker.jobs).hasSize(1);
     }
   }
