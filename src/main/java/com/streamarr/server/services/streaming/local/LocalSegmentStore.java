@@ -108,13 +108,14 @@ public class LocalSegmentStore implements SegmentStore {
       var lock = publicationLocks.getMutex(segmentPath);
       lock.lock();
       try {
-        return publishUnlessStored(segmentPath);
+        return publishInitializationOrMediaSegment(segmentPath);
       } finally {
         lock.unlock();
       }
     }
 
-    private SegmentPublication publishUnlessStored(Path segmentPath) throws IOException {
+    private SegmentPublication publishInitializationOrMediaSegment(Path segmentPath)
+        throws IOException {
       if (SegmentNames.isInitSegment(segmentName)) {
         return temporary.publishUnlessStored(segmentPath);
       }

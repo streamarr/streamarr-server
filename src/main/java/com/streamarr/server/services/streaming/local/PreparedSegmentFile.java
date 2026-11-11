@@ -107,22 +107,24 @@ final class PreparedSegmentFile implements AutoCloseable {
     }
   }
 
-  void publishTo(Path target) throws IOException {
+  /**
+   * Publishes when nothing is stored at {@code target} yet; otherwise leaves the stored file
+   * untouched. Answers whether it published. Callers serialize publications to one target.
+   */
+  boolean publishWhenNothingIsStored(Path target) throws IOException {
     content.close();
+    if (!files.notExists(target)) {
+      return false;
+    }
+
+    publishTo(target);
+    return true;
+  }
+
+  private void publishTo(Path target) throws IOException {
     // Never a plain move: one that fails can leave part of the file at the target, and the next
     // publication would keep that part as the stored segment.
     files.moveAtomically(temporary, target);
-  }
-
-  /**
-   * Publishes when nothing is stored at {@code target} yet; otherwise leaves the stored file
-   * untouched. Callers serialize publications to one target.
-   */
-  void publishWhenNothingIsStored(Path target) throws IOException {
-    content.close();
-    if (files.notExists(target)) {
-      publishTo(target);
-    }
   }
 
   /**
@@ -131,9 +133,7 @@ final class PreparedSegmentFile implements AutoCloseable {
    * target.
    */
   SegmentPublication publishUnlessStored(Path target) throws IOException {
-    content.close();
-    if (files.notExists(target)) {
-      publishTo(target);
+    if (publishWhenNothingIsStored(target)) {
       return SegmentPublication.PUBLISHED;
     }
 
