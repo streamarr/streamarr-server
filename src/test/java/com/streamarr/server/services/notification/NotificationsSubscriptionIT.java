@@ -319,6 +319,20 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should deliver the request's withdrawal when the Account that made the offer is deleted")
+  void shouldDeliverTheRequestsWithdrawalWhenTheAccountThatMadeTheOfferIsDeleted()
+      throws Exception {
+    var offer = steps.offer(theo, steps.profileManagedBy("Kai", sam, sam, theo), riverside);
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    var outcome = accountLifecycle.deleteMyAccount(authTestSupport.freshIdentityOf(theo), "DELETE");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertWithdrawn(nextChange(socket), riversideAdmin, offer);
+  }
+
+  @Test
+  @DisplayName(
       "Should deliver the request's withdrawal when the ServerAdmin that made the offer loses that"
           + " authority")
   void shouldDeliverTheRequestsWithdrawalWhenTheServerAdminThatMadeTheOfferLosesThatAuthority()
