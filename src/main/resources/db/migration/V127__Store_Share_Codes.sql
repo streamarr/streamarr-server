@@ -1,10 +1,11 @@
 -- Share codes (ADR 0024 §Share codes). A HouseholdAdmin, or a ServerAdmin, issues a share code for
 -- one Household, and whoever holds it may offer a Profile to that Household. The code has the form
--- of the code a person types to link a Device. Only the SHA-256 digest of the normalised code is
--- stored: the code itself is returned once, when it is issued. A code admits one offer and is then
--- spent; it also stops when it expires, when it is withdrawn, or when the system invalidates it
--- because its issuer may no longer issue it. A LIVE row past expires_at reads as EXPIRED. Codes are
--- deleted with their Household.
+-- of the code a person types to link a Device. Only the HMAC-SHA-256 of the normalised code, under
+-- a server key kept outside the database, is stored: the code itself is returned once, when it is
+-- issued, and the stored digests alone do not let a reader try every code. A code admits one offer
+-- and is then spent; it also stops when it expires, when it is withdrawn, or when the system
+-- invalidates it because its issuer may no longer issue it. A LIVE row past expires_at reads as
+-- EXPIRED. Codes are deleted with their Household.
 
 CREATE TYPE share_code_status AS ENUM ('LIVE', 'SPENT', 'WITHDRAWN', 'EXPIRED', 'INVALIDATED');
 
