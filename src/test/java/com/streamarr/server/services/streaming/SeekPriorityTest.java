@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionB
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -137,5 +138,21 @@ class SeekPriorityTest {
         seekPriority.runningJobAttemptHasStored(session, StreamSession.defaultVariant(), 10);
 
     assertThat(storedSegment).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse to say what a running job attempt stored when the stream session or the"
+          + " variant is missing")
+  void shouldRefuseToSayWhatARunningJobAttemptStoredWhenTheStreamSessionOrTheVariantIsMissing() {
+    var session = defaultSessionBuilder().build();
+    var variantLabel = StreamSession.defaultVariant();
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> seekPriority.runningJobAttemptHasStored(null, variantLabel, 0))
+        .withMessageContaining("session");
+    assertThatNullPointerException()
+        .isThrownBy(() -> seekPriority.runningJobAttemptHasStored(session, null, 0))
+        .withMessageContaining("variantLabel");
   }
 }

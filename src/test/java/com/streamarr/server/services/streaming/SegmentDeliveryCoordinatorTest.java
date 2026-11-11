@@ -1541,6 +1541,47 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(forwardAgain.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
+  // The player seeks forward to segment 96 and back to segment 90, then plays on without another
+  // seek. The job attempt at segment 90 has stored segments 90 to 96 when the player, which takes
+  // segments 97 to 100 from the store, asks for segment 101. Segment 97, one relocation gap before
+  // that request, is still only a segment of the earlier job attempt at segment 96.
+  @Test
+  @DisplayName(
+      "Should relocate the variant to the requested media segment when playback after a seek back"
+          + " passes the media segments that an earlier job attempt stored")
+  void
+      shouldRelocateTheVariantToTheRequestedMediaSegmentWhenPlaybackAfterASeekBackPassesTheMediaSegmentsThatAnEarlierJobAttemptStored()
+          throws Exception {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    var forward = heldDelivery(sessionId, "segment96.m4s");
+    for (var index = 96; index <= 100; index++) {
+      upload(sessionId, "segment" + index + ".m4s", new byte[] {1});
+    }
+
+    assertThat(forward.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    var back = heldDelivery(sessionId, "segment90.m4s");
+    for (var index = 90; index <= 96; index++) {
+      upload(sessionId, "segment" + index + ".m4s", new byte[] {1});
+    }
+
+    assertThat(back.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    for (var index = 97; index <= 100; index++) {
+      assertThat(
+              coordinator.deliver(
+                  sessionId, StreamSession.defaultVariant(), "segment" + index + ".m4s"))
+          .isInstanceOf(SegmentDelivery.Ready.class);
+    }
+
+    var next = heldDelivery(sessionId, "segment101.m4s");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 96, 90, 101);
+    upload(sessionId, "segment101.m4s", new byte[] {1});
+    assertThat(next.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
   @Test
   @DisplayName(
       "Should answer a held request as unrecoverable without restarting its variant when a request for another video variant stops that variant")
