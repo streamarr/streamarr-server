@@ -1722,17 +1722,39 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Test
-  @DisplayName("Should report one storage failure when an upload's bytes cannot be written")
-  void shouldReportOneStorageFailureWhenUploadsBytesCannotBeWritten() throws Exception {
+  @DisplayName(
+      "Should reject an upload once when it sends more bytes than it declared and its temporary"
+          + " file cannot be discarded")
+  void
+      shouldRejectUploadOnceWhenItSendsMoreBytesThanItDeclaredAndItsTemporaryFileCannotBeDiscarded()
+          throws Exception {
+    var response = new RecordingUploadResponseObserver();
+    var started = startedUpload(new CloseFailingSegmentStore(), response, 4);
+    started.upload().onNext(dataFrame(new byte[] {1, 2, 3}));
+
+    started.upload().onNext(dataFrame(new byte[] {4, 5}));
+
+    assertThat(response.errorCount()).isEqualTo(1);
+    assertThat(Status.fromThrowable(response.error()).getCode())
+        .isEqualTo(Status.Code.INVALID_ARGUMENT);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report one storage failure as the first data message arrives when an upload's bytes"
+          + " cannot be written")
+  void shouldReportOneStorageFailureAsTheFirstDataMessageArrivesWhenUploadsBytesCannotBeWritten()
+      throws Exception {
     var response = new RecordingUploadResponseObserver();
     var started = startedUpload(new WriteFailingSegmentStore(), response, 4);
 
     started.upload().onNext(dataFrame(new byte[] {1, 2}));
-    started.upload().onNext(dataFrame(new byte[] {3, 4}));
-    started.upload().onCompleted();
 
     assertThat(response.errorCount()).isEqualTo(1);
     assertThat(Status.fromThrowable(response.error()).getCode()).isEqualTo(Status.Code.INTERNAL);
+    started.upload().onNext(dataFrame(new byte[] {3, 4}));
+    started.upload().onCompleted();
+    assertThat(response.errorCount()).isEqualTo(1);
   }
 
   @Test
@@ -1801,6 +1823,25 @@ class WorkerSessionGrpcServiceTest {
         }
       };
     }
+  }
+
+  private static final class CloseFailingSegmentStore extends FakeSegmentStore {
+
+    @Override
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+      return failingOnClose(super.prepareSegment(sessionId, segmentName));
+    }
+  }
+
+  private static SegmentStore.PreparedSegment failingOnClose(
+      SegmentStore.PreparedSegment prepared) {
+    return new ForwardingPreparedSegment(prepared) {
+      @Override
+      public void close() {
+        prepared.close();
+        throw new IllegalStateException("Simulated prepared segment cleanup failure");
+      }
+    };
   }
 
   @Test
@@ -2309,14 +2350,7 @@ class WorkerSessionGrpcServiceTest {
 
     @Override
     public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
-      var prepared = super.prepareSegment(sessionId, segmentName);
-      return new ForwardingPreparedSegment(prepared) {
-        @Override
-        public void close() {
-          prepared.close();
-          throw new IllegalStateException("Simulated prepared segment cleanup failure");
-        }
-      };
+      return failingOnClose(super.prepareSegment(sessionId, segmentName));
     }
   }
 
