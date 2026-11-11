@@ -442,6 +442,33 @@ class RemoteFormatFailureIT {
     }
   }
 
+  // ADR 0058: another attempt of the same decision copies the same short audio, so the failure
+  // ends the job and playback recovers with an audio encode.
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeMode.class,
+      names = {"REMUX", "VIDEO_TRANSCODE"})
+  @DisplayName(
+      "Should treat copied audio that ran short as terminal when the job copies or encodes video")
+  void shouldTreatCopiedAudioThatRanShortAsTerminalWhenTheJobCopiesOrEncodesVideo(
+      TranscodeMode mode) throws Exception {
+    var events = new CapturingEventPublisher();
+    try (var rig = new FailureRig(events);
+        var worker = new TestWorker(rig.server)) {
+      rig.executor.start(rig.requestBuilder().transcodeDecision(rig.decision(mode)).build());
+      var job = worker.nextJob();
+      worker.fail(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPIED_AUDIO_RAN_SHORT);
+      worker.awaitProcessed(rig.server);
+
+      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+          .contains(TranscodeFailure.COPIED_AUDIO_RAN_SHORT);
+      assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
+      assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
+          .containsExactly(terminalEventFor(job, TranscodeFailure.COPIED_AUDIO_RAN_SHORT));
+      assertThat(worker.jobs).hasSize(1);
+    }
+  }
+
   @ParameterizedTest
   @EnumSource(
       value = TranscodeMode.class,

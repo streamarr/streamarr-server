@@ -156,6 +156,7 @@ public class HlsStreamingService implements StreamingService {
             .source(probe)
             .capabilityDeclaration(command.capabilityDeclaration())
             .videoFormatConstraint(command.videoFormatConstraint())
+            .audioFormatConstraint(command.audioFormatConstraint())
             .excludedEncodeCodecFamilies(command.excludedEncodeCodecFamilies())
             .excludedEncodeFormats(command.excludedEncodeFormats())
             .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())

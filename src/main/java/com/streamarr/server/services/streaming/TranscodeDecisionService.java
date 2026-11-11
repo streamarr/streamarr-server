@@ -179,7 +179,7 @@ public class TranscodeDecisionService {
   public Optional<TranscodeDecision> decide(@NonNull TranscodeDecisionRequest request) {
     var source = request.source();
     var declaration = request.capabilityDeclaration();
-    var sessionAudio = decideAudio(source, declaration);
+    var sessionAudio = decideAudio(request);
     var videoCopy = videoCopy(request, sessionAudio.decision());
     var copy =
         switch (videoCopy) {
@@ -838,6 +838,19 @@ public class TranscodeDecisionService {
       boolean videoCopyable, AudioDecision audio, SubtitleDecision subtitle) {
     boolean subtitleForcesTranscode = subtitle.mode() == SubtitleMode.BURN_IN;
     return TranscodeMode.of(videoCopyable && !subtitleForcesTranscode, audio.mode());
+  }
+
+  private SessionAudio decideAudio(TranscodeDecisionRequest request) {
+    var source = request.source();
+    var declaration = request.capabilityDeclaration();
+    if (request.audioFormatConstraint() == AudioFormatConstraint.ENCODE_ONLY
+        && source.audioCodec() != null) {
+      return new SessionAudio(
+          HlsAudioEncodes.forTrack(declaration, AudioTrackChannels.of(source)),
+          Optional.of(DecisionReason.AUDIO_ENDS_EARLY));
+    }
+
+    return decideAudio(source, declaration);
   }
 
   private SessionAudio decideAudio(MediaProbe source, ClientCapabilityDeclaration declaration) {

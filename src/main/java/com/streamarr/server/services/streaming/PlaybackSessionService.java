@@ -111,6 +111,14 @@ public class PlaybackSessionService implements AutoCloseable {
     // so it differs from startedFormatAttempts, which numbers each decision.
     @Builder.Default private int formatAttemptCount = 1;
     @Builder.Default private int startedFormatAttempts = 1;
+
+    @Builder.Default
+    private VideoFormatConstraint videoFormatConstraint =
+        VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE;
+
+    @Builder.Default
+    private AudioFormatConstraint audioFormatConstraint = AudioFormatConstraint.COPY_OR_ENCODE;
+
     private final Set<String> excludedEncodeCodecFamilies = new HashSet<>();
     private final Set<EncodeFormat> excludedEncodeFormats = new HashSet<>();
     private final Set<UUID> streamIds = new HashSet<>();
@@ -638,6 +646,8 @@ public class PlaybackSessionService implements AutoCloseable {
   public void onTerminalTranscodeFailure(@NonNull TerminalTranscodeFailureEvent event) {
     var failedId = event.streamSessionId();
     switch (event.failure()) {
+      case COPIED_AUDIO_RAN_SHORT ->
+          handleJobFailure(failedId, playback -> reserveAudioEncode(playback, failedId));
       case OUTPUT_MISMATCH ->
           failWithoutFormatAttempt(failedId, new PlaybackSessionFailure.OutputMismatch());
       case INVALID_SPECIFICATION ->
@@ -648,6 +658,42 @@ public class PlaybackSessionService implements AutoCloseable {
       case SEGMENT_CAP_EXCEEDED ->
           recoverFromFailedCopy(failedId, new PlaybackSessionFailure.OutputMismatch());
     }
+  }
+
+  private Optional<FormatAttemptReservation> reserveAudioEncode(
+      PlaybackSession playback, UUID failedId) {
+    if (!isCurrentAttempt(playback, failedId) || endedNormally(playback)) {
+      return Optional.empty();
+    }
+
+    if (playback.formatAttemptCount >= recoveryPolicy.maximumFormatAttempts()) {
+      return Optional.of(
+          failPlayback(playback, failedId, new PlaybackSessionFailure.AttemptsExhausted()));
+    }
+
+    var videoConstraint = playback.videoFormatConstraint;
+    if (videoConstraint == VideoFormatConstraint.DIRECT_PLAY_OR_COPY_OR_ENCODE) {
+      videoConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
+    }
+
+    if (playback.current instanceof PlaybackFormatAttempt.Ready(var session)
+        && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
+      videoConstraint = VideoFormatConstraint.ENCODE_ONLY;
+    }
+
+    playback.audioFormatConstraint = AudioFormatConstraint.ENCODE_ONLY;
+    playback.pendingAttemptCause = Optional.of(DecisionReason.AUDIO_ENDS_EARLY);
+    return Optional.of(
+        reserveNextFormatAttempt(
+            playback,
+            failedId,
+            ReservedFormatAttempt.builder()
+                .videoFormatConstraint(videoConstraint)
+                .choice(playback.choice)
+                .choiceWhenEncoding(
+                    videoConstraint == VideoFormatConstraint.ENCODE_ONLY
+                        ? playback.choice
+                        : FormatRecoveryPolicy.choiceWhenEncodingAfterACopy(playback.choice))));
   }
 
   private void failWithoutFormatAttempt(UUID failedId, PlaybackSessionFailure reason) {
@@ -882,6 +928,7 @@ public class PlaybackSessionService implements AutoCloseable {
     var childId = UUID.randomUUID();
     var next = attempt.streamId(childId).build();
     playback.choice = next.choice();
+    playback.videoFormatConstraint = next.videoFormatConstraint();
     playback.lastAccessedAt = clock.instant();
     playback.current = new PlaybackFormatAttempt.Pending(childId);
     if (next.softwareEncodeCodecFamily().isEmpty()) {
@@ -1033,7 +1080,8 @@ public class PlaybackSessionService implements AutoCloseable {
               .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
               .excludedEncodeFormats(Set.copyOf(playback.excludedEncodeFormats))
               .startPosition(playback.startPosition)
-              .audioTrackPosition(playback.audioTrackPosition);
+              .audioTrackPosition(playback.audioTrackPosition)
+              .audioFormatConstraint(playback.audioFormatConstraint);
         });
   }
 

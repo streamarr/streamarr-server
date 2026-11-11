@@ -1673,13 +1673,14 @@ final class LiveWorkerConnectionRegistry {
         VariantJob job, JobAttemptFailed failed) {
       return switch (failed.getFailure()) {
         case JOB_ATTEMPT_FAILURE_OUTPUT_MISMATCH -> Optional.of(TranscodeFailure.OUTPUT_MISMATCH);
+        case JOB_ATTEMPT_FAILURE_COPIED_AUDIO_RAN_SHORT ->
+            Optional.of(TranscodeFailure.COPIED_AUDIO_RAN_SHORT);
         case JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION ->
             Optional.of(TranscodeFailure.INVALID_SPECIFICATION);
         case JOB_ATTEMPT_FAILURE_DOLBY_VISION_CONVERSION_FAILED ->
             Optional.of(TranscodeFailure.DOLBY_VISION_CONVERSION_FAILED);
         case JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED -> segmentCapFailure(job);
-        case JOB_ATTEMPT_FAILURE_COPIED_AUDIO_RAN_SHORT,
-            JOB_ATTEMPT_FAILURE_UNSPECIFIED,
+        case JOB_ATTEMPT_FAILURE_UNSPECIFIED,
             JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE,
             JOB_ATTEMPT_FAILURE_STARTUP_FAILED,
             JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED,

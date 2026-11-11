@@ -4290,6 +4290,27 @@ class HlsStreamingServiceTest {
   @Builder
   record UnverifiedEncode(ProbedCodecFamily acceptedEncode, Set<String> verifiedFamilies) {}
 
+  // ADR 0058: only an encode can pad audio whose copy ran short beside video.
+  @ParameterizedTest
+  @CsvSource({"COPY_OR_ENCODE,AUDIO_TRANSCODE", "ENCODE_ONLY,FULL_TRANSCODE"})
+  @DisplayName(
+      "Should encode audio that it would copy when the format attempt requires an audio encode")
+  void shouldEncodeAudioThatItWouldCopyWhenTheFormatAttemptRequiresAnAudioEncode(
+      VideoFormatConstraint videoFormatConstraint, TranscodeMode expectedMode) {
+    var decision =
+        accepted(
+                service.createSession(
+                    createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                        .videoFormatConstraint(videoFormatConstraint)
+                        .audioFormatConstraint(AudioFormatConstraint.ENCODE_ONLY)
+                        .build()))
+            .getTranscodeDecision();
+
+    assertThat(decision.transcodeMode()).isEqualTo(expectedMode);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.reasons()).contains(DecisionReason.AUDIO_ENDS_EARLY);
+  }
+
   // An encode-only format attempt follows a copy that the client could not play, so it never falls
   // back to a copy, even over the viewer's limits with nothing to encode to.
   @ParameterizedTest(name = "{0}")
