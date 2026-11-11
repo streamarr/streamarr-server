@@ -112,9 +112,11 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments());
     }
 
+    // The media end is where every playlist of the stream session ends, which can lie before or
+    // after the duration that the container header states.
     if (command
         .startPosition()
-        .filter(start -> start.compareTo(probe.duration()) >= 0)
+        .filter(start -> start.compareTo(probe.mediaEnd()) >= 0)
         .isPresent()) {
       return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
     }
