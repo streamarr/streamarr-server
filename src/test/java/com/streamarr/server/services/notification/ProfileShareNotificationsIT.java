@@ -6,7 +6,6 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
-import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.notification.Notification;
@@ -16,7 +15,6 @@ import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.RequestResolution;
-import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -31,7 +29,6 @@ import com.streamarr.server.services.identity.AccountLifecycleService.TransferAc
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
 import com.streamarr.server.services.identity.ProfileSharingService;
-import com.streamarr.server.services.identity.ShareCodeCommand;
 import com.streamarr.server.services.identity.ShareRejections;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
@@ -57,7 +54,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Profile Share Notifications Integration Tests")
 class ProfileShareNotificationsIT extends AbstractIntegrationTest {
 
-  private static final String IP_ADDRESS = "203.0.113.7";
   private static final String CONNECTED_EMAIL = "ollie@example.com";
 
   @Autowired private ProfileSharingService sharing;
@@ -78,12 +74,24 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   private AuthTestSupport.TestIdentity sam;
   private AuthTestSupport.TestIdentity riverside;
   private AuthTestSupport.TestIdentity riversideAdmin;
+  private ShareSteps steps;
 
   @BeforeEach
   void setUp() {
+    steps =
+        ShareSteps.builder()
+            .sharing(sharing)
+            .auth(authTestSupport)
+            .profiles(profileRepository)
+            .managers(profileManagerRepository)
+            .shares(shareRepository)
+            .accounts(userAccountRepository)
+            .transactions(transactionTemplate)
+            .build();
     sam = track(authTestSupport.createIdentity());
     riverside = track(authTestSupport.createIdentity());
-    riversideAdmin = secondAdminOf(riverside);
+    riversideAdmin =
+        steps.promoted(track(authTestSupport.createHouseholdMemberIdentity(riverside)));
   }
 
   @AfterEach
@@ -101,7 +109,7 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should give each HouseholdAdmin of the target Household a request when a Profile is offered")
   void shouldGiveEachHouseholdAdminOfTheTargetHouseholdARequestWhenAProfileIsOffered() {
-    var offer = offer(sam, sam.profile(), riverside);
+    var offer = steps.offer(sam, sam.profile(), riverside);
 
     assertThat(notificationsAbout(offer))
         .allSatisfy(
@@ -121,9 +129,9 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
           + " Household")
   void shouldTellTheAccountThatMadeTheOfferNothingWhenItAdministersTheTargetHousehold() {
     var kai = track(authTestSupport.createIdentity());
-    var ollie = profileManagedBy("Ollie", kai, kai, riverside);
+    var ollie = steps.profileManagedBy("Ollie", kai, kai, riverside);
 
-    var offer = offer(riverside, ollie, riverside);
+    var offer = steps.offer(riverside, ollie, riverside);
 
     assertThat(notificationsAbout(offer))
         .extracting(Notification::getRecipientAccountId)
@@ -134,7 +142,7 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @DisplayName("Should give no request to a HouseholdAdmin who was promoted after the offer")
   void shouldGiveNoRequestToAHouseholdAdminWhoWasPromotedAfterTheOffer() {
     var member = track(authTestSupport.createHouseholdMemberIdentity(riverside));
-    var offer = offer(sam, sam.profile(), riverside);
+    var offer = steps.offer(sam, sam.profile(), riverside);
 
     transactionTemplate.executeWithoutResult(
         _ -> userAccountRepository.tryPromoteToHouseholdAdmin(member.account().getId()));
@@ -149,7 +157,7 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
     transactionTemplate.executeWithoutResult(
         _ -> userAccountRepository.tryDisable(riversideAdmin.account().getId()));
 
-    offer(sam, sam.profile(), riverside);
+    steps.offer(sam, sam.profile(), riverside);
 
     assertThat(notificationsOf(riversideAdmin))
         .extracting(Notification::getKind)
@@ -160,9 +168,9 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should give new requests and withdraw the older ones when an offer replaces an older offer")
   void shouldGiveNewRequestsAndWithdrawTheOlderOnesWhenAnOfferReplacesAnOlderOffer() {
-    var older = offer(sam, sam.profile(), riverside);
+    var older = steps.offer(sam, sam.profile(), riverside);
 
-    var newer = offer(sam, sam.profile(), riverside);
+    var newer = steps.offer(sam, sam.profile(), riverside);
 
     assertThat(notificationsOf(riverside))
         .extracting(Notification::getShareId)
@@ -176,8 +184,8 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
       "Should tell the offering side, except the Account that answered, when an offer is accepted")
   void shouldTellTheOfferingSideExceptTheAccountThatAnsweredWhenAnOfferIsAccepted() {
     var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
-    var ollie = profileManagedBy("Ollie", sam, sam, theo);
-    var offer = offer(sam, ollie, riverside);
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, theo);
+    var offer = steps.offer(sam, ollie, riverside);
 
     assertThat(sharing.acceptProfileShare(authTestSupport.identityOf(riverside), offer.getId()))
         .isInstanceOf(Outcome.Accepted.class);
@@ -197,8 +205,8 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
       "Should tell the Account that made the offer when a ServerAdmin offered for a Profile")
   void shouldTellTheAccountThatMadeTheOfferWhenAServerAdminOfferedForAProfile() {
     var admin = track(authTestSupport.createAdminIdentity());
-    var ollie = profileManagedBy("Ollie", sam, sam);
-    var offer = offer(admin, ollie, riverside);
+    var ollie = steps.profileManagedBy("Ollie", sam, sam);
+    var offer = steps.offer(admin, ollie, riverside);
 
     sharing.rejectProfileShare(authTestSupport.identityOf(riverside), offer.getId());
 
@@ -214,7 +222,7 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should tell nobody anything new when the offer is canceled")
   void shouldTellNobodyAnythingNewWhenTheOfferIsCanceled() {
-    var offer = offer(sam, sam.profile(), riverside);
+    var offer = steps.offer(sam, sam.profile(), riverside);
 
     sharing.cancelProfileShare(authTestSupport.identityOf(sam), offer.getId());
 
@@ -227,8 +235,8 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should tell nobody anything new when the expiry sweep stores an offer's expiry")
   void shouldTellNobodyAnythingNewWhenTheExpirySweepStoresAnOffersExpiry() {
-    var offer = offer(sam, sam.profile(), riverside);
-    lapse(offer);
+    var offer = steps.offer(sam, sam.profile(), riverside);
+    steps.lapse(offer);
 
     expirySweeper.sweep();
 
@@ -242,9 +250,9 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should make no Notification when the acceptance that would make it rolls back")
   void shouldMakeNoNotificationWhenTheAcceptanceThatWouldMakeItRollsBack() {
-    var ollie = profileManagedBy("Ollie", sam, sam);
-    profileManagedBy("Ollie", riverside, riverside);
-    var offer = offer(sam, ollie, riverside);
+    var ollie = steps.profileManagedBy("Ollie", sam, sam);
+    steps.profileManagedBy("Ollie", riverside, riverside);
+    var offer = steps.offer(sam, ollie, riverside);
 
     var outcome = sharing.acceptProfileShare(authTestSupport.identityOf(riverside), offer.getId());
 
@@ -256,7 +264,7 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should tell the offering side when a HouseholdAdmin of the Household ends the share")
   void shouldTellTheOfferingSideWhenAHouseholdAdminOfTheHouseholdEndsTheShare() {
-    var share = accepted(offer(sam, sam.profile(), riverside));
+    var share = steps.accept(riverside, steps.offer(sam, sam.profile(), riverside));
 
     sharing.endProfileShare(authTestSupport.identityOf(riversideAdmin), share.getId());
 
@@ -275,7 +283,7 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should tell the Household's side when the Profile's own Account ends the share")
   void shouldTellTheHouseholdsSideWhenTheProfilesOwnAccountEndsTheShare() {
-    var share = accepted(offer(sam, sam.profile(), riverside));
+    var share = steps.accept(riverside, steps.offer(sam, sam.profile(), riverside));
 
     sharing.endProfileShare(authTestSupport.identityOf(sam), share.getId());
 
@@ -292,8 +300,8 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should end the share for the Household's side when its ender also manages the Profile")
   void shouldEndTheShareForTheHouseholdsSideWhenItsEnderAlsoManagesTheProfile() {
-    var ollie = profileManagedBy("Ollie", sam, sam, riversideAdmin);
-    var share = accepted(offer(sam, ollie, riverside));
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, riversideAdmin);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
 
     sharing.endProfileShare(authTestSupport.identityOf(riversideAdmin), share.getId());
 
@@ -311,8 +319,8 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
       "Should tell both sides once each, except the ServerAdmin, when a ServerAdmin ends the share")
   void shouldTellBothSidesOnceEachExceptTheServerAdminWhenAServerAdminEndsTheShare() {
     var admin = track(authTestSupport.createAdminIdentity());
-    var ollie = profileManagedBy("Ollie", sam, sam, riversideAdmin, admin);
-    var share = accepted(offer(sam, ollie, riverside));
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, riversideAdmin, admin);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
 
     var outcome =
         sharing.administrativelyEndProfileShare(
@@ -331,8 +339,8 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should keep the answer and the end side by side when an accepted share later ends")
   void shouldKeepTheAnswerAndTheEndSideBySideWhenAnAcceptedShareLaterEnds() {
-    var ollie = profileManagedBy("Ollie", sam, sam);
-    var share = accepted(offer(sam, ollie, riverside));
+    var ollie = steps.profileManagedBy("Ollie", sam, sam);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
 
     sharing.endProfileShare(authTestSupport.identityOf(riverside), share.getId());
 
@@ -379,8 +387,8 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should tell nobody anything new when a rejection comes after the offer's time ran out")
   void shouldTellNobodyAnythingNewWhenARejectionComesAfterTheOffersTimeRanOut() {
-    var offer = offer(sam, sam.profile(), riverside);
-    lapse(offer);
+    var offer = steps.offer(sam, sam.profile(), riverside);
+    steps.lapse(offer);
 
     sharing.rejectProfileShare(authTestSupport.identityOf(riverside), offer.getId());
 
@@ -394,9 +402,9 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
           + " an Account")
   void shouldTellBothSidesOfEachVisitExceptTheNewAccountWhenAProfileIsConnectedToAnAccount() {
     var kai = track(authTestSupport.createIdentity());
-    var ollie = profileManagedBy("Ollie", sam, sam);
-    var visit = accepted(offer(sam, ollie, riverside));
-    var waiting = offer(sam, ollie, kai);
+    var ollie = steps.profileManagedBy("Ollie", sam, sam);
+    var visit = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+    var waiting = steps.offer(sam, ollie, kai);
 
     var connected = connect(ollie, riverside);
 
@@ -419,8 +427,8 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should give each HouseholdAdmin a request when connecting a Profile offers it to them again")
   void shouldGiveEachHouseholdAdminARequestWhenConnectingAProfileOffersItToThemAgain() {
-    var ollie = profileManagedBy("Ollie", sam, sam);
-    accepted(offer(sam, ollie, riverside));
+    var ollie = steps.profileManagedBy("Ollie", sam, sam);
+    steps.accept(riverside, steps.offer(sam, ollie, riverside));
 
     connect(ollie, riverside);
 
@@ -443,31 +451,6 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
         .findByProfileIdAndHouseholdIdAndStatus(
             profile.getId(), household.household().getId(), ProfileShareStatus.ACTIVE)
         .orElseThrow();
-  }
-
-  private ProfileHouseholdShare offer(
-      AuthTestSupport.TestIdentity offerer, Profile profile, AuthTestSupport.TestIdentity target) {
-    var code = authTestSupport.shareCodeFor(target);
-    return sharing
-        .offerProfileShare(
-            authTestSupport.identityOf(offerer),
-            profile.getId(),
-            ShareCodeCommand.builder().code(code).ipAddress(IP_ADDRESS).build())
-        .fold(
-            share -> share,
-            rejection -> {
-              throw new IllegalStateException("The offer was refused: " + rejection);
-            });
-  }
-
-  private ProfileHouseholdShare accepted(ProfileHouseholdShare offer) {
-    return sharing
-        .acceptProfileShare(authTestSupport.identityOf(riverside), offer.getId())
-        .fold(
-            share -> share,
-            rejection -> {
-              throw new IllegalStateException("The offer was not accepted: " + rejection);
-            });
   }
 
   /**
@@ -500,19 +483,10 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
                 .displayName("Ollie")
                 .password("a strong passphrase")
                 .deviceName("web")
-                .ipAddress(IP_ADDRESS)
+                .ipAddress(ShareSteps.IP_ADDRESS)
                 .build())
         .account()
         .getId();
-  }
-
-  private void lapse(ProfileHouseholdShare offer) {
-    transactionTemplate.executeWithoutResult(
-        _ -> {
-          var lapsed = shareRepository.findById(offer.getId()).orElseThrow();
-          lapsed.setExpiresAt(Instant.now().minusSeconds(1));
-          shareRepository.saveAndFlush(lapsed);
-        });
   }
 
   private ProfileHouseholdShare stored(ProfileHouseholdShare share) {
@@ -549,50 +523,6 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
     return notificationRepository.findAll().stream()
         .filter(notification -> notification.getRecipientAccountId().equals(recipientAccountId))
         .toList();
-  }
-
-  /** A Profile of the owner's Household, available there, with the given direct managers. */
-  private Profile profileManagedBy(
-      String name, AuthTestSupport.TestIdentity owner, AuthTestSupport.TestIdentity... managers) {
-    return transactionTemplate.execute(
-        _ -> {
-          var profile =
-              profileRepository.saveAndFlush(
-                  ProfileFixture.defaultProfileBuilder()
-                      .name(name)
-                      .householdId(owner.household().getId())
-                      .build());
-          for (var manager : managers) {
-            profileManagerRepository.saveAndFlush(
-                ProfileManager.builder()
-                    .accountId(manager.account().getId())
-                    .profileId(profile.getId())
-                    .build());
-          }
-
-          shareRepository.saveAndFlush(
-              ProfileHouseholdShare.builder()
-                  .profileId(profile.getId())
-                  .householdId(owner.household().getId())
-                  .status(ProfileShareStatus.ACTIVE)
-                  .build());
-          return profile;
-        });
-  }
-
-  private AuthTestSupport.TestIdentity secondAdminOf(AuthTestSupport.TestIdentity household) {
-    var member = track(authTestSupport.createHouseholdMemberIdentity(household));
-    transactionTemplate.executeWithoutResult(
-        _ -> userAccountRepository.tryPromoteToHouseholdAdmin(member.account().getId()));
-    var promoted = userAccountRepository.findById(member.account().getId()).orElseThrow();
-    assertThat(promoted.getHouseholdRole()).isEqualTo(HouseholdRole.ADMIN);
-    return AuthTestSupport.TestIdentity.builder()
-        .account(promoted)
-        .household(member.household())
-        .profile(member.profile())
-        .session(member.session())
-        .rawRefreshToken(member.rawRefreshToken())
-        .build();
   }
 
   private AuthTestSupport.TestIdentity track(AuthTestSupport.TestIdentity identity) {
