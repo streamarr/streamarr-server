@@ -135,7 +135,12 @@ public record Keyset<V>(@NonNull Field<V> sortValue, @NonNull Field<UUID> itemId
         sort(itemId, ascending));
   }
 
-  private Condition beyond(Seek seek) {
+  /**
+   * The rows the seek reads beyond its position, in its order and direction, unordered and
+   * unlimited: the condition {@link #rowsBeyond} reads with, for a write that must touch the same
+   * rows. No position admits every row.
+   */
+  public Condition beyond(Seek seek) {
     if (seek.position().isEmpty()) {
       return noCondition();
     }
