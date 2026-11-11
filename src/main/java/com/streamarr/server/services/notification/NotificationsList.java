@@ -1,7 +1,7 @@
 package com.streamarr.server.services.notification;
 
 import com.streamarr.server.domain.notification.Notification;
-import com.streamarr.server.domain.notification.ShareNotification;
+import com.streamarr.server.domain.notification.SubjectNotification;
 import com.streamarr.server.domain.pagination.ListOrder;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.Row;
@@ -27,13 +27,13 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-class NotificationsList implements PagedList<ShareNotification, UUID> {
+class NotificationsList implements PagedList<SubjectNotification, UUID> {
 
   static final ListOrder NEWEST_FIRST =
       ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.DESC).build();
 
   private final NotificationRepository notificationRepository;
-  private final ShareNotifications shareNotifications;
+  private final NotificationReads notificationReads;
 
   @Override
   public ListOrder order(UUID recipientAccountId) {
@@ -41,8 +41,8 @@ class NotificationsList implements PagedList<ShareNotification, UUID> {
   }
 
   @Override
-  public List<Row<ShareNotification>> rowsBeyond(UUID recipientAccountId, Seek seek) {
-    var shown = new ArrayList<Row<ShareNotification>>();
+  public List<Row<SubjectNotification>> rowsBeyond(UUID recipientAccountId, Seek seek) {
+    var shown = new ArrayList<Row<SubjectNotification>>();
     var read = seek;
     while (true) {
       var rows = notificationRepository.rowsOfRecipient(recipientAccountId, read);
@@ -56,10 +56,10 @@ class NotificationsList implements PagedList<ShareNotification, UUID> {
   }
 
   /** The rows that the guard shows their recipients, in the order read. */
-  List<Row<ShareNotification>> shownOf(List<Row<Notification>> rows) {
+  List<Row<SubjectNotification>> shownOf(List<Row<Notification>> rows) {
     Map<UUID, Position> positions =
         rows.stream().collect(Collectors.toMap(row -> row.item().getId(), Row::position));
-    return shareNotifications.shown(rows.stream().map(Row::item).toList()).stream()
+    return notificationReads.shown(rows.stream().map(Row::item).toList()).stream()
         .map(shown -> new Row<>(shown, positions.get(shown.notification().getId())))
         .toList();
   }

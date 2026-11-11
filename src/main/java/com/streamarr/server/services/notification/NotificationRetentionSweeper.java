@@ -16,7 +16,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Retention (ADR 0063 §Retention): deletes the history whose latest event is older than the
  * retention period, the news that its recipient read and the requests that resolved, and the unread
  * news that the guard hides from its recipient after the same period. Unread news that the guard
- * shows, waiting requests, and news whose guard decision fails stay.
+ * shows, a disabled Account's unread news, waiting requests, and news whose guard decision fails
+ * stay.
  */
 @Slf4j
 @Component
@@ -24,7 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class NotificationRetentionSweeper {
 
   private final NotificationRepository notificationRepository;
-  private final ProfileShareGuard guard;
+  private final NotificationReads notificationReads;
   private final ServerSettingsService serverSettingsService;
   private final TransactionTemplate transactionTemplate;
   private final Clock clock;
@@ -42,7 +43,10 @@ class NotificationRetentionSweeper {
     var cutoff = now.minus(serverSettingsService.notificationRetention());
     transactionTemplate.executeWithoutResult(_ -> deleteHistory(cutoff, now));
     var hidden =
-        guard.visibilities(notificationRepository.findUnreadNewsBefore(cutoff)).entrySet().stream()
+        notificationReads
+            .visibilities(notificationRepository.findUnreadNewsBefore(cutoff))
+            .entrySet()
+            .stream()
             .filter(decided -> decided.getValue() == NotificationVisibility.HIDDEN)
             .map(Map.Entry::getKey)
             .toList();

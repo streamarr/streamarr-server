@@ -15,6 +15,7 @@ import com.streamarr.server.domain.notification.GuardedNotification;
 import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.NotificationSubject;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.domain.notification.UnreadNews;
@@ -31,6 +32,7 @@ import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -156,13 +158,10 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
 
   private List<Notification> unreadOf(UUID recipientAccountId, Condition among, Instant now) {
     var query =
-        dsl.select(NOTIFICATION.asterisk())
-            .from(NOTIFICATION)
-            .join(PROFILE_HOUSEHOLD_SHARE)
-            .on(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
+        dsl.selectFrom(NOTIFICATION)
             .where(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
             .and(NOTIFICATION.READ_AT.isNull())
-            .and(NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).or(waitingAt(now)))
+            .and(NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).or(requestWaitsAt(now)))
             .and(among);
     return JooqQueryHelper.nativeQuery(entityManager, query, Notification.class);
   }
@@ -242,16 +241,10 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
 
   @Override
   public int deleteHistoryBefore(Instant cutoff, Instant now) {
-    var stillWaiting =
-        DSL.exists(
-            DSL.selectOne()
-                .from(PROFILE_HOUSEHOLD_SHARE)
-                .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
-                .and(waitingAt(now)));
     var readNews =
         NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).and(NOTIFICATION.READ_AT.isNotNull());
     var resolvedRequest =
-        NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)).andNot(stillWaiting);
+        NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)).andNot(requestWaitsAt(now));
     return dsl.deleteFrom(NOTIFICATION)
         .where(NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)))
         .and(readNews.or(resolvedRequest))
@@ -259,17 +252,11 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   }
 
   @Override
-  public List<GuardedNotification> findUnreadNewsBefore(Instant cutoff) {
-    return dsl.select(
-            NOTIFICATION.ID,
-            NOTIFICATION.RECIPIENT_ACCOUNT_ID,
-            PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
-            PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
-        .from(NOTIFICATION)
-        .join(PROFILE_HOUSEHOLD_SHARE)
-        .on(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
-        .where(unreadNewsBefore(cutoff))
-        .fetch(Records.mapping(GuardedNotification::new));
+  public List<Notification> findUnreadNewsBefore(Instant cutoff) {
+    return JooqQueryHelper.nativeQuery(
+        entityManager,
+        dsl.selectFrom(NOTIFICATION).where(unreadNewsBefore(cutoff)),
+        Notification.class);
   }
 
   @Override
@@ -278,6 +265,38 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
         .where(NOTIFICATION.ID.in(notificationIds))
         .and(unreadNewsBefore(cutoff))
         .execute();
+  }
+
+  /** A request that waits at the instant: its subject still waits, as its kind's subject says. */
+  private static Condition requestWaitsAt(Instant now) {
+    return NOTIFICATION
+        .FORM
+        .eq(inline(NotificationForm.REQUEST))
+        .and(
+            DSL.or(
+                Arrays.stream(NotificationSubject.values())
+                    .map(subject -> kindAbout(subject).and(subjectWaitsAt(subject, now)))
+                    .toList()));
+  }
+
+  private static Condition subjectWaitsAt(NotificationSubject subject, Instant now) {
+    return switch (subject) {
+      case PROFILE_SHARE ->
+          DSL.exists(
+              DSL.selectOne()
+                  .from(PROFILE_HOUSEHOLD_SHARE)
+                  .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
+                  .and(waitingAt(now)));
+    };
+  }
+
+  private static Condition kindAbout(NotificationSubject subject) {
+    return NOTIFICATION.KIND.in(
+        Arrays.stream(NotificationKind.values())
+            .filter(kind -> kind.getSubject() == subject)
+            .map(NotificationRepositoryCustomImpl::storedKind)
+            .map(DSL::inline)
+            .toList());
   }
 
   // A pending offer whose time ran out no longer waits, before the expiry sweep stores it.

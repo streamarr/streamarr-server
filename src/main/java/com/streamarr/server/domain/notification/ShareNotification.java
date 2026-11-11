@@ -11,10 +11,17 @@ import lombok.NonNull;
  * once it resolves, and its resolution comes from the share, never from the Notification.
  */
 public record ShareNotification(
-    @NonNull Notification notification, @NonNull ProfileHouseholdShare share) {
+    @NonNull Notification notification, @NonNull ProfileHouseholdShare share)
+    implements SubjectNotification {
 
+  @Override
   public boolean unreadAt(Instant now) {
     return notification.getReadAt().isEmpty() && resolutionAt(now).isEmpty();
+  }
+
+  @Override
+  public ShareNotification withNotification(Notification stored) {
+    return new ShareNotification(stored, share);
   }
 
   /** How the request resolved at the instant; empty while it waits, and always for news. */

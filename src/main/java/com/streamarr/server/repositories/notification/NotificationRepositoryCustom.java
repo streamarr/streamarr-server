@@ -92,7 +92,7 @@ public interface NotificationRepositoryCustom {
    * The unread news whose latest event is before the cutoff, except a disabled Account's: nothing
    * changes for a disabled Account's Notifications until it is enabled again.
    */
-  List<GuardedNotification> findUnreadNewsBefore(Instant cutoff);
+  List<Notification> findUnreadNewsBefore(Instant cutoff);
 
   /**
    * Deletes the given Notifications that are still unread news with a latest event before the

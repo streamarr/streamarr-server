@@ -1,6 +1,6 @@
 package com.streamarr.server.services.notification;
 
-import com.streamarr.server.domain.notification.ShareNotification;
+import com.streamarr.server.domain.notification.SubjectNotification;
 import com.streamarr.server.domain.pagination.PaginationDirection;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.Seek;
@@ -36,7 +36,7 @@ public class NotificationService {
 
   private final AuthorizationService authorizationService;
   private final NotificationsList notificationsList;
-  private final ShareNotifications shareNotifications;
+  private final NotificationReads notificationReads;
   private final NotificationRepository notificationRepository;
   private final Clock clock;
   private final ApplicationEventPublisher events;
@@ -56,7 +56,7 @@ public class NotificationService {
 
   /** The Account's Notifications, newest latest event first. */
   @Transactional(readOnly = true)
-  public ListPage<ShareNotification> notifications(
+  public ListPage<SubjectNotification> notifications(
       @NonNull AuthenticatedIdentity identity, @NonNull PageRequest request) {
     authorizationService.requireAllowed(identity, new Intent.ViewNotifications());
     return Pager.page(notificationsList, identity.accountId(), request);
@@ -81,7 +81,7 @@ public class NotificationService {
                 notification -> notification.getRecipientAccountId().equals(identity.accountId()))
             .flatMap(
                 notification ->
-                    shareNotifications.shown(List.of(notification)).stream().findFirst());
+                    notificationReads.shown(List.of(notification)).stream().findFirst());
     if (shown.isEmpty()) {
       return Outcome.rejected(new MarkNotificationReadRejection.NotFound());
     }
@@ -90,14 +90,14 @@ public class NotificationService {
       publishMarked(identity.accountId(), List.of(notificationId));
     }
 
-    var share = shown.orElseThrow().share();
+    var read = shown.orElseThrow();
     return notificationRepository
         .findByIdAndReloadFromDatabase(notificationId)
         .<Outcome<NotificationRead, MarkNotificationReadRejection>>map(
             marked ->
                 Outcome.accepted(
                     new NotificationRead(
-                        new ShareNotification(marked, share), unreadCountOf(identity.accountId()))))
+                        read.withNotification(marked), unreadCountOf(identity.accountId()))))
         .orElseGet(() -> Outcome.rejected(new MarkNotificationReadRejection.NotFound()));
   }
 
@@ -124,7 +124,7 @@ public class NotificationService {
             .includingPosition(true)
             .build();
     var shown =
-        shareNotifications.shown(
+        notificationReads.shown(
             notificationRepository.findUnreadOfRecipientThrough(accountId, atOrBelow, now));
     var marked =
         notificationRepository.markReadThrough(
@@ -167,7 +167,7 @@ public class NotificationService {
   }
 
   private int unreadCountOf(UUID accountId) {
-    return shareNotifications
+    return notificationReads
         .shown(notificationRepository.findUnreadOfRecipient(accountId, clock.instant()))
         .size();
   }

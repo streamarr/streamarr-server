@@ -5,7 +5,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
-import com.streamarr.server.domain.notification.ShareNotification;
+import com.streamarr.server.domain.notification.SubjectNotification;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -36,7 +36,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Tag("IntegrationTest")
 @DisplayName("Notifications paging")
 class NotificationsPagedListIT
-    extends PagedListContract<ShareNotification, NotificationsPagedListIT.Scope> {
+    extends PagedListContract<SubjectNotification, NotificationsPagedListIT.Scope> {
 
   private static final Instant NEWEST = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
@@ -91,12 +91,12 @@ class NotificationsPagedListIT
   }
 
   @Override
-  protected ListPage<ShareNotification> page(Scope scope, PageRequest request) {
+  protected ListPage<SubjectNotification> page(Scope scope, PageRequest request) {
     return notificationService.notifications(auth.identityOf(scope.riverside()), request);
   }
 
   @Override
-  protected UUID idOf(ShareNotification item) {
+  protected UUID idOf(SubjectNotification item) {
     return item.notification().getId();
   }
 

@@ -12,11 +12,12 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum NotificationKind {
   /** A Profile is offered to a Household; its subject is the offer. */
-  PROFILE_SHARE_OFFERED(NotificationForm.REQUEST),
+  PROFILE_SHARE_OFFERED(NotificationForm.REQUEST, NotificationSubject.PROFILE_SHARE),
   /** A HouseholdAdmin or a ServerAdmin accepted or rejected an offer. */
-  PROFILE_SHARE_ANSWERED(NotificationForm.NEWS),
+  PROFILE_SHARE_ANSWERED(NotificationForm.NEWS, NotificationSubject.PROFILE_SHARE),
   /** An active share ended. */
-  PROFILE_SHARE_ENDED(NotificationForm.NEWS);
+  PROFILE_SHARE_ENDED(NotificationForm.NEWS, NotificationSubject.PROFILE_SHARE);
 
   private final NotificationForm form;
+  private final NotificationSubject subject;
 }
