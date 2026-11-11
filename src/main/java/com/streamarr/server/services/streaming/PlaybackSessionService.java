@@ -716,49 +716,50 @@ public class PlaybackSessionService implements AutoCloseable {
       return Optional.empty();
     }
 
-    var failed = failedAttempt(playback, fixedFailure);
+    return Optional.of(
+        reserveAfterFailedAttempt(playback, failedId, failedAttempt(playback, fixedFailure)));
+  }
+
+  private FormatAttemptReservation reserveAfterFailedAttempt(
+      PlaybackSession playback, UUID failedId, FailedFormatAttempt failed) {
     if (failed.output() instanceof FailedFormatAttempt.Encode(var codecFamily, var format)) {
       excludeFailedEncode(playback, codecFamily, format);
     }
 
     return switch (recoveryPolicy.after(playback.choice, failed, playback.formatAttemptCount)) {
-      case NextFormatAttempt.Fail(var reason) ->
-          Optional.of(failPlayback(playback, failedId, reason));
+      case NextFormatAttempt.Fail(var reason) -> failPlayback(playback, failedId, reason);
       case NextFormatAttempt.Encode(var choice) -> {
         playback.pendingAttemptCause = Optional.of(causeOf(failed));
-        yield Optional.of(
-            reserveNextFormatAttempt(
-                playback,
-                failedId,
-                ReservedFormatAttempt.builder()
-                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
-                    .choice(choice)
-                    .choiceWhenEncoding(choice)));
+        yield reserveNextFormatAttempt(
+            playback,
+            failedId,
+            ReservedFormatAttempt.builder()
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .choice(choice)
+                .choiceWhenEncoding(choice));
       }
       case NextFormatAttempt.CopyOrEncode(var whenCopying, var whenEncoding) -> {
         playback.pendingAttemptCause = Optional.of(causeOf(failed));
-        yield Optional.of(
-            reserveNextFormatAttempt(
-                playback,
-                failedId,
-                ReservedFormatAttempt.builder()
-                    .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
-                    .choice(whenCopying)
-                    .choiceWhenEncoding(whenEncoding)));
+        yield reserveNextFormatAttempt(
+            playback,
+            failedId,
+            ReservedFormatAttempt.builder()
+                .videoFormatConstraint(VideoFormatConstraint.COPY_OR_ENCODE)
+                .choice(whenCopying)
+                .choiceWhenEncoding(whenEncoding));
       }
       case NextFormatAttempt.CopyWithDolbyVisionStrippedOrEncode(
               var whenCopying,
               var whenEncoding) -> {
         playback.pendingAttemptCause = Optional.of(DecisionReason.DOLBY_VISION_COPY_FAILED);
-        yield Optional.of(
-            reserveNextFormatAttempt(
-                playback,
-                failedId,
-                ReservedFormatAttempt.builder()
-                    .videoFormatConstraint(
-                        VideoFormatConstraint.COPY_WITH_DOLBY_VISION_STRIPPED_OR_ENCODE)
-                    .choice(whenCopying)
-                    .choiceWhenEncoding(whenEncoding)));
+        yield reserveNextFormatAttempt(
+            playback,
+            failedId,
+            ReservedFormatAttempt.builder()
+                .videoFormatConstraint(
+                    VideoFormatConstraint.COPY_WITH_DOLBY_VISION_STRIPPED_OR_ENCODE)
+                .choice(whenCopying)
+                .choiceWhenEncoding(whenEncoding));
       }
     };
   }
