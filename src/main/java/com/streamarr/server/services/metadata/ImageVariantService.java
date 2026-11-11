@@ -212,8 +212,12 @@ public class ImageVariantService {
   }
 
   private static BufferedImage blurHashInput(BufferedImage smallVariant) {
-    if (smallVariant.getWidth() <= BLUR_HASH_MAX_INPUT_EDGE
-        && smallVariant.getHeight() <= BLUR_HASH_MAX_INPUT_EDGE) {
+    var fitsWithinInput =
+        smallVariant.getWidth() <= BLUR_HASH_MAX_INPUT_EDGE
+            && smallVariant.getHeight() <= BLUR_HASH_MAX_INPUT_EDGE;
+    // Thumbnailator's progressive resizer draws nothing when it narrows an image that is one pixel
+    // high, so fitting it would hash as black.
+    if (fitsWithinInput || smallVariant.getHeight() == 1) {
       return smallVariant;
     }
 
