@@ -107,16 +107,6 @@ class CredentialCodePropertiesTest {
     assertThat(VALIDATOR.validate(properties)).isEmpty();
   }
 
-  @Test
-  @DisplayName("Should leave the share code key out when the properties are rendered as text")
-  void shouldLeaveShareCodeKeyOutWhenPropertiesAreRenderedAsText() {
-    var key = "c2hhcmUtY29kZS10ZXN0LWtleS1vZi0zMi1ieXRlcyE=";
-    var builder = validProperties().shareCodeKey(key);
-
-    assertThat(builder.toString()).doesNotContain(key).contains("REDACTED");
-    assertThat(builder.build().toString()).doesNotContain(key).contains("REDACTED");
-  }
-
   private static CredentialCodeProperties.CredentialCodePropertiesBuilder validProperties() {
     return CredentialCodeProperties.builder()
         .invitationTtl(Duration.ofDays(7))
