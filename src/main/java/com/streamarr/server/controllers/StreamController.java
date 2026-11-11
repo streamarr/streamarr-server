@@ -102,6 +102,10 @@ public class StreamController {
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   public ResponseEntity<Resource> getInitSegment(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
@@ -125,6 +129,10 @@ public class StreamController {
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   public ResponseEntity<Resource> getSegment(
       @PathVariable UUID sessionId, @PathVariable String segmentName) {
@@ -171,6 +179,10 @@ public class StreamController {
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   public ResponseEntity<Resource> getVariantInitSegment(
       @PathVariable UUID sessionId, @PathVariable String variantLabel) {
@@ -204,6 +216,10 @@ public class StreamController {
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
   public ResponseEntity<Resource> getVariantSegment(
       @PathVariable UUID sessionId,
       @PathVariable String variantLabel,
