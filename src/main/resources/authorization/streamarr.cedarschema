@@ -340,6 +340,11 @@ namespace Streamarr {
     resource: Profile,
     context: {},
   };
+  action viewReceivedManagerInvitations in managerAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
   action acceptManagerInvitation in managerAdministration appliesTo {
     principal: Account,
     resource: ManagerInvitation,

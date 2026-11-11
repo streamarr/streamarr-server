@@ -115,6 +115,11 @@ enum Action {
       Authorizes.READ,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.PROFILE_MANAGEMENT),
+  VIEW_RECEIVED_MANAGER_INVITATIONS(
+      "viewReceivedManagerInvitations",
+      ResourceKind.ACCOUNT,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   VIEW_PROFILE_SHARE_HOUSEHOLDS(
       "viewProfileShareHouseholds",
       ResourceKind.PROFILE,
