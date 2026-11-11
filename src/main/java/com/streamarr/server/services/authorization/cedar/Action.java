@@ -301,6 +301,12 @@ enum Action {
       Authorizes.READ,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD),
+  WITHDRAW_SHARE_CODE(
+      "withdrawShareCode",
+      ResourceKind.HOUSEHOLD,
+      Authorizes.WRITE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.LIVE_PRINCIPAL_HOUSEHOLD),
   INVITE_PROFILE_MANAGER(
       "inviteProfileManager",
       ResourceKind.PROFILE,

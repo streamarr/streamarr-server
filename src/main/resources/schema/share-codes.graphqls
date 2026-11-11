@@ -34,6 +34,16 @@ type ShareCode {
     issuedByDisplayName: String
 }
 
+type ShareCodeConnection {
+    edges: [ShareCodeEdge!]!
+    pageInfo: PageInfo!
+}
+
+type ShareCodeEdge {
+    node: ShareCode!
+    cursor: String!
+}
+
 "The code appears here once and never again."
 type IssuedShareCode {
     shareCode: ShareCode!
@@ -51,3 +61,14 @@ type IssueShareCodePayload {
 }
 
 union IssueShareCodeError = HouseholdNotFoundError
+
+input WithdrawShareCodeInput {
+    shareCodeId: ID!
+}
+
+type WithdrawShareCodePayload {
+    shareCode: ShareCode
+    userErrors: [WithdrawShareCodeError!]!
+}
+
+union WithdrawShareCodeError = ShareCodeNotFoundError | ShareCodeNotLiveError

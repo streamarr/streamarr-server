@@ -39,6 +39,24 @@ class ShareErrorsTest {
   }
 
   @Test
+  @DisplayName("Should name the share code input when withdrawing a share code fails")
+  void shouldNameShareCodeInputWhenWithdrawingShareCodeFails() {
+    assertSoftly(
+        softly -> {
+          softly
+              .assertThat(
+                  ShareErrors.toWithdrawShareCodeError(new ShareCodeRejections.ShareCodeNotFound()))
+              .isEqualTo(new ShareCodeNotFoundError("No such share code.", List.of("shareCodeId")));
+          softly
+              .assertThat(
+                  ShareErrors.toWithdrawShareCodeError(new ShareCodeRejections.ShareCodeNotLive()))
+              .isInstanceOf(ShareCodeNotLiveError.class)
+              .extracting(error -> ((ShareCodeNotLiveError) error).inputPath())
+              .isEqualTo(List.of("shareCodeId"));
+        });
+  }
+
+  @Test
   @DisplayName("Should map every acceptance rejection when acceptance fails")
   void shouldMapEveryAcceptanceRejectionWhenAcceptanceFails() {
     assertSoftly(

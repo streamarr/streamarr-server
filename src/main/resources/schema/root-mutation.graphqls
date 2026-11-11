@@ -70,6 +70,12 @@ type Mutation {
     or reject it. Everyone else gets HouseholdNotFoundError, and so does a device-bound session.
     """
     issueShareCode(input: IssueShareCodeInput!): IssueShareCodePayload
+    """
+    Withdraw a live share code, so that no offer can present it. Any HouseholdAdmin of its
+    Household, or a ServerAdmin, may withdraw any of the Household's codes, whoever issued it. A
+    code that no longer works gets ShareCodeNotLiveError. Everyone else gets ShareCodeNotFoundError.
+    """
+    withdrawShareCode(input: WithdrawShareCodeInput!): WithdrawShareCodePayload
     inviteProfileManager(input: InviteProfileManagerInput!): InviteProfileManagerPayload
     cancelManagerInvitation(input: CancelManagerInvitationInput!): CancelManagerInvitationPayload
     acceptManagerInvitation(input: AcceptManagerInvitationInput!): AcceptManagerInvitationPayload

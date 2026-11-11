@@ -1,7 +1,10 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.ShareCode;
+import com.streamarr.server.domain.auth.ShareCodeFilter;
 import com.streamarr.server.domain.auth.ShareCodeStatus;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.auth.ShareCodeRepository;
 import java.time.Instant;
 import java.util.Arrays;
@@ -37,6 +40,19 @@ public class FakeShareCodeRepository extends FakeJpaRepository<ShareCode>
   @Override
   public boolean tryInvalidate(UUID shareCodeId, Instant now) {
     return endLive(shareCodeId, ShareCodeStatus.INVALIDATED, now);
+  }
+
+  @Override
+  public List<Row<ShareCode>> rowsInHousehold(ShareCodeFilter filter, Seek seek) {
+    return InMemoryKeyset.byCreationTime(
+        database.values().stream()
+            .filter(shareCode -> filter.householdId().equals(shareCode.getHouseholdId()))
+            .filter(
+                shareCode ->
+                    filter.statuses().isEmpty()
+                        || filter.statuses().contains(shareCode.statusAt(filter.at())))
+            .toList(),
+        seek);
   }
 
   @Override

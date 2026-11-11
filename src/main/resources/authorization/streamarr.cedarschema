@@ -314,6 +314,11 @@ namespace Streamarr {
     resource: Household,
     context: {},
   };
+  action withdrawShareCode in shareAdministration appliesTo {
+    principal: Account,
+    resource: Household,
+    context: {},
+  };
   action managerAdministration;
   action inviteProfileManager in managerAdministration appliesTo {
     principal: Account,
