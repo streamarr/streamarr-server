@@ -52,6 +52,17 @@ class SharingAndInvitationSettingsIT extends AbstractIntegrationTest {
             .outOfRangeError("LifetimeOutOfRangeError")
             .outOfRangeMessage("Choose from 1 to 720 hours.")
             .stored(ServerSettingsRecord::getShareCodeLifetimeHours)
+            .build(),
+        Setting.builder()
+            .name("InvitationLifetime")
+            .value("hours")
+            .defaultValue(168)
+            .minimum(1)
+            .maximum(720)
+            .changedTo(48)
+            .outOfRangeError("LifetimeOutOfRangeError")
+            .outOfRangeMessage("Choose from 1 to 720 hours.")
+            .stored(ServerSettingsRecord::getInvitationLifetimeHours)
             .build());
   }
 

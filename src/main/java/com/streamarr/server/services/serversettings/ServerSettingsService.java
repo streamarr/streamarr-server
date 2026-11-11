@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.EncoderPresetChoice;
 import com.streamarr.server.exceptions.ServerSettingsMissingException;
 import com.streamarr.server.repositories.ServerSettingsRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.InvitationLifetime;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.Outcome;
@@ -17,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-public class ServerSettingsService {
+public class ServerSettingsService implements InvitationLifetime {
 
   private final AuthorizationService authorizationService;
   private final ServerSettingsRepository serverSettingsRepository;
@@ -142,6 +143,40 @@ public class ServerSettingsService {
    */
   public Duration shareCodeLifetime() {
     return shareCodeLifetimeOf(storedSettings()).duration();
+  }
+
+  public LifetimeSetting readInvitationLifetimeSetting(@NonNull AuthenticatedIdentity identity) {
+    authorizationService.requireAllowed(identity, new Intent.ViewInvitationLifetime());
+    return invitationLifetimeOf(storedSettings());
+  }
+
+  /** Last write wins; the audit columns record the ServerAdmin who made the change. */
+  @Transactional
+  public Outcome<LifetimeSetting, ChangeLifetimeRejection> changeInvitationLifetime(
+      @NonNull AuthenticatedIdentity identity, int hours) {
+    authorizationService.requireAllowed(identity, new Intent.ChangeInvitationLifetime());
+    if (!LifetimeSetting.allows(hours)) {
+      return Outcome.rejected(new ChangeLifetimeRejection.OutOfRange());
+    }
+
+    var settings = storedSettings();
+    settings.setInvitationLifetimeHours(hours);
+    serverSettingsRepository.save(settings);
+    return Outcome.accepted(invitationLifetimeOf(settings));
+  }
+
+  /**
+   * How long an Account invitation, a ProfileManager invitation, or an offer of a Profile waits for
+   * its answer. Issuing reads the setting for what it issues, not for a caller, so this read is not
+   * authorized.
+   */
+  @Override
+  public Duration invitationLifetime() {
+    return invitationLifetimeOf(storedSettings()).duration();
+  }
+
+  private static LifetimeSetting invitationLifetimeOf(ServerSettings settings) {
+    return new LifetimeSetting(settings.getId(), settings.getInvitationLifetimeHours());
   }
 
   private static LifetimeSetting shareCodeLifetimeOf(ServerSettings settings) {

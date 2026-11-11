@@ -29,6 +29,7 @@ public final class ServerSettingsTestSupport {
               .set(SERVER_SETTINGS.IDLE_SEGMENT_RETENTION_MINUTES, 60)
               .set(SERVER_SETTINGS.NOTIFICATION_RETENTION_DAYS, 90)
               .set(SERVER_SETTINGS.SHARE_CODE_LIFETIME_HOURS, 168)
+              .set(SERVER_SETTINGS.INVITATION_LIFETIME_HOURS, 168)
               .execute();
         });
   }

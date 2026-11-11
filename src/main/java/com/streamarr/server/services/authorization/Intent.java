@@ -285,6 +285,17 @@ public sealed interface Intent {
   record ChangeShareCodeLifetime() implements UnitIntent {}
 
   /**
+   * Read how long an invitation waits for its answer (ADR 0024 §Invitations); a whole-surface gate.
+   */
+  record ViewInvitationLifetime() implements UnitIntent {}
+
+  /**
+   * Change how long an invitation waits for its answer (ADR 0024 §Invitations); a whole-surface
+   * gate.
+   */
+  record ChangeInvitationLifetime() implements UnitIntent {}
+
+  /**
    * List, count and follow the signed-in Account's own Notifications (ADR 0063): any enabled
    * Account, never a device-bound session. It reads only what was told to that Account, and nothing
    * else decides what it reads.

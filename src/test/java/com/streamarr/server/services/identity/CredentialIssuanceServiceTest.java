@@ -831,7 +831,6 @@ class CredentialIssuanceServiceTest {
 
   private static CredentialCodeProperties codeProperties() {
     return CredentialCodeProperties.builder()
-        .invitationTtl(INVITATION_TTL)
         .passwordResetTtl(PASSWORD_RESET_TTL)
         .replacementLockTimeout(Duration.ofSeconds(5))
         .build();

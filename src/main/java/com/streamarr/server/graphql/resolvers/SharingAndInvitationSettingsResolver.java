@@ -4,8 +4,10 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
+import com.streamarr.server.graphql.inputs.ChangeInvitationLifetimeInput;
 import com.streamarr.server.graphql.inputs.ChangeShareCodeLifetimeInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
+import com.streamarr.server.graphql.mutation.sharing.ChangeInvitationLifetimePayload;
 import com.streamarr.server.graphql.mutation.sharing.ChangeShareCodeLifetimePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -35,5 +37,21 @@ public class SharingAndInvitationSettingsResolver {
             authorizationService.currentIdentity(), input.hours()),
         ShareErrors::toLifetimeError,
         ChangeShareCodeLifetimePayload::new);
+  }
+
+  @DgsQuery
+  public LifetimeSetting invitationLifetimeSetting() {
+    return serverSettingsService.readInvitationLifetimeSetting(
+        authorizationService.currentIdentity());
+  }
+
+  @DgsMutation
+  public ChangeInvitationLifetimePayload changeInvitationLifetime(
+      @InputArgument ChangeInvitationLifetimeInput input) {
+    return MutationPayloads.payload(
+        serverSettingsService.changeInvitationLifetime(
+            authorizationService.currentIdentity(), input.hours()),
+        ShareErrors::toLifetimeError,
+        ChangeInvitationLifetimePayload::new);
   }
 }

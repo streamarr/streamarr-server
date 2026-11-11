@@ -7,6 +7,7 @@ import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
+import static com.streamarr.server.support.ServerSettingsTestSupport.resetServerSettings;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -128,12 +129,14 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    resetServerSettings(dsl);
     dsl.deleteFrom(SECURITY_AUDIT_EVENT).execute();
     serverAdmin = authTestSupport.createAdminIdentity();
   }
 
   @AfterEach
   void tearDown() {
+    resetServerSettings(dsl);
     managerInvitationRepository.deleteAll();
     invitationRepository.deleteAll();
     resetCodeRepository.deleteAll();
@@ -451,6 +454,24 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     var declined = invitationRepository.findAll().getFirst();
     assertThat(declined.getCreatedBy()).isEqualTo(serverAdmin.account().getId());
     assertThat(declined.getLastModifiedBy()).isNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should issue an invitation that lasts the new lifetime when a ServerAdmin changed it before")
+  void shouldIssueInvitationThatLastsTheNewLifetimeWhenServerAdminChangedItBefore()
+      throws Exception {
+    graphql(
+            authTestSupport.accountBearer(serverAdmin),
+            "mutation { changeInvitationLifetime(input: {hours: 2}) { userErrors { __typename } } }")
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist());
+    var issuedAfter = Instant.now();
+
+    var code = issueInvitation("invitee@example.com");
+
+    assertThat(invitationRepository.findByPublicId(publicIdOf(code)).orElseThrow().getExpiresAt())
+        .isBetween(issuedAfter.plus(Duration.ofHours(2)), Instant.now().plus(Duration.ofHours(2)));
   }
 
   @Test

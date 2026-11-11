@@ -371,6 +371,86 @@ class ServerSettingsServiceTest {
   }
 
   @Test
+  @DisplayName("Should let invitations last seven days when no ServerAdmin has changed it")
+  void shouldLetInvitationsLastSevenDaysWhenNoServerAdminHasChangedIt() {
+    assertThat(serverSettingsService.invitationLifetime()).isEqualTo(Duration.ofDays(7));
+  }
+
+  @Test
+  @DisplayName("Should let invitations last the stored hours when the setting was changed")
+  void shouldLetInvitationsLastTheStoredHoursWhenTheSettingWasChanged() {
+    var settings = serverSettingsRepository.findAll().getFirst();
+    settings.setInvitationLifetimeHours(2);
+    serverSettingsRepository.save(settings);
+
+    assertThat(serverSettingsService.invitationLifetime()).isEqualTo(Duration.ofHours(2));
+  }
+
+  @Test
+  @DisplayName(
+      "Should report seven days and the allowed range when a ServerAdmin reads the invitation"
+          + " lifetime")
+  void shouldReportSevenDaysAndTheAllowedRangeWhenAServerAdminReadsTheInvitationLifetime() {
+    var settingsId = serverSettingsRepository.findAll().getFirst().getId();
+
+    var setting = serverSettingsService.readInvitationLifetimeSetting(identity);
+
+    assertThat(setting.id()).isEqualTo(settingsId);
+    assertThat(setting.hours()).isEqualTo(168);
+    assertThat(setting.minimumHours()).isEqualTo(1);
+    assertThat(setting.maximumHours()).isEqualTo(720);
+    assertThat(authorizationService.recordedIntents())
+        .containsExactly(new Intent.ViewInvitationLifetime());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 24, 720})
+  @DisplayName("Should let invitations last the new hours when a ServerAdmin changes the lifetime")
+  void shouldLetInvitationsLastTheNewHoursWhenAServerAdminChangesTheLifetime(int hours) {
+    var setting = accepted(serverSettingsService.changeInvitationLifetime(identity, hours));
+
+    assertThat(setting.hours()).isEqualTo(hours);
+    assertThat(setting.id()).isEqualTo(serverSettingsRepository.findAll().getFirst().getId());
+    assertThat(serverSettingsService.invitationLifetime()).isEqualTo(Duration.ofHours(hours));
+    assertThat(serverSettingsService.shareCodeLifetime()).isEqualTo(Duration.ofDays(7));
+    assertThat(authorizationService.recordedIntents())
+        .startsWith(new Intent.ChangeInvitationLifetime());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {Integer.MIN_VALUE, -1, 0, 721, Integer.MAX_VALUE})
+  @DisplayName(
+      "Should reject the change and keep seven days when the invitation lifetime is out of range")
+  void shouldRejectTheChangeAndKeepSevenDaysWhenTheInvitationLifetimeIsOutOfRange(int hours) {
+    var outcome = serverSettingsService.changeInvitationLifetime(identity, hours);
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new ChangeLifetimeRejection.OutOfRange());
+    assertThat(serverSettingsService.invitationLifetime()).isEqualTo(Duration.ofDays(7));
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {24, 0})
+  @DisplayName(
+      "Should refuse a caller who is not a ServerAdmin and keep seven days when the caller changes"
+          + " the invitation lifetime")
+  void shouldRefuseACallerWhoIsNotAServerAdminWhenTheCallerChangesTheInvitationLifetime(int hours) {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> serverSettingsService.changeInvitationLifetime(identity, hours))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(serverSettingsService.invitationLifetime()).isEqualTo(Duration.ofDays(7));
+  }
+
+  @Test
+  @DisplayName("Should refuse the invitation lifetime read when the caller is not a ServerAdmin")
+  void shouldRefuseTheInvitationLifetimeReadWhenTheCallerIsNotAServerAdmin() {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> serverSettingsService.readInvitationLifetimeSetting(identity))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
   @DisplayName("Should fail with a missing-settings error when the settings row is absent")
   void shouldFailWithMissingSettingsErrorWhenSettingsRowIsAbsent() {
     serverSettingsRepository.deleteAll();

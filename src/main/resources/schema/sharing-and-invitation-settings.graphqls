@@ -29,3 +29,32 @@ type ChangeShareCodeLifetimePayload {
 }
 
 union ChangeShareCodeLifetimeError = LifetimeOutOfRangeError
+
+"""
+How long an Account invitation, a ProfileManager invitation, or an offer of a Profile waits for its
+answer after it is made. Only a ServerAdmin reads or changes it. A change applies to what is issued
+after it.
+"""
+type InvitationLifetimeSetting {
+    "The same for every read and change, so a client cache can update the setting in place."
+    id: ID!
+    hours: Int!
+    "The shortest lifetime a ServerAdmin can choose."
+    minimumHours: Int!
+    "The longest lifetime a ServerAdmin can choose."
+    maximumHours: Int!
+}
+
+"Only a ServerAdmin may change the invitation lifetime."
+input ChangeInvitationLifetimeInput {
+    "How long what is issued from now on waits for its answer, from minimumHours to maximumHours."
+    hours: Int!
+}
+
+type ChangeInvitationLifetimePayload {
+    "The setting as changed. Null when the change is refused."
+    invitationLifetimeSetting: InvitationLifetimeSetting
+    userErrors: [ChangeInvitationLifetimeError!]!
+}
+
+union ChangeInvitationLifetimeError = LifetimeOutOfRangeError

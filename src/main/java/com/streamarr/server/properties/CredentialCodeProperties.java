@@ -8,15 +8,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 /**
- * Opaque one-time credentials (ADR 0024 §Invitations, §Account): how long an invitation and a
- * password-reset code stay usable, and how long issuance waits for the replacement lock (advisory
- * lock on the recipient email, Account row locks) before giving up. A share code lasts as long as
- * the server settings say. Defaults live in application.yml.
+ * Opaque one-time credentials (ADR 0024 §Invitations, §Account): how long a password-reset code
+ * stays usable, and how long issuance waits for the replacement lock (advisory lock on the
+ * recipient email, Account row locks) before giving up. How long an invitation or a share code
+ * lasts is a server setting a ServerAdmin chooses. Defaults live in application.yml.
  */
 @Builder
 @Validated
 @ConfigurationProperties(prefix = "auth.credential-codes")
 public record CredentialCodeProperties(
-    @NotNull @DurationMin(minutes = 5) Duration invitationTtl,
     @NotNull @DurationMin(minutes = 5) Duration passwordResetTtl,
     @NotNull @DurationMin(millis = 1) Duration replacementLockTimeout) {}

@@ -165,6 +165,20 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
         return (Integer) get(9);
     }
 
+    /**
+     * Setter for <code>public.server_settings.invitation_lifetime_hours</code>.
+     */
+    public void setInvitationLifetimeHours(Integer value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.server_settings.invitation_lifetime_hours</code>.
+     */
+    public Integer getInvitationLifetimeHours() {
+        return (Integer) get(10);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -188,7 +202,7 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
     /**
      * Create a detached, initialised ServerSettingsRecord
      */
-    public ServerSettingsRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, Boolean singleton, String encoderPreset, Integer idleSegmentRetentionMinutes, Integer notificationRetentionDays, Integer shareCodeLifetimeHours) {
+    public ServerSettingsRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, Boolean singleton, String encoderPreset, Integer idleSegmentRetentionMinutes, Integer notificationRetentionDays, Integer shareCodeLifetimeHours, Integer invitationLifetimeHours) {
         super(ServerSettings.SERVER_SETTINGS);
 
         setId(id);
@@ -201,6 +215,7 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
         setIdleSegmentRetentionMinutes(idleSegmentRetentionMinutes);
         setNotificationRetentionDays(notificationRetentionDays);
         setShareCodeLifetimeHours(shareCodeLifetimeHours);
+        setInvitationLifetimeHours(invitationLifetimeHours);
         resetTouchedOnNotNull();
     }
 }
