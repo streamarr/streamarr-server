@@ -18,8 +18,9 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * A code that a HouseholdAdmin, or a ServerAdmin, issues for one Household so that whoever holds it
- * may offer a Profile there (ADR 0024 §Share codes). Only the SHA-256 digest of the normalised code
- * is stored; the code itself is returned once, when it is issued. A deleted issuer goes null.
+ * may offer a Profile there (ADR 0024 §Share codes). Only the keyed digest of the normalised code
+ * is stored ({@code ShareCodes}); the code itself is returned once, when it is issued. A deleted
+ * issuer goes null.
  */
 @Entity
 @Table(name = "share_code")
