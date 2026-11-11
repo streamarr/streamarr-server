@@ -133,8 +133,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should skip ahead without reading the segment file when a stream skips")
-  void shouldSkipAheadWithoutReadingSegmentFileWhenStreamSkips() throws IOException {
+  @DisplayName("Should skip ahead without reading the stored bytes when a stream skips")
+  void shouldSkipAheadWithoutReadingStoredBytesWhenStreamSkips() throws IOException {
     var sessionId = UUID.randomUUID();
     store.storeSegment(sessionId, "segment0.m4s", new byte[] {7, 8, 9, 10});
 
@@ -339,10 +339,8 @@ class LocalSegmentStoreTest {
         IntStream.range(0, CONTENDERS)
             .mapToObj(
                 contender ->
-                    prepared(
-                        store,
-                        sessionId,
-                        VARIANT_INITIALIZATION_SEGMENT,
+                    appended(
+                        store.prepareSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT),
                         contenderInitialization(contender)))
             .toList();
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -363,9 +361,8 @@ class LocalSegmentStoreTest {
     }
   }
 
-  private static SegmentStore.PreparedSegment prepared(
-      SegmentStore store, UUID sessionId, String segmentName, byte[] data) {
-    var prepared = store.prepareSegment(sessionId, segmentName);
+  private static SegmentStore.PreparedSegment appended(
+      SegmentStore.PreparedSegment prepared, byte[] data) {
     prepared.append(ByteBuffer.wrap(data));
     return prepared;
   }
@@ -414,7 +411,8 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
     var segmentData = "remote segment".getBytes();
 
-    try (var prepared = prepared(store, sessionId, "720p/segment0.m4s", segmentData)) {
+    try (var prepared =
+        appended(store.prepareSegment(sessionId, "720p/segment0.m4s"), segmentData)) {
       assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
       assertThat(store.segmentExists(sessionId, "720p/segment0.m4s")).isFalse();
 
@@ -429,7 +427,9 @@ class LocalSegmentStoreTest {
   void shouldDiscardPreparedSegmentWhenClosedWithoutPublication() {
     var sessionId = UUID.randomUUID();
 
-    try (var _ = prepared(store, sessionId, "720p/segment0.m4s", "remote segment".getBytes())) {
+    try (var _ =
+        appended(
+            store.prepareSegment(sessionId, "720p/segment0.m4s"), "remote segment".getBytes())) {
       assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
     }
 
@@ -440,7 +440,9 @@ class LocalSegmentStoreTest {
   @DisplayName("Should translate cleanup I/O failure when a prepared segment is closed")
   void shouldTranslateCleanupIoFailureWhenPreparedSegmentIsClosed() throws Exception {
     var prepared =
-        prepared(store, UUID.randomUUID(), "720p/segment0.m4s", "remote segment".getBytes());
+        appended(
+            store.prepareSegment(UUID.randomUUID(), "720p/segment0.m4s"),
+            "remote segment".getBytes());
     Path temporary;
     try (var files = Files.list(tempDir)) {
       temporary = files.findFirst().orElseThrow();
