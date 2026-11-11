@@ -11,6 +11,7 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.persistence.EntityManagerFactory;
 import java.util.ArrayList;
@@ -42,6 +43,7 @@ class HouseholdDevicesEndpointsIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private DeviceRegistrationRepository registrationRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
+  @Autowired private UserAccountRepository accountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private EntityManagerFactory entityManagerFactory;
 
@@ -175,9 +177,16 @@ class HouseholdDevicesEndpointsIT extends AbstractIntegrationTest {
     return nodes;
   }
 
-  /** An Account of another Household whose Personal Profile is available in the host's. */
+  /**
+   * An Account of another Household, named apart from the host, whose Personal Profile is available
+   * in the host's.
+   */
   private AuthTestSupport.TestIdentity visitor() {
     var visitor = identity();
+    var name = "Visitor " + visitor.account().getId();
+    transactionTemplate.executeWithoutResult(
+        _ -> accountRepository.tryRename(visitor.account().getId(), name));
+    visitor.account().setDisplayName(name);
     shareRepository.saveAndFlush(
         ProfileHouseholdShare.builder()
             .profileId(visitor.profile().getId())
