@@ -28,9 +28,10 @@ type ProfileShare {
     "Why the system withdrew this offer; set only when status is INVALIDATED."
     invalidationReason: String
     """
-    The Profile on offer or shared. Shown to the target Household's HouseholdAdmins, to those who
-    may see the Profile's administration (its managers, and a HouseholdAdmin where it is
-    available), and to ServerAdmins. Null for everyone else.
+    The Profile on offer or shared. Shown to the Profile's managers and to ServerAdmins at every
+    status. Shown to the target Household's HouseholdAdmins only while the offer is PENDING and not
+    past its expiresAt, or the share is ACTIVE: once it is over, they get null. Null for everyone
+    else.
     """
     profile: ProfileSummary
     """
@@ -40,9 +41,10 @@ type ProfileShare {
     """
     visitor: Boolean
     """
-    The display name of the Account that offered the Profile. Shown to the target Household's
-    HouseholdAdmins and to ServerAdmins. Null for everyone else, for a share the system made, and
-    once that Account is deleted.
+    The display name of the Account that offered the Profile. Shown to ServerAdmins, and to the
+    target Household's HouseholdAdmins while the offer is PENDING and not past its expiresAt, or
+    the share is ACTIVE. Null for everyone else, for a share that is over unless the reader is a
+    ServerAdmin, for a share the system made, and once that Account is deleted.
     """
     offeredByDisplayName: String
     """

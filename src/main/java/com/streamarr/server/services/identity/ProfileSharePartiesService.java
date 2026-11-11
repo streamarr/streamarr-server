@@ -28,12 +28,17 @@ import org.springframework.transaction.annotation.Transactional;
  * the Household it is into. Each party is shown only to readers who may already know it, and a
  * hidden party is absent from the answer.
  *
+ * <p>The target Household's HouseholdAdmins see the Profile and the offerer only while the offer is
+ * pending or the share is active. Once it is over they see neither; only ServerAdmins, who may read
+ * the Household's share history, still do. The offering side sees its own shares at every status.
+ *
  * <p>Each authority is decided once per batch. When a share can be shown from either side, the side
  * with fewer distinct values in the batch is asked first, so a page of the shares into one
  * Household, or of one Profile, needs only a fixed number of decisions for its Profiles when its
- * reader may list that page. The offerer's name is decided on the target side alone, once for each
- * Household in the batch. The Household's name is for the Profile's side and ServerAdmins, so a
- * HouseholdAdmin who asks for it on their own Household's page is decided once for each Profile.
+ * reader may list that page. The offerer's name is decided on the target side alone, for each
+ * Household in the batch: once for its live shares and once for those that are over. The
+ * Household's name is for the Profile's side and ServerAdmins, so a HouseholdAdmin who asks for it
+ * on their own Household's page is decided once for each Profile.
  */
 @Service
 @RequiredArgsConstructor
@@ -45,9 +50,9 @@ public class ProfileSharePartiesService {
   private final HouseholdRepository householdRepository;
 
   /**
-   * The Profile on each share, and whether it is a visitor in the share's Household, for the target
-   * Household's HouseholdAdmins and for readers who may see the Profile's administration: its
-   * managers, a HouseholdAdmin where it is available, and ServerAdmins.
+   * The Profile on each share, and whether it is a visitor in the share's Household, for the
+   * offering side at every status: the Profile's managers and ServerAdmins. The target Household's
+   * HouseholdAdmins see it only while the offer is pending or the share is active.
    */
   @Transactional(readOnly = true)
   public Map<ShareReference, SharedProfile> profiles(
@@ -60,7 +65,7 @@ public class ProfileSharePartiesService {
             .filter(
                 share ->
                     authority.eitherSide(
-                        share, authority::administersTarget, Intent.ViewProfileAdministration::new))
+                        share, authority::targetSees, Intent.ViewProfileShareHouseholds::new))
             .toList();
     var personal = personalProfileIds(shown);
 
@@ -81,7 +86,8 @@ public class ProfileSharePartiesService {
 
   /**
    * The display name of the Account that offered each share, for the target Household's
-   * HouseholdAdmins. A share the system made, or whose offering Account is deleted, names nobody.
+   * HouseholdAdmins while the offer is pending or the share is active, and for ServerAdmins at
+   * every status. A share the system made, or whose offering Account is deleted, names nobody.
    */
   @Transactional(readOnly = true)
   public Map<ShareReference, String> offererNames(
@@ -91,7 +97,7 @@ public class ProfileSharePartiesService {
     var shown =
         shares.stream()
             .filter(share -> share.offeredBy().isPresent())
-            .filter(authority::administersTarget)
+            .filter(authority::targetSees)
             .toList();
     var offererIds =
         shown.stream().flatMap(share -> share.offeredBy().stream()).collect(Collectors.toSet());
@@ -175,8 +181,14 @@ public class ProfileSharePartiesService {
               <= distinct(shares, ShareReference::profileId).size();
     }
 
-    boolean administersTarget(ShareReference share) {
-      return allows(new Intent.ViewHouseholdAdministration(share.householdId()));
+    /**
+     * Whether the target Household's side may see the share's Profile and offerer: its
+     * HouseholdAdmins while the share is live, and afterwards only a reader of its share history.
+     */
+    boolean targetSees(ShareReference share) {
+      return share.live()
+          ? allows(new Intent.ViewHouseholdAdministration(share.householdId()))
+          : viewsTargetShareHistory(share);
     }
 
     boolean viewsTargetShareHistory(ShareReference share) {

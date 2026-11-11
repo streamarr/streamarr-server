@@ -1033,8 +1033,11 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep a declined offer when a Household lists its shares in every status")
-  void shouldKeepDeclinedOfferWhenHouseholdListsItsSharesInEveryStatus() throws Exception {
+  @DisplayName(
+      "Should keep a declined offer for a ServerAdmin and not for the Household's HouseholdAdmin"
+          + " when they list its shares in every status")
+  void shouldKeepDeclinedOfferForServerAdminAndNotForHouseholdAdminWhenTheyListEveryStatus()
+      throws Exception {
     var shareId = offer(managedOrphan(), host.household().getId());
     graphql(
             authTestSupport.accountBearer(host),
@@ -1045,27 +1048,41 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
                 .formatted(shareId))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.rejectProfileShare.share.status").value("REJECTED"));
+    var lists =
+        """
+        query {
+          every: householdShares(householdId: "%1$s") { edges { node { id status } } }
+          live: householdShares(householdId: "%1$s", statuses: [PENDING, ACTIVE]) {
+            edges { node { id status } } }
+          declined: householdShares(householdId: "%1$s", statuses: [REJECTED]) {
+            edges { node { id } } }
+        }
+        """
+            .formatted(host.household().getId());
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      graphql(authTestSupport.accountBearer(serverAdmin), lists)
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath(
+                  "$.data.every.edges[?(@.node.id == '%s')].node.status".formatted(shareId),
+                  contains("REJECTED")))
+          .andExpect(jsonPath("$.data.live.edges[*].node.status", everyItem(is("ACTIVE"))))
+          .andExpect(jsonPath("$.data.declined.edges[*].node.id", contains(shareId)));
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
 
-    graphql(
-            authTestSupport.accountBearer(host),
-            """
-            query {
-              every: householdShares(householdId: "%1$s") { edges { node { id status } } }
-              live: householdShares(householdId: "%1$s", statuses: [PENDING, ACTIVE]) {
-                edges { node { id status } } }
-              declined: householdShares(householdId: "%1$s", statuses: [REJECTED]) {
-                edges { node { id } } }
-            }
-            """
-                .formatted(host.household().getId()))
+    // The Household's HouseholdAdmins list only offers still pending and active shares.
+    graphql(authTestSupport.accountBearer(host), lists)
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.every.edges[*].node.status", everyItem(is("ACTIVE"))))
         .andExpect(
-            jsonPath(
-                "$.data.every.edges[?(@.node.id == '%s')].node.status".formatted(shareId),
-                contains("REJECTED")))
+            jsonPath("$.data.every.edges[?(@.node.id == '%s')]".formatted(shareId)).isEmpty())
         .andExpect(jsonPath("$.data.live.edges[*].node.status", everyItem(is("ACTIVE"))))
-        .andExpect(jsonPath("$.data.declined.edges[*].node.id", contains(shareId)));
+        .andExpect(jsonPath("$.data.declined.edges").isEmpty());
   }
 
   @Test
@@ -1464,28 +1481,42 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   // ---- Expiry is a predicate: a stale PENDING offer is listed as EXPIRED and is not live.
 
   @Test
-  @DisplayName("Should list an expired offer as expired when a Household lists its shares")
-  void shouldListExpiredOfferAsExpiredWhenHouseholdListsItsShares() throws Exception {
+  @DisplayName(
+      "Should list an expired offer as expired for a ServerAdmin and not at all for the"
+          + " Household's HouseholdAdmin")
+  void shouldListExpiredOfferAsExpiredForServerAdminAndNotAtAllForHouseholdAdmin()
+      throws Exception {
     var orphan = managedOrphan();
     var shareId = offer(orphan, host.household().getId());
     expire(UUID.fromString(shareId));
+    var lists =
+        """
+        query {
+          pending: householdShares(householdId: "%1$s", statuses: [PENDING]) {
+            edges { node { id } } }
+          expired: householdShares(householdId: "%1$s", statuses: [EXPIRED]) {
+            edges { node { id status } } }
+        }
+        """
+            .formatted(host.household().getId());
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      graphql(authTestSupport.accountBearer(serverAdmin), lists)
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.pending.edges.length()").value(0))
+          .andExpect(jsonPath("$.data.expired.edges[*].node.id", contains(shareId)))
+          .andExpect(jsonPath("$.data.expired.edges[*].node.status", contains("EXPIRED")));
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
 
-    graphql(
-            authTestSupport.accountBearer(host),
-            """
-            query {
-              pending: householdShares(householdId: "%1$s", statuses: [PENDING]) {
-                edges { node { id } } }
-              expired: householdShares(householdId: "%1$s", statuses: [EXPIRED]) {
-                edges { node { id status } } }
-            }
-            """
-                .formatted(host.household().getId()))
+    // An offer past its expiry is no longer pending, so it leaves the HouseholdAdmin's list.
+    graphql(authTestSupport.accountBearer(host), lists)
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.pending.edges.length()").value(0))
-        .andExpect(jsonPath("$.data.expired.edges[*].node.id", contains(shareId)))
-        .andExpect(jsonPath("$.data.expired.edges[*].node.status", contains("EXPIRED")));
+        .andExpect(jsonPath("$.data.expired.edges.length()").value(0));
   }
 
   @Test

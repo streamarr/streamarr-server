@@ -42,6 +42,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -423,6 +424,77 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should list only the offers still pending and the active shares when the Household's"
+          + " HouseholdAdmin lists every status")
+  void shouldListOnlyPendingOffersAndActiveSharesWhenHouseholdAdminListsEveryStatus() {
+    var live = sharesOfEveryOutcomeInto(household);
+    administerHouseholdOnly();
+
+    var page = service.householdShares(identity(), everyShareInto(household), paginationOptions());
+
+    assertThat(page.rows())
+        .extracting(row -> row.item().getId())
+        .containsExactlyInAnyOrderElementsOf(live);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep only the live statuses it names when the Household's HouseholdAdmin names some"
+          + " that are over")
+  void shouldKeepOnlyLiveStatusesItNamesWhenHouseholdAdminNamesSomeThatAreOver() {
+    var offer = pendingShare();
+    sharesOfEveryOutcomeInto(household);
+    administerHouseholdOnly();
+
+    var pendingOrDeclined =
+        service.householdShares(
+            identity(),
+            sharesInto(household, ProfileShareStatus.PENDING, ProfileShareStatus.REJECTED),
+            paginationOptions());
+    var over =
+        service.householdShares(
+            identity(),
+            sharesInto(
+                household,
+                ProfileShareStatus.REJECTED,
+                ProfileShareStatus.CANCELED,
+                ProfileShareStatus.EXPIRED,
+                ProfileShareStatus.INVALIDATED,
+                ProfileShareStatus.ENDED),
+            paginationOptions());
+
+    assertThat(pendingOrDeclined.rows())
+        .extracting(row -> row.item().getId())
+        .contains(offer.getId())
+        .allSatisfy(
+            id ->
+                assertThat(shares.findById(id).orElseThrow().statusAt(NOW))
+                    .isEqualTo(ProfileShareStatus.PENDING));
+    assertThat(over.rows()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should list every share into the Household at every status when the reader may view its"
+          + " share history")
+  void shouldListEveryShareIntoHouseholdAtEveryStatusWhenReaderMayViewItsShareHistory() {
+    sharesOfEveryOutcomeInto(household);
+    authorization.decideUnitWith(
+        intent ->
+            intent.equals(new Intent.ViewHouseholdAdministration(household.getId()))
+                    || intent.equals(new Intent.ViewHouseholdShareHistory(household.getId()))
+                ? allowed()
+                : denied());
+
+    var page = service.householdShares(identity(), everyShareInto(household), paginationOptions());
+
+    assertThat(page.rows())
+        .extracting(row -> row.item().statusAt(NOW))
+        .containsExactlyInAnyOrder(ProfileShareStatus.values());
+  }
+
+  @Test
   @DisplayName("Should list every share into the Household when no status is named")
   void shouldListEveryShareIntoHouseholdWhenNoStatusIsNamed() {
     var offer = pendingShare();
@@ -764,6 +836,43 @@ class ProfileSharingServiceTest {
 
   private static ProfileShareChangedEvent changeOf(ProfileHouseholdShare share) {
     return new ProfileShareChangedEvent(ChangedShare.of(share));
+  }
+
+  private void administerHouseholdOnly() {
+    authorization.decideUnitWith(
+        intent ->
+            intent.equals(new Intent.ViewHouseholdAdministration(household.getId()))
+                ? allowed()
+                : denied());
+  }
+
+  /**
+   * One share of its own Profile into the Household for every outcome, an offer past its expiry
+   * among them; answers the ids of the offer still pending and the active share.
+   */
+  private List<UUID> sharesOfEveryOutcomeInto(Household into) {
+    var live = new ArrayList<UUID>();
+    for (var status : ProfileShareStatus.values()) {
+      var offered = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var share =
+          shares.save(
+              ProfileHouseholdShare.builder()
+                  .profileId(offered.getId())
+                  .householdId(into.getId())
+                  .status(
+                      status == ProfileShareStatus.EXPIRED ? ProfileShareStatus.PENDING : status)
+                  .offeredByAccountId(identity().accountId())
+                  .expiresAt(
+                      status == ProfileShareStatus.EXPIRED
+                          ? NOW.minusSeconds(1)
+                          : NOW.plusSeconds(3600))
+                  .build());
+      if (status.isLive()) {
+        live.add(share.getId());
+      }
+    }
+
+    return live;
   }
 
   private ProfileHouseholdShare pendingShare() {

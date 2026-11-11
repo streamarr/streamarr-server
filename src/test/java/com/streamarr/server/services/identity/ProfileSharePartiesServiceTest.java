@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -20,6 +22,7 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -28,10 +31,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 @Tag("UnitTest")
 @DisplayName("Profile Share Parties Service Tests")
 class ProfileSharePartiesServiceTest {
+
+  private static final Instant NOW = Instant.parse("2026-08-21T12:00:00Z");
 
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
@@ -60,7 +67,7 @@ class ProfileSharePartiesServiceTest {
                 .picture("fox")
                 .build());
     offerer = accounts.save(AccountFixture.defaultAccountBuilder().displayName("Robin").build());
-    share = new ShareReference(offered.getId(), target.getId(), Optional.of(offerer.getId()));
+    share = liveShare(offered.getId(), target.getId(), Optional.of(offerer.getId()));
   }
 
   // ---- The Profile on a share.
@@ -78,19 +85,118 @@ class ProfileSharePartiesServiceTest {
   }
 
   @Test
-  @DisplayName("Should show the Profile when the reader may see its administration")
-  void shouldShowProfileWhenReaderMaySeeItsAdministration() {
-    allowOnly(intent -> intent.equals(new Intent.ViewProfileAdministration(offered.getId())));
+  @DisplayName("Should show the Profile when the reader is on the offering side")
+  void shouldShowProfileWhenReaderIsOnOfferingSide() {
+    allowOnly(this::offeringSide);
 
     assertThat(service.profiles(reader(), Set.of(share))).containsKey(share);
   }
 
   @Test
-  @DisplayName("Should hide the Profile when the reader has neither authority")
-  void shouldHideProfileWhenReaderHasNeitherAuthority() {
-    allowOnly(intent -> intent.equals(new Intent.ViewProfileShareHouseholds(offered.getId())));
+  @DisplayName("Should hide the Profile when the reader only hosts it in another Household")
+  void shouldHideProfileWhenReaderOnlyHostsItInAnotherHousehold() {
+    // Seeing the Profile's administration where it is available names nothing on this share.
+    allowOnly(intent -> intent.equals(new Intent.ViewProfileAdministration(offered.getId())));
 
     assertThat(service.profiles(reader(), Set.of(share))).isEmpty();
+  }
+
+  // ---- Each status, on each side (ADR 0024 §Profile sharing, §Read authorization).
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = ProfileShareStatus.class,
+      names = {"PENDING", "ACTIVE"})
+  @DisplayName(
+      "Should show the target HouseholdAdmin the Profile and the offerer when the offer is pending"
+          + " or the share is active")
+  void shouldShowTargetHouseholdAdminProfileAndOffererWhenOfferIsPendingOrShareIsActive(
+      ProfileShareStatus status) {
+    allowOnly(this::administersTarget);
+    var live = shareIn(status);
+
+    assertThat(service.profiles(reader(), Set.of(live))).containsKey(live);
+    assertThat(service.offererNames(reader(), Set.of(live))).containsEntry(live, "Robin");
+    assertThat(service.households(reader(), Set.of(live))).isEmpty();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = ProfileShareStatus.class,
+      names = {"REJECTED", "CANCELED", "EXPIRED", "INVALIDATED", "ENDED"})
+  @DisplayName(
+      "Should hide the Profile and the offerer from the target HouseholdAdmin when the offer or"
+          + " the share is over")
+  void shouldHideProfileAndOffererFromTargetHouseholdAdminWhenOfferOrShareIsOver(
+      ProfileShareStatus status) {
+    allowOnly(this::administersTarget);
+    var over = shareIn(status);
+
+    assertThat(service.profiles(reader(), Set.of(over))).isEmpty();
+    assertThat(service.offererNames(reader(), Set.of(over))).isEmpty();
+    assertThat(service.households(reader(), Set.of(over))).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should hide the Profile and the offerer from the target HouseholdAdmin when a pending offer"
+          + " is past its expiry")
+  void shouldHideProfileAndOffererFromTargetHouseholdAdminWhenPendingOfferIsPastItsExpiry() {
+    allowOnly(this::administersTarget);
+    var lapsed =
+        ShareReference.of(
+            offerOf(ProfileShareStatus.PENDING).expiresAt(NOW.minusSeconds(1)).build(), NOW);
+
+    assertThat(service.profiles(reader(), Set.of(lapsed))).isEmpty();
+    assertThat(service.offererNames(reader(), Set.of(lapsed))).isEmpty();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(ProfileShareStatus.class)
+  @DisplayName(
+      "Should show the offering side the Profile and the Household but not the offerer at every"
+          + " status")
+  void shouldShowOfferingSideProfileAndHouseholdButNotOffererAtEveryStatus(
+      ProfileShareStatus status) {
+    allowOnly(this::offeringSide);
+    var any = shareIn(status);
+
+    assertThat(service.profiles(reader(), Set.of(any))).containsKey(any);
+    assertThat(service.households(reader(), Set.of(any))).containsKey(any);
+    assertThat(service.offererNames(reader(), Set.of(any))).isEmpty();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(ProfileShareStatus.class)
+  @DisplayName("Should show a ServerAdmin every party at every status")
+  void shouldShowServerAdminEveryPartyAtEveryStatus(ProfileShareStatus status) {
+    // A ServerAdmin is allowed each of these reads.
+    allowOnly(
+        intent ->
+            administersTarget(intent)
+                || intent.equals(new Intent.ViewHouseholdShareHistory(target.getId()))
+                || offeringSide(intent));
+    var any = shareIn(status);
+
+    assertThat(service.profiles(reader(), Set.of(any))).containsKey(any);
+    assertThat(service.offererNames(reader(), Set.of(any))).containsEntry(any, "Robin");
+    assertThat(service.households(reader(), Set.of(any))).containsKey(any);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = ProfileShareStatus.class,
+      names = {"REJECTED", "CANCELED", "EXPIRED", "INVALIDATED", "ENDED"})
+  @DisplayName(
+      "Should name the Profile and the offerer to a reader of the Household's share history when"
+          + " the offer or the share is over")
+  void shouldNameProfileAndOffererToReaderOfHouseholdsShareHistoryWhenOfferOrShareIsOver(
+      ProfileShareStatus status) {
+    allowOnly(intent -> intent.equals(new Intent.ViewHouseholdShareHistory(target.getId())));
+    var over = shareIn(status);
+
+    assertThat(service.offererNames(reader(), Set.of(over))).containsEntry(over, "Robin");
+    assertThat(service.profiles(reader(), Set.of(over))).containsKey(over);
   }
 
   @Test
@@ -99,7 +205,7 @@ class ProfileSharePartiesServiceTest {
     allowOnly(this::administersTarget);
     var person = profiles.save(ProfileFixture.kidProfileBuilder().name("Jo").build());
     accounts.save(AccountFixture.defaultAccountBuilder().personalProfileId(person.getId()).build());
-    var personShare = new ShareReference(person.getId(), target.getId(), Optional.empty());
+    var personShare = liveShare(person.getId(), target.getId(), Optional.empty());
 
     var shown = service.profiles(reader(), Set.of(share, personShare));
 
@@ -115,7 +221,7 @@ class ProfileSharePartiesServiceTest {
     allowOnly(this::administersTarget);
     var own =
         profiles.save(ProfileFixture.defaultProfileBuilder().householdId(target.getId()).build());
-    var ownShare = new ShareReference(own.getId(), target.getId(), Optional.empty());
+    var ownShare = liveShare(own.getId(), target.getId(), Optional.empty());
 
     var shown = service.profiles(reader(), Set.of(share, ownShare));
 
@@ -129,7 +235,7 @@ class ProfileSharePartiesServiceTest {
   void shouldAnswerNoProfileWhenSharesProfileIsGone() {
     // A decision about a missing Profile cannot be made, so asking would fail.
     failOnProfileSide();
-    var gone = new ShareReference(UUID.randomUUID(), target.getId(), Optional.of(offerer.getId()));
+    var gone = liveShare(UUID.randomUUID(), target.getId(), Optional.of(offerer.getId()));
 
     assertThat(service.profiles(reader(), Set.of(gone))).isEmpty();
   }
@@ -159,9 +265,8 @@ class ProfileSharePartiesServiceTest {
   @DisplayName("Should name no offerer when the system made the share or the offerer is gone")
   void shouldNameNoOffererWhenSystemMadeShareOrOffererIsGone() {
     allowOnly(this::administersTarget);
-    var structural = new ShareReference(offered.getId(), target.getId(), Optional.empty());
-    var orphaned =
-        new ShareReference(offered.getId(), target.getId(), Optional.of(UUID.randomUUID()));
+    var structural = liveShare(offered.getId(), target.getId(), Optional.empty());
+    var orphaned = liveShare(offered.getId(), target.getId(), Optional.of(UUID.randomUUID()));
 
     assertThat(service.offererNames(reader(), Set.of(structural, orphaned))).isEmpty();
   }
@@ -207,7 +312,7 @@ class ProfileSharePartiesServiceTest {
   @DisplayName("Should answer no Household from the offering side when the share's Profile is gone")
   void shouldAnswerNoHouseholdFromOfferingSideWhenSharesProfileIsGone() {
     failOnProfileSide();
-    var gone = new ShareReference(UUID.randomUUID(), UUID.randomUUID(), Optional.empty());
+    var gone = liveShare(UUID.randomUUID(), UUID.randomUUID(), Optional.empty());
 
     assertThat(service.households(reader(), Set.of(gone))).isEmpty();
   }
@@ -219,10 +324,8 @@ class ProfileSharePartiesServiceTest {
   void shouldDecideEachShareByItsOwnHouseholdAndProfileWhenPageIsMixed() {
     var elsewhere = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var other = profiles.save(ProfileFixture.defaultProfileBuilder().build());
-    var intoElsewhere =
-        new ShareReference(offered.getId(), elsewhere.getId(), Optional.of(offerer.getId()));
-    var otherIntoTarget =
-        new ShareReference(other.getId(), target.getId(), Optional.of(offerer.getId()));
+    var intoElsewhere = liveShare(offered.getId(), elsewhere.getId(), Optional.of(offerer.getId()));
+    var otherIntoTarget = liveShare(other.getId(), target.getId(), Optional.of(offerer.getId()));
     allowOnly(
         intent ->
             administersTarget(intent)
@@ -252,6 +355,30 @@ class ProfileSharePartiesServiceTest {
 
   private boolean administersTarget(Intent.UnitIntent intent) {
     return intent.equals(new Intent.ViewHouseholdAdministration(target.getId()));
+  }
+
+  private boolean offeringSide(Intent.UnitIntent intent) {
+    return intent.equals(new Intent.ViewProfileShareHouseholds(offered.getId()));
+  }
+
+  private static ShareReference liveShare(
+      UUID profileId, UUID householdId, Optional<UUID> offeredBy) {
+    return new ShareReference(profileId, householdId, offeredBy, true);
+  }
+
+  /** The share of the offered Profile into the target at the status, read at {@code NOW}. */
+  private ShareReference shareIn(ProfileShareStatus status) {
+    return ShareReference.of(offerOf(status).build(), NOW);
+  }
+
+  private ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> offerOf(
+      ProfileShareStatus status) {
+    return ProfileHouseholdShare.builder()
+        .profileId(offered.getId())
+        .householdId(target.getId())
+        .status(status)
+        .offeredByAccountId(offerer.getId())
+        .expiresAt(NOW.plusSeconds(3600));
   }
 
   private void allowOnly(Predicate<Intent.UnitIntent> allowed) {
