@@ -1,7 +1,10 @@
 package com.streamarr.server.services.notification;
 
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -10,6 +13,10 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.notification.Notification;
+import com.streamarr.server.domain.notification.NotificationDraft;
+import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.ProfileShareAnswer;
+import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -18,15 +25,25 @@ import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
+import com.streamarr.server.support.TestFixtureWork;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
+import org.jooq.impl.SQLDataType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -57,8 +74,11 @@ class NotificationMarksIT extends AbstractIntegrationTest {
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private NotificationRepository notificationRepository;
+  @Autowired private NotificationService notificationService;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private JdbcTemplate jdbcTemplate;
+  @Autowired private DSLContext dsl;
 
   private final List<TestIdentity> identities = new ArrayList<>();
   private TestIdentity sam;
@@ -232,6 +252,78 @@ class NotificationMarksIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should leave a Notification unread when an update in place moved it above the cursor before"
+          + " its recipient marked all read")
+  void shouldLeaveANotificationUnreadWhenAnUpdateInPlaceMovedItAboveTheCursor() throws Exception {
+    var moved = acceptedNewsFor(theo, "Kai");
+    var through = acceptedNewsFor(theo, "Ollie");
+    var cursor = cursorOf(theo, through);
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            notificationRepository.upsertUnreadNews(
+                answeredAgain(moved, moved.getLatestEventAt().plusSeconds(60))));
+
+    markAll(theo, cursor)
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.markAllNotificationsRead.unreadNotificationCount").value(1));
+
+    assertThat(stored(through).getReadAt()).isPresent();
+    assertThat(stored(moved).getReadAt()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep what an update in place stored when the mark of the Notification waited behind"
+          + " it")
+  void shouldKeepWhatAnUpdateInPlaceStoredWhenTheMarkOfTheNotificationWaitedBehindIt()
+      throws Exception {
+    var news = acceptedNewsFor(theo);
+    var later = news.getLatestEventAt().plusSeconds(60);
+    var updateHolds = new CountDownLatch(1);
+    var releaseUpdate = new CountDownLatch(1);
+    var updatePid = new AtomicInteger();
+
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
+      var update =
+          executor.submit(
+              () ->
+                  transactionTemplate.executeWithoutResult(
+                      _ -> {
+                        var held =
+                            notificationRepository.upsertUnreadNews(answeredAgain(news, later));
+                        notificationRepository.replaceFacts(
+                            held.notificationId(),
+                            ProfileShareFacts.answered("Kai Rose", ProfileShareAnswer.ACCEPTED));
+                        updatePid.set(
+                            dsl.select(DSL.field("pg_backend_pid()", SQLDataType.INTEGER))
+                                .fetchSingle()
+                                .value1());
+                        updateHolds.countDown();
+                        awaitLatch(releaseUpdate);
+                      }));
+      awaitLatch(updateHolds);
+      var mark =
+          executor.submit(
+              () ->
+                  notificationService.markNotificationRead(
+                      authTestSupport.identityOf(theo), news.getId()));
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .until(() -> waitersBehind(jdbcTemplate, updatePid.get(), "update%notification%") == 1);
+
+      releaseUpdate.countDown();
+      update.get(10, TimeUnit.SECONDS);
+      mark.get(10, TimeUnit.SECONDS);
+    }
+
+    var stored = stored(news);
+    assertThat(stored.getReadAt()).isPresent();
+    assertThat(stored.getLatestEventAt()).isEqualTo(later);
+    assertThat(stored.getProfileName()).isEqualTo("Kai Rose");
+  }
+
+  @Test
+  @DisplayName(
       "Should leave unread the Notifications that the guard hides when its recipient marks all"
           + " read")
   void shouldLeaveUnreadTheNotificationsThatTheGuardHidesWhenItsRecipientMarksAllRead()
@@ -313,7 +405,11 @@ class NotificationMarksIT extends AbstractIntegrationTest {
   }
 
   private Notification acceptedNewsFor(TestIdentity recipient) {
-    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam, theo), riverside);
+    return acceptedNewsFor(recipient, "Kai");
+  }
+
+  private Notification acceptedNewsFor(TestIdentity recipient, String profileName) {
+    var offer = steps.offer(sam, steps.profileManagedBy(profileName, sam, sam, theo), riverside);
     steps.accept(riverside, offer);
     return notificationRepository.findAll().stream()
         .filter(notification -> notification.getShareId().equals(offer.getId()))
@@ -336,6 +432,18 @@ class NotificationMarksIT extends AbstractIntegrationTest {
 
   private Notification stored(Notification notification) {
     return notificationRepository.findById(notification.getId()).orElseThrow();
+  }
+
+  /** A later answer of the news's kind about its share, which updates the unread news in place. */
+  private static NotificationDraft<NotificationKind, ProfileShareFacts> answeredAgain(
+      Notification news, Instant at) {
+    return NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
+        .recipientAccountId(news.getRecipientAccountId())
+        .kind(NotificationKind.PROFILE_SHARE_ANSWERED)
+        .subjectId(news.getShareId())
+        .facts(ProfileShareFacts.answered(news.getProfileName(), ProfileShareAnswer.ACCEPTED))
+        .at(at)
+        .build();
   }
 
   private Profile kai() {
