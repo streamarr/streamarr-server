@@ -20,6 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 class SegmentFolderLeftoversTest {
 
   private static final byte[] SEGMENT = "segment".getBytes();
+  private static final String MARK_NAME = ".streamarr-segment-folder";
 
   @TempDir Path segmentFolder;
   @TempDir Path outside;
@@ -84,6 +85,42 @@ class SegmentFolderLeftoversTest {
         .isDirectoryNotContaining(
             entry ->
                 !entry.equals(directoryNamedLikeASession) && !entry.equals(fileNamedLikeAnUpload));
+  }
+
+  // Copying a segment folder's entries into another folder brings the mark along.
+  @Test
+  @DisplayName(
+      "Should keep everything when the folder's mark was copied from another segment folder")
+  void shouldKeepEverythingWhenTheFoldersMarkWasCopiedFromAnotherSegmentFolder()
+      throws IOException {
+    var otherSegmentFolder = outside.resolve("segments");
+    new SegmentFolderLeftovers(otherSegmentFolder).delete();
+    var directoryNamedLikeASession =
+        Files.createDirectory(segmentFolder.resolve(UUID.randomUUID().toString()));
+    var fileInThatDirectory =
+        Files.write(directoryNamedLikeASession.resolve("movie.mkv"), "media".getBytes());
+    Files.copy(otherSegmentFolder.resolve(MARK_NAME), segmentFolder.resolve(MARK_NAME));
+
+    new SegmentFolderLeftovers(segmentFolder).delete();
+
+    assertThat(fileInThatDirectory).exists();
+  }
+
+  @Test
+  @DisplayName("Should keep everything when the folder's mark is a soft link")
+  void shouldKeepEverythingWhenTheFoldersMarkIsASoftLink() throws IOException {
+    new SegmentFolderLeftovers(segmentFolder).delete();
+    var markOutsideTheFolder =
+        Files.move(segmentFolder.resolve(MARK_NAME), outside.resolve(MARK_NAME));
+    Files.createSymbolicLink(segmentFolder.resolve(MARK_NAME), markOutsideTheFolder);
+    var directoryNamedLikeASession =
+        Files.createDirectory(segmentFolder.resolve(UUID.randomUUID().toString()));
+    var fileInThatDirectory =
+        Files.write(directoryNamedLikeASession.resolve("movie.mkv"), "media".getBytes());
+
+    new SegmentFolderLeftovers(segmentFolder).delete();
+
+    assertThat(fileInThatDirectory).exists();
   }
 
   @Test

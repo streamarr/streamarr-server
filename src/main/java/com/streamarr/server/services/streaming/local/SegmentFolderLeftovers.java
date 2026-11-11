@@ -38,8 +38,9 @@ public class SegmentFolderLeftovers {
    * holds nothing of a running store.
    *
    * <p>It deletes only in a folder that carries its mark, and it marks only a folder that is empty.
-   * A folder that held something else first therefore keeps everything. It never throws: what it
-   * cannot delete stays.
+   * A folder that held something else first therefore keeps everything. The mark holds the path of
+   * the folder that it marks, so a mark that was copied into another folder marks nothing there. It
+   * never throws: what it cannot delete stays.
    */
   public void delete() {
     try {
@@ -50,21 +51,26 @@ public class SegmentFolderLeftovers {
       }
 
       if (isEmpty()) {
-        Files.createFile(mark());
+        Files.writeString(mark(), markedFolder());
         return;
       }
 
       log.warn(
-          "The segment folder {} holds entries but no segment store's mark, so the server deletes"
-              + " no leftovers there. Give the server an empty folder of its own.",
+          "The segment folder {} holds entries but no mark of its own, so the server deletes no"
+              + " leftovers there. Give the server an empty folder of its own.",
           segmentFolder);
     } catch (IOException | DirectoryIteratorException e) {
       log.warn("Failed to delete the leftovers in the segment folder {}", segmentFolder, e);
     }
   }
 
-  private boolean isMarked() {
-    return Files.isRegularFile(mark());
+  private boolean isMarked() throws IOException {
+    return Files.isRegularFile(mark(), LinkOption.NOFOLLOW_LINKS)
+        && Files.readString(mark()).equals(markedFolder());
+  }
+
+  private String markedFolder() throws IOException {
+    return segmentFolder.toRealPath().toString();
   }
 
   private Path mark() {
