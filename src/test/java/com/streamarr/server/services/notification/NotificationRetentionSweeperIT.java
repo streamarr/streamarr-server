@@ -217,8 +217,9 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should delete history past the retention period that a ServerAdmin chose")
-  void shouldDeleteHistoryPastTheRetentionPeriodThatAServerAdminChose() {
+  @DisplayName(
+      "Should delete history past the retention period when a ServerAdmin chose a shorter one")
+  void shouldDeleteHistoryPastTheRetentionPeriodWhenAServerAdminChoseAShorterOne() {
     var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
     markRead(newsOf(sam, share));
     age(share, Duration.ofDays(31));

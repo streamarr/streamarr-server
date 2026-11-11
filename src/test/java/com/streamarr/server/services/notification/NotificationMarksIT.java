@@ -231,8 +231,10 @@ class NotificationMarksIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should mark read every Notification at or below the cursor and leave a newer one unread")
-  void shouldMarkReadEveryNotificationAtOrBelowTheCursorAndLeaveANewerOneUnread() throws Exception {
+      "Should mark read every Notification at or below the cursor and leave a newer one unread"
+          + " when the list is marked read through a cursor")
+  void shouldMarkReadEveryNotificationAtOrBelowTheCursorWhenTheListIsMarkedReadThroughACursor()
+      throws Exception {
     var oldest = requestFor(riversideAdmin, steps.offer(sam, kai(), riverside));
     var through = requestFor(riversideAdmin, steps.offer(sam, ollie(), riverside));
     var cursor = cursorOf(riversideAdmin, through);

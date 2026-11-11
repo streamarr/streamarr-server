@@ -259,8 +259,11 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should continue from the cursor of the last Notification of the previous page")
-  void shouldContinueFromTheCursorOfTheLastNotificationOfThePreviousPage() throws Exception {
+  @DisplayName(
+      "Should continue after the previous page's last Notification when its cursor is the after"
+          + " argument")
+  void shouldContinueAfterThePreviousPagesLastNotificationWhenItsCursorIsTheAfterArgument()
+      throws Exception {
     var first = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
     var second = steps.offer(sam, steps.profileManagedBy("Ollie", sam, sam), riverside);
     var bearer = authTestSupport.accountBearer(riversideAdmin);
@@ -332,7 +335,8 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should read a page of many Notifications in as many statements as a page of a few when"
           + " they name different Profiles")
-  void shouldReadAPageOfManyNotificationsInAsManyStatementsAsAPageOfAFew() throws Exception {
+  void shouldReadAPageOfManyNotificationsInAsManyStatementsWhenTheyNameDifferentProfiles()
+      throws Exception {
     var bearer = authTestSupport.accountBearer(riversideAdmin);
     offerProfiles(2);
     var few = statementsWhile(() -> mockMvc.perform(graphqlRequest(bearer, NOTIFICATIONS)));
@@ -386,9 +390,9 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should show news about a share to a HouseholdAdmin of a Household the Profile is shared"
-          + " into")
-  void shouldShowNewsAboutAShareToAHouseholdAdminOfAHouseholdTheProfileIsSharedInto()
+      "Should show news about a share to a HouseholdAdmin when the Profile is shared into its"
+          + " Household")
+  void shouldShowNewsAboutAShareToAHouseholdAdminWhenTheProfileIsSharedIntoItsHousehold()
       throws Exception {
     var kai = track(authTestSupport.createIdentity());
     var ollie = steps.profileManagedBy("Ollie", sam, sam);

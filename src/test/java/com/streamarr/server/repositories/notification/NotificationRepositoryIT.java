@@ -125,8 +125,9 @@ class NotificationRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep news of different kinds about one share side by side")
-  void shouldKeepNewsOfDifferentKindsAboutOneShareSideBySide() {
+  @DisplayName(
+      "Should keep news of different kinds about one share side by side when each kind is told")
+  void shouldKeepNewsOfDifferentKindsAboutOneShareSideBySideWhenEachKindIsTold() {
     var share = offerOf(managedProfile("Ollie"), sam);
     var answer = upsert(answered(sam, share).at(EVENT).build());
 
