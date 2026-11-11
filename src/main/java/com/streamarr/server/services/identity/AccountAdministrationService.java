@@ -48,6 +48,7 @@ public class AccountAdministrationService {
   private final PasswordResetCodeRepository passwordResetCodeRepository;
   private final ProfileHouseholdShareRepository profileHouseholdShareRepository;
   private final ProfileShareLifecycle shareLifecycle;
+  private final ShareCodeIssuerAuthority shareCodeIssuers;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
 
@@ -118,6 +119,7 @@ public class AccountAdministrationService {
         TransitionPlan.<AdministrationRejections.RevokeHouseholdAdmin>builder()
             .operation("revokeHouseholdAdmin")
             .transition(() -> userAccountRepository.tryDemoteToHouseholdMember(accountId))
+            .afterTransition(() -> shareCodeIssuers.afterIssuerChanged(accountId, clock.instant()))
             .notFound(AdministrationRejections.AccountNotFound::new)
             .constraint(CHK_HOUSEHOLD_ADMIN, AdministrationRejections.LastHouseholdAdmin::new)
             .build());
@@ -247,9 +249,9 @@ public class AccountAdministrationService {
   /**
    * A disabled issuer leaves no unexpired codes or pending share offers behind. A ServerAdmin
    * demotion invalidates codes and offers for which the issuer has no remaining authority (ADR 0024
-   * §Invitations: the system is the acting party). HouseholdAdmin demotion touches neither — that
-   * role issues no codes and offers no Profiles. A deleted issuer is handled by the V058 triggers
-   * in the same statement as the SET NULL.
+   * §Invitations: the system is the acting party). HouseholdAdmin demotion touches only share
+   * codes, the one credential that role issues. A deleted issuer is handled by the V058 triggers in
+   * the same statement as the SET NULL, and its share codes by {@link AccountRemoval}.
    */
   private int invalidateIssuedCredentials(UUID issuerAccountId, IssuerAuthorityLoss authorityLoss) {
     var now = clock.instant();
@@ -260,6 +262,7 @@ public class AccountAdministrationService {
     invalidated +=
         passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
             issuerAccountId, reason, now);
+    invalidated += shareCodeIssuers.afterIssuerChanged(issuerAccountId, now);
     return invalidated
         + switch (authorityLoss) {
           case ACCOUNT_DISABLED ->
