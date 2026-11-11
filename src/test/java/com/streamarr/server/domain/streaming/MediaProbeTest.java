@@ -3,12 +3,17 @@ package com.streamarr.server.domain.streaming;
 import static com.streamarr.server.fixtures.ProbeFixture.audioStreamBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.media.LearnedStreamEnd;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -353,6 +358,138 @@ class MediaProbeTest {
   private static MediaProbe probeOf(VideoPlaybackFacts.VideoPlaybackFactsBuilder facts) {
     return StreamSessionFixture.defaultProbeBuilder()
         .videoPlaybackFacts(Optional.of(facts.build()))
+        .build();
+  }
+
+  // A healthy file's audio can outlast its last picture. The session delivers both streams, so its
+  // media ends where the audio ends, and a copy lists the audio after the last picture.
+  @Test
+  @DisplayName(
+      "Should end the media at the audio's end when the session's audio outlasts the video")
+  void shouldEndTheMediaAtTheAudiosEndWhenTheSessionsAudioOutlastsTheVideo() {
+    var probe = probeEndingAt(Duration.ofSeconds(20), video(14_000), audioEndingAt(1, 16_000));
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(16));
+  }
+
+  @Test
+  @DisplayName(
+      "Should end the media at the video's end when the video outlasts the session's audio")
+  void shouldEndTheMediaAtTheVideosEndWhenTheVideoOutlastsTheSessionsAudio() {
+    var probe = probeEndingAt(Duration.ofSeconds(20), video(14_167), audioEndingAt(1, 14_101));
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(14_167));
+  }
+
+  @Test
+  @DisplayName("Should end the media at the video's end when the file has no audio stream")
+  void shouldEndTheMediaAtTheVideosEndWhenTheFileHasNoAudioStream() {
+    var probe =
+        probeEndingAt(
+            Duration.ofSeconds(20),
+            video(14_167),
+            subtitle("subrip", "eng")
+                .index(1)
+                .endTime(Optional.of(Duration.ofSeconds(19)))
+                .build());
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofMillis(14_167));
+  }
+
+  // The session delivers its own audio track only. A commentary track that runs on, or a late
+  // subtitle cue, would otherwise make every copy advertise time that it holds no media for.
+  @Test
+  @DisplayName(
+      "Should end the media at the session's own streams when another audio track and a subtitle"
+          + " end later")
+  void shouldEndTheMediaAtTheSessionsOwnStreamsWhenAnotherAudioTrackAndASubtitleEndLater() {
+    var probe =
+        probeEndingAt(
+            Duration.ofSeconds(30),
+            video(14_000),
+            audioEndingAt(1, 16_000),
+            audioEndingAt(2, 25_000),
+            subtitle("subrip", "eng")
+                .index(3)
+                .endTime(Optional.of(Duration.ofSeconds(30)))
+                .build());
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(16));
+    assertThat(probe.withSessionAudioTrackAt(1).mediaEnd()).isEqualTo(Duration.ofSeconds(25));
+  }
+
+  @Test
+  @DisplayName(
+      "Should end the media at the container's duration when the session's audio states no end")
+  void shouldEndTheMediaAtTheContainersDurationWhenTheSessionsAudioStatesNoEnd() {
+    var probe =
+        probeEndingAt(
+            Duration.ofSeconds(20), video(14_000), audioStreamBuilder("aac").index(1).build());
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(20));
+  }
+
+  @Test
+  @DisplayName("Should end the media at the container's duration when the video states no end")
+  void shouldEndTheMediaAtTheContainersDurationWhenTheVideoStatesNoEnd() {
+    var probe =
+        probeEndingAt(
+            Duration.ofSeconds(20),
+            StreamInfo.builder().index(0).codecType("video").build(),
+            audioEndingAt(1, 16_000));
+
+    assertThat(probe.mediaEnd()).isEqualTo(Duration.ofSeconds(20));
+  }
+
+  // The header of a file cut near 14 s states 30 s for each stream. A keyframe packet scan read
+  // where each stream's packets end.
+  @Test
+  @DisplayName(
+      "Should end the media at the learned ends when the container header overstates each stream's"
+          + " end")
+  void shouldEndTheMediaAtTheLearnedEndsWhenTheContainerHeaderOverstatesEachStreamsEnd() {
+    var stated = probeEndingAt(Duration.ofSeconds(30), video(30_000), audioEndingAt(1, 30_000));
+
+    var learned =
+        stated.withLearnedEndTimes(
+            List.of(
+                learnedEnd(0, Duration.ofMillis(14_167)),
+                learnedEnd(1, Duration.ofMillis(14_250))));
+
+    assertThat(stated.mediaEnd()).isEqualTo(Duration.ofSeconds(30));
+    assertThat(learned.mediaEnd()).isEqualTo(Duration.ofMillis(14_250));
+    assertThat(learned.videoEndTime()).contains(Duration.ofMillis(14_167));
+  }
+
+  private static LearnedStreamEnd learnedEnd(int streamIndex, Duration endTime) {
+    return LearnedStreamEnd.builder()
+        .mediaFileId(UUID.randomUUID())
+        .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+        .streamIndex(streamIndex)
+        .endTime(endTime)
+        .build();
+  }
+
+  // The default probe's chosen video stream is stream 0.
+  private static StreamInfo video(long endMillis) {
+    return StreamInfo.builder()
+        .index(0)
+        .codecType("video")
+        .endTime(Optional.of(Duration.ofMillis(endMillis)))
+        .build();
+  }
+
+  private static StreamInfo audioEndingAt(int index, long endMillis) {
+    return audioStreamBuilder("aac")
+        .index(index)
+        .endTime(Optional.of(Duration.ofMillis(endMillis)))
+        .build();
+  }
+
+  private static MediaProbe probeEndingAt(Duration containerDuration, StreamInfo... streams) {
+    return StreamSessionFixture.defaultProbeBuilder()
+        .duration(containerDuration)
+        .streams(List.of(streams))
         .build();
   }
 

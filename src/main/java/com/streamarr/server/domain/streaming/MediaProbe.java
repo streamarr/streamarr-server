@@ -325,6 +325,28 @@ public record MediaProbe(
   }
 
   /**
+   * Where the media that a stream session delivers ends: the later end time of the chosen video
+   * stream and the session's audio stream, or the video's alone in a file without audio (ADR 0037,
+   * early ends). Every variant's media playlist, every job attempt and the session's watch progress
+   * end there, so a stream that ends first is held or padded up to it, and no copy is advertised
+   * past it. While the end time of one of those streams is unknown, the media ends at the
+   * container's duration.
+   */
+  public Duration mediaEnd() {
+    var videoEnd = videoEndTime();
+    var sessionAudio = audioStreams().stream().findFirst();
+    if (videoEnd.isEmpty() || sessionAudio.isEmpty()) {
+      return videoEnd.orElse(duration);
+    }
+
+    return sessionAudio
+        .get()
+        .endTime()
+        .map(audioEnd -> audioEnd.compareTo(videoEnd.get()) > 0 ? audioEnd : videoEnd.get())
+        .orElse(duration);
+  }
+
+  /**
    * Whether the chosen video stream ends at least {@code margin} before another stream of the
    * source ends, by their probed end times (ADR 0037, early ends). The probe states end times for
    * audio and video streams only. A stream whose end time the probe does not state never ends
