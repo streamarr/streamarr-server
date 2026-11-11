@@ -39,6 +39,8 @@ import com.streamarr.server.domain.language.ProfileLanguagePreferences;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
@@ -66,6 +68,7 @@ import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
@@ -78,6 +81,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.SourceContainer;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
@@ -98,6 +102,8 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
+import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
@@ -6696,6 +6702,96 @@ class HlsStreamingServiceTest {
         .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
     assertThat(runtimeRegistry.findById(command.streamSessionId())).isEmpty();
+  }
+
+  // The header of a file cut near 14 s states 30 s. Every playlist of the stream session ends at
+  // the scanned media end, so a start position between the two lies past the last segment.
+  @ParameterizedTest
+  @ValueSource(longs = {14_250, 20_000})
+  @DisplayName(
+      "Should refuse a start position at or past the scanned media end when the container header"
+          + " overstates the source's length")
+  void shouldRefuseAStartPositionAtOrPastTheScannedMediaEndWhenTheHeaderOverstatesTheLength(
+      long startMillis) {
+    var file = seedMediaFileScannedToEndAt(Duration.ofSeconds(30), Duration.ofMillis(14_250));
+    var command =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofMillis(startMillis)))
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // A file that was written to a pipe states no duration, so its header reads as zero. Its scanned
+  // media end is the only end that the server knows.
+  @Test
+  @DisplayName(
+      "Should start at the start position's segment when the position lies before the scanned"
+          + " media end of a source whose header states no duration")
+  void
+      shouldStartAtTheStartPositionsSegmentWhenItLiesBeforeTheScannedEndOfASourceWithoutADuration() {
+    var file = seedMediaFileScannedToEndAt(Duration.ZERO, Duration.ofMillis(14_250));
+    var command =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofSeconds(13)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getStartPosition()).contains(Duration.ofSeconds(13));
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .isEqualTo(2);
+  }
+
+  // A media file whose header states the container duration, and whose keyframe packet scan read
+  // keyframes at 0, 6 and 12 s, the video's end one frame before the media end, and the audio's
+  // end at the media end.
+  private MediaFile seedMediaFileScannedToEndAt(Duration containerDuration, Duration mediaEnd) {
+    var file = seedMediaFile();
+    var snapshot = new SourceFileSnapshot(1_000_000, Instant.EPOCH);
+    probeResults.publish(
+        ProbePublication.builder()
+            .mediaFileId(file.getId())
+            .snapshot(snapshot)
+            .probeVersion(ProbeVersion.CURRENT)
+            .outcome(
+                ProbeFixture.completeProbeBuilder(
+                        defaultProbeBuilder().duration(containerDuration).build())
+                    .keyframes(
+                        new KeyframeKnowledge.PacketScanRequired(
+                            KeyframePacketScanReason.NO_CONTAINER_INDEX))
+                    .build())
+            .build());
+    probeResults.publishKeyframePacketScan(
+        KeyframePacketScanPublication.builder()
+            .mediaFileId(file.getId())
+            .snapshot(snapshot)
+            .probeVersion(ProbeVersion.CURRENT)
+            .keyframes(
+                new KeyframeKnowledge.Known(
+                    KeyframePositions.builder()
+                        .streamIndex(0)
+                        .timeBaseNumerator(1)
+                        .timeBaseDenominator(1_000)
+                        .source(KeyframePositionSource.PACKET_SCAN)
+                        .keyframes(
+                            List.of(
+                                new KeyframePosition(0, 0),
+                                new KeyframePosition(6_000, 6_000),
+                                new KeyframePosition(12_000, 12_000)))
+                        .build()))
+            .streamEnds(
+                List.of(
+                    new SourceStreamEnd(0, mediaEnd.minusMillis(42)),
+                    new SourceStreamEnd(1, mediaEnd)))
+            .build());
+    return file;
   }
 
   @Test
