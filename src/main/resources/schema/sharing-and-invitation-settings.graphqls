@@ -9,6 +9,7 @@ first. Only a ServerAdmin reads or changes it. A change applies to codes issued 
 type ShareCodeLifetimeSetting {
     "The same for every read and change, so a client cache can update the setting in place."
     id: ID!
+    "How long, in hours, a code issued now stays live. Only a ServerAdmin reads it."
     hours: Int!
     "The shortest lifetime a ServerAdmin can choose."
     minimumHours: Int!
@@ -22,12 +23,15 @@ input ChangeShareCodeLifetimeInput {
     hours: Int!
 }
 
+"The answer to a ServerAdmin's change of the share code lifetime."
 type ChangeShareCodeLifetimePayload {
     "The setting as changed. Null when the change is refused."
     shareCodeLifetimeSetting: ShareCodeLifetimeSetting
+    "Why the change was refused. Empty when the setting changed."
     userErrors: [ChangeShareCodeLifetimeError!]!
 }
 
+"Why a ServerAdmin's change of the share code lifetime was refused."
 union ChangeShareCodeLifetimeError = LifetimeOutOfRangeError
 
 """
@@ -38,6 +42,7 @@ after it.
 type InvitationLifetimeSetting {
     "The same for every read and change, so a client cache can update the setting in place."
     id: ID!
+    "How long, in hours, what is issued now waits for its answer. Only a ServerAdmin reads it."
     hours: Int!
     "The shortest lifetime a ServerAdmin can choose."
     minimumHours: Int!
@@ -51,12 +56,15 @@ input ChangeInvitationLifetimeInput {
     hours: Int!
 }
 
+"The answer to a ServerAdmin's change of the invitation lifetime."
 type ChangeInvitationLifetimePayload {
     "The setting as changed. Null when the change is refused."
     invitationLifetimeSetting: InvitationLifetimeSetting
+    "Why the change was refused. Empty when the setting changed."
     userErrors: [ChangeInvitationLifetimeError!]!
 }
 
+"Why a ServerAdmin's change of the invitation lifetime was refused."
 union ChangeInvitationLifetimeError = LifetimeOutOfRangeError
 
 """
@@ -67,6 +75,7 @@ it refuses the next issue until the Household holds fewer codes than the limit.
 type ShareCodeLimitSetting {
     "The same for every read and change, so a client cache can update the setting in place."
     id: ID!
+    "How many live share codes a Household may hold now. Only a ServerAdmin reads it."
     codes: Int!
     "The lowest limit a ServerAdmin can choose."
     minimumCodes: Int!
@@ -80,10 +89,13 @@ input ChangeShareCodeLimitInput {
     codes: Int!
 }
 
+"The answer to a ServerAdmin's change of the share code limit."
 type ChangeShareCodeLimitPayload {
     "The setting as changed. Null when the change is refused."
     shareCodeLimitSetting: ShareCodeLimitSetting
+    "Why the change was refused. Empty when the setting changed."
     userErrors: [ChangeShareCodeLimitError!]!
 }
 
+"Why a ServerAdmin's change of the share code limit was refused."
 union ChangeShareCodeLimitError = ShareCodeLimitOutOfRangeError
