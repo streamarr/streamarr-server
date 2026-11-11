@@ -141,6 +141,14 @@ type Query {
     """
     pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     """
+    One invitation to manage a Profile, at any status, for the page where the Account it names
+    accepts or declines it. Its named Account, the managers of its Profile and ServerAdmins read it.
+    It shows the Profile's and the inviter's names as they are now, and the names it was made with
+    once the Profile or the inviter is deleted. Null for everyone else, for a device-bound session,
+    for a disabled Account, and when no invitation has the id.
+    """
+    managerInvitation(invitationId: ID!): ManagerInvitationDetails
+    """
     A Household's active Devices, newest first, for its HouseholdAdmins and for ServerAdmins.
     Everyone else gets an empty list. visitorsOnly: true keeps only the Devices that visitors
     linked: people who are not members of the Household. Leave it out, or pass false, to get every

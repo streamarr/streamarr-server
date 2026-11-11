@@ -94,6 +94,16 @@ public class ProfileCastSupport {
         });
   }
 
+  /** Gives the Profile the name. */
+  public void rename(Profile profile, String name) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var stored = profileRepository.findById(profile.getId()).orElseThrow();
+          stored.setName(name);
+          profileRepository.saveAndFlush(stored);
+        });
+  }
+
   /** Another HouseholdAdmin of the identity's Household, whose Personal Profile is an Adult. */
   public TestIdentity secondAdminOf(TestIdentity householdOf) {
     var admin = authTestSupport.createHouseholdMemberIdentity(householdOf);
