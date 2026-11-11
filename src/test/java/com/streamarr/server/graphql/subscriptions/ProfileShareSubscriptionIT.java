@@ -130,8 +130,8 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     assertThat(offeredToHost.path("profile").path("name").asString()).isEqualTo(orphan.getName());
     assertThat(offeredToHost.path("offeredByDisplayName").asString())
         .isEqualTo(owner.account().getDisplayName());
-    assertThat(offeredToHost.path("household").path("name").asString())
-        .isEqualTo(host.household().getName());
+    // The Household's name belongs to the Profile's managers and ServerAdmins.
+    assertThat(offeredToHost.path("household").isNull()).isTrue();
     assertThat(offeredToOwner.path("household").path("name").asString())
         .isEqualTo(host.household().getName());
     // The offerer's name belongs to the target side, as in the share queries.

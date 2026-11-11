@@ -936,6 +936,45 @@ class CedarIdentityPoliciesTest {
 
     @Test
     @DisplayName(
+        "Should not show a Profile's share Households when the caller's own Personal Profile is"
+            + " supervised")
+    void shouldNotShowProfileShareHouseholdsWhenCallersOwnPersonalProfileIsSupervised() {
+      var view = new Intent.ViewProfileShareHouseholds(personal.getId());
+      assertThat(decide(member(), view)).isEqualTo(ALLOWED);
+
+      // A supervised person is not a ProfileManager of their own Profile (ADR 0024).
+      personal.setMaximumAllowedRatingAge(12);
+      profiles.save(personal);
+      assertThat(decide(member(), view)).isEqualTo(DENIED);
+
+      personal.setMaximumAllowedRatingAge(null);
+      personal.setKind(ProfileKind.KID);
+      profiles.save(personal);
+      assertThat(decide(member(), view)).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should let only a live ServerAdmin view the share history of a Household")
+    void shouldLetOnlyLiveServerAdminViewTheShareHistoryOfHousehold() {
+      var home = new Intent.ViewHouseholdShareHistory(account.getHouseholdId());
+      var elsewhere = new Intent.ViewHouseholdShareHistory(visitedHouseholdId);
+
+      // Administering the Household is not enough.
+      assertThat(decide(atHome(), home)).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), home)).isEqualTo(ALLOWED);
+      assertThat(decide(member(), elsewhere)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), home)).isEqualTo(DENIED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), home)).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
         "Should let an enabled Account follow share changes when its session is not device-bound")
     void shouldLetAnEnabledAccountFollowShareChangesWhenItsSessionIsNotDeviceBound() {
       var follow = new Intent.ViewProfileShareChanges();

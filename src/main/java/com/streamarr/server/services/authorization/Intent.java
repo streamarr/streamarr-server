@@ -54,10 +54,18 @@ public sealed interface Intent {
   record ViewManagerInvitations(UUID profileId) implements UnitIntent {}
 
   /**
-   * The names of the Households a Profile is offered or shared to: the offering side only, meaning
-   * its ProfileManagers, the sovereign Account, and live ServerAdmin.
+   * A Profile's shares into every Household and the name of each: the offering side only, meaning
+   * its ProfileManagers and live ServerAdmin. The Account of a self-managed Personal Profile is one
+   * of its ProfileManagers; the Account of a supervised one is not.
    */
   record ViewProfileShareHouseholds(UUID profileId) implements UnitIntent {}
+
+  /**
+   * A Household's share history, as ServerAdmin inspects it: every share into the Household at
+   * every status, with its Profile, its offerer and the Household's name. Live ServerAdmin only;
+   * administering the Household is not enough.
+   */
+  record ViewHouseholdShareHistory(UUID householdId) implements UnitIntent {}
 
   /**
    * Following the changes of the Profile shares the caller may read: any enabled Account, never a

@@ -178,11 +178,21 @@ class ProfileSharePartiesServiceTest {
   }
 
   @Test
-  @DisplayName("Should show the Household when the reader administers it")
-  void shouldShowHouseholdWhenReaderAdministersIt() {
+  @DisplayName("Should hide the Household when the reader only administers it")
+  void shouldHideHouseholdWhenReaderOnlyAdministersIt() {
+    // The Household's name belongs to the Profile's side (ADR 0024).
     allowOnly(this::administersTarget);
 
-    assertThat(service.households(reader(), Set.of(share))).containsKey(share);
+    assertThat(service.households(reader(), Set.of(share))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should show the Household when the reader may view its share history")
+  void shouldShowHouseholdWhenReaderMayViewItsShareHistory() {
+    allowOnly(intent -> intent.equals(new Intent.ViewHouseholdShareHistory(target.getId())));
+
+    assertThat(service.households(reader(), Set.of(share)).get(share).getName())
+        .isEqualTo("Lakeside");
   }
 
   @Test
@@ -213,13 +223,16 @@ class ProfileSharePartiesServiceTest {
         new ShareReference(offered.getId(), elsewhere.getId(), Optional.of(offerer.getId()));
     var otherIntoTarget =
         new ShareReference(other.getId(), target.getId(), Optional.of(offerer.getId()));
-    allowOnly(this::administersTarget);
+    allowOnly(
+        intent ->
+            administersTarget(intent)
+                || intent.equals(new Intent.ViewProfileShareHouseholds(other.getId())));
 
     var names = service.offererNames(reader(), Set.of(share, intoElsewhere, otherIntoTarget));
     var shown = service.households(reader(), Set.of(share, intoElsewhere, otherIntoTarget));
 
     assertThat(names).containsOnlyKeys(share, otherIntoTarget);
-    assertThat(shown).containsOnlyKeys(share, otherIntoTarget);
+    assertThat(shown).containsOnlyKeys(otherIntoTarget);
   }
 
   @Test
