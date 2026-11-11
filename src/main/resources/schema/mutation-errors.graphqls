@@ -286,7 +286,9 @@ type InvitationNotPendingError implements InputMutationError & MutationError {
 """
 No share with that id that the caller may see. Once an offer is declined, canceled, expired or
 withdrawn, or a share has ended, the target Household's HouseholdAdmins get this too, as for a share
-that no longer exists, unless they manage the Profile or are ServerAdmins.
+that no longer exists, unless they manage the Profile or are ServerAdmins. A HouseholdAdmin who
+only hosts the Profile gets it for every share of the Profile into another Household, at every
+status, required by Account membership or not.
 """
 type ShareNotFoundError implements InputMutationError & MutationError {
     message: String!
