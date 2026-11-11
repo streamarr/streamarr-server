@@ -1856,8 +1856,8 @@ class WorkerSessionGrpcServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject an upload when ownership is lost during publication")
-  void shouldRejectUploadWhenOwnershipIsLostDuringPublication() throws Exception {
+  @DisplayName("Should reject an upload when ownership is lost before its data arrives")
+  void shouldRejectUploadWhenOwnershipIsLostBeforeItsDataArrives() throws Exception {
     var segmentStore = new BlockingSegmentStore();
 
     var result = uploadThatLosesOwnership(segmentStore);
