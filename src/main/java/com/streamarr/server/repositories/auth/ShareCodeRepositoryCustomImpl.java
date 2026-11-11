@@ -65,8 +65,7 @@ public class ShareCodeRepositoryCustomImpl implements ShareCodeRepositoryCustom 
     return dsl.selectDistinct(SHARE_CODE.HOUSEHOLD_ID)
         .from(SHARE_CODE)
         .where(SHARE_CODE.ISSUER_ACCOUNT_ID.eq(issuerAccountId))
-        .and(SHARE_CODE.STATUS.eq(ShareCodeStatus.LIVE))
-        .and(SHARE_CODE.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)))
+        .and(liveAt(now))
         .fetch(SHARE_CODE.HOUSEHOLD_ID);
   }
 
@@ -117,13 +116,19 @@ public class ShareCodeRepositoryCustomImpl implements ShareCodeRepositoryCustom 
 
   /** Ends the codes the condition names that are live at the instant; answers how many. */
   private int endLiveWhere(Condition codes, ShareCodeStatus ended, Instant now) {
-    var at = now.atOffset(ZoneOffset.UTC);
     return dsl.update(SHARE_CODE)
         .set(SHARE_CODE.STATUS, ended)
-        .set(SHARE_CODE.ENDED_AT, at)
+        .set(SHARE_CODE.ENDED_AT, now.atOffset(ZoneOffset.UTC))
         .where(codes)
-        .and(SHARE_CODE.STATUS.eq(ShareCodeStatus.LIVE))
-        .and(SHARE_CODE.EXPIRES_AT.gt(at))
+        .and(liveAt(now))
         .execute();
+  }
+
+  /** A code is live at an instant while it is LIVE and has not expired by then. */
+  private static Condition liveAt(Instant now) {
+    return SHARE_CODE
+        .STATUS
+        .eq(ShareCodeStatus.LIVE)
+        .and(SHARE_CODE.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)));
   }
 }
