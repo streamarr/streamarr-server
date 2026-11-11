@@ -37,8 +37,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * A live share code stays live only while the Account that issued it may still issue one for the
- * code's Household, by either role (issue #870, decision 10, provisional). Each change that can
- * take that away is driven here through the service people use.
+ * code's Household, by either role (ADR 0024 §Share codes). Each change that can take that away is
+ * driven here through the service people use.
  */
 @Tag("IntegrationTest")
 @DisplayName("Share Code Issuer Authority Integration Tests")
