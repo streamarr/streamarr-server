@@ -146,11 +146,13 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName(
       "Should deliver the new request and then its resolution when an offer is made and rejected")
-  void shouldDeliverTheNewRequestAndThenItsResolutionWhenAnOfferIsMadeAndRejected() {
+  void shouldDeliverTheNewRequestAndThenItsResolutionWhenAnOfferIsMadeAndRejected()
+      throws Exception {
     var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
 
     var offer = steps.offer(sam, kai(), riverside);
     var made = nextChange(socket);
+    assertMatchesAFreshQuery(made, riversideAdmin);
     sharing.rejectProfileShare(authTestSupport.identityOf(riverside), offer.getId());
     var resolved = nextChange(socket);
 
@@ -165,6 +167,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     assertThat(resolved.path("unreadNotificationCount").asInt()).isZero();
     assertThat(nodeOf(resolved).path("unread").asBoolean()).isFalse();
     assertThat(nodeOf(resolved).path("resolution").asString()).isEqualTo("DECIDED");
+    assertMatchesAFreshQuery(resolved, riversideAdmin);
   }
 
   @Test
@@ -307,7 +310,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should deliver the request's expiry when the sweep stores the offer's expiry")
-  void shouldDeliverTheRequestsExpiryWhenTheSweepStoresTheOffersExpiry() {
+  void shouldDeliverTheRequestsExpiryWhenTheSweepStoresTheOffersExpiry() throws Exception {
     var offer = steps.offer(sam, kai(), riverside);
     var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
 
@@ -319,13 +322,15 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
         .isEqualTo(requestFor(riversideAdmin, offer).getId().toString());
     assertThat(nodeOf(expired).path("resolution").asString()).isEqualTo("EXPIRED");
     assertThat(expired.path("unreadNotificationCount").asInt()).isZero();
+    assertMatchesAFreshQuery(expired, riversideAdmin);
   }
 
   @Test
   @DisplayName(
       "Should deliver the mark to every open socket of the Account when its recipient marks the"
           + " news read")
-  void shouldDeliverTheMarkToEveryOpenSocketOfTheAccountWhenItsRecipientMarksTheNewsRead() {
+  void shouldDeliverTheMarkToEveryOpenSocketOfTheAccountWhenItsRecipientMarksTheNewsRead()
+      throws Exception {
     var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam, theo), riverside);
     steps.accept(riverside, offer);
     var news = requestFor(theo, offer);
@@ -334,7 +339,9 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
     notificationService.markNotificationRead(authTestSupport.identityOf(theo), news.getId());
 
-    assertThat(List.of(nextChange(phone), nextChange(laptop)))
+    var onPhone = nextChange(phone);
+    var onLaptop = nextChange(laptop);
+    assertThat(List.of(onPhone, onLaptop))
         .allSatisfy(
             marked -> {
               assertThat(onlyChange(marked).path("notificationId").asString())
@@ -344,6 +351,8 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
               assertThat(nodeOf(marked).path("unread").asBoolean()).isFalse();
               assertThat(marked.path("unreadNotificationCount").asInt()).isZero();
             });
+    assertMatchesAFreshQuery(onPhone, theo);
+    assertMatchesAFreshQuery(onLaptop, theo);
   }
 
   @Test
