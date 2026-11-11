@@ -216,7 +216,9 @@ class AuthorizationParityTest {
           CHANGE_ENCODER_PRESET,
           VIEW_IDLE_SEGMENT_RETENTION,
           CHANGE_IDLE_SEGMENT_RETENTION,
-          VIEW_ACTIVE_STREAMS ->
+          VIEW_ACTIVE_STREAMS,
+          VIEW_NOTIFICATION_RETENTION,
+          CHANGE_NOTIFICATION_RETENTION ->
           "serverAdministration";
       case VIEW_PROFILE_PICKER,
           SELECT_PROFILE,
@@ -380,6 +382,8 @@ class AuthorizationParityTest {
         new Intent.ChangeIdleSegmentRetention(),
         new Intent.ViewActiveStreams(),
         new Intent.ViewNotifications(),
-        new Intent.MarkNotificationsRead());
+        new Intent.MarkNotificationsRead(),
+        new Intent.ViewNotificationRetention(),
+        new Intent.ChangeNotificationRetention());
   }
 }

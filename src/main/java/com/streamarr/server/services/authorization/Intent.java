@@ -272,6 +272,12 @@ public sealed interface Intent {
   /** See every active stream on the server and why it plays as it does; a whole-surface gate. */
   record ViewActiveStreams() implements UnitIntent {}
 
+  /** Read how long the server keeps Notification history (ADR 0063); a whole-surface gate. */
+  record ViewNotificationRetention() implements UnitIntent {}
+
+  /** Change how long the server keeps Notification history (ADR 0063); a whole-surface gate. */
+  record ChangeNotificationRetention() implements UnitIntent {}
+
   /**
    * List, count and follow the signed-in Account's own Notifications (ADR 0063): any enabled
    * Account, never a device-bound session. Each Notification is then guarded by the read of its

@@ -474,6 +474,12 @@ type IdleSegmentRetentionOutOfRangeError implements InputMutationError & Mutatio
     inputPath: [String!]!
 }
 
+"The days lie outside the range that the Notification retention setting reports."
+type NotificationRetentionOutOfRangeError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
 "No video copy or encode satisfies the playback request."
 type NoEligibleVideoFormatError implements MutationError {
     message: String!
