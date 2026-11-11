@@ -210,6 +210,41 @@ public final class TestImages {
     return new BufferedImage(colorModel, raster, false, null);
   }
 
+  /**
+   * A teal TIFF with a 32-bit floating-point sample for each of red, green, blue and alpha. Every
+   * alpha sample is 0.5, where 1.0 is fully opaque.
+   */
+  public static byte[] createFloatingPointTiffImageWithHalfTransparentPixels() {
+    return floatingPointTealTiffImage(0.5f);
+  }
+
+  /** The same TIFF with every alpha sample at 1.0, which is fully opaque. */
+  public static byte[] createFloatingPointOpaqueTiffImageWithAlphaChannel() {
+    return floatingPointTealTiffImage(1.0f);
+  }
+
+  private static byte[] floatingPointTealTiffImage(float alpha) {
+    var colorModel =
+        new ComponentColorModel(
+            ColorSpace.getInstance(ColorSpace.CS_sRGB),
+            true,
+            false,
+            Transparency.TRANSLUCENT,
+            DataBuffer.TYPE_FLOAT);
+    var raster = colorModel.createCompatibleWritableRaster(200, 300);
+    var tealRow = new float[raster.getWidth()];
+    var alphaRow = new float[raster.getWidth()];
+    Arrays.fill(tealRow, 0xA0 / 255f);
+    Arrays.fill(alphaRow, alpha);
+    for (var y = 0; y < raster.getHeight(); y++) {
+      raster.setSamples(0, y, raster.getWidth(), 1, 1, tealRow);
+      raster.setSamples(0, y, raster.getWidth(), 1, 2, tealRow);
+      raster.setSamples(0, y, raster.getWidth(), 1, 3, alphaRow);
+    }
+
+    return write(new BufferedImage(colorModel, raster, false, null), "tiff");
+  }
+
   /** A PNG with one 16-bit grey sample for each pixel, which no JPEG encoder accepts. */
   public static byte[] createSixteenBitGrayscalePngImage() {
     return writePng(new BufferedImage(600, 900, BufferedImage.TYPE_USHORT_GRAY));
