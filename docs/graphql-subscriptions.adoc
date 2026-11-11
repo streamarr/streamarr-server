@@ -347,7 +347,7 @@ After every reconnect, the client subscribes and queries again.
 == Notifications
 
 `notificationsChanged` delivers each committed change to the signed-in Account's Notifications.
-A change arrives when a Notification is made or updated in place, when a request resolves because its offer was accepted, rejected, canceled, replaced, invalidated or expired, and when the Account marks Notifications read.
+A change arrives when a Notification is made or updated in place, when a request resolves because its offer was accepted, declined, canceled, replaced, invalidated or expired, and when the Account marks Notifications read.
 A change that rolls back never arrives.
 Each change carries `notifications`, one entry for each Notification that the change touched, and `unreadNotificationCount`, the Account's unread count after the change.
 Each entry carries `notificationId` and `edge`, the same edge that the `notifications` query returns, read when the server delivers the change.

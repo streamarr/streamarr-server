@@ -71,7 +71,7 @@ interface RequestNotification implements Notification {
 
 "How a request resolved."
 enum RequestResolution {
-    "Someone with the authority accepted, rejected or declined the subject."
+    "Someone with the authority accepted or declined the subject."
     DECIDED
     "The proposer canceled the subject, a newer proposal replaced it, or the server invalidated it."
     WITHDRAWN
@@ -103,7 +103,7 @@ type ProfileShareOfferedNotification implements RequestNotification & Notificati
     profileName: String!
 }
 
-"A Household accepted or rejected an offer of a Profile that the recipient manages or offered."
+"A Household accepted or declined an offer of a Profile that the recipient manages or offered."
 type ProfileShareAnsweredNotification implements Notification {
     id: ID!
     message: String!
@@ -125,7 +125,7 @@ type ProfileShareAnsweredNotification implements Notification {
 enum ProfileShareAnswer {
     "The Household accepted the offer, and the share became active."
     ACCEPTED
-    "The Household rejected the offer."
+    "The Household declined the offer."
     REJECTED
 }
 
