@@ -49,7 +49,7 @@ public class FakeLearnedStreamEndRepository implements LearnedStreamEndRepositor
       return false;
     }
 
-    learned.put(key, end);
+    learned.put(key, end.toBuilder().fromPacketScan(false).build());
     return true;
   }
 
