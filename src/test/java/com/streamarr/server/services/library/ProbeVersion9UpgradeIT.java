@@ -8,9 +8,7 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
-import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
-import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.task.ProbeInputs;
@@ -41,17 +39,17 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.convention.TestBean;
 
 @Tag("IntegrationTest")
-@DisplayName("Probe Version 8 Upgrade Integration Tests")
-@Import(ProbeVersion8UpgradeIT.UpgradeConfiguration.class)
+@DisplayName("Probe Version 9 Upgrade Integration Tests")
+@Import(ProbeVersion9UpgradeIT.UpgradeConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-class ProbeVersion8UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
+class ProbeVersion9UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
 
-  private static final int VERSION_7 =
-      ProbeVersion.FIRST_TO_REPORT_MAXIMUM_FRAME_RATE_AND_RPU_FACTS - 1;
-  // Version 8 adds the chosen video stream's maximum frame rate. A version 7 result has none.
-  private static final int VERSION_8 =
-      ProbeVersion.FIRST_TO_REPORT_MAXIMUM_FRAME_RATE_AND_RPU_FACTS;
-  private static final Fraction VERSION_8_MAXIMUM_FRAME_RATE = new Fraction(60, 1);
+  private static final int VERSION_8 = ProbeVersion.FIRST_TO_REPORT_SCANNED_STREAM_ENDS - 1;
+  private static final int VERSION_9 = ProbeVersion.FIRST_TO_REPORT_SCANNED_STREAM_ENDS;
+  // A keyframe packet scan stores the stream ends that version 9 adds, after the probe. The two
+  // probes here read different durations, so the test can tell which result a session plays from.
+  private static final Duration VERSION_8_DURATION = Duration.ofSeconds(12);
+  private static final Duration VERSION_9_DURATION = Duration.ofSeconds(11);
 
   private static final FakeFfprobeService PROBE = new FakeFfprobeService();
   private static final CountDownLatch RELEASE_LATER_PROBES = new CountDownLatch(1);
@@ -60,9 +58,9 @@ class ProbeVersion8UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
   @TestBean FfprobeService ffprobeService;
 
   // The first probe stores its result at once and every later probe waits, so the test observes
-  // one file on its version 8 result while the other still has only its version 7 result.
+  // one file on its version 9 result while the other still has only its version 8 result.
   static FfprobeService ffprobeService() {
-    PROBE.answerWith(probeOutcome(Optional.of(VERSION_8_MAXIMUM_FRAME_RATE)));
+    PROBE.answerWith(probeOutcome(VERSION_9_DURATION));
     PROBE.runDuringProbe(
         () -> {
           if (STARTED_PROBES.incrementAndGet() > 1) {
@@ -80,13 +78,11 @@ class ProbeVersion8UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
     }
   }
 
-  private static ProbeOutcome.Success probeOutcome(Optional<Fraction> maximumFrameRate) {
+  private static ProbeOutcome.Success probeOutcome(Duration duration) {
     var probe = completeProbe();
-    var video =
-        retainedVideo(probe.streams().getFirst()).maximumFrameRate(maximumFrameRate).build();
     return ProbeOutcome.Success.builder()
-        .container(probe.container())
-        .streams(List.of(video))
+        .container(probe.container().toBuilder().duration(Optional.of(duration)).build())
+        .streams(List.of(retainedVideo(probe.streams().getFirst()).build()))
         .keyframes(probe.keyframes())
         .chosenVideoStream(probe.chosenVideoStream())
         .streamTitlesOmitted(Optional.of(false))
@@ -95,9 +91,9 @@ class ProbeVersion8UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should play each file from its version 7 result until its version 8 result is stored when the server starts after upgrading")
+      "Should play each file from its version 8 result until its version 9 result is stored when the server starts after upgrading")
   void
-      shouldPlayEachFileFromItsVersion7ResultUntilItsVersion8ResultIsStoredWhenTheServerStartsAfterUpgrading()
+      shouldPlayEachFileFromItsVersion8ResultUntilItsVersion9ResultIsStoredWhenTheServerStartsAfterUpgrading()
           throws InterruptedException {
     var mediaFileIds = fixture.mediaFileIds();
     // Nothing signals that the startup scan has requested its probes, so the test polls for them.
@@ -109,8 +105,8 @@ class ProbeVersion8UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
                     .hasSize(2)
                     .allSatisfy(
                         state -> {
-                          assertThat(requestedVersion(state)).contains(VERSION_8);
-                          assertThat(storedVersion(state)).contains(VERSION_7);
+                          assertThat(requestedVersion(state)).contains(VERSION_9);
+                          assertThat(storedVersion(state)).contains(VERSION_8);
                         }));
     assertThat(jdbc.queryForList("SELECT kind::text FROM library_operation", String.class))
         .containsExactly("SCAN", "SCAN");
@@ -119,29 +115,29 @@ class ProbeVersion8UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
     assertThat(PROBE.probeCount()).isZero();
     mediaFileIds.forEach(
         mediaFileId ->
-            assertThat(playedMaximumFrameRate(mediaFileId)).as("the version 7 result").isEmpty());
+            assertThat(playedDuration(mediaFileId))
+                .as("the version 8 result")
+                .isEqualTo(VERSION_8_DURATION));
 
     var scheduler = startProbeScheduler();
     try {
       progress.awaitProbeAttemptsEnded(1);
       var states = outcomes.findProbeStates(mediaFileIds);
-      var reprobed = fileStoredAt(states, VERSION_8);
-      var waiting = fileStoredAt(states, VERSION_7);
-      assertThat(playedMaximumFrameRate(reprobed))
-          .as("the re-probed file's version 8 result")
-          .contains(VERSION_8_MAXIMUM_FRAME_RATE);
-      assertThat(playedMaximumFrameRate(waiting))
-          .as("the waiting file's version 7 result")
-          .isEmpty();
+      var reprobed = fileStoredAt(states, VERSION_9);
+      var waiting = fileStoredAt(states, VERSION_8);
+      assertThat(playedDuration(reprobed))
+          .as("the re-probed file's version 9 result")
+          .isEqualTo(VERSION_9_DURATION);
+      assertThat(playedDuration(waiting))
+          .as("the waiting file's version 8 result")
+          .isEqualTo(VERSION_8_DURATION);
 
       RELEASE_LATER_PROBES.countDown();
       progress.awaitProbeAttemptsEnded(1);
       assertThat(outcomes.findProbeStates(mediaFileIds))
-          .allSatisfy(state -> assertThat(storedVersion(state)).contains(VERSION_8));
+          .allSatisfy(state -> assertThat(storedVersion(state)).contains(VERSION_9));
       mediaFileIds.forEach(
-          mediaFileId ->
-              assertThat(playedMaximumFrameRate(mediaFileId))
-                  .contains(VERSION_8_MAXIMUM_FRAME_RATE));
+          mediaFileId -> assertThat(playedDuration(mediaFileId)).isEqualTo(VERSION_9_DURATION));
       assertThat(PROBE.probeCount()).isEqualTo(2);
       progress.awaitScansEnded(mediaFileIds.size());
       assertThat(jdbc.queryForList("SELECT status::text FROM library", String.class))
@@ -171,17 +167,14 @@ class ProbeVersion8UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
     return files.getFirst();
   }
 
-  private Optional<Fraction> playedMaximumFrameRate(UUID mediaFileId) {
+  private Duration playedDuration(UUID mediaFileId) {
     var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
     var session =
         accepted(
             streaming.createSession(
                 createStreamSessionCommand(mediaFileId, UUID.randomUUID(), options)));
     try {
-      return session.getMediaProbe().streams().stream()
-          .filter(stream -> "video".equals(stream.codecType()))
-          .findFirst()
-          .flatMap(StreamInfo::maximumFrameRate);
+      return session.getMediaProbe().duration();
     } finally {
       streaming.destroySession(session.getSessionId());
     }
@@ -193,20 +186,20 @@ class ProbeVersion8UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
 
     @Bean
     ProbeUpgradeFixture upgradeFixture() throws IOException {
-      return ProbeUpgradeFixture.create(List.of(VERSION_7, VERSION_7));
+      return ProbeUpgradeFixture.create(List.of(VERSION_8, VERSION_8));
     }
 
     @Bean
-    FlywayMigrationStrategy storeVersion7Results(ProbeUpgradeFixture fixture) {
+    FlywayMigrationStrategy storeVersion8Results(ProbeUpgradeFixture fixture) {
       return flyway -> {
         flyway.migrate();
-        fixture.seed(flyway.getConfiguration().getDataSource(), ProbeVersion8UpgradeIT::seedResult);
+        fixture.seed(flyway.getConfiguration().getDataSource(), ProbeVersion9UpgradeIT::seedResult);
       };
     }
   }
 
-  // The version 7 results go through the repository's own request and publication writes, so they
-  // are stored exactly as a version 7 probe stored them.
+  // The version 8 results go through the repository's own request and publication writes, so they
+  // are stored exactly as a version 8 probe stored them.
   private static void seedResult(
       Connection connection, ProbeUpgradeFixture.UpgradeFile file, SourceFileSnapshot snapshot) {
     var repository =
@@ -221,7 +214,7 @@ class ProbeVersion8UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
                     .mediaFileId(file.mediaFileId())
                     .snapshot(snapshot)
                     .probeVersion(file.probeVersion())
-                    .outcome(probeOutcome(Optional.empty()))
+                    .outcome(probeOutcome(VERSION_8_DURATION))
                     .build()))
         .isTrue();
   }
