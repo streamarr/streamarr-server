@@ -12,7 +12,6 @@ import com.streamarr.server.jooq.generated.enums.NotificationKind;
 import com.streamarr.server.jooq.generated.enums.ProfileShareAnswer;
 import com.streamarr.server.jooq.generated.enums.ProfileShareEndedBy;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
-import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
 
 import java.time.OffsetDateTime;
@@ -216,19 +215,7 @@ public class Notification extends TableImpl<NotificationRecord> {
 
     @Override
     public List<ForeignKey<NotificationRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.NOTIFICATION__FK_NOTIFICATION_RECIPIENT, Keys.NOTIFICATION__FK_NOTIFICATION_SHARE);
-    }
-
-    private transient UserAccountPath _userAccount;
-
-    /**
-     * Get the implicit join path to the <code>public.user_account</code> table.
-     */
-    public UserAccountPath userAccount() {
-        if (_userAccount == null)
-            _userAccount = new UserAccountPath(this, Keys.NOTIFICATION__FK_NOTIFICATION_RECIPIENT, null);
-
-        return _userAccount;
+        return Arrays.asList(Keys.NOTIFICATION__FK_NOTIFICATION_SHARE);
     }
 
     private transient ProfileHouseholdSharePath _profileHouseholdShare;

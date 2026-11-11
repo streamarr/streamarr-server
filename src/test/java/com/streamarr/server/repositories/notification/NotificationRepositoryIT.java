@@ -23,6 +23,8 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.time.Instant;
@@ -33,6 +35,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
@@ -64,6 +67,7 @@ class NotificationRepositoryIT extends AbstractIntegrationTest {
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private DataSource dataSource;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private AuthTestSupport.TestIdentity sam;
@@ -213,6 +217,33 @@ class NotificationRepositoryIT extends AbstractIntegrationTest {
     assertThat(second).isInstanceOf(UnreadNews.Moved.class);
     assertThat(second.notificationId()).isEqualTo(first.notificationId());
     assertThat(notificationsOf(sam)).hasSize(1);
+  }
+
+  // Account transfers, removals and promotions lock Account rows FOR UPDATE. A share write tells
+  // Accounts it does not lock, so a Notification must not wait on its recipient's row.
+  @Test
+  @DisplayName(
+      "Should make a Notification without waiting when another transaction holds its recipient's"
+          + " Account row")
+  void shouldMakeANotificationWithoutWaitingWhenAnotherTransactionHoldsItsRecipientsAccountRow()
+      throws Exception {
+    var share = offerOf(managedProfile("Ollie"), sam);
+
+    try (var held =
+            PostgresLockTestSupport.lockRow(
+                RowLockTarget.builder()
+                    .dataSource(dataSource)
+                    .table("user_account")
+                    .rowId(riverside.account().getId())
+                    .build());
+        var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor()) {
+      var request = executor.submit(() -> insert(offered(riverside, share).at(EVENT).build()));
+      var news = executor.submit(() -> upsert(answered(riverside, share).at(EVENT).build()));
+
+      assertThat(request.get(5, TimeUnit.SECONDS)).isNotNull();
+      assertThat(news.get(5, TimeUnit.SECONDS)).isInstanceOf(UnreadNews.Made.class);
+      held.release();
+    }
   }
 
   @Test

@@ -9,6 +9,12 @@
 -- may no longer see the Profile. It stores no picture, no kind, no other name and never a code.
 -- It is deleted with its recipient and with its share, and so with the share's Profile or
 -- Household; deleting the Account that made the offer deletes nothing.
+--
+-- The recipient is not a foreign key. A share write tells Accounts that other operations lock FOR
+-- UPDATE, such as an Account transfer, and a foreign key's check would make the write wait on each
+-- recipient's row. A trigger deletes an Account's Notifications instead. A Notification made while
+-- its recipient was being deleted outlives it unseen, since every read is by its recipient, until
+-- the retention sweep deletes it.
 
 CREATE TYPE notification_form AS ENUM ('REQUEST', 'NEWS');
 
@@ -43,8 +49,6 @@ CREATE TABLE notification
         CHECK ((kind = 'PROFILE_SHARE_ANSWERED') = (share_answer IS NOT NULL)),
     CONSTRAINT chk_notification_share_ended_by
         CHECK ((kind = 'PROFILE_SHARE_ENDED') = (share_ended_by IS NOT NULL)),
-    CONSTRAINT fk_notification_recipient FOREIGN KEY (recipient_account_id)
-        REFERENCES user_account (id) ON DELETE CASCADE,
     CONSTRAINT fk_notification_share FOREIGN KEY (share_id)
         REFERENCES profile_household_share (id) ON DELETE CASCADE
 );
@@ -63,3 +67,21 @@ CREATE INDEX idx_notification_share ON notification (share_id);
 
 CREATE TRIGGER fill_audit_columns BEFORE INSERT OR UPDATE ON notification
     FOR EACH ROW EXECUTE FUNCTION fill_audit_columns();
+
+CREATE FUNCTION delete_notifications_of_deleted_accounts()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+AS
+$$
+BEGIN
+    DELETE FROM notification n USING deleted_accounts d WHERE n.recipient_account_id = d.id;
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER delete_notifications_of_deleted_accounts
+    AFTER DELETE
+    ON user_account
+    REFERENCING OLD TABLE AS deleted_accounts
+    FOR EACH STATEMENT
+EXECUTE FUNCTION delete_notifications_of_deleted_accounts();
