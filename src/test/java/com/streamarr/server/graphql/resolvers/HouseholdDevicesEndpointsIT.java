@@ -38,6 +38,8 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("Household Devices Endpoints Integration Tests")
 class HouseholdDevicesEndpointsIT extends AbstractIntegrationTest {
 
+  private static final int COUNTED_RUNS = 3;
+
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
@@ -218,7 +220,18 @@ class HouseholdDevicesEndpointsIT extends AbstractIntegrationTest {
   }
 
   // Hibernate statistics are global, so the count holds only while no other test uses the context.
+  // The session reaper also reads the server settings every few seconds on its own thread, so a
+  // run can count one statement that is not the request's; the fewest over a few runs is its own.
   private long statementsWhileListing(AuthTestSupport.TestIdentity reader) throws Exception {
+    var fewest = Long.MAX_VALUE;
+    for (var run = 0; run < COUNTED_RUNS; run++) {
+      fewest = Math.min(fewest, statementsOfOneListing(reader));
+    }
+
+    return fewest;
+  }
+
+  private long statementsOfOneListing(AuthTestSupport.TestIdentity reader) throws Exception {
     var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
     var previouslyEnabled = statistics.isStatisticsEnabled();
     statistics.setStatisticsEnabled(true);
