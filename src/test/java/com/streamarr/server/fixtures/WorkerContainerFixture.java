@@ -29,6 +29,10 @@ public final class WorkerContainerFixture implements AutoCloseable {
 
   private static final String RMS_LEVEL = "RMS level dB: ";
 
+  // The frame metadata key that FFmpeg's signalstats filter writes.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static final String LUMA_CHANGE = "lavfi.signalstats.YDIF";
+
   private final WorkerSessionServer workerSessions;
   private final UUID sourceNamespaceId;
   private final Path sourceRoot;
@@ -389,6 +393,14 @@ public final class WorkerContainerFixture implements AutoCloseable {
   public record DecodedAudio(String channelLayout, List<Double> channelLevels) {}
 
   public long decodedVideoFrameCount(Path media) throws Exception {
+    return decodedVideoFrameHashes(media).size();
+  }
+
+  /**
+   * The MD5 hash of each picture that the worker image's FFmpeg decodes from the media's first
+   * video stream, in presentation order.
+   */
+  public List<String> decodedVideoFrameHashes(Path media) throws Exception {
     var input = "/tmp/decode-" + UUID.randomUUID() + ".mp4";
     container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
     var decode =
@@ -412,7 +424,43 @@ public final class WorkerContainerFixture implements AutoCloseable {
         .getStdout()
         .lines()
         .filter(line -> !line.isBlank() && !line.startsWith("#"))
-        .count();
+        .map(line -> line.substring(line.lastIndexOf(',') + 1).trim())
+        .toList();
+  }
+
+  /**
+   * How much each decoded frame of the media's first video stream differs from the frame before it:
+   * the mean absolute difference of their luma samples, which FFmpeg's signalstats filter reports
+   * as YDIF, in presentation order. The first frame has none before it and reports 0.
+   */
+  public List<Double> lumaChangeFromPreviousFrame(Path media) throws Exception {
+    var input = "/tmp/change-" + UUID.randomUUID() + ".mp4";
+    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
+    var decode =
+        container.execInContainer(
+            "/cnb/lifecycle/launcher",
+            "ffmpeg",
+            "-v",
+            "error",
+            "-xerror",
+            "-i",
+            input,
+            "-map",
+            "0:v:0",
+            "-vf",
+            "signalstats,metadata=mode=print:key=" + LUMA_CHANGE + ":file=" + input + ".change",
+            "-f",
+            "null",
+            "-");
+    assertThat(decode.getExitCode()).as("Decode video: %s", decode.getStderr()).isZero();
+    var changes = container.execInContainer("cat", input + ".change");
+    assertThat(changes.getExitCode()).as(changes.getStderr()).isZero();
+    return changes
+        .getStdout()
+        .lines()
+        .filter(line -> line.startsWith(LUMA_CHANGE + "="))
+        .map(line -> Double.parseDouble(line.substring(LUMA_CHANGE.length() + 1)))
+        .toList();
   }
 
   public String logs() {
