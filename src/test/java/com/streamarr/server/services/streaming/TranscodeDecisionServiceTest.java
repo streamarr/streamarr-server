@@ -13,6 +13,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.a
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -27,6 +28,7 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncodeFormat;
+import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
@@ -47,7 +49,11 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
@@ -240,6 +246,97 @@ class TranscodeDecisionServiceTest {
         .contains(EncodeCodecProfile.AV1_MAIN);
     assertThat(withoutAv1.lowerVariantEncode().map(LowerVariantEncode::codecProfile))
         .contains(EncodeCodecProfile.H264_HIGH);
+  }
+
+  // ADR 0050: the lower variants encode only once the player switches to one, so the encode
+  // features of a busy worker's verified encoder count as its codec family does.
+  @Test
+  @DisplayName(
+      "Should encode the lower variants beside an Auto HDR10 copy in 10-bit PQ when only a busy"
+          + " worker's verified encoder writes PQ")
+  void shouldEncodeTheLowerVariantsBesideAnAutoHdr10CopyInTenBitPqWhenOnlyABusyWorkerWritesPq() {
+    var decision = service.decide(hdr10CopyBesideABusyPqEncoder().build()).orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.lowerVariantEncode())
+        .contains(
+            new LowerVariantEncode(EncodeCodecProfile.AV1_MAIN, EncodeFormat.hdr(VideoRange.PQ)));
+  }
+
+  // #397: a format that failed earlier in the playback session stays out of every later encode.
+  // The lower variants keep the copy's range, so no 8-bit SDR lower variant takes its place.
+  @Test
+  @DisplayName(
+      "Should copy without lower variants when the encode format of the copy's range failed"
+          + " earlier in the playback session")
+  void shouldCopyWithoutLowerVariantsWhenTheEncodeFormatOfTheCopysRangeFailedEarlier() {
+    var decision =
+        service
+            .decide(
+                hdr10CopyBesideABusyPqEncoder()
+                    .excludedEncodeFormats(Set.of(EncodeFormat.hdr(VideoRange.PQ)))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.lowerVariantEncode()).isEmpty();
+  }
+
+  // An Auto request for a 10-bit HDR10 HEVC source from a client that plays PQ in HEVC and AV1.
+  // The only free worker encodes H.264, and a busy worker's SVT-AV1 lists every encode feature.
+  private TranscodeDecisionRequest.TranscodeDecisionRequestBuilder hdr10CopyBesideABusyPqEncoder() {
+    var everyRange = List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG);
+    var hdr10 =
+        probeBuilder("hevc", "aac")
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .codecFamily(Optional.of(ProbedCodecFamily.HEVC))
+                        .dynamicRange(
+                            VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+                        .bitDepth(OptionalInt.of(10))
+                        .codecString(Optional.of("hvc1.2.4.L120.90"))
+                        .videoProperties(
+                            Optional.of(
+                                VideoStreamProperties.builder()
+                                    .codecProfile(Optional.of(VideoCodecProfile.HEVC_MAIN_10))
+                                    .codecLevel(OptionalInt.of(40))
+                                    .codecTier(Optional.of(VideoCodecTier.MAIN))
+                                    .firstFramesRead(true)
+                                    .build()))
+                        .build()))
+            .build();
+    return TranscodeDecisionRequest.builder()
+        .source(hdr10)
+        .capabilityDeclaration(
+            defaultDeclarationBuilder()
+                .video(
+                    List.of(
+                        hevcEntryBuilder().compatibleBases(everyRange).build(),
+                        av1EntryBuilder().compatibleBases(everyRange).build(),
+                        h264EntryBuilder().build()))
+                .build())
+        .encodableVideoCodecFamilies(Set.of("h264"))
+        .verifiedVideoCodecFamilies(Set.of("h264", "av1"))
+        .verifiedVideoEncoders(
+            List.of(
+                WorkerVerifiedEncoder.builder()
+                    .backend(
+                        EncoderBackend.builder()
+                            .codecFamily("av1")
+                            .encoder("libsvtav1")
+                            .kind(EncoderBackend.Kind.SOFTWARE)
+                            .build())
+                    .keyframeVerified(true)
+                    .encodeFeatures(Set.of(VideoEncodeFeature.values()))
+                    .build()))
+        .videoCopySupport(
+            List.of(
+                WorkerVideoCopySupport.builder()
+                    .plannedOutput(true)
+                    .bitstreamRewrites(Set.of())
+                    .build()));
   }
 
   @ParameterizedTest

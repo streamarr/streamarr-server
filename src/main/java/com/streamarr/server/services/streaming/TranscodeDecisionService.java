@@ -271,11 +271,12 @@ public class TranscodeDecisionService {
     return Stream.concat(videoReasons.stream(), undeclared).distinct().toList();
   }
 
-  // In Auto, encoded lower variants sit beside a copy (ADR 0050). They encode only once the player
-  // switches to one, so a busy worker's verified encoder counts. A source without an encoded
-  // variant, such as one without a usable frame rate, copies alone. So does a copy whose range or
-  // bit depth an 8-bit SDR encode would change: a bandwidth dip must not move a television between
-  // HDR and SDR.
+  // In Auto, encoded lower variants sit beside a copy, in the copy's range and at its bit depth: a
+  // bandwidth dip must not move a television between HDR and SDR (ADR 0050). They encode only once
+  // the player switches to one, so a busy worker's verified encoder and its encode features count.
+  // A copy plays alone when no verified encoder writes that format in a codec profile that an entry
+  // fits, when the format failed earlier in the playback session, and when the source has no
+  // encoded variant, such as one without a usable frame rate.
   private static Optional<LowerVariantEncode> lowerVariantEncode(
       TranscodeDecisionRequest request, CopyPlan plan) {
     if (request.viewerLimits().quality() != VideoQuality.AUTO) {
@@ -283,17 +284,17 @@ public class TranscodeDecisionService {
     }
 
     var copyFormat = plannedCopy(request, plan).encodeFormatInItsRangeAndBitDepth();
-    if (!copyFormat.equals(Optional.of(EncodeFormat.SDR_8_BIT))) {
-      return Optional.empty();
-    }
-
-    return selectEncode(
-            request.toBuilder()
-                .encodableVideoCodecFamilies(request.verifiedVideoCodecFamilies())
-                .build())
-        .map(EncodeChoice::codecProfile)
-        .filter(profile -> encodedVariantRequest(request.source(), profile).isPresent())
-        .map(profile -> new LowerVariantEncode(profile, EncodeFormat.SDR_8_BIT));
+    var withVerifiedEncoders =
+        request.toBuilder()
+            .encodableVideoCodecFamilies(request.verifiedVideoCodecFamilies())
+            .videoEncoders(request.verifiedVideoEncoders())
+            .build();
+    return fittingEncodes(withVerifiedEncoders)
+        .filter(encode -> copyFormat.filter(encode.format()::equals).isPresent())
+        .reduce(TranscodeDecisionService::preferredEncode)
+        .filter(
+            encode -> encodedVariantRequest(request.source(), encode.codecProfile()).isPresent())
+        .map(encode -> new LowerVariantEncode(encode.codecProfile(), encode.format()));
   }
 
   // Every decision about the audio reads the source's first audio stream, the session's.
