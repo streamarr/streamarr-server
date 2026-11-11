@@ -129,6 +129,14 @@ public class ShareCodeService {
   }
 
   /**
+   * The live code a request presents to name its Household, verified as a credential attempt by the
+   * presenting Account; empty for a code that does not work. It leaves the code live.
+   */
+  Optional<ShareCode> presentedShareCode(AuthenticatedIdentity identity, ShareCodeCommand command) {
+    return present(identity, command, Function.identity());
+  }
+
+  /**
    * What the presented code admits, verified as a credential attempt by the presenting Account; a
    * code that does not work admits nothing. A session that may not present share codes is refused
    * with FORBIDDEN before any attempt counts.

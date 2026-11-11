@@ -27,6 +27,8 @@ import com.streamarr.server.services.auth.CreateAuthSessionCommand;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenContext;
+import com.streamarr.server.services.identity.NewShareCode;
+import com.streamarr.server.services.identity.ShareCodeService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -67,6 +69,7 @@ public class AuthTestSupport {
   private final PlaybackTokenIssuer playbackTokenIssuer;
   private final PasswordEncoder passwordEncoder;
   private final TransactionTemplate transactionTemplate;
+  private final ShareCodeService shareCodeService;
 
   private TestIdentity bootstrapAdmin;
 
@@ -299,6 +302,22 @@ public class AuthTestSupport {
    */
   public void deleteIdentity(TestIdentity identity) {
     deleteAccount(identity.account().getId());
+  }
+
+  /** A live share code for the HouseholdAdmin's own Household, issued as they would issue it. */
+  public String shareCodeFor(TestIdentity householdAdmin) {
+    return shareCodeFor(householdAdmin, householdAdmin.household().getId());
+  }
+
+  /** A live share code for the Household, issued by an Account that may issue one for it. */
+  public String shareCodeFor(TestIdentity issuer, UUID householdId) {
+    return shareCodeService
+        .issueShareCode(identityOf(issuer), householdId)
+        .fold(
+            NewShareCode::code,
+            rejections -> {
+              throw new IllegalStateException("No share code issued: " + rejections);
+            });
   }
 
   public static RequestPostProcessor bearer(String token) {
