@@ -5,10 +5,14 @@ import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.domain.notification.UnreadNews;
+import com.streamarr.server.domain.notification.UnreadShareNews;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/** The writes of Notifications about a Profile share (ADR 0063). */
+/** The writes and the retention of Notifications about a Profile share (ADR 0063). */
 public interface NotificationRepositoryCustom {
 
   /** Stores a new Notification for its recipient, unread, and answers its id. */
@@ -31,4 +35,19 @@ public interface NotificationRepositoryCustom {
    * sides, read past Hibernate's first-level cache; empty when the share no longer exists.
    */
   Optional<ShareSides> findShareSides(UUID shareId);
+
+  /**
+   * Deletes the history whose latest event is before the cutoff: the news that its recipient read
+   * and the requests whose offer no longer waits at {@code now}. Answers how many it deleted.
+   */
+  int deleteHistoryBefore(Instant cutoff, Instant now);
+
+  /** The unread news whose latest event is before the cutoff. */
+  List<UnreadShareNews> findUnreadNewsBefore(Instant cutoff);
+
+  /**
+   * Deletes the given Notifications that are still unread news with a latest event before the
+   * cutoff, so a later event keeps the news it moves. Answers how many it deleted.
+   */
+  int deleteUnreadNewsBefore(Collection<UUID> notificationIds, Instant cutoff);
 }
