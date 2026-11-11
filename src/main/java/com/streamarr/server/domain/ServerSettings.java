@@ -33,4 +33,6 @@ public class ServerSettings extends BaseAuditableEntity<ServerSettings> {
   @Builder.Default private int idleSegmentRetentionMinutes = 60;
 
   @Builder.Default private int notificationRetentionDays = 90;
+
+  @Builder.Default private int shareCodeLifetimeHours = 168;
 }

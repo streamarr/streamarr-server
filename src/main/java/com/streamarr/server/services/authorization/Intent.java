@@ -278,6 +278,12 @@ public sealed interface Intent {
   /** Change how long the server keeps Notification history (ADR 0063); a whole-surface gate. */
   record ChangeNotificationRetention() implements UnitIntent {}
 
+  /** Read how long a share code stays live (ADR 0024 §Share codes); a whole-surface gate. */
+  record ViewShareCodeLifetime() implements UnitIntent {}
+
+  /** Change how long a share code stays live (ADR 0024 §Share codes); a whole-surface gate. */
+  record ChangeShareCodeLifetime() implements UnitIntent {}
+
   /**
    * List, count and follow the signed-in Account's own Notifications (ADR 0063): any enabled
    * Account, never a device-bound session. It reads only what was told to that Account, and nothing

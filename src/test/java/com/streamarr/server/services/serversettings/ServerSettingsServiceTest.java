@@ -292,6 +292,85 @@ class ServerSettingsServiceTest {
   }
 
   @Test
+  @DisplayName("Should let share codes last seven days when no ServerAdmin has changed it")
+  void shouldLetShareCodesLastSevenDaysWhenNoServerAdminHasChangedIt() {
+    assertThat(serverSettingsService.shareCodeLifetime()).isEqualTo(Duration.ofDays(7));
+  }
+
+  @Test
+  @DisplayName("Should let share codes last the stored hours when the setting was changed")
+  void shouldLetShareCodesLastTheStoredHoursWhenTheSettingWasChanged() {
+    var settings = serverSettingsRepository.findAll().getFirst();
+    settings.setShareCodeLifetimeHours(2);
+    serverSettingsRepository.save(settings);
+
+    assertThat(serverSettingsService.shareCodeLifetime()).isEqualTo(Duration.ofHours(2));
+  }
+
+  @Test
+  @DisplayName(
+      "Should report seven days and the allowed range when a ServerAdmin reads the share code"
+          + " lifetime")
+  void shouldReportSevenDaysAndTheAllowedRangeWhenAServerAdminReadsTheShareCodeLifetime() {
+    var settingsId = serverSettingsRepository.findAll().getFirst().getId();
+
+    var setting = serverSettingsService.readShareCodeLifetimeSetting(identity);
+
+    assertThat(setting.id()).isEqualTo(settingsId);
+    assertThat(setting.hours()).isEqualTo(168);
+    assertThat(setting.minimumHours()).isEqualTo(1);
+    assertThat(setting.maximumHours()).isEqualTo(720);
+    assertThat(authorizationService.recordedIntents())
+        .containsExactly(new Intent.ViewShareCodeLifetime());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 24, 720})
+  @DisplayName("Should let share codes last the new hours when a ServerAdmin changes the lifetime")
+  void shouldLetShareCodesLastTheNewHoursWhenAServerAdminChangesTheLifetime(int hours) {
+    var setting = accepted(serverSettingsService.changeShareCodeLifetime(identity, hours));
+
+    assertThat(setting.hours()).isEqualTo(hours);
+    assertThat(setting.id()).isEqualTo(serverSettingsRepository.findAll().getFirst().getId());
+    assertThat(serverSettingsService.shareCodeLifetime()).isEqualTo(Duration.ofHours(hours));
+    assertThat(authorizationService.recordedIntents())
+        .startsWith(new Intent.ChangeShareCodeLifetime());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {Integer.MIN_VALUE, -1, 0, 721, Integer.MAX_VALUE})
+  @DisplayName(
+      "Should reject the change and keep seven days when the share code lifetime is out of range")
+  void shouldRejectTheChangeAndKeepSevenDaysWhenTheShareCodeLifetimeIsOutOfRange(int hours) {
+    var outcome = serverSettingsService.changeShareCodeLifetime(identity, hours);
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new ChangeLifetimeRejection.OutOfRange());
+    assertThat(serverSettingsService.shareCodeLifetime()).isEqualTo(Duration.ofDays(7));
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {24, 0})
+  @DisplayName(
+      "Should refuse a caller who is not a ServerAdmin and keep seven days when the caller changes"
+          + " the share code lifetime")
+  void shouldRefuseACallerWhoIsNotAServerAdminWhenTheCallerChangesTheShareCodeLifetime(int hours) {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> serverSettingsService.changeShareCodeLifetime(identity, hours))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(serverSettingsService.shareCodeLifetime()).isEqualTo(Duration.ofDays(7));
+  }
+
+  @Test
+  @DisplayName("Should refuse the share code lifetime read when the caller is not a ServerAdmin")
+  void shouldRefuseTheShareCodeLifetimeReadWhenTheCallerIsNotAServerAdmin() {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> serverSettingsService.readShareCodeLifetimeSetting(identity))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
   @DisplayName("Should fail with a missing-settings error when the settings row is absent")
   void shouldFailWithMissingSettingsErrorWhenSettingsRowIsAbsent() {
     serverSettingsRepository.deleteAll();

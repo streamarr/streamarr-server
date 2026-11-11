@@ -201,6 +201,10 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_NOTIFICATION_RETENTION));
       case Intent.ChangeNotificationRetention _ ->
           unitPlan(AuthorizationCheck.onServer(Action.CHANGE_NOTIFICATION_RETENTION));
+      case Intent.ViewShareCodeLifetime _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_SHARE_CODE_LIFETIME));
+      case Intent.ChangeShareCodeLifetime _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.CHANGE_SHARE_CODE_LIFETIME));
       case Intent.ViewNotifications _ ->
           unitPlan(AuthorizationCheck.onAccount(Action.VIEW_NOTIFICATIONS, identity.accountId()));
       case Intent.MarkNotificationsRead _ ->

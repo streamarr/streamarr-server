@@ -100,6 +100,7 @@ class ReadDecisionsInReadOnlyTransactionIT extends AbstractIntegrationTest {
       case VIEW_ACTIVE_STREAMS -> new Intent.ViewActiveStreams();
       case VIEW_NOTIFICATIONS -> new Intent.ViewNotifications();
       case VIEW_NOTIFICATION_RETENTION -> new Intent.ViewNotificationRetention();
+      case VIEW_SHARE_CODE_LIFETIME -> new Intent.ViewShareCodeLifetime();
       default -> throw new AssertionError(action + " authorizes a read but names no intent here");
     };
   }

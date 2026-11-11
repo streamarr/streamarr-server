@@ -129,6 +129,8 @@ type Mutation {
     markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload
     "Changes how long the server keeps read news and resolved requests. Requires a ServerAdmin."
     changeNotificationRetention(input: ChangeNotificationRetentionInput!): ChangeNotificationRetentionPayload
+    "Changes how long a share code issued from now on stays live. Requires a ServerAdmin."
+    changeShareCodeLifetime(input: ChangeShareCodeLifetimeInput!): ChangeShareCodeLifetimePayload
 }
 
 enum ImageRefreshMode {

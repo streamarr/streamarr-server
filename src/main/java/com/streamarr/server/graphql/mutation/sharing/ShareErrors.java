@@ -3,6 +3,8 @@ package com.streamarr.server.graphql.mutation.sharing;
 import com.streamarr.server.graphql.mutation.InputPath;
 import com.streamarr.server.services.identity.ShareCodeRejections;
 import com.streamarr.server.services.identity.ShareRejections;
+import com.streamarr.server.services.serversettings.ChangeLifetimeRejection;
+import com.streamarr.server.services.serversettings.LifetimeSetting;
 
 /** The exhaustive mappings from service rejection to schema error type, one per union. */
 public final class ShareErrors {
@@ -46,6 +48,17 @@ public final class ShareErrors {
   public static LookUpShareCodeError toLookUpShareCodeError(ShareCodeRejections.LookUp rejection) {
     return switch (rejection) {
       case ShareCodeRejections.ShareCodeRefused _ -> shareCodeRefused("code");
+    };
+  }
+
+  /** The share code lifetime and the invitation lifetime refuse a change in the same words. */
+  public static LifetimeOutOfRangeError toLifetimeError(ChangeLifetimeRejection rejection) {
+    return switch (rejection) {
+      case ChangeLifetimeRejection.OutOfRange _ ->
+          new LifetimeOutOfRangeError(
+              "Choose from %d to %d hours."
+                  .formatted(LifetimeSetting.MINIMUM_HOURS, LifetimeSetting.MAXIMUM_HOURS),
+              InputPath.of("hours"));
     };
   }
 

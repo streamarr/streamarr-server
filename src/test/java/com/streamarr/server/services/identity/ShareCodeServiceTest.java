@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialKind;
+import com.streamarr.server.domain.auth.ShareCode;
 import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
@@ -14,6 +15,7 @@ import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
+import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fakes.FakeShareCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
@@ -21,7 +23,6 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.PaginationFixture;
-import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ShareCodes;
 import com.streamarr.server.services.auth.ShareCodesFixture;
@@ -32,6 +33,7 @@ import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.ListPage;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -53,7 +55,7 @@ import org.springframework.security.access.AccessDeniedException;
 class ShareCodeServiceTest {
 
   private static final Instant NOW = Instant.parse("2026-11-10T12:00:00Z");
-  private static final Duration SHARE_CODE_TTL = Duration.ofDays(7);
+  private static final Duration DEFAULT_SHARE_CODE_LIFETIME = Duration.ofDays(7);
   private static final UUID PRESENTER_ID = UUID.fromString("30000000-0000-0000-0000-000000000001");
 
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
@@ -61,6 +63,7 @@ class ShareCodeServiceTest {
   private final FakeShareCodeRepository shareCodes = new FakeShareCodeRepository();
   private final FakeCredentialAttemptRepository attempts = new FakeCredentialAttemptRepository();
   private final ShareCodes codes = ShareCodesFixture.shareCodes();
+  private final FakeServerSettingsRepository serverSettings = new FakeServerSettingsRepository();
 
   private UserAccount issuer;
   private FakeAuthorizationService authorization;
@@ -81,6 +84,21 @@ class ShareCodeServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should expire the code after the share code lifetime a ServerAdmin set when a code is issued")
+  void shouldExpireCodeAfterShareCodeLifetimeServerAdminSetWhenCodeIsIssued() {
+    var settings = serverSettings.findAll().getFirst();
+    settings.setShareCodeLifetimeHours(2);
+    serverSettings.save(settings);
+
+    var issued = accepted(service.issueShareCode(identity(), householdId));
+
+    assertThat(shareCodes.findById(issued.shareCode().shareCode().getId()).orElseThrow())
+        .extracting(ShareCode::getExpiresAt)
+        .isEqualTo(NOW.plus(Duration.ofHours(2)));
+  }
+
+  @Test
   @DisplayName("Should answer with a code that only its digest is stored by when a code is issued")
   void shouldAnswerWithCodeThatOnlyItsDigestIsStoredByWhenCodeIsIssued() {
     var issued = accepted(service.issueShareCode(identity(), householdId));
@@ -91,7 +109,7 @@ class ShareCodeServiceTest {
     assertThat(stored.getHouseholdId()).isEqualTo(householdId);
     assertThat(stored.getIssuerAccountId()).isEqualTo(issuer.getId());
     assertThat(stored.statusAt(NOW)).isEqualTo(ShareCodeStatus.LIVE);
-    assertThat(stored.getExpiresAt()).isEqualTo(NOW.plus(SHARE_CODE_TTL));
+    assertThat(stored.getExpiresAt()).isEqualTo(NOW.plus(DEFAULT_SHARE_CODE_LIFETIME));
     assertThat(issued.shareCode().issuedByDisplayName()).isEqualTo("Household Admin");
     assertThat(issued.toString()).doesNotContain(issued.code());
   }
@@ -512,12 +530,7 @@ class ShareCodeServiceTest {
         attempts.gate(Clock.fixed(NOW, ZoneOffset.UTC)),
         new HouseholdShareCodesList(shareCodes, Clock.fixed(NOW, ZoneOffset.UTC)),
         drawn,
-        CredentialCodeProperties.builder()
-            .invitationTtl(Duration.ofDays(7))
-            .passwordResetTtl(Duration.ofHours(1))
-            .shareCodeTtl(SHARE_CODE_TTL)
-            .replacementLockTimeout(Duration.ofSeconds(5))
-            .build(),
+        new ServerSettingsService(authorization, serverSettings),
         Clock.fixed(NOW, ZoneOffset.UTC));
   }
 

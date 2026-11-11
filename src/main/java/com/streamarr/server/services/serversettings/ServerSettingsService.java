@@ -116,6 +116,38 @@ public class ServerSettingsService {
         settings.getId(), settings.getNotificationRetentionDays());
   }
 
+  public LifetimeSetting readShareCodeLifetimeSetting(@NonNull AuthenticatedIdentity identity) {
+    authorizationService.requireAllowed(identity, new Intent.ViewShareCodeLifetime());
+    return shareCodeLifetimeOf(storedSettings());
+  }
+
+  /** Last write wins; the audit columns record the ServerAdmin who made the change. */
+  @Transactional
+  public Outcome<LifetimeSetting, ChangeLifetimeRejection> changeShareCodeLifetime(
+      @NonNull AuthenticatedIdentity identity, int hours) {
+    authorizationService.requireAllowed(identity, new Intent.ChangeShareCodeLifetime());
+    if (!LifetimeSetting.allows(hours)) {
+      return Outcome.rejected(new ChangeLifetimeRejection.OutOfRange());
+    }
+
+    var settings = storedSettings();
+    settings.setShareCodeLifetimeHours(hours);
+    serverSettingsRepository.save(settings);
+    return Outcome.accepted(shareCodeLifetimeOf(settings));
+  }
+
+  /**
+   * How long a share code stays live after it is issued. Issuing reads the setting for the code,
+   * not for a caller, so this read is not authorized.
+   */
+  public Duration shareCodeLifetime() {
+    return shareCodeLifetimeOf(storedSettings()).duration();
+  }
+
+  private static LifetimeSetting shareCodeLifetimeOf(ServerSettings settings) {
+    return new LifetimeSetting(settings.getId(), settings.getShareCodeLifetimeHours());
+  }
+
   private IdleSegmentRetentionSetting storedIdleSegmentRetention() {
     return idleSegmentRetentionOf(storedSettings());
   }
