@@ -4,6 +4,7 @@ import com.streamarr.server.support.AuthTestSupportConfig;
 import com.streamarr.server.support.HibernateWorkCounterConfiguration;
 import com.streamarr.server.support.JooqStatementCounter;
 import com.streamarr.server.support.PausedContextConnectionRelease;
+import com.streamarr.server.support.ProfileCastSupport;
 import com.streamarr.server.support.RunningArtworkPrioritySchedulersConfiguration;
 import com.streamarr.server.support.RunningLibraryOperationSchedulerConfiguration;
 import com.streamarr.server.support.StatementCount;
@@ -32,6 +33,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
   HibernateWorkCounterConfiguration.class,
   JooqStatementCounter.class,
   PausedContextConnectionRelease.class,
+  ProfileCastSupport.class,
   RunningArtworkPrioritySchedulersConfiguration.class,
   RunningLibraryOperationSchedulerConfiguration.class,
   StatementCount.class,
