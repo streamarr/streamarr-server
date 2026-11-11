@@ -14,6 +14,18 @@ type Query {
     Authorizes from the signed selected-Profile token, including revalidation queries.
     """
     continueWatching(first: Int, after: String): ContinueWatchingConnection!
+    """
+    The signed-in Account's Notifications, newest latestEventAt first. Forward-only: first
+    defaults to 20, and after continues from an opaque cursor for this Account and list. Needs an
+    Account session that is not device-bound, with or without a selected Profile. A device-bound
+    session gets FORBIDDEN.
+    """
+    notifications(first: Int, after: String): NotificationConnection!
+    """
+    How many of the signed-in Account's Notifications are unread, including the requests that
+    still wait. The same access as notifications.
+    """
+    unreadNotificationCount: Int!
     householdAdministration(householdId: ID!): HouseholdAdministration
     households(first: Int, after: String, last: Int, before: String): HouseholdAdministrationConnection!
     accountAdministration(accountId: ID!): AccountAdministration
