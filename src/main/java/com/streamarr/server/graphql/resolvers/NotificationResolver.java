@@ -11,7 +11,7 @@ import com.streamarr.server.domain.notification.ProfileShareLine;
 import com.streamarr.server.domain.pagination.OrderMediaBy;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.Row;
-import com.streamarr.server.domain.pagination.SortDirection;
+import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
@@ -32,6 +32,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ShareReference;
 import com.streamarr.server.services.identity.SharedProfile;
 import com.streamarr.server.services.notification.NotificationService;
+import com.streamarr.server.services.notification.NotificationsList;
 import com.streamarr.server.services.notification.NotificationsShown;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.MediaOrder;
@@ -55,6 +56,7 @@ import org.dataloader.DataLoader;
 public class NotificationResolver {
 
   private static final String LIST = "notifications";
+  private static final int DEFAULT_PAGE_SIZE = 20;
 
   private final NotificationService notificationService;
   private final AuthorizationService authorizationService;
@@ -65,9 +67,8 @@ public class NotificationResolver {
 
   @DgsQuery
   public Connection<NotificationDetails> notifications(DataFetchingEnvironment dfe) {
-    int first = dfe.getArgumentOrDefault("first", 20);
     var pagination =
-        paginationService.getPaginationOptions(first, dfe.getArgument("after"), 0, null);
+        ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE);
     var identity = authorizationService.currentIdentity();
     var list = listOf(identity.accountId());
     var page = notificationService.notifications(identity, cursors.pageRequest(list, pagination));
@@ -227,10 +228,11 @@ public class NotificationResolver {
     return new ListIdentity(LIST, accountId);
   }
 
-  // The list sorts by an instant, newest first, as the Library's ADDED order does, so the edge
-  // reuses that order's key.
+  // The list sorts by an instant, as the Library's ADDED order does, so the edge reuses that
+  // order's
+  // key in the list's own direction.
   private static MediaOrder orderOf(Position position) {
-    return MediaOrder.at(OrderMediaBy.ADDED, SortDirection.DESC, position);
+    return MediaOrder.at(OrderMediaBy.ADDED, NotificationsList.NEWEST_FIRST.direction(), position);
   }
 
   private static String typeOf(NotificationKind kind) {

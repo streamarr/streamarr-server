@@ -27,9 +27,9 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-class NotificationsList implements PagedList<SubjectNotification, UUID> {
+public class NotificationsList implements PagedList<SubjectNotification, UUID> {
 
-  static final ListOrder NEWEST_FIRST =
+  public static final ListOrder NEWEST_FIRST =
       ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.DESC).build();
 
   private final NotificationRepository notificationRepository;
