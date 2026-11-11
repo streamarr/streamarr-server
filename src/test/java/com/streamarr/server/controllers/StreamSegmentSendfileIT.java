@@ -173,8 +173,18 @@ class StreamSegmentSendfileIT extends AbstractIntegrationTest {
         .hasValueSatisfying(type -> assertThat(type).startsWith("multipart/byteranges"));
     var body = new String(answer.body(), StandardCharsets.ISO_8859_1);
     assertThat(body)
-        .contains("Content-Range: bytes 0-9/" + SEGMENT_LENGTH)
-        .contains("Content-Range: bytes 100-109/" + SEGMENT_LENGTH);
+        .contains(partOf(0, 9))
+        .contains(partOf(100, 109))
+        .containsOnlyOnce("Content-Range: bytes 0-9/")
+        .containsOnlyOnce("Content-Range: bytes 100-109/");
+  }
+
+  // One part of a multipart/byteranges body: its last header, a blank line, its bytes, and the
+  // line break before the next boundary.
+  private String partOf(int first, int last) {
+    var bytes = Arrays.copyOfRange(segmentBytes, first, last + 1);
+    return "Content-Range: bytes %d-%d/%d\r\n\r\n%s\r\n--"
+        .formatted(first, last, SEGMENT_LENGTH, new String(bytes, StandardCharsets.ISO_8859_1));
   }
 
   @Test
