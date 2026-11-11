@@ -1016,6 +1016,7 @@ class StreamingResolverTest {
             .jobAttemptId(UUID.randomUUID())
             .variantLabel("default")
             .failure(failure)
+            .copiedVideo(false)
             .build());
 
     var status = playbackStatus(playbackId);

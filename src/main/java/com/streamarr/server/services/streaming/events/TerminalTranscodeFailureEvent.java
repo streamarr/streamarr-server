@@ -9,7 +9,8 @@ import lombok.NonNull;
  * A job attempt failed in a way that a replacement attempt would repeat, and no other format
  * attempt follows it. A copy's output mismatch publishes {@link VideoCopyOutputMismatchEvent}
  * instead, because every playback choice falls back to an encode. {@code copiedVideo} says whether
- * the failed job copied the video; otherwise it encoded the video.
+ * the failed job copied the video; otherwise it encoded the video. Every publisher states it: an
+ * event built without it is refused.
  */
 @Builder
 public record TerminalTranscodeFailureEvent(
@@ -17,4 +18,4 @@ public record TerminalTranscodeFailureEvent(
     @NonNull UUID jobAttemptId,
     @NonNull String variantLabel,
     @NonNull TranscodeFailure failure,
-    boolean copiedVideo) {}
+    @NonNull Boolean copiedVideo) {}

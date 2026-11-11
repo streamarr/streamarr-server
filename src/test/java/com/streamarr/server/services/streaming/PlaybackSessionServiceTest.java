@@ -1012,9 +1012,10 @@ class PlaybackSessionServiceTest {
     var initial = accepted(service.start(command));
 
     service.onTerminalTranscodeFailure(
-        terminalFailure(
-            initial.currentFormatAttempt().streamSessionId(),
-            TranscodeFailure.SEGMENT_CAP_EXCEEDED));
+        terminalFailureBuilder(initial.currentFormatAttempt().streamSessionId())
+            .failure(TranscodeFailure.SEGMENT_CAP_EXCEEDED)
+            .copiedVideo(true)
+            .build());
 
     assertThatTheFixedQualityPlaysAnEncodeAfterItsCopyFailed(
         service.access(request(initial, command)).orElseThrow(), quality);
@@ -1416,14 +1417,10 @@ class PlaybackSessionServiceTest {
     assertThat(streams.getAllSessions()).isEmpty();
   }
 
+  // A failure that ends playback whether its job copied the video or encoded it.
   private static TerminalTranscodeFailureEvent terminalFailure(
       UUID streamSessionId, TranscodeFailure failure) {
-    return TerminalTranscodeFailureEvent.builder()
-        .streamSessionId(streamSessionId)
-        .jobAttemptId(UUID.randomUUID())
-        .variantLabel("default")
-        .failure(failure)
-        .build();
+    return terminalFailureBuilder(streamSessionId).failure(failure).copiedVideo(false).build();
   }
 
   private static TerminalTranscodeFailureEvent copiedAudioRanShortBesideCopiedVideo(
@@ -1438,11 +1435,15 @@ class PlaybackSessionServiceTest {
 
   private static TerminalTranscodeFailureEvent.TerminalTranscodeFailureEventBuilder
       copiedAudioRanShortBuilder(UUID streamSessionId) {
+    return terminalFailureBuilder(streamSessionId).failure(TranscodeFailure.COPIED_AUDIO_RAN_SHORT);
+  }
+
+  private static TerminalTranscodeFailureEvent.TerminalTranscodeFailureEventBuilder
+      terminalFailureBuilder(UUID streamSessionId) {
     return TerminalTranscodeFailureEvent.builder()
         .streamSessionId(streamSessionId)
         .jobAttemptId(UUID.randomUUID())
-        .variantLabel("default")
-        .failure(TranscodeFailure.COPIED_AUDIO_RAN_SHORT);
+        .variantLabel("default");
   }
 
   private static PlaybackSessionFailure playbackFailureOf(TranscodeFailure failure) {

@@ -233,6 +233,7 @@ class ActiveStreamServiceTest {
             .jobAttemptId(UUID.randomUUID())
             .variantLabel(StreamSession.defaultVariant())
             .failure(TranscodeFailure.INVALID_SPECIFICATION)
+            .copiedVideo(false)
             .build());
     formatAttemptStarts.forEach(Runnable::run);
 
