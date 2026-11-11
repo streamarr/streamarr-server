@@ -11,12 +11,12 @@ import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.notification.GuardedNotification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.domain.notification.UnreadNews;
-import com.streamarr.server.domain.notification.UnreadShareNews;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.enums.NotificationForm;
 import com.streamarr.server.jooq.generated.enums.ProfileShareAnswer;
@@ -142,7 +142,7 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   }
 
   @Override
-  public List<UnreadShareNews> findUnreadNewsBefore(Instant cutoff) {
+  public List<GuardedNotification> findUnreadNewsBefore(Instant cutoff) {
     return dsl.select(
             NOTIFICATION.ID,
             NOTIFICATION.RECIPIENT_ACCOUNT_ID,
@@ -152,7 +152,7 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
         .join(PROFILE_HOUSEHOLD_SHARE)
         .on(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
         .where(unreadNewsBefore(cutoff))
-        .fetch(Records.mapping(UnreadShareNews::new));
+        .fetch(Records.mapping(GuardedNotification::new));
   }
 
   @Override
