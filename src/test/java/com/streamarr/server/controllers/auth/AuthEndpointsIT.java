@@ -54,6 +54,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
@@ -117,6 +119,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   private AuthTestSupport.TestIdentity identity;
   private AuthTestSupport.TestIdentity host;
   private String setupEmail;
+  private UserAccount emailAccount;
 
   @AfterEach
   void deleteIdentityGraph() {
@@ -125,6 +128,9 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
       userAccountRepository
           .findByEmailIgnoreCase(setupEmail)
           .ifPresent(created -> authTestSupport.deleteAccount(created.getId()));
+    }
+    if (emailAccount != null) {
+      authTestSupport.deleteAccount(emailAccount.getId());
     }
     if (host != null) {
       authTestSupport.deleteIdentity(host);
@@ -348,6 +354,42 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                         .formatted(account.getEmail(), password)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.accessToken").isNotEmpty());
+  }
+
+  // U+0130, a capital I with a dot, is i under PostgreSQL's lower().
+  @ParameterizedTest
+  @CsvSource({"sam@example.com, SAM@Example.COM", "ilker@example.com, \u0130lker@example.com"})
+  @DisplayName("Should sign in to the Account when the email differs from it only in case")
+  void shouldSignInToAccountWhenEmailDiffersFromItOnlyInCase(String storedEmail, String typedEmail)
+      throws Exception {
+    var stored = seedAccountWithEmail(storedEmail);
+
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(typedEmail, authTestSupport.password())))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    var claims = decodeToken(objectMapper.readTree(response).get("accessToken").asString());
+    assertThat(claims.getSubject()).isEqualTo(stored.getId().toString());
+  }
+
+  // U+0131, a dotless i, stays itself under lower(): the address is not ilker@example.com.
+  @Test
+  @DisplayName(
+      "Should refuse sign-in like an unknown email when the email differs from an Account's by a dotless i")
+  void shouldRefuseSignInLikeUnknownEmailWhenEmailDiffersFromAccountByDotlessI() throws Exception {
+    var stored = seedAccountWithEmail("ilker@example.com");
+    var unknownEmailAnswer = refusedSignIn("absent-" + UUID.randomUUID() + "@example.com");
+
+    assertThat(refusedSignIn("\u0131lker@example.com")).isEqualTo(unknownEmailAnswer);
+    assertThat(dsl.fetchCount(CREDENTIAL_ATTEMPT, CREDENTIAL_ATTEMPT.ACCOUNT_ID.eq(stored.getId())))
+        .isZero();
   }
 
   @Test
@@ -1763,6 +1805,26 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             .getResponse()
             .getContentAsString();
     return objectMapper.readTree(response).get("refreshToken").asString();
+  }
+
+  /** An Account stored with this email and the shared test password, deleted after the test. */
+  private UserAccount seedAccountWithEmail(String email) {
+    emailAccount = authTestSupport.createAccount(builder -> builder.email(email));
+    return emailAccount;
+  }
+
+  /** The 401 body of a sign-in with the shared test password. */
+  private String refusedSignIn(String email) throws Exception {
+    return mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody(email, authTestSupport.password())))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
   }
 
   /** One Household, one HouseholdAdmin Account with its unrestricted Adult Personal Profile. */
