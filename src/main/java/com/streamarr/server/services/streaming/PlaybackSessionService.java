@@ -767,7 +767,10 @@ public class PlaybackSessionService implements AutoCloseable {
   /**
    * Continues the requested variant's encode on the software encoder of the same codec family in a
    * new format attempt, which the client reopens at the same position (ADR 0044). It spends no
-   * format attempt, and no worker with room for it ends the playback session.
+   * format attempt, and no worker with room for it ends the playback session. The encode keeps its
+   * range and bit depth. When no software encoder on a worker with room writes them, the encode has
+   * failed as after a format error: Auto gives the range or the 10 bits up within its budget, and a
+   * fixed quality ends playback (ADR 0013).
    */
   @EventListener
   public void onRequestedVariantHardwareEncoderFailed(
@@ -965,17 +968,56 @@ public class PlaybackSessionService implements AutoCloseable {
       switch (outcome) {
         case Outcome.Accepted(var session) ->
             settle(work.playback(), session, next.choiceWhenEncoding());
-        case Outcome.Rejected(var rejections) -> {
-          failCurrent(
-              work.playback(),
-              streamId,
-              new PlaybackSessionFailure.CreationRejected(rejections.getFirst()));
-          streamingService.destroySession(streamId);
-        }
+        case Outcome.Rejected(var rejections) ->
+            failOrRecoverRejectedAttempt(
+                work.playback(),
+                next,
+                new PlaybackSessionFailure.CreationRejected(rejections.getFirst()));
       }
     } catch (RuntimeException failure) {
       failFormatAttempt(work, failure, false);
     }
+  }
+
+  private void failOrRecoverRejectedAttempt(
+      PlaybackSession playback,
+      ReservedFormatAttempt attempt,
+      PlaybackSessionFailure.CreationRejected rejection) {
+    var afterAFailedEncode =
+        locked(playback, () -> reserveAfterContinuationRejected(playback, attempt, rejection));
+    if (afterAFailedEncode.isPresent()) {
+      scheduleAfterChange(afterAFailedEncode.get());
+      return;
+    }
+
+    failCurrent(playback, attempt.streamId(), rejection);
+    streamingService.destroySession(attempt.streamId());
+  }
+
+  // A software continuation of a PQ, HLG or 10-bit SDR encode that could not start never continues
+  // in another range or bit depth. Its encode has failed, so what follows is what follows a format
+  // error during that encode. The continuation made no decision, so a format attempt that follows
+  // takes its number. An 8-bit SDR encode has no range to give up, so its rejected continuation
+  // ends playback (ADR 0044).
+  private Optional<FormatAttemptReservation> reserveAfterContinuationRejected(
+      PlaybackSession playback,
+      ReservedFormatAttempt attempt,
+      PlaybackSessionFailure.CreationRejected rejection) {
+    var continuation =
+        attempt
+            .softwareContinuation()
+            .filter(encode -> !encode.format().equals(EncodeFormat.SDR_8_BIT));
+    if (continuation.isEmpty() || !pending(playback, attempt.streamId())) {
+      return Optional.empty();
+    }
+
+    var failedEncode =
+        new FailedFormatAttempt.Encode(
+            continuation.get().codecFamily(), continuation.get().format());
+    playback.startedFormatAttempts--;
+    return Optional.of(
+        reserveAfterFailedAttempt(
+            playback, attempt.streamId(), new FailedFormatAttempt(rejection, failedEncode)));
   }
 
   private void failFormatAttempt(

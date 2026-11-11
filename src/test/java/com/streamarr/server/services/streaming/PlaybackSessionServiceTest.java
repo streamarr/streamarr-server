@@ -47,6 +47,7 @@ import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.PlaybackSessionClosedException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -1143,6 +1144,30 @@ class PlaybackSessionServiceTest {
                 assertThat(attempt.reason())
                     .isEqualTo(new PlaybackSessionFailure.CreationRejected(streams.rejection)));
     assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  // A playback session that closed while its software continuation started reserves nothing more.
+  @Test
+  @DisplayName(
+      "Should announce no change when a playback session closes while the software continuation"
+          + " of its PQ encode starts and no stream session can continue it")
+  void shouldAnnounceNoChangeWhenAPlaybackSessionClosesWhileItsRejectedPqContinuationStarts() {
+    streams.copiesTheSource = false;
+    streams.encodeFormat = EncodeFormat.hdr(VideoRange.PQ);
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+    streams.rejection = new CreateStreamSessionRejection.NoEligibleVideoFormat();
+    streams.beforeNextCreation =
+        _ -> {
+          service.close(request(initial, command));
+          events.clear();
+        };
+
+    service.onRequestedVariantHardwareEncoderFailed(
+        hardwareEncoderFailure(initial.currentFormatAttempt().streamSessionId()));
+
+    assertThat(events.getEventsOfType(PlaybackSessionChangedEvent.class)).isEmpty();
+    assertThat(streams.createdCommands).hasSize(2);
   }
 
   @Test
@@ -3521,6 +3546,8 @@ class PlaybackSessionServiceTest {
     private RuntimeException destroyFailure;
     // Whether a capability entry accepts a copy of the source, as the transcode decision finds.
     private boolean copiesTheSource = true;
+    // The range and bit depth of an encode, as the transcode decision plans them.
+    private EncodeFormat encodeFormat = EncodeFormat.SDR_8_BIT;
     // Whether the declaration covers the source for direct play, as the transcode decision finds.
     private boolean coversTheSourceForDirectPlay;
     private List<DecisionReason> copyReasons = List.of();
@@ -3576,7 +3603,10 @@ class PlaybackSessionServiceTest {
       if (constraint == VideoFormatConstraint.ENCODE_ONLY || !copiesTheSource) {
         return defaultSessionBuilder()
             .transcodeDecision(
-                fullTranscodeDecision("h264").toBuilder().reasons(encodeReasons).build())
+                fullTranscodeDecision("h264").toBuilder()
+                    .reasons(encodeReasons)
+                    .videoEncodeFormat(encodeFormat)
+                    .build())
             .variants(List.of(ENCODED_720P));
       }
 

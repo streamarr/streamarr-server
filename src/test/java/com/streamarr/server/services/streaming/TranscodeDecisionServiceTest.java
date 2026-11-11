@@ -27,6 +27,7 @@ import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.EncodeFormat;
+import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
@@ -46,7 +47,10 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
@@ -1176,6 +1180,92 @@ class TranscodeDecisionServiceTest {
             .orElseThrow();
 
     assertThat(decision.softwareEncoder()).isFalse();
+  }
+
+  // ADR 0013: a software continuation keeps the failed encode's range and bit depth, so the
+  // decision plans that format alone and nothing when no software encoder writes it.
+  @Test
+  @DisplayName(
+      "Should decide nothing when no software encoder writes the range of the PQ encode that a"
+          + " software continuation continues")
+  void shouldDecideNothingWhenNoSoftwareEncoderWritesTheSoftwareContinuationsRange() {
+    var decision =
+        service.decide(
+            softwareContinuationOfAnHdr10Source(
+                    EncodeFormat.hdr(VideoRange.PQ), Set.of(VideoEncodeFeature.TEN_BIT))
+                .build());
+
+    assertThat(decision).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should plan PQ at 10 bits with the software encoder when it writes the range of the PQ"
+          + " encode that a software continuation continues")
+  void shouldPlanPqAt10BitsWhenTheSoftwareEncoderWritesTheSoftwareContinuationsRange() {
+    var decision =
+        service
+            .decide(
+                softwareContinuationOfAnHdr10Source(
+                        EncodeFormat.hdr(VideoRange.PQ),
+                        Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.hdr(VideoRange.PQ));
+    assertThat(decision.softwareEncoder()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should plan 8-bit SDR when a software continuation continues an 8-bit SDR encode of an"
+          + " HDR10 source and the software encoder writes PQ")
+  void shouldPlan8BitSdrWhenASoftwareContinuationContinuesAnSdrEncodeAndTheSoftwareWritesPq() {
+    var decision =
+        service
+            .decide(
+                softwareContinuationOfAnHdr10Source(
+                        EncodeFormat.SDR_8_BIT,
+                        Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.SDR_8_BIT);
+  }
+
+  // An AV1 encode of an HDR10 HEVC source for a client that declares AV1 with SDR and PQ at 10
+  // bits, continued on a software AV1 encoder that lists the encode features.
+  private TranscodeDecisionRequest.TranscodeDecisionRequestBuilder
+      softwareContinuationOfAnHdr10Source(
+          EncodeFormat failedEncodeFormat, Set<VideoEncodeFeature> softwareAv1Features) {
+    var hdr10 =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .streamIndex(0)
+            .codecFamily(Optional.of(HEVC))
+            .bitDepth(OptionalInt.of(10))
+            .codecString(Optional.of("hvc1.2.4.L120.90"))
+            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+            .build();
+    var hdrAv1 =
+        av1EntryBuilder().compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ)).build();
+    var softwareAv1 =
+        WorkerVerifiedEncoder.builder()
+            .backend(
+                EncoderBackend.builder()
+                    .codecFamily("av1")
+                    .encoder("libsvtav1")
+                    .kind(EncoderBackend.Kind.SOFTWARE)
+                    .build())
+            .keyframeVerified(true)
+            .encodeFeatures(softwareAv1Features)
+            .build();
+    return TranscodeDecisionRequest.builder()
+        .source(probeBuilder("hevc", "aac").videoPlaybackFacts(Optional.of(hdr10)).build())
+        .capabilityDeclaration(defaultDeclarationBuilder().video(List.of(hdrAv1)).build())
+        .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+        .encodableVideoCodecFamilies(Set.of("av1"))
+        .videoEncoders(List.of(softwareAv1))
+        .softwareContinuation(Optional.of(new SoftwareContinuation("av1", failedEncodeFormat)));
   }
 
   @ParameterizedTest(name = "{0}")
