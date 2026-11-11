@@ -224,7 +224,13 @@ public class ImageVariantService {
 
   private byte[] encode(BufferedImage image, String formatName) {
     try (var outputStream = new ByteArrayOutputStream()) {
-      ImageIO.write(image, formatName, outputStream);
+      // ImageIO.write writes nothing and returns false when no encoder accepts the image.
+      if (!ImageIO.write(image, formatName, outputStream)) {
+        throw new ImageProcessingException(
+            "No %s encoder accepts the image (BufferedImage type %d, %d bits per pixel)."
+                .formatted(formatName, image.getType(), image.getColorModel().getPixelSize()));
+      }
+
       return outputStream.toByteArray();
     } catch (IOException e) {
       throw new ImageProcessingException(e);
