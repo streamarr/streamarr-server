@@ -311,6 +311,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   void shouldPreserveExpiryWhenExpiredOffersOffererIsNoLongerAuthorized() throws Exception {
     var orphan = managedOrphan();
     var offerer = authTestSupport.createAdminIdentity();
+    // A ServerAdmin still finds an offer that is over and may decide it.
+    var decider = authTestSupport.createAdminIdentity();
     try {
       var response =
           graphql(
@@ -344,7 +346,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           });
 
       graphql(
-              authTestSupport.accountBearer(host),
+              authTestSupport.accountBearer(decider),
               """
               mutation { acceptProfileShare(input: {shareId: "%s"}) {
                 share { status } userErrors { __typename } } }
@@ -352,16 +354,15 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
                   .formatted(shareId))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.errors").doesNotExist())
-          // An offer past its expiry is over, so the Household it was offered to no longer finds
-          // it.
           .andExpect(
               jsonPath("$.data.acceptProfileShare.userErrors[0].__typename")
-                  .value("ShareNotFoundError"));
+                  .value("ShareNotPendingError"));
 
       var stored = shareRepository.findById(shareId).orElseThrow();
       assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
       assertThat(stored.getInvalidationReason()).isEmpty();
     } finally {
+      authTestSupport.deleteIdentity(decider);
       authTestSupport.deleteIdentity(offerer);
     }
   }
