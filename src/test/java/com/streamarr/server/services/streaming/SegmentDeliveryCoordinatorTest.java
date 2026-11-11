@@ -11,6 +11,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDura
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.h264Nvenc;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
@@ -34,6 +35,8 @@ import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -1669,8 +1672,10 @@ class SegmentDeliveryCoordinatorTest {
     for (var index = 0; index < deliveredSegments; index++) {
       var segmentName = "480p/" + SegmentNames.mediaSegmentName(index);
       upload(session.getSessionId(), segmentName, new byte[] {1});
-      assertThat(coordinator.deliver(session.getSessionId(), "480p", segmentName))
-          .isInstanceOf(SegmentDelivery.Ready.class);
+      assertThat(
+              StoredSegments.bytes(
+                  coordinator.deliver(session.getSessionId(), "480p", segmentName)))
+          .containsExactly(1);
     }
 
     return session;
@@ -2739,6 +2744,28 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
+  @Test
+  @DisplayName(
+      "Should close the switched variant's first media segment when stopping the variant that the player left fails unexpectedly")
+  void
+      shouldCloseTheSwitchedVariantsFirstMediaSegmentWhenStoppingTheVariantThatThePlayerLeftFailsUnexpectedly()
+          throws Exception {
+    var failing = new UnexpectedStopFailureExecutor();
+    transcodeExecutor = failing;
+    var rig = rigWith(failing);
+    lifecycle = rig.lifecycle();
+    coordinator = rig.coordinator();
+    var sessionId = ladderSessionPlayingFirstListedVariant(3).getSessionId();
+    var switched = heldDelivery(sessionId, "1080p", "1080p/segment3.m4s");
+    failing.failStopsOf(sessionId);
+
+    upload(sessionId, "1080p/segment3.m4s", new byte[] {3});
+
+    assertThatThrownBy(() -> switched.get(2, TimeUnit.SECONDS))
+        .hasCauseInstanceOf(UncheckedIOException.class);
+    assertThat(segmentStore.openSegmentCount()).isZero();
+  }
+
   /**
    * Holds one request's thread at the session mutex once the given condition holds, so a second
    * request can run between the first request's steps.
@@ -2979,6 +3006,26 @@ class SegmentDeliveryCoordinatorTest {
       } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
       }
+    }
+  }
+
+  /** Fails every later stop of one stream session's variants with a failure no caller expects. */
+  private static final class UnexpectedStopFailureExecutor extends FakeTranscodeExecutor {
+
+    private volatile UUID failingSessionId;
+
+    private void failStopsOf(UUID sessionId) {
+      failingSessionId = sessionId;
+    }
+
+    @Override
+    public void stopVariant(UUID sessionId, String variantLabel) {
+      if (sessionId.equals(failingSessionId)) {
+        throw new UncheckedIOException(
+            new IOException("Simulated unexpected variant stop failure"));
+      }
+
+      super.stopVariant(sessionId, variantLabel);
     }
   }
 
