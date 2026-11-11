@@ -285,6 +285,48 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should deliver the end to the Household's side when the offering side ends the share")
+  void shouldDeliverTheEndToTheHouseholdsSideWhenTheOfferingSideEndsTheShare() throws Exception {
+    var share = steps.accept(riverside, steps.offer(sam, sam.profile(), riverside));
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    sharing.endProfileShare(authTestSupport.identityOf(sam), share.getId());
+
+    var ended = nextChange(socket);
+    assertThat(nodeOf(ended).path("__typename").asString())
+        .isEqualTo("ProfileShareEndedNotification");
+    assertMatchesAFreshQuery(ended, riversideAdmin);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the end to the Household an Account leaves when its transfer ends the share"
+          + " into it")
+  void shouldDeliverTheEndToTheHouseholdAnAccountLeavesWhenItsTransferEndsTheShareIntoIt()
+      throws Exception {
+    var ben = track(authTestSupport.createHouseholdMemberIdentity(riverside));
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    var outcome =
+        accountLifecycle.transferAccount(
+            authTestSupport.freshIdentityOf(serverAdmin),
+            TransferAccountCommand.builder()
+                .accountId(ben.account().getId())
+                .destinationHouseholdId(sam.household().getId())
+                .sourceHouseholdAccess(SourceHouseholdAccess.END)
+                .reason("moved in with Sam")
+                .build());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var ended = nextChange(socket);
+    assertThat(nodeOf(ended).path("__typename").asString())
+        .isEqualTo("ProfileShareEndedNotification");
+    assertMatchesAFreshQuery(ended, riversideAdmin);
+  }
+
+  @Test
   @DisplayName("Should deliver the end to both sides when a ServerAdmin ends the share")
   void shouldDeliverTheEndToBothSidesWhenAServerAdminEndsTheShare() throws Exception {
     var share = steps.accept(riverside, steps.offer(sam, kai(), riverside));
