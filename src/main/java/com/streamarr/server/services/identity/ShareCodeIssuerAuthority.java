@@ -1,7 +1,5 @@
 package com.streamarr.server.services.identity;
 
-import com.streamarr.server.domain.auth.ShareCode;
-import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.ShareCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -11,7 +9,6 @@ import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import java.time.Instant;
 import java.util.UUID;
-import java.util.function.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -37,13 +34,18 @@ class ShareCodeIssuerAuthority {
 
   /**
    * Invalidates the issuer's live codes for each Household it may no longer issue one for, after a
-   * change to its roles, its Household or whether it is enabled; answers how many it invalidated.
+   * change to its roles or its Household; answers how many it invalidated. The decision depends on
+   * the Household alone, so it is asked once for each Household the issuer holds live codes for.
    */
   int afterIssuerChanged(UUID issuerAccountId, Instant now) {
     // The change was written past the managed copy, and the decision reads the role from it.
     userAccountRepository.findByIdAndReloadFromDatabase(issuerAccountId);
-    return invalidateLiveCodesIssuedBy(
-        issuerAccountId, now, shareCode -> !mayStillIssue(issuerAccountId, shareCode));
+    return shareCodeRepository.findHouseholdIdsWithLiveCodesIssuedBy(issuerAccountId, now).stream()
+        .filter(householdId -> !mayStillIssue(issuerAccountId, householdId))
+        .mapToInt(
+            householdId ->
+                shareCodeRepository.invalidateLiveIssuedFor(issuerAccountId, householdId, now))
+        .sum();
   }
 
   /**
@@ -62,24 +64,9 @@ class ShareCodeIssuerAuthority {
     return shareCodeRepository.invalidateLiveIssuedBy(issuerAccountId, now);
   }
 
-  private int invalidateLiveCodesIssuedBy(
-      UUID issuerAccountId, Instant now, Predicate<ShareCode> authorityLost) {
-    var invalidated = 0;
-    for (var shareCode :
-        shareCodeRepository.findByIssuerAccountIdAndStatus(issuerAccountId, ShareCodeStatus.LIVE)) {
-      if (shareCode.isLiveAt(now)
-          && authorityLost.test(shareCode)
-          && shareCodeRepository.tryInvalidate(shareCode.getId(), now)) {
-        invalidated++;
-      }
-    }
-
-    return invalidated;
-  }
-
-  private boolean mayStillIssue(UUID issuerAccountId, ShareCode shareCode) {
+  private boolean mayStillIssue(UUID issuerAccountId, UUID householdId) {
     return switch (authorizationService.decideForAccount(
-        issuerAccountId, new Intent.IssueShareCode(shareCode.getHouseholdId()))) {
+        issuerAccountId, new Intent.IssueShareCode(householdId))) {
       case Decision.Allowed<AuthorizationUnit> _ -> true;
       case Decision.Denied<AuthorizationUnit> _ -> false;
       case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
