@@ -93,7 +93,7 @@ class SupersededSegmentRequestTest {
     var session = defaultLadderSessionBuilder().build();
     runtimeRegistry.save(session);
     sessionIds.add(session.getSessionId());
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 

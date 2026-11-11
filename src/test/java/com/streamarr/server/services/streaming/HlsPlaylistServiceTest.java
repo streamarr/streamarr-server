@@ -43,6 +43,7 @@ import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import java.nio.file.Path;
@@ -82,7 +83,7 @@ class HlsPlaylistServiceTest {
             .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
-    service = new HlsPlaylistService(properties);
+    service = new HlsPlaylistService(properties, UploadBudgetFixture.OFF);
   }
 
   private StreamSession createSession(TranscodeMode mode, int durationSeconds) {
@@ -1958,7 +1959,8 @@ class HlsPlaylistServiceTest {
           new HlsPlaylistService(
               StreamingProperties.builder()
                   .targetSegmentDuration(Duration.ofSeconds(expected.segmentSeconds()))
-                  .build());
+                  .build(),
+              UploadBudgetFixture.OFF);
 
       var playlist =
           segmentService.generateMultivariantPlaylist(
@@ -2004,7 +2006,8 @@ class HlsPlaylistServiceTest {
           new HlsPlaylistService(
               StreamingProperties.builder()
                   .targetSegmentDuration(Duration.ofSeconds(slotSeconds))
-                  .build());
+                  .build(),
+              UploadBudgetFixture.OFF);
 
       assertThat(
               segmentService.generateMultivariantPlaylist(

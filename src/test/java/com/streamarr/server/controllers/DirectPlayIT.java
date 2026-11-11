@@ -232,7 +232,7 @@ class DirectPlayIT extends AbstractIntegrationTest {
         """
         mutation {
           createPlaybackSession(input: {
-            mediaFileId: "%s", options: {quality: %s}, capabilities: %s
+            mediaFileId: "%s", networkRoute: INTERNET, options: {quality: %s}, capabilities: %s
           }) {
             playbackSession {
               currentFormatAttempt {
