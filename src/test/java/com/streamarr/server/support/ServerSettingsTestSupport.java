@@ -8,6 +8,7 @@ import com.streamarr.server.repositories.audit.PostgresTransactionAuditActorBind
 import java.util.function.Consumer;
 import lombok.NonNull;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.impl.DSL;
 
 public final class ServerSettingsTestSupport {
@@ -16,7 +17,7 @@ public final class ServerSettingsTestSupport {
 
   /**
    * Puts the one server settings row back to the state that its migration seeds, with the System
-   * actor as its last modifier.
+   * actor as its last modifier. The sharing settings take the defaults their migrations declare.
    */
   public static void resetServerSettings(@NonNull DSLContext dsl) {
     asSystem(
@@ -27,21 +28,27 @@ public final class ServerSettingsTestSupport {
                 .set(SERVER_SETTINGS.ENCODER_PRESET, EncoderPresetChoice.AUTOMATIC.name())
                 .set(SERVER_SETTINGS.IDLE_SEGMENT_RETENTION_MINUTES, 60)
                 .set(SERVER_SETTINGS.NOTIFICATION_RETENTION_DAYS, 90)
-                .set(SERVER_SETTINGS.SHARE_CODE_LIFETIME_HOURS, 168)
-                .set(SERVER_SETTINGS.INVITATION_LIFETIME_HOURS, 168)
-                .set(SERVER_SETTINGS.SHARE_CODE_LIMIT, 10)
+                .set(
+                    SERVER_SETTINGS.SHARE_CODE_LIFETIME_HOURS,
+                    DSL.defaultValue(SERVER_SETTINGS.SHARE_CODE_LIFETIME_HOURS))
+                .set(
+                    SERVER_SETTINGS.INVITATION_LIFETIME_HOURS,
+                    DSL.defaultValue(SERVER_SETTINGS.INVITATION_LIFETIME_HOURS))
+                .set(
+                    SERVER_SETTINGS.SHARE_CODE_LIMIT,
+                    DSL.defaultValue(SERVER_SETTINGS.SHARE_CODE_LIMIT))
                 .execute());
   }
 
   /** Stores how many live share codes a Household may hold, with the System actor as modifier. */
   public static void limitShareCodes(@NonNull DSLContext dsl, int codes) {
-    asSystem(
-        dsl,
-        transaction ->
-            transaction
-                .update(SERVER_SETTINGS)
-                .set(SERVER_SETTINGS.SHARE_CODE_LIMIT, codes)
-                .execute());
+    storeSetting(dsl, SERVER_SETTINGS.SHARE_CODE_LIMIT, codes);
+  }
+
+  /** Stores one setting with the System actor as modifier, past the service and its range. */
+  public static void storeSetting(
+      @NonNull DSLContext dsl, @NonNull Field<Integer> setting, int value) {
+    asSystem(dsl, transaction -> transaction.update(SERVER_SETTINGS).set(setting, value).execute());
   }
 
   private static void asSystem(DSLContext dsl, Consumer<DSLContext> write) {
