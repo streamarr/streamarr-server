@@ -61,10 +61,12 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
   private final DSLContext dsl;
   private final StreamMeasurementRows measurementRows;
+  private final ScannedStreamEndRows scannedStreamEndRows;
 
   public MediaFileContainerInfoRepositoryCustomImpl(DSLContext dsl) {
     this.dsl = dsl;
     this.measurementRows = new StreamMeasurementRows(dsl);
+    this.scannedStreamEndRows = new ScannedStreamEndRows(dsl);
   }
 
   @Override
@@ -95,6 +97,13 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   @Override
   @Transactional
   public boolean publishKeyframePacketScan(KeyframePacketScanPublication publication) {
+    // Every writer of a file's probe outcome and learned stream ends takes the media file's row
+    // lock first. A stream end row references the media file, so storing one without the lock
+    // would wait on a probe publication that waits on this scan's outcome row.
+    if (!lockMediaFile(publication.mediaFileId())) {
+      return false;
+    }
+
     var changes = dsl.newRecord(MEDIA_FILE_CONTAINER_INFO);
     setKeyframeStatus(changes, publication.keyframes());
     changes.setKeyframePacketScanReason(null);
@@ -114,6 +123,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
       insertKeyframePositions(publication.mediaFileId(), positions);
     }
 
+    scannedStreamEndRows.replaceWith(publication);
     measurementRows.deleteNotFollowingStoredOutcome(publication.mediaFileId());
     return true;
   }
@@ -577,6 +587,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
               var keyframes,
               var chosenVideoStream,
               var titlesOmitted,
+              _,
               _) -> {
         row.setStreamTitlesOmitted(titlesOmitted.orElse(null));
         setKeyframeStatus(row, keyframes);
@@ -594,7 +605,14 @@ public class MediaFileContainerInfoRepositoryCustomImpl
     dsl.executeInsert(row);
     if (!(publication.outcome()
         instanceof
-        ProbeOutcome.Success(var container, var streams, var keyframes, _, _, var measurements))) {
+        ProbeOutcome.Success(
+            var container,
+            var streams,
+            var keyframes,
+            _,
+            _,
+            var measurements,
+            _))) {
       measurementRows.deleteNotFollowingStoredOutcome(mediaFileId);
       return;
     }

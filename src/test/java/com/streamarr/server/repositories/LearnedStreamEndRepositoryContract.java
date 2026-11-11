@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.LearnedStreamEnd;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,19 @@ public interface LearnedStreamEndRepositoryContract {
 
   /** Stores a probe outcome of the file for the snapshot, in place of any stored before. */
   void storeProbeOutcome(UUID mediaFileId, SourceFileSnapshot snapshot);
+
+  /**
+   * Stores a probe outcome of the file for the snapshot that needs a keyframe packet scan, in place
+   * of any stored before.
+   */
+  void storeProbeOutcomeNeedingPacketScan(UUID mediaFileId, SourceFileSnapshot snapshot);
+
+  /**
+   * Publishes a keyframe packet scan of the file's stored outcome for the snapshot, with the stream
+   * ends that the scan read, and returns whether the scan was stored.
+   */
+  boolean publishKeyframePacketScan(
+      UUID mediaFileId, SourceFileSnapshot snapshot, List<SourceStreamEnd> streamEnds);
 
   /** Creates a media file whose stored probe outcome holds {@link #SNAPSHOT}. */
   default UUID createProbedMediaFile() {
@@ -122,6 +137,96 @@ public interface LearnedStreamEndRepositoryContract {
 
     assertThat(repository().findFor(mediaFileId, SNAPSHOT))
         .containsExactlyInAnyOrder(learned, otherStream);
+  }
+
+  @Test
+  @DisplayName(
+      "Should read each scanned end time when a keyframe packet scan of the stored probe outcome"
+          + " publishes it")
+  default void shouldReadEachScannedEndTimeWhenAKeyframePacketScanPublishesIt() {
+    var mediaFileId = createMediaFile();
+    storeProbeOutcomeNeedingPacketScan(mediaFileId, SNAPSHOT);
+
+    var published =
+        publishKeyframePacketScan(
+            mediaFileId,
+            SNAPSHOT,
+            List.of(
+                new SourceStreamEnd(0, Duration.ofSeconds(14, 166_666_666)),
+                new SourceStreamEnd(1, Duration.ofMillis(14_250))));
+
+    assertThat(published).isTrue();
+    assertThat(repository().findFor(mediaFileId, SNAPSHOT))
+        .containsExactlyInAnyOrder(
+            learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(14, 166_666_666)).toBuilder()
+                .streamIndex(0)
+                .build(),
+            learned(mediaFileId, SNAPSHOT, Duration.ofMillis(14_250)));
+  }
+
+  // A job attempt learns an end from the last sample that it read. The scan read every packet of
+  // the stream, so its end replaces the attempt's.
+  @Test
+  @DisplayName(
+      "Should replace a learned end time when a keyframe packet scan reads the stream's end for the"
+          + " same snapshot")
+  default void shouldReplaceALearnedEndTimeWhenAKeyframePacketScanReadsTheStreamsEnd() {
+    var mediaFileId = createMediaFile();
+    storeProbeOutcomeNeedingPacketScan(mediaFileId, SNAPSHOT);
+    repository().store(learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(84)));
+
+    publishKeyframePacketScan(
+        mediaFileId, SNAPSHOT, List.of(new SourceStreamEnd(1, Duration.ofMillis(14_250))));
+
+    assertThat(repository().findFor(mediaFileId, SNAPSHOT))
+        .containsExactly(learned(mediaFileId, SNAPSHOT, Duration.ofMillis(14_250)));
+  }
+
+  @Test
+  @DisplayName("Should keep a scanned end time when a later attempt learns another one")
+  default void shouldKeepAScannedEndTimeWhenALaterAttemptLearnsAnotherOne() {
+    var mediaFileId = createMediaFile();
+    storeProbeOutcomeNeedingPacketScan(mediaFileId, SNAPSHOT);
+    publishKeyframePacketScan(
+        mediaFileId, SNAPSHOT, List.of(new SourceStreamEnd(1, Duration.ofMillis(14_250))));
+
+    var stored = repository().store(learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(84)));
+
+    assertThat(stored).isFalse();
+    assertThat(repository().findFor(mediaFileId, SNAPSHOT))
+        .containsExactly(learned(mediaFileId, SNAPSHOT, Duration.ofMillis(14_250)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should store no scanned end time when the stored probe outcome needs no keyframe packet"
+          + " scan")
+  default void shouldStoreNoScannedEndTimeWhenTheStoredProbeOutcomeNeedsNoKeyframePacketScan() {
+    var mediaFileId = createProbedMediaFile();
+
+    var published =
+        publishKeyframePacketScan(
+            mediaFileId, SNAPSHOT, List.of(new SourceStreamEnd(1, Duration.ofMillis(14_250))));
+
+    assertThat(published).isFalse();
+    assertThat(repository().findFor(mediaFileId, SNAPSHOT)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should store no scanned end time when the scan read another version of the file than the"
+          + " stored probe outcome describes")
+  default void shouldStoreNoScannedEndTimeWhenTheScanReadAnotherVersionOfTheFile() {
+    var mediaFileId = createMediaFile();
+    storeProbeOutcomeNeedingPacketScan(mediaFileId, CHANGED_SNAPSHOT);
+
+    var published =
+        publishKeyframePacketScan(
+            mediaFileId, SNAPSHOT, List.of(new SourceStreamEnd(1, Duration.ofMillis(14_250))));
+
+    assertThat(published).isFalse();
+    assertThat(repository().findFor(mediaFileId, SNAPSHOT)).isEmpty();
+    assertThat(repository().findFor(mediaFileId, CHANGED_SNAPSHOT)).isEmpty();
   }
 
   private static LearnedStreamEnd learned(
