@@ -188,7 +188,7 @@ public class ImageVariantService {
     }
 
     var resized = new EnumMap<ImageSize, BufferedImage>(ImageSize.class);
-    var resizeFrom = source;
+    var previous = source;
     for (var size : RESIZABLE_SIZES.reversed()) {
       var targetWidth = widths.get(size);
       if (targetWidth == null) {
@@ -197,9 +197,8 @@ public class ImageVariantService {
       }
 
       var targetHeight = heightAtSourceAspectRatio(source, targetWidth);
-      resizeFrom =
-          render(thumbnailOf(resizeFrom, transparent).forceSize(targetWidth, targetHeight));
-      resized.put(size, resizeFrom);
+      previous = render(thumbnailOf(previous, transparent).forceSize(targetWidth, targetHeight));
+      resized.put(size, previous);
     }
     return resized;
   }
@@ -240,14 +239,18 @@ public class ImageVariantService {
     var fitsWithinInput =
         smallVariant.getWidth() <= BLUR_HASH_MAX_INPUT_EDGE
             && smallVariant.getHeight() <= BLUR_HASH_MAX_INPUT_EDGE;
-    // Thumbnailator's progressive resizer draws nothing when it narrows an image that is one pixel
-    // high, so fitting it would hash as black.
-    if (fitsWithinInput || smallVariant.getHeight() == 1) {
+    if (fitsWithinInput || isOnePixelHigh(smallVariant)) {
       return smallVariant;
     }
 
     return render(
         Thumbnails.of(smallVariant).size(BLUR_HASH_MAX_INPUT_EDGE, BLUR_HASH_MAX_INPUT_EDGE));
+  }
+
+  // Thumbnailator 0.4.21's progressive resizer draws nothing when it narrows an image that is one
+  // pixel high: its first step halves that pixel to zero, leaving a black result.
+  private static boolean isOnePixelHigh(BufferedImage image) {
+    return image.getHeight() == 1;
   }
 
   // Reads alpha as the image stores it, one row at a time. A palette holds alpha in its entries.
