@@ -257,6 +257,52 @@ public final class WorkerContainerFixture implements AutoCloseable {
         .toList();
   }
 
+  /**
+   * Where each packet of the selected stream ends, in seconds from the media's start time: the
+   * packet's presentation time plus its duration, less the start time that ffprobe states for the
+   * container. Leaves out a packet whose presentation time ffprobe does not list.
+   */
+  public List<Double> packetEnds(Path media, String streamSelector) throws Exception {
+    var start = containerStartTime(media);
+    var ends =
+        probePackets(
+                media, streamSelector, List.of("-show_entries", "packet=pts_time,duration_time"))
+            .stream()
+            .map(line -> line.split(","))
+            .filter(packet -> !packet[0].equals("N/A"))
+            .map(packet -> Double.parseDouble(packet[0]) + Double.parseDouble(packet[1]) - start)
+            .toList();
+    assertThat(ends).isNotEmpty();
+    return ends;
+  }
+
+  /** The last decoded audio sample's end, in seconds from the container's start time. */
+  public double decodedAudioEnd(Path media) throws Exception {
+    var start = containerStartTime(media);
+    var sampleRate =
+        Double.parseDouble(
+            probePackets(media, "a:0", List.of("-show_entries", "stream=sample_rate"))
+                .getFirst()
+                .replace(",", ""));
+    assertThat(sampleRate).isPositive();
+    return probePackets(
+            media, "a:0", List.of("-show_frames", "-show_entries", "frame=pts_time,nb_samples"))
+        .stream()
+        .map(line -> line.split(","))
+        .mapToDouble(
+            frame ->
+                Double.parseDouble(frame[0]) + Double.parseDouble(frame[1]) / sampleRate - start)
+        .max()
+        .orElseThrow();
+  }
+
+  private double containerStartTime(Path media) throws Exception {
+    return Double.parseDouble(
+        probePackets(media, "a:0", List.of("-show_entries", "format=start_time"))
+            .getFirst()
+            .replace(",", ""));
+  }
+
   public List<String> videoPacketHashes(Path media) throws Exception {
     return packetHashes(media, "v");
   }

@@ -94,6 +94,8 @@ class HlsCopyPlaylistApiSmokeTest {
   // The AAC encoder's priming samples make each source about 23 ms longer than its video, which
   // the last segment's EXTINF includes. The offset stays below one frame.
   private static final Offset<Double> AUDIO_TAIL = within(0.03);
+  // The segment list counts the media's end in whole milliseconds.
+  private static final Offset<Double> ONE_MILLISECOND = within(0.001);
   private static final String TOKEN = "smoke-token";
   private static final Duration RESPONSE_BOUND = Duration.ofSeconds(90);
 
@@ -114,6 +116,33 @@ class HlsCopyPlaylistApiSmokeTest {
   private static final List<String> INDEX_FIRST_MATROSKA =
       source(
           30, KEYFRAME_EVERY_TWO_SECONDS, List.of("-reserve_index_space", "4k", "-f", "matroska"));
+
+  // A fragmented MP4 file has no index, so the keyframe packet scan reads every packet of the
+  // source. The audio lasts 2 s longer than the video.
+  private static final int OUTLASTED_VIDEO_SECONDS = 12;
+  private static final int OUTLASTING_AUDIO_SECONDS = 14;
+  private static final List<String> AUDIO_OUTLASTS_VIDEO_FRAGMENTED_MP4 =
+      List.of(
+          "-f",
+          "lavfi",
+          "-i",
+          "testsrc=size=160x90:rate=24:duration=" + OUTLASTED_VIDEO_SECONDS,
+          "-f",
+          "lavfi",
+          "-i",
+          "sine=frequency=440:duration=" + OUTLASTING_AUDIO_SECONDS,
+          "-c:v",
+          "libx264",
+          "-pix_fmt",
+          "yuv420p",
+          "-force_key_frames",
+          "expr:gte(t,n_forced*2)",
+          "-c:a",
+          "aac",
+          "-movflags",
+          "+frag_keyframe+empty_moov+default_base_moof",
+          "-f",
+          "mp4");
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeMediaFileContainerInfoRepository probeOutcomes =
@@ -299,11 +328,51 @@ class HlsCopyPlaylistApiSmokeTest {
             (video, advertised) -> assertThat(video).isCloseTo(advertised.seconds(), AUDIO_TAIL));
   }
 
+  @Test
+  @DisplayName(
+      "Should advertise a stream copy through the audio's end and serve every audio packet when"
+          + " the source's audio outlasts its video")
+  void shouldAdvertiseACopyThroughTheAudiosEndAndServeEveryAudioPacketWhenAudioOutlastsVideo()
+      throws Exception {
+    var source = generateSource("audio-outlasts-video.mp4", AUDIO_OUTLASTS_VIDEO_FRAGMENTED_MP4);
+    var videoEnd = latestPacketEnd(source, "v:0");
+    var audioEnd = latestPacketEnd(source, "a:0");
+    var file = storeProbeOutcome(source);
+
+    assertThat(probeOutcomes.findKeyframeKnowledge(file.getId()))
+        .contains(
+            new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX));
+    assertThat(runRequestedPacketScans()).containsExactly(new KeyframePacketScanResult.Completed());
+
+    startCopyPlayback(source);
+    var playlist = mediaPlaylist();
+    var served = servedSegments(playlist);
+
+    assertThat(audioEnd - videoEnd)
+        .as("the source's audio outlasts its video by about 2 s")
+        .isCloseTo(OUTLASTING_AUDIO_SECONDS - OUTLASTED_VIDEO_SECONDS, within(0.1));
+    assertThat(playlist.segments())
+        .as("one segment for each 6 s slot that holds video, and none for the audio alone")
+        .hasSize(2);
+    assertThat(videoOpenings(playlist, served).getLast())
+        .as("the last segment's video opens where the playlist lists the segment's start")
+        .isCloseTo(playlist.segmentStarts().getLast(), HALF_A_FRAME);
+    var advertisedEnd =
+        playlist.segmentStarts().getLast() + playlist.segments().getLast().seconds();
+    // The last AAC packet starts at 14.061746 s; the longest packet lasts 0.083333 s.
+    // ADR 0032 adds 2 ms, then ADR 0037 rounds up to a whole millisecond.
+    assertThat(advertisedEnd).as("the playlist ends at the scanned audio end").isEqualTo(14.148);
+    assertThat(advertisedEnd)
+        .as("the playlist includes the last decoded audio sample")
+        .isGreaterThanOrEqualTo(workerFixture.worker().decodedAudioEnd(source));
+    assertThat(workerFixture.worker().audioPacketHashes(playable(playlist, served)))
+        .as("the segments carry every source audio packet once, in order, past the video's end")
+        .isEqualTo(workerFixture.worker().audioPacketHashes(source));
+  }
+
   // The index lists every keyframe of the 30 s source, but the file's data ends near 14 s. The
   // source has a keyframe every 2 s, so every 6 s slot that starts before the real end opens a
-  // segment, and the plain grid's later slots open none. ADR 0037, segment list: the last
-  // segment's interval runs to the end of the media, and each EXTINF gives a segment's real
-  // duration.
+  // segment, and the plain grid's later slots open none.
   @ParameterizedTest(name = "{0}")
   @MethodSource("indexFirstSources")
   @DisplayName(
@@ -313,7 +382,8 @@ class HlsCopyPlaylistApiSmokeTest {
       String fileName, List<String> mediaArguments) throws Exception {
     var source = generateSource(fileName, mediaArguments);
     truncateBeforePacketNearHalf(source);
-    var realEnd = lastVideoPresentationTime(source);
+    var lastVideoPresentation = lastVideoPresentationTime(source);
+    var realEnd = Math.max(latestPacketEnd(source, "v:0"), latestPacketEnd(source, "a:0"));
     var file = storeProbeOutcome(source);
 
     assertThat(probeOutcomes.findKeyframeKnowledge(file.getId()))
@@ -338,9 +408,9 @@ class HlsCopyPlaylistApiSmokeTest {
         .as("the cut source ends after its second slot and before the plain grid's last slot")
         .isStrictlyBetween(6.0, 24.0);
     assertThat(playlist.segmentStarts())
-        .as("one segment for each 6 s slot that starts before the real end at %s s", realEnd)
+        .as("one segment for each 6 s slot that holds video, which ends at %s s", realEnd)
         .zipSatisfy(
-            slotStartsBefore(realEnd),
+            slotStartsBefore(lastVideoPresentation),
             (advertised, slotStart) -> assertThat(advertised).isCloseTo(slotStart, HALF_A_FRAME));
     assertThat(videoOpenings(playlist, served))
         .as("each advertised segment's video opens where the playlist lists its start")
@@ -348,8 +418,9 @@ class HlsCopyPlaylistApiSmokeTest {
             playlist.segmentStarts(),
             (opening, advertised) -> assertThat(opening).isCloseTo(advertised, HALF_A_FRAME));
     assertThat(playlist.segmentStarts().getLast() + playlist.segments().getLast().seconds())
-        .as("the last segment ends where the source's last video frame ends")
-        .isCloseTo(realEnd + FRAME_SECONDS, HALF_A_FRAME);
+        .as("the last segment ends at the later of the source's video end and audio end")
+        .isCloseTo(realEnd, ONE_MILLISECOND)
+        .isGreaterThanOrEqualTo(workerFixture.worker().decodedAudioEnd(source));
     assertThat(playlist.targetDurationSeconds())
         .as("no EXTINF exceeds the 6 s period, so the target duration stays at the period")
         .isEqualTo(SEGMENT_SECONDS);
@@ -440,6 +511,13 @@ class HlsCopyPlaylistApiSmokeTest {
 
   private double lastVideoPresentationTime(Path source) throws Exception {
     return workerFixture.worker().packetTimestamps(source).stream()
+        .max(Double::compare)
+        .orElseThrow();
+  }
+
+  // Where the stream's packets end, in seconds from the source's start time.
+  private double latestPacketEnd(Path source, String streamSelector) throws Exception {
+    return workerFixture.worker().packetEnds(source, streamSelector).stream()
         .max(Double::compare)
         .orElseThrow();
   }
