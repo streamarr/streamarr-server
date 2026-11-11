@@ -9,7 +9,6 @@ import com.streamarr.server.services.metadata.color.AmbientColorExtractor;
 import io.trbl.blurhash.BlurHash;
 import java.awt.AlphaComposite;
 import java.awt.image.BufferedImage;
-import java.awt.image.ColorModel;
 import java.awt.image.IndexColorModel;
 import java.awt.image.Raster;
 import java.io.ByteArrayInputStream;
@@ -21,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.DoublePredicate;
+import java.util.function.IntPredicate;
 import javax.imageio.ImageIO;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.stereotype.Service;
@@ -31,7 +30,6 @@ public class ImageVariantService {
 
   private static final int BLUR_HASH_COMPONENT_X = 4;
   private static final int BLUR_HASH_COMPONENT_Y = 3;
-  private static final int OPAQUE_WHITE = 0xFFFFFFFF;
 
   private static final List<ImageSize> RESIZABLE_SIZES =
       List.of(ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE);
@@ -191,32 +189,24 @@ public class ImageVariantService {
   }
 
   // Reads alpha as the image stores it, one row at a time. A palette holds alpha in its entries.
-  // Every other color model holds it in its own band of each pixel.
+  // Every other color model holds it in its own band of each pixel, where a JPEG or a PNG stores
+  // it as an unsigned integer of 8 or 16 bits.
   private static boolean hasTransparentPixel(BufferedImage image) {
-    var colorModel = image.getColorModel();
-    if (!colorModel.hasAlpha()) {
+    if (!image.getColorModel().hasAlpha()) {
       return false;
     }
 
-    if (colorModel instanceof IndexColorModel palette) {
-      return hasSampleMatching(image.getRaster(), entry -> palette.getAlpha((int) entry) != 0xFF);
+    if (image.getColorModel() instanceof IndexColorModel palette) {
+      return hasSampleMatching(image.getRaster(), entry -> palette.getAlpha(entry) != 0xFF);
     }
 
-    var opaque = opaqueAlphaSampleOf(colorModel);
-    return hasSampleMatching(image.getAlphaRaster(), alpha -> alpha < opaque);
+    var alphaBand = image.getAlphaRaster();
+    var opaque = (1 << alphaBand.getSampleModel().getSampleSize(0)) - 1;
+    return hasSampleMatching(alphaBand, alpha -> alpha != opaque);
   }
 
-  // The sample that means fully opaque depends on how the image stores alpha: 255 in 8 bits,
-  // 65535 in 16 bits, 1.0 in floating point. The color model gives it by converting an opaque
-  // pixel to the image's own samples.
-  private static double opaqueAlphaSampleOf(ColorModel colorModel) {
-    var opaquePixel = colorModel.createCompatibleWritableRaster(1, 1);
-    opaquePixel.setDataElements(0, 0, colorModel.getDataElements(OPAQUE_WHITE, null));
-    return colorModel.getAlphaRaster(opaquePixel).getSampleDouble(0, 0, 0);
-  }
-
-  private static boolean hasSampleMatching(Raster firstBand, DoublePredicate condition) {
-    var row = new double[firstBand.getWidth()];
+  private static boolean hasSampleMatching(Raster firstBand, IntPredicate condition) {
+    var row = new int[firstBand.getWidth()];
     for (var y = firstBand.getMinY(); y < firstBand.getMinY() + firstBand.getHeight(); y++) {
       firstBand.getSamples(firstBand.getMinX(), y, row.length, 1, 0, row);
       if (Arrays.stream(row).anyMatch(condition)) {

@@ -342,13 +342,9 @@ public class ImageService {
         fileName);
   }
 
-  // The extension names the format of the variant's bytes. A variant that is neither JPEG nor PNG
-  // gets no extension.
   private static String fileNameOf(GeneratedVariant variant, UUID imageId) {
-    var name = variant.variant().name().toLowerCase() + "-" + imageId;
-    return ImageFormat.ofBytes(variant.data())
-        .map(format -> name + "." + format.getExtension())
-        .orElse(name);
+    var format = ImageFormat.ofBytes(variant.data()).orElseThrow();
+    return variant.variant().name().toLowerCase() + "-" + imageId + "." + format.getExtension();
   }
 
   private Path resolveAbsolutePath(String relativePath) {
