@@ -82,8 +82,9 @@ import org.junit.jupiter.params.provider.MethodSource;
  * The encoded lower variants beside an Auto copy keep the copy's range and bit depth, through the
  * real transcode decision, ladder and playlist (ADR 0050). A bandwidth dip must not move a
  * television between HDR and SDR, so a copy whose range no verified encoder writes, or whose range
- * the client plays in no codec that a worker encodes, lists no lower variants. Auto still gives HDR
- * up for SDR only after an HDR encode fails (#397).
+ * the client plays in no codec that a worker encodes, lists no lower variants. Neither does a copy
+ * that the playlist describes as Dolby Vision, which no encode writes. Auto still gives HDR up for
+ * SDR only after an HDR encode fails (#397).
  */
 @Tag("UnitTest")
 @DisplayName("Lower Variants In The Copy's Range Tests")
@@ -141,8 +142,7 @@ class LowerVariantsInTheCopysRangeTest {
   }
 
   // Each copy lists 720p, 480p and 360p below its own 1080p picture. Every entry announces one
-  // range, so a player reads them as one ladder, and only the copy announces Dolby Vision, which no
-  // encode keeps (ADR 0013).
+  // range and none announces Dolby Vision, so a player reads them as one ladder.
   @ParameterizedTest(name = "{0}")
   @MethodSource("copiesWhoseRangeAWorkerEncodes")
   @DisplayName(
@@ -153,7 +153,7 @@ class LowerVariantsInTheCopysRangeTest {
     workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE)));
     probes.setDefaultProbe(ladder.source());
 
-    var copy = accepted(playback.start(startAuto(clientThatPlaysEveryRange())));
+    var copy = accepted(playback.start(startAuto(ladder.client())));
 
     var entries = streamInfEntries(copy);
     var lowerEntries = entries.subList(1, entries.size());
@@ -165,15 +165,11 @@ class LowerVariantsInTheCopysRangeTest {
         .hasSize(4)
         .extracting(LowerVariantsInTheCopysRangeTest::rangeOf)
         .containsOnly(ladder.range());
-    assertThat(videoCodecOf(entries.getFirst())).startsWith(ladder.copySampleEntry() + ".");
+    assertThat(entries).noneMatch(entry -> entry.contains("SUPPLEMENTAL-CODECS"));
+    assertThat(videoCodecOf(entries.getFirst())).startsWith("hvc1.");
     assertThat(lowerEntries)
         .hasSize(3)
-        .allSatisfy(
-            entry -> {
-              assertThat(videoCodecOf(entry)).matches(TEN_BIT_AV1);
-              assertThat(entry).doesNotContain("SUPPLEMENTAL-CODECS");
-            });
-    assertThat(supplementalCodecsOf(entries.getFirst())).isEqualTo(ladder.supplementalCodecs());
+        .allSatisfy(entry -> assertThat(videoCodecOf(entry)).matches(TEN_BIT_AV1));
     assertThat(sessionOf(copy).decisionOf("720p").plannedVideoOutput())
         .isInstanceOfSatisfying(
             PlannedVideoOutput.Encode.class,
@@ -201,20 +197,10 @@ class LowerVariantsInTheCopysRangeTest {
             .build(),
         ladder("HLG").source(hevc(CompatibleBase.HLG)).range(VideoRange.HLG).build(),
         ladder("10-bit SDR").source(hevc(CompatibleBase.SDR)).range(VideoRange.SDR).build(),
-        ladder("Dolby Vision 8.1")
+        ladder("Dolby Vision 8.1, copied without it for a client that declares PQ alone")
             .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1))
             .range(VideoRange.PQ)
-            .supplementalCodecs(Optional.of("dvh1.08.06/db1p"))
-            .build(),
-        ladder("Dolby Vision 8.4")
-            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_4))
-            .range(VideoRange.HLG)
-            .supplementalCodecs(Optional.of("dvh1.08.06/db4h"))
-            .build(),
-        ladder("single-track Dolby Vision 7, converted to 8.1")
-            .source(singleTrackProfile7Source())
-            .range(VideoRange.PQ)
-            .supplementalCodecs(Optional.of("dvh1.08.06/db1p"))
+            .client(clientThatPlaysNoDolbyVision())
             .build(),
         ladder("Dolby Vision 8.2 on a 10-bit SDR base")
             .source(
@@ -233,11 +219,54 @@ class LowerVariantsInTheCopysRangeTest {
                                     .build()),
                             Presence.PRESENT))))
             .range(VideoRange.SDR)
+            .build());
+  }
+
+  // No encode writes Dolby Vision (ADR 0013), so a lower variant would take a television out of
+  // its Dolby Vision mode. The encoder and the client here list lower variants beside an HDR10
+  // copy.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("copiesThatThePlaylistDescribesAsDolbyVision")
+  @DisplayName("Should list the copy alone when the playlist describes the copy as Dolby Vision")
+  void shouldListTheCopyAloneWhenThePlaylistDescribesTheCopyAsDolbyVision(
+      DolbyVisionCopy dolbyVision) {
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(svtAv1(EVERY_ENCODE_FEATURE)));
+    probes.setDefaultProbe(dolbyVision.source());
+
+    var copy = accepted(playback.start(startAuto(clientThatPlaysEveryRange())));
+
+    assertThatTheCopyPlaysAlone(copy);
+    assertThat(streamInfEntries(copy))
+        .singleElement()
+        .satisfies(
+            entry -> {
+              assertThat(videoCodecOf(entry)).startsWith(dolbyVision.sampleEntry() + ".");
+              assertThat(supplementalCodecsOf(entry)).isEqualTo(dolbyVision.supplementalCodecs());
+              assertThat(rangeOf(entry)).isEqualTo(dolbyVision.range());
+            });
+  }
+
+  static Stream<DolbyVisionCopy> copiesThatThePlaylistDescribesAsDolbyVision() {
+    return Stream.of(
+        dolbyVisionCopy("Dolby Vision 8.1")
+            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1))
+            .range(VideoRange.PQ)
+            .supplementalCodecs(Optional.of("dvh1.08.06/db1p"))
             .build(),
-        ladder("Dolby Vision 5, reshaped into PQ")
+        dolbyVisionCopy("Dolby Vision 8.4")
+            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_4))
+            .range(VideoRange.HLG)
+            .supplementalCodecs(Optional.of("dvh1.08.06/db4h"))
+            .build(),
+        dolbyVisionCopy("single-track Dolby Vision 7, converted to 8.1")
+            .source(singleTrackProfile7Source())
+            .range(VideoRange.PQ)
+            .supplementalCodecs(Optional.of("dvh1.08.06/db1p"))
+            .build(),
+        dolbyVisionCopy("Dolby Vision 5 in its own sample entry")
             .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_5))
             .range(VideoRange.PQ)
-            .copySampleEntry("dvh1")
+            .sampleEntry("dvh1")
             .build());
   }
 
@@ -331,7 +360,7 @@ class LowerVariantsInTheCopysRangeTest {
     workers.setTargetEncoders(ExecutionTargetId.LOCAL, copyAlone.encoders());
     probes.setDefaultProbe(copyAlone.source());
 
-    var copy = accepted(playback.start(startAuto(clientThatPlaysEveryRange())));
+    var copy = accepted(playback.start(startAuto(copyAlone.client())));
 
     assertThatTheCopyPlaysAlone(copy);
   }
@@ -350,13 +379,10 @@ class LowerVariantsInTheCopysRangeTest {
             .source(hevc(CompatibleBase.SDR))
             .encoder(svtAv1(without(VideoEncodeFeature.TEN_BIT)))
             .build(),
-        copyAlone("Dolby Vision 8.1 beside an AV1 encoder without PQ")
+        copyAlone("Dolby Vision 8.1, copied without it, beside an AV1 encoder without PQ")
             .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1))
+            .client(clientThatPlaysNoDolbyVision())
             .encoder(svtAv1(without(VideoEncodeFeature.PQ)))
-            .build(),
-        copyAlone("Dolby Vision 5 beside an AV1 encoder that cannot reshape Dolby Vision into PQ")
-            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_5))
-            .encoder(svtAv1(without(VideoEncodeFeature.DOLBY_VISION_TO_PQ)))
             .build(),
         copyAlone("HDR10 beside encoders that list no encode feature")
             .source(hevc(CompatibleBase.PQ))
@@ -397,15 +423,6 @@ class LowerVariantsInTheCopysRangeTest {
         copyAlone("10-bit SDR on a client whose AV1 entry declares 8 bits")
             .source(hevc(CompatibleBase.SDR))
             .client(clientWith(hdrHevc, av1EntryBuilder().maxBitDepth(8).build()))
-            .build(),
-        copyAlone("Dolby Vision 5 on a client that declares profile 5 but no PQ")
-            .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_5))
-            .client(
-                clientWith(
-                    hevcEntryBuilder()
-                        .dolbyVisionProfiles(profiles(DolbyVisionProfile.PROFILE_5))
-                        .build(),
-                    av1EntryBuilder().build()))
             .build());
   }
 
@@ -488,14 +505,13 @@ class LowerVariantsInTheCopysRangeTest {
     assertThat(streamInfEntries(copy)).hasSize(1);
   }
 
-  /** A copy that lists lower variants, with what its playlist entries announce. */
+  /** A copy that lists lower variants on this client, with the range that its entries announce. */
   @Builder(builderMethodName = "copyLadderBuilder")
   private record CopyLadder(
       @NonNull String name,
       @NonNull MediaProbe source,
       @NonNull VideoRange range,
-      @NonNull String copySampleEntry,
-      @NonNull Optional<String> supplementalCodecs) {
+      @NonNull ClientCapabilityDeclaration client) {
 
     @Override
     public String toString() {
@@ -504,9 +520,28 @@ class LowerVariantsInTheCopysRangeTest {
   }
 
   private static CopyLadder.CopyLadderBuilder ladder(String name) {
-    return CopyLadder.copyLadderBuilder()
+    return CopyLadder.copyLadderBuilder().name(name).client(clientThatPlaysEveryRange());
+  }
+
+  /** A copy that keeps its Dolby Vision, with what its playlist entry announces. */
+  @Builder(builderMethodName = "dolbyVisionCopyBuilder")
+  private record DolbyVisionCopy(
+      @NonNull String name,
+      @NonNull MediaProbe source,
+      @NonNull VideoRange range,
+      @NonNull String sampleEntry,
+      @NonNull Optional<String> supplementalCodecs) {
+
+    @Override
+    public String toString() {
+      return name;
+    }
+  }
+
+  private static DolbyVisionCopy.DolbyVisionCopyBuilder dolbyVisionCopy(String name) {
+    return DolbyVisionCopy.dolbyVisionCopyBuilder()
         .name(name)
-        .copySampleEntry("hvc1")
+        .sampleEntry("hvc1")
         .supplementalCodecs(Optional.empty());
   }
 
@@ -643,6 +678,14 @@ class LowerVariantsInTheCopysRangeTest {
                     DolbyVisionProfile.PROFILE_8_1,
                     DolbyVisionProfile.PROFILE_8_4))
             .build(),
+        av1EntryBuilder().compatibleBases(EVERY_RANGE).build());
+  }
+
+  // The same client without a Dolby Vision profile, so it gets a Dolby Vision source's copy with
+  // the Dolby Vision stripped.
+  private static ClientCapabilityDeclaration clientThatPlaysNoDolbyVision() {
+    return clientWith(
+        hevcEntryBuilder().compatibleBases(EVERY_RANGE).hdr10Plus(true).build(),
         av1EntryBuilder().compatibleBases(EVERY_RANGE).build());
   }
 

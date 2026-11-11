@@ -276,10 +276,13 @@ public class TranscodeDecisionService {
   // the player switches to one, so a busy worker's verified encoder and its encode features count.
   // A copy plays alone when no verified encoder writes that format in a codec profile that an entry
   // fits, when the format failed earlier in the playback session, and when the source has no
-  // encoded variant, such as one without a usable frame rate.
+  // encoded variant, such as one without a usable frame rate. So does a copy that the playlist
+  // describes as Dolby Vision: no encode writes Dolby Vision (ADR 0013), so a lower variant would
+  // take a television out of its Dolby Vision mode.
   private static Optional<LowerVariantEncode> lowerVariantEncode(
       TranscodeDecisionRequest request, CopyPlan plan) {
-    if (request.viewerLimits().quality() != VideoQuality.AUTO) {
+    if (request.viewerLimits().quality() != VideoQuality.AUTO
+        || plan.dolbyVisionOutput().isPresent()) {
       return Optional.empty();
     }
 

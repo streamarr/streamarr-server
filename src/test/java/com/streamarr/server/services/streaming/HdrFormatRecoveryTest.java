@@ -667,7 +667,7 @@ class HdrFormatRecoveryTest {
         scenario("Dolby Vision 8.1 in Auto")
             .source(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1).build())
             .quality(auto)
-            .attempt(autoCopy(Output.DOLBY_VISION_COPY, VideoRange.PQ).build())
+            .attempt(autoCopy(Output.DOLBY_VISION_COPY, VideoRange.PQ).variants(1).build())
             .attempt(autoCopy(Output.STRIPPED_COPY, VideoRange.PQ).build())
             .attempt(autoHdrEncode(VideoRange.PQ).build())
             .attempt(autoEncode().build())
@@ -921,7 +921,8 @@ class HdrFormatRecoveryTest {
   }
 
   // Auto copies the source's own video above 720p, 480p and 360p in 10-bit AV1 in the copy's range,
-  // which a worker here encodes and the client plays (ADR 0050).
+  // which a worker here encodes and the client plays (ADR 0050). A copy that keeps Dolby Vision is
+  // its playlist's one variant.
   private static DeliveredAttempt.DeliveredAttemptBuilder autoCopy(
       Output output, VideoRange range) {
     return delivered(output, range).choice(VideoQuality.AUTO).variants(4);
