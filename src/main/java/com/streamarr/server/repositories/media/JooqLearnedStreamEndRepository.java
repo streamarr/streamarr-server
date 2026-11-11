@@ -30,7 +30,9 @@ public class JooqLearnedStreamEndRepository implements LearnedStreamEndRepositor
   // stored outcome as it stands once any publication has committed. The end is stored only while
   // that outcome holds its snapshot, so a completion of an attempt that read an earlier version of
   // the file stores nothing. The first end learned for a snapshot wins against a concurrent
-  // completion, and an end learned for an earlier version of the file is replaced.
+  // completion, and an end learned for an earlier version of the file is replaced. The end is
+  // stored as a job attempt's, whatever the record says: only a keyframe packet scan publication
+  // stores a scanned end.
   @Override
   @Transactional
   public boolean store(LearnedStreamEnd learned) {
@@ -48,7 +50,8 @@ public class JooqLearnedStreamEndRepository implements LearnedStreamEndRepositor
                 LEARNED.SOURCE_MODIFIED_EPOCH_SECOND,
                 LEARNED.SOURCE_MODIFIED_NANOS,
                 LEARNED.END_SECONDS,
-                LEARNED.END_NANOS)
+                LEARNED.END_NANOS,
+                LEARNED.FROM_PACKET_SCAN)
             .select(
                 DSL.select(
                         MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID,
@@ -57,7 +60,8 @@ public class JooqLearnedStreamEndRepository implements LearnedStreamEndRepositor
                         MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_EPOCH_SECOND,
                         MEDIA_FILE_CONTAINER_INFO.SOURCE_MODIFIED_NANOS,
                         DSL.val(end.getSeconds()),
-                        DSL.val(end.getNano()))
+                        DSL.val(end.getNano()),
+                        DSL.inline(false))
                     .from(MEDIA_FILE_CONTAINER_INFO)
                     .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(learned.mediaFileId()))
                     .and(snapshotMatches(snapshot)))
@@ -70,6 +74,7 @@ public class JooqLearnedStreamEndRepository implements LearnedStreamEndRepositor
             .set(LEARNED.SOURCE_MODIFIED_NANOS, DSL.excluded(LEARNED.SOURCE_MODIFIED_NANOS))
             .set(LEARNED.END_SECONDS, DSL.excluded(LEARNED.END_SECONDS))
             .set(LEARNED.END_NANOS, DSL.excluded(LEARNED.END_NANOS))
+            .set(LEARNED.FROM_PACKET_SCAN, DSL.excluded(LEARNED.FROM_PACKET_SCAN))
             .where(
                 DSL.row(
                         LEARNED.SOURCE_SIZE,
@@ -111,6 +116,7 @@ public class JooqLearnedStreamEndRepository implements LearnedStreamEndRepositor
         .snapshot(snapshot)
         .streamIndex(row.getStreamIndex())
         .endTime(Duration.ofSeconds(row.getEndSeconds(), row.getEndNanos()))
+        .fromPacketScan(row.getFromPacketScan())
         .build();
   }
 }

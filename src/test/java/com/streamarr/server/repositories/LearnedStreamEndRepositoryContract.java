@@ -158,10 +158,10 @@ public interface LearnedStreamEndRepositoryContract {
     assertThat(published).isTrue();
     assertThat(repository().findFor(mediaFileId, SNAPSHOT))
         .containsExactlyInAnyOrder(
-            learned(mediaFileId, SNAPSHOT, Duration.ofSeconds(14, 166_666_666)).toBuilder()
+            scanned(mediaFileId, SNAPSHOT, Duration.ofSeconds(14, 166_666_666)).toBuilder()
                 .streamIndex(0)
                 .build(),
-            learned(mediaFileId, SNAPSHOT, Duration.ofMillis(14_250)));
+            scanned(mediaFileId, SNAPSHOT, Duration.ofMillis(14_250)));
   }
 
   // A job attempt learns an end from the last sample that it read. The scan read every packet of
@@ -179,7 +179,7 @@ public interface LearnedStreamEndRepositoryContract {
         mediaFileId, SNAPSHOT, List.of(new SourceStreamEnd(1, Duration.ofMillis(14_250))));
 
     assertThat(repository().findFor(mediaFileId, SNAPSHOT))
-        .containsExactly(learned(mediaFileId, SNAPSHOT, Duration.ofMillis(14_250)));
+        .containsExactly(scanned(mediaFileId, SNAPSHOT, Duration.ofMillis(14_250)));
   }
 
   @Test
@@ -194,7 +194,27 @@ public interface LearnedStreamEndRepositoryContract {
 
     assertThat(stored).isFalse();
     assertThat(repository().findFor(mediaFileId, SNAPSHOT))
-        .containsExactly(learned(mediaFileId, SNAPSHOT, Duration.ofMillis(14_250)));
+        .containsExactly(scanned(mediaFileId, SNAPSHOT, Duration.ofMillis(14_250)));
+  }
+
+  // Only a keyframe packet scan's end time may move a stream session's end, so an end time that a
+  // job attempt reports for the changed file must not read as a scanned one.
+  @Test
+  @DisplayName(
+      "Should read an attempt's end time as not scanned when it replaces the end time that a scan"
+          + " read before the file changed")
+  default void shouldReadAnAttemptsEndTimeAsNotScannedWhenItReplacesAnEarlierFilesScannedEndTime() {
+    var mediaFileId = createMediaFile();
+    storeProbeOutcomeNeedingPacketScan(mediaFileId, SNAPSHOT);
+    publishKeyframePacketScan(
+        mediaFileId, SNAPSHOT, List.of(new SourceStreamEnd(1, Duration.ofMillis(14_250))));
+    storeProbeOutcome(mediaFileId, CHANGED_SNAPSHOT);
+    var relearned = learned(mediaFileId, CHANGED_SNAPSHOT, Duration.ofSeconds(90));
+
+    var stored = repository().store(relearned);
+
+    assertThat(stored).isTrue();
+    assertThat(repository().findFor(mediaFileId, CHANGED_SNAPSHOT)).containsExactly(relearned);
   }
 
   @Test
@@ -237,5 +257,10 @@ public interface LearnedStreamEndRepositoryContract {
         .streamIndex(1)
         .endTime(endTime)
         .build();
+  }
+
+  private static LearnedStreamEnd scanned(
+      UUID mediaFileId, SourceFileSnapshot snapshot, Duration endTime) {
+    return learned(mediaFileId, snapshot, endTime).toBuilder().fromPacketScan(true).build();
   }
 }

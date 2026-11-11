@@ -154,6 +154,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
               .snapshot(publication.snapshot())
               .streamIndex(end.streamIndex())
               .endTime(end.endTime())
+              .fromPacketScan(true)
               .build());
     }
   }
