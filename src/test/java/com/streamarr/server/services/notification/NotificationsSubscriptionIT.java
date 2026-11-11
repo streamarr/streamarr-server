@@ -562,6 +562,30 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should deliver nothing about a request when its Profile is deleted, and leave it out of a"
+          + " fresh query")
+  void shouldDeliverNothingAboutARequestWhenItsProfileIsDeleted() throws Exception {
+    var deleted = steps.offer(sam, kai(), riverside);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    var outcome =
+        profileLifecycle.administrativelyDeleteProfile(
+            authTestSupport.freshIdentityOf(serverAdmin),
+            deleted.getProfileId(),
+            "a duplicate Profile");
+    var later = steps.offer(sam, steps.profileManagedBy("Ash", sam, sam), riverside);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var first = nextChange(socket);
+    assertThat(onlyChange(first).path("notificationId").asString())
+        .isEqualTo(requestFor(riversideAdmin, later).getId().toString());
+    assertThat(first.path("unreadNotificationCount").asInt()).isEqualTo(1);
+    assertMatchesAFreshQuery(first, riversideAdmin);
+  }
+
+  @Test
   @DisplayName("Should deliver the request's expiry when the sweep stores the offer's expiry")
   void shouldDeliverTheRequestsExpiryWhenTheSweepStoresTheOffersExpiry() throws Exception {
     var offer = steps.offer(sam, kai(), riverside);
