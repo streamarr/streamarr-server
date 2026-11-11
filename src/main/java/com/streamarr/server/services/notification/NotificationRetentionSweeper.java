@@ -1,13 +1,17 @@
 package com.streamarr.server.services.notification;
 
+import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
+import java.util.Optional;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -18,10 +22,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * news that the guard hides from its recipient after the same period. Unread news that the guard
  * shows, a disabled Account's unread news, waiting requests, and news whose guard decision fails
  * stay.
+ *
+ * <p>The unread news is read, decided and deleted a batch at a time, each batch's deletion in its
+ * own transaction, so one sweep holds a bounded number of Notifications however many have aged.
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 class NotificationRetentionSweeper {
 
   private final NotificationRepository notificationRepository;
@@ -29,6 +35,22 @@ class NotificationRetentionSweeper {
   private final ServerSettingsService serverSettingsService;
   private final TransactionTemplate transactionTemplate;
   private final Clock clock;
+  private final int batchSize;
+
+  NotificationRetentionSweeper(
+      NotificationRepository notificationRepository,
+      NotificationReads notificationReads,
+      ServerSettingsService serverSettingsService,
+      TransactionTemplate transactionTemplate,
+      Clock clock,
+      @Value("${notifications.retention-sweep-batch-size:500}") int batchSize) {
+    this.notificationRepository = notificationRepository;
+    this.notificationReads = notificationReads;
+    this.serverSettingsService = serverSettingsService;
+    this.transactionTemplate = transactionTemplate;
+    this.clock = clock;
+    this.batchSize = batchSize;
+  }
 
   // A short initial delay: an instance restarted more often than the interval would never sweep.
   @Scheduled(
@@ -42,11 +64,22 @@ class NotificationRetentionSweeper {
     var now = clock.instant();
     var cutoff = now.minus(serverSettingsService.notificationRetention());
     transactionTemplate.executeWithoutResult(_ -> deleteHistory(cutoff, now));
+    var batch = notificationRepository.findUnreadNewsBefore(cutoff, Optional.empty(), batchSize);
+    while (!batch.isEmpty()) {
+      deleteHidden(batch, cutoff);
+      Optional<UUID> after = Optional.of(batch.getLast().getId());
+      batch = notificationRepository.findUnreadNewsBefore(cutoff, after, batchSize);
+    }
+  }
+
+  private void deleteHistory(Instant cutoff, Instant now) {
+    var deleted = notificationRepository.deleteHistoryBefore(cutoff, now);
+    log.info("Deleted {} read or resolved Notifications older than {}.", deleted, cutoff);
+  }
+
+  private void deleteHidden(List<Notification> batch, Instant cutoff) {
     var hidden =
-        notificationReads
-            .visibilities(notificationRepository.findUnreadNewsBefore(cutoff))
-            .entrySet()
-            .stream()
+        notificationReads.visibilities(batch).entrySet().stream()
             .filter(decided -> decided.getValue() == NotificationVisibility.HIDDEN)
             .map(Map.Entry::getKey)
             .toList();
@@ -59,10 +92,5 @@ class NotificationRetentionSweeper {
           var deleted = notificationRepository.deleteUnreadNewsBefore(hidden, cutoff);
           log.info("Deleted {} hidden unread Notifications older than {}.", deleted, cutoff);
         });
-  }
-
-  private void deleteHistory(Instant cutoff, Instant now) {
-    var deleted = notificationRepository.deleteHistoryBefore(cutoff, now);
-    log.info("Deleted {} read or resolved Notifications older than {}.", deleted, cutoff);
   }
 }

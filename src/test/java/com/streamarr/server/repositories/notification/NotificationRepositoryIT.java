@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -298,6 +299,35 @@ class NotificationRepositoryIT extends AbstractIntegrationTest {
     authTestSupport.deleteIdentity(kai);
 
     assertThat(notificationsAbout(share)).extracting(Notification::getId).containsExactly(request);
+  }
+
+  @Test
+  @DisplayName(
+      "Should read the unread news before the cutoff in pages of the limit, each after the last id"
+          + " of the one before, when there is more than a page of it")
+  void shouldReadTheUnreadNewsBeforeTheCutoffInPagesOfTheLimitWhenThereIsMoreThanAPage() {
+    var old = EVENT.minus(Duration.ofDays(100));
+    var arranged = new ArrayList<UUID>();
+    for (var made = 0; made < 5; made++) {
+      arranged.add(
+          insert(answered(sam, offerOf(managedProfile("Ollie " + made), sam)).at(old).build()));
+    }
+
+    var read = new ArrayList<UUID>();
+    var after = Optional.<UUID>empty();
+    while (true) {
+      var page =
+          notificationRepository.findUnreadNewsBefore(EVENT.minus(Duration.ofDays(90)), after, 2);
+      assertThat(page).hasSizeLessThanOrEqualTo(2);
+      if (page.isEmpty()) {
+        break;
+      }
+
+      page.forEach(notification -> read.add(notification.getId()));
+      after = Optional.of(page.getLast().getId());
+    }
+
+    assertThat(read).doesNotHaveDuplicates().containsAll(arranged);
   }
 
   private UUID insert(NotificationDraft<NotificationKind, ProfileShareFacts> draft) {
