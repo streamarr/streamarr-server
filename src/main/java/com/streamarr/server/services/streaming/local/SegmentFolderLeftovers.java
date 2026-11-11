@@ -6,6 +6,7 @@ import java.nio.file.DirectoryIteratorException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.regex.Pattern;
 import lombok.NonNull;
@@ -37,10 +38,10 @@ public class SegmentFolderLeftovers {
    * Deletes the leftovers. Call it before the folder's segment store exists, so that the folder
    * holds nothing of a running store.
    *
-   * <p>It deletes only in a folder that carries its mark, and it marks only a folder that is empty.
-   * A folder that held something else first therefore keeps everything. The mark holds the path of
-   * the folder that it marks, so a mark that was copied into another folder marks nothing there. It
-   * never throws: what it cannot delete stays.
+   * <p>It deletes only in a folder that carries its mark, and it marks only a folder that holds no
+   * other entry. A folder that held something else first therefore keeps everything. The mark holds
+   * the path of the folder that it marks, so a mark that was copied into another folder marks
+   * nothing there. It never throws: what it cannot delete stays.
    */
   public void delete() {
     try {
@@ -50,8 +51,8 @@ public class SegmentFolderLeftovers {
         return;
       }
 
-      if (isEmpty()) {
-        Files.writeString(mark(), markedFolder());
+      if (holdsNoOtherEntry()) {
+        writeMark();
         return;
       }
 
@@ -77,10 +78,18 @@ public class SegmentFolderLeftovers {
     return segmentFolder.resolve(MARK_NAME);
   }
 
-  private boolean isEmpty() throws IOException {
-    try (var entries = Files.newDirectoryStream(segmentFolder)) {
-      return !entries.iterator().hasNext();
+  // A mark alone claims nothing for another owner: an earlier process may have ended while it
+  // wrote the mark.
+  private boolean holdsNoOtherEntry() throws IOException {
+    try (var others = Files.newDirectoryStream(segmentFolder, entry -> !entry.equals(mark()))) {
+      return !others.iterator().hasNext();
     }
+  }
+
+  // Deletes what holds the mark's place first, so that the write never follows a soft link there.
+  private void writeMark() throws IOException {
+    Files.deleteIfExists(mark());
+    Files.writeString(mark(), markedFolder(), StandardOpenOption.CREATE_NEW);
   }
 
   private void deleteEachLeftover() throws IOException {
