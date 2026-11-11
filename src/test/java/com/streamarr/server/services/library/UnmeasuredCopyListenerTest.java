@@ -8,7 +8,6 @@ import com.streamarr.server.repositories.media.BitrateScanPriorityRepository;
 import com.streamarr.server.services.events.library.UnmeasuredCopyStartedEvent;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,12 +26,11 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 @DisplayName("Unmeasured Copy Listener Tests")
 class UnmeasuredCopyListenerTest {
 
-  private static final String MOVED_SCANS_METRIC = "streamarr.probes.bitrate_scans_moved_forward";
   private static final Duration BOUND = Duration.ofSeconds(10);
   // Half the bound of a held raise, so a listener that waited for the raise would still wait.
   private static final Duration RETURN_BOUND = Duration.ofSeconds(5);
 
-  private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+  private final RaiseOutcomeMeters meters = new RaiseOutcomeMeters();
   private final Map<UUID, BitrateScanPriority> waitingScans = new ConcurrentHashMap<>();
   private final List<UnmeasuredCopyListener> listeners = new ArrayList<>();
   private final List<HeldRaise> heldRaises = new ArrayList<>();
@@ -54,7 +52,7 @@ class UnmeasuredCopyListenerTest {
     var listener = listenerOver(this::raiseWaitingScan);
 
     listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
-    listener.close();
+    meters.awaitCounted("moved");
 
     assertThat(waitingScans)
         .containsEntry(mediaFileId, BitrateScanPriority.COPIED_BY_STREAM_SESSION);
@@ -67,7 +65,7 @@ class UnmeasuredCopyListenerTest {
     var listener = listenerOver(this::raiseWaitingScan);
 
     listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
-    listener.close();
+    meters.awaitCounted("unchanged");
 
     assertThat(waitingScans).isEmpty();
     assertThat(countOf("unchanged")).isOne();
@@ -89,7 +87,7 @@ class UnmeasuredCopyListenerTest {
     awaitLatch(heldRaise.started);
     var priorityAfterTheListenerReturned = waitingScans.get(mediaFileId);
     heldRaise.finish();
-    listener.close();
+    meters.awaitCounted("moved");
 
     assertThat(priorityAfterTheListenerReturned).isEqualTo(BitrateScanPriority.UNPROBED_BITRATE);
     assertThat(waitingScans)
@@ -106,7 +104,7 @@ class UnmeasuredCopyListenerTest {
             });
 
     listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
-    listener.close();
+    meters.awaitCounted("failed");
 
     assertThat(countOf("failed")).isOne();
   }
@@ -125,7 +123,7 @@ class UnmeasuredCopyListenerTest {
     listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
     var alreadyMovingWhileTheRaiseWaited = countOf("already_moving");
     heldRaise.finish();
-    listener.close();
+    meters.awaitCounted("moved");
 
     assertThat(alreadyMovingWhileTheRaiseWaited).isOne();
     assertThat(countOf("moved")).isOne();
@@ -150,11 +148,10 @@ class UnmeasuredCopyListenerTest {
               return raiseWaitingScan(file, priority);
             });
     listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
-    // The count is the only signal that the first raise ended, and the listener stays open.
-    await().atMost(BOUND).untilAsserted(() -> assertThat(countOf("failed")).isOne());
+    meters.awaitCounted("failed");
 
     listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
-    listener.close();
+    meters.awaitCounted("moved");
 
     assertThat(waitingScans)
         .containsEntry(mediaFileId, BitrateScanPriority.COPIED_BY_STREAM_SESSION);
@@ -274,6 +271,6 @@ class UnmeasuredCopyListenerTest {
   }
 
   private double countOf(String outcome) {
-    return meters.counter(MOVED_SCANS_METRIC, "outcome", outcome).count();
+    return meters.countOf(outcome);
   }
 }
