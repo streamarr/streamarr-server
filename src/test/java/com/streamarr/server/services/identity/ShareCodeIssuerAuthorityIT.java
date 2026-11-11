@@ -137,17 +137,25 @@ class ShareCodeIssuerAuthorityIT extends AbstractIntegrationTest {
     var destination = track(authTestSupport.createIdentity());
     var code = issue(mover, host.household().getId());
 
-    accepted(
-        accountLifecycle.transferAccount(
-            fresh(actor),
-            TransferAccountCommand.builder()
-                .accountId(mover.account().getId())
-                .destinationHouseholdId(destination.household().getId())
-                .sourceHouseholdAccess(SourceHouseholdAccess.KEEP_AS_VISITOR)
-                .reason("relocated")
-                .build()));
+    accepted(accountLifecycle.transferAccount(fresh(actor), moving(mover, destination)));
 
     assertThat(stored(code).getStatus()).isEqualTo(ShareCodeStatus.INVALIDATED);
+  }
+
+  @Test
+  @DisplayName("Should keep a ServerAdmin's codes when the ServerAdmin moves to another Household")
+  void shouldKeepServerAdminsCodesWhenServerAdminMovesToAnotherHousehold() {
+    var both = track(authTestSupport.createAdminIdentity());
+    // Tracked so that teardown deletes the Household the ServerAdmin leaves behind.
+    track(secondAdminOf(both));
+    var destination = track(authTestSupport.createIdentity());
+    var forOwn = issue(both, both.household().getId());
+    var forHost = issue(both, host.household().getId());
+
+    accepted(accountLifecycle.transferAccount(fresh(actor), moving(both, destination)));
+
+    assertThat(stored(forOwn).getStatus()).isEqualTo(ShareCodeStatus.LIVE);
+    assertThat(stored(forHost).getStatus()).isEqualTo(ShareCodeStatus.LIVE);
   }
 
   @Test
@@ -396,6 +404,16 @@ class ShareCodeIssuerAuthorityIT extends AbstractIntegrationTest {
     var presenter = track(authTestSupport.createIdentity());
     return shareCodeService.lookUpShareCode(
         authTestSupport.identityOf(presenter), presenting(code));
+  }
+
+  private static TransferAccountCommand moving(
+      AuthTestSupport.TestIdentity mover, AuthTestSupport.TestIdentity destination) {
+    return TransferAccountCommand.builder()
+        .accountId(mover.account().getId())
+        .destinationHouseholdId(destination.household().getId())
+        .sourceHouseholdAccess(SourceHouseholdAccess.KEEP_AS_VISITOR)
+        .reason("relocated")
+        .build();
   }
 
   private static AdministrativelyDeleteAccountCommand erase(
