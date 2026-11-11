@@ -1041,8 +1041,10 @@ class TranscodeDecisionServiceTest {
   void shouldDecideNothingWhenNoSoftwareEncoderWritesTheSoftwareContinuationsRange() {
     var decision =
         service.decide(
-            softwareContinuationOfAnHdr10Source(
-                    EncodeFormat.hdr(VideoRange.PQ), Set.of(VideoEncodeFeature.TEN_BIT))
+            softwareContinuationOfA10BitSource(
+                    CompatibleBase.PQ,
+                    EncodeFormat.hdr(VideoRange.PQ),
+                    Set.of(VideoEncodeFeature.TEN_BIT))
                 .build());
 
     assertThat(decision).isEmpty();
@@ -1056,7 +1058,8 @@ class TranscodeDecisionServiceTest {
     var decision =
         service
             .decide(
-                softwareContinuationOfAnHdr10Source(
+                softwareContinuationOfA10BitSource(
+                        CompatibleBase.PQ,
                         EncodeFormat.hdr(VideoRange.PQ),
                         Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
                     .build())
@@ -1074,7 +1077,8 @@ class TranscodeDecisionServiceTest {
     var decision =
         service
             .decide(
-                softwareContinuationOfAnHdr10Source(
+                softwareContinuationOfA10BitSource(
+                        CompatibleBase.PQ,
                         EncodeFormat.SDR_8_BIT,
                         Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
                     .build())
@@ -1083,18 +1087,20 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.SDR_8_BIT);
   }
 
-  // An AV1 encode of an HDR10 HEVC source for a client that declares AV1 with SDR and PQ at 10
-  // bits, continued on a software AV1 encoder that lists the encode features.
+  // An AV1 encode of a 10-bit HEVC source in the compatible base for a client that declares AV1
+  // with SDR and PQ at 10 bits, continued on a software AV1 encoder that lists the encode features.
   private TranscodeDecisionRequest.TranscodeDecisionRequestBuilder
-      softwareContinuationOfAnHdr10Source(
-          EncodeFormat failedEncodeFormat, Set<VideoEncodeFeature> softwareAv1Features) {
-    var hdr10 =
+      softwareContinuationOfA10BitSource(
+          CompatibleBase sourceBase,
+          EncodeFormat failedEncodeFormat,
+          Set<VideoEncodeFeature> softwareAv1Features) {
+    var tenBit =
         VideoPlaybackFactsFixture.sdrH264FactsBuilder()
             .streamIndex(0)
             .codecFamily(Optional.of(HEVC))
             .bitDepth(OptionalInt.of(10))
             .codecString(Optional.of("hvc1.2.4.L120.90"))
-            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(sourceBase))
             .build();
     var hdrAv1 =
         av1EntryBuilder().compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ)).build();
@@ -1110,7 +1116,7 @@ class TranscodeDecisionServiceTest {
             .encodeFeatures(softwareAv1Features)
             .build();
     return TranscodeDecisionRequest.builder()
-        .source(probeBuilder("hevc", "aac").videoPlaybackFacts(Optional.of(hdr10)).build())
+        .source(probeBuilder("hevc", "aac").videoPlaybackFacts(Optional.of(tenBit)).build())
         .capabilityDeclaration(defaultDeclarationBuilder().video(List.of(hdrAv1)).build())
         .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
         .encodableVideoCodecFamilies(Set.of("av1"))
