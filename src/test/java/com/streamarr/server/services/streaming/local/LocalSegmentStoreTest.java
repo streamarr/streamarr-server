@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,8 +40,11 @@ import org.junit.jupiter.api.io.TempDir;
 class LocalSegmentStoreTest {
 
   private static final String VARIANT_INITIALIZATION_SEGMENT = "720p/init.mp4";
+  private static final String VARIANT_MEDIA_SEGMENT = "720p/segment0.m4s";
   private static final int CONTENDERS = 8;
   private static final int RACE_ROUNDS = 25;
+  // Without the per-name lock, only some rounds of a media race interleave a check and a move.
+  private static final int MEDIA_RACE_ROUNDS = 100;
 
   @TempDir Path tempDir;
 
@@ -369,7 +373,6 @@ class LocalSegmentStoreTest {
 
   private static List<Integer> contendersStoredByConcurrentPublication(
       SegmentStore store, UUID sessionId) {
-    var start = new CountDownLatch(1);
     var prepared =
         IntStream.range(0, CONTENDERS)
             .mapToObj(
@@ -378,20 +381,60 @@ class LocalSegmentStoreTest {
                         store.prepareSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT),
                         contenderInitialization(contender)))
             .toList();
+    var publications = afterConcurrentPublication(prepared, Function.identity());
+    return IntStream.range(0, CONTENDERS)
+        .filter(contender -> publications.get(contender) == SegmentPublication.PUBLISHED)
+        .boxed()
+        .toList();
+  }
+
+  @Test
+  @DisplayName(
+      "Should never change a stored media segment when differing ones are published concurrently")
+  void shouldNeverChangeStoredMediaSegmentWhenDifferingOnesArePublishedConcurrently() {
+    for (var round = 0; round < MEDIA_RACE_ROUNDS; round++) {
+      var sessionId = UUID.randomUUID();
+
+      var readsAfterPublication = readsAfterConcurrentMediaPublication(sessionId);
+
+      var stored = StoredSegments.bytes(store, sessionId, VARIANT_MEDIA_SEGMENT);
+      assertThat(readsAfterPublication)
+          .as("bytes each contender read after its own publication in round %s", round)
+          .allSatisfy(read -> assertThat(read).isEqualTo(stored));
+    }
+  }
+
+  // Each contender reads the stored segment as soon as its own publication returns.
+  private List<byte[]> readsAfterConcurrentMediaPublication(UUID sessionId) {
+    var prepared =
+        IntStream.range(0, CONTENDERS)
+            .mapToObj(
+                contender ->
+                    appended(
+                        store.prepareSegment(sessionId, VARIANT_MEDIA_SEGMENT),
+                        ("moof mdat from encoder " + contender).getBytes()))
+            .toList();
+    return afterConcurrentPublication(
+        prepared, _ -> StoredSegments.bytes(store, sessionId, VARIANT_MEDIA_SEGMENT));
+  }
+
+  // Publishes every prepared segment at once and answers, in order, what each contender saw
+  // straight after its own publication returned.
+  private static <T> List<T> afterConcurrentPublication(
+      List<SegmentStore.PreparedSegment> prepared,
+      Function<SegmentPublication, T> afterPublication) {
+    var start = new CountDownLatch(1);
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var publications =
+      var contenders =
           prepared.stream()
               .map(
                   segment ->
-                      CompletableFuture.supplyAsync(() -> publishAfter(start, segment), executor))
+                      CompletableFuture.supplyAsync(
+                          () -> afterPublication.apply(publishAfter(start, segment)), executor))
               .toList();
       start.countDown();
-      return IntStream.range(0, CONTENDERS)
-          .filter(
-              contender ->
-                  publications.get(contender).orTimeout(5, TimeUnit.SECONDS).join()
-                      == SegmentPublication.PUBLISHED)
-          .boxed()
+      return contenders.stream()
+          .map(contender -> contender.orTimeout(5, TimeUnit.SECONDS).join())
           .toList();
     }
   }
