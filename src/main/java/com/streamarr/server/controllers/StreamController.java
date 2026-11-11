@@ -271,16 +271,12 @@ public class StreamController {
     }
 
     var resource = new OpenedSourceResource(source.get());
-    // Spring's own 416 still writes the whole file as its body.
-    if (range != null && !isSatisfiable(range, resource)) {
-      return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-          .header(HttpHeaders.CONTENT_RANGE, "bytes */" + resource.contentLength())
-          .build();
-    }
-
-    return ResponseEntity.ok()
-        .contentType(MediaType.parseMediaType(source.get().container().getMediaType()))
-        .body(resource);
+    return unsatisfiableRangeAnswer(range, resource, resource.contentLength())
+        .orElseGet(
+            () ->
+                ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(source.get().container().getMediaType()))
+                    .body(resource));
   }
 
   /**
@@ -324,6 +320,19 @@ public class StreamController {
         .registerDestructionCallback(opened.getName(), close, RequestAttributes.SCOPE_REQUEST);
   }
 
+  // Spring's own 416 still writes the whole resource as its body.
+  private static Optional<ResponseEntity<Resource>> unsatisfiableRangeAnswer(
+      String range, Resource resource, long length) {
+    if (range == null || isSatisfiable(range, resource)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+            .header(HttpHeaders.CONTENT_RANGE, "bytes */" + length)
+            .build());
+  }
+
   private static boolean isSatisfiable(String range, Resource resource) {
     try {
       HttpRange.toResourceRegions(HttpRange.parseRanges(range), resource);
@@ -352,14 +361,8 @@ public class StreamController {
     var request = currentRequest();
     var resource = new StoredSegmentResource(segment);
     var range = request.getHeader(HttpHeaders.RANGE);
-    // Spring's own 416 still writes the whole segment as its body.
-    if (range != null && !isSatisfiable(range, resource)) {
-      return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-          .header(HttpHeaders.CONTENT_RANGE, "bytes */" + segment.length())
-          .build();
-    }
-
-    return TomcatSendfile.answer(request, segment, MP4_MEDIA_TYPE)
+    return unsatisfiableRangeAnswer(range, resource, segment.length())
+        .or(() -> TomcatSendfile.answer(request, segment, MP4_MEDIA_TYPE))
         .orElseGet(() -> ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(resource));
   }
 
