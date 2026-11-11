@@ -46,6 +46,7 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -66,6 +67,7 @@ class CopiedAudioMeasuredCountTest {
 
   private static final int VIDEO_STREAM = 0;
   private static final int AUDIO_STREAM = 1;
+  private static final int SECOND_AUDIO_STREAM = 2;
   private static final long NOMINAL_BITRATE = 384_000L;
   private static final long COUNTED_BITRATE = 4_000_000L;
 
@@ -126,6 +128,40 @@ class CopiedAudioMeasuredCountTest {
             .build();
 
     var decision = decide(measured(sourceThatIsEncoded(), track), ViewerLimits.builder().build());
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(2_000_000L);
+  }
+
+  // The file holds two 5.1 FLAC tracks, and the stream session plays the second. That track's
+  // 1,800,000,000 bytes come to 1,800,000,000 × 8 / 7,200 s = 2,000,000 b/s. The first track's
+  // 3,600,000,000 bytes would come to 4,000,000 b/s.
+  @Test
+  @DisplayName(
+      "Should count the stream session's audio track when it is not the file's first audio track")
+  void shouldCountTheStreamSessionsAudioTrackWhenItIsNotTheFilesFirstAudioTrack() {
+    var oneTrack = sourceThatIsEncoded();
+    var secondTrack =
+        ProbeFixture.audioStreamBuilder("flac")
+            .index(SECOND_AUDIO_STREAM)
+            .channels(OptionalInt.of(6))
+            .bitrate(OptionalLong.empty())
+            .build();
+    var measurement =
+        new StreamMeasurements(
+            StreamMeasurementSource.BITRATE_SCAN,
+            List.of(
+                measuredVideo(),
+                measuredTrack(AUDIO_STREAM, 3_600_000_000L),
+                measuredTrack(SECOND_AUDIO_STREAM, 1_800_000_000L)));
+    var source =
+        oneTrack.toBuilder()
+            .streams(Stream.concat(oneTrack.streams().stream(), Stream.of(secondTrack)).toList())
+            .streamMeasurements(Optional.of(measurement))
+            .build()
+            .withSessionAudioTrackAt(1);
+
+    var decision = decide(source, ViewerLimits.builder().build());
 
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
     assertThat(decision.audioDecision().bitrate()).isEqualTo(2_000_000L);
@@ -393,12 +429,14 @@ class CopiedAudioMeasuredCountTest {
 
   // 84,375 frames of 4,096 samples at 48 kHz last 2 hours.
   private static MediaProbe measured(MediaProbe source) {
-    var track =
-        StreamMeasurementFixture.measuredStreamBuilder(AUDIO_STREAM, 3_600_000_000L)
-            .packetCount(84_375)
-            .measuredDuration(7_200_000)
-            .build();
-    return measured(source, track);
+    return measured(source, measuredTrack(AUDIO_STREAM, 3_600_000_000L));
+  }
+
+  private static MeasuredStream measuredTrack(int stream, long bytes) {
+    return StreamMeasurementFixture.measuredStreamBuilder(stream, bytes)
+        .packetCount(84_375)
+        .measuredDuration(7_200_000)
+        .build();
   }
 
   private static MediaProbe measured(MediaProbe source, MeasuredStream track) {
