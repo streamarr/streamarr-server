@@ -34,7 +34,8 @@ interface Notification {
     id: ID!
     """
     The Notification's line, in English, for a client that shows this type but handles it no
-    further. A client may word its own line from the typed fields. Never parse this one.
+    further. It is plain text: show it as text, never as markup. Each name in it stands in
+    quotation marks. A client may word its own line from the typed fields. Never parse this one.
     """
     message: String!
     "When the first event made the Notification, as an ISO-8601 instant."

@@ -126,7 +126,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.message")
                 .value(
-                    "%s offered the Profile Kai to your Household."
+                    "“%s” offered the Profile “Kai” to your Household."
                         .formatted(sam.account().getDisplayName())))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(true))
@@ -162,7 +162,35 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.message")
-                .value("The Profile Kai was offered to your Household."));
+                .value("The Profile “Kai” was offered to your Household."));
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the Household in quotation marks to the offering side when a ServerAdmin ends"
+          + " the share")
+  void shouldNameTheHouseholdInQuotationMarksToTheOfferingSideWhenAServerAdminEndsTheShare()
+      throws Exception {
+    var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var share =
+        steps.accept(
+            riverside, steps.offer(sam, steps.profileManagedBy("Kai", sam, sam, theo), riverside));
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    sharing.administrativelyEndProfileShare(
+        authTestSupport.freshIdentityOf(serverAdmin), share.getId(), "a mistaken share");
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(theo), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.__typename")
+                .value("ProfileShareEndedNotification"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.message")
+                .value(
+                    "The Profile “Kai” is no longer shared with “%s”."
+                        .formatted(riverside.household().getName())));
   }
 
   @Test
@@ -191,7 +219,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.message")
                 .value(
-                    "%s accepted the Profile Kai Renamed."
+                    "“%s” accepted the Profile “Kai Renamed”."
                         .formatted(riverside.household().getName())));
   }
 
