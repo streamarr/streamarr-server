@@ -766,11 +766,12 @@ public class PlaybackSessionService implements AutoCloseable {
 
   /**
    * Continues the requested variant's encode on the software encoder of the same codec family in a
-   * new format attempt, which the client reopens at the same position (ADR 0044). It spends no
-   * format attempt, and no worker with room for it ends the playback session. The encode keeps its
-   * range and bit depth. When no software encoder on a worker with room writes them, the encode has
+   * new format attempt, which the client reopens at the same position (ADR 0044). The encode keeps
+   * its range and bit depth, and a continuation that starts spends no format attempt. When no
+   * software encoder on a worker with room writes a 10-bit or HDR encode's format, the encode has
    * failed as after a format error: Auto gives the range or the 10 bits up within its budget, and a
-   * fixed quality ends playback (ADR 0013).
+   * fixed quality ends playback (ADR 0013). An 8-bit SDR encode with no worker with room for it
+   * ends the playback session.
    */
   @EventListener
   public void onRequestedVariantHardwareEncoderFailed(
