@@ -224,6 +224,29 @@ public final class WorkerContainerFixture implements AutoCloseable {
     return timestamps;
   }
 
+  /**
+   * Where each packet of the selected stream ends, in seconds from the media's start time: the
+   * packet's presentation time plus its duration, less the start time that ffprobe states for the
+   * container. Leaves out a packet whose presentation time ffprobe does not list.
+   */
+  public List<Double> packetEnds(Path media, String streamSelector) throws Exception {
+    var start =
+        Double.parseDouble(
+            probePackets(media, streamSelector, List.of("-show_entries", "format=start_time"))
+                .getFirst()
+                .replace(",", ""));
+    var ends =
+        probePackets(
+                media, streamSelector, List.of("-show_entries", "packet=pts_time,duration_time"))
+            .stream()
+            .map(line -> line.split(","))
+            .filter(packet -> !packet[0].equals("N/A"))
+            .map(packet -> Double.parseDouble(packet[0]) + Double.parseDouble(packet[1]) - start)
+            .toList();
+    assertThat(ends).isNotEmpty();
+    return ends;
+  }
+
   public List<String> videoPacketHashes(Path media) throws Exception {
     return packetHashes(media, "v");
   }
