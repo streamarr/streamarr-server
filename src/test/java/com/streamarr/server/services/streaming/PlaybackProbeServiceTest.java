@@ -154,12 +154,31 @@ class PlaybackProbeServiceTest {
           .isEqualTo(Optional.empty());
     }
 
+    // The header of a truncated file states the length of the whole file, 30 s here. The end that
+    // the server learned from the stream's packets is where the stream really ends.
     @Test
-    @DisplayName("Should keep the header's end time when an end was also learned for the stream")
-    void shouldKeepTheHeadersEndTimeWhenAnEndWasAlsoLearnedForTheStream() {
+    @DisplayName(
+        "Should read a learned end time in place of the header's end time when an end was learned"
+            + " for the stream")
+    void shouldReadALearnedEndTimeInPlaceOfTheHeadersEndTimeWhenAnEndWasLearnedForTheStream() {
       outcomes.store(
           audioAndVideo(REQUESTED_INPUTS.snapshot(), Optional.of(Duration.ofSeconds(30))));
-      learnedStreamEnds.store(learnedEnd(REQUESTED_INPUTS.snapshot(), 1, Duration.ofSeconds(20)));
+      learnedStreamEnds.store(learnedEnd(REQUESTED_INPUTS.snapshot(), 1, Duration.ofSeconds(14)));
+
+      var probe = probeOf(service().read(mediaFileId));
+
+      assertThat(probe.audioStreams())
+          .singleElement()
+          .extracting(StreamInfo::endTime)
+          .isEqualTo(Optional.of(Duration.ofSeconds(14)));
+    }
+
+    @Test
+    @DisplayName("Should keep the header's end time when no end was learned for the stream")
+    void shouldKeepTheHeadersEndTimeWhenNoEndWasLearnedForTheStream() {
+      outcomes.store(
+          audioAndVideo(REQUESTED_INPUTS.snapshot(), Optional.of(Duration.ofSeconds(30))));
+      learnedStreamEnds.store(learnedEnd(REQUESTED_INPUTS.snapshot(), 0, Duration.ofSeconds(14)));
 
       var probe = probeOf(service().read(mediaFileId));
 
