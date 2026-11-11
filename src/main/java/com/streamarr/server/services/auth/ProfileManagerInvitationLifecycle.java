@@ -71,6 +71,14 @@ public class ProfileManagerInvitationLifecycle {
     announceStoppedWaiting(invitationRepository.tryInvalidatePending(invitationId, reason, now));
   }
 
+  /** Withdraws the pending invitation to manage the Profile sent to the address, in any case. */
+  public void invalidatePendingByProfileIdAndRecipientEmail(
+      UUID profileId, String email, String reason, Instant now) {
+    announceStoppedWaiting(
+        invitationRepository.invalidatePendingByProfileIdAndRecipientEmail(
+            profileId, email, reason, now));
+  }
+
   /** Withdraws the pending invitation to manage the Profile that names the Account. */
   public void invalidatePendingByProfileIdAndRecipientAccountId(
       UUID profileId, UUID recipientAccountId, String reason, Instant now) {

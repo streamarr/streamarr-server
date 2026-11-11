@@ -5,6 +5,8 @@ import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitation
 import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.valueOf;
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.lower;
+import static org.jooq.impl.DSL.val;
 
 import com.streamarr.server.domain.auth.ChangedManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
@@ -106,6 +108,18 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   public List<ChangedManagerInvitation> tryInvalidatePending(
       UUID invitationId, String reason, Instant now) {
     return invalidate(PROFILE_MANAGER_INVITATION.ID.eq(invitationId), reason, now);
+  }
+
+  @Override
+  public List<ChangedManagerInvitation> invalidatePendingByProfileIdAndRecipientEmail(
+      UUID profileId, String email, String reason, Instant now) {
+    return invalidate(
+        PROFILE_MANAGER_INVITATION
+            .PROFILE_ID
+            .eq(profileId)
+            .and(lower(PROFILE_MANAGER_INVITATION.RECIPIENT_EMAIL).eq(lower(val(email)))),
+        reason,
+        now);
   }
 
   @Override

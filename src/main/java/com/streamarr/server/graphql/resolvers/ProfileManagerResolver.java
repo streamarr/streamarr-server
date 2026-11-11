@@ -83,7 +83,7 @@ public class ProfileManagerResolver {
             .inviteProfileManager(
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.profileId()),
-                Ids.parseUuid(input.recipientAccountId()))
+                input.email())
             .map(
                 issued ->
                     new IssuedManagerInvitation(

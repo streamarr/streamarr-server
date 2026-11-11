@@ -386,10 +386,10 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                 authTestSupport.accountBearer(owner),
                 """
                 mutation { inviteProfileManager(input: {profileId: "%s",
-                  recipientAccountId: "%s"}) {
+                  email: "%s"}) {
                   issued { code } userErrors { __typename } } }
                 """
-                    .formatted(orphan.getId(), recipient.account().getId()))
+                    .formatted(orphan.getId(), recipient.account().getEmail()))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -461,10 +461,10 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                 authTestSupport.accountBearer(owner),
                 """
                 mutation { inviteProfileManager(input: {profileId: "%s",
-                  recipientAccountId: "%s"}) {
+                  email: "%s"}) {
                   issued { code invitation { id } } userErrors { __typename } } }
                 """
-                    .formatted(orphan.getId(), recipient.account().getId()))
+                    .formatted(orphan.getId(), recipient.account().getEmail()))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -556,10 +556,10 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                 authTestSupport.accountBearer(owner),
                 """
                 mutation { inviteProfileManager(input: {profileId: "%s",
-                  recipientAccountId: "%s"}) {
+                  email: "%s"}) {
                   issued { code invitation { id } } userErrors { __typename } } }
                 """
-                    .formatted(owner.profile().getId(), recipient.account().getId()))
+                    .formatted(owner.profile().getId(), recipient.account().getEmail()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andReturn()
@@ -671,10 +671,10 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
             authTestSupport.accountBearer(owner),
             """
             mutation { inviteProfileManager(input: {profileId: "%s",
-              recipientAccountId: "%s"}) {
+              email: "%s"}) {
               issued { invitation { id status } } userErrors { __typename } } }
             """
-                .formatted(orphan.getId(), recipient.account().getId()));
+                .formatted(orphan.getId(), recipient.account().getEmail()));
 
     var outcomes =
         raceGraphql(new GraphqlRaceLock(RaceLockTarget.PROFILE, orphan.getId()), request, request);
@@ -712,11 +712,11 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                                     authTestSupport.accountBearer(owner),
                                     """
                                     mutation { inviteProfileManager(input: {profileId: "%s",
-                                      recipientAccountId: "%s"}) {
+                                      email: "%s"}) {
                                       issued { invitation { id } }
                                       userErrors { __typename } } }
                                     """
-                                        .formatted(orphan.getId(), recipient.account().getId()))
+                                        .formatted(orphan.getId(), recipient.account().getEmail()))
                                 .andExpect(status().isOk())
                                 .andReturn()
                                 .getResponse()
@@ -1158,11 +1158,11 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                 authTestSupport.accountBearer(owner),
                 """
                 mutation { inviteProfileManager(input: {profileId: "%s",
-                  recipientAccountId: "%s"}) {
+                  email: "%s"}) {
                   issued { code invitation { id profileName status } }
                   userErrors { __typename } } }
                 """
-                    .formatted(profile.getId(), recipient.account().getId()))
+                    .formatted(profile.getId(), recipient.account().getEmail()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andExpect(

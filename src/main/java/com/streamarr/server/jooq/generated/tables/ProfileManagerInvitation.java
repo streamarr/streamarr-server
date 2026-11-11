@@ -227,7 +227,7 @@ public class ProfileManagerInvitation extends TableImpl<ProfileManagerInvitation
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_PM_INVITATION_PROFILE, Indexes.IDX_PM_INVITATION_RECIPIENT, Indexes.UQ_PM_INVITATION_LIVE);
+        return Arrays.asList(Indexes.IDX_PM_INVITATION_PENDING_EXPIRY, Indexes.IDX_PM_INVITATION_PROFILE, Indexes.IDX_PM_INVITATION_RECIPIENT, Indexes.UQ_PM_INVITATION_LIVE);
     }
 
     @Override
@@ -286,7 +286,7 @@ public class ProfileManagerInvitation extends TableImpl<ProfileManagerInvitation
     @Override
     public List<Check<ProfileManagerInvitationRecord>> getChecks() {
         return Arrays.asList(
-            Internal.createCheck(this, DSL.name("chk_pm_invitation_pending_has_parties"), "(((status <> 'PENDING'::profile_manager_invitation_status) OR ((profile_id IS NOT NULL) AND (inviter_account_id IS NOT NULL) AND (recipient_account_id IS NOT NULL))))", true)
+            Internal.createCheck(this, DSL.name("chk_pm_invitation_pending_has_parties"), "(((status <> 'PENDING'::profile_manager_invitation_status) OR ((profile_id IS NOT NULL) AND (inviter_account_id IS NOT NULL))))", true)
         );
     }
 

@@ -6,6 +6,7 @@ import static com.streamarr.server.jooq.generated.enums.HouseholdRole.valueOf;
 import static com.streamarr.server.jooq.generated.tables.HouseholdGuard.HOUSEHOLD_GUARD;
 import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
+import static com.streamarr.server.jooq.generated.tables.ProfileManager.PROFILE_MANAGER;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.lower;
@@ -346,6 +347,26 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
         dsl.fetchExists(
             dsl.selectOne().from(USER_ACCOUNT).where(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId)));
     return Optional.of(householdHasAccount ? requestedRole : HouseholdRole.ADMIN);
+  }
+
+  @Override
+  public Optional<UUID> lockAccountThatMayAcceptManagement(UUID profileId, String email) {
+    var ownProfile = PROFILE.as("invitee_profile");
+    return dsl.select(USER_ACCOUNT.ID)
+        .from(USER_ACCOUNT)
+        .join(ownProfile)
+        .on(ownProfile.ID.eq(USER_ACCOUNT.PERSONAL_PROFILE_ID))
+        .where(lower(USER_ACCOUNT.EMAIL).eq(lower(DSL.val(email))))
+        .and(ownProfile.RESTRICTED.isFalse())
+        .and(USER_ACCOUNT.PERSONAL_PROFILE_ID.ne(profileId))
+        .andNotExists(
+            DSL.selectOne()
+                .from(PROFILE_MANAGER)
+                .where(PROFILE_MANAGER.ACCOUNT_ID.eq(USER_ACCOUNT.ID))
+                .and(PROFILE_MANAGER.PROFILE_ID.eq(profileId)))
+        .forShare()
+        .of(ownProfile)
+        .fetchOptional(USER_ACCOUNT.ID);
   }
 
   @Override

@@ -37,7 +37,11 @@ public interface ProfileManagerInvitationRepositoryCustom {
   List<ChangedManagerInvitation> tryInvalidatePending(
       UUID invitationId, String reason, Instant now);
 
-  /** Replacement: at most one PENDING invitation per Profile and recipient. */
+  /** Replacement: at most one PENDING invitation per Profile and address, whatever its case. */
+  List<ChangedManagerInvitation> invalidatePendingByProfileIdAndRecipientEmail(
+      UUID profileId, String email, String reason, Instant now);
+
+  /** Invalidates the PENDING invitation for the Profile that names the Account. */
   List<ChangedManagerInvitation> invalidatePendingByProfileIdAndRecipientAccountId(
       UUID profileId, UUID recipientAccountId, String reason, Instant now);
 

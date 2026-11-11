@@ -85,6 +85,17 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
+  public List<ChangedManagerInvitation> invalidatePendingByProfileIdAndRecipientEmail(
+      UUID profileId, String email, String reason, Instant now) {
+    return invalidate(
+        invitation ->
+            profileId.equals(invitation.getProfileId())
+                && email.equalsIgnoreCase(invitation.getRecipientEmail()),
+        reason,
+        now);
+  }
+
+  @Override
   public List<ChangedManagerInvitation> invalidatePendingByProfileIdAndRecipientAccountId(
       UUID profileId, UUID recipientAccountId, String reason, Instant now) {
     return invalidate(

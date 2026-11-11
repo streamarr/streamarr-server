@@ -227,11 +227,17 @@ type Mutation {
     """
     lookUpShareCode(input: LookUpShareCodeInput!): LookUpShareCodePayload
     """
-    Invites another Account to manage a Profile; it becomes a manager only by accepting. The
-    Profile's managers, never a HouseholdAdmin through supervision and never a ServerAdmin as such
-    (administrativelyGrantProfileManager is its override). The code appears once in the answer. A
-    caller who may read profileAdministration of the Profile but may not do this gets FORBIDDEN;
-    everyone else, a device-bound session included, gets ProfileNotFoundError.
+    Invites someone by email address to manage a Profile; they become a manager only by accepting.
+    The Profile's managers, never a HouseholdAdmin through supervision and never a ServerAdmin as
+    such (administrativelyGrantProfileManager is its override). The answer and the Profile's list of
+    pending invitations are the same whether or not an Account has the address and whether or not
+    that Account may accept: an address with no Account, or whose Account is supervised or already
+    manages the Profile, still gets an invitation that waits, and that nobody can accept. It never
+    passes to an Account that takes the address later. A newer invitation to the same address, in
+    any case, replaces a pending one. The invitation waits for the invitation lifetime that a
+    ServerAdmin sets. The code appears once, in this answer. A caller who may read
+    profileAdministration of the Profile but may not invite gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ProfileNotFoundError.
     """
     inviteProfileManager(input: InviteProfileManagerInput!): InviteProfileManagerPayload
     """

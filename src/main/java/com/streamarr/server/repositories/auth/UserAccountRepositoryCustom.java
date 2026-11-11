@@ -122,6 +122,16 @@ public interface UserAccountRepositoryCustom {
   boolean isEligibleProfileManager(
       UUID accountId, UUID householdId, ProfileManagerEligibility eligibility);
 
+  /**
+   * The Account that may accept an invitation to manage the Profile that is sent to the address:
+   * the Account with that address, whatever its case, whose own Personal Profile is an unrestricted
+   * Adult, and that does not already manage the Profile. One statement answers for every address,
+   * so its timing does not say whether an Account has it. It holds that Account's Personal Profile
+   * under a share lock, so a change of that Profile's policy waits for the invitation and then
+   * withdraws it. Call it inside the write transaction, after locking the Profile.
+   */
+  Optional<UUID> lockAccountThatMayAcceptManagement(UUID profileId, String email);
+
   boolean tryGrantServerAdmin(UUID accountId);
 
   boolean tryRevokeServerAdmin(UUID accountId);

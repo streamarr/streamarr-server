@@ -6,7 +6,10 @@ import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
 
-/** Everything about a manager invitation except its secret, which is never queryable. */
+/**
+ * A manager invitation as its readers see it: never its secret, and never whether an Account can
+ * answer it.
+ */
 @Builder
 public record ManagerInvitationDetails(
     UUID id,
@@ -14,7 +17,6 @@ public record ManagerInvitationDetails(
     String profileName,
     UUID inviterAccountId,
     String inviterDisplayName,
-    UUID recipientAccountId,
     String recipientEmail,
     ProfileManagerInvitationStatus status,
     String expiresAt) {
@@ -26,7 +28,6 @@ public record ManagerInvitationDetails(
         .profileName(invitation.getProfileName())
         .inviterAccountId(invitation.getInviterAccountId())
         .inviterDisplayName(invitation.getInviterDisplayName())
-        .recipientAccountId(invitation.getRecipientAccountId())
         .recipientEmail(invitation.getRecipientEmail())
         .status(invitation.statusAt(now))
         .expiresAt(invitation.getExpiresAt().toString())

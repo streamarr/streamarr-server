@@ -5,8 +5,11 @@ public final class ManagerRejections {
 
   private ManagerRejections() {}
 
-  public sealed interface Invite
-      permits ProfileNotFound, RecipientNotFound, RecipientNotEligible, AlreadyManager {}
+  /**
+   * An invitation is refused only for what the inviter can see: the Profile, or the shape of the
+   * address. Nothing about whether an Account has the address refuses it.
+   */
+  public sealed interface Invite permits ProfileNotFound, EmailRequired, EmailInvalid {}
 
   public sealed interface Cancel permits ManagerInvitationNotFound, InvitationNotPending {}
 
@@ -38,12 +41,16 @@ public final class ManagerRejections {
   public record ProfileNotFound()
       implements Invite, Relinquish, Remove, AdministrativelyGrant, AdministrativelyRemove {}
 
-  public record RecipientNotFound() implements Invite, AdministrativelyGrant {}
+  public record RecipientNotFound() implements AdministrativelyGrant {}
+
+  public record EmailRequired() implements Invite {}
+
+  public record EmailInvalid() implements Invite {}
 
   /** Eligible means the Account's own Personal Profile is an unrestricted Adult. */
-  public record RecipientNotEligible() implements Invite, Accept, AdministrativelyGrant {}
+  public record RecipientNotEligible() implements Accept, AdministrativelyGrant {}
 
-  public record AlreadyManager() implements Invite, Accept, AdministrativelyGrant {}
+  public record AlreadyManager() implements Accept, AdministrativelyGrant {}
 
   /** The one deliberate answer for every miss: unknown, expired, decided, or hidden. */
   public record ManagerInvitationNotFound() implements Cancel, Accept, Decline {}
