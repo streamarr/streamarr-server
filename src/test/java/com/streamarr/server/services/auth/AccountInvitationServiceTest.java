@@ -73,6 +73,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class AccountInvitationServiceTest {
 
   private static final Instant NOW = Instant.parse("2026-08-19T12:00:00Z");
+  private static final Duration INVITATION_LIFETIME = Duration.ofDays(2);
 
   private final FakeAccountInvitationRepository invitations = new FakeAccountInvitationRepository();
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
@@ -367,7 +368,7 @@ class AccountInvitationServiceTest {
             .passwordResetTtl(Duration.ofHours(1))
             .replacementLockTimeout(Duration.ofSeconds(5))
             .build(),
-        () -> Duration.ofDays(7),
+        () -> INVITATION_LIFETIME,
         clock);
   }
 
@@ -443,7 +444,7 @@ class AccountInvitationServiceTest {
         .allSatisfy(
             share -> {
               assertThat(share.getOfferedByAccountId()).isEqualTo(accepted.account().getId());
-              assertThat(share.getExpiresAt()).isAfter(NOW);
+              assertThat(share.getExpiresAt()).isEqualTo(NOW.plus(INVITATION_LIFETIME));
             });
   }
 
