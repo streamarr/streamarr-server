@@ -32,6 +32,9 @@ public interface ShareCodeRepositoryCustom {
   /** Invalidates a live code whose issuer may no longer issue it; false when it was not live. */
   boolean tryInvalidate(UUID shareCodeId, Instant now);
 
+  /** Invalidates every code the issuer holds live, in one statement; answers how many. */
+  int invalidateLiveIssuedBy(UUID issuerAccountId, Instant now);
+
   /** The codes of one Household that the filter keeps, newest first, beyond the seek. */
   List<Row<ShareCode>> rowsInHousehold(ShareCodeFilter filter, Seek seek);
 

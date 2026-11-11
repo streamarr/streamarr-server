@@ -46,12 +46,20 @@ class ShareCodeIssuerAuthority {
         issuerAccountId, now, shareCode -> !mayStillIssue(issuerAccountId, shareCode));
   }
 
+  /**
+   * Invalidates every live code of an issuer just disabled, which may issue none, without asking
+   * about each; answers how many.
+   */
+  int afterIssuerDisabled(UUID issuerAccountId, Instant now) {
+    return shareCodeRepository.invalidateLiveIssuedBy(issuerAccountId, now);
+  }
+
   /** Invalidates every live code of an issuer about to be deleted; answers how many. */
   int beforeIssuerDeleted(UUID issuerAccountId, Instant now) {
     // An issue holds the issuer's row while it decides and stores, so once this lock is granted
     // every code it stored has committed and is read below, and a later issue finds no Account.
     userAccountRepository.lockById(issuerAccountId);
-    return invalidateLiveCodesIssuedBy(issuerAccountId, now, _ -> true);
+    return shareCodeRepository.invalidateLiveIssuedBy(issuerAccountId, now);
   }
 
   private int invalidateLiveCodesIssuedBy(

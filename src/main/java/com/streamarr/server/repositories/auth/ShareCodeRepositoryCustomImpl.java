@@ -60,6 +60,12 @@ public class ShareCodeRepositoryCustomImpl implements ShareCodeRepositoryCustom 
   }
 
   @Override
+  public int invalidateLiveIssuedBy(UUID issuerAccountId, Instant now) {
+    return endLiveWhere(
+        SHARE_CODE.ISSUER_ACCOUNT_ID.eq(issuerAccountId), ShareCodeStatus.INVALIDATED, now);
+  }
+
+  @Override
   public List<Row<ShareCode>> rowsInHousehold(ShareCodeFilter filter, Seek seek) {
     var keyset =
         Keyset.<OffsetDateTime>builder()
@@ -102,14 +108,18 @@ public class ShareCodeRepositoryCustomImpl implements ShareCodeRepositoryCustom 
   }
 
   private boolean endLive(UUID shareCodeId, ShareCodeStatus ended, Instant now) {
+    return endLiveWhere(SHARE_CODE.ID.eq(shareCodeId), ended, now) > 0;
+  }
+
+  /** Ends the codes the condition names that are live at the instant; answers how many. */
+  private int endLiveWhere(Condition codes, ShareCodeStatus ended, Instant now) {
     var at = now.atOffset(ZoneOffset.UTC);
     return dsl.update(SHARE_CODE)
-            .set(SHARE_CODE.STATUS, ended)
-            .set(SHARE_CODE.ENDED_AT, at)
-            .where(SHARE_CODE.ID.eq(shareCodeId))
-            .and(SHARE_CODE.STATUS.eq(ShareCodeStatus.LIVE))
-            .and(SHARE_CODE.EXPIRES_AT.gt(at))
-            .execute()
-        > 0;
+        .set(SHARE_CODE.STATUS, ended)
+        .set(SHARE_CODE.ENDED_AT, at)
+        .where(codes)
+        .and(SHARE_CODE.STATUS.eq(ShareCodeStatus.LIVE))
+        .and(SHARE_CODE.EXPIRES_AT.gt(at))
+        .execute();
   }
 }

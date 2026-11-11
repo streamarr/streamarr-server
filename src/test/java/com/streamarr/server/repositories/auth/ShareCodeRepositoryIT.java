@@ -132,6 +132,36 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should invalidate only the issuer's live codes when its codes are invalidated")
+  void shouldInvalidateOnlyIssuersLiveCodesWhenItsCodesAreInvalidated() {
+    var other = authTestSupport.createIdentity();
+    try {
+      var live = insert(shareCodes.issue().digest(), now.plus(7, ChronoUnit.DAYS));
+      var forOtherHousehold =
+          insertFor(other.household().getId(), host.account().getId(), now.plusSeconds(60));
+      var expired = insert(shareCodes.issue().digest(), now);
+      var withdrawn = insert(shareCodes.issue().digest(), now.plus(7, ChronoUnit.DAYS));
+      transactionTemplate.execute(_ -> shareCodeRepository.tryWithdraw(withdrawn, now));
+      var someoneElses =
+          insertFor(host.household().getId(), other.account().getId(), now.plusSeconds(60));
+
+      var invalidated =
+          transactionTemplate.execute(
+              _ -> shareCodeRepository.invalidateLiveIssuedBy(host.account().getId(), now));
+
+      assertThat(invalidated).isEqualTo(2);
+      assertThat(statusOf(live)).isEqualTo(ShareCodeStatus.INVALIDATED);
+      assertThat(shareCodeRepository.findById(live).orElseThrow().getEndedAt()).isEqualTo(now);
+      assertThat(statusOf(forOtherHousehold)).isEqualTo(ShareCodeStatus.INVALIDATED);
+      assertThat(statusOf(expired)).isEqualTo(ShareCodeStatus.LIVE);
+      assertThat(statusOf(withdrawn)).isEqualTo(ShareCodeStatus.WITHDRAWN);
+      assertThat(statusOf(someoneElses)).isEqualTo(ShareCodeStatus.LIVE);
+    } finally {
+      authTestSupport.deleteIdentity(other);
+    }
+  }
+
+  @Test
   @DisplayName(
       "Should read each code as it stands at the filter's instant when a list keeps statuses")
   void shouldReadEachCodeAsItStandsAtFiltersInstantWhenListKeepsStatuses() {
@@ -247,6 +277,19 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
   private UUID insert(byte[] digest, Instant expiresAt) {
     return transactionTemplate.execute(
         _ -> shareCodeRepository.tryInsert(unsaved(digest, expiresAt)).orElseThrow());
+  }
+
+  private UUID insertFor(UUID householdId, UUID issuerAccountId, Instant expiresAt) {
+    var unsaved =
+        unsaved(shareCodes.issue().digest(), expiresAt).toBuilder()
+            .householdId(householdId)
+            .issuerAccountId(issuerAccountId)
+            .build();
+    return transactionTemplate.execute(_ -> shareCodeRepository.tryInsert(unsaved).orElseThrow());
+  }
+
+  private ShareCodeStatus statusOf(UUID shareCodeId) {
+    return shareCodeRepository.findById(shareCodeId).orElseThrow().getStatus();
   }
 
   private ShareCode unsaved(byte[] digest, Instant expiresAt) {
