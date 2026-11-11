@@ -270,6 +270,11 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
             .and(USER_ACCOUNT.SERVER_ADMIN.isTrue()));
   }
 
+  @Override
+  public void lockById(UUID accountId) {
+    lockWhere(USER_ACCOUNT.ID.eq(accountId));
+  }
+
   /** One row lock, taken only while the condition still holds; false means nothing was locked. */
   private boolean lockWhere(Condition condition) {
     return dsl.select(USER_ACCOUNT.ID)

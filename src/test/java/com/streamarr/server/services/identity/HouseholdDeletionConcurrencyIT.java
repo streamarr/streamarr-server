@@ -56,7 +56,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
 
   private static final String ACCOUNT_TRANSFER = "%update%user_account%household_id%";
-  private static final String ACCOUNT_DELETION = "%delete%from%user_account%";
+  // An Account deletion holds the Account row before it reads the share codes the Account issued.
+  private static final String ACCOUNT_DELETION_LOCK = "%from%user_account%for update%";
   private static final String SESSION_REVOCATION = "%update%auth_session%revoked_at%";
 
   @Autowired private HouseholdDeletionService service;
@@ -578,7 +579,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
                                   .profileCleanup(ProfileCleanup.ERASE_PROFILE)
                                   .reason("stale deletion")
                                   .build()))
-                  .competitorStatement(ACCOUNT_DELETION)
+                  .competitorStatement(ACCOUNT_DELETION_LOCK)
                   .departure(
                       () ->
                           accountLifecycle.transferAccount(

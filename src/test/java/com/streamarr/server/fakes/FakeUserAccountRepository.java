@@ -259,6 +259,11 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
+  public void lockById(UUID accountId) {
+    // One thread owns the in-memory rows; there is no concurrent transaction to wait for.
+  }
+
+  @Override
   public Optional<HouseholdRole> roleForNewAccount(UUID householdId, HouseholdRole requestedRole) {
     return Optional.of(
         findByHouseholdId(householdId).isEmpty() ? HouseholdRole.ADMIN : requestedRole);

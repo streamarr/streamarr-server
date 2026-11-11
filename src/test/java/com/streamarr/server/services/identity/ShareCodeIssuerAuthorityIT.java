@@ -1,6 +1,7 @@
 package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -21,6 +22,7 @@ import com.streamarr.server.support.PostgresLockTestSupport;
 import com.streamarr.server.support.TestFixtureWork;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -172,6 +174,109 @@ class ShareCodeIssuerAuthorityIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should invalidate a code when it is issued while its issuer is being deleted")
+  void shouldInvalidateCodeWhenItIsIssuedWhileItsIssuerIsBeingDeleted() throws Exception {
+    var departing = secondAdminOf(host);
+    var hostRow =
+        PostgresLockTestSupport.RowLockTarget.builder()
+            .dataSource(dataSource)
+            .table("household")
+            .rowId(host.household().getId())
+            .build();
+
+    Outcome<NewShareCode, ShareCodeRejections.Issue> issued;
+    Outcome<UUID, TransferRejections.AdministrativelyDeleteAccount> deleted;
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
+        var observer = dataSource.getConnection();
+        var householdLock = PostgresLockTestSupport.lockRow(hostRow)) {
+      // The issue holds its issuer's row and waits to store the code.
+      var issue =
+          executor.submit(
+              () ->
+                  shareCodeService.issueShareCode(
+                      authTestSupport.identityOf(departing), host.household().getId()));
+      var issuePid =
+          PostgresLockTestSupport.awaitBlockedBackendPidRunning(
+              observer, householdLock.backendPid(), "%");
+      var deletion =
+          executor.submit(
+              () -> accountLifecycle.administrativelyDeleteAccount(fresh(actor), erase(departing)));
+      PostgresLockTestSupport.awaitBlockedBackendPidRunning(observer, issuePid, "%user_account%");
+
+      householdLock.release();
+      issued = issue.get(10, TimeUnit.SECONDS);
+      deleted = deletion.get(10, TimeUnit.SECONDS);
+    }
+
+    var code = accepted(issued).code();
+    accepted(deleted);
+    assertThat(storedByCode(code))
+        .satisfies(
+            shareCode -> {
+              assertThat(shareCode.getStatus()).isEqualTo(ShareCodeStatus.INVALIDATED);
+              assertThat(shareCode.getIssuerAccountId()).isNull();
+            });
+    assertThat(lookUp(code))
+        .isEqualTo(Outcome.rejected(new ShareCodeRejections.ShareCodeRefused()));
+  }
+
+  @Test
+  @DisplayName("Should refuse to issue when the issuer's deletion is under way")
+  void shouldRefuseToIssueWhenIssuersDeletionIsUnderWay() throws Exception {
+    var departing = secondAdminOf(host);
+    var membership =
+        shareRepository
+            .findByProfileIdAndHouseholdIdAndStatus(
+                departing.profile().getId(), host.household().getId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow();
+    var membershipRow =
+        PostgresLockTestSupport.RowLockTarget.builder()
+            .dataSource(dataSource)
+            .table("profile_household_share")
+            .rowId(membership.getId())
+            .build();
+
+    Outcome<NewShareCode, ShareCodeRejections.Issue> issued;
+    Outcome<UUID, TransferRejections.AdministrativelyDeleteAccount> deleted;
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
+        var observer = dataSource.getConnection();
+        var membershipLock = PostgresLockTestSupport.lockRow(membershipRow)) {
+      // The deletion has read the issuer's codes and waits to turn its membership into a visit.
+      var deletion =
+          executor.submit(
+              () ->
+                  accountLifecycle.administrativelyDeleteAccount(
+                      fresh(actor), preserve(departing, host)));
+      var deletionPid =
+          PostgresLockTestSupport.awaitBlockedBackendPidRunning(
+              observer, membershipLock.backendPid(), "%update%profile_household_share%");
+      var issue =
+          executor.submit(
+              () ->
+                  shareCodeService.issueShareCode(
+                      authTestSupport.identityOf(departing), host.household().getId()));
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .until(
+              () ->
+                  issue.isDone()
+                      || PostgresLockTestSupport.waitersBehind(
+                              observer, deletionPid, "%user_account%")
+                          > 0);
+
+      membershipLock.release();
+      deleted = deletion.get(10, TimeUnit.SECONDS);
+      issued = issue.get(10, TimeUnit.SECONDS);
+    }
+
+    accepted(deleted);
+    assertThat(issued).isEqualTo(Outcome.rejected(new ShareCodeRejections.HouseholdNotFound()));
+    assertThat(shareCodeRepository.findAll())
+        .filteredOn(shareCode -> shareCode.getHouseholdId().equals(host.household().getId()))
+        .isEmpty();
+  }
+
+  @Test
   @DisplayName("Should leave a code that already ended as it was when its issuer loses the role")
   void shouldLeaveCodeThatAlreadyEndedAsItWasWhenItsIssuerLosesRole() {
     secondAdminOf(host);
@@ -285,6 +390,31 @@ class ShareCodeIssuerAuthorityIT extends AbstractIntegrationTest {
       AuthTestSupport.TestIdentity offerer, String code) {
     return profileSharingService.offerProfileShare(
         authTestSupport.identityOf(offerer), offerer.profile().getId(), presenting(code));
+  }
+
+  private Outcome<String, ShareCodeRejections.LookUp> lookUp(String code) {
+    var presenter = track(authTestSupport.createIdentity());
+    return shareCodeService.lookUpShareCode(
+        authTestSupport.identityOf(presenter), presenting(code));
+  }
+
+  private static AdministrativelyDeleteAccountCommand erase(
+      AuthTestSupport.TestIdentity departing) {
+    return AdministrativelyDeleteAccountCommand.builder()
+        .accountId(departing.account().getId())
+        .profileCleanup(ProfileCleanup.ERASE_PROFILE)
+        .reason("departed")
+        .build();
+  }
+
+  private static AdministrativelyDeleteAccountCommand preserve(
+      AuthTestSupport.TestIdentity departing, AuthTestSupport.TestIdentity replacementManager) {
+    return AdministrativelyDeleteAccountCommand.builder()
+        .accountId(departing.account().getId())
+        .profileCleanup(ProfileCleanup.PRESERVE_PROFILE)
+        .replacementManagerAccountId(replacementManager.account().getId())
+        .reason("departed")
+        .build();
   }
 
   private static ShareCodeCommand presenting(String code) {
