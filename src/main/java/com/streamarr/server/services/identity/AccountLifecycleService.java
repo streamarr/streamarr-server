@@ -2,6 +2,7 @@ package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
+import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AccountRemovalConflictException;
@@ -92,6 +93,7 @@ public class AccountLifecycleService {
                     .profileId(account.get().getPersonalProfileId())
                     .destinationHouseholdId(command.destinationHouseholdId())
                     .sourceHouseholdAccess(command.sourceHouseholdAccess())
+                    .sourceShareEnding(new ShareAction.EndedByServer(identity.accountId()))
                     .now(now)
                     .build());
 
@@ -140,7 +142,7 @@ public class AccountLifecycleService {
     try {
       return mutationTransactions.write(
           () -> {
-            erase(account.get(), command);
+            erase(account.get(), command, identity.accountId());
             audit(
                 identity,
                 "administrativelyDeleteAccount",
@@ -185,7 +187,8 @@ public class AccountLifecycleService {
                     .accountId(account.getId())
                     .profileCleanup(ProfileCleanup.ERASE_PROFILE)
                     .reason("self-deletion")
-                    .build());
+                    .build(),
+                identity.accountId());
             audit(identity, "deleteMyAccount", ACCOUNT_ID, account.getId(), "self-deletion");
             return account.getId();
           },
@@ -196,7 +199,8 @@ public class AccountLifecycleService {
     }
   }
 
-  private void erase(UserAccount account, AdministrativelyDeleteAccountCommand command) {
+  private void erase(
+      UserAccount account, AdministrativelyDeleteAccountCommand command, UUID actingAccountId) {
     if (userAccountRepository.findByHouseholdId(account.getHouseholdId()).size() <= 1) {
       throw new MutationRejection(new TransferRejections.FinalAccount());
     }
@@ -212,6 +216,7 @@ public class AccountLifecycleService {
         AccountRemoval.Deletion.builder()
             .account(account)
             .profileDisposition(profileDisposition)
+            .sourceShareEnding(new ShareAction.EndedByServer(actingAccountId))
             .now(clock.instant())
             .build());
   }

@@ -13,6 +13,7 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvitationEmailAlreadyUsedException;
@@ -354,7 +355,7 @@ public class AccountInvitationService {
     profileManagerInvitationRepository.invalidatePendingByProfileId(
         profileId, PROFILE_LINKED_REASON, now);
     shareLifecycle.ensureActiveMembershipShare(profileId, householdId, now);
-    endCurrentVisits(profileId, householdId, now);
+    endCurrentVisits(account, now);
     shareLifecycle.invalidatePendingByProfileId(profileId, PROFILE_LINKED_REASON, now);
     var reofferAccountId =
         profile.isRestricted() ? invitation.getIssuerAccountId() : account.getId();
@@ -368,14 +369,18 @@ public class AccountInvitationService {
     return account;
   }
 
-  private void endCurrentVisits(UUID profileId, UUID homeHouseholdId, Instant now) {
+  // Connecting the Profile ends its visits on the way, so both sides of each are told, except the
+  // Account that connected it.
+  private void endCurrentVisits(UserAccount account, Instant now) {
+    var profileId = account.getPersonalProfileId();
     for (var share :
         shareRepository.findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE)) {
-      if (share.getHouseholdId().equals(homeHouseholdId)) {
+      if (share.getHouseholdId().equals(account.getHouseholdId())) {
         continue;
       }
 
-      if (!shareLifecycle.tryEndActive(share.getId(), now)) {
+      if (!shareLifecycle.tryEndActive(
+          share.getId(), new ShareAction.EndedByServer(account.getId()), now)) {
         throw new IllegalStateException(
             "Active Profile share %s could not be ended during Account linking"
                 .formatted(share.getId()));

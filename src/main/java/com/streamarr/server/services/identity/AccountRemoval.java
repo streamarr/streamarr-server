@@ -3,6 +3,7 @@ package com.streamarr.server.services.identity;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AccountRemovalConflictException;
@@ -144,7 +145,8 @@ class AccountRemoval {
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareLifecycle.tryEndActive(share.getId(), now));
+        .ifPresent(
+            share -> shareLifecycle.tryEndActive(share.getId(), deletion.sourceShareEnding(), now));
     shareLifecycle.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
     shareLifecycle.convertMembershipShareToVisitorShare(profileId, destinationHouseholdId);
   }
@@ -176,7 +178,8 @@ class AccountRemoval {
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareLifecycle.tryEndActive(share.getId(), now));
+        .ifPresent(
+            share -> shareLifecycle.tryEndActive(share.getId(), transfer.sourceShareEnding(), now));
     authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId);
     authSessionRepository.clearHouseholdContextFromAccountSessions(accountId, sourceHouseholdId);
     registrationLifecycle.revokeAllByAccountAndHousehold(
@@ -189,6 +192,10 @@ class AccountRemoval {
     }
   }
 
+  /**
+   * One Account's move. {@code sourceShareEnding} says how the share of its Personal Profile into
+   * the source Household ends when the move ends it.
+   */
   @Builder
   record Transfer(
       @NonNull UUID accountId,
@@ -196,12 +203,18 @@ class AccountRemoval {
       @NonNull UUID profileId,
       @NonNull UUID destinationHouseholdId,
       @NonNull SourceHouseholdAccess sourceHouseholdAccess,
+      @NonNull ShareAction.Ending sourceShareEnding,
       @NonNull Instant now) {}
 
+  /**
+   * One Account's deletion. {@code sourceShareEnding} says how the share of a preserved Personal
+   * Profile into the source Household ends when the Profile moves to another Household.
+   */
   @Builder
   record Deletion(
       @NonNull UserAccount account,
       @NonNull ProfileDisposition profileDisposition,
+      @NonNull ShareAction.Ending sourceShareEnding,
       @NonNull Instant now) {}
 
   sealed interface ProfileDisposition permits ErasePersonalProfile, PreservePersonalProfile {}

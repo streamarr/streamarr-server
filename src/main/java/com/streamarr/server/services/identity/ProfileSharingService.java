@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
+import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.domain.auth.ShareCode;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
@@ -160,13 +161,19 @@ public class ProfileSharingService {
   public Outcome<ProfileHouseholdShare, ShareRejections.Decline> rejectProfileShare(
       AuthenticatedIdentity identity, UUID shareId) {
     return declinePending(
-        identity, new Intent.RejectProfileShare(shareId), shareId, ProfileShareStatus.REJECTED);
+        identity,
+        new Intent.RejectProfileShare(shareId),
+        shareId,
+        () -> shareLifecycle.tryRejectPending(shareId, identity.accountId(), clock.instant()));
   }
 
   public Outcome<ProfileHouseholdShare, ShareRejections.Decline> cancelProfileShare(
       AuthenticatedIdentity identity, UUID shareId) {
     return declinePending(
-        identity, new Intent.CancelProfileShare(shareId), shareId, ProfileShareStatus.CANCELED);
+        identity,
+        new Intent.CancelProfileShare(shareId),
+        shareId,
+        () -> shareLifecycle.tryCancelPending(shareId, clock.instant()));
   }
 
   public Outcome<ProfileHouseholdShare, ShareRejections.End> endProfileShare(
@@ -192,6 +199,7 @@ public class ProfileSharingService {
                         throw new MutationRejection(rejection);
                       });
                 })
+            .ending(new ShareAction.EndedBySide(identity.accountId()))
             .afterEnd(_ -> {})
             .notActive(ShareRejections.ShareNotActive::new)
             .structural(ShareRejections.StructuralShareCannotEnd::new)
@@ -228,6 +236,7 @@ public class ProfileSharingService {
                     throw new MutationRejection(new ShareRejections.ReasonRequired());
                   }
                 })
+            .ending(new ShareAction.EndedByServer(identity.accountId()))
             .afterEnd(
                 share ->
                     securityAuditEventRepository.append(
@@ -281,7 +290,7 @@ public class ProfileSharingService {
       AuthenticatedIdentity identity,
       Intent.UnitIntent intent,
       UUID shareId,
-      ProfileShareStatus target) {
+      BooleanSupplier decline) {
     return mutationTransactions.write(
         () -> {
           requireShare(identity, shareId);
@@ -295,7 +304,7 @@ public class ProfileSharingService {
               rejection -> {
                 throw new MutationRejection(rejection);
               });
-          if (!shareLifecycle.tryDeclinePending(shareId, target, clock.instant())) {
+          if (!decline.getAsBoolean()) {
             throw lifecycleRefusal(identity, shareId, ShareRejections.ShareNotPending::new);
           }
 
@@ -331,7 +340,7 @@ public class ProfileSharingService {
       return invalidateUnauthorizedOffer(identity, shareId);
     }
 
-    if (!shareLifecycle.tryActivatePending(shareId, clock.instant())) {
+    if (!shareLifecycle.tryActivatePending(shareId, identity.accountId(), clock.instant())) {
       throw lifecycleRefusal(identity, shareId, () -> notPending(shareId));
     }
 
@@ -366,12 +375,14 @@ public class ProfileSharingService {
   }
 
   /**
-   * What one way of ending a share does around the end itself: its authorization, its work after
-   * the end, and the lifecycle refusals it can meet, typed for the verb that asked.
+   * What one way of ending a share does around the end itself: its authorization, how the share's
+   * sides are told it ended, its work after the end, and the lifecycle refusals it can meet, typed
+   * for the verb that asked.
    */
   @Builder
   private record EndSteps<R>(
       Runnable authorize,
+      ShareAction.Ending ending,
       Consumer<ProfileHouseholdShare> afterEnd,
       Supplier<? extends R> notActive,
       Supplier<? extends R> structural) {}
@@ -384,7 +395,7 @@ public class ProfileSharingService {
           profileRepository.lockSharedByShareId(shareId);
           steps.authorize().run();
           var now = clock.instant();
-          if (!shareLifecycle.tryEndActive(shareId, now)) {
+          if (!shareLifecycle.tryEndActive(shareId, steps.ending(), now)) {
             throw lifecycleRefusal(identity, shareId, steps.notActive());
           }
 

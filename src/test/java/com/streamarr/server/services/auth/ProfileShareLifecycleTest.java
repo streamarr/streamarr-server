@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
@@ -29,6 +30,7 @@ class ProfileShareLifecycleTest {
 
   private static final Instant NOW = Instant.parse("2026-08-21T12:00:00Z");
   private static final String REASON = "offerer lost authority";
+  private static final UUID ACTOR = UUID.randomUUID();
 
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
@@ -169,12 +171,15 @@ class ProfileShareLifecycleTest {
         write(
             "accept",
             ProfileShareStatus.PENDING,
-            (lifecycle, share) -> lifecycle.tryActivatePending(share.getId(), NOW)),
+            (lifecycle, share) -> lifecycle.tryActivatePending(share.getId(), ACTOR, NOW)),
         write(
-            "decline",
+            "reject",
             ProfileShareStatus.PENDING,
-            (lifecycle, share) ->
-                lifecycle.tryDeclinePending(share.getId(), ProfileShareStatus.REJECTED, NOW)),
+            (lifecycle, share) -> lifecycle.tryRejectPending(share.getId(), ACTOR, NOW)),
+        write(
+            "cancel",
+            ProfileShareStatus.PENDING,
+            (lifecycle, share) -> lifecycle.tryCancelPending(share.getId(), NOW)),
         write(
             "invalidate",
             ProfileShareStatus.PENDING,
@@ -182,7 +187,8 @@ class ProfileShareLifecycleTest {
         write(
             "end",
             ProfileShareStatus.ACTIVE,
-            (lifecycle, share) -> lifecycle.tryEndActive(share.getId(), NOW)),
+            (lifecycle, share) ->
+                lifecycle.tryEndActive(share.getId(), new ShareAction.EndedBySide(ACTOR), NOW)),
         write(
             "supersede",
             ProfileShareStatus.PENDING,
@@ -328,6 +334,88 @@ class ProfileShareLifecycleTest {
 
     assertThat(announced())
         .containsExactlyInAnyOrder(ChangedShare.of(left), ChangedShare.of(joined));
+  }
+
+  @Test
+  @DisplayName("Should announce an offer when a pending share is created")
+  void shouldAnnounceAnOfferWhenAPendingShareIsCreated() {
+    lifecycle.create(pending(UUID.randomUUID()).build());
+
+    assertThat(actions()).containsExactly(new ShareAction.Offered());
+  }
+
+  @Test
+  @DisplayName("Should announce no action to tell when an active share is created")
+  void shouldAnnounceNoActionToTellWhenAnActiveShareIsCreated() {
+    lifecycle.create(pending(UUID.randomUUID()).status(ProfileShareStatus.ACTIVE).build());
+
+    assertThat(actions()).containsExactly(new ShareAction.Other());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("answers")
+  @DisplayName("Should announce the Account that answered when an offer is accepted or rejected")
+  void shouldAnnounceTheAccountThatAnsweredWhenAnOfferIsAcceptedOrRejected(
+      String answer,
+      ProfileShareStatus before,
+      BiConsumer<ProfileShareLifecycle, ProfileHouseholdShare> change) {
+    var share = shares.save(pending(UUID.randomUUID()).status(before).build());
+
+    change.accept(lifecycle, share);
+
+    assertThat(actions()).containsExactly(new ShareAction.Answered(ACTOR));
+  }
+
+  static Stream<Arguments> answers() {
+    return Stream.of(
+        write(
+            "accept",
+            ProfileShareStatus.PENDING,
+            (lifecycle, share) -> lifecycle.tryActivatePending(share.getId(), ACTOR, NOW)),
+        write(
+            "reject",
+            ProfileShareStatus.PENDING,
+            (lifecycle, share) -> lifecycle.tryRejectPending(share.getId(), ACTOR, NOW)));
+  }
+
+  @ParameterizedTest
+  @MethodSource("endings")
+  @DisplayName("Should announce how the share ended when an active share ends")
+  void shouldAnnounceHowTheShareEndedWhenAnActiveShareEnds(ShareAction.Ending ending) {
+    var share = shares.save(pending(UUID.randomUUID()).status(ProfileShareStatus.ACTIVE).build());
+
+    lifecycle.tryEndActive(share.getId(), ending, NOW);
+
+    assertThat(actions()).containsExactly(ending);
+  }
+
+  static Stream<ShareAction.Ending> endings() {
+    return Stream.of(
+        new ShareAction.EndedBySide(ACTOR),
+        new ShareAction.EndedByServer(ACTOR),
+        new ShareAction.EndedWithHousehold());
+  }
+
+  @Test
+  @DisplayName("Should announce no action to tell when an offer is canceled, withdrawn or expires")
+  void shouldAnnounceNoActionToTellWhenAnOfferIsCanceledWithdrawnOrExpires() {
+    var canceled = shares.save(pending(UUID.randomUUID()).build());
+    var invalidated = shares.save(pending(UUID.randomUUID()).build());
+    var replaced = shares.save(pending(UUID.randomUUID()).build());
+    shares.save(pending(UUID.randomUUID()).expiresAt(NOW.minusSeconds(1)).build());
+
+    lifecycle.tryCancelPending(canceled.getId(), NOW);
+    lifecycle.tryInvalidatePending(invalidated.getId(), REASON, NOW);
+    lifecycle.supersedePending(replaced.getProfileId(), replaced.getHouseholdId(), NOW);
+    lifecycle.expireLapsedOffers(NOW);
+
+    assertThat(actions()).hasSize(4).containsOnly(new ShareAction.Other());
+  }
+
+  private List<ShareAction> actions() {
+    return events.getEventsOfType(ProfileShareChangedEvent.class).stream()
+        .map(ProfileShareChangedEvent::action)
+        .toList();
   }
 
   private Map<ChangedShare, Boolean> liveness() {
