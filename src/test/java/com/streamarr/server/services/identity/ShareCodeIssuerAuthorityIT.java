@@ -311,9 +311,9 @@ class ShareCodeIssuerAuthorityIT extends AbstractIntegrationTest {
           .isEqualTo(Outcome.rejected(new ShareCodeRejections.HouseholdNotFound()));
     }
 
-    assertThat(
-            shareCodeRepository.findByIssuerAccountIdAndStatus(
-                host.account().getId(), ShareCodeStatus.LIVE))
+    assertThat(shareCodeRepository.findAll())
+        .filteredOn(shareCode -> host.account().getId().equals(shareCode.getIssuerAccountId()))
+        .filteredOn(shareCode -> shareCode.getStatus() == ShareCodeStatus.LIVE)
         .isEmpty();
   }
 

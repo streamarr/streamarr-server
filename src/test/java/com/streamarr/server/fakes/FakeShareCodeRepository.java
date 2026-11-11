@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /** Share codes in memory, with the database's single-winner endings and unique digests. */
 public class FakeShareCodeRepository extends FakeJpaRepository<ShareCode>
@@ -38,21 +39,27 @@ public class FakeShareCodeRepository extends FakeJpaRepository<ShareCode>
   }
 
   @Override
-  public boolean tryInvalidate(UUID shareCodeId, Instant now) {
-    return endLive(shareCodeId, ShareCodeStatus.INVALIDATED, now);
+  public List<UUID> findHouseholdIdsWithLiveCodesIssuedBy(UUID issuerAccountId, Instant now) {
+    return database.values().stream()
+        .filter(shareCode -> issuerAccountId.equals(shareCode.getIssuerAccountId()))
+        .filter(shareCode -> shareCode.isLiveAt(now))
+        .map(ShareCode::getHouseholdId)
+        .distinct()
+        .toList();
   }
 
   @Override
-  public synchronized int invalidateLiveIssuedBy(UUID issuerAccountId, Instant now) {
-    var invalidated = 0;
-    for (var shareCode : List.copyOf(database.values())) {
-      if (issuerAccountId.equals(shareCode.getIssuerAccountId())
-          && endLive(shareCode.getId(), ShareCodeStatus.INVALIDATED, now)) {
-        invalidated++;
-      }
-    }
+  public int invalidateLiveIssuedBy(UUID issuerAccountId, Instant now) {
+    return invalidateLive(shareCode -> issuerAccountId.equals(shareCode.getIssuerAccountId()), now);
+  }
 
-    return invalidated;
+  @Override
+  public int invalidateLiveIssuedFor(UUID issuerAccountId, UUID householdId, Instant now) {
+    return invalidateLive(
+        shareCode ->
+            issuerAccountId.equals(shareCode.getIssuerAccountId())
+                && householdId.equals(shareCode.getHouseholdId()),
+        now);
   }
 
   @Override
@@ -80,13 +87,15 @@ public class FakeShareCodeRepository extends FakeJpaRepository<ShareCode>
         .findFirst();
   }
 
-  @Override
-  public List<ShareCode> findByIssuerAccountIdAndStatus(
-      UUID issuerAccountId, ShareCodeStatus status) {
-    return database.values().stream()
-        .filter(shareCode -> issuerAccountId.equals(shareCode.getIssuerAccountId()))
-        .filter(shareCode -> shareCode.getStatus() == status)
-        .toList();
+  private synchronized int invalidateLive(Predicate<ShareCode> codes, Instant now) {
+    var invalidated = 0;
+    for (var shareCode : List.copyOf(database.values())) {
+      if (codes.test(shareCode) && endLive(shareCode.getId(), ShareCodeStatus.INVALIDATED, now)) {
+        invalidated++;
+      }
+    }
+
+    return invalidated;
   }
 
   private synchronized boolean endLive(UUID shareCodeId, ShareCodeStatus ended, Instant now) {

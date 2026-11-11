@@ -422,7 +422,7 @@ class ShareCodeServiceTest {
           FakeShareCodeRepository stored,
           ShareCodeService service,
           AuthenticatedIdentity admin) {
-        stored.tryInvalidate(issued.shareCode().shareCode().getId(), NOW);
+        stored.invalidateLiveIssuedBy(issued.shareCode().shareCode().getIssuerAccountId(), NOW);
         return issued.code();
       }
     },

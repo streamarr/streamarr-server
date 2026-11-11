@@ -162,6 +162,42 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should end only one Household's codes when the issuer loses that Household")
+  void shouldEndOnlyOneHouseholdsCodesWhenIssuerLosesThatHousehold() {
+    var other = authTestSupport.createIdentity();
+    var third = authTestSupport.createIdentity();
+    try {
+      var lost = insert(shareCodes.issue().digest(), now.plusSeconds(60));
+      var alsoLost = insert(shareCodes.issue().digest(), now.plusSeconds(60));
+      var expired = insert(shareCodes.issue().digest(), now);
+      var kept = insertFor(other.household().getId(), host.account().getId(), now.plusSeconds(60));
+      insertFor(third.household().getId(), host.account().getId(), now);
+
+      var households =
+          transactionTemplate.execute(
+              _ ->
+                  shareCodeRepository.findHouseholdIdsWithLiveCodesIssuedBy(
+                      host.account().getId(), now));
+      var invalidated =
+          transactionTemplate.execute(
+              _ ->
+                  shareCodeRepository.invalidateLiveIssuedFor(
+                      host.account().getId(), host.household().getId(), now));
+
+      assertThat(households)
+          .containsExactlyInAnyOrder(host.household().getId(), other.household().getId());
+      assertThat(invalidated).isEqualTo(2);
+      assertThat(statusOf(lost)).isEqualTo(ShareCodeStatus.INVALIDATED);
+      assertThat(statusOf(alsoLost)).isEqualTo(ShareCodeStatus.INVALIDATED);
+      assertThat(statusOf(expired)).isEqualTo(ShareCodeStatus.LIVE);
+      assertThat(statusOf(kept)).isEqualTo(ShareCodeStatus.LIVE);
+    } finally {
+      authTestSupport.deleteIdentity(third);
+      authTestSupport.deleteIdentity(other);
+    }
+  }
+
+  @Test
   @DisplayName(
       "Should read each code as it stands at the filter's instant when a list keeps statuses")
   void shouldReadEachCodeAsItStandsAtFiltersInstantWhenListKeepsStatuses() {
@@ -305,7 +341,7 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
   enum Ending {
     SPEND(ShareCodeStatus.SPENT, ShareCodeRepository::trySpend),
     WITHDRAW(ShareCodeStatus.WITHDRAWN, ShareCodeRepository::tryWithdraw),
-    INVALIDATE(ShareCodeStatus.INVALIDATED, ShareCodeRepository::tryInvalidate);
+    INVALIDATE(ShareCodeStatus.INVALIDATED, Ending::invalidateItsIssuersCodesForItsHousehold);
 
     private final ShareCodeStatus status;
     private final Transition transition;
@@ -325,6 +361,14 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
 
     Ending other() {
       return values()[(ordinal() + 1) % values().length];
+    }
+
+    private static boolean invalidateItsIssuersCodesForItsHousehold(
+        ShareCodeRepository repository, UUID id, Instant at) {
+      var shareCode = repository.findById(id).orElseThrow();
+      return repository.invalidateLiveIssuedFor(
+              shareCode.getIssuerAccountId(), shareCode.getHouseholdId(), at)
+          > 0;
     }
   }
 

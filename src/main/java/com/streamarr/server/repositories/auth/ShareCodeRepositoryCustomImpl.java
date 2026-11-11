@@ -55,14 +55,30 @@ public class ShareCodeRepositoryCustomImpl implements ShareCodeRepositoryCustom 
   }
 
   @Override
-  public boolean tryInvalidate(UUID shareCodeId, Instant now) {
-    return endLive(shareCodeId, ShareCodeStatus.INVALIDATED, now);
+  public List<UUID> findHouseholdIdsWithLiveCodesIssuedBy(UUID issuerAccountId, Instant now) {
+    return dsl.selectDistinct(SHARE_CODE.HOUSEHOLD_ID)
+        .from(SHARE_CODE)
+        .where(SHARE_CODE.ISSUER_ACCOUNT_ID.eq(issuerAccountId))
+        .and(SHARE_CODE.STATUS.eq(ShareCodeStatus.LIVE))
+        .and(SHARE_CODE.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)))
+        .fetch(SHARE_CODE.HOUSEHOLD_ID);
   }
 
   @Override
   public int invalidateLiveIssuedBy(UUID issuerAccountId, Instant now) {
     return endLiveWhere(
         SHARE_CODE.ISSUER_ACCOUNT_ID.eq(issuerAccountId), ShareCodeStatus.INVALIDATED, now);
+  }
+
+  @Override
+  public int invalidateLiveIssuedFor(UUID issuerAccountId, UUID householdId, Instant now) {
+    return endLiveWhere(
+        SHARE_CODE
+            .ISSUER_ACCOUNT_ID
+            .eq(issuerAccountId)
+            .and(SHARE_CODE.HOUSEHOLD_ID.eq(householdId)),
+        ShareCodeStatus.INVALIDATED,
+        now);
   }
 
   @Override

@@ -16,6 +16,7 @@ import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -62,6 +63,26 @@ class ShareCodeIssuerAuthorityTest {
   }
 
   @Test
+  @DisplayName("Should ask once for each Household when the issuer changes")
+  void shouldAskOnceForEachHouseholdWhenIssuerChanges() {
+    var kept = List.of(liveCode(ISSUER_ID, KEPT_HOUSEHOLD), liveCode(ISSUER_ID, KEPT_HOUSEHOLD));
+    var lost =
+        List.of(
+            liveCode(ISSUER_ID, LOST_HOUSEHOLD),
+            liveCode(ISSUER_ID, LOST_HOUSEHOLD),
+            liveCode(ISSUER_ID, LOST_HOUSEHOLD));
+
+    var invalidated = issuerAuthority.afterIssuerChanged(ISSUER_ID, NOW);
+
+    assertThat(invalidated).isEqualTo(3);
+    assertThat(lost).extracting(ShareCode::getStatus).containsOnly(ShareCodeStatus.INVALIDATED);
+    assertThat(kept).extracting(ShareCode::getStatus).containsOnly(ShareCodeStatus.LIVE);
+    assertThat(authorization.recordedIntents())
+        .containsExactlyInAnyOrder(
+            new Intent.IssueShareCode(KEPT_HOUSEHOLD), new Intent.IssueShareCode(LOST_HOUSEHOLD));
+  }
+
+  @Test
   @DisplayName(
       "Should leave codes that no longer work and other issuers' codes when the issuer changes")
   void shouldLeaveCodesThatNoLongerWorkAndOtherIssuersCodesWhenIssuerChanges() {
@@ -78,6 +99,7 @@ class ShareCodeIssuerAuthorityTest {
     assertThat(expired.statusAt(NOW)).isEqualTo(ShareCodeStatus.EXPIRED);
     assertThat(withdrawn.getStatus()).isEqualTo(ShareCodeStatus.WITHDRAWN);
     assertThat(someoneElses.getStatus()).isEqualTo(ShareCodeStatus.LIVE);
+    assertThat(authorization.recordedIntents()).isEmpty();
   }
 
   @Test

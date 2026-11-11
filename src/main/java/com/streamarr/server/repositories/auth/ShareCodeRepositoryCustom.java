@@ -29,11 +29,17 @@ public interface ShareCodeRepositoryCustom {
   /** Withdraws a live code; false when it was not live. */
   boolean tryWithdraw(UUID shareCodeId, Instant now);
 
-  /** Invalidates a live code whose issuer may no longer issue it; false when it was not live. */
-  boolean tryInvalidate(UUID shareCodeId, Instant now);
+  /** The Households for which the issuer holds codes that are live at the instant. */
+  List<UUID> findHouseholdIdsWithLiveCodesIssuedBy(UUID issuerAccountId, Instant now);
 
   /** Invalidates every code the issuer holds live, in one statement; answers how many. */
   int invalidateLiveIssuedBy(UUID issuerAccountId, Instant now);
+
+  /**
+   * Invalidates every code the issuer holds live for one Household, in one statement; answers how
+   * many.
+   */
+  int invalidateLiveIssuedFor(UUID issuerAccountId, UUID householdId, Instant now);
 
   /** The codes of one Household that the filter keeps, newest first, beyond the seek. */
   List<Row<ShareCode>> rowsInHousehold(ShareCodeFilter filter, Seek seek);
