@@ -73,6 +73,36 @@ enum ProfileAuthority {
     SUPERVISES
 }
 
+"What a change of a Profile's kind or content limit, or a new Profile, would lock (ADR 0024 §PIN safety)."
+type ProfileLockPreview {
+    """
+    One entry for each Household where something would be locked that is not locked now, among the
+    Households whose Profile picker the asking Account may already see: its own Household and those
+    its Personal Profile visits, its own first. Other Households are left out. The change itself is
+    never refused for what it locks.
+    """
+    households: [HouseholdLockPreview!]!
+}
+
+"What a change, or a new Profile, would lock in one Household."
+type HouseholdLockPreview {
+    household: HouseholdSummary!
+    "The other Profiles that would be locked there until each has a PIN, by name."
+    profiles: [LockedProfile!]!
+    """
+    Whether the changed Profile, or the new one, would itself be locked there until it has a PIN.
+    A changed Profile that is locked there already does not count.
+    """
+    locksThisProfile: Boolean!
+}
+
+"A Profile that a change would lock, as the Household's Profile picker shows it."
+type LockedProfile {
+    id: ID!
+    name: String!
+    picture: String
+}
+
 input CreateProfileInput {
     householdId: ID!
     name: String!
