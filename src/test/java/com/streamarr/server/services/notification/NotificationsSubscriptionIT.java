@@ -21,6 +21,8 @@ import com.streamarr.server.services.identity.AccountAdministrationService;
 import com.streamarr.server.services.identity.AccountLifecycleService;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
+import com.streamarr.server.services.identity.HouseholdDeletionService;
+import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.identity.ProfileLifecycleService;
 import com.streamarr.server.services.identity.ProfileLifecycleService.TransferProfileCommand;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
@@ -109,6 +111,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private ProfileManagerAdministrationService profileManagement;
   @Autowired private ProfileLifecycleService profileLifecycle;
+  @Autowired private HouseholdDeletionService householdDeletion;
   @Autowired private NotificationService notificationService;
   @Autowired private ProfileShareExpirySweeper expirySweeper;
   @Autowired private ProfileRepository profileRepository;
@@ -520,6 +523,34 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
                 .destinationHouseholdId(sam.household().getId())
                 .sourceHouseholdAccess(SourceHouseholdAccess.END)
                 .reason("moved in with Sam")
+                .build());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var resolved = nextChange(socket);
+    assertThat(onlyChange(resolved).path("notificationId").asString())
+        .isEqualTo(requestFor(sam, offer).getId().toString());
+    assertThat(nodeOf(resolved).path("resolution").asString()).isEqualTo("DECIDED");
+    assertMatchesAFreshQuery(resolved, sam);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the request's resolution when deleting a Household moves its final Account"
+          + " into the Household its Profile was offered to")
+  void shouldDeliverTheRequestsResolutionWhenDeletingAHouseholdMovesItsFinalAccountIntoTheOffer()
+      throws Exception {
+    var brook = track(authTestSupport.createIdentity());
+    var offer = steps.offer(brook, brook.profile(), sam);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(sam));
+
+    var outcome =
+        householdDeletion.transferLastAccountAndDeleteHousehold(
+            authTestSupport.freshIdentityOf(serverAdmin),
+            TransferLastAccountAndDeleteHouseholdCommand.builder()
+                .householdId(brook.household().getId())
+                .destinationHouseholdId(sam.household().getId())
+                .reason("Brook moved in with Sam")
                 .build());
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
