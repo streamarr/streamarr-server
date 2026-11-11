@@ -263,8 +263,8 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a digest when it is not a SHA-256 digest")
-  void shouldRefuseDigestWhenItIsNotSha256Digest() {
+  @DisplayName("Should refuse a digest when it is not 32 bytes long")
+  void shouldRefuseDigestWhenItIsNotThirtyTwoBytesLong() {
     var shortDigest = new byte[31];
 
     assertThatThrownBy(() -> insert(shortDigest, now.plusSeconds(60)))
