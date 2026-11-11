@@ -613,6 +613,7 @@ public class HlsStreamingService implements StreamingService {
             .viewerLimits(decisionRequest.viewerLimits())
             .capabilityDeclaration(decisionRequest.capabilityDeclaration())
             .codecProfile(lowerVariant.encodeCodecProfile().orElseThrow())
+            .encodeFormat(lowerVariant.videoEncodeFormat())
             .frameRate(lowerVariant.outputFrameRate().orElseThrow())
             .audioSteps(new AudioSteps(List.of(audio)))
             .build();

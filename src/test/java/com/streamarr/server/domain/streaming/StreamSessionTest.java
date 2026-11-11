@@ -113,7 +113,9 @@ class StreamSessionTest {
   void shouldOfferTheCopyAndRunEachLowerVariantsEncodeWhenACopySitsBesideLowerVariants() {
     var copy =
         StreamSessionFixture.remuxDecision().toBuilder()
-            .lowerVariantCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+            .lowerVariantEncode(
+                Optional.of(
+                    new LowerVariantEncode(EncodeCodecProfile.H264_HIGH, EncodeFormat.SDR_8_BIT)))
             .build();
     var session = abrSessionBuilder().transcodeDecision(copy).build();
 

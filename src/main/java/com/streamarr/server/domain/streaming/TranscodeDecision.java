@@ -23,9 +23,9 @@ import lombok.NonNull;
  * in a fixed quality, and is empty in Auto and Original (ADR 0013). {@code softwareEncoder} is true
  * when the encode runs on the software encoder of its codec family after a hardware encoder failed
  * (ADR 0044). {@code videoEncodeFormat} is the range and bit depth that the decision's encode
- * writes, and a decision that copies the video holds 8-bit SDR (#397). {@code
- * lowerVariantCodecProfile} holds the codec profile that the encoded lower variants beside a copy
- * force in Auto, so only a decision that copies the video holds one (ADR 0050).
+ * writes, and a decision that copies the video holds 8-bit SDR (#397). {@code lowerVariantEncode}
+ * is the encode that the lower variants beside a copy run in Auto, so only a decision that copies
+ * the video holds one (ADR 0050).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -43,7 +43,7 @@ public record TranscodeDecision(
     @NonNull Optional<DynamicRangeChoice> dynamicRangeChoice,
     boolean softwareEncoder,
     @NonNull EncodeFormat videoEncodeFormat,
-    @NonNull Optional<EncodeCodecProfile> lowerVariantCodecProfile) {
+    @NonNull Optional<LowerVariantEncode> lowerVariantEncode) {
 
   public TranscodeDecision {
     var copiesVideo = transcodeMode != null && transcodeMode.copiesVideo();
@@ -72,9 +72,9 @@ public record TranscodeDecision(
           "A decision that encodes the video cannot hold a Dolby Vision output");
     }
 
-    if (!copiesVideo && lowerVariantCodecProfile.isPresent()) {
+    if (!copiesVideo && lowerVariantEncode.isPresent()) {
       throw new IllegalArgumentException(
-          "A decision that encodes the video cannot hold a lower variant codec profile");
+          "A decision that encodes the video cannot hold a lower variant encode");
     }
 
     videoBitstreamRewrites = List.copyOf(videoBitstreamRewrites);
@@ -121,20 +121,21 @@ public record TranscodeDecision(
   }
 
   /**
-   * The decision that the encoded lower variants beside this decision's copy run: an SDR encode of
-   * the same video stream in the lower variant codec profile, with this decision's audio and
-   * subtitles. Empty for a decision without lower variants.
+   * The decision that the encoded lower variants beside this decision's copy run: the lower variant
+   * encode of the same video stream, with this decision's audio and subtitles. Empty for a decision
+   * without lower variants.
    */
   public Optional<TranscodeDecision> lowerVariantDecision() {
-    return lowerVariantCodecProfile.map(
-        profile ->
+    return lowerVariantEncode.map(
+        encode ->
             toBuilder()
                 .transcodeMode(TranscodeMode.of(false, audioDecision.mode()))
-                .videoCodecFamily(profile.codecFamilyName())
-                .encodeCodecProfile(Optional.of(profile))
+                .videoCodecFamily(encode.codecProfile().codecFamilyName())
+                .encodeCodecProfile(Optional.of(encode.codecProfile()))
+                .videoEncodeFormat(encode.format())
                 .videoBitstreamRewrites(List.of())
                 .videoDolbyVisionOutput(Optional.empty())
-                .lowerVariantCodecProfile(Optional.empty())
+                .lowerVariantEncode(Optional.empty())
                 .build());
   }
 
@@ -203,6 +204,6 @@ public record TranscodeDecision(
     private OptionalInt audioStreamIndex = OptionalInt.empty();
     private Optional<DynamicRangeChoice> dynamicRangeChoice = Optional.empty();
     private EncodeFormat videoEncodeFormat = EncodeFormat.SDR_8_BIT;
-    private Optional<EncodeCodecProfile> lowerVariantCodecProfile = Optional.empty();
+    private Optional<LowerVariantEncode> lowerVariantEncode = Optional.empty();
   }
 }

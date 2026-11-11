@@ -29,8 +29,10 @@ import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.FieldOrder;
 import com.streamarr.server.domain.streaming.Fraction;
+import com.streamarr.server.domain.streaming.LowerVariantEncode;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.PlaybackState;
@@ -3678,7 +3680,11 @@ class PlaybackSessionServiceTest {
               .orElseGet(StreamSessionFixture::remuxDecisionBuilder);
       return defaultSessionBuilder()
           .transcodeDecision(
-              copy.reasons(copyReasons).lowerVariantCodecProfile(lowerVariantCodecProfile).build())
+              copy.reasons(copyReasons)
+                  .lowerVariantEncode(
+                      lowerVariantCodecProfile.map(
+                          profile -> new LowerVariantEncode(profile, EncodeFormat.SDR_8_BIT)))
+                  .build())
           .variants(List.of());
     }
 

@@ -17,6 +17,7 @@ import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
@@ -25,6 +26,7 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.LowerVariantEncode;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
@@ -828,7 +830,10 @@ class HlsPlaylistServiceTest {
                                   VideoPlaybackFactsFixture.rangeWithoutEnhancement(
                                       CompatibleBase.PQ))
                               .codecString(Optional.of("hvc1.2.4.L150.B0")))
-                      .lowerVariantCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+                      .lowerVariantEncode(
+                          Optional.of(
+                              new LowerVariantEncode(
+                                  EncodeCodecProfile.H264_HIGH, EncodeFormat.SDR_8_BIT)))
                       .build())
               .variants(
                   List.of(
@@ -1131,7 +1136,10 @@ class HlsPlaylistServiceTest {
           StreamSessionFixture.abrSessionBuilder()
               .transcodeDecision(
                   StreamSessionFixture.remuxDecision().toBuilder()
-                      .lowerVariantCodecProfile(Optional.of(EncodeCodecProfile.H264_HIGH))
+                      .lowerVariantEncode(
+                          Optional.of(
+                              new LowerVariantEncode(
+                                  EncodeCodecProfile.H264_HIGH, EncodeFormat.SDR_8_BIT)))
                       .build())
               .build();
       session.pinEncoder("1080p", WorkerVerifiedEncoderFixture.libx264());

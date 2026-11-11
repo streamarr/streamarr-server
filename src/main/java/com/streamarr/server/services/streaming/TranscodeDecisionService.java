@@ -20,6 +20,7 @@ import com.streamarr.server.domain.streaming.EncodedVariantRequest;
 import com.streamarr.server.domain.streaming.HlsAudioEncodes;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.LowerVariantEncode;
 import com.streamarr.server.domain.streaming.MediaFileProbePropertyIssue;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
@@ -213,7 +214,7 @@ public class TranscodeDecisionService {
             .videoSource(source.videoPlaybackFacts())
             .videoBitstreamRewrites(copyPlan.map(CopyPlan::bitstreamRewrites).orElseGet(List::of))
             .videoDolbyVisionOutput(copyPlan.flatMap(CopyPlan::dolbyVisionOutput))
-            .lowerVariantCodecProfile(copyPlan.flatMap(_ -> lowerVariantCodecProfile(request)))
+            .lowerVariantEncode(copyPlan.flatMap(_ -> lowerVariantEncode(request)))
             .reasons(
                 afterDirectPlayRefusals(
                     request,
@@ -273,8 +274,7 @@ public class TranscodeDecisionService {
   // In Auto, encoded lower variants sit beside a copy (ADR 0050). They encode only once the player
   // switches to one, so a busy worker's verified encoder counts. A source without an encoded
   // variant, such as one without a usable frame rate, copies alone.
-  private static Optional<EncodeCodecProfile> lowerVariantCodecProfile(
-      TranscodeDecisionRequest request) {
+  private static Optional<LowerVariantEncode> lowerVariantEncode(TranscodeDecisionRequest request) {
     if (request.viewerLimits().quality() != VideoQuality.AUTO) {
       return Optional.empty();
     }
@@ -284,7 +284,8 @@ public class TranscodeDecisionService {
                 .encodableVideoCodecFamilies(request.verifiedVideoCodecFamilies())
                 .build())
         .map(EncodeChoice::codecProfile)
-        .filter(profile -> encodedVariantRequest(request.source(), profile).isPresent());
+        .filter(profile -> encodedVariantRequest(request.source(), profile).isPresent())
+        .map(profile -> new LowerVariantEncode(profile, EncodeFormat.SDR_8_BIT));
   }
 
   // Every decision about the audio reads the source's first audio stream, the session's.

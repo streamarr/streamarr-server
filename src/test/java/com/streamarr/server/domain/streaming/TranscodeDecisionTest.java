@@ -161,7 +161,7 @@ class TranscodeDecisionTest {
                         EncodeFormat.SDR_8_BIT,
                         Optional.empty())),
         Arguments.of(
-            "lowerVariantCodecProfile",
+            "lowerVariantEncode",
             (ThrowingCallable)
                 () ->
                     new TranscodeDecision(

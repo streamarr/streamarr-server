@@ -26,6 +26,7 @@ import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
@@ -35,6 +36,7 @@ import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
+import com.streamarr.server.domain.streaming.LowerVariantEncode;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
@@ -207,7 +209,8 @@ class TranscodeDecisionServiceTest {
             .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
-    assertThat(decision.lowerVariantCodecProfile()).contains(EncodeCodecProfile.H264_HIGH);
+    assertThat(decision.lowerVariantEncode())
+        .contains(new LowerVariantEncode(EncodeCodecProfile.H264_HIGH, EncodeFormat.SDR_8_BIT));
     assertThat(decision.lowerVariantDecision().orElseThrow())
         .satisfies(
             lower -> {
@@ -233,8 +236,10 @@ class TranscodeDecisionServiceTest {
     var withoutAv1 =
         service.decide(request.excludedEncodeCodecFamilies(Set.of("av1")).build()).orElseThrow();
 
-    assertThat(preferred.lowerVariantCodecProfile()).contains(EncodeCodecProfile.AV1_MAIN);
-    assertThat(withoutAv1.lowerVariantCodecProfile()).contains(EncodeCodecProfile.H264_HIGH);
+    assertThat(preferred.lowerVariantEncode().map(LowerVariantEncode::codecProfile))
+        .contains(EncodeCodecProfile.AV1_MAIN);
+    assertThat(withoutAv1.lowerVariantEncode().map(LowerVariantEncode::codecProfile))
+        .contains(EncodeCodecProfile.H264_HIGH);
   }
 
   @ParameterizedTest
@@ -257,7 +262,7 @@ class TranscodeDecisionServiceTest {
             .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
-    assertThat(decision.lowerVariantCodecProfile()).isEmpty();
+    assertThat(decision.lowerVariantEncode()).isEmpty();
   }
 
   @Test
@@ -286,7 +291,7 @@ class TranscodeDecisionServiceTest {
             .orElseThrow();
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
-    assertThat(decision.lowerVariantCodecProfile()).isEmpty();
+    assertThat(decision.lowerVariantEncode()).isEmpty();
   }
 
   @Test
