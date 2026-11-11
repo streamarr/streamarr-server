@@ -32,9 +32,10 @@ type Query {
     """
     householdShares(householdId: ID!, statuses: [ProfileShareStatus!], visitorsOnly: Boolean, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
     """
-    A Profile's shares into every Household, newest first, for its managers, the Account whose own
-    Profile it is, and ServerAdmins. Everyone else gets an empty list, including a HouseholdAdmin
-    where the Profile is available: householdShares gives them the share into their own Household.
+    A Profile's shares into every Household, newest first, for its managers and ServerAdmins. The
+    Account of a self-managed Personal Profile is one of its managers; the Account of a supervised
+    Personal Profile is not. Everyone else gets an empty list, including a HouseholdAdmin where the
+    Profile is available: householdShares gives them the share into their own Household.
     statuses keeps only shares in those statuses, as householdShares does: pass [PENDING, ACTIVE]
     for where the Profile is offered or available now.
     """

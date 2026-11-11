@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,9 +30,10 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Each authority is decided once per batch. When a share can be shown from either side, the side
  * with fewer distinct values in the batch is asked first, so a page of the shares into one
- * Household, or of one Profile, needs only a fixed number of decisions for its Profiles and
- * Households when its reader may list that page. The offerer's name is decided on the target side
- * alone, once for each Household in the batch.
+ * Household, or of one Profile, needs only a fixed number of decisions for its Profiles when its
+ * reader may list that page. The offerer's name is decided on the target side alone, once for each
+ * Household in the batch. The Household's name is for the Profile's side and ServerAdmins, so a
+ * HouseholdAdmin who asks for it on their own Household's page is decided once for each Profile.
  */
 @Service
 @RequiredArgsConstructor
@@ -55,7 +57,10 @@ public class ProfileSharePartiesService {
     var shown =
         shares.stream()
             .filter(share -> existing.containsKey(share.profileId()))
-            .filter(share -> authority.eitherSide(share, Intent.ViewProfileAdministration::new))
+            .filter(
+                share ->
+                    authority.eitherSide(
+                        share, authority::administersTarget, Intent.ViewProfileAdministration::new))
             .toList();
     var personal = personalProfileIds(shown);
 
@@ -101,8 +106,9 @@ public class ProfileSharePartiesService {
   }
 
   /**
-   * The Household each share is into, for that Household's HouseholdAdmins and for the offering
-   * side: the Profile's managers, the Account whose Personal Profile it is, and ServerAdmins.
+   * The Household each share is into, for the offering side: the Profile's managers and
+   * ServerAdmins. The Account of a supervised Personal Profile is not one of its managers, and
+   * administering the Household is not enough.
    */
   @Transactional(readOnly = true)
   public Map<ShareReference, Household> households(
@@ -110,7 +116,12 @@ public class ProfileSharePartiesService {
     var authority = new BatchAuthority(reader, shares, profilesById(shares).keySet());
     var shown =
         shares.stream()
-            .filter(share -> authority.eitherSide(share, Intent.ViewProfileShareHouseholds::new))
+            .filter(
+                share ->
+                    authority.eitherSide(
+                        share,
+                        authority::viewsTargetShareHistory,
+                        Intent.ViewProfileShareHouseholds::new))
             .toList();
     var loaded =
         householdRepository.findAllById(distinct(shown, ShareReference::householdId)).stream()
@@ -168,9 +179,16 @@ public class ProfileSharePartiesService {
       return allows(new Intent.ViewHouseholdAdministration(share.householdId()));
     }
 
-    /** Whether the reader administers the target Household, or the Profile side allows it. */
-    boolean eitherSide(ShareReference share, Function<UUID, Intent.UnitIntent> profileSide) {
-      BooleanSupplier target = () -> administersTarget(share);
+    boolean viewsTargetShareHistory(ShareReference share) {
+      return allows(new Intent.ViewHouseholdShareHistory(share.householdId()));
+    }
+
+    /** Whether the target Household's side allows it, or the Profile's side does. */
+    boolean eitherSide(
+        ShareReference share,
+        Predicate<ShareReference> householdSide,
+        Function<UUID, Intent.UnitIntent> profileSide) {
+      BooleanSupplier target = () -> householdSide.test(share);
       BooleanSupplier profile =
           () ->
               existingProfiles.contains(share.profileId())

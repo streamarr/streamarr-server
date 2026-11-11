@@ -7,20 +7,25 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
+import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.persistence.EntityManagerFactory;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +41,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/** Who sees the Profile, the offerer and the Household that a share names. */
+/**
+ * Who sees the Profile, the offerer and the Household that a share names, and who is handed a
+ * change of the share.
+ */
 @Tag("IntegrationTest")
 @DisplayName("Profile Share Parties Integration Tests")
 class ProfileSharePartiesIT extends AbstractIntegrationTest {
@@ -56,6 +64,7 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
+  @Autowired private ProfileSharingService profileSharingService;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private EntityManagerFactory entityManagerFactory;
 
@@ -75,8 +84,11 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should name every party when the target HouseholdAdmin lists the offers")
-  void shouldNameEveryPartyWhenTargetHouseholdAdminListsOffers() throws Exception {
+  @DisplayName(
+      "Should name the Profile and the offerer but not the Household when the target"
+          + " HouseholdAdmin lists the offers")
+  void shouldNameProfileAndOffererButNotHouseholdWhenTargetHouseholdAdminListsOffers()
+      throws Exception {
     var orphan = managedProfile(ProfileFixture.defaultProfileBuilder().picture("lantern"));
     var shareId = offer(owner, orphan, host);
 
@@ -91,8 +103,47 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     assertThat(share.path("profile").path("restricted").asBoolean()).isFalse();
     assertThat(share.path("offeredByDisplayName").asString())
         .isEqualTo(owner.account().getDisplayName());
+    // The Household's name on a share is for the Profile's managers and ServerAdmins.
+    assertThat(share.path("household").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the Household when a self-managed Account lists the shares of its own Profile")
+  void shouldNameHouseholdWhenSelfManagedAccountListsSharesOfItsOwnProfile() throws Exception {
+    var shareId = offer(owner, owner.profile(), host);
+
+    var share = shareWithId(profileShares(owner, owner.profile(), "[PENDING]"), shareId);
+
     assertThat(share.path("household").path("name").asString())
         .isEqualTo(host.household().getName());
+    assertThat(
+            profileSharingService.shareChange(
+                authTestSupport.identityOf(owner), changeOf(UUID.fromString(shareId))))
+        .isPresent();
+  }
+
+  @Test
+  @DisplayName(
+      "Should show a supervised person no share of their own Profile when they list its shares or"
+          + " follow its changes")
+  void shouldShowSupervisedPersonNoShareOfTheirOwnProfileWhenTheyListItsSharesOrFollowItsChanges()
+      throws Exception {
+    var supervised = supervisedMemberOf(owner);
+    var shareId = offer(owner, supervised.profile(), host);
+    var offered = changeOf(UUID.fromString(shareId));
+
+    var forSupervised = profileShares(supervised, supervised.profile(), "[]");
+    var forManager = shareWithId(profileShares(owner, supervised.profile(), "[]"), shareId);
+
+    // An Account whose Personal Profile is supervised is not one of its ProfileManagers.
+    assertThat(edges(forSupervised)).isEmpty();
+    assertThat(profileSharingService.shareChange(authTestSupport.identityOf(supervised), offered))
+        .isEmpty();
+    assertThat(forManager.path("household").path("name").asString())
+        .isEqualTo(host.household().getName());
+    assertThat(profileSharingService.shareChange(authTestSupport.identityOf(owner), offered))
+        .isPresent();
   }
 
   @Test
@@ -216,18 +267,20 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should show every party when the hosting HouseholdAdmin lists a share into its Household")
-  void shouldShowEveryPartyWhenHostingHouseholdAdminListsShareIntoItsHousehold() throws Exception {
+      "Should name the Profile and the offerer but not the Household when the hosting"
+          + " HouseholdAdmin lists a share into its Household")
+  void shouldNameProfileAndOffererButNotHouseholdWhenHostingHouseholdAdminListsShareIntoIt()
+      throws Exception {
     var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
     var shareId = offer(owner, orphan, host);
     accept(host, shareId);
 
     var share = shareWithId(householdShares(host, host, "[ACTIVE]"), shareId);
 
-    assertThat(share.path("household").path("name").asString())
-        .isEqualTo(host.household().getName());
+    assertThat(share.path("profile").path("name").asString()).isEqualTo(orphan.getName());
     assertThat(share.path("offeredByDisplayName").asString())
         .isEqualTo(owner.account().getDisplayName());
+    assertThat(share.path("household").isNull()).isTrue();
   }
 
   @Test
@@ -293,22 +346,53 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
                 .value(owner.household().getName()));
   }
 
+  // The Household's name is left out: for a reader who is not a ServerAdmin it is decided once for
+  // each Profile on the page, since only the Profile's managers see it.
   @Test
   @DisplayName(
       "Should read a Household's offers in the same number of statements when it holds more")
   void shouldReadHouseholdsOffersInTheSameNumberOfStatementsWhenItHoldsMore() throws Exception {
+    var query =
+        """
+        query { householdShares(householdId: "%s", statuses: [PENDING]) {
+          edges { node { id profile { name personalProfile } visitor offeredByDisplayName } } } }
+        """
+            .formatted(host.household().getId());
     offer(owner, managedProfile(ProfileFixture.defaultProfileBuilder()), host);
     offer(owner, owner.profile(), host);
     // The first request fills caches that later requests skip.
-    householdShares(host, host, "[PENDING]");
-    var forTwoOffers = statementsWhile(() -> householdShares(host, host, "[PENDING]"));
+    query(host, query, "householdShares");
+    var forTwoOffers = statementsWhile(() -> query(host, query, "householdShares"));
 
     var other = identity();
     offer(other, other.profile(), host);
     offer(owner, managedProfile(ProfileFixture.kidProfileBuilder()), host);
 
-    assertThat(edges(householdShares(host, host, "[PENDING]"))).hasSize(4);
-    assertThat(statementsWhile(() -> householdShares(host, host, "[PENDING]")))
+    assertThat(edges(query(host, query, "householdShares"))).hasSize(4);
+    assertThat(statementsWhile(() -> query(host, query, "householdShares")))
+        .isEqualTo(forTwoOffers);
+  }
+
+  @Test
+  @DisplayName(
+      "Should read every party of a Household's shares for a ServerAdmin in the same number of"
+          + " statements when it holds more")
+  void shouldReadEveryPartyOfHouseholdsSharesForServerAdminInSameNumberOfStatementsWhenItHoldsMore()
+      throws Exception {
+    var serverAdmin = adminIdentity();
+    offer(owner, managedProfile(ProfileFixture.defaultProfileBuilder()), host);
+    offer(owner, owner.profile(), host);
+    householdShares(serverAdmin, host, "[]");
+    var forTwoOffers = statementsWhile(() -> householdShares(serverAdmin, host, "[]"));
+
+    var other = identity();
+    offer(other, other.profile(), host);
+    offer(owner, managedProfile(ProfileFixture.kidProfileBuilder()), host);
+
+    assertThat(edges(householdShares(serverAdmin, host, "[]")))
+        .hasSize(5)
+        .allSatisfy(share -> assertThat(share.path("household").path("name").isString()).isTrue());
+    assertThat(statementsWhile(() -> householdShares(serverAdmin, host, "[]")))
         .isEqualTo(forTwoOffers);
   }
 
@@ -483,6 +567,30 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     var identity = authTestSupport.createIdentity();
     identities.add(identity);
     return identity;
+  }
+
+  /** A member of the Household whose Personal Profile is a Kid, supervised by its admin. */
+  private AuthTestSupport.TestIdentity supervisedMemberOf(AuthTestSupport.TestIdentity admin) {
+    var member = authTestSupport.createHouseholdMemberIdentity(admin);
+    identities.add(member);
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(admin.account().getId())
+                  .profileId(member.profile().getId())
+                  .build());
+          var profile = profileRepository.findById(member.profile().getId()).orElseThrow();
+          profile.setKind(ProfileKind.KID);
+          profileRepository.saveAndFlush(profile);
+        });
+    return member;
+  }
+
+  // The change the share's last write announced, as a subscriber would be handed it.
+  private ProfileShareChangedEvent changeOf(UUID shareId) {
+    return new ProfileShareChangedEvent(
+        ChangedShare.of(shareRepository.findById(shareId).orElseThrow()));
   }
 
   private AuthTestSupport.TestIdentity adminIdentity() {

@@ -47,8 +47,9 @@ type ProfileShare {
     offeredByDisplayName: String
     """
     The Household the Profile is offered or shared to, at every status. Shown to the Profile's
-    managers, to the Account whose own Profile it is, to that Household's HouseholdAdmins, and to
-    ServerAdmins. Null for everyone else.
+    managers and to ServerAdmins. Null for everyone else, including that Household's
+    HouseholdAdmins. The Account of a self-managed Personal Profile is one of its managers; the
+    Account of a supervised Personal Profile is not.
     """
     household: HouseholdSummary
 }
@@ -78,8 +79,8 @@ extend type Subscription {
     Any signed-in session may subscribe, with or without a selected Profile. A device-bound session
     gets FORBIDDEN, and so does a disabled Account. A change reaches a subscriber only when the
     subscriber may read the share through householdShares or profileShares: the target
-    Household's HouseholdAdmins, the Profile's managers, the Account whose own Profile it is, and
-    ServerAdmins.
+    Household's HouseholdAdmins, the Profile's managers, and ServerAdmins. The Account of a
+    supervised Personal Profile is not one of its managers and receives none of its changes.
     The server decides this for each change as it delivers it, so a subscriber who loses that
     authority stops receiving the share's changes, and a share never reaches someone the queries
     would not show it to. The share's fields are hidden from the same readers as in the queries.

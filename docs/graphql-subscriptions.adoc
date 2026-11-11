@@ -289,8 +289,10 @@ A device-bound session gets `FORBIDDEN`, and so does a disabled Account.
 The server decides each change as it delivers it, with the same reads as the share queries:
 
 * The target Household's HouseholdAdmins and ServerAdmins, who read the share through `householdShares`.
-* The Profile's managers, the Account whose own Profile it is, and ServerAdmins, who read it through `profileShares`.
+* The Profile's managers and ServerAdmins, who read it through `profileShares`.
 
+The Account of a self-managed Personal Profile is one of its managers.
+The Account of a supervised Personal Profile, such as a Kid's, is not: it receives no change of that Profile's shares.
 A HouseholdAdmin who only hosts a Profile receives that Profile's share into their own Household and no other.
 The share's fields are hidden from the same readers as in the queries.
 A subscriber who stops managing a Profile stops receiving its changes at once.

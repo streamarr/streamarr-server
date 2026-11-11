@@ -110,6 +110,11 @@ enum Action {
       Authorizes.READ,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.PROFILE_MANAGEMENT),
+  VIEW_HOUSEHOLD_SHARE_HISTORY(
+      "viewHouseholdShareHistory",
+      ResourceKind.HOUSEHOLD,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   VIEW_PROFILE_SHARE_CHANGES(
       "viewProfileShareChanges",
       ResourceKind.SERVER,
