@@ -10,6 +10,8 @@ import static com.streamarr.server.fakes.TestImages.createPngImageWithOneTranslu
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createSixteenBitGrayscalePngImage;
 import static com.streamarr.server.fakes.TestImages.createSixteenBitOpaquePngImage;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitOpaquePngImageWithAlphaChannel;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitPngImageWithOneAlphaSampleBelowOpaque;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTestImageWithMismatchedColorProfile;
@@ -195,6 +197,16 @@ class ImageServiceTest {
   }
 
   @Test
+  @DisplayName("Should store resized variants as PNG when one 16-bit alpha sample is below opaque")
+  void shouldStoreResizedVariantsAsPngWhenOneSixteenBitAlphaSampleIsBelowOpaque() {
+    var result = processPoster(createSixteenBitPngImageWithOneAlphaSampleBelowOpaque());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(imageData -> assertThat(formatNameOf(imageData)).isEqualTo("png"));
+  }
+
+  @Test
   @DisplayName("Should omit BlurHash when image has transparent pixels")
   void shouldOmitBlurHashWhenImageHasTransparentPixels() {
     var result = processLogo(createPngImageWithTransparentBorder());
@@ -229,7 +241,10 @@ class ImageServiceTest {
     return Stream.of(
         named(
             "alpha channel in which every pixel is opaque", createOpaquePngImageWithAlphaChannel()),
-        named("16-bit color samples without an alpha channel", createSixteenBitOpaquePngImage()));
+        named("16-bit color samples without an alpha channel", createSixteenBitOpaquePngImage()),
+        named(
+            "16-bit color samples with a fully opaque alpha channel",
+            createSixteenBitOpaquePngImageWithAlphaChannel()));
   }
 
   @Test

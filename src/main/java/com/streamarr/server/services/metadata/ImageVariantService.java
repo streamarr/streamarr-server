@@ -8,7 +8,8 @@ import com.streamarr.server.services.metadata.color.AmbientColorExtractor;
 import io.trbl.blurhash.BlurHash;
 import java.awt.AlphaComposite;
 import java.awt.image.BufferedImage;
-import java.awt.image.DataBufferInt;
+import java.awt.image.IndexColorModel;
+import java.awt.image.Raster;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.IntPredicate;
 import javax.imageio.ImageIO;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.stereotype.Service;
@@ -102,9 +104,10 @@ public class ImageVariantService {
     }
 
     var sourceImage = decodeImage(originalImageData);
-    var transparentImage = argbCopyWhenTransparent(sourceImage);
-    var transparent = transparentImage.isPresent();
-    sourceImage = transparentImage.orElse(sourceImage);
+    var transparent = hasTransparentPixel(sourceImage);
+    if (transparent) {
+      sourceImage = withAlphaThatSurvivesResizing(sourceImage);
+    }
 
     var widths = WIDTH_TABLE.get(imageType);
     if (widths == null) {
@@ -180,22 +183,42 @@ public class ImageVariantService {
     return BlurHash.encode(image, BLUR_HASH_COMPONENT_X, BLUR_HASH_COMPONENT_Y);
   }
 
-  // A copy that stores alpha for every pixel, when at least one pixel is not fully opaque.
-  // Thumbnailator resizes into a new image of its source's type, and a new palette image has an
-  // opaque palette, so only this copy carries a palette image's transparency through a resize.
-  private static Optional<BufferedImage> argbCopyWhenTransparent(BufferedImage image) {
+  // Reads alpha at the precision the image stores it, one row at a time. A palette holds alpha
+  // in its entries. Every other color model holds it in the last band of each pixel.
+  private static boolean hasTransparentPixel(BufferedImage image) {
     if (!image.getColorModel().hasAlpha()) {
-      return Optional.empty();
+      return false;
     }
 
-    var argbCopy = copy(image, BufferedImage.TYPE_INT_ARGB);
-    // A TYPE_INT_ARGB image always stores its pixels in a DataBufferInt.
-    var pixels = ((DataBufferInt) argbCopy.getRaster().getDataBuffer()).getData();
-    if (Arrays.stream(pixels).allMatch(pixel -> pixel >>> 24 == 0xFF)) {
-      return Optional.empty();
+    if (image.getColorModel() instanceof IndexColorModel palette) {
+      return hasSampleMatching(image.getRaster(), entry -> palette.getAlpha(entry) != 0xFF);
     }
 
-    return Optional.of(argbCopy);
+    var alphaBand = image.getAlphaRaster();
+    var opaque = (1 << alphaBand.getSampleModel().getSampleSize(0)) - 1;
+    return hasSampleMatching(alphaBand, alpha -> alpha != opaque);
+  }
+
+  private static boolean hasSampleMatching(Raster firstBand, IntPredicate condition) {
+    var row = new int[firstBand.getWidth()];
+    for (var y = firstBand.getMinY(); y < firstBand.getMinY() + firstBand.getHeight(); y++) {
+      firstBand.getSamples(firstBand.getMinX(), y, row.length, 1, 0, row);
+      if (Arrays.stream(row).anyMatch(condition)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Thumbnailator resizes into a new image of its source's type, and a new palette image has an
+  // opaque palette. A transparent palette image is therefore resized from an ARGB copy.
+  private static BufferedImage withAlphaThatSurvivesResizing(BufferedImage transparentImage) {
+    if (transparentImage.getColorModel() instanceof IndexColorModel) {
+      return copy(transparentImage, BufferedImage.TYPE_INT_ARGB);
+    }
+
+    return transparentImage;
   }
 
   private static BufferedImage copy(BufferedImage image, int imageType) {
