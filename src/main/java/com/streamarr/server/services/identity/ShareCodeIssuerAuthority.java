@@ -19,10 +19,8 @@ import org.springframework.stereotype.Component;
  * the issuing decision itself, asked again of the Account as it now stands, not the role the code
  * was issued under.
  *
- * <p>Provisional (issue #870, decision 10): the rule lives only here, and every change that can
- * take the authority away calls it inside the changing transaction, after the change, or before a
- * deletion once it holds the issuer's row, so reversing the rule means removing this class and its
- * calls.
+ * <p>Every change that can take the authority away calls it inside the changing transaction: after
+ * the change, or before a deletion once it holds the issuer's row.
  */
 @Component
 @RequiredArgsConstructor
