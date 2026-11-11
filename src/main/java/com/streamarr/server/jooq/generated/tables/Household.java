@@ -15,6 +15,7 @@ import com.streamarr.server.jooq.generated.tables.EsnBlock.EsnBlockPath;
 import com.streamarr.server.jooq.generated.tables.HouseholdGuard.HouseholdGuardPath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
+import com.streamarr.server.jooq.generated.tables.ShareCode.ShareCodePath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
 import com.streamarr.server.jooq.generated.tables.records.HouseholdRecord;
 
@@ -288,6 +289,19 @@ public class Household extends TableImpl<HouseholdRecord> {
             _profileHouseholdShare = new ProfileHouseholdSharePath(this, null, Keys.PROFILE_HOUSEHOLD_SHARE__FK_PROFILE_HOUSEHOLD_SHARE_HOUSEHOLD.getInverseKey());
 
         return _profileHouseholdShare;
+    }
+
+    private transient ShareCodePath _shareCode;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.share_code</code>
+     * table
+     */
+    public ShareCodePath shareCode() {
+        if (_shareCode == null)
+            _shareCode = new ShareCodePath(this, null, Keys.SHARE_CODE__FK_SHARE_CODE_HOUSEHOLD.getInverseKey());
+
+        return _shareCode;
     }
 
     private transient UserAccountPath _userAccount;

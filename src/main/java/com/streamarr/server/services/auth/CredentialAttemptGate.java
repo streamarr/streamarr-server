@@ -129,7 +129,8 @@ public class CredentialAttemptGate {
           PROFILE_PIN,
           ACCOUNT_INVITATION_CODE,
           PASSWORD_RESET_CODE,
-          PROFILE_MANAGER_INVITATION_CODE ->
+          PROFILE_MANAGER_INVITATION_CODE,
+          SHARE_CODE ->
           new TooManyCredentialAttemptsException(retryAfter);
     };
   }

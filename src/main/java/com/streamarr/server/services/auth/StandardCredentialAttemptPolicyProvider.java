@@ -20,8 +20,9 @@ public class StandardCredentialAttemptPolicyProvider implements CredentialAttemp
       STANDARD_POLICY.toBuilder().resetFailuresOnSuccess(false).build();
 
   /**
-   * Pairing codes are publicly issuable, so successful checks must not reset the approver's failed
-   * attempts. Other credential kinds reset failures on success.
+   * Pairing codes are publicly issuable, and anyone who holds one live share code could look it up
+   * between guesses, so a success keeps the earlier failures of the Account that presents either
+   * (ADR 0030). Other credential kinds reset failures on success.
    */
   @Override
   public CredentialAttemptPolicy policyFor(CredentialKind kind) {
@@ -33,7 +34,7 @@ public class StandardCredentialAttemptPolicyProvider implements CredentialAttemp
           PASSWORD_RESET_CODE,
           PROFILE_MANAGER_INVITATION_CODE ->
           STANDARD_POLICY;
-      case DEVICE_PAIRING_CODE -> SUCCESS_KEEPS_FAILURES_POLICY;
+      case DEVICE_PAIRING_CODE, SHARE_CODE -> SUCCESS_KEEPS_FAILURES_POLICY;
     };
   }
 }

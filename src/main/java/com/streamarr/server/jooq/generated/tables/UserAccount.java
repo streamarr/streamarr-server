@@ -19,6 +19,7 @@ import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileH
 import com.streamarr.server.jooq.generated.tables.ProfileManager.ProfileManagerPath;
 import com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.ProfileManagerInvitationPath;
 import com.streamarr.server.jooq.generated.tables.ServerBootstrap.ServerBootstrapPath;
+import com.streamarr.server.jooq.generated.tables.ShareCode.ShareCodePath;
 import com.streamarr.server.jooq.generated.tables.records.UserAccountRecord;
 
 import java.time.OffsetDateTime;
@@ -424,6 +425,19 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
             _serverBootstrap = new ServerBootstrapPath(this, null, Keys.SERVER_BOOTSTRAP__FK_SERVER_BOOTSTRAP_ADMIN_ACCOUNT.getInverseKey());
 
         return _serverBootstrap;
+    }
+
+    private transient ShareCodePath _shareCode;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.share_code</code>
+     * table
+     */
+    public ShareCodePath shareCode() {
+        if (_shareCode == null)
+            _shareCode = new ShareCodePath(this, null, Keys.SHARE_CODE__FK_SHARE_CODE_ISSUER.getInverseKey());
+
+        return _shareCode;
     }
 
     @Override

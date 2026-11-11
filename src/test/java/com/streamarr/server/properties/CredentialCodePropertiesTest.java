@@ -23,7 +23,8 @@ class CredentialCodePropertiesTest {
 
     assertThat(VALIDATOR.validate(properties))
         .extracting(violation -> violation.getPropertyPath().toString())
-        .containsExactlyInAnyOrder("invitationTtl", "passwordResetTtl", "replacementLockTimeout");
+        .containsExactlyInAnyOrder(
+            "invitationTtl", "passwordResetTtl", "shareCodeTtl", "replacementLockTimeout");
   }
 
   @Test
@@ -48,12 +49,23 @@ class CredentialCodePropertiesTest {
   }
 
   @Test
+  @DisplayName("Should reject a share code lifetime shorter than five minutes")
+  void shouldRejectShareCodeLifetimeWhenShorterThanFiveMinutes() {
+    var properties = validProperties().shareCodeTtl(Duration.ofMinutes(5).minusNanos(1)).build();
+
+    assertThat(VALIDATOR.validate(properties))
+        .extracting(violation -> violation.getPropertyPath().toString())
+        .containsExactly("shareCodeTtl");
+  }
+
+  @Test
   @DisplayName("Should accept credential lifetimes when they are five minutes")
   void shouldAcceptCredentialLifetimesWhenTheyAreFiveMinutes() {
     var properties =
         validProperties()
             .invitationTtl(Duration.ofMinutes(5))
             .passwordResetTtl(Duration.ofMinutes(5))
+            .shareCodeTtl(Duration.ofMinutes(5))
             .build();
 
     assertThat(VALIDATOR.validate(properties)).isEmpty();
@@ -81,6 +93,7 @@ class CredentialCodePropertiesTest {
     return CredentialCodeProperties.builder()
         .invitationTtl(Duration.ofDays(7))
         .passwordResetTtl(Duration.ofHours(1))
+        .shareCodeTtl(Duration.ofDays(7))
         .replacementLockTimeout(Duration.ofSeconds(5));
   }
 }

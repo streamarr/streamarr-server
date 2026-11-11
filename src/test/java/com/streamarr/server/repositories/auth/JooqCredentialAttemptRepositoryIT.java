@@ -306,7 +306,7 @@ class JooqCredentialAttemptRepositoryIT extends AbstractIntegrationTest {
     var builder = CredentialAttemptMetadata.builder().kind(kind).ipAddress(IP_ADDRESS);
     var indexColumn =
         switch (kind) {
-          case ACCOUNT_LOGIN, ACCOUNT_PASSWORD_VERIFICATION, DEVICE_PAIRING_CODE -> {
+          case ACCOUNT_LOGIN, ACCOUNT_PASSWORD_VERIFICATION, DEVICE_PAIRING_CODE, SHARE_CODE -> {
             builder.accountId(UUID.randomUUID());
             yield "account_id";
           }
