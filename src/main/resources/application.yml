@@ -237,6 +237,10 @@ auth:
   # profileShareChanged. Reads treat such an offer as EXPIRED at once either way.
   sharing:
     expiry-sweep-interval: ${AUTH_SHARING_EXPIRY_SWEEP_INTERVAL:1m}
+  # How often invitations to manage a Profile whose time ran out are stored as EXPIRED, so the
+  # change is announced. Reads treat such an invitation as EXPIRED at once either way.
+  managers:
+    expiry-sweep-interval: ${AUTH_MANAGERS_EXPIRY_SWEEP_INTERVAL:1m}
 
 notifications:
   # How often the server deletes Notification history, the news that its recipient read and the

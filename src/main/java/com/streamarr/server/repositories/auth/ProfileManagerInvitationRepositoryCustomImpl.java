@@ -6,6 +6,7 @@ import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitation
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.lower;
+import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.val;
 
 import com.streamarr.server.domain.auth.ChangedManagerInvitation;
@@ -198,6 +199,11 @@ public class ProfileManagerInvitationRepositoryCustomImpl
                 .and(pending())
                 .returning(CHANGED_INVITATION));
     return Stream.concat(expired.stream(), invalidated.stream()).toList();
+  }
+
+  @Override
+  public List<ChangedManagerInvitation> materializeExpiredPending(Instant now) {
+    return materializeExpiredPending(noCondition(), now);
   }
 
   private List<ChangedManagerInvitation> materializeExpiredPending(Condition scope, Instant now) {

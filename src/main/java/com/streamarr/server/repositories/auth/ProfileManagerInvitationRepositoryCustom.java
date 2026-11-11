@@ -69,4 +69,7 @@ public interface ProfileManagerInvitationRepositoryCustom {
 
   /** The ids of every invitation to manage the Profile, whatever its status, read as scalars. */
   List<UUID> findIdsByProfileId(UUID profileId);
+
+  /** Stores EXPIRED on every PENDING invitation whose time ran out, and answers each of them. */
+  List<ChangedManagerInvitation> materializeExpiredPending(Instant now);
 }
