@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.auth.HouseholdProfilesFilter;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
@@ -18,7 +19,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.jooq.exception.NoDataFoundException;
 
 /** Pair with a {@link FakeProfileHouseholdShareRepository} so availability follows the shares. */
@@ -215,5 +218,18 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   @Override
   public List<Row<Profile>> rowsManagedBy(UUID accountId, Seek seek) {
     throw new UnsupportedOperationException("Managed Profiles are read only from PostgreSQL");
+  }
+
+  @Override
+  public List<Row<Profile>> rowsInHousehold(HouseholdProfilesFilter filter, Seek seek) {
+    throw new UnsupportedOperationException("Managed Profiles are read only from PostgreSQL");
+  }
+
+  @Override
+  public Set<UUID> availableAmong(UUID householdId, Collection<UUID> profileIds) {
+    return findAvailableInHousehold(householdId).stream()
+        .map(Profile::getId)
+        .filter(profileIds::contains)
+        .collect(Collectors.toSet());
   }
 }

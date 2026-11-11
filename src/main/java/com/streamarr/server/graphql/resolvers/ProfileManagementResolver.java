@@ -2,9 +2,13 @@ package com.streamarr.server.graphql.resolvers;
 
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
+import com.netflix.graphql.dgs.DgsQuery;
+import com.netflix.graphql.dgs.InputArgument;
+import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
+import com.streamarr.server.graphql.dto.HouseholdProfile;
 import com.streamarr.server.graphql.dto.ProfileAdministration;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileManagementQueryService;
@@ -35,6 +39,17 @@ public class ProfileManagementResolver {
     var page = profileManagementQueryService.managedProfiles(identity, pageRequest(list, dfe));
     return relayConnectionAdapter.toConnection(
         page, list, details -> ProfileAdministration.from(details.profile(), details.linked()));
+  }
+
+  @DgsQuery
+  public Connection<HouseholdProfile> householdProfiles(
+      @InputArgument String householdId, DataFetchingEnvironment dfe) {
+    var household = Ids.parseUuid(householdId);
+    var list = new ListIdentity("household-profiles", household);
+    var page =
+        profileManagementQueryService.householdProfiles(
+            authorizationService.currentIdentity(), household, pageRequest(list, dfe));
+    return relayConnectionAdapter.toConnection(page, list, HouseholdProfile::from);
   }
 
   private PageRequest pageRequest(ListIdentity list, DataFetchingEnvironment dfe) {

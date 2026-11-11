@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.auth;
 
+import com.streamarr.server.domain.auth.HouseholdProfilesFilter;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
@@ -9,6 +10,7 @@ import com.streamarr.server.domain.pagination.Seek;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface ProfileRepositoryCustom {
@@ -28,6 +30,15 @@ public interface ProfileRepositoryCustom {
    * it holds a direct grant for.
    */
   List<Row<Profile>> rowsManagedBy(UUID accountId, Seek seek);
+
+  /**
+   * The Profiles the filter keeps for Household settings beyond the seek, ordered by lowercased
+   * name, then ID.
+   */
+  List<Row<Profile>> rowsInHousehold(HouseholdProfilesFilter filter, Seek seek);
+
+  /** Which of the Profiles are available in the Household. */
+  Set<UUID> availableAmong(UUID householdId, Collection<UUID> profileIds);
 
   /** The Kid Profiles actively shared into the Household, which decide its PIN safety rule. */
   List<Profile> findAvailableKidsInHousehold(UUID householdId);
