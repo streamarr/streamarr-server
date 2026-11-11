@@ -309,15 +309,27 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
     }
 
     var reader = DSL.val(accountId);
+    var readersHousehold =
+        DSL.exists(
+            DSL.selectOne()
+                .from(USER_ACCOUNT)
+                .where(USER_ACCOUNT.ID.eq(reader))
+                .and(USER_ACCOUNT.HOUSEHOLD_ID.eq(PROFILE.HOUSEHOLD_ID)));
     return dsl.select(
             PROFILE.ID,
+            PROFILE.HOUSEHOLD_ID,
             DSL.field(ProfileAuthorityConditions.managedBy(reader)),
-            DSL.field(ProfileAuthorityConditions.supervisedBy(reader)))
+            DSL.field(ProfileAuthorityConditions.supervisedBy(reader)),
+            DSL.field(readersHousehold))
         .from(PROFILE)
         .where(PROFILE.ID.in(profileIds))
         .fetch(
             row ->
-                new ProfileReaderRelation(row.value1(), authorityOf(row.value2(), row.value3())));
+                new ProfileReaderRelation(
+                    row.value1(),
+                    row.value2(),
+                    authorityOf(row.value3(), row.value4()),
+                    row.value5()));
   }
 
   private static Optional<ProfileAuthority> authorityOf(boolean manages, boolean supervises) {

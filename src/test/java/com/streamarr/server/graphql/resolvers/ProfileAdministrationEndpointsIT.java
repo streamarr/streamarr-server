@@ -41,6 +41,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
@@ -808,7 +809,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(admin),
             """
-            query { profileAdministration(profileId: "%s") { name kind householdId linked } }
+            query { profileAdministration(profileId: "%s") { name kind household { id } linked } }
             """
                 .formatted(kid.getId()))
         .andExpect(status().isOk())
@@ -848,6 +849,43 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     } finally {
       authTestSupport.deleteIdentity(host);
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the Household out when a hosting HouseholdAdmin reads a visiting Profile")
+  void shouldLeaveTheHouseholdOutWhenAHostingHouseholdAdminReadsAVisitingProfile()
+      throws Exception {
+    var kid = kidProfile();
+    var host = authTestSupport.createIdentity();
+    try {
+      shareInto(kid, host);
+
+      assertThat(administration(host, kid).path("household").isNull()).isTrue();
+      assertThat(administration(admin, kid).path("household").path("name").asString())
+          .isEqualTo(admin.household().getName());
+      assertThat(administration(serverAdmin, kid).path("household").path("id").asString())
+          .isEqualTo(admin.household().getId().toString());
+    } finally {
+      authTestSupport.deleteIdentity(host);
+    }
+  }
+
+  private JsonNode administration(AuthTestSupport.TestIdentity reader, Profile profile)
+      throws Exception {
+    var body =
+        graphql(
+                authTestSupport.accountBearer(reader),
+                """
+                query { profileAdministration(profileId: "%s") { household { id name } } }
+                """
+                    .formatted(profile.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(body).path("data").path("profileAdministration");
   }
 
   private String readerAuthority(AuthTestSupport.TestIdentity reader, Profile profile)

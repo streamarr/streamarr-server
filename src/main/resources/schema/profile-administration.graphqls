@@ -8,7 +8,12 @@ type ProfileAdministration {
     picture: String
     pinConfigured: Boolean!
     restricted: Boolean!
-    householdId: ID!
+    """
+    The Household the Profile belongs to, for the Profile's managers, for ServerAdmins and for the
+    Accounts of that Household. Null for a HouseholdAdmin of a Household the Profile only visits:
+    where a visitor comes from is not that Household's business.
+    """
+    household: HouseholdSummary
     linked: Boolean!
     """
     What the requesting Account is to the Profile. MANAGES for each of its ProfileManagers: the

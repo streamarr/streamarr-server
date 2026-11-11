@@ -29,7 +29,8 @@ public interface ProfileRepositoryCustom {
 
   /**
    * What the Account is to each of the Profiles that exist, in one statement: whether it manages
-   * each and whether it supervises each, as the Cedar facts would decide them one at a time.
+   * each and whether it supervises each, as the Cedar facts would decide them one at a time, and
+   * whether each belongs to the Account's own Household.
    */
   List<ProfileReaderRelation> relationsTo(UUID accountId, Collection<UUID> profileIds);
 
