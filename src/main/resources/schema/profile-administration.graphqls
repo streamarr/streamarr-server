@@ -37,6 +37,31 @@ type ProfileAdministrationEdge {
     cursor: String!
 }
 
+"One row of a Household's Profiles in Household settings."
+type HouseholdProfile {
+    "The Profile's administrative details. Its household is null for a visitor the reader does not manage."
+    profile: ProfileAdministration!
+    "Whether the Profile belongs to another Household and is shared into this one. The row never says which."
+    visitor: Boolean!
+    """
+    Whether this Household's PIN safety rule keeps the Profile from being selected here until it
+    has a PIN. False while the Profile is not available here.
+    """
+    locked: Boolean!
+}
+
+"A page of a Household's Profiles."
+type HouseholdProfileConnection {
+    edges: [HouseholdProfileEdge!]!
+    pageInfo: PageInfo!
+}
+
+"One of a Household's Profiles and where it sits in the list."
+type HouseholdProfileEdge {
+    node: HouseholdProfile!
+    cursor: String!
+}
+
 "What an Account is to a Profile (ADR 0024)."
 enum ProfileAuthority {
     "A ProfileManager: edits the Profile and its policy, manages its PIN, invites managers and offers it to Households."

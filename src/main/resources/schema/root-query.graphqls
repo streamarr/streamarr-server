@@ -30,6 +30,14 @@ type Query {
     households(first: Int, after: String, last: Int, before: String): HouseholdAdministrationConnection!
     accountAdministration(accountId: ID!): AccountAdministration
     profileAdministration(profileId: ID!): ProfileAdministration
+    """
+    A Household's Profiles for Household settings, by name. Its HouseholdAdmins and ServerAdmins
+    get every Profile available there, both those that belong there and the visitors shared in,
+    and also the Profiles they manage that belong there but are not available there. A visitor's
+    row never says where it comes from. Everyone else gets an empty list, and so do a
+    device-bound session and a disabled Account.
+    """
+    householdProfiles(householdId: ID!, first: Int, after: String, last: Int, before: String): HouseholdProfileConnection!
     accountInvitations(first: Int, after: String, last: Int, before: String): AccountInvitationConnection!
     accountInvitationProfilePreview(profileId: ID!): AccountInvitationProfilePreview
     """

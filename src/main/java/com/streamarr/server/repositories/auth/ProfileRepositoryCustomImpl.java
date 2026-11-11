@@ -8,6 +8,7 @@ import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.P
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static org.jooq.impl.DSL.lower;
 
+import com.streamarr.server.domain.auth.HouseholdProfilesFilter;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileAuthority;
 import com.streamarr.server.domain.auth.ProfileKind;
@@ -291,6 +292,42 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
             ProfileAuthorityConditions.managedBy(DSL.val(accountId)),
             seek);
     return JooqQueryHelper.nativeRows(entityManager, query, Profile.class, keyset);
+  }
+
+  @Override
+  public List<Row<Profile>> rowsInHousehold(HouseholdProfilesFilter filter, Seek seek) {
+    var managedThere =
+        PROFILE
+            .HOUSEHOLD_ID
+            .eq(filter.householdId())
+            .and(ProfileAuthorityConditions.managedBy(DSL.val(filter.readerAccountId())));
+    var kept =
+        filter.everyAvailableProfile()
+            ? managedThere.or(
+                DSL.exists(
+                    DSL.selectOne()
+                        .from(PROFILE_HOUSEHOLD_SHARE)
+                        .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(PROFILE.ID))
+                        .and(availableIn(filter.householdId()))))
+            : managedThere;
+    var keyset = byName();
+    var query =
+        keyset.rowsBeyond(
+            dsl.select(PROFILE.asterisk(), keyset.selectedSortValue()).from(PROFILE), kept, seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, Profile.class, keyset);
+  }
+
+  @Override
+  public Set<UUID> availableAmong(UUID householdId, Collection<UUID> profileIds) {
+    if (profileIds.isEmpty()) {
+      return Set.of();
+    }
+
+    return dsl.select(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID)
+        .from(PROFILE_HOUSEHOLD_SHARE)
+        .where(availableIn(householdId))
+        .and(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.in(profileIds))
+        .fetchSet(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID);
   }
 
   private static Keyset<String> byName() {
