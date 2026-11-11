@@ -38,6 +38,7 @@ import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -124,6 +125,53 @@ class ImageVariantServiceTest {
       var variantAspectRatio = (double) variant.width() / variant.height();
       assertThat(variantAspectRatio).isCloseTo(sourceAspectRatio, offset(0.005));
     }
+  }
+
+  // Each height is the variant width times the source height over the source width, rounded half
+  // up and at least 1, as a direct width-only Thumbnailator resize of the source gives it. Sizing
+  // MEDIUM from LARGE's rounded height, or SMALL from MEDIUM's, would be a pixel off on the 505x763
+  // and 43x75 rows and on the 2001x2999 poster and profile rows.
+  @ParameterizedTest(name = "{0} from a {1} source")
+  @CsvSource(
+      textBlock =
+          """
+          POSTER,   2001x2999, 185x277, 342x513,  500x749
+          PROFILE,  2001x2999, 185x277, 342x513,  500x749
+          BACKDROP, 2001x2999, 300x450, 780x1169, 1280x1918
+          STILL,    2001x2999, 300x450, 780x1169, 1280x1918
+          LOGO,     2001x2999, 92x138,  185x277,  500x749
+          POSTER,   505x763,   185x280, 342x517,  500x755
+          PROFILE,  505x763,   185x280, 342x517,  500x755
+          BACKDROP, 505x763,   300x453, 780x1178, 1280x1934
+          STILL,    505x763,   300x453, 780x1178, 1280x1934
+          LOGO,     505x763,   92x139,  185x280,  500x755
+          POSTER,   43x75,     185x323, 342x597,  500x872
+          PROFILE,  43x75,     185x323, 342x597,  500x872
+          BACKDROP, 43x75,     300x523, 780x1360, 1280x2233
+          STILL,    43x75,     300x523, 780x1360, 1280x2233
+          LOGO,     43x75,     92x160,  185x323,  500x872
+          POSTER,   4001x3,    185x1,   342x1,    500x1
+          PROFILE,  4001x3,    185x1,   342x1,    500x1
+          BACKDROP, 4001x3,    300x1,   780x1,    1280x1
+          STILL,    4001x3,    300x1,   780x1,    1280x1
+          LOGO,     4001x3,    92x1,    185x1,    500x1
+          """)
+  @DisplayName(
+      "Should size every variant from the source aspect ratio when source dimensions are odd,"
+          + " narrow or extreme")
+  void shouldSizeEveryVariantFromSourceAspectRatioWhenSourceDimensionsAreOddNarrowOrExtreme(
+      ImageType imageType, String source, String small, String medium, String large) {
+    var sourceDimensions = source.split("x");
+    var imageData =
+        createTestImage(
+            Integer.parseInt(sourceDimensions[0]), Integer.parseInt(sourceDimensions[1]));
+
+    var variants = imageVariantService.generateVariants(imageData, imageType);
+
+    assertThat(variants)
+        .filteredOn(v -> v.variant() != ImageSize.ORIGINAL)
+        .extracting(v -> v.variant() + " " + v.width() + "x" + v.height())
+        .containsExactlyInAnyOrder("SMALL " + small, "MEDIUM " + medium, "LARGE " + large);
   }
 
   @Test

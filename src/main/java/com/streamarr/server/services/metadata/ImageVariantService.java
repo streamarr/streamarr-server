@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -119,20 +120,12 @@ public class ImageVariantService {
       sourceImage = copyGrayscaleSamplesToArgb(sourceImage);
     }
 
-    var widths = WIDTH_TABLE.get(imageType);
-    if (widths == null) {
-      throw new ImageProcessingException("No width configuration for image type: " + imageType);
-    }
+    var resizedImages = resizeInCascade(sourceImage, imageType, transparent);
     var variants = new ArrayList<GeneratedVariant>();
 
     for (var size : RESIZABLE_SIZES) {
-      var targetWidth = widths.get(size);
-      if (targetWidth == null) {
-        throw new ImageProcessingException(
-            "No width configuration for image size: " + size + " on image type: " + imageType);
-      }
+      var resized = resizedImages.get(size);
       if (transparent) {
-        var resized = resizeIntoArgb(sourceImage, targetWidth);
         variants.add(
             GeneratedVariant.builder()
                 .variant(size)
@@ -144,7 +137,6 @@ public class ImageVariantService {
         continue;
       }
 
-      var resized = resize(sourceImage, targetWidth);
       var blurHash = size == ImageSize.SMALL ? computeBlurHash(resized) : null;
       var ambientColors =
           size == ImageSize.SMALL
@@ -188,14 +180,47 @@ public class ImageVariantService {
     return image;
   }
 
-  private BufferedImage resize(BufferedImage source, int targetWidth) {
-    return render(Thumbnails.of(source).width(targetWidth));
+  private static Map<ImageSize, BufferedImage> resizeInCascade(
+      BufferedImage source, ImageType imageType, boolean transparent) {
+    var widths = WIDTH_TABLE.get(imageType);
+    if (widths == null) {
+      throw new ImageProcessingException("No width configuration for image type: " + imageType);
+    }
+
+    var resized = new EnumMap<ImageSize, BufferedImage>(ImageSize.class);
+    var resizeFrom = source;
+    for (var size : RESIZABLE_SIZES.reversed()) {
+      var targetWidth = widths.get(size);
+      if (targetWidth == null) {
+        throw new ImageProcessingException(
+            "No width configuration for image size: " + size + " on image type: " + imageType);
+      }
+
+      var targetHeight = heightAtSourceAspectRatio(source, targetWidth);
+      resizeFrom =
+          render(thumbnailOf(resizeFrom, transparent).forceSize(targetWidth, targetHeight));
+      resized.put(size, resizeFrom);
+    }
+    return resized;
+  }
+
+  // Thumbnailator's rounding for a width-only resize of the source, so each variant keeps the size
+  // a direct resize gives rather than inheriting the rounding of the variant it was resized from.
+  private static int heightAtSourceAspectRatio(BufferedImage source, int targetWidth) {
+    var sourceAspectRatio = (double) source.getWidth() / source.getHeight();
+    return Math.max(1, (int) Math.round(targetWidth / sourceAspectRatio));
   }
 
   // Thumbnailator resizes into a new image of its source's type unless it is given another. A new
   // palette image has an opaque palette, so an image with transparency is resized into ARGB.
-  private static BufferedImage resizeIntoArgb(BufferedImage source, int targetWidth) {
-    return render(Thumbnails.of(source).imageType(BufferedImage.TYPE_INT_ARGB).width(targetWidth));
+  private static Thumbnails.Builder<BufferedImage> thumbnailOf(
+      BufferedImage image, boolean transparent) {
+    var thumbnail = Thumbnails.of(image);
+    if (transparent) {
+      thumbnail = thumbnail.imageType(BufferedImage.TYPE_INT_ARGB);
+    }
+
+    return thumbnail;
   }
 
   private static BufferedImage render(Thumbnails.Builder<BufferedImage> thumbnail) {
