@@ -204,23 +204,37 @@ class InviteByEmailIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should refuse the code when an Account takes the address after the invitation was made")
-  void shouldRefuseTheCodeWhenAnAccountTakesTheAddressAfterTheInvitationWasMade() throws Exception {
+      "Should refuse the code and the invitation when an Account takes the address after the"
+          + " invitation was made")
+  void shouldRefuseTheCodeAndTheInvitationWhenAnAccountTakesTheAddressAfterTheInvitationWasMade()
+      throws Exception {
     var address = "late.%s@example.com".formatted(UUID.randomUUID());
-    var code = invite(address).at("/data/inviteProfileManager/issued/code").asString();
+    var issued = invite(address).at("/data/inviteProfileManager/issued");
     var late = track(authTestSupport.createIdentityWithEmail(address));
+    var bearer = authTestSupport.accountBearer(late);
 
-    var answer =
+    var lookup =
         graphql(
-                authTestSupport.accountBearer(late),
+                bearer,
                 """
-                mutation { acceptManagerInvitation(input: {code: "%s"}) {
+                mutation { lookUpManagerInvitationCode(input: {code: "%s"}) {
+                  invitation { id } userErrors { __typename } } }
+                """
+                    .formatted(issued.at("/code").asString()))
+            .at("/data/lookUpManagerInvitationCode");
+    var acceptance =
+        graphql(
+                bearer,
+                """
+                mutation { acceptManagerInvitation(input: {invitationId: "%s"}) {
                   invitation { status } userErrors { __typename } } }
                 """
-                    .formatted(code))
+                    .formatted(issued.at("/invitation/id").asString()))
             .at("/data/acceptManagerInvitation");
 
-    assertThat(answer.at("/userErrors/0/__typename").asString())
+    assertThat(lookup.at("/userErrors/0/__typename").asString())
+        .isEqualTo("ManagerInvitationNotFoundError");
+    assertThat(acceptance.at("/userErrors/0/__typename").asString())
         .isEqualTo("ManagerInvitationNotFoundError");
     assertThat(received(late)).isEmpty();
   }

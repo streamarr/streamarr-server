@@ -51,6 +51,18 @@ permit (
 )
 when { principal has enabled && principal.enabled && principal == resource };
 
+// One invitation is its named Account's to read, whatever became of it, where it may answer it.
+@id("view-received-manager-invitation-as-named-recipient")
+permit (
+  principal,
+  action == Streamarr::Action::"viewReceivedManagerInvitation",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  resource has recipientIsPrincipal && resource.recipientIsPrincipal
+};
+
 // Only the named recipient answers an invitation addressed to them.
 @id("decide-manager-invitation-as-named-recipient")
 permit (

@@ -117,7 +117,11 @@ type CancelManagerInvitationPayload {
 union CancelManagerInvitationError = ManagerInvitationNotFoundError | InvitationNotPendingError
 
 input AcceptManagerInvitationInput {
-    code: String!
+    """
+    The invitation to accept, as pendingManagerInvitations or lookUpManagerInvitationCode gives it
+    to the Account it names.
+    """
+    invitationId: ID!
 }
 
 type AcceptManagerInvitationPayload {
@@ -127,11 +131,16 @@ type AcceptManagerInvitationPayload {
 
 union AcceptManagerInvitationError =
     ManagerInvitationNotFoundError
+  | InvitationNotPendingError
   | ProfileManagerNotEligibleError
   | AlreadyManagerError
 
 input DeclineManagerInvitationInput {
-    code: String!
+    """
+    The invitation to decline, as pendingManagerInvitations or lookUpManagerInvitationCode gives it
+    to the Account it names.
+    """
+    invitationId: ID!
 }
 
 type DeclineManagerInvitationPayload {
@@ -139,7 +148,27 @@ type DeclineManagerInvitationPayload {
     userErrors: [DeclineManagerInvitationError!]!
 }
 
-union DeclineManagerInvitationError = ManagerInvitationNotFoundError
+union DeclineManagerInvitationError = ManagerInvitationNotFoundError | InvitationNotPendingError
+
+input LookUpManagerInvitationCodeInput {
+    "The code the inviter passed on, exactly as inviteProfileManager gave it."
+    code: String!
+}
+
+type LookUpManagerInvitationCodePayload {
+    """
+    The pending invitation the code belongs to, for the Account it names to accept or decline by
+    its id. Null when the code is refused.
+    """
+    invitation: ManagerInvitationDetails
+    userErrors: [LookUpManagerInvitationCodeError!]!
+}
+
+"""
+Why a code was refused. A code that does not work and a code for an invitation that names another
+Account get the same ManagerInvitationNotFoundError.
+"""
+union LookUpManagerInvitationCodeError = ManagerInvitationNotFoundError
 
 input RelinquishProfileManagementInput {
     profileId: ID!

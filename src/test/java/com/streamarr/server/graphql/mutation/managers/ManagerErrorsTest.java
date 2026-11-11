@@ -48,7 +48,13 @@ class ManagerErrorsTest {
         .isInstanceOf(ProfileManagerNotEligibleError.class);
     assertThat(ManagerErrors.toAcceptError(new ManagerRejections.AlreadyManager()))
         .isInstanceOf(AlreadyManagerError.class);
+    assertThat(ManagerErrors.toAcceptError(new ManagerRejections.InvitationNotPending()))
+        .isInstanceOf(InvitationNotPendingError.class);
     assertThat(ManagerErrors.toDeclineError(new ManagerRejections.ManagerInvitationNotFound()))
+        .isInstanceOf(ManagerInvitationNotFoundError.class);
+    assertThat(ManagerErrors.toDeclineError(new ManagerRejections.InvitationNotPending()))
+        .isInstanceOf(InvitationNotPendingError.class);
+    assertThat(ManagerErrors.toLookUpError(new ManagerRejections.ManagerInvitationNotFound()))
         .isInstanceOf(ManagerInvitationNotFoundError.class);
   }
 
@@ -66,15 +72,25 @@ class ManagerErrorsTest {
   }
 
   @Test
-  @DisplayName("Should point at code when acceptance is rejected")
-  void shouldPointAtCodeWhenAcceptanceIsRejected() {
+  @DisplayName(
+      "Should point at the invitation id when a decision is refused and at the code when a lookup"
+          + " is refused")
+  void shouldPointAtTheInvitationIdWhenADecisionIsRefusedAndAtTheCodeWhenALookupIsRefused() {
     assertThat(ManagerErrors.toAcceptError(new ManagerRejections.RecipientNotEligible()))
         .isInstanceOfSatisfying(
             ProfileManagerNotEligibleError.class,
-            error -> assertThat(error.inputPath()).containsExactly("code"));
+            error -> assertThat(error.inputPath()).containsExactly("invitationId"));
     assertThat(ManagerErrors.toAcceptError(new ManagerRejections.AlreadyManager()))
         .isInstanceOfSatisfying(
             AlreadyManagerError.class,
+            error -> assertThat(error.inputPath()).containsExactly("invitationId"));
+    assertThat(ManagerErrors.toDeclineError(new ManagerRejections.InvitationNotPending()))
+        .isInstanceOfSatisfying(
+            InvitationNotPendingError.class,
+            error -> assertThat(error.inputPath()).containsExactly("invitationId"));
+    assertThat(ManagerErrors.toLookUpError(new ManagerRejections.ManagerInvitationNotFound()))
+        .isInstanceOfSatisfying(
+            ManagerInvitationNotFoundError.class,
             error -> assertThat(error.inputPath()).containsExactly("code"));
   }
 

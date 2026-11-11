@@ -18,6 +18,7 @@ import com.streamarr.server.graphql.inputs.AdministrativelyRemoveProfileManagerI
 import com.streamarr.server.graphql.inputs.CancelManagerInvitationInput;
 import com.streamarr.server.graphql.inputs.DeclineManagerInvitationInput;
 import com.streamarr.server.graphql.inputs.InviteProfileManagerInput;
+import com.streamarr.server.graphql.inputs.LookUpManagerInvitationCodeInput;
 import com.streamarr.server.graphql.inputs.RelinquishProfileManagementInput;
 import com.streamarr.server.graphql.inputs.RemoveProfileManagerInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
@@ -27,6 +28,7 @@ import com.streamarr.server.graphql.mutation.managers.AdministrativelyRemoveProf
 import com.streamarr.server.graphql.mutation.managers.CancelManagerInvitationPayload;
 import com.streamarr.server.graphql.mutation.managers.DeclineManagerInvitationPayload;
 import com.streamarr.server.graphql.mutation.managers.InviteProfileManagerPayload;
+import com.streamarr.server.graphql.mutation.managers.LookUpManagerInvitationCodePayload;
 import com.streamarr.server.graphql.mutation.managers.ManagerErrors;
 import com.streamarr.server.graphql.mutation.managers.RelinquishProfileManagementPayload;
 import com.streamarr.server.graphql.mutation.managers.RemoveProfileManagerPayload;
@@ -106,11 +108,11 @@ public class ProfileManagerResolver {
 
   @DgsMutation
   public AcceptManagerInvitationPayload acceptManagerInvitation(
-      @InputArgument AcceptManagerInvitationInput input, DataFetchingEnvironment dfe) {
+      @InputArgument AcceptManagerInvitationInput input) {
     return MutationPayloads.payload(
         managerService
             .acceptManagerInvitation(
-                authorizationService.currentIdentity(), managerInvitationCode(input.code(), dfe))
+                authorizationService.currentIdentity(), Ids.parseUuid(input.invitationId()))
             .map(this::invitationDetails),
         ManagerErrors::toAcceptError,
         AcceptManagerInvitationPayload::new);
@@ -118,14 +120,26 @@ public class ProfileManagerResolver {
 
   @DgsMutation
   public DeclineManagerInvitationPayload declineManagerInvitation(
-      @InputArgument DeclineManagerInvitationInput input, DataFetchingEnvironment dfe) {
+      @InputArgument DeclineManagerInvitationInput input) {
     return MutationPayloads.payload(
         managerService
             .declineManagerInvitation(
-                authorizationService.currentIdentity(), managerInvitationCode(input.code(), dfe))
+                authorizationService.currentIdentity(), Ids.parseUuid(input.invitationId()))
             .map(this::invitationDetails),
         ManagerErrors::toDeclineError,
         DeclineManagerInvitationPayload::new);
+  }
+
+  @DgsMutation
+  public LookUpManagerInvitationCodePayload lookUpManagerInvitationCode(
+      @InputArgument LookUpManagerInvitationCodeInput input, DataFetchingEnvironment dfe) {
+    return MutationPayloads.payload(
+        managerService
+            .lookUpManagerInvitationCode(
+                authorizationService.currentIdentity(), managerInvitationCode(input.code(), dfe))
+            .map(this::invitationDetails),
+        ManagerErrors::toLookUpError,
+        LookUpManagerInvitationCodePayload::new);
   }
 
   @DgsMutation

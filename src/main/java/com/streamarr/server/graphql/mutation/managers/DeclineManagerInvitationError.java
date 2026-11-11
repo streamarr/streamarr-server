@@ -7,4 +7,4 @@ import com.streamarr.server.graphql.mutation.MutationError;
  * resolves by.
  */
 public sealed interface DeclineManagerInvitationError extends MutationError
-    permits ManagerInvitationNotFoundError {}
+    permits ManagerInvitationNotFoundError, InvitationNotPendingError {}

@@ -249,16 +249,31 @@ type Mutation {
     """
     cancelManagerInvitation(input: CancelManagerInvitationInput!): CancelManagerInvitationPayload
     """
-    Accepts an invitation to manage a Profile by its code, which makes the signed-in Account a
-    direct manager. Only the Account the invitation names, while its own Personal Profile is an
-    unrestricted Adult (ProfileManagerNotEligibleError otherwise). A code that does not work, one
-    that names another Account, and a device-bound session all get ManagerInvitationNotFoundError.
+    Finds the invitation to manage a Profile that a code belongs to, so that the Account it names can
+    accept or decline it by id; the code itself decides nothing. Any signed-in Account may look a
+    code up, but only the Account the invitation names gets the invitation: a code that does not
+    work and a code for an invitation that names another Account both get
+    ManagerInvitationNotFoundError. A device-bound session and a disabled Account get FORBIDDEN.
+    Every lookup counts as a credential attempt by the Account that presents the code. After too
+    many failures the request ends with TOO_MANY_CREDENTIAL_ATTEMPTS and retryAfterSeconds. It is a
+    mutation because each lookup is recorded, and so that the code never travels in a URL.
+    """
+    lookUpManagerInvitationCode(input: LookUpManagerInvitationCodeInput!): LookUpManagerInvitationCodePayload
+    """
+    Accepts an invitation to manage a Profile by its id, which makes the signed-in Account a direct
+    manager. No code is needed. Only the Account the invitation names, while its own Personal
+    Profile is an unrestricted Adult (ProfileManagerNotEligibleError otherwise). An invitation that
+    was already decided, canceled or withdrawn, or that expired, gets InvitationNotPendingError,
+    as does one whose inviter no longer manages the Profile, which this withdraws. Of two answers to
+    one invitation, exactly one is taken. Everyone else, a device-bound session included, and an id
+    that names no invitation get ManagerInvitationNotFoundError.
     """
     acceptManagerInvitation(input: AcceptManagerInvitationInput!): AcceptManagerInvitationPayload
     """
-    Declines an invitation to manage a Profile by its code. Only the Account the invitation names. A
-    code that does not work, one that names another Account, and a device-bound session all get
-    ManagerInvitationNotFoundError.
+    Declines an invitation to manage a Profile by its id. No code is needed. Only the Account the
+    invitation names. An invitation that was already decided, canceled or withdrawn, or that
+    expired, gets InvitationNotPendingError. Everyone else, a device-bound session included, and an
+    id that names no invitation get ManagerInvitationNotFoundError.
     """
     declineManagerInvitation(input: DeclineManagerInvitationInput!): DeclineManagerInvitationPayload
     """

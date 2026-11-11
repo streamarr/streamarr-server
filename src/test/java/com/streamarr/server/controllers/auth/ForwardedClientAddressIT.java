@@ -107,11 +107,11 @@ class ForwardedClientAddressIT extends AbstractIntegrationTest {
                             Map.of(
                                 "query",
                                 """
-                mutation { declineManagerInvitation(input: {code: "unknown.secret"}) { userErrors { __typename } } }
+                mutation { lookUpManagerInvitationCode(input: {code: "unknown.secret"}) { userErrors { __typename } } }
                 """))))
         .andExpect(status().isOk())
         .andExpect(
-            jsonPath("$.data.declineManagerInvitation.userErrors[0].__typename")
+            jsonPath("$.data.lookUpManagerInvitationCode.userErrors[0].__typename")
                 .value("ManagerInvitationNotFoundError"));
     assertThat(
             dsl.select(IP_ADDRESS_TEXT, IP_ADDRESS_FAMILY)
