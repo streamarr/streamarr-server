@@ -67,9 +67,7 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.width()).isEqualTo(185);
+    assertThat(smallVariant(variants).width()).isEqualTo(185);
   }
 
   @Test
@@ -79,9 +77,7 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.width()).isEqualTo(300);
+    assertThat(smallVariant(variants).width()).isEqualTo(300);
   }
 
   @Test
@@ -91,9 +87,7 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.ambientColors())
+    assertThat(smallVariant(variants).ambientColors())
         .isEqualTo(
             Optional.of(
                 AmbientColors.builder()
@@ -152,9 +146,7 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.blurHash()).isNotBlank();
+    assertThat(smallVariant(variants).blurHash()).isNotBlank();
   }
 
   @Test
