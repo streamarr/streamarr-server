@@ -96,6 +96,8 @@ public class PlaybackSessionService implements AutoCloseable {
     private final VideoQuality requestedChoice;
     // Every later format attempt follows the playback choice that plays now (ADR 0052).
     private PlayingChoice choice;
+    // What the pending format attempt plays once it turns out to encode the video.
+    private PlayingChoice choiceWhenEncoding;
     private PlaybackFormatAttempt current;
     // Every format attempt starts at the start position until playback moves from it.
     private Optional<Duration> startPosition;
@@ -188,7 +190,7 @@ public class PlaybackSessionService implements AutoCloseable {
       return switch (outcome) {
         case Outcome.Accepted(var session) -> {
           offerChoicesOf(playback, session);
-          settle(playback, session, firstEncodeChoice(playback.requestedChoice));
+          settle(playback, session);
           yield Outcome.accepted(
               snapshot(playback).orElseThrow(PlaybackSessionClosedException::new));
         }
@@ -231,6 +233,7 @@ public class PlaybackSessionService implements AutoCloseable {
               .command(command)
               .requestedChoice(requested)
               .choice(PlayingChoice.requested(requested))
+              .choiceWhenEncoding(firstEncodeChoice(requested))
               .current(new PlaybackFormatAttempt.Pending(childId))
               .startPosition(command.startPosition())
               .lastAccessedAt(clock.instant())
@@ -934,6 +937,7 @@ public class PlaybackSessionService implements AutoCloseable {
     var childId = UUID.randomUUID();
     var next = attempt.streamId(childId).build();
     playback.choice = next.choice();
+    playback.choiceWhenEncoding = next.choiceWhenEncoding();
     playback.videoFormatConstraint = next.videoFormatConstraint();
     playback.lastAccessedAt = clock.instant();
     playback.current = new PlaybackFormatAttempt.Pending(childId);
@@ -1014,8 +1018,7 @@ public class PlaybackSessionService implements AutoCloseable {
                   .softwareEncodeCodecFamily(next.softwareEncodeCodecFamily())
                   .build());
       switch (outcome) {
-        case Outcome.Accepted(var session) ->
-            settle(work.playback(), session, next.choiceWhenEncoding());
+        case Outcome.Accepted(var session) -> settle(work.playback(), session);
         case Outcome.Rejected(var rejections) -> {
           failCurrent(
               work.playback(),
@@ -1189,8 +1192,7 @@ public class PlaybackSessionService implements AutoCloseable {
     }
   }
 
-  private void settle(
-      PlaybackSession playback, StreamSession session, PlayingChoice choiceWhenEncoding) {
+  private void settle(PlaybackSession playback, StreamSession session) {
     boolean accepted =
         locked(
             playback,
@@ -1199,7 +1201,7 @@ public class PlaybackSessionService implements AutoCloseable {
                 return false;
               }
 
-              adopt(playback, session, choiceWhenEncoding);
+              adopt(playback, session, playback.choiceWhenEncoding);
               return true;
             });
     if (!accepted) {
