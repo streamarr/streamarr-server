@@ -53,6 +53,8 @@ public class ProfileManagerAdministrationService {
       "chk_restricted_account_holds_no_authority";
   private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
   private static final String REPLACED_REASON = "replaced by a newer invitation";
+  // ADR 0024: so that a manager cannot fill other people's Notifications with Requests.
+  private static final int PENDING_INVITATIONS_PER_PROFILE = 10;
   private static final String INVITER_LEFT_REASON = "inviting manager lost management";
   private static final String RESOURCE_PROFILE_ID = "profileId";
   private static final String RESOURCE_ACCOUNT_ID = "accountId";
@@ -116,6 +118,12 @@ public class ProfileManagerAdministrationService {
           var currentRefusal = inviteRefusal(identity, profileId);
           if (currentRefusal.isPresent()) {
             throw new MutationRejection(currentRefusal.get());
+          }
+
+          // Counted under the Profile's lock, which every invitation to it takes first.
+          if (invitationRepository.countLivePendingForProfileExceptTo(profileId, address, now)
+              >= PENDING_INVITATIONS_PER_PROFILE) {
+            throw new MutationRejection(new ManagerRejections.ManagerInvitationLimitReached());
           }
 
           var recipientAccountId =

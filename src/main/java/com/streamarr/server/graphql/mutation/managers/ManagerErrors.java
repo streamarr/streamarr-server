@@ -21,6 +21,10 @@ public final class ManagerErrors {
           new EmailRequiredError("Enter the person's email address.", InputPath.of(EMAIL));
       case ManagerRejections.EmailInvalid _ ->
           new EmailInvalidError("Enter a valid email address.", InputPath.of(EMAIL));
+      case ManagerRejections.ManagerInvitationLimitReached _ ->
+          new ManagerInvitationLimitReachedError(
+              "Ten invitations to manage this Profile already wait for an answer. Cancel one"
+                  + " before inviting someone else.");
     };
   }
 

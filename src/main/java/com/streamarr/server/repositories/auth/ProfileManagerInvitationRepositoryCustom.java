@@ -18,6 +18,12 @@ public interface ProfileManagerInvitationRepositoryCustom {
   List<Row<ProfileManagerInvitation>> rowsPendingForRecipient(
       UUID recipientAccountId, Instant now, Seek seek);
 
+  /**
+   * How many live PENDING invitations wait for the Profile, leaving out the one to the address,
+   * whatever its case, which a new invitation to that address would replace.
+   */
+  int countLivePendingForProfileExceptTo(UUID profileId, String email, Instant now);
+
   /** Cancels one live PENDING invitation exactly once; empty when it was not live and pending. */
   Optional<ChangedManagerInvitation> tryCancelPending(UUID invitationId, Instant now);
 

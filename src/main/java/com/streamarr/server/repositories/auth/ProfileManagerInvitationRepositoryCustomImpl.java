@@ -76,6 +76,18 @@ public class ProfileManagerInvitationRepositoryCustomImpl
     return JooqQueryHelper.nativeRows(entityManager, query, ProfileManagerInvitation.class, keyset);
   }
 
+  @Override
+  public int countLivePendingForProfileExceptTo(UUID profileId, String email, Instant now) {
+    return dsl.fetchCount(
+        PROFILE_MANAGER_INVITATION,
+        PROFILE_MANAGER_INVITATION
+            .PROFILE_ID
+            .eq(profileId)
+            .and(pending())
+            .and(PROFILE_MANAGER_INVITATION.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)))
+            .and(lower(PROFILE_MANAGER_INVITATION.RECIPIENT_EMAIL).ne(lower(val(email)))));
+  }
+
   private Optional<ChangedManagerInvitation> tryTransitionPending(
       UUID invitationId, ProfileManagerInvitationStatus target, Instant now) {
     return onlyChanged(

@@ -9,7 +9,8 @@ public final class ManagerRejections {
    * An invitation is refused only for what the inviter can see: the Profile, or the shape of the
    * address. Nothing about whether an Account has the address refuses it.
    */
-  public sealed interface Invite permits ProfileNotFound, EmailRequired, EmailInvalid {}
+  public sealed interface Invite
+      permits ProfileNotFound, EmailRequired, EmailInvalid, ManagerInvitationLimitReached {}
 
   public sealed interface Cancel permits ManagerInvitationNotFound, InvitationNotPending {}
 
@@ -46,6 +47,9 @@ public final class ManagerRejections {
   public record EmailRequired() implements Invite {}
 
   public record EmailInvalid() implements Invite {}
+
+  /** As many invitations as one Profile may have already wait for an answer. */
+  public record ManagerInvitationLimitReached() implements Invite {}
 
   /** Eligible means the Account's own Personal Profile is an unrestricted Adult. */
   public record RecipientNotEligible() implements Accept, AdministrativelyGrant {}
