@@ -76,9 +76,12 @@ type Mutation {
     """
     Issue a share code for a Household, for its HouseholdAdmins and for ServerAdmins. The code
     expires after the server's share code lifetime, 7 days unless the server sets another, and the
-    answer is the only place it appears. A Household may hold several live codes. Issuing a code
-    invites an offer and consents to nothing: every offer still waits for a HouseholdAdmin to accept
-    or reject it. Everyone else gets HouseholdNotFoundError, and so does a device-bound session.
+    answer is the only place it appears. A Household may hold several live codes, up to the
+    server's share code limit, 10 unless the server sets another; at the limit the answer is
+    ShareCodeLimitReachedError until a code is spent, withdrawn or invalidated, or expires. Issuing
+    a code invites an offer and consents to nothing: every offer still waits for a HouseholdAdmin
+    to accept or reject it. Everyone else gets HouseholdNotFoundError, and so does a device-bound
+    session.
     """
     issueShareCode(input: IssueShareCodeInput!): IssueShareCodePayload
     """

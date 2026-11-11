@@ -30,6 +30,8 @@ public final class ShareErrors {
     return switch (rejection) {
       case ShareCodeRejections.HouseholdNotFound _ ->
           new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
+      case ShareCodeRejections.ShareCodeLimitReached _ ->
+          new ShareCodeLimitReachedError("Withdraw a code before issuing another.");
     };
   }
 

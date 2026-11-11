@@ -37,4 +37,6 @@ public class ServerSettings extends BaseAuditableEntity<ServerSettings> {
   @Builder.Default private int shareCodeLifetimeHours = 168;
 
   @Builder.Default private int invitationLifetimeHours = 168;
+
+  @Builder.Default private int shareCodeLimit = 10;
 }

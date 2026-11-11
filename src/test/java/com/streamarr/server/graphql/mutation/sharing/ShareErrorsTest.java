@@ -60,6 +60,13 @@ class ShareErrorsTest {
   }
 
   @Test
+  @DisplayName("Should ask to withdraw a code when the Household holds the limit of live codes")
+  void shouldAskToWithdrawACodeWhenTheHouseholdHoldsTheLimitOfLiveCodes() {
+    assertThat(ShareErrors.toIssueShareCodeError(new ShareCodeRejections.ShareCodeLimitReached()))
+        .isEqualTo(new ShareCodeLimitReachedError("Withdraw a code before issuing another."));
+  }
+
+  @Test
   @DisplayName("Should name the Household input when issuing a share code fails")
   void shouldNameHouseholdInputWhenIssuingShareCodeFails() {
     assertThat(ShareErrors.toIssueShareCodeError(new ShareCodeRejections.HouseholdNotFound()))

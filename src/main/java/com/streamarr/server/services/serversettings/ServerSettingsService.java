@@ -179,6 +179,14 @@ public class ServerSettingsService implements InvitationLifetime {
     return new LifetimeSetting(settings.getId(), settings.getInvitationLifetimeHours());
   }
 
+  /**
+   * How many live share codes a Household may hold at once. Issuing reads the setting for the
+   * Household, not for a caller, so this read is not authorized.
+   */
+  public int shareCodeLimit() {
+    return storedSettings().getShareCodeLimit();
+  }
+
   private static LifetimeSetting shareCodeLifetimeOf(ServerSettings settings) {
     return new LifetimeSetting(settings.getId(), settings.getShareCodeLifetimeHours());
   }
