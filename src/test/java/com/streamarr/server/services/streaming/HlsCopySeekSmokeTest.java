@@ -478,7 +478,16 @@ class HlsCopySeekSmokeTest {
         .containsEntry("pix_fmt", "yuv420p10le")
         .containsEntry("color_primaries", "bt2020")
         .containsEntry("color_transfer", "smpte2084")
+        .containsEntry("red_x", "35400/50000")
+        .containsEntry("red_y", "14600/50000")
+        .containsEntry("green_x", "8500/50000")
+        .containsEntry("green_y", "39850/50000")
+        .containsEntry("blue_x", "6550/50000")
+        .containsEntry("blue_y", "2300/50000")
+        .containsEntry("white_point_x", "15635/50000")
+        .containsEntry("white_point_y", "16450/50000")
         .containsEntry("max_luminance", "10000000/10000")
+        .containsEntry("min_luminance", "50/10000")
         .containsEntry("max_content", "1000")
         .containsEntry("max_average", "400");
   }
