@@ -8,10 +8,8 @@ import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
-import com.streamarr.server.domain.streaming.VideoCodecTier;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 import lombok.experimental.UtilityClass;
 
 /** Client capability declarations of an SDR player that plays its entries over HLS. */
@@ -52,26 +50,26 @@ public class ClientCapabilityDeclarationFixture {
     return sdrEntryBuilder(ProbedCodecFamily.H264)
         .codecProfiles(
             List.of(
-                h264Profile(VideoCodecProfile.H264_CONSTRAINED_BASELINE),
-                h264Profile(VideoCodecProfile.H264_MAIN),
-                h264Profile(VideoCodecProfile.H264_HIGH)));
+                upToLevel(VideoCodecProfile.H264_CONSTRAINED_BASELINE, 52),
+                upToLevel(VideoCodecProfile.H264_MAIN, 52),
+                upToLevel(VideoCodecProfile.H264_HIGH, 52)));
   }
 
-  /** HEVC Main and Main 10 up to Main tier level 5.1, SDR, up to 4K at 60 fps. */
+  /** HEVC Main and Main 10 up to level 5.1, SDR, up to 4K at 60 fps. */
   public static VideoCapabilityEntry.VideoCapabilityEntryBuilder hevcEntryBuilder() {
     return sdrEntryBuilder(ProbedCodecFamily.HEVC)
         .maxBitDepth(10)
         .codecProfiles(
             List.of(
-                mainTierProfile(VideoCodecProfile.HEVC_MAIN),
-                mainTierProfile(VideoCodecProfile.HEVC_MAIN_10)));
+                upToLevel(VideoCodecProfile.HEVC_MAIN, 51),
+                upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)));
   }
 
-  /** AV1 Main up to Main tier level 5.1, SDR, up to 4K at 60 fps. */
+  /** AV1 Main up to level 5.1, SDR, up to 4K at 60 fps. */
   public static VideoCapabilityEntry.VideoCapabilityEntryBuilder av1EntryBuilder() {
     return sdrEntryBuilder(ProbedCodecFamily.AV1)
         .maxBitDepth(10)
-        .codecProfiles(List.of(mainTierProfile(VideoCodecProfile.AV1_MAIN)));
+        .codecProfiles(List.of(upToLevel(VideoCodecProfile.AV1_MAIN, 51)));
   }
 
   /** A stereo AAC audio capability entry that applies to HLS. */
@@ -99,15 +97,7 @@ public class ClientCapabilityDeclarationFixture {
         .hls(true);
   }
 
-  private static VideoCodecProfileCapability h264Profile(VideoCodecProfile profile) {
-    return VideoCodecProfileCapability.builder().profile(profile).maxLevel(52).build();
-  }
-
-  private static VideoCodecProfileCapability mainTierProfile(VideoCodecProfile profile) {
-    return VideoCodecProfileCapability.builder()
-        .profile(profile)
-        .maxLevel(51)
-        .maxTier(Optional.of(VideoCodecTier.MAIN))
-        .build();
+  private static VideoCodecProfileCapability upToLevel(VideoCodecProfile profile, int maxLevel) {
+    return VideoCodecProfileCapability.builder().profile(profile).maxLevel(maxLevel).build();
   }
 }

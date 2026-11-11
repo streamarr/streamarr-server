@@ -7,7 +7,6 @@ import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError.
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError.CapabilityProfileMismatchError;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError.CapabilityValuesRequiredError;
 import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError.HlsAacCapabilityRequiredError;
-import com.streamarr.server.graphql.mutation.streaming.CreateStreamSessionError.VideoCodecTierInvalidError;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioChannelsNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioDeliveryMissing;
@@ -15,8 +14,6 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Au
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfilesMissing;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierMissing;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierNotApplicable;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CompatibleBasesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DirectPlaySampleEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
@@ -94,14 +91,6 @@ public final class CapabilityDeclarationErrors {
       case CodecLevelNotPositive(var entry, var profile) ->
           new CapabilityMaximumInvalidError(
               NOT_POSITIVE, videoPath(entry, CODEC_PROFILES, Integer.toString(profile), MAX_LEVEL));
-      case CodecTierMissing(var entry, var profile) ->
-          new VideoCodecTierInvalidError(
-              "Declare the maximum tier of an HEVC or AV1 codec profile.",
-              videoPath(entry, CODEC_PROFILES, Integer.toString(profile), "maxTier"));
-      case CodecTierNotApplicable(var entry, var profile) ->
-          new VideoCodecTierInvalidError(
-              "Leave out the maximum tier of an H.264 codec profile. H.264 has no tier.",
-              videoPath(entry, CODEC_PROFILES, Integer.toString(profile), "maxTier"));
       case DolbyVisionProfileOutsideCodecFamily(var entry, var profile) ->
           new CapabilityProfileMismatchError(
               "Declare Dolby Vision profiles 5 and 8 in an HEVC entry, and 10 in an AV1 entry.",

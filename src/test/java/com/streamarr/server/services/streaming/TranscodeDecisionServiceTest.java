@@ -44,7 +44,6 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
-import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.ProbeFixture;
@@ -2308,7 +2307,6 @@ class TranscodeDecisionServiceTest {
                         VideoCodecProfileCapability.builder()
                             .profile(VideoCodecProfile.AV1_HIGH)
                             .maxLevel(51)
-                            .maxTier(Optional.of(VideoCodecTier.MAIN))
                             .build()))
                 .build(),
             "h264"),
@@ -2362,7 +2360,6 @@ class TranscodeDecisionServiceTest {
                         VideoCodecProfileCapability.builder()
                             .profile(VideoCodecProfile.AV1_MAIN)
                             .maxLevel(19)
-                            .maxTier(Optional.of(VideoCodecTier.MAIN))
                             .build()))
                 .build()));
   }
@@ -2479,7 +2476,6 @@ class TranscodeDecisionServiceTest {
                     VideoCodecProfileCapability.builder()
                         .profile(VideoCodecProfile.AV1_HIGH)
                         .maxLevel(51)
-                        .maxTier(Optional.of(VideoCodecTier.MAIN))
                         .build()))
             .build();
     var declaration =

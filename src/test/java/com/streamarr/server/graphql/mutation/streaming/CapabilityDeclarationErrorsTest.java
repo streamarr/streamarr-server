@@ -10,8 +10,6 @@ import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.Au
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfilesMissing;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierMissing;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierNotApplicable;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CompatibleBasesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DirectPlaySampleEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
@@ -124,14 +122,6 @@ class CapabilityDeclarationErrorsTest {
             new CodecLevelNotPositive(0, 3),
             CreateStreamSessionError.CapabilityMaximumInvalidError.class,
             List.of("capabilities", "video", "0", "codecProfiles", "3", "maxLevel")),
-        Arguments.of(
-            new CodecTierMissing(0, 3),
-            CreateStreamSessionError.VideoCodecTierInvalidError.class,
-            List.of("capabilities", "video", "0", "codecProfiles", "3", "maxTier")),
-        Arguments.of(
-            new CodecTierNotApplicable(0, 3),
-            CreateStreamSessionError.VideoCodecTierInvalidError.class,
-            List.of("capabilities", "video", "0", "codecProfiles", "3", "maxTier")),
         Arguments.of(
             new DolbyVisionProfileOutsideCodecFamily(4, 1),
             CreateStreamSessionError.CapabilityProfileMismatchError.class,

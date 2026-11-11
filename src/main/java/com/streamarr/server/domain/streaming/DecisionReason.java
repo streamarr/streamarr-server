@@ -16,7 +16,7 @@ public enum DecisionReason {
   VIDEO_CODEC_NOT_DECLARED,
   /** The closest video capability entry does not list the source's codec profile. */
   VIDEO_CODEC_PROFILE_NOT_DECLARED,
-  /** The source's codec level or tier is above the closest entry's maximum for its profile. */
+  /** The source's codec level is above the closest entry's maximum for its profile. */
   VIDEO_CODEC_LEVEL_NOT_DECLARED,
   /** The source's bit depth is above the closest entry's maximum. */
   VIDEO_BIT_DEPTH_NOT_DECLARED,

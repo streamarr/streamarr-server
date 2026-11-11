@@ -57,7 +57,6 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
-import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
@@ -1599,7 +1598,7 @@ class StreamingResolverTest {
             capabilities: {
               video: [{
                 codecFamily: HEVC
-                codecProfiles: [{profile: HEVC_MAIN_10, maxLevel: 51, maxTier: HIGH}]
+                codecProfiles: [{profile: HEVC_MAIN_10, maxLevel: 51}]
                 maxBitDepth: 10, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 59.94
                 compatibleBases: [SDR, PQ, HLG]
                 dolbyVisionProfiles: [{profile: PROFILE_8_1, maxLevel: 6}]
@@ -1671,7 +1670,6 @@ class StreamingResolverTest {
                                     VideoCodecProfileCapability.builder()
                                         .profile(VideoCodecProfile.HEVC_MAIN_10)
                                         .maxLevel(51)
-                                        .maxTier(Optional.of(VideoCodecTier.HIGH))
                                         .build()))
                             .maxBitDepth(10)
                             .maxWidth(3840)
@@ -2260,11 +2258,6 @@ class StreamingResolverTest {
                 "CapabilityMaximumInvalidError",
                 "inputPath",
                 List.of("capabilities", "video", "0", "codecProfiles", "0", "maxLevel")),
-            Map.of(
-                "__typename",
-                "VideoCodecTierInvalidError",
-                "inputPath",
-                List.of("capabilities", "video", "0", "codecProfiles", "0", "maxTier")),
             Map.of(
                 "__typename",
                 "HlsAacCapabilityRequiredError",
