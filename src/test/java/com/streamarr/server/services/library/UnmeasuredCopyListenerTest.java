@@ -173,8 +173,7 @@ class UnmeasuredCopyListenerTest {
     awaitLatch(heldRaise.started);
 
     listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(otherFileId));
-    // The held raise keeps the listener open, so the other file's count is the only signal.
-    await().atMost(BOUND).untilAsserted(() -> assertThat(countOf("moved")).isOne());
+    awaitLatch(heldRaise.raisedAnotherFile);
 
     assertThat(waitingScans)
         .containsEntry(otherFileId, BitrateScanPriority.COPIED_BY_STREAM_SESSION)
@@ -250,6 +249,7 @@ class UnmeasuredCopyListenerTest {
     private final UUID heldFile;
     private final CountDownLatch started = new CountDownLatch(1);
     private final CountDownLatch finish = new CountDownLatch(1);
+    private final CountDownLatch raisedAnotherFile = new CountDownLatch(1);
 
     private HeldRaise(UUID heldFile) {
       this.heldFile = heldFile;
@@ -260,9 +260,12 @@ class UnmeasuredCopyListenerTest {
       if (file.equals(heldFile)) {
         started.countDown();
         awaitLatch(finish);
+        return raiseWaitingScan(file, priority);
       }
 
-      return raiseWaitingScan(file, priority);
+      var raised = raiseWaitingScan(file, priority);
+      raisedAnotherFile.countDown();
+      return raised;
     }
 
     private void finish() {
