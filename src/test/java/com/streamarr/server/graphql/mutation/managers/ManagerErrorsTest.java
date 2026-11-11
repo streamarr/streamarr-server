@@ -36,6 +36,8 @@ class ManagerErrorsTest {
         .isInstanceOf(EmailRequiredError.class);
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.EmailInvalid()))
         .isInstanceOf(EmailInvalidError.class);
+    assertThat(ManagerErrors.toInviteError(new ManagerRejections.ManagerInvitationLimitReached()))
+        .isInstanceOf(ManagerInvitationLimitReachedError.class);
     assertThat(ManagerErrors.toCancelError(new ManagerRejections.ManagerInvitationNotFound()))
         .isInstanceOf(ManagerInvitationNotFoundError.class);
     assertThat(ManagerErrors.toCancelError(new ManagerRejections.InvitationNotPending()))

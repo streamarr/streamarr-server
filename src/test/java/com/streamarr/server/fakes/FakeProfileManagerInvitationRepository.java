@@ -49,6 +49,17 @@ public class FakeProfileManagerInvitationRepository
         .findFirst();
   }
 
+  @Override
+  public int countLivePendingForProfileExceptTo(UUID profileId, String email, Instant now) {
+    return (int)
+        database.values().stream()
+            .filter(invitation -> profileId.equals(invitation.getProfileId()))
+            .filter(
+                invitation -> invitation.statusAt(now) == ProfileManagerInvitationStatus.PENDING)
+            .filter(invitation -> !email.equalsIgnoreCase(invitation.getRecipientEmail()))
+            .count();
+  }
+
   private Optional<ChangedManagerInvitation> tryTransitionPending(
       UUID invitationId, ProfileManagerInvitationStatus target, Instant now) {
     var invitation = database.get(invitationId);

@@ -44,6 +44,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -183,6 +184,55 @@ class ProfileManagerAdministrationServiceTest {
     assertThat(rejectionOf(service.inviteProfileManager(identity(), orphan.getId(), "mara")))
         .isInstanceOf(ManagerRejections.EmailInvalid.class);
     assertThat(invitations.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should refuse an eleventh invitation when ten wait for the Profile")
+  void shouldRefuseAnEleventhInvitationWhenTenWaitForTheProfile() {
+    inviteTenAddresses();
+
+    assertThat(
+            rejectionOf(
+                service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail())))
+        .isInstanceOf(ManagerRejections.ManagerInvitationLimitReached.class);
+    assertThat(waitingFor(orphan)).hasSize(10);
+  }
+
+  @Test
+  @DisplayName("Should count an invitation that nobody can answer toward the limit")
+  void shouldCountAnInvitationThatNobodyCanAnswerTowardTheLimit() {
+    inviteTenAddresses();
+
+    assertThat(waitingFor(orphan))
+        .allSatisfy(invitation -> assertThat(invitation.getRecipientAccountId()).isNull());
+    assertThat(
+            rejectionOf(
+                service.inviteProfileManager(identity(), orphan.getId(), "sam@example.com")))
+        .isInstanceOf(ManagerRejections.ManagerInvitationLimitReached.class);
+  }
+
+  @Test
+  @DisplayName("Should make room when a waiting invitation expires")
+  void shouldMakeRoomWhenAWaitingInvitationExpires() {
+    inviteTenAddresses();
+    var lapsing = waitingFor(orphan).getFirst();
+    lapsing.setExpiresAt(NOW);
+
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
+
+    assertThat(issued.invitation().getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("Should replace the invitation when ten wait and the same address is invited again")
+  void shouldReplaceTheInvitationWhenTenWaitAndTheSameAddressIsInvitedAgain() {
+    inviteTenAddresses();
+
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), "Person.0@Example.com"));
+
+    assertThat(waitingFor(orphan)).hasSize(10).contains(issued.invitation());
   }
 
   @Test
@@ -778,6 +828,21 @@ class ProfileManagerAdministrationServiceTest {
         .publicId(UUID.randomUUID().toString())
         .secretDigest(new byte[] {1})
         .build();
+  }
+
+  private void inviteTenAddresses() {
+    for (var person = 0; person < 10; person++) {
+      issued(
+          service.inviteProfileManager(
+              identity(), orphan.getId(), "person.%d@example.com".formatted(person)));
+    }
+  }
+
+  private List<ProfileManagerInvitation> waitingFor(Profile profile) {
+    return invitations.findAll().stream()
+        .filter(invitation -> profile.getId().equals(invitation.getProfileId()))
+        .filter(invitation -> invitation.statusAt(NOW) == ProfileManagerInvitationStatus.PENDING)
+        .toList();
   }
 
   private AuthenticatedIdentity identity() {

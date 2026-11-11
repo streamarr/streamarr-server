@@ -234,8 +234,9 @@ type Mutation {
     that Account may accept: an address with no Account, or whose Account is supervised or already
     manages the Profile, still gets an invitation that waits, and that nobody can accept. It never
     passes to an Account that takes the address later. A newer invitation to the same address, in
-    any case, replaces a pending one. The invitation waits for the invitation lifetime that a
-    ServerAdmin sets. The code appears once, in this answer. A caller who may read
+    any case, replaces a pending one. At most ten invitations wait for one Profile
+    (ManagerInvitationLimitReachedError), those that nobody can accept included. The invitation
+    waits for the invitation lifetime that a ServerAdmin sets. The code appears once, in this answer. A caller who may read
     profileAdministration of the Profile but may not invite gets FORBIDDEN; everyone else, a
     device-bound session included, gets ProfileNotFoundError.
     """

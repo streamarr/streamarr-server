@@ -90,7 +90,20 @@ type InviteProfileManagerPayload {
     userErrors: [InviteProfileManagerError!]!
 }
 
-union InviteProfileManagerError = ProfileNotFoundError | EmailRequiredError | EmailInvalidError
+union InviteProfileManagerError =
+    ProfileNotFoundError
+  | EmailRequiredError
+  | EmailInvalidError
+  | ManagerInvitationLimitReachedError
+
+"""
+Ten invitations to manage the Profile already wait for an answer, so no invitation was made. One
+that is accepted, declined, canceled, replaced or invalidated, or that expires, makes room. Inviting
+an address that already has one waiting replaces it, and is never refused for this.
+"""
+type ManagerInvitationLimitReachedError implements MutationError {
+    message: String!
+}
 
 input CancelManagerInvitationInput {
     invitationId: ID!
