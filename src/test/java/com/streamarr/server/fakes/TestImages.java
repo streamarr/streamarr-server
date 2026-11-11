@@ -80,6 +80,28 @@ public final class TestImages {
     return writePng(image);
   }
 
+  /**
+   * Four flat quadrants split at half the width and height: red top left, blue top right, green
+   * bottom right and yellow bottom left.
+   */
+  public static byte[] createQuadrantPngImage(int width, int height) {
+    var left = width / 2;
+    var top = height / 2;
+    var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+    var graphics = image.createGraphics();
+    graphics.setColor(new Color(0xC0392B));
+    graphics.fillRect(0, 0, left, top);
+    graphics.setColor(new Color(0x2980B9));
+    graphics.fillRect(left, 0, width - left, top);
+    graphics.setColor(new Color(0x27AE60));
+    graphics.fillRect(left, top, width - left, height - top);
+    graphics.setColor(new Color(0xF1C40F));
+    graphics.fillRect(0, top, left, height - top);
+    graphics.dispose();
+
+    return writePng(image);
+  }
+
   public static byte[] createTransparentPngImage() {
     return writePng(new BufferedImage(185, 278, BufferedImage.TYPE_INT_ARGB));
   }

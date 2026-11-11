@@ -2,6 +2,7 @@ package com.streamarr.server.services.metadata;
 
 import static com.streamarr.server.fakes.TestImages.createGifImage;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createQuadrantPngImage;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
@@ -25,6 +26,7 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 import javax.imageio.ImageIO;
@@ -152,6 +154,44 @@ class ImageVariantServiceTest {
     var small =
         variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
     assertThat(small.blurHash()).isNotBlank();
+  }
+
+  @Test
+  @DisplayName("Should hash a thumbnail fitted within 128 pixels when the small variant is wider")
+  void shouldHashThumbnailFittedWithin128PixelsWhenSmallVariantIsWider() {
+    var imageData = createQuadrantPngImage(300, 169);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the 128x72
+    // Thumbnailator thumbnail of the 300x169 small variant, and L=Iq#w|DjsJ.MoNFfQofa#ayfQfQ for
+    // the small variant itself.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("L=Iq#w|DjsJ.MoNFayofa#ayfQfQ");
+  }
+
+  @Test
+  @DisplayName("Should hash a thumbnail fitted within 128 pixels when the small variant is taller")
+  void shouldHashThumbnailFittedWithin128PixelsWhenSmallVariantIsTaller() {
+    var imageData = createQuadrantPngImage(185, 278);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the 85x128
+    // Thumbnailator thumbnail of the 185x278 small variant, and L=Iq#x|DjsJ.MoNFayoff8fQfQfQ for
+    // the small variant itself.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("L=Iq#x|Do0J.MoNFayofa#ayfQfQ");
+  }
+
+  @Test
+  @DisplayName("Should hash the small variant itself when it fits within 128 pixels")
+  void shouldHashSmallVariantItselfWhenItFitsWithin128Pixels() {
+    var imageData = createQuadrantPngImage(92, 60);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.LOGO);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the fixture's
+    // own 92x60 pixels, and L=Iq#x|DjsJ.MoNFayofa#ayfQfQ for a 128x83 enlargement of them.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("L=Iq#x|Do0J.MoRiayofa#ayfQfQ");
   }
 
   @Test
@@ -320,6 +360,11 @@ class ImageVariantServiceTest {
     var variant = defaultVariantBuilder().data(null).build();
 
     assertThat(variant.toString()).contains("dataLength=0");
+  }
+
+  private static ImageVariantService.GeneratedVariant smallVariant(
+      List<ImageVariantService.GeneratedVariant> variants) {
+    return variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
   }
 
   private static GeneratedVariantBuilder defaultVariantBuilder() {
