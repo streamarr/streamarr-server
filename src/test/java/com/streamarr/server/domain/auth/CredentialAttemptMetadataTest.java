@@ -62,6 +62,19 @@ class CredentialAttemptMetadataTest {
   }
 
   @Test
+  @DisplayName("Should require the presenting Account when the kind is a share code")
+  void shouldRequirePresentingAccountWhenKindIsShareCode() {
+    var metadata =
+        CredentialAttemptMetadata.builder()
+            .kind(CredentialKind.SHARE_CODE)
+            .credentialId(CREDENTIAL_ID)
+            .ipAddress(IP_ADDRESS);
+    assertThatThrownBy(metadata::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("SHARE_CODE target requires accountId");
+  }
+
+  @Test
   @DisplayName("Should require the Account when the kind is an Account password verification")
   void shouldRequireAccountWhenKindIsAccountPasswordVerification() {
     var metadata =
@@ -178,6 +191,12 @@ class CredentialAttemptMetadataTest {
             CredentialAttemptMetadata.builder()
                 .kind(CredentialKind.DEVICE_PAIRING_CODE)
                 .accountId(ACCOUNT_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.SHARE_CODE,
+            CredentialAttemptMetadata.builder()
+                .kind(CredentialKind.SHARE_CODE)
+                .accountId(ACCOUNT_ID)
                 .ipAddress(IP_ADDRESS)));
   }
 
@@ -241,6 +260,22 @@ class CredentialAttemptMetadataTest {
             "credentialId",
             CredentialAttemptMetadata.builder()
                 .kind(CredentialKind.DEVICE_PAIRING_CODE)
+                .accountId(ACCOUNT_ID)
+                .credentialId(CREDENTIAL_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.SHARE_CODE,
+            "profileId",
+            CredentialAttemptMetadata.builder()
+                .kind(CredentialKind.SHARE_CODE)
+                .accountId(ACCOUNT_ID)
+                .profileId(PROFILE_ID)
+                .ipAddress(IP_ADDRESS)),
+        Arguments.of(
+            CredentialKind.SHARE_CODE,
+            "credentialId",
+            CredentialAttemptMetadata.builder()
+                .kind(CredentialKind.SHARE_CODE)
                 .accountId(ACCOUNT_ID)
                 .credentialId(CREDENTIAL_ID)
                 .ipAddress(IP_ADDRESS)),

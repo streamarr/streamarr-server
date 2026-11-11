@@ -39,6 +39,7 @@ import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
+import com.streamarr.server.jooq.generated.tables.ShareCode;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
 
@@ -116,6 +117,8 @@ public class Indexes {
     public static final Index IDX_SESSION_PROGRESS_MEDIA_FILE_ID = Internal.createIndex(DSL.name("idx_session_progress_media_file_id"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID }, false);
     public static final Index IDX_SESSION_PROGRESS_PROFILE_ID = Internal.createIndex(DSL.name("idx_session_progress_profile_id"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.PROFILE_ID }, false);
     public static final Index IDX_SESSION_PROGRESS_RESUME = Internal.createIndex(DSL.name("idx_session_progress_resume"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.PROFILE_ID, SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID, SessionProgress.SESSION_PROGRESS.LAST_MODIFIED_ON.desc() }, false);
+    public static final Index IDX_SHARE_CODE_HOUSEHOLD_CREATED_ID = Internal.createIndex(DSL.name("idx_share_code_household_created_id"), ShareCode.SHARE_CODE, new OrderField[] { ShareCode.SHARE_CODE.HOUSEHOLD_ID, ShareCode.SHARE_CODE.CREATED_ON.desc(), ShareCode.SHARE_CODE.ID }, false);
+    public static final Index IDX_SHARE_CODE_ISSUER = Internal.createIndex(DSL.name("idx_share_code_issuer"), ShareCode.SHARE_CODE, new OrderField[] { ShareCode.SHARE_CODE.ISSUER_ACCOUNT_ID }, false);
     public static final Index IDX_USER_ACCOUNT_HOUSEHOLD_ID = Internal.createIndex(DSL.name("idx_user_account_household_id"), UserAccount.USER_ACCOUNT, new OrderField[] { UserAccount.USER_ACCOUNT.HOUSEHOLD_ID }, false);
     public static final Index IDX_WATCH_HISTORY_PROFILE_COLLECTABLE = Internal.createIndex(DSL.name("idx_watch_history_profile_collectable"), WatchHistory.WATCH_HISTORY, new OrderField[] { WatchHistory.WATCH_HISTORY.PROFILE_ID, WatchHistory.WATCH_HISTORY.COLLECTABLE_ID, WatchHistory.WATCH_HISTORY.WATCHED_AT.desc() }, false);
     public static final Index IMAGE_COMPANY_ID_IDX = Internal.createIndex(DSL.name("image_company_id_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.COMPANY_ID }, false);
