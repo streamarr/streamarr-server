@@ -197,7 +197,12 @@ public class ImageVariantService {
       }
 
       var targetHeight = heightAtSourceAspectRatio(source, targetWidth);
-      previous = render(thumbnailOf(previous, transparent).forceSize(targetWidth, targetHeight));
+      var resizeFrom = previous;
+      if (isOnePixelHigh(previous)) {
+        resizeFrom = source;
+      }
+
+      previous = render(thumbnailOf(resizeFrom, transparent).forceSize(targetWidth, targetHeight));
       resized.put(size, previous);
     }
     return resized;

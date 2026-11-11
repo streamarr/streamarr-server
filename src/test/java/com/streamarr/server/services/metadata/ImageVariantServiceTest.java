@@ -24,6 +24,7 @@ import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.exceptions.ImageProcessingException;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
@@ -172,6 +173,25 @@ class ImageVariantServiceTest {
         .filteredOn(v -> v.variant() != ImageSize.ORIGINAL)
         .extracting(v -> v.variant() + " " + v.width() + "x" + v.height())
         .containsExactlyInAnyOrder("SMALL " + small, "MEDIUM " + medium, "LARGE " + large);
+  }
+
+  @ParameterizedTest
+  @EnumSource(ImageType.class)
+  @DisplayName("Should keep a solid color in every resized variant when the source is a thin strip")
+  void shouldKeepSolidColorInEveryResizedVariantWhenSourceIsThinStrip(ImageType imageType) {
+    var red = 0xC0392B;
+    var imageData = createSolidPngImage(4001, 3, red);
+
+    var variants = imageVariantService.generateVariants(imageData, imageType);
+
+    // JPEG keeps a flat color within a few levels; a resize that draws nothing leaves black.
+    assertThat(variants)
+        .filteredOn(v -> v.variant() != ImageSize.ORIGINAL)
+        .allSatisfy(
+            v ->
+                assertThat(largestChannelDifference(v.data(), red))
+                    .as("%s variant", v.variant())
+                    .isLessThanOrEqualTo(8));
   }
 
   @Test
@@ -415,6 +435,22 @@ class ImageVariantServiceTest {
     var variant = defaultVariantBuilder().data(null).build();
 
     assertThat(variant.toString()).contains("dataLength=0");
+  }
+
+  private static int largestChannelDifference(byte[] encodedImage, int rgb) throws IOException {
+    var image = ImageIO.read(new ByteArrayInputStream(encodedImage));
+    var largest = 0;
+    for (var y = 0; y < image.getHeight(); y++) {
+      for (var x = 0; x < image.getWidth(); x++) {
+        var pixel = image.getRGB(x, y);
+        for (var shift = 0; shift <= 16; shift += 8) {
+          var difference = Math.abs(((pixel >> shift) & 0xFF) - ((rgb >> shift) & 0xFF));
+          largest = Math.max(largest, difference);
+        }
+      }
+    }
+
+    return largest;
   }
 
   private static ImageVariantService.GeneratedVariant smallVariant(
