@@ -109,6 +109,12 @@ enum Action {
       Authorizes.READ,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.PROFILE_MANAGEMENT),
+  VIEW_PROFILE_MANAGERS(
+      "viewProfileManagers",
+      ResourceKind.PROFILE,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT),
   VIEW_PROFILE_SHARE_HOUSEHOLDS(
       "viewProfileShareHouseholds",
       ResourceKind.PROFILE,

@@ -28,6 +28,20 @@ when {
    (principal has serverAdmin && principal.serverAdmin))
 };
 
+// Who manages a Profile is its managers' business, not the business of a HouseholdAdmin who only
+// supervises it where it is shared.
+@id("view-profile-managers-as-manager-or-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"viewProfileManagers",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  ((resource has managedByPrincipal && resource.managedByPrincipal) ||
+   (principal has serverAdmin && principal.serverAdmin))
+};
+
 // Only the named recipient answers an invitation addressed to them.
 @id("decide-manager-invitation-as-named-recipient")
 permit (
