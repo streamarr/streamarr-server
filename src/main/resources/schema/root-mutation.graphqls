@@ -42,18 +42,110 @@ type Mutation {
     renameAccount(input: RenameAccountInput!): RenameAccountPayload
     createHousehold(input: CreateHouseholdInput!): CreateHouseholdPayload
     renameHousehold(input: RenameHouseholdInput!): RenameHouseholdPayload
+    """
+    Creates a Profile in a Household and makes it available there. A HouseholdAdmin of that
+    Household whose own Personal Profile is an unrestricted Adult, or a ServerAdmin. The creator
+    becomes its first manager; only a ServerAdmin may also name another Account as a manager with
+    localManagerAccountId. profileCreationPreview first says which Profiles it would lock; the
+    creation is never refused for that. A caller who may read the Household's administration but may
+    not create a Profile there gets FORBIDDEN; everyone else, a device-bound session included, gets
+    HouseholdNotFoundError.
+    """
     createProfile(input: CreateProfileInput!): CreateProfilePayload
+    """
+    Renames a Profile; the name is unique among the Profiles available in each Household where it
+    is. Its managers, a HouseholdAdmin who supervises the restricted Profile where it is available,
+    and ServerAdmins. A caller who may read profileAdministration of the Profile but may not do this
+    gets FORBIDDEN; everyone else, a device-bound session included, gets ProfileNotFoundError.
+    """
     renameProfile(input: RenameProfileInput!): RenameProfilePayload
+    """
+    Sets a Profile's picture. Its managers, a HouseholdAdmin who supervises the restricted Profile
+    where it is available, and ServerAdmins. A caller who may read profileAdministration of the
+    Profile but may not do this gets FORBIDDEN; everyone else, a device-bound session included, gets
+    ProfileNotFoundError.
+    """
     setProfilePicture(input: SetProfilePictureInput!): SetProfilePicturePayload
+    """
+    Changes a Profile's kind. Its managers and ServerAdmins, never a HouseholdAdmin through
+    supervision. Leaving the Profile an unrestricted Adult needs a recent password from whoever does
+    it (ReauthenticationRequiredError), and making someone's own unrestricted Adult Personal Profile
+    a Kid is a ServerAdmin override that needs one too. profilePolicyChangePreview first says which
+    Profiles the change would lock; the change is never refused for that. A caller who may read
+    profileAdministration of the Profile but may not do this gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ProfileNotFoundError.
+    """
     changeProfileKind(input: ChangeProfileKindInput!): ChangeProfileKindPayload
+    """
+    Sets or changes a Profile's content limit, the oldest rating age it may watch. Its managers,
+    ServerAdmins, and a HouseholdAdmin who supervises the restricted Profile where it is available.
+    Putting a limit on someone's own unrestricted Adult Personal Profile is a ServerAdmin override
+    that needs a recent password (ReauthenticationRequiredError). A negative age gets
+    MaximumAllowedRatingAgeInvalidError. profilePolicyChangePreview first says which Profiles the
+    change would lock; the change is never refused for that. A caller who may read
+    profileAdministration of the Profile but may not do this gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ProfileNotFoundError.
+    """
     setProfileMaximumAllowedRatingAge(input: SetProfileMaximumAllowedRatingAgeInput!): SetProfileMaximumAllowedRatingAgePayload
+    """
+    Removes a Profile's content limit. An Adult left without one is unrestricted: only its managers
+    and ServerAdmins may do that, with a recent password (ReauthenticationRequiredError). A Kid
+    stays restricted without a limit, so a HouseholdAdmin who supervises it where it is available
+    may also remove its limit. profilePolicyChangePreview first says which Profiles the change would
+    lock. A caller who may read profileAdministration of the Profile but may not do this gets
+    FORBIDDEN; everyone else, a device-bound session included, gets ProfileNotFoundError.
+    """
     removeProfileMaximumAllowedRatingAge(input: RemoveProfileMaximumAllowedRatingAgeInput!): RemoveProfileMaximumAllowedRatingAgePayload
+    """
+    Sets or changes a Profile's PIN, which goes with it into every Household. Its managers and a
+    HouseholdAdmin who supervises the restricted Profile where it is available; a ServerAdmin uses
+    administrativelyResetProfilePin. A caller who may read profileAdministration of the Profile but
+    may not do this gets FORBIDDEN; everyone else, a device-bound session included, gets
+    ProfileNotFoundError.
+    """
     setProfilePin(input: SetProfilePinInput!): SetProfilePinPayload
+    """
+    Removes a Profile's PIN. Its managers and a HouseholdAdmin who supervises the restricted Profile
+    where it is available. Refused with ProfilePinRequiredError while removing it would lock the
+    Profile in a Household where it is available. A caller who may read profileAdministration of the
+    Profile but may not do this gets FORBIDDEN; everyone else, a device-bound session included, gets
+    ProfileNotFoundError.
+    """
     removeProfilePin(input: RemoveProfilePinInput!): RemoveProfilePinPayload
+    """
+    Resets any Profile's PIN as a ServerAdmin override, with a recent password
+    (ReauthenticationRequiredError) and an audited reason. A caller who may read
+    profileAdministration of the Profile but may not do this gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ProfileNotFoundError.
+    """
     administrativelyResetProfilePin(input: AdministrativelyResetProfilePinInput!): AdministrativelyResetProfilePinPayload
+    """
+    Deletes a Profile with its watch history, progress and preferences, for good. Only its last
+    direct manager may, with a recent password (ReauthenticationRequiredError), and only while it is
+    nobody's Personal Profile (ProfileAdministration.linked), has no active or pending share in any
+    Household, its own included (profileShares with statuses [PENDING, ACTIVE]), and no other
+    Account holds a direct grant for it (profileManagers). Pending invitations to manage it
+    (pendingManagerInvitationsForProfile) are invalidated with it. A ServerAdmin has no shortcut
+    here; administrativelyDeleteProfile is its override. A caller who may read profileAdministration
+    of the Profile but may not delete it gets ProfileNotDeletableError; everyone else, a device-
+    bound session included, gets ProfileNotFoundError.
+    """
     deleteProfile(input: DeleteProfileInput!): DeleteProfilePayload
+    """
+    Invites a new Account by email, with a new Personal Profile created for it on acceptance.
+    ServerAdmin work: everyone else, a device-bound session included, gets FORBIDDEN.
+    """
     issueAccountInvitationWithNewProfile(input: IssueAccountInvitationWithNewProfileInput!): IssueAccountInvitationWithNewProfilePayload
+    """
+    Invites a new Account by email for an existing Profile, which becomes its Personal Profile on
+    acceptance; accountInvitationProfilePreview first says where that Profile is available.
+    ServerAdmin work: everyone else, a device-bound session included, gets FORBIDDEN.
+    """
     issueAccountInvitationForExistingProfile(input: IssueAccountInvitationForExistingProfileInput!): IssueAccountInvitationForExistingProfilePayload
+    """
+    Cancels a pending Account invitation. ServerAdmin work: everyone else, a device-bound session
+    included, gets FORBIDDEN.
+    """
     cancelAccountInvitation(input: CancelAccountInvitationInput!): CancelAccountInvitationPayload
     issuePasswordReset(input: IssuePasswordResetInput!): IssuePasswordResetPayload
     """
@@ -68,10 +160,43 @@ type Mutation {
     FORBIDDEN. A newer offer of the same Profile to the same Household replaces a pending one.
     """
     offerProfileShare(input: OfferProfileShareInput!): OfferProfileSharePayload
+    """
+    Accepts a pending offer of a Profile, which makes it available in the target Household. A
+    HouseholdAdmin of the target Household, or a ServerAdmin. A caller who may read the Profile's or
+    the target Household's administration but may not accept gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ShareNotFoundError.
+    """
     acceptProfileShare(input: AcceptProfileShareInput!): AcceptProfileSharePayload
+    """
+    Rejects a pending offer of a Profile. A HouseholdAdmin of the target Household, or a
+    ServerAdmin. A caller who may read the Profile's or the target Household's administration but
+    may not reject gets FORBIDDEN; everyone else, a device-bound session included, gets
+    ShareNotFoundError.
+    """
     rejectProfileShare(input: RejectProfileShareInput!): RejectProfileSharePayload
+    """
+    Withdraws a pending offer of a Profile. The Account that offered it, the Account whose own
+    unrestricted Adult Personal Profile is on offer, or a ServerAdmin. A caller who may read the
+    Profile's or the target Household's administration but may not withdraw it gets FORBIDDEN;
+    everyone else, a device-bound session included, gets ShareNotFoundError.
+    """
     cancelProfileShare(input: CancelProfileShareInput!): CancelProfileSharePayload
+    """
+    Ends an active share, so the Profile is no longer available in that Household. A HouseholdAdmin
+    of that Household, a direct manager of the Profile who is a member of that Household, or the
+    Account whose own unrestricted Adult Personal Profile it is. A share that an Account's
+    membership requires cannot end (StructuralShareCannotEndError). A caller who may read the
+    Profile's or the Household's administration but may not end it gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ShareNotFoundError.
+    """
     endProfileShare(input: EndProfileShareInput!): EndProfileSharePayload
+    """
+    Ends an active share as a ServerAdmin override, with a recent password
+    (ReauthenticationRequiredError). A share that an Account's membership requires cannot end
+    (StructuralShareCannotEndError). A caller who may read the Profile's or the Household's
+    administration but may not end it gets FORBIDDEN; everyone else, a device-bound session
+    included, gets ShareNotFoundError.
+    """
     administrativelyEndProfileShare(input: AdministrativelyEndProfileShareInput!): AdministrativelyEndProfileSharePayload
     """
     Issue a share code for a Household, for its HouseholdAdmins and for ServerAdmins. The code
@@ -101,13 +226,64 @@ type Mutation {
     travels in a URL.
     """
     lookUpShareCode(input: LookUpShareCodeInput!): LookUpShareCodePayload
+    """
+    Invites another Account to manage a Profile; it becomes a manager only by accepting. The
+    Profile's managers, never a HouseholdAdmin through supervision and never a ServerAdmin as such
+    (administrativelyGrantProfileManager is its override). The code appears once in the answer. A
+    caller who may read profileAdministration of the Profile but may not do this gets FORBIDDEN;
+    everyone else, a device-bound session included, gets ProfileNotFoundError.
+    """
     inviteProfileManager(input: InviteProfileManagerInput!): InviteProfileManagerPayload
+    """
+    Withdraws a pending invitation to manage a Profile. The Account that sent it, or a ServerAdmin.
+    A caller who may see the invitation (its named Account, or one who may read the Profile's
+    administration) but may not withdraw it gets FORBIDDEN; everyone else, a device-bound session
+    included, gets ManagerInvitationNotFoundError.
+    """
     cancelManagerInvitation(input: CancelManagerInvitationInput!): CancelManagerInvitationPayload
+    """
+    Accepts an invitation to manage a Profile by its code, which makes the signed-in Account a
+    direct manager. Only the Account the invitation names, while its own Personal Profile is an
+    unrestricted Adult (ProfileManagerNotEligibleError otherwise). A code that does not work, one
+    that names another Account, and a device-bound session all get ManagerInvitationNotFoundError.
+    """
     acceptManagerInvitation(input: AcceptManagerInvitationInput!): AcceptManagerInvitationPayload
+    """
+    Declines an invitation to manage a Profile by its code. Only the Account the invitation names. A
+    code that does not work, one that names another Account, and a device-bound session all get
+    ManagerInvitationNotFoundError.
+    """
     declineManagerInvitation(input: DeclineManagerInvitationInput!): DeclineManagerInvitationPayload
+    """
+    Gives up the signed-in Account's own direct grant to manage a Profile, for good: to manage it
+    again it needs a new invitation or a ServerAdmin's grant. An Account cannot give up managing its
+    own Personal Profile, which holds no grant. Refused with ProfileRequiresEligibleManagerError
+    when the Profile would be left without a manager it needs. A caller who may read
+    profileAdministration of the Profile but may not do this gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ProfileNotFoundError.
+    """
     relinquishProfileManagement(input: RelinquishProfileManagementInput!): RelinquishProfileManagementPayload
+    """
+    Removes another Account's direct grant to manage a Profile. Only the Account whose own
+    unrestricted Adult Personal Profile it is; managers cannot remove one another. Refused with
+    ProfileRequiresEligibleManagerError when the Profile would be left without a manager it needs. A
+    caller who may read profileAdministration of the Profile but may not do this gets FORBIDDEN;
+    everyone else, a device-bound session included, gets ProfileNotFoundError.
+    """
     removeProfileManager(input: RemoveProfileManagerInput!): RemoveProfileManagerPayload
+    """
+    Makes an Account a direct manager of a Profile without an invitation, as a ServerAdmin override
+    with a recent password (ReauthenticationRequiredError) and an audited reason. A caller who may
+    read profileAdministration of the Profile but may not do this gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ProfileNotFoundError.
+    """
     administrativelyGrantProfileManager(input: AdministrativelyGrantProfileManagerInput!): AdministrativelyGrantProfileManagerPayload
+    """
+    Removes an Account's direct grant to manage a Profile as a ServerAdmin override, with a recent
+    password (ReauthenticationRequiredError) and an audited reason. A caller who may read
+    profileAdministration of the Profile but may not do this gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ProfileNotFoundError.
+    """
     administrativelyRemoveProfileManager(input: AdministrativelyRemoveProfileManagerInput!): AdministrativelyRemoveProfileManagerPayload
     revokeDeviceRegistration(input: RevokeDeviceRegistrationInput!): RevokeDeviceRegistrationPayload
     blockEsn(input: BlockEsnInput!): BlockEsnPayload
@@ -117,11 +293,30 @@ type Mutation {
     transferAccount(input: TransferAccountInput!): TransferAccountPayload
     administrativelyDeleteAccount(input: AdministrativelyDeleteAccountInput!): AdministrativelyDeleteAccountPayload
     deleteMyAccount(input: DeleteMyAccountInput!): DeleteMyAccountPayload
+    """
+    Moves a Profile that is nobody's Personal Profile to another Household. ServerAdmin work. A
+    caller who may read profileAdministration of the Profile but may not do this gets FORBIDDEN;
+    everyone else, a device-bound session included, gets ProfileNotFoundError.
+    """
     transferProfile(input: TransferProfileInput!): TransferProfilePayload
+    """
+    Deletes a Profile that is nobody's Personal Profile, whatever its shares and managers, as a
+    ServerAdmin override with a recent password (ReauthenticationRequiredError) and an audited
+    reason. A caller who may read profileAdministration of the Profile but may not do this gets
+    FORBIDDEN; everyone else, a device-bound session included, gets ProfileNotFoundError.
+    """
     administrativelyDeleteProfile(input: AdministrativelyDeleteProfileInput!): AdministrativelyDeleteProfilePayload
     deleteEmptyHousehold(input: DeleteEmptyHouseholdInput!): DeleteEmptyHouseholdPayload
     transferLastAccountAndDeleteHousehold(input: TransferLastAccountAndDeleteHouseholdInput!): TransferLastAccountAndDeleteHouseholdPayload
     deleteLastAccountAndHousehold(input: DeleteLastAccountAndHouseholdInput!): DeleteLastAccountAndHouseholdPayload
+    """
+    Deletes a Household and its last Account, but keeps that Account's Personal Profile: it moves to
+    destinationHouseholdId, and replacementManagerAccountId, an Account of that Household whose own
+    Personal Profile is unrestricted, is made its manager. A ServerAdmin with a recent password
+    (ReauthenticationRequiredError) and an audited reason. A caller who may read the Household's
+    administration but may not delete it gets FORBIDDEN; everyone else, a device-bound session
+    included, gets HouseholdNotFoundError.
+    """
     deleteLastAccountAndHouseholdPreservingPersonalProfile(input: DeleteLastAccountAndHouseholdPreservingPersonalProfileInput!): DeleteLastAccountAndHouseholdPreservingPersonalProfilePayload
     changeEncoderPreset(input: ChangeEncoderPresetInput!): ChangeEncoderPresetPayload
     changeIdleSegmentRetention(input: ChangeIdleSegmentRetentionInput!): ChangeIdleSegmentRetentionPayload

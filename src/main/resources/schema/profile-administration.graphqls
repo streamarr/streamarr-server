@@ -1,5 +1,9 @@
 # Profile administration (ADR 0024 §ProfileManager, §Profile creation, §PIN safety; ADR 0026).
 
+"""
+A Profile as its administrators see it (ADR 0024): its managers, the HouseholdAdmins of a Household
+where it is available, and ServerAdmins.
+"""
 type ProfileAdministration {
     id: ID!
     name: String!
@@ -14,6 +18,7 @@ type ProfileAdministration {
     where a visitor comes from is not that Household's business.
     """
     household: HouseholdSummary
+    "Whether the Profile is an Account's Personal Profile."
     linked: Boolean!
     """
     What the requesting Account is to the Profile. MANAGES for each of its ProfileManagers: the

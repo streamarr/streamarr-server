@@ -115,6 +115,7 @@ type SecurityAuditEventEdge {
     cursor: String!
 }
 
+"One playback by a Profile: what was played, how far, and when."
 type ProfileActivityDetails {
     id: ID!
     mediaFileId: ID!
@@ -124,11 +125,13 @@ type ProfileActivityDetails {
     watchedAt: String!
 }
 
+"A page of a Profile's viewing activity."
 type ProfileActivityConnection {
     edges: [ProfileActivityEdge!]!
     pageInfo: PageInfo!
 }
 
+"One playback by a Profile and where it sits in its list."
 type ProfileActivityEdge {
     node: ProfileActivityDetails!
     cursor: String!
