@@ -27,6 +27,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.BitrateScanRequesters;
+import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.PlaybackSessionFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
@@ -332,8 +333,8 @@ class HlsCopyPlaylistApiSmokeTest {
         .zipSatisfy(
             slotStartsBefore(realEnd),
             (advertised, slotStart) -> assertThat(advertised).isCloseTo(slotStart, HALF_A_FRAME));
-    assertThat(videoOpeningsAfterTheFirst(playlist, served))
-        .as("each advertised segment's video opens as long after the first segment's as listed")
+    assertThat(videoOpenings(playlist, served))
+        .as("each advertised segment's video opens where the playlist lists its start")
         .zipSatisfy(
             playlist.segmentStarts(),
             (opening, advertised) -> assertThat(opening).isCloseTo(advertised, HALF_A_FRAME));
@@ -520,16 +521,21 @@ class HlsCopyPlaylistApiSmokeTest {
         Files.createTempFile(temporaryDirectory, "served", ".mp4"), media.toByteArray());
   }
 
-  // When each served segment's first frame presents, counted from the first segment's first frame.
-  private List<Double> videoOpeningsAfterTheFirst(MediaPlaylist playlist, List<byte[]> served)
-      throws Exception {
-    var openings = new ArrayList<Double>();
-    for (var segment : served) {
-      openings.add(
-          videoPresentationTimes(playlist, segment).stream().min(Double::compare).orElseThrow());
-    }
+  // When each served segment's first video sample presents: its track fragment's decode time plus
+  // the sample's composition offset. FFmpeg's MP4 demuxer shifts every presentation time by the
+  // track's largest negative composition offset, one frame here, so ffprobe prints each one late.
+  private List<Double> videoOpenings(MediaPlaylist playlist, List<byte[]> served) throws Exception {
+    var initialization = bodyOf(playlist.initializationUri());
+    return served.stream()
+        .map(segment -> Fmp4Fixture.firstVideoPresentationTime(joined(initialization, segment)))
+        .toList();
+  }
 
-    return openings.stream().map(opening -> opening - openings.getFirst()).toList();
+  private static byte[] joined(byte[] initialization, byte[] mediaSegment) {
+    var media = new ByteArrayOutputStream();
+    media.writeBytes(initialization);
+    media.writeBytes(mediaSegment);
+    return media.toByteArray();
   }
 
   // From a segment's first frame to the end of its last frame.
