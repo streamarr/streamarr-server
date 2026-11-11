@@ -380,6 +380,7 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
       for (var failure = 0; failure < 5; failure++) {
         lookUp(bearer, "BCDF-GHJK");
       }
+
       var throttled = errors(executeAllowingErrors(bearer, LOOK_UP, Map.of("code", code)));
       executeAllowingErrors(
           bearer,
