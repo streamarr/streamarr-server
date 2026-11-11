@@ -8,8 +8,10 @@ import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.domain.notification.UnreadNews;
+import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
+import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import java.time.Instant;
 import java.util.Collection;
@@ -17,12 +19,14 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.apache.commons.lang3.NotImplementedException;
 
 /**
- * Notifications in memory for the retention sweep, which reads and deletes aged news. It knows no
- * share and no Account, so it holds news alone and treats no recipient as disabled; the reads and
- * writes that need the share are left to the database.
+ * Notifications in memory for the list, the unread count and the retention sweep. It knows no share
+ * and no Account, so it holds news alone, reads every Notification of a recipient as one a read
+ * rule could show, which leaves the guard to decide each, and treats no recipient as disabled; the
+ * reads and writes that need the share are left to the database.
  */
 public class FakeNotificationRepository extends FakeJpaRepository<Notification>
     implements NotificationRepository {
@@ -79,7 +83,29 @@ public class FakeNotificationRepository extends FakeJpaRepository<Notification>
 
   @Override
   public List<Row<Notification>> rowsOfRecipient(UUID recipientAccountId, Seek seek) {
-    throw new NotImplementedException();
+    return InMemoryKeyset.rowsBeyond(
+        ofRecipient(recipientAccountId)
+            .map(
+                notification ->
+                    new Row<>(
+                        notification,
+                        new Position(
+                            new SortValue.OfInstant(notification.getLatestEventAt()),
+                            notification.getId())))
+            .toList(),
+        seek);
+  }
+
+  @Override
+  public List<Notification> findUnreadOfRecipient(UUID recipientAccountId, Instant now) {
+    return ofRecipient(recipientAccountId)
+        .filter(notification -> notification.getReadAt().isEmpty())
+        .toList();
+  }
+
+  private Stream<Notification> ofRecipient(UUID recipientAccountId) {
+    return database.values().stream()
+        .filter(notification -> notification.getRecipientAccountId().equals(recipientAccountId));
   }
 
   @Override
@@ -90,11 +116,6 @@ public class FakeNotificationRepository extends FakeJpaRepository<Notification>
 
   @Override
   public List<GuardedNotification> findRequestsAbout(UUID shareId) {
-    throw new NotImplementedException();
-  }
-
-  @Override
-  public List<Notification> findUnreadOfRecipient(UUID recipientAccountId, Instant now) {
     throw new NotImplementedException();
   }
 
