@@ -1,16 +1,21 @@
 package com.streamarr.server.services.artwork;
 
+import static com.streamarr.server.fakes.TestImages.OPAQUE_MID_GRAY;
 import static com.streamarr.server.fakes.TestImages.OPAQUE_TEAL;
 import static com.streamarr.server.fakes.TestImages.alphaOfCornerPixel;
 import static com.streamarr.server.fakes.TestImages.centrePixelOf;
 import static com.streamarr.server.fakes.TestImages.colorComponentCountOf;
+import static com.streamarr.server.fakes.TestImages.createGrayscaleOpaquePngImageWithAlphaChannel;
 import static com.streamarr.server.fakes.TestImages.createGrayscalePngImage;
+import static com.streamarr.server.fakes.TestImages.createGrayscalePngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createGrayscalePngImageWithTransparentGrayLevel;
 import static com.streamarr.server.fakes.TestImages.createOpaquePngImageWithAlphaChannel;
 import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithOneTranslucentPixel;
 import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithOneTranslucentPixel;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createSixteenBitGrayscalePngImage;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitGrayscalePngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createSixteenBitOpaquePngImage;
 import static com.streamarr.server.fakes.TestImages.createSixteenBitOpaquePngImageWithAlphaChannel;
 import static com.streamarr.server.fakes.TestImages.createSixteenBitPngImageWithOneAlphaSampleBelowOpaque;
@@ -216,6 +221,38 @@ class ImageServiceTest {
     assertThat(resizedVariantFilesOf(result))
         .hasSize(3)
         .allSatisfy(imageData -> assertThat(formatNameOf(imageData)).isEqualTo("png"));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("grayscaleImagesWithTransparentBorder")
+  @DisplayName("Should keep the gray level in PNG variants when grayscale image has transparency")
+  void shouldKeepGrayLevelInPngVariantsWhenGrayscaleImageHasTransparency(byte[] imageData) {
+    var result = processLogo(imageData);
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(ImageServiceTest::assertPngOfMidGrayWithTransparentBorder);
+  }
+
+  private static Stream<Named<byte[]>> grayscaleImagesWithTransparentBorder() {
+    return Stream.of(
+        named("8-bit gray and alpha samples", createGrayscalePngImageWithTransparentBorder()),
+        named(
+            "16-bit gray and alpha samples",
+            createSixteenBitGrayscalePngImageWithTransparentBorder()),
+        named(
+            "a transparent gray level in a tRNS chunk",
+            createGrayscalePngImageWithTransparentGrayLevel()));
+  }
+
+  @Test
+  @DisplayName("Should keep the gray level in JPEG variants when grayscale alpha is fully opaque")
+  void shouldKeepGrayLevelInJpegVariantsWhenGrayscaleAlphaIsFullyOpaque() {
+    var result = processLogo(createGrayscaleOpaquePngImageWithAlphaChannel());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(imageData -> assertJpegOfSolidColor(imageData, new Color(OPAQUE_MID_GRAY)));
   }
 
   @Test
@@ -891,11 +928,21 @@ class ImageServiceTest {
     assertThat(colorComponentCountOf(imageData)).as("color components").isEqualTo(1);
   }
 
+  private static void assertPngOfMidGrayWithTransparentBorder(byte[] imageData) {
+    assertThat(formatNameOf(imageData)).isEqualTo("png");
+    assertThat(alphaOfCornerPixel(imageData)).as("corner alpha").isZero();
+    assertThat(centrePixelOf(imageData)).as("centre pixel").isEqualTo(OPAQUE_MID_GRAY);
+  }
+
   private static void assertJpegOfSolidTeal(byte[] imageData) {
+    assertJpegOfSolidColor(imageData, new Color(OPAQUE_TEAL));
+  }
+
+  private static void assertJpegOfSolidColor(byte[] imageData, Color expected) {
     assertThat(formatNameOf(imageData)).isEqualTo("jpeg");
     var centre = new Color(centrePixelOf(imageData));
-    assertThat(centre.getRed()).as("red").isCloseTo(0x00, within(4));
-    assertThat(centre.getGreen()).as("green").isCloseTo(0xA0, within(4));
-    assertThat(centre.getBlue()).as("blue").isCloseTo(0xA0, within(4));
+    assertThat(centre.getRed()).as("red").isCloseTo(expected.getRed(), within(4));
+    assertThat(centre.getGreen()).as("green").isCloseTo(expected.getGreen(), within(4));
+    assertThat(centre.getBlue()).as("blue").isCloseTo(expected.getBlue(), within(4));
   }
 }

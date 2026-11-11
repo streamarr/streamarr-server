@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.services.metadata.color.AmbientColorExtractor;
 import io.trbl.blurhash.BlurHash;
 import java.awt.AlphaComposite;
+import java.awt.color.ColorSpace;
 import java.awt.image.BufferedImage;
 import java.awt.image.IndexColorModel;
 import java.awt.image.Raster;
@@ -112,6 +113,9 @@ public class ImageVariantService {
 
     var sourceImage = decodeImage(originalImageData);
     var transparent = hasTransparentPixel(sourceImage);
+    if (isGrayscaleWithAlpha(sourceImage)) {
+      sourceImage = copyGrayscaleSamplesToArgb(sourceImage);
+    }
 
     var widths = WIDTH_TABLE.get(imageType);
     if (widths == null) {
@@ -231,6 +235,41 @@ public class ImageVariantService {
     }
 
     return false;
+  }
+
+  private static boolean isGrayscaleWithAlpha(BufferedImage image) {
+    var colorModel = image.getColorModel();
+    return colorModel.hasAlpha() && colorModel.getColorSpace().getType() == ColorSpace.TYPE_GRAY;
+  }
+
+  // ImageIO decodes a grayscale PNG with alpha as linear gray. Java2D converts linear gray to
+  // sRGB when it draws such an image, which lightens it: gray 128 becomes 188. Copying the
+  // samples keeps their values.
+  private static BufferedImage copyGrayscaleSamplesToArgb(BufferedImage image) {
+    var samples = image.getRaster();
+    var width = samples.getWidth();
+    var maxSample = (1 << samples.getSampleModel().getSampleSize(0)) - 1;
+    var argb = new BufferedImage(width, samples.getHeight(), BufferedImage.TYPE_INT_ARGB);
+    var gray = new int[width];
+    var alpha = new int[width];
+    var argbRow = new int[width];
+    for (var y = 0; y < samples.getHeight(); y++) {
+      samples.getSamples(samples.getMinX(), samples.getMinY() + y, width, 1, 0, gray);
+      samples.getSamples(samples.getMinX(), samples.getMinY() + y, width, 1, 1, alpha);
+      Arrays.setAll(
+          argbRow, x -> argbOf(toEightBits(gray[x], maxSample), toEightBits(alpha[x], maxSample)));
+      argb.getRaster().setDataElements(0, y, width, 1, argbRow);
+    }
+
+    return argb;
+  }
+
+  private static int toEightBits(int sample, int maxSample) {
+    return (sample * 0xFF + maxSample / 2) / maxSample;
+  }
+
+  private static int argbOf(int gray, int alpha) {
+    return alpha << 24 | gray << 16 | gray << 8 | gray;
   }
 
   private static BufferedImage copy(BufferedImage image, int imageType) {

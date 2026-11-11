@@ -16,17 +16,24 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
+import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageTypeSpecifier;
+import javax.imageio.metadata.IIOMetadataNode;
 
 public final class TestImages {
 
   /** The opaque colour that the images with a transparent border show at their centre. */
   public static final int OPAQUE_TEAL = 0xFF00A0A0;
 
+  /** The opaque grey that the grayscale images with an alpha channel show at their centre. */
+  public static final int OPAQUE_MID_GRAY = 0xFF808080;
+
   private static final int TRANSPARENT = 0;
   private static final int TEAL_ONE_STEP_SHORT_OF_OPAQUE = 0xFE00A0A0;
   private static final int BORDERED_WIDTH = 400;
   private static final int BORDERED_HEIGHT = 200;
+  private static final String PNG_METADATA_FORMAT = "javax_imageio_png_1.0";
 
   private TestImages() {}
 
@@ -208,6 +215,97 @@ public final class TestImages {
     }
 
     return new BufferedImage(colorModel, raster, false, null);
+  }
+
+  /**
+   * A logo-like PNG with one 8-bit grey sample and one 8-bit alpha sample for each pixel: an opaque
+   * mid-grey rectangle over the middle half of each axis, and transparent pixels everywhere else.
+   */
+  public static byte[] createGrayscalePngImageWithTransparentBorder() {
+    return writePng(
+        withTransparentBorder(opaqueMidGrayImageWithAlphaChannel(DataBuffer.TYPE_BYTE)));
+  }
+
+  /** The same picture with 16 bits for each grey sample and each alpha sample. */
+  public static byte[] createSixteenBitGrayscalePngImageWithTransparentBorder() {
+    return writePng(
+        withTransparentBorder(opaqueMidGrayImageWithAlphaChannel(DataBuffer.TYPE_USHORT)));
+  }
+
+  /** A mid-grey PNG with a grey sample and an alpha sample for each pixel, all fully opaque. */
+  public static byte[] createGrayscaleOpaquePngImageWithAlphaChannel() {
+    return writePng(opaqueMidGrayImageWithAlphaChannel(DataBuffer.TYPE_BYTE));
+  }
+
+  private static BufferedImage opaqueMidGrayImageWithAlphaChannel(int dataType) {
+    var colorModel =
+        new ComponentColorModel(
+            ColorSpace.getInstance(ColorSpace.CS_GRAY),
+            true,
+            false,
+            Transparency.TRANSLUCENT,
+            dataType);
+    var raster = colorModel.createCompatibleWritableRaster(BORDERED_WIDTH, BORDERED_HEIGHT);
+    var sampleBits = DataBuffer.getDataTypeSize(dataType);
+    var midGrayRow = new int[BORDERED_WIDTH];
+    var opaqueRow = new int[BORDERED_WIDTH];
+    Arrays.fill(midGrayRow, 0x8080 >> (16 - sampleBits));
+    Arrays.fill(opaqueRow, (1 << sampleBits) - 1);
+    for (var y = 0; y < BORDERED_HEIGHT; y++) {
+      raster.setSamples(0, y, BORDERED_WIDTH, 1, 0, midGrayRow);
+      raster.setSamples(0, y, BORDERED_WIDTH, 1, 1, opaqueRow);
+    }
+
+    return new BufferedImage(colorModel, raster, false, null);
+  }
+
+  private static BufferedImage withTransparentBorder(BufferedImage image) {
+    var alphaBand = image.getAlphaRaster();
+    var transparentRow = new int[BORDERED_WIDTH];
+    for (var y = 0; y < BORDERED_HEIGHT; y++) {
+      var isCentreRow = y >= BORDERED_HEIGHT / 4 && y < BORDERED_HEIGHT * 3 / 4;
+      var borderWidth = isCentreRow ? BORDERED_WIDTH / 4 : BORDERED_WIDTH;
+      alphaBand.setSamples(0, y, borderWidth, 1, 0, transparentRow);
+      alphaBand.setSamples(BORDERED_WIDTH - borderWidth, y, borderWidth, 1, 0, transparentRow);
+    }
+
+    return image;
+  }
+
+  /**
+   * The same picture as a PNG with one 8-bit grey sample for each pixel and no alpha channel. Its
+   * border is black, and its tRNS chunk names black as the transparent grey level.
+   */
+  public static byte[] createGrayscalePngImageWithTransparentGrayLevel() {
+    var image = new BufferedImage(BORDERED_WIDTH, BORDERED_HEIGHT, BufferedImage.TYPE_BYTE_GRAY);
+    for (var y = BORDERED_HEIGHT / 4; y < BORDERED_HEIGHT * 3 / 4; y++) {
+      for (var x = BORDERED_WIDTH / 4; x < BORDERED_WIDTH * 3 / 4; x++) {
+        image.getRaster().setSample(x, y, 0, 0x80);
+      }
+    }
+
+    var transparentGrayLevel = new IIOMetadataNode("tRNS_Grayscale");
+    transparentGrayLevel.setAttribute("gray", "0");
+    var transparency = new IIOMetadataNode("tRNS");
+    transparency.appendChild(transparentGrayLevel);
+
+    var writer = ImageIO.getImageWritersByFormatName("png").next();
+    var outputStream = new ByteArrayOutputStream();
+    try (var imageOutput = ImageIO.createImageOutputStream(outputStream)) {
+      var metadata =
+          writer.getDefaultImageMetadata(ImageTypeSpecifier.createFromRenderedImage(image), null);
+      var chunks = metadata.getAsTree(PNG_METADATA_FORMAT);
+      chunks.appendChild(transparency);
+      metadata.setFromTree(PNG_METADATA_FORMAT, chunks);
+      writer.setOutput(imageOutput);
+      writer.write(new IIOImage(image, null, metadata));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    } finally {
+      writer.dispose();
+    }
+
+    return outputStream.toByteArray();
   }
 
   /** A PNG with one 8-bit grey sample for each pixel and no alpha channel. */
