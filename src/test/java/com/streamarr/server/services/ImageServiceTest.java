@@ -5,6 +5,7 @@ import static com.streamarr.server.fakes.TestImages.alphaOfCornerPixel;
 import static com.streamarr.server.fakes.TestImages.centrePixelOf;
 import static com.streamarr.server.fakes.TestImages.createGifImage;
 import static com.streamarr.server.fakes.TestImages.createOpaquePngImageWithAlphaChannel;
+import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithOneTranslucentPixel;
 import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithOneTranslucentPixel;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
@@ -190,6 +191,16 @@ class ImageServiceTest {
   @DisplayName("Should store resized variants as PNG when a single pixel is not fully opaque")
   void shouldStoreResizedVariantsAsPngWhenSinglePixelIsNotFullyOpaque() {
     var result = processPoster(createPngImageWithOneTranslucentPixel());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(imageData -> assertThat(formatNameOf(imageData)).isEqualTo("png"));
+  }
+
+  @Test
+  @DisplayName("Should store resized variants as PNG when one palette pixel is not fully opaque")
+  void shouldStoreResizedVariantsAsPngWhenOnePalettePixelIsNotFullyOpaque() {
+    var result = processPoster(createPalettePngImageWithOneTranslucentPixel());
 
     assertThat(resizedVariantFilesOf(result))
         .hasSize(3)
