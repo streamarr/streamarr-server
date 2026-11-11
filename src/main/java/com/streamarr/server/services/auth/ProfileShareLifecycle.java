@@ -19,6 +19,10 @@ import org.springframework.stereotype.Service;
  * Each share a write changes is announced as a {@link ProfileShareChangedEvent}, and a write that
  * changes nothing announces nothing. The database deletes a share with its Profile or its
  * Household, so whoever deletes either announces those shares here first.
+ *
+ * <p>Every write changes a share that is pending or active, so each is announced as the change of a
+ * live share, the change that ends it included. A share announced without being written, as it is
+ * moved or deleted, is live when it is stored pending or active.
  */
 @Service
 @RequiredArgsConstructor
@@ -37,7 +41,7 @@ public class ProfileShareLifecycle {
   /** Stores a new share. */
   public ProfileHouseholdShare create(ProfileHouseholdShare share) {
     var created = shareRepository.saveAndFlush(share);
-    announce(ChangedShare.of(created));
+    announceAsStored(created);
     return created;
   }
 
@@ -105,14 +109,12 @@ public class ProfileShareLifecycle {
 
   /** Announces every share of the Profile, which the database deletes with the Profile. */
   public void announceDeletionWithProfile(UUID profileId) {
-    shareRepository.findByProfileId(profileId).forEach(share -> announce(ChangedShare.of(share)));
+    shareRepository.findByProfileId(profileId).forEach(this::announceAsStored);
   }
 
   /** Announces every share into the Household, which the database deletes with the Household. */
   public void announceDeletionWithHousehold(UUID householdId) {
-    shareRepository
-        .findByHouseholdId(householdId)
-        .forEach(share -> announce(ChangedShare.of(share)));
+    shareRepository.findByHouseholdId(householdId).forEach(this::announceAsStored);
   }
 
   /**
@@ -125,7 +127,7 @@ public class ProfileShareLifecycle {
             share ->
                 share.getHouseholdId().equals(sourceHouseholdId)
                     || share.getHouseholdId().equals(destinationHouseholdId))
-        .forEach(share -> announce(ChangedShare.of(share)));
+        .forEach(this::announceAsStored);
   }
 
   private boolean announced(Optional<ChangedShare> changed) {
@@ -138,6 +140,14 @@ public class ProfileShareLifecycle {
   }
 
   private void announce(ChangedShare changed) {
-    events.publishEvent(new ProfileShareChangedEvent(changed));
+    events.publishEvent(new ProfileShareChangedEvent(changed, true));
+  }
+
+  // An offer past its expiry that the sweep has not reached is still stored pending, so it is
+  // announced as live and its Household hears this change as the one that tells it the offer is
+  // over.
+  private void announceAsStored(ProfileHouseholdShare share) {
+    events.publishEvent(
+        new ProfileShareChangedEvent(ChangedShare.of(share), share.getStatus().isLive()));
   }
 }

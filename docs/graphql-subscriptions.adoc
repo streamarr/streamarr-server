@@ -299,10 +299,20 @@ A subscriber who stops managing a Profile stops receiving its changes at once.
 An Account that is disabled after subscribing gets an `error` message with `FORBIDDEN` at the next change, and the operation ends.
 The HouseholdAdmin role comes from the access token, so a HouseholdAdmin who loses that role keeps receiving their Household's changes until the token expires, as with the queries.
 
+=== The last change a Household receives
+
+The target Household's HouseholdAdmins follow a share while the offer is `PENDING` or the share is `ACTIVE`.
+They also receive the change that ends it: the offer is declined, canceled, expired or invalidated, or the share ends.
+That last change carries the share's own fields, such as `status` and `invalidationReason`.
+Its `profile`, `visitor`, `offeredByDisplayName` and `household` are `null`, as in the queries, which no longer list the share for them.
+The client takes the share out of its lists when that change arrives.
+No later change of the share reaches them, not even its removal.
+ServerAdmins and the Profile's managers receive every change of the share.
+
 === Removals
 
 A change whose `share` is `null`, with no `errors`, removes the share: it was deleted with its Profile or its Household.
-A share deleted with its Profile reaches those who may read its Household's shares.
+A share deleted with its Profile reaches those who may read its Household's shares: its HouseholdAdmins only while it is pending or active, and ServerAdmins always.
 A share deleted with its Household reaches those who may read its Profile's shares.
 A `null` share with `errors` is not a removal: the client keeps the share and runs its queries again.
 A share that stops being readable to the subscriber does not arrive as removed; the queries stop listing it.

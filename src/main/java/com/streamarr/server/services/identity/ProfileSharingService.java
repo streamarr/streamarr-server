@@ -476,6 +476,14 @@ public class ProfileSharingService {
         authorizationService.decide(identity, new Intent.ViewHouseholdAdministration(householdId)));
   }
 
+  private boolean householdSideFollows(
+      AuthenticatedIdentity identity, ProfileShareChangedEvent change) {
+    var householdId = change.share().householdId();
+    return change.live()
+        ? mayViewHousehold(identity, householdId)
+        : mayViewHouseholdShareHistory(identity, householdId);
+  }
+
   private boolean mayViewHouseholdShareHistory(AuthenticatedIdentity identity, UUID householdId) {
     return isAllowed(
         authorizationService.decide(identity, new Intent.ViewHouseholdShareHistory(householdId)));
@@ -535,14 +543,16 @@ public class ProfileSharingService {
    * One committed share change as the reader may read it, decided as it is delivered. The reader
    * gets it when they may read the shares into its Household or the shares of its Profile, as
    * {@link #householdShares} and {@link #profileShares} decide; it then carries the share as it
-   * stands now, or no share once the share was deleted. A share deleted with its Profile is decided
-   * by its Household alone. Refuses a reader who may no longer follow share changes at all.
+   * stands now, or no share once the share was deleted. The Household's HouseholdAdmins get the
+   * changes of a live share, the change that ends it included, and none after; a reader of its
+   * share history, a ServerAdmin, gets them all. A share deleted with its Profile is decided by its
+   * Household alone. Refuses a reader who may no longer follow share changes at all.
    */
   public Optional<ShareChange> shareChange(
       AuthenticatedIdentity identity, ProfileShareChangedEvent change) {
     requireViewProfileShareChanges(identity);
     var changed = change.share();
-    if (!mayViewHousehold(identity, changed.householdId())
+    if (!householdSideFollows(identity, change)
         && !mayViewProfileShares(identity, changed.profileId())) {
       return Optional.empty();
     }

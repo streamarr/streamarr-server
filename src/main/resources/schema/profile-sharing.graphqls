@@ -86,6 +86,13 @@ extend type Subscription {
     The server decides this for each change as it delivers it, so a subscriber who loses that
     authority stops receiving the share's changes, and a share never reaches someone the queries
     would not show it to. The share's fields are hidden from the same readers as in the queries.
+
+    The target Household's HouseholdAdmins follow a share while the offer is PENDING or the share
+    is ACTIVE. They also get the change that ends it: the offer declined, canceled, expired or
+    invalidated, or the share ended. That last change carries the share's own fields, such as its
+    status and invalidationReason, with profile, visitor, offeredByDisplayName and household null,
+    so the client can take the share out of its lists. No change of that share reaches them after
+    it, not even its removal. ServerAdmins and the Profile's managers get every change.
     A share deleted with its Profile reaches only those who may read its Household's shares, and
     a share deleted with its Household reaches only those who may read its Profile's shares.
     An operation whose Account may no longer follow share changes ends with FORBIDDEN.

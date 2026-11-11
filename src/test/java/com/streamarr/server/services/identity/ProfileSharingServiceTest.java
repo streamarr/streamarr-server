@@ -718,6 +718,63 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should give the Household's HouseholdAdmin the change that ends a share and none after it")
+  void shouldGiveHouseholdAdminTheChangeThatEndsShareAndNoneAfterIt() {
+    var share = declinedShare();
+    authorization.decideUnitWith(
+        intent ->
+            switch (intent) {
+              case Intent.ViewProfileShareChanges _ -> allowed();
+              case Intent.ViewHouseholdAdministration(var id) when id.equals(household.getId()) ->
+                  allowed();
+              default -> denied();
+            });
+
+    var ending = service.shareChange(identity(), changeOf(share));
+    var after = service.shareChange(identity(), laterChangeOf(share));
+
+    assertThat(ending).hasValueSatisfying(change -> assertThat(change.share()).contains(share));
+    assertThat(after).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should give every change of a share that is over when the reader may view the Household's"
+          + " share history")
+  void shouldGiveEveryChangeOfShareThatIsOverWhenReaderMayViewHouseholdsShareHistory() {
+    var share = declinedShare();
+    authorization.decideUnitWith(
+        intent ->
+            switch (intent) {
+              case Intent.ViewProfileShareChanges _ -> allowed();
+              case Intent.ViewHouseholdShareHistory(var id) when id.equals(household.getId()) ->
+                  allowed();
+              default -> denied();
+            });
+
+    assertThat(service.shareChange(identity(), laterChangeOf(share)))
+        .hasValueSatisfying(change -> assertThat(change.share()).contains(share));
+  }
+
+  @Test
+  @DisplayName("Should give the offering side every change of a share that is over")
+  void shouldGiveOfferingSideEveryChangeOfShareThatIsOver() {
+    var share = declinedShare();
+    authorization.decideUnitWith(
+        intent ->
+            switch (intent) {
+              case Intent.ViewProfileShareChanges _ -> allowed();
+              case Intent.ViewProfileShareHouseholds(var id) when id.equals(profile.getId()) ->
+                  allowed();
+              default -> denied();
+            });
+
+    assertThat(service.shareChange(identity(), laterChangeOf(share)))
+        .hasValueSatisfying(change -> assertThat(change.share()).contains(share));
+  }
+
+  @Test
   @DisplayName("Should give the share when the reader is on the Profile's offering side")
   void shouldGiveTheShareWhenTheReaderIsOnTheProfilesOfferingSide() {
     var share = pendingShare();
@@ -765,7 +822,7 @@ class ProfileSharingServiceTest {
   void shouldDecideAChangeByItsHouseholdAloneWhenItsProfileNoLongerExists() {
     var removed =
         new ProfileShareChangedEvent(
-            new ChangedShare(UUID.randomUUID(), UUID.randomUUID(), household.getId()));
+            new ChangedShare(UUID.randomUUID(), UUID.randomUUID(), household.getId()), true);
     authorization.decideUnitWith(
         intent ->
             switch (intent) {
@@ -834,8 +891,25 @@ class ProfileSharingServiceTest {
     return authorization.currentIdentity();
   }
 
+  /** A change of a share that was pending or active until it, or still is. */
   private static ProfileShareChangedEvent changeOf(ProfileHouseholdShare share) {
-    return new ProfileShareChangedEvent(ChangedShare.of(share));
+    return new ProfileShareChangedEvent(ChangedShare.of(share), true);
+  }
+
+  /** A change of a share that was already over, such as its deletion with its Profile. */
+  private static ProfileShareChangedEvent laterChangeOf(ProfileHouseholdShare share) {
+    return new ProfileShareChangedEvent(ChangedShare.of(share), false);
+  }
+
+  private ProfileHouseholdShare declinedShare() {
+    return shares.save(
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(household.getId())
+            .status(ProfileShareStatus.REJECTED)
+            .offeredByAccountId(identity().accountId())
+            .expiresAt(NOW.plusSeconds(3600))
+            .build());
   }
 
   private void administerHouseholdOnly() {
