@@ -59,6 +59,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -191,6 +193,24 @@ class ProfileSharingServiceTest {
     assertThat(attempts.attempts())
         .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
         .containsExactly(CredentialAttemptResult.SUCCEEDED, CredentialAttemptResult.FAILED);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(OfferEnding.class)
+  @DisplayName("Should refuse a spent code when its offer was canceled or rejected")
+  void shouldRefuseSpentCodeWhenItsOfferWasCanceledOrRejected(OfferEnding ending) {
+    var code = shareCodeFor(household);
+    var other = profiles.save(ProfileFixture.defaultProfileBuilder().name("Other").build());
+    var offer =
+        acceptedShare(service.offerProfileShare(identity(), profile.getId(), presenting(code)));
+    assertThat(ending.end(service, identity(), offer.getId())).isInstanceOf(Outcome.Accepted.class);
+
+    assertThat(rejectionOf(service.offerProfileShare(identity(), other.getId(), presenting(code))))
+        .isEqualTo(new ShareCodeRejections.ShareCodeRefused());
+    assertThat(shares.findAll())
+        .extracting(ProfileHouseholdShare::getProfileId)
+        .containsExactly(profile.getId());
+    assertThat(storedCode(code).getStatus()).isEqualTo(ShareCodeStatus.SPENT);
   }
 
   @Test
@@ -1640,6 +1660,27 @@ class ProfileSharingServiceTest {
   void shouldReturnShareNotFoundWhenAllowedPrincipalCancelsMissingShare() {
     assertThat(rejectionOf(service.cancelProfileShare(identity(), UUID.randomUUID())))
         .isInstanceOf(ShareRejections.ShareNotFound.class);
+  }
+
+  /** The ways an offer ends before anyone accepts it. */
+  enum OfferEnding {
+    CANCELED {
+      @Override
+      Outcome<ProfileHouseholdShare, ShareRejections.Decline> end(
+          ProfileSharingService service, AuthenticatedIdentity identity, UUID shareId) {
+        return service.cancelProfileShare(identity, shareId);
+      }
+    },
+    REJECTED {
+      @Override
+      Outcome<ProfileHouseholdShare, ShareRejections.Decline> end(
+          ProfileSharingService service, AuthenticatedIdentity identity, UUID shareId) {
+        return service.rejectProfileShare(identity, shareId);
+      }
+    };
+
+    abstract Outcome<ProfileHouseholdShare, ShareRejections.Decline> end(
+        ProfileSharingService service, AuthenticatedIdentity identity, UUID shareId);
   }
 
   /** A live share code for the Household, issued as a HouseholdAdmin issues one. */
