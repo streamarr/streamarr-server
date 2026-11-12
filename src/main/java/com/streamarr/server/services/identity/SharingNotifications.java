@@ -1,12 +1,17 @@
 package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.ChangedShare;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.ShareAction;
+import com.streamarr.server.domain.notification.ProfileShareAnswer;
+import com.streamarr.server.domain.notification.RequestAnswer;
+import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
+import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
@@ -22,12 +27,12 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Tells the sides of a Profile share what happened to it (ADR 0063 §The sharing kinds). It hears
- * each share write inside the write's transaction, so what it tells commits or rolls back with the
- * write. It works out the recipients from the relationship rows as they stand at the write and
- * holds those rows until the write commits, so a relationship that changes at the same moment
- * either waits for the write or has already changed when it is read. The Account that acted is
- * never told.
+ * Tells the sides of a Profile share what happened to it, and settles the requests about an offer
+ * when it stops waiting (ADR 0063 §The sharing kinds). It hears each share write inside the write's
+ * transaction, so what it tells commits or rolls back with the write. It works out the recipients
+ * from the relationship rows as they stand at the write and holds those rows until the write
+ * commits, so a relationship that changes at the same moment either waits for the write or has
+ * already changed when it is read. The Account that acted is never told.
  */
 @Component
 @RequiredArgsConstructor
@@ -41,10 +46,8 @@ class SharingNotifications {
   public void onProfileShareChanged(ProfileShareChangedEvent change) {
     switch (change.action()) {
       case ShareAction.Offered() -> tellOffer(change);
-      case ShareAction.Answered _,
-          ShareAction.OfferStoppedWaiting _,
-          ShareAction.Ending _,
-          ShareAction.Other _ -> {}
+      case ShareAction.Answered _, ShareAction.OfferStoppedWaiting _ -> resolveRequests(change);
+      case ShareAction.Ending _, ShareAction.Other _ -> {}
     }
   }
 
@@ -63,6 +66,23 @@ class SharingNotifications {
             .at(instantOf(change))
             .subjectExpiresAt(share.expiresAt())
             .build());
+  }
+
+  // An offer that stopped waiting settles every recipient's request at once, as the status the
+  // write left it in says, at the instant the write recorded.
+  private void resolveRequests(ProfileShareChangedEvent change) {
+    var share = change.share();
+    Settlement.of(share.status())
+        .map(
+            settled ->
+                ResolveRequestsEvent.builder()
+                    .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
+                    .subject(SubjectReference.profileShare(share.shareId()))
+                    .resolution(settled.resolution())
+                    .answer(settled.answer())
+                    .at(instantOf(change))
+                    .build())
+        .ifPresent(events::publishEvent);
   }
 
   /** The target Household's HouseholdAdmins, held until the write commits. */
@@ -91,5 +111,31 @@ class SharingNotifications {
 
   private static Set<RecipientReference> accounts(Set<UUID> accountIds) {
     return accountIds.stream().map(RecipientReference::account).collect(Collectors.toSet());
+  }
+
+  /**
+   * How an offer's requests resolve from the status that stopped it waiting. An offer that linking
+   * made its Profile's home share is accepted: the share is active, so a withdrawn request beside
+   * it would contradict the share queries.
+   */
+  private record Settlement(RequestResolution resolution, Optional<RequestAnswer> answer) {
+
+    static Optional<Settlement> of(ProfileShareStatus status) {
+      return switch (status) {
+        case ACTIVE -> decided(ProfileShareAnswer.ACCEPTED);
+        case REJECTED -> decided(ProfileShareAnswer.REJECTED);
+        case CANCELED, INVALIDATED -> unanswered(RequestResolution.WITHDRAWN);
+        case EXPIRED -> unanswered(RequestResolution.EXPIRED);
+        case PENDING, ENDED -> Optional.empty();
+      };
+    }
+
+    private static Optional<Settlement> decided(ProfileShareAnswer answer) {
+      return Optional.of(new Settlement(RequestResolution.DECIDED, Optional.of(answer)));
+    }
+
+    private static Optional<Settlement> unanswered(RequestResolution resolution) {
+      return Optional.of(new Settlement(resolution, Optional.empty()));
+    }
   }
 }
