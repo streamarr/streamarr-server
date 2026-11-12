@@ -65,10 +65,16 @@ public class SegmentFolderLeftovers {
     }
   }
 
-  // Compared as bytes, so that a mark which is not text reads as the mark of another folder.
+  // Compared as bytes, so that a mark which is not text reads as the mark of another folder. A
+  // mark of another size is not read, so that no mark is too large to read.
   private boolean isMarked() throws IOException {
-    return Files.isRegularFile(mark(), LinkOption.NOFOLLOW_LINKS)
-        && Arrays.equals(Files.readAllBytes(mark()), markedFolder());
+    if (!Files.isRegularFile(mark(), LinkOption.NOFOLLOW_LINKS)) {
+      return false;
+    }
+
+    var markedFolder = markedFolder();
+    return Files.size(mark()) == markedFolder.length
+        && Arrays.equals(Files.readAllBytes(mark()), markedFolder);
   }
 
   private byte[] markedFolder() throws IOException {
