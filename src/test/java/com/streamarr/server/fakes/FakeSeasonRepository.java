@@ -37,6 +37,16 @@ public class FakeSeasonRepository extends FakeJpaRepository<Season> implements S
   }
 
   @Override
+  public List<Season> findDistinctBySeriesIdAndEpisodesFilesIsNotEmptyOrderBySeasonNumber(
+      UUID seriesId) {
+    return findBySeriesIdOrderBySeasonNumber(seriesId).stream()
+        .filter(
+            season ->
+                season.getEpisodes().stream().anyMatch(episode -> !episode.getFiles().isEmpty()))
+        .toList();
+  }
+
+  @Override
   public List<Season> findBySeriesIdOrderBySeasonNumber(UUID seriesId) {
     return database.values().stream()
         .filter(season -> inSeries(season, List.of(seriesId)))

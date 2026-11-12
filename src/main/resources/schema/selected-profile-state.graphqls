@@ -10,18 +10,18 @@ type SelectedProfileState {
 
 "One Profile's watch state of one media title."
 type WatchState {
-    "Whether the Profile watched the title. A season or a series takes its status from its episodes."
+    "Whether the Profile watched the title. A season or a series takes its status from its episodes with files."
     watchStatus: WatchStatus!
     """
     The resume position. A season or a series returns the most recently saved resume position among
-    its episodes. Null when no counted resume position applies.
+    its episodes with files. Null when no counted resume position applies.
     """
     watchProgress: WatchProgress
     """
     When the Profile last watched the title, as an ISO-8601 instant. For a movie or an episode it is
     the later of the latest completion or manual mark that has not been dismissed and the latest
     session progress with a position; progress older than that completion does not count. A season
-    or a series takes the latest value among its episodes. The LAST_WATCHED sort orders movies and
+    or a series takes the latest value among its episodes with files. The LAST_WATCHED sort orders movies and
     series by this value, and Continue Watching orders by it, newest first, then by id. Null when
     the Profile has not watched the title.
     """

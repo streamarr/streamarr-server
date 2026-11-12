@@ -13,4 +13,6 @@ public interface SeasonRepository extends JpaRepository<Season, UUID>, SeasonRep
   Optional<Season> findBySeriesIdAndSeasonNumber(UUID seriesId, int seasonNumber);
 
   List<Season> findBySeriesIdOrderBySeasonNumber(UUID seriesId);
+
+  List<Season> findDistinctBySeriesIdAndEpisodesFilesIsNotEmptyOrderBySeasonNumber(UUID seriesId);
 }

@@ -84,6 +84,28 @@ class WatchStatusServiceTest {
             authorizationService);
   }
 
+  @Test
+  @DisplayName("Should aggregate and mark only episodes with files")
+  void shouldAggregateAndMarkOnlyEpisodesWithFiles() {
+    var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+    var available = saveEpisode(Episode.builder().episodeNumber(1).season(season).build());
+    var missing = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+
+    service.markWatched(PROFILE_ID, available.getId());
+
+    assertThat(service.getWatchStatusForSeasons(PROFILE_ID, List.of(season.getId())))
+        .containsEntry(season.getId(), WatchStatus.WATCHED);
+    service.markWatched(PROFILE_ID, season.getId());
+    assertThat(service.getWatchStatusForMoviesAndEpisodes(PROFILE_ID, List.of(missing.getId())))
+        .containsEntry(missing.getId(), WatchStatus.UNWATCHED);
+  }
+
+  private Episode saveEpisode(Episode episode) {
+    var saved = episodeRepository.save(episode);
+    saved.addFile(mediaFileRepository.save(buildMatchedMediaFile(saved.getId())));
+    return saved;
+  }
+
   @Nested
   @DisplayName("Viewing Profile Activity")
   class ViewProfileActivityTests {
@@ -153,8 +175,8 @@ class WatchStatusServiceTest {
     @DisplayName("Should mark all episodes when marking season as watched")
     void shouldMarkAllEpisodesWhenMarkingSeasonAsWatched() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-      episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
-      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      saveEpisode(Episode.builder().episodeNumber(1).season(season).build());
+      saveEpisode(Episode.builder().episodeNumber(2).season(season).build());
 
       service.markWatched(PROFILE_ID, season.getId());
 
@@ -252,8 +274,8 @@ class WatchStatusServiceTest {
       var series = seriesRepository.save(buildSeries());
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
-      var first = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
-      var second = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+      var first = saveEpisode(Episode.builder().episodeNumber(1).season(s1).build());
+      var second = saveEpisode(Episode.builder().episodeNumber(1).season(s2).build());
 
       service.markWatched(PROFILE_ID, series.getId());
 
@@ -390,8 +412,8 @@ class WatchStatusServiceTest {
     @DisplayName("Should return in progress when all episodes have progress")
     void shouldReturnInProgressWhenAllEpisodesHaveProgress() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
-      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      var ep1 = saveEpisode(Episode.builder().episodeNumber(1).season(season).build());
+      var ep2 = saveEpisode(Episode.builder().episodeNumber(2).season(season).build());
 
       var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
       var mf2 = mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
@@ -410,8 +432,8 @@ class WatchStatusServiceTest {
     @DisplayName("Should return in progress when some episodes have progress")
     void shouldReturnInProgressWhenSomeEpisodesHaveProgress() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
-      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      var ep1 = saveEpisode(Episode.builder().episodeNumber(1).season(season).build());
+      var ep2 = saveEpisode(Episode.builder().episodeNumber(2).season(season).build());
 
       var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
       mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
@@ -437,8 +459,8 @@ class WatchStatusServiceTest {
     void shouldBatchMultipleSeasonsInSingleCallWhenGivenMultipleSeasonIds() {
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).build());
-      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
-      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+      var ep1 = saveEpisode(Episode.builder().episodeNumber(1).season(s1).build());
+      var ep2 = saveEpisode(Episode.builder().episodeNumber(1).season(s2).build());
 
       var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
       mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
@@ -513,8 +535,8 @@ class WatchStatusServiceTest {
     void shouldMarkEveryEpisodeWhenMarkingAStoredSeriesWatchedById() {
       var series = seriesRepository.save(buildSeries());
       var season = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
-      episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
-      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      saveEpisode(Episode.builder().episodeNumber(1).season(season).build());
+      saveEpisode(Episode.builder().episodeNumber(2).season(season).build());
 
       var outcome = service.markWatched(PROFILE_ID, series.getId());
 
@@ -551,8 +573,8 @@ class WatchStatusServiceTest {
     @DisplayName("Should resolve season scope when marking season watched by id")
     void shouldResolveSeasonScopeWhenMarkingSeasonWatchedById() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-      episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
-      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      saveEpisode(Episode.builder().episodeNumber(1).season(season).build());
+      saveEpisode(Episode.builder().episodeNumber(2).season(season).build());
 
       service.markWatched(PROFILE_ID, season.getId());
 
@@ -563,9 +585,8 @@ class WatchStatusServiceTest {
     @DisplayName("Should dismiss all episode history when marking season unwatched by id")
     void shouldDismissAllEpisodeHistoryWhenMarkingSeasonUnwatchedById() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-      var first = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
-      var second =
-          episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      var first = saveEpisode(Episode.builder().episodeNumber(1).season(season).build());
+      var second = saveEpisode(Episode.builder().episodeNumber(2).season(season).build());
       service.markWatched(PROFILE_ID, season.getId());
 
       service.markUnwatched(PROFILE_ID, season.getId());
@@ -591,8 +612,8 @@ class WatchStatusServiceTest {
       var series = seriesRepository.save(buildSeries());
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
-      episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
-      episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+      saveEpisode(Episode.builder().episodeNumber(1).season(s1).build());
+      saveEpisode(Episode.builder().episodeNumber(1).season(s2).build());
 
       service.markWatched(PROFILE_ID, series.getId());
 
@@ -605,9 +626,8 @@ class WatchStatusServiceTest {
     void shouldReturnInProgressWhenOnlySomeEpisodesHaveHistory() {
       var series = buildSeries();
       var season = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
-      var watched =
-          episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
-      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      var watched = saveEpisode(Episode.builder().episodeNumber(1).season(season).build());
+      saveEpisode(Episode.builder().episodeNumber(2).season(season).build());
 
       service.markWatched(PROFILE_ID, watched.getId());
 
@@ -621,7 +641,7 @@ class WatchStatusServiceTest {
       var populated = buildSeries();
       var populatedSeason =
           seasonRepository.save(Season.builder().seasonNumber(1).series(populated).build());
-      episodeRepository.save(Episode.builder().episodeNumber(1).season(populatedSeason).build());
+      saveEpisode(Episode.builder().episodeNumber(1).season(populatedSeason).build());
 
       var empty = buildSeries();
       seasonRepository.save(Season.builder().seasonNumber(1).series(empty).build());
@@ -638,8 +658,7 @@ class WatchStatusServiceTest {
     @DisplayName("Should return unwatched when session progress position is zero")
     void shouldReturnUnwatchedWhenSessionProgressPositionIsZero() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-      var episode =
-          episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var episode = saveEpisode(Episode.builder().episodeNumber(1).season(season).build());
       var file = mediaFileRepository.save(buildMatchedMediaFile(episode.getId()));
 
       sessionProgressRepository.save(
@@ -670,8 +689,7 @@ class WatchStatusServiceTest {
     @DisplayName("Should show the season in progress when a watched episode is being rewatched")
     void shouldShowSeasonInProgressWhenAWatchedEpisodeIsBeingRewatched() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-      var episode =
-          episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var episode = saveEpisode(Episode.builder().episodeNumber(1).season(season).build());
       var file = mediaFileRepository.save(buildMatchedMediaFile(episode.getId()));
       saveCompletion(episode.getId(), EARLIER);
       saveProgress(file.getId(), 600, LATER);
@@ -688,8 +706,7 @@ class WatchStatusServiceTest {
     @DisplayName("Should show the season watched without progress when completions are newer")
     void shouldShowSeasonWatchedWithoutProgressWhenCompletionsAreNewer() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-      var episode =
-          episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var episode = saveEpisode(Episode.builder().episodeNumber(1).season(season).build());
       var file = mediaFileRepository.save(buildMatchedMediaFile(episode.getId()));
       saveProgress(file.getId(), 600, EARLIER);
       saveCompletion(episode.getId(), LATER);
@@ -711,8 +728,8 @@ class WatchStatusServiceTest {
       var series = buildSeries();
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
-      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
-      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+      var ep1 = saveEpisode(Episode.builder().episodeNumber(1).season(s1).build());
+      var ep2 = saveEpisode(Episode.builder().episodeNumber(1).season(s2).build());
 
       var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
       var mf2 = mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
@@ -733,8 +750,8 @@ class WatchStatusServiceTest {
       var series = buildSeries();
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
-      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
-      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+      var ep1 = saveEpisode(Episode.builder().episodeNumber(1).season(s1).build());
+      var ep2 = saveEpisode(Episode.builder().episodeNumber(1).season(s2).build());
 
       var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
       mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
@@ -762,8 +779,8 @@ class WatchStatusServiceTest {
       var series2 = buildSeries();
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series1).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(1).series(series2).build());
-      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
-      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+      var ep1 = saveEpisode(Episode.builder().episodeNumber(1).season(s1).build());
+      var ep2 = saveEpisode(Episode.builder().episodeNumber(1).season(s2).build());
 
       var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
       mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));

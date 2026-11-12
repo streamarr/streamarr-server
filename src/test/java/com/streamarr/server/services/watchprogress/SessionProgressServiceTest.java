@@ -647,6 +647,8 @@ class SessionProgressServiceTest {
 
       var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
       var mf2 = mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
+      ep1.addFile(mf1);
+      ep2.addFile(mf2);
 
       sessionProgressRepository.save(
           progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
@@ -670,6 +672,8 @@ class SessionProgressServiceTest {
 
       var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
       var mf2 = mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
+      ep1.addFile(mf1);
+      ep2.addFile(mf2);
 
       sessionProgressRepository.save(
           progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());

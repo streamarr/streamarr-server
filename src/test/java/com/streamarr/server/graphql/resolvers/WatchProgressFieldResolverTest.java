@@ -175,7 +175,7 @@ class WatchProgressFieldResolverTest {
     void shouldReturnWatchProgressWhenMovieHasMediaFiles() {
       var movie = setupMovie();
       var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(movie.getId());
+      movie.addFile(mediaFile);
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
@@ -225,7 +225,7 @@ class WatchProgressFieldResolverTest {
     void shouldReturnNullWatchProgressWhenNoProgressExists() {
       var movie = setupMovie();
       var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(movie.getId());
+      movie.addFile(mediaFile);
       mediaFileRepository.save(mediaFile);
 
       Object watchProgress =
@@ -249,7 +249,7 @@ class WatchProgressFieldResolverTest {
       var movie = setupMovie();
 
       var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(movie.getId());
+      movie.addFile(mediaFile);
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
@@ -281,7 +281,7 @@ class WatchProgressFieldResolverTest {
               .map(
                   movie -> {
                     var mediaFile = buildMediaFile();
-                    mediaFile.setMediaId(movie.getId());
+                    movie.addFile(mediaFile);
                     var fileId = mediaFileRepository.save(mediaFile).getId();
                     sessionProgressRepository.save(
                         progressBuilder(OTHER_PROFILE_ID, fileId).positionSeconds(1200).build());
@@ -328,7 +328,7 @@ class WatchProgressFieldResolverTest {
     void shouldKeepTheSelectedProfileStateAndNullOnlyTheFailedFieldWhenANullableFieldFails() {
       var movie = setupMovie();
       var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(movie.getId());
+      movie.addFile(mediaFile);
       mediaFileRepository.save(mediaFile);
       sessionProgressRepository.save(
           progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(300).build());
@@ -426,7 +426,7 @@ class WatchProgressFieldResolverTest {
           episodeRepository.save(Episode.builder().episodeNumber(1).season(graph.season()).build());
 
       var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(episode.getId());
+      episode.addFile(mediaFile);
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
@@ -468,15 +468,15 @@ class WatchProgressFieldResolverTest {
       episodeRepository.save(newerEpisode);
 
       var olderFile = buildMediaFile();
-      olderFile.setMediaId(olderEpisode.getId());
+      olderEpisode.addFile(olderFile);
       mediaFileRepository.save(olderFile);
 
       var newerFile = buildMediaFile();
-      newerFile.setMediaId(newerEpisode.getId());
+      newerEpisode.addFile(newerFile);
       mediaFileRepository.save(newerFile);
 
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+      when(seriesService.findSeasonsWithFiles(seriesId)).thenReturn(List.of(season));
 
       var olderProgress =
           sessionProgressRepository.save(
@@ -527,7 +527,7 @@ class WatchProgressFieldResolverTest {
       season.setId(UUID.randomUUID());
 
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+      when(seriesService.findSeasonsWithFiles(seriesId)).thenReturn(List.of(season));
 
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -555,7 +555,7 @@ class WatchProgressFieldResolverTest {
           episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
 
       var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(episode.getId());
+      episode.addFile(mediaFile);
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
@@ -603,11 +603,11 @@ class WatchProgressFieldResolverTest {
       episodeRepository.save(newerEpisode);
 
       var olderFile = buildMediaFile();
-      olderFile.setMediaId(olderEpisode.getId());
+      olderEpisode.addFile(olderFile);
       mediaFileRepository.save(olderFile);
 
       var newerFile = buildMediaFile();
-      newerFile.setMediaId(newerEpisode.getId());
+      newerEpisode.addFile(newerFile);
       mediaFileRepository.save(newerFile);
 
       when(seriesService.findById(series.getId())).thenReturn(Optional.of(series));
@@ -681,7 +681,7 @@ class WatchProgressFieldResolverTest {
     var season = buildSeason("Season 1", 1);
     var episode = buildEpisode("Pilot", 1);
     when(seriesService.findById(series.getId())).thenReturn(Optional.of(series));
-    when(seriesService.findSeasons(series.getId())).thenReturn(List.of(season));
+    when(seriesService.findSeasonsWithFiles(series.getId())).thenReturn(List.of(season));
     when(seriesService.findEpisodes(season.getId())).thenReturn(List.of(episode));
     return new SeriesGraph(series, season, episode);
   }
