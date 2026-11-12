@@ -2748,8 +2748,7 @@ class SegmentDeliveryCoordinatorTest {
   @DisplayName(
       "Should close the switched variant's first media segment when stopping the variant that the player left fails unexpectedly")
   void
-      shouldCloseTheSwitchedVariantsFirstMediaSegmentWhenStoppingTheVariantThatThePlayerLeftFailsUnexpectedly()
-          throws Exception {
+      shouldCloseTheSwitchedVariantsFirstMediaSegmentWhenStoppingTheVariantThatThePlayerLeftFailsUnexpectedly() {
     var failing = new UnexpectedStopFailureExecutor();
     transcodeExecutor = failing;
     var rig = rigWith(failing);

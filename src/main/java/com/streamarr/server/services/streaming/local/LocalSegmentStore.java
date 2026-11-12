@@ -87,7 +87,7 @@ public class LocalSegmentStore implements SegmentStore {
     @Override
     public SegmentPublication publish() {
       getOutputDirectory(sessionId);
-      var segmentPath = resolveSegmentPath(sessionId, segmentName);
+      var segmentPath = resolveSegmentPath();
       try {
         Files.createDirectories(segmentPath.getParent());
         if (SegmentNames.isInitSegment(segmentName)) {
@@ -99,6 +99,12 @@ public class LocalSegmentStore implements SegmentStore {
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
       }
+    }
+
+    private Path resolveSegmentPath() {
+      return findSegmentPath(sessionId, segmentName)
+          .orElseThrow(
+              () -> new TranscodeException("No output directory for session: " + sessionId));
     }
 
     private SegmentPublication publishInitialization(Path segmentPath) throws IOException {
@@ -155,11 +161,6 @@ public class LocalSegmentStore implements SegmentStore {
           }
         });
     sessionDirs.clear();
-  }
-
-  private Path resolveSegmentPath(UUID sessionId, String segmentName) {
-    return findSegmentPath(sessionId, segmentName)
-        .orElseThrow(() -> new TranscodeException("No output directory for session: " + sessionId));
   }
 
   /**
