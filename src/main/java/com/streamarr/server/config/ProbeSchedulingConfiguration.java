@@ -1,14 +1,9 @@
 package com.streamarr.server.config;
 
 import com.github.kagkarlsson.scheduler.PollingStrategyConfig;
-import com.github.kagkarlsson.scheduler.SchedulerName;
-import com.github.kagkarlsson.scheduler.SystemClock;
 import com.github.kagkarlsson.scheduler.TaskRepository;
-import com.github.kagkarlsson.scheduler.TaskResolver;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
-import com.github.kagkarlsson.scheduler.event.SchedulerListeners;
-import com.github.kagkarlsson.scheduler.jdbc.AutodetectJdbcCustomization;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcCustomization;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
@@ -29,7 +24,6 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.MeterBinder;
 import java.time.Clock;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import javax.sql.DataSource;
@@ -160,17 +154,13 @@ public class ProbeSchedulingConfiguration {
    */
   @Bean
   public TaskRepository probeTaskRepository(DataSource dataSource, Serializer probeTaskSerializer) {
-    var clock = new SystemClock();
-    return new JdbcTaskRepository(
-        new SchedulerTransactionDataSource(dataSource),
-        false,
-        new AutodetectJdbcCustomization(dataSource),
-        JdbcTaskRepository.DEFAULT_TABLE_NAME,
-        new TaskResolver(SchedulerListeners.NOOP, clock, List.of()),
-        new SchedulerName.Fixed("probe-task-completion"),
-        probeTaskSerializer,
-        false,
-        clock);
+    return SchedulerTables.taskRepository()
+        .dataSource(dataSource)
+        .tableName(JdbcTaskRepository.DEFAULT_TABLE_NAME)
+        .name("probe-task-completion")
+        .serializer(probeTaskSerializer)
+        .clock(Clock.systemUTC())
+        .build();
   }
 
   @RequiredArgsConstructor

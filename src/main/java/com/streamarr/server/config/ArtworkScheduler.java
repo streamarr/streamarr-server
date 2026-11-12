@@ -2,18 +2,13 @@ package com.streamarr.server.config;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
-import com.github.kagkarlsson.scheduler.SchedulerName;
-import com.github.kagkarlsson.scheduler.TaskResolver;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerConfigurationSupport;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
 import com.github.kagkarlsson.scheduler.event.SchedulerListener;
-import com.github.kagkarlsson.scheduler.event.SchedulerListeners;
 import com.github.kagkarlsson.scheduler.exceptions.ExecutionException;
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceCurrentlyExecutingException;
 import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceNotFoundException;
-import com.github.kagkarlsson.scheduler.jdbc.AutodetectJdbcCustomization;
-import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.media.ArtworkTarget;
@@ -78,16 +73,13 @@ public final class ArtworkScheduler {
     var transactionalDataSource = new SchedulerTransactionDataSource(dataSource);
     var serializer = customizer.serializer().orElseThrow();
     var artworkTasks =
-        new JdbcTaskRepository(
-            transactionalDataSource,
-            false,
-            new AutodetectJdbcCustomization(dataSource),
-            tableName,
-            new TaskResolver(SchedulerListeners.NOOP, clock::instant, List.of()),
-            new SchedulerName.Fixed(taskName + "-completion"),
-            serializer,
-            false,
-            clock::instant);
+        SchedulerTables.taskRepository()
+            .dataSource(dataSource)
+            .tableName(tableName)
+            .name(taskName + "-completion")
+            .serializer(serializer)
+            .clock(clock)
+            .build();
     var completion =
         ArtworkStepsTaskCompletion.builder()
             .requests(requests)
