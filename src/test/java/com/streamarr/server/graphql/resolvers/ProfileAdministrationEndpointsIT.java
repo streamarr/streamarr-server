@@ -574,6 +574,47 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should leave the Household unnamed when a HouseholdAdmin who only supervises the visiting"
+          + " Kid removes the PIN its home requires")
+  void shouldLeaveTheHouseholdUnnamedWhenAHouseholdAdminWhoOnlySupervisesTheVisitingKidRemovesIt()
+      throws Exception {
+    var cabin = authTestSupport.createIdentity();
+    try {
+      var sam =
+          cast.profileManagedBy(
+              admin,
+              ProfileFixture.kidProfileBuilder()
+                  .name("Sam")
+                  .maximumAllowedRatingAge(13)
+                  .pinHash("{noop}a-pin-hash"));
+      cast.profileManagedBy(
+          admin, ProfileFixture.kidProfileBuilder().name("Mara").maximumAllowedRatingAge(10));
+      cast.makeAvailable(sam, cabin);
+
+      graphql(
+              authTestSupport.accountBearer(cabin),
+              """
+              mutation { removeProfilePin(input: {profileId: "%s"}) {
+                profile { id } userErrors { __typename
+                  ... on ProfilePinRequiredError { householdId message } } } }
+              """
+                  .formatted(sam.getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.removeProfilePin.userErrors[0].__typename")
+                  .value("ProfilePinRequiredError"))
+          .andExpect(jsonPath("$.data.removeProfilePin.userErrors[0].householdId").isEmpty())
+          .andExpect(
+              jsonPath("$.data.removeProfilePin.userErrors[0].message")
+                  .value("Another Household's safety policy requires this PIN."));
+    } finally {
+      authTestSupport.deleteIdentity(cabin);
+    }
+  }
+
+  @Test
   @DisplayName("Should return the removed PIN state when removal succeeds")
   void shouldReturnRemovedPinStateWhenRemovalSucceeds() throws Exception {
     graphql(

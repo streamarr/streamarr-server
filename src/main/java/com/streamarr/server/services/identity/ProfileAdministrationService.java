@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -550,7 +551,7 @@ public class ProfileAdministrationService {
 
   /**
    * Refuses removal when it would lock the Profile in any Household where it is available. The
-   * Household is named only for a caller who may view its administration.
+   * Household is named only for a caller who may already see that the Profile is available there.
    */
   private Optional<ProfileRejections.WouldLockProfile> wouldLockIn(
       AuthenticatedIdentity identity, UUID profileId) {
@@ -561,11 +562,11 @@ public class ProfileAdministrationService {
       var available = profileRepository.findAvailableInHousehold(householdId);
       var requiring = ProfileSafetyRule.profilesRequiringPin(available);
       if (requiring.contains(profileId)) {
-        var name =
-            mayViewHousehold(identity, householdId)
-                ? householdRepository.findById(householdId).map(h -> h.getName())
-                : Optional.<String>empty();
-        return Optional.of(new ProfileRejections.WouldLockProfile(householdId, name));
+        var household =
+            seesTheProfileIn(identity, profileId, householdId)
+                ? householdRepository.findById(householdId)
+                : Optional.<Household>empty();
+        return Optional.of(new ProfileRejections.WouldLockProfile(household));
       }
     }
 
@@ -584,6 +585,14 @@ public class ProfileAdministrationService {
   private boolean mayViewProfile(AuthenticatedIdentity identity, UUID profileId) {
     return authorizationService.decide(identity, new Intent.ViewProfileAdministration(profileId))
         instanceof Decision.Allowed<?>;
+  }
+
+  // Whoever may use the Household, manages the Profile or is a ServerAdmin may already see that the
+  // Profile is available there (ADR 0024 §PIN safety); viewProfileManagers allows the last two.
+  private boolean seesTheProfileIn(
+      AuthenticatedIdentity identity, UUID profileId, UUID householdId) {
+    return userAccountRepository.mayUseHousehold(identity.accountId(), householdId)
+        || authorizationService.isAllowed(identity, new Intent.ViewProfileManagers(profileId));
   }
 
   private boolean mayViewHousehold(AuthenticatedIdentity identity, UUID householdId) {
