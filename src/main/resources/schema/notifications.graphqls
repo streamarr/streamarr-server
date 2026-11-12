@@ -4,28 +4,20 @@
 type NotificationRetentionSetting {
     "The same for every read and change, so a client cache can update the setting in place."
     id: ID!
-    "How many days the server keeps them after their latest event."
     days: Int!
-    "The shortest retention a ServerAdmin can choose."
     minimumDays: Int!
-    "The longest retention a ServerAdmin can choose."
     maximumDays: Int!
 }
 
-"A ServerAdmin's new retention for Notifications."
 input ChangeNotificationRetentionInput {
-    "Between minimumDays and maximumDays of the setting, inclusive."
     days: Int!
 }
 
-"The retention after a change, or why the server refused it."
 type ChangeNotificationRetentionPayload {
-    "The setting as stored. Null when userErrors is not empty."
     notificationRetentionSetting: NotificationRetentionSetting
     userErrors: [ChangeNotificationRetentionError!]!
 }
 
-"Why the server refused a change of the retention."
 union ChangeNotificationRetentionError = NotificationRetentionOutOfRangeError
 
 """
@@ -33,12 +25,10 @@ What the signed-in Account was told when something happened to a subject (ADR 00
 concrete type names the kind and holds what the Account was told and the subject's id.
 """
 interface Notification {
-    "Stable for the Notification's whole life; marks and live changes name it."
     id: ID!
     """
     The Notification's line, in English, for a client that shows this type but handles it no
-    further. It is plain text: show it as text, never as markup. Each name in it stands in
-    quotation marks. A client may word its own line from the typed fields. Never parse this one.
+    further. A client may word its own line from the typed fields. Never parse this one.
     """
     message: String!
     "When the first event made the Notification, as an ISO-8601 instant."
@@ -72,7 +62,6 @@ interface RequestNotification implements Notification {
     resolvedAt: String
 }
 
-"How a request resolved."
 enum RequestResolution {
     "Someone with the authority accepted, rejected or declined the subject."
     DECIDED
@@ -122,15 +111,11 @@ type ProfileShareAnsweredNotification implements Notification {
     shareId: ID!
     "The Profile's name when the offer was answered. A later rename does not change it."
     profileName: String!
-    "How the Household answered."
     answer: ProfileShareAnswer!
 }
 
-"How a Household answered an offer of a Profile."
 enum ProfileShareAnswer {
-    "The Household accepted the offer, and the share became active."
     ACCEPTED
-    "The Household declined the offer."
     REJECTED
 }
 
@@ -151,11 +136,9 @@ type ProfileShareEndedNotification implements Notification {
     shareId: ID!
     "The Profile's name when the share ended. A later rename does not change it."
     profileName: String!
-    "Which side ended the share."
     endedBy: ProfileShareEndedBy!
 }
 
-"Which side ended a share."
 enum ProfileShareEndedBy {
     "A ProfileManager of the Profile ended the share. The Profile's own Account counts as one."
     OFFERING_SIDE
@@ -165,13 +148,11 @@ enum ProfileShareEndedBy {
     SERVER
 }
 
-"A page of the signed-in Account's Notifications."
 type NotificationConnection {
     edges: [NotificationEdge]!
     pageInfo: PageInfo!
 }
 
-"Membership and ordering in the Notifications list, shared by queries and change payloads."
 type NotificationEdge implements OrderedEdge {
     "Null when the Notification failed to resolve."
     node: Notification
@@ -180,7 +161,6 @@ type NotificationEdge implements OrderedEdge {
     orderKey: String!
 }
 
-"The Notifications that the client showed the signed-in Account, to mark read."
 input MarkNotificationsReadInput {
     """
     The ids of the rows that the client's page showed, from 1 to 100. An id that does not exist,
@@ -189,14 +169,12 @@ input MarkNotificationsReadInput {
     notificationIds: [ID!]!
 }
 
-"The unread count after the Notifications were marked read, or why the server refused the mark."
 type MarkNotificationsReadPayload {
     "The signed-in Account's unread count after the change."
     unreadNotificationCount: Int
     userErrors: [MarkNotificationsReadError!]!
 }
 
-"Why the server refused to mark the Notifications read. A refused mark marks none of them."
 union MarkNotificationsReadError = NotificationIdCountOutOfRangeError | InvalidIdError
 
 extend type Subscription {
@@ -220,9 +198,7 @@ type NotificationsChange {
     unreadNotificationCount: Int
 }
 
-"One Notification that a change touched."
 type NotificationChange {
-    "The Notification's id, also when its edge is null."
     notificationId: ID!
     """
     The same edge that the notifications query returns, or null when the Notification was
