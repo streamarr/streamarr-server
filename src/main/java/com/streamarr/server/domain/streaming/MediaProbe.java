@@ -419,18 +419,23 @@ public record MediaProbe(
   }
 
   /**
-   * Whether the chosen video stream ends at least {@code margin} before another stream of the
-   * source ends, by their probed end times (ADR 0037, early ends). The probe states end times for
-   * audio and video streams only. A stream whose end time the probe does not state never ends
-   * early, and never makes another stream end early.
+   * Whether the chosen video stream ends at least {@code margin} before the session's audio stream
+   * ends, by their probed end times (ADR 0037, early ends). A stream session delivers only those
+   * two streams, so no other stream of the file, such as an audio track that the session does not
+   * play, makes either one end early, however long it runs. A stream whose end time the probe does
+   * not state never ends early, and never makes the other end early, so in a file without audio the
+   * video never ends early.
    */
   public boolean videoEndsEarly(@NonNull Duration margin) {
-    return endsEarly(chosenVideoStream(), margin);
+    return endsEarly(chosenVideoStream(), sessionAudioStream(), margin);
   }
 
-  /** Whether the session's audio stream ends early, by the rule of {@link #videoEndsEarly}. */
+  /**
+   * Whether the session's audio stream ends at least {@code margin} before the chosen video stream
+   * ends, by the rule of {@link #videoEndsEarly}.
+   */
   public boolean sessionAudioEndsEarly(@NonNull Duration margin) {
-    return endsEarly(sessionAudioStream(), margin);
+    return endsEarly(sessionAudioStream(), chosenVideoStream(), margin);
   }
 
   // The session plays the first audio stream that the probe lists.
@@ -443,16 +448,15 @@ public record MediaProbe(
         facts -> streams.stream().filter(s -> s.index() == facts.streamIndex()).findFirst());
   }
 
-  private boolean endsEarly(Optional<StreamInfo> stream, Duration margin) {
-    if (stream.isEmpty() || stream.get().endTime().isEmpty()) {
+  private static boolean endsEarly(
+      Optional<StreamInfo> stream, Optional<StreamInfo> other, Duration margin) {
+    var end = stream.flatMap(StreamInfo::endTime);
+    var otherEnd = other.flatMap(StreamInfo::endTime);
+    if (end.isEmpty() || otherEnd.isEmpty()) {
       return false;
     }
 
-    var earliestLaterEnd = stream.get().endTime().get().plus(margin);
-    return streams.stream()
-        .filter(other -> other.index() != stream.get().index())
-        .flatMap(other -> other.endTime().stream())
-        .anyMatch(end -> end.compareTo(earliestLaterEnd) >= 0);
+    return otherEnd.get().compareTo(end.get().plus(margin)) >= 0;
   }
 
   /**

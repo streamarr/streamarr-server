@@ -928,9 +928,9 @@ class TranscodeDecisionReasonTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("earlyEndingStreams")
   @DisplayName(
-      "Should encode a chosen stream only when it ends at least one segment before another stream"
-          + " of the source")
-  void shouldEncodeAChosenStreamOnlyWhenItEndsAtLeastOneSegmentBeforeAnotherStreamOfTheSource(
+      "Should encode a delivered stream only when it ends at least one segment before the other"
+          + " stream that the session delivers")
+  void shouldEncodeADeliveredStreamOnlyWhenItEndsAtLeastOneSegmentBeforeTheOtherDeliveredStream(
       Source source, boolean copiesVideo, AudioMode audio, List<DecisionReason> expected) {
     var decision = decide(source.probe(), defaultDeclarationBuilder().build());
 
@@ -975,15 +975,16 @@ class TranscodeDecisionReasonTest {
             List.of()),
         Arguments.of(
             Named.of(
-                "video and audio that end one segment before a second audio track",
+                "video and audio that end one segment before an audio track that the session does"
+                    + " not play",
                 Source.builder()
                     .videoEnd(oneSegmentEarlier)
                     .audioEnd(oneSegmentEarlier)
                     .secondAudioEnd(tenMinutes)
                     .build()),
-            false,
-            AudioMode.TRANSCODE,
-            List.of(DecisionReason.VIDEO_ENDS_EARLY, DecisionReason.AUDIO_ENDS_EARLY)),
+            true,
+            AudioMode.COPY,
+            List.of()),
         Arguments.of(
             Named.of(
                 "audio whose end the probe states beside video whose end it does not",

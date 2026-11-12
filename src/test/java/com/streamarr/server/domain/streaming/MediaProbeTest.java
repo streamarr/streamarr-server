@@ -16,6 +16,7 @@ import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -30,6 +31,7 @@ class MediaProbeTest {
 
   private static final String MATROSKA_DEMUXER = "matroska,webm";
   private static final String MOV_DEMUXER = "mov,mp4,m4a,3gp,3g2,mj2";
+  private static final Duration ONE_SEGMENT = Duration.ofSeconds(6);
 
   @ParameterizedTest
   @ValueSource(strings = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle"})
@@ -641,6 +643,112 @@ class MediaProbeTest {
     assertThat(learned.videoEndTime()).contains(Duration.ofMillis(14_167));
   }
 
+  // The margin is one 6 s segment (ADR 0037, early ends).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("videoEnds")
+  @DisplayName(
+      "Should find that the video ends early only when the session's audio ends at least one"
+          + " margin after it")
+  void shouldFindThatTheVideoEndsEarlyOnlyWhenTheSessionsAudioEndsAtLeastOneMarginAfterIt(
+      MediaProbe probe, boolean endsEarly) {
+    assertThat(probe.videoEndsEarly(ONE_SEGMENT)).isEqualTo(endsEarly);
+  }
+
+  static Stream<Arguments> videoEnds() {
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "the session's audio ends one margin after the video",
+                probe(videoStatedToEndAt(10_000), audioStatedToEndAt(1, 16_000))),
+            true),
+        Arguments.of(
+            Named.of(
+                "the session's audio ends just under one margin after the video",
+                probe(videoStatedToEndAt(10_000), audioStatedToEndAt(1, 15_999))),
+            false),
+        Arguments.of(
+            Named.of(
+                "a track listed after the session's ends one margin after the video",
+                probe(
+                    videoStatedToEndAt(10_000),
+                    audioStatedToEndAt(1, 10_000),
+                    audioStatedToEndAt(2, 16_000))),
+            false),
+        Arguments.of(
+            Named.of(
+                "a track listed before the session's ends one margin after the video",
+                probe(
+                        videoStatedToEndAt(10_000),
+                        audioStatedToEndAt(1, 16_000),
+                        audioStatedToEndAt(2, 10_000))
+                    .withSessionAudioTrackAt(1)),
+            false),
+        Arguments.of(
+            Named.of(
+                "the session plays the second of two tracks, which ends one margin after the video",
+                probe(
+                        videoStatedToEndAt(10_000),
+                        audioStatedToEndAt(1, 10_000),
+                        audioStatedToEndAt(2, 16_000))
+                    .withSessionAudioTrackAt(1)),
+            true),
+        Arguments.of(
+            Named.of(
+                "a file without audio whose second video stream ends one margin after the video",
+                probe(videoStatedToEndAt(10_000), secondVideoStatedToEndAt(16_000))),
+            false),
+        Arguments.of(
+            Named.of(
+                "the session's audio has no stated end, and another track ends one margin after the"
+                    + " video",
+                probe(videoStatedToEndAt(10_000), audio(1), audioStatedToEndAt(2, 16_000))),
+            false),
+        Arguments.of(
+            Named.of("the video has no stated end", probe(video(), audioStatedToEndAt(1, 16_000))),
+            false));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sessionAudioEnds")
+  @DisplayName(
+      "Should find that the session's audio ends early only when the video ends at least one"
+          + " margin after it")
+  void shouldFindThatTheSessionsAudioEndsEarlyOnlyWhenTheVideoEndsAtLeastOneMarginAfterIt(
+      MediaProbe probe, boolean endsEarly) {
+    assertThat(probe.sessionAudioEndsEarly(ONE_SEGMENT)).isEqualTo(endsEarly);
+  }
+
+  static Stream<Arguments> sessionAudioEnds() {
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "the video ends one margin after the session's audio",
+                probe(videoStatedToEndAt(16_000), audioStatedToEndAt(1, 10_000))),
+            true),
+        Arguments.of(
+            Named.of(
+                "another track ends one margin after the session's audio",
+                probe(
+                    videoStatedToEndAt(10_000),
+                    audioStatedToEndAt(1, 10_000),
+                    audioStatedToEndAt(2, 16_000))),
+            false),
+        Arguments.of(
+            Named.of(
+                "the session plays the second of two tracks, which ends one margin before the video",
+                probe(
+                        videoStatedToEndAt(16_000),
+                        audioStatedToEndAt(1, 16_000),
+                        audioStatedToEndAt(2, 10_000))
+                    .withSessionAudioTrackAt(1)),
+            true),
+        Arguments.of(
+            Named.of(
+                "the session's audio has no stated end",
+                probe(videoStatedToEndAt(16_000), audio(1))),
+            false));
+  }
+
   private static LearnedStreamEnd scannedEnd(int streamIndex, long endMillis) {
     return scannedEnd(streamIndex, Duration.ofMillis(endMillis));
   }
@@ -669,6 +777,15 @@ class MediaProbeTest {
 
   private static StreamInfo videoStatedToEndAt(long endMillis) {
     return video().toBuilder().endTime(Optional.of(Duration.ofMillis(endMillis))).build();
+  }
+
+  // A second video stream, such as another angle, which the session does not deliver.
+  private static StreamInfo secondVideoStatedToEndAt(long endMillis) {
+    return StreamInfo.builder()
+        .index(1)
+        .codecType("video")
+        .endTime(Optional.of(Duration.ofMillis(endMillis)))
+        .build();
   }
 
   private static StreamInfo audioStatedToEndAt(int index, long endMillis) {
