@@ -21,14 +21,13 @@ import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.support.AuthTestSupport;
-import jakarta.persistence.EntityManagerFactory;
+import com.streamarr.server.support.StatementCount;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -53,7 +52,6 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("Profile Share Parties Integration Tests")
 class ProfileSharePartiesIT extends AbstractIntegrationTest {
 
-  private static final int COUNTED_RUNS = 3;
   private static final String PARTIES =
       """
       edges { node { id status householdId
@@ -72,7 +70,7 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
   @Autowired private ProfileSharingService profileSharingService;
   @Autowired private ProfileShareLifecycle shareLifecycle;
   @Autowired private TransactionTemplate transactionTemplate;
-  @Autowired private EntityManagerFactory entityManagerFactory;
+  @Autowired private StatementCount statementCount;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private AuthTestSupport.TestIdentity owner;
@@ -417,7 +415,8 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     offer(owner, managedProfile(ProfileFixture.defaultProfileBuilder()), host);
     offer(owner, owner.profile(), host);
     householdShares(serverAdmin, host, "[]");
-    var forTwoOffers = statementsWhile(() -> householdShares(serverAdmin, host, "[]"));
+    var forTwoOffers =
+        statementCount.statementsWhile(() -> householdShares(serverAdmin, host, "[]"));
 
     var other = identity();
     offer(other, other.profile(), host);
@@ -426,7 +425,7 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     assertThat(edges(householdShares(serverAdmin, host, "[]")))
         .hasSize(5)
         .allSatisfy(share -> assertThat(share.path("household").path("name").isString()).isTrue());
-    assertThat(statementsWhile(() -> householdShares(serverAdmin, host, "[]")))
+    assertThat(statementCount.statementsWhile(() -> householdShares(serverAdmin, host, "[]")))
         .isEqualTo(forTwoOffers);
   }
 
@@ -440,7 +439,8 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     offer(owner, owner.profile(), host);
     // The first request fills caches that later requests skip.
     householdShares(host, host, "[PENDING]");
-    var forTwoOffers = statementsWhile(() -> householdShares(host, host, "[PENDING]"));
+    var forTwoOffers =
+        statementCount.statementsWhile(() -> householdShares(host, host, "[PENDING]"));
 
     var other = identity();
     offer(other, other.profile(), host);
@@ -449,7 +449,7 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     assertThat(edges(householdShares(host, host, "[PENDING]")))
         .hasSize(4)
         .allSatisfy(share -> assertThat(share.path("household").isNull()).isTrue());
-    assertThat(statementsWhile(() -> householdShares(host, host, "[PENDING]")))
+    assertThat(statementCount.statementsWhile(() -> householdShares(host, host, "[PENDING]")))
         .isEqualTo(forTwoOffers);
   }
 
@@ -468,7 +468,7 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
         """
             .formatted(orphan.getId());
     query(owner, query, "profileShares");
-    var forTwoOffers = statementsWhile(() -> query(owner, query, "profileShares"));
+    var forTwoOffers = statementCount.statementsWhile(() -> query(owner, query, "profileShares"));
 
     offer(owner, orphan, identity());
     offer(owner, orphan, identity());
@@ -476,7 +476,8 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     assertThat(edges(query(owner, query, "profileShares")))
         .hasSize(4)
         .allSatisfy(share -> assertThat(share.path("household").path("name").isString()).isTrue());
-    assertThat(statementsWhile(() -> query(owner, query, "profileShares"))).isEqualTo(forTwoOffers);
+    assertThat(statementCount.statementsWhile(() -> query(owner, query, "profileShares")))
+        .isEqualTo(forTwoOffers);
   }
 
   private JsonNode householdShares(
@@ -696,37 +697,5 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
             .content(objectMapper.writeValueAsString(Map.of("query", query))));
-  }
-
-  @FunctionalInterface
-  private interface Request {
-    void run() throws Exception;
-  }
-
-  // Hibernate statistics are global, so the count holds only while no other test uses the context.
-  // The session reaper also reads the server settings every few seconds on its own thread, so a
-  // run can count one statement that is not the request's; the fewest over a few runs is its own.
-  private long statementsWhile(Request request) throws Exception {
-    var fewest = Long.MAX_VALUE;
-    for (var run = 0; run < COUNTED_RUNS; run++) {
-      fewest = Math.min(fewest, statementsOfOneRun(request));
-    }
-
-    return fewest;
-  }
-
-  private long statementsOfOneRun(Request request) throws Exception {
-    var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
-    var previouslyEnabled = statistics.isStatisticsEnabled();
-    statistics.setStatisticsEnabled(true);
-    statistics.clear();
-
-    try {
-      request.run();
-      return statistics.getPrepareStatementCount();
-    } finally {
-      statistics.clear();
-      statistics.setStatisticsEnabled(previouslyEnabled);
-    }
   }
 }
