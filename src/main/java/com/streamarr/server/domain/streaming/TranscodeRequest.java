@@ -36,24 +36,20 @@ public record TranscodeRequest(
    * the source keyframe that opens its first segment, and the worker seeks there instead of to
    * {@code seekPosition} seconds. An encoded attempt after segment 0 carries one when the source's
    * keyframes are known: the time, by which the container's demuxer seeks, of the last keyframe
-   * that presents at least half a second before its first segment. When they are not, it carries
-   * {@code readFromLastKeyframePresentingAtOrBefore} instead, that half a second before its first
-   * segment, and the worker finds the keyframe in the source (ADR 0037, seek). Every other attempt
-   * carries neither. {@code outputFrameRate} is the exact rate at which an encode runs, the
-   * source's output frame rate unless the variant names another; a stream copy keeps the source's
-   * timing and carries none. {@code exactSegmentStarts} holds the stream session's segment list
-   * (ADR 0037): every attempt of a stream copy session carries the copy's exact starts, and every
-   * attempt on a plain grid that merges its final slot carries the grid's whole-second starts; an
-   * attempt on any other plain grid carries none. {@code advertisedEnd} is the end of the variant's
-   * last advertised media segment, up to which an encoded stream holds its last frame or pads with
-   * silence (ADR 0037, early ends).
+   * that presents at least half a second before its first segment. Every encoded attempt after
+   * segment 0 carries {@code readFromLastKeyframePresentingAtOrBefore}, that half a second before
+   * its first segment on the attempt's own timeline: the worker keeps the keyframe seek position
+   * when its read shows a picture by then, and otherwise finds the keyframe in the source (ADR
+   * 0037, seek). Every other attempt carries neither. {@code outputFrameRate} is the exact rate at
+   * which an encode runs, the source's output frame rate unless the variant names another; a stream
+   * copy keeps the source's timing and carries none. {@code exactSegmentStarts} holds the stream
+   * session's segment list (ADR 0037): every attempt of a stream copy session carries the copy's
+   * exact starts, and every attempt on a plain grid that merges its final slot carries the grid's
+   * whole-second starts; an attempt on any other plain grid carries none. {@code advertisedEnd} is
+   * the end of the variant's last advertised media segment, up to which an encoded stream holds its
+   * last frame or pads with silence (ADR 0037, early ends).
    */
   public TranscodeRequest {
-    if (keyframeSeekPosition.isPresent() && readFromLastKeyframePresentingAtOrBefore.isPresent()) {
-      throw new IllegalArgumentException(
-          "An attempt reads from a keyframe seek position or searches for its keyframe, not both");
-    }
-
     if (variantLabel == null) {
       variantLabel = StreamSession.defaultVariant();
     }

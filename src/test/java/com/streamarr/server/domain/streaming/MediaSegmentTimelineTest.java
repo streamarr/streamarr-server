@@ -429,25 +429,44 @@ class MediaSegmentTimelineTest {
     assertThat(timeline.lastKeyframeReadTime(0)).isEmpty();
   }
 
+  // The worker checks that the read from the stored keyframe's seek position shows a picture by
+  // the time, which lies on the attempt's timeline, where the stored position does not.
   @Test
   @DisplayName(
-      "Should leave the keyframe search to no attempt when the timeline seeks to stored keyframes")
-  void shouldLeaveTheKeyframeSearchToNoAttemptWhenTheTimelineSeeksToStoredKeyframes() {
-    var positions =
-        KeyframePositions.builder()
-            .streamIndex(0)
-            .timeBaseNumerator(1)
-            .timeBaseDenominator(1000)
-            .source(KeyframePositionSource.CONTAINER_INDEX)
-            .keyframes(List.of(new KeyframePosition(0, 0), new KeyframePosition(6000, 6000)))
-            .build();
-    var grid = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(12), SIX_SECONDS);
+      "Should have an encoded attempt after segment 0 carry the time that its read must show a"
+          + " picture by beside the stored keyframe's seek position when the timeline seeks to"
+          + " stored keyframes")
+  void shouldCarryTheReadTimeBesideTheStoredKeyframesSeekPositionWhenTheTimelineSeeksToKeyframes() {
     var seeking =
-        new MediaSegmentTimeline.KeyframeSeekingGrid(grid, positions, DemuxerSeekTime.DECODE_TIME);
-    var copy = grid.openedAt(positions, everyKeyframeOf(positions));
+        new MediaSegmentTimeline.KeyframeSeekingGrid(
+            new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(12), SIX_SECONDS),
+            keyframesAtZeroAndSixSeconds(),
+            DemuxerSeekTime.DECODE_TIME);
 
-    assertThat(seeking.lastKeyframeReadTime(1)).isEmpty();
+    assertThat(seeking.keyframeSeekPosition(1)).hasValue(Duration.ZERO);
+    assertThat(seeking.lastKeyframeReadTime(1)).hasValue(Duration.ofMillis(5_500));
+    assertThat(seeking.lastKeyframeReadTime(0)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should leave the keyframe read time to no attempt of a stream copy")
+  void shouldLeaveTheKeyframeReadTimeToNoAttemptOfAStreamCopy() {
+    var positions = keyframesAtZeroAndSixSeconds();
+    var copy =
+        new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(12), SIX_SECONDS)
+            .openedAt(positions, everyKeyframeOf(positions));
+
     assertThat(copy.lastKeyframeReadTime(1)).isEmpty();
+  }
+
+  private static KeyframePositions keyframesAtZeroAndSixSeconds() {
+    return KeyframePositions.builder()
+        .streamIndex(0)
+        .timeBaseNumerator(1)
+        .timeBaseDenominator(1000)
+        .source(KeyframePositionSource.CONTAINER_INDEX)
+        .keyframes(List.of(new KeyframePosition(0, 0), new KeyframePosition(6000, 6000)))
+        .build();
   }
 
   @Test
