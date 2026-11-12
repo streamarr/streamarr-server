@@ -918,48 +918,66 @@ class LowerVariantsInTheCopysRangeTest {
         .isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
   }
 
-  // The upload budget leaves the copy out of the playlist that the player read, so it plays the
-  // lower variants alone. The copy alone that replaces the stream session is created as any stream
-  // session is, so the budget decides it again: its 5 Mb/s average exceeds the 3.8 Mb/s that 80% of
-  // 11 Mb/s leaves beside the other copy, so the replacement encodes. Its playlist leaves out the
+  // The copy alone that replaces the stream session is created as any stream session is, so the
+  // budget decides it again: its 5 Mb/s average exceeds the 3.8 Mb/s that the share leaves. The
+  // H.264 encode that just failed stays out of that decision, so the replacement encodes in AV1,
+  // the worker's other codec family, and spends no format attempt. Its playlist leaves out the
   // 1080p rung, which does not fit either, and creating it starts the first-listed 480p.
-  @Test
+  @ParameterizedTest
+  @EnumSource(LowerVariantFailure.class)
   @DisplayName(
-      "Should encode the replacement through the upload budget when a lower variant fails while the"
-          + " budget leaves the copy out")
-  void shouldEncodeTheReplacementThroughTheUploadBudgetWhenALowerVariantFailsWhileItLeavesItOut() {
-    var settings = ServerSettingsFixture.defaultServerSettings();
-    var budget = playThroughTheUploadBudgetOf(settings);
-    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(encoder("h264", "libx264")));
-    probes.setDefaultProbe(defaultProbeBuilder().audioChannels(OptionalInt.of(2)).build());
-    accepted(playback.start(startAuto(clientThatPlaysEveryRange())));
-    accepted(
-        settings.changeUploadBudget(
-            AuthenticatedIdentityFixture.accountScopedBuilder().build(), Optional.of(11)));
+      "Should encode the replacement in another codec family through the upload budget when a"
+          + " lower variant fails while the budget leaves the copy out")
+  void shouldEncodeTheReplacementInAnotherCodecFamilyThroughTheUploadBudgetWhenALowerVariantFails(
+      LowerVariantFailure failure) {
+    workerVerifies(encoder("h264", "libx264"), encoder("av1", "libsvtav1"));
     var command = startAuto(clientThatPlaysEveryRange());
-    var second = accepted(playback.start(command));
-    var replacedId = sessionOf(second).getSessionId();
-    var playlists = new HlsPlaylistService(PROPERTIES, budget);
-    var servedFirst = listedUris(playlists.generateMultivariantPlaylist(sessionOf(second), "t"));
-    rig.lifecycle().prepareRequestedVariant(replacedId, "720p", "720p/segment0.m4s");
+    var leftOut = startACopyThatTheUploadBudgetLeavesOut(command);
+    var replacedId = sessionOf(leftOut.copy()).getSessionId();
 
-    workers.failTerminally(replacedId, "720p", TranscodeFailure.SEGMENT_CAP_EXCEEDED);
-    playback.onTerminalTranscodeFailure(
-        terminalFailure(replacedId, "720p", TranscodeFailure.SEGMENT_CAP_EXCEEDED));
+    var afterTheFailure = failThe720pLowerVariant(failure, leftOut.copy(), command);
 
-    var after = snapshotOf(second, command);
-    var replacement = sessionOf(after);
-    assertThat(servedFirst)
-        .containsExactly("720p/stream.m3u8?t=t", "480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
+    var replacement = sessionOf(afterTheFailure);
     assertThat(replacement.getSessionId()).isNotEqualTo(replacedId);
-    assertThat(after.formatAttemptCount()).isEqualTo(1);
-    assertThat(after.decisions().getLast().reasons())
+    assertThat(afterTheFailure.formatAttemptCount()).isEqualTo(1);
+    assertThat(afterTheFailure.decisions().getLast().reasons())
         .first()
         .isEqualTo(DecisionReason.LOWER_VARIANT_FAILED);
     assertThat(replacement.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
-    assertThat(listedUris(playlists.generateMultivariantPlaylist(replacement, "t")))
+    assertThat(streamInfEntries(afterTheFailure))
+        .isNotEmpty()
+        .allSatisfy(entry -> assertThat(videoCodecOf(entry)).startsWith("av01."));
+    assertThat(listedUris(leftOut.playlists().generateMultivariantPlaylist(replacement, "t")))
         .containsExactly("480p/stream.m3u8?t=t", "720p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
     assertThat(workers.isRunning(replacement.getSessionId(), "480p")).isTrue();
+  }
+
+  // As above, on a worker that encodes H.264 alone. The budget's encode then has no codec family
+  // left, so the copy alone replaces the stream session over the share and plays on: the budget
+  // never refuses playback (ADR 0050), and the replacement never offers the failed encode.
+  @ParameterizedTest
+  @EnumSource(LowerVariantFailure.class)
+  @DisplayName(
+      "Should replace the stream session with the copy alone over the upload budget when a lower"
+          + " variant fails and its codec family is the only one that the worker encodes")
+  void shouldReplaceTheStreamSessionWithTheCopyAloneOverTheBudgetWhenNoOtherCodecFamilyIsLeft(
+      LowerVariantFailure failure) {
+    workerVerifies(encoder("h264", "libx264"));
+    var command = startAuto(clientThatPlaysEveryRange());
+    var leftOut = startACopyThatTheUploadBudgetLeavesOut(command);
+    var replacedId = sessionOf(leftOut.copy()).getSessionId();
+
+    var afterTheFailure = failThe720pLowerVariant(failure, leftOut.copy(), command);
+
+    var copyAlone = sessionOf(afterTheFailure);
+    assertThat(copyAlone.getSessionId()).isNotEqualTo(replacedId);
+    assertThatTheCopyPlaysAlone(afterTheFailure);
+    assertThat(afterTheFailure.formatAttemptCount()).isEqualTo(1);
+    assertThat(afterTheFailure.decisions().getLast().reasons())
+        .first()
+        .isEqualTo(DecisionReason.LOWER_VARIANT_FAILED);
+    assertThat(workers.isRunning(copyAlone.getSessionId(), StreamSession.defaultVariant()))
+        .isTrue();
   }
 
   // ADR 0050 for an AV1 copy: a hardware AV1 encoder that writes every range runs beside H.265 and
@@ -1017,6 +1035,67 @@ class LowerVariantsInTheCopysRangeTest {
     public String toString() {
       return name;
     }
+  }
+
+  /** How a lower variant fails for good. */
+  enum LowerVariantFailure {
+    /** The player reports that it cannot decode the lower variant. */
+    PLAYERS_DECODE_ERROR,
+    /** The worker reports an output mismatch, which every job attempt with its decision repeats. */
+    WORKERS_OUTPUT_MISMATCH,
+    /** The worker reports a segment over the cap on the copy's segment list. */
+    WORKERS_SEGMENT_OVER_THE_CAP
+  }
+
+  /** A copy whose playlist the upload budget serves without it, and the budget's playlists. */
+  private record CopyLeftOut(
+      @NonNull PlaybackSessionSnapshot copy, @NonNull HlsPlaylistService playlists) {}
+
+  // An Auto copy of the 5 Mb/s H.264 source plays and counts, then the budget turns on at 11 Mb/s.
+  // Streams get 80% of it, which leaves 3.8 Mb/s beside the first copy. A second Auto copy of the
+  // source then starts, and the budget leaves the copy out of its playlist, which lists the 720p,
+  // 480p and 360p H.264 lower variants alone.
+  private CopyLeftOut startACopyThatTheUploadBudgetLeavesOut(StartPlaybackSessionCommand command) {
+    var settings = ServerSettingsFixture.defaultServerSettings();
+    var playlists = new HlsPlaylistService(PROPERTIES, playThroughTheUploadBudgetOf(settings));
+    probes.setDefaultProbe(defaultProbeBuilder().audioChannels(OptionalInt.of(2)).build());
+    accepted(playback.start(startAuto(clientThatPlaysEveryRange())));
+    accepted(
+        settings.changeUploadBudget(
+            AuthenticatedIdentityFixture.accountScopedBuilder().build(), Optional.of(11)));
+    var copy = accepted(playback.start(command));
+    assertThat(sessionOf(copy).getVariants())
+        .allSatisfy(
+            variant ->
+                assertThat(sessionOf(copy).decisionOf(variant.label()).videoCodecFamily())
+                    .isEqualTo("h264"));
+    assertThat(listedUris(playlists.generateMultivariantPlaylist(sessionOf(copy), "t")))
+        .containsExactly("720p/stream.m3u8?t=t", "480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
+    return new CopyLeftOut(copy, playlists);
+  }
+
+  // The player plays the 720p lower variant until it fails for good.
+  private PlaybackSessionSnapshot failThe720pLowerVariant(
+      LowerVariantFailure failure,
+      PlaybackSessionSnapshot copy,
+      StartPlaybackSessionCommand command) {
+    var copyId = sessionOf(copy).getSessionId();
+    rig.lifecycle().prepareRequestedVariant(copyId, "720p", "720p/segment0.m4s");
+    return switch (failure) {
+      case PLAYERS_DECODE_ERROR -> rejectCurrentFormatAttempt(copy, command);
+      case WORKERS_OUTPUT_MISMATCH ->
+          failTerminally(copy, command, TranscodeFailure.OUTPUT_MISMATCH);
+      case WORKERS_SEGMENT_OVER_THE_CAP ->
+          failTerminally(copy, command, TranscodeFailure.SEGMENT_CAP_EXCEEDED);
+    };
+  }
+
+  private PlaybackSessionSnapshot failTerminally(
+      PlaybackSessionSnapshot copy, StartPlaybackSessionCommand command, TranscodeFailure failure) {
+    var copyId = sessionOf(copy).getSessionId();
+    workers.failTerminally(copyId, "720p", failure);
+    playback.onTerminalTranscodeFailure(terminalFailure(copyId, "720p", failure));
+    return snapshotOf(copy, command);
   }
 
   // Replaces the playback service with one whose stream sessions the upload budget of these
