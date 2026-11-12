@@ -15,14 +15,15 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
- * Keeps the executions that a completion or failure handler removed or rescheduled. Handlers only
- * remove and reschedule, so every other operation is unsupported. Like the JDBC repository, it
- * turns each reschedule into a {@link RescheduleUpdate}.
+ * Keeps the executions that a completion or failure handler removed, rescheduled or released.
+ * Handlers only remove, reschedule and release, so every other operation is unsupported. Like the
+ * JDBC repository, it turns each reschedule into a {@link RescheduleUpdate}.
  */
 public final class FakeTaskRepository implements TaskRepository {
 
   private final List<Execution> removed = new ArrayList<>();
   private final List<RescheduleUpdate> rescheduled = new ArrayList<>();
+  private final List<Execution> released = new ArrayList<>();
 
   public synchronized List<Execution> removed() {
     return List.copyOf(removed);
@@ -30,6 +31,11 @@ public final class FakeTaskRepository implements TaskRepository {
 
   public synchronized List<RescheduleUpdate> rescheduled() {
     return List.copyOf(rescheduled);
+  }
+
+  /** The picked executions released for any scheduler to pick again. */
+  public synchronized List<Execution> released() {
+    return List.copyOf(released);
   }
 
   @Override
@@ -140,8 +146,8 @@ public final class FakeTaskRepository implements TaskRepository {
   }
 
   @Override
-  public void unpickPickedBatch(List<Execution> pickedExecutions) {
-    throw unsupported();
+  public synchronized void unpickPickedBatch(List<Execution> pickedExecutions) {
+    released.addAll(pickedExecutions);
   }
 
   @Override

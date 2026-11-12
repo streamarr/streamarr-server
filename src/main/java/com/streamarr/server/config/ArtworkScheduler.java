@@ -106,7 +106,7 @@ public final class ArtworkScheduler {
                 dataSource,
                 List.of(task),
                 schedulerListeners,
-                List.of());
+                List.of(new ReleaseAtShutdown(artworkTasks)));
     return new ArtworkScheduler(task, client, newScheduler, clock);
   }
 

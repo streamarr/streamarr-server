@@ -13,8 +13,9 @@ services:
   streamarr-server:
     image: ${STREAMARR_SERVER_IMAGE:-streamarr/streamarr-server:0.0.11-SNAPSHOT} # x-release-please-version
     restart: always
-    # Outlasts the 30 s shutdown drain of library operations.
-    stop_grace_period: 45s
+    # The server stops its background work and its web server within 5 s, then closes its
+    # sessions and connections. The rest of the grace period is margin.
+    stop_grace_period: 15s
     ports:
       - "8080:8080"
     environment:

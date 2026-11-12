@@ -137,7 +137,7 @@ public final class KeyframePacketScanScheduler
                 dataSource,
                 List.of(task, bitrateScanTask),
                 schedulerListeners,
-                List.of());
+                List.of(new ReleaseAtShutdown(scanTasks)));
     return new KeyframePacketScanScheduler(
         new Tasks(task, bitrateScanTask), client, newScheduler, clock, autoStartup);
   }
@@ -189,6 +189,11 @@ public final class KeyframePacketScanScheduler
   }
 
   @Override
+  public void stop(@NonNull Runnable callback) {
+    BackgroundWorkStop.onItsOwnThread("keyframe-packet-scan-scheduler-stop", this::stop, callback);
+  }
+
+  @Override
   public synchronized boolean isRunning() {
     return running != null;
   }
@@ -196,6 +201,11 @@ public final class KeyframePacketScanScheduler
   @Override
   public boolean isAutoStartup() {
     return autoStartup;
+  }
+
+  @Override
+  public int getPhase() {
+    return BackgroundWorkStop.PHASE;
   }
 
   private record Tasks(

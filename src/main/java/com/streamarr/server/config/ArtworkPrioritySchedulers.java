@@ -3,6 +3,7 @@ package com.streamarr.server.config;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.services.ArtworkPriority;
 import com.streamarr.server.services.ArtworkScheduling;
+import java.util.List;
 import lombok.Builder;
 import lombok.NonNull;
 import org.springframework.context.SmartLifecycle;
@@ -36,8 +37,13 @@ public class ArtworkPrioritySchedulers implements ArtworkScheduling, SmartLifecy
 
   @Override
   public void stop() {
-    primary.stop();
-    background.stop();
+    BackgroundWorkStop.together(
+        "artwork-scheduler-stop-", List.of(primary::stop, background::stop));
+  }
+
+  @Override
+  public void stop(@NonNull Runnable callback) {
+    BackgroundWorkStop.onItsOwnThread("artwork-schedulers-stop", this::stop, callback);
   }
 
   @Override
@@ -48,5 +54,10 @@ public class ArtworkPrioritySchedulers implements ArtworkScheduling, SmartLifecy
   @Override
   public boolean isAutoStartup() {
     return autoStartup;
+  }
+
+  @Override
+  public int getPhase() {
+    return BackgroundWorkStop.PHASE;
   }
 }

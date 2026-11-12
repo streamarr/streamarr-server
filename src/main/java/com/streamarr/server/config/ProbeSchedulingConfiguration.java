@@ -1,12 +1,17 @@
 package com.streamarr.server.config;
 
 import com.github.kagkarlsson.scheduler.PollingStrategyConfig;
+import com.github.kagkarlsson.scheduler.Scheduler;
+import com.github.kagkarlsson.scheduler.SystemClock;
 import com.github.kagkarlsson.scheduler.TaskRepository;
+import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerConfigurationSupport;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
+import com.github.kagkarlsson.scheduler.event.SchedulerListener;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcCustomization;
 import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
+import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.repositories.media.BitrateScanRepository;
@@ -24,14 +29,19 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.MeterBinder;
 import java.time.Clock;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -85,6 +95,40 @@ public class ProbeSchedulingConfiguration {
       ProbeCapacityJdbcCustomization probeCapacityJdbcCustomization) {
     return new VirtualThreadCustomizer(
         probeTaskSerializer, dataSource, probeCapacityJdbcCustomization);
+  }
+
+  /**
+   * The probe scheduler, built as the db-scheduler starter builds it, which then backs off. Its
+   * executions that a shutdown cuts off are released for the next start, and {@link
+   * ProbeSchedulerStop} stops it with the server's other background work instead of when the
+   * context destroys it.
+   */
+  @Bean(destroyMethod = "")
+  @ConditionalOnProperty(name = "db-scheduler.enabled", havingValue = "true", matchIfMissing = true)
+  @DependsOnDatabaseInitialization
+  public Scheduler probeScheduler(
+      DbSchedulerProperties properties,
+      DbSchedulerCustomizer dbSchedulerCustomizer,
+      StatsRegistry statsRegistry,
+      DataSource dataSource,
+      List<Task<?>> tasks,
+      List<SchedulerListener> listeners,
+      TaskRepository probeTaskRepository) {
+    return DbSchedulerConfigurationSupport.buildScheduler(
+        properties,
+        dbSchedulerCustomizer,
+        statsRegistry,
+        new SystemClock(),
+        dataSource,
+        tasks,
+        listeners,
+        List.of(new ReleaseAtShutdown(probeTaskRepository)));
+  }
+
+  @Bean
+  @ConditionalOnProperty(name = "db-scheduler.enabled", havingValue = "true", matchIfMissing = true)
+  public ProbeSchedulerStop probeSchedulerStop(Scheduler probeScheduler) {
+    return new ProbeSchedulerStop(probeScheduler);
   }
 
   @Bean
@@ -166,6 +210,10 @@ public class ProbeSchedulingConfiguration {
   @RequiredArgsConstructor
   private static final class VirtualThreadCustomizer implements DbSchedulerCustomizer {
 
+    // As many threads as db-scheduler's own housekeeper, which runs the heartbeats and the check
+    // for dead executions.
+    private static final int HOUSEKEEPER_THREADS = 3;
+
     private final Serializer serializer;
     private final DataSource dataSource;
     private final JdbcCustomization jdbcCustomization;
@@ -181,6 +229,24 @@ public class ProbeSchedulingConfiguration {
     @Override
     public Optional<ExecutorService> executorService() {
       return Optional.of(SystemWork.newExecutorRunningAsSystemActor("scheduled-task-"));
+    }
+
+    // A scheduler's stop waits up to 5 s for its poll and its heartbeats to end after their
+    // interrupt. A virtual thread that waits for the database ends at the interrupt, where a
+    // platform thread in a socket read waits for the database to answer.
+    @Override
+    public Optional<ExecutorService> dueExecutor() {
+      return Optional.of(
+          Executors.newSingleThreadExecutor(
+              SystemWork.newThreadFactoryRunningAsSystemActor("scheduler-poll-")));
+    }
+
+    @Override
+    public Optional<ScheduledExecutorService> housekeeperExecutor() {
+      return Optional.of(
+          Executors.newScheduledThreadPool(
+              HOUSEKEEPER_THREADS,
+              SystemWork.newThreadFactoryRunningAsSystemActor("scheduler-housekeeper-")));
     }
 
     // The library's single-statement PostgreSQL claim nests its LIMIT inside the UPDATE's IN

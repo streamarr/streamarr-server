@@ -1,0 +1,285 @@
+package com.streamarr.server;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.streamarr.server.config.KeyframePacketScanScheduler;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.ProbeContainer;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
+import com.streamarr.server.domain.task.ProbePublication;
+import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.fixtures.LoopbackProbeWorker;
+import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
+import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.library.KeyframePacketScanRequests;
+import com.streamarr.server.services.probe.ProbeTaskRequests;
+import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
+import com.streamarr.server.support.BoundedTask;
+import com.streamarr.transcode.v1.ProbeRequest;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.context.TypeExcludeFilter;
+import org.springframework.boot.test.context.TestComponent;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.type.classreading.MetadataReader;
+import org.springframework.core.type.classreading.MetadataReaderFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+/**
+ * Starts the server as a process starts it, with its schedulers running, lets an unanswering worker
+ * hold a probe and a keyframe packet scan, and shuts the server down. The test's own context only
+ * stores the fixtures.
+ */
+@Tag("IntegrationTest")
+@DisplayName("Server shutdown integration tests")
+class ServerShutdownIT extends AbstractIntegrationTest {
+
+  // The maintainer's decision: the server stops within about 10 s of SIGTERM in every case.
+  private static final Duration STOP_BOUND = Duration.ofSeconds(10);
+  // Far below the 60 s after which db-scheduler finds an execution that no server holds dead.
+  private static final Duration CLAIM_BOUND = Duration.ofSeconds(20);
+  private static final String PROBE_TABLE = "scheduled_tasks";
+
+  @TempDir Path sourceRoot;
+
+  @Autowired private LibraryRepository libraries;
+  @Autowired private MediaFileRepository mediaFiles;
+  @Autowired private MediaFileContainerInfoRepository outcomes;
+  @Autowired private JdbcTemplate jdbc;
+
+  private final List<ConfigurableApplicationContext> servers = new ArrayList<>();
+  private final List<MediaFile> createdFiles = new ArrayList<>();
+  private UUID libraryId;
+
+  @BeforeEach
+  void setUp() {
+    deleteScheduledWork();
+    libraryId = libraries.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary()).getId();
+  }
+
+  @AfterEach
+  void tearDown() {
+    servers.forEach(ConfigurableApplicationContext::close);
+    deleteScheduledWork();
+    mediaFiles.deleteAll(createdFiles);
+    libraries.deleteById(libraryId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop within ten seconds, with the grace periods of both schedulers overlapping, when"
+          + " an unanswering worker holds a probe and a keyframe packet scan")
+  void shouldStopWithinTenSecondsWhenAnUnansweringWorkerHoldsAProbeAndAKeyframePacketScan()
+      throws Exception {
+    var held = heldWork();
+    var server = startServer();
+    var gracePeriod =
+        server
+            .getEnvironment()
+            .getRequiredProperty("db-scheduler.shutdown-max-wait", Duration.class);
+
+    try (var worker = connectedWorker(server)) {
+      requestHeldWork(server, held);
+      awaitStartedProbeAndScan(worker);
+
+      var stopping = System.nanoTime();
+      BoundedTask.runWithin(STOP_BOUND, server::close);
+      var stopped = Duration.ofNanos(System.nanoTime() - stopping);
+
+      assertThat(stopped)
+          .as("Both schedulers wait their grace period at once, not one after the other")
+          .isLessThan(gracePeriod.multipliedBy(2));
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should release the probe and the keyframe packet scan that a shutdown cut off without a"
+          + " failure, and run both at once when the server starts again")
+  void shouldReleaseTheCutOffWorkWithoutAFailureAndRunItAtOnceWhenTheServerStartsAgain()
+      throws Exception {
+    var held = heldWork();
+    var server = startServer();
+    try (var worker = connectedWorker(server)) {
+      requestHeldWork(server, held);
+      awaitStartedProbeAndScan(worker);
+      BoundedTask.runWithin(STOP_BOUND, server::close);
+    }
+
+    assertThat(scheduledRow(PROBE_TABLE, held.probed()))
+        .as("The probe is claimable at once and counts no failure")
+        .isEqualTo(new ScheduledRow(false, 0));
+    assertThat(scheduledRow(KeyframePacketScanScheduler.TABLE_NAME, held.scanned()))
+        .as("The keyframe packet scan is claimable at once and counts no failure")
+        .isEqualTo(new ScheduledRow(false, 0));
+
+    var restarted = startServer();
+    try (var worker = connectedWorker(restarted)) {
+      awaitStartedProbeAndScan(worker);
+    }
+  }
+
+  // A probe of one file and a keyframe packet scan of another. The scan's file holds a stored
+  // outcome that needs the scan.
+  private HeldWork heldWork() throws IOException {
+    var probed = createMediaFile("probed.mkv");
+    var scanned = createMediaFile("scanned.mkv");
+    assertThat(
+            outcomes.publish(
+                ProbePublication.builder()
+                    .mediaFileId(scanned.getId())
+                    .snapshot(snapshotOf(scanned))
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .outcome(
+                        new ProbeOutcome.Success(
+                            ProbeContainer.builder()
+                                .format(Optional.of("mpegts"))
+                                .duration(Optional.of(Duration.ofSeconds(60)))
+                                .build(),
+                            List.of(),
+                            new KeyframeKnowledge.PacketScanRequired(
+                                KeyframePacketScanReason.NO_CONTAINER_INDEX)))
+                    .build()))
+        .isTrue();
+    return new HeldWork(probed, scanned);
+  }
+
+  private static void requestHeldWork(ConfigurableApplicationContext server, HeldWork held)
+      throws IOException {
+    server
+        .getBean(ProbeTaskRequests.class)
+        .request(
+            ProbeTaskRequest.builder()
+                .mediaFileId(held.probed().getId())
+                .libraryId(held.probed().getLibraryId())
+                .filepathUri(held.probed().getFilepathUri())
+                .snapshot(snapshotOf(held.probed()))
+                .probeVersion(ProbeVersion.CURRENT)
+                .build());
+    server
+        .getBean(KeyframePacketScanRequests.class)
+        .request(
+            KeyframePacketScanTaskRequest.builder()
+                .mediaFileId(held.scanned().getId())
+                .filepathUri(held.scanned().getFilepathUri())
+                .snapshot(snapshotOf(held.scanned()))
+                .probeVersion(ProbeVersion.CURRENT)
+                .build());
+  }
+
+  // The worker never answers, so the probe and the scan run until the shutdown cuts them off.
+  private static void awaitStartedProbeAndScan(LoopbackProbeWorker worker) throws Exception {
+    var started = new ArrayList<ProbeRequest>();
+    started.add(worker.nextResponse(CLAIM_BOUND).getStartProbe().getRequest());
+    started.add(worker.nextResponse(CLAIM_BOUND).getStartProbe().getRequest());
+
+    assertThat(started)
+        .extracting(ProbeRequest::getScanKeyframePackets)
+        .containsExactlyInAnyOrder(false, true);
+  }
+
+  private static LoopbackProbeWorker connectedWorker(ConfigurableApplicationContext server)
+      throws Exception {
+    return LoopbackProbeWorker.builder()
+        .port(server.getBean(WorkerSessionServer.class).port())
+        .probeVersion(ProbeVersion.CURRENT)
+        .availableSlots(1)
+        .backgroundProbeCapacity(1)
+        .keyframePacketScanCapacity(1)
+        .build();
+  }
+
+  // The server runs as a process runs it: db-scheduler is on, and the test's own configuration
+  // classes stay out of its component scan.
+  private ConfigurableApplicationContext startServer() {
+    var server =
+        new SpringApplicationBuilder(StreamarrServerApplication.class)
+            .profiles("test")
+            .initializers(
+                context ->
+                    context
+                        .getBeanFactory()
+                        .registerSingleton("testComponentExclusion", new TestComponentExclusion()))
+            .run(
+                "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                "--spring.datasource.username=" + postgres.getUsername(),
+                "--spring.datasource.password=" + postgres.getPassword(),
+                "--db-scheduler.enabled=true",
+                "--server.port=0",
+                "--streaming.remote.source-root=" + sourceRoot,
+                "--spring.main.banner-mode=off");
+    servers.add(server);
+    return server;
+  }
+
+  private MediaFile createMediaFile(String filename) throws IOException {
+    var source = Files.write(sourceRoot.resolve(filename), new byte[] {1, 2, 3});
+    var file =
+        mediaFiles.saveAndFlush(
+            MediaFile.builder()
+                .libraryId(libraryId)
+                .status(MediaFileStatus.MATCHED)
+                .filename(filename)
+                .filepathUri(FilepathCodec.encode(source))
+                .size(3)
+                .build());
+    createdFiles.add(file);
+    return file;
+  }
+
+  private static SourceFileSnapshot snapshotOf(MediaFile file) throws IOException {
+    return SourceFileSnapshot.of(
+        Files.readAttributes(
+            FilepathCodec.decode(file.getFilepathUri()), BasicFileAttributes.class));
+  }
+
+  private ScheduledRow scheduledRow(String table, MediaFile file) {
+    return jdbc.queryForObject(
+        "SELECT picked, consecutive_failures FROM " + table + " WHERE task_instance = ?",
+        (row, _) -> new ScheduledRow(row.getBoolean("picked"), row.getInt("consecutive_failures")),
+        file.getId().toString());
+  }
+
+  private void deleteScheduledWork() {
+    jdbc.update("DELETE FROM " + PROBE_TABLE);
+    jdbc.update("DELETE FROM " + KeyframePacketScanScheduler.TABLE_NAME);
+  }
+
+  private record HeldWork(MediaFile probed, MediaFile scanned) {}
+
+  private record ScheduledRow(boolean picked, int consecutiveFailures) {}
+
+  // The test context framework keeps test configuration out of a test's own context. A server
+  // started by hand has no such filter, so it gets this one.
+  private static final class TestComponentExclusion extends TypeExcludeFilter {
+
+    @Override
+    public boolean match(MetadataReader reader, MetadataReaderFactory factory) {
+      return reader.getAnnotationMetadata().isAnnotated(TestComponent.class.getName());
+    }
+  }
+}
