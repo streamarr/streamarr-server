@@ -21,7 +21,9 @@ import graphql.language.StringValue;
 import graphql.language.Value;
 import graphql.parser.ParserOptions;
 import graphql.validation.ValidationError;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -41,15 +43,19 @@ import org.springframework.stereotype.Component;
  * keeps its line and column and leaves out the token the parser stopped at, in its message and
  * beside it, and the line that token stood on. Every value written under the node a validation
  * error points at becomes {@code 'REDACTED'} in its message, so the message still names the
- * argument and what is wrong with it. It runs first, so that every instrumentation after it, among
- * them DGS's, which turns these errors into typed errors that keep the message, reads the redacted
- * message.
+ * argument and what is wrong with it. When those values would print too long to look for, the
+ * message names only the kind of error and the path to its field, and the error keeps its location.
+ * It runs first, so that every instrumentation after it, among them DGS's, which turns these errors
+ * into typed errors that keep the message, reads the redacted message.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentation {
 
   private static final String REDACTED = "'REDACTED'";
+
+  // Far more than any hand-written argument's values print, and cheap to print.
+  private static final long QUOTED_LENGTH_LIMIT = 1 << 14;
 
   // graphql-java parses a request with the parser options its context holds, and with its
   // operation defaults when it holds none.
@@ -86,11 +92,13 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
 
   private static Function<ValidationError, String> descriptionsWithoutValues(
       ExecutionResult executionResult, InstrumentationExecutionParameters parameters) {
-    var quotedValues = quotedValuesAt(executionResult, parameters);
-    return rejected -> withoutQuotedValues(rejected, quotedValues);
+    return quotedValuesAt(executionResult, parameters)
+        .<Function<ValidationError, String>>map(
+            quotedValues -> rejected -> withoutQuotedValues(rejected, quotedValues))
+        .orElse(RequestErrorRedactionInstrumentation::withoutAnyValue);
   }
 
-  private static Map<SourceLocation, List<String>> quotedValuesAt(
+  private static Optional<Map<SourceLocation, List<String>>> quotedValuesAt(
       ExecutionResult executionResult, InstrumentationExecutionParameters parameters) {
     var locations =
         executionResult.getErrors().stream()
@@ -98,7 +106,7 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
             .flatMap(error -> error.getLocations().stream())
             .collect(Collectors.toSet());
     if (locations.isEmpty()) {
-      return Map.of();
+      return Optional.of(Map.of());
     }
 
     // A document that failed validation parsed first, so it parses again the same way.
@@ -147,6 +155,11 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
     return message;
   }
 
+  private static String withoutAnyValue(ValidationError rejected) {
+    return "Validation error (%s@[%s]) : the values written here are too long to quote"
+        .formatted(rejected.getValidationErrorType(), String.join("/", rejected.getQueryPath()));
+  }
+
   private static GraphQLError described(ValidationError rejected, String description) {
     return ValidationError.newValidationError()
         .validationErrorType(rejected.getValidationErrorType())
@@ -157,16 +170,20 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
         .build();
   }
 
-  private static Map<SourceLocation, List<String>> quotedValuesAt(
+  private static Optional<Map<SourceLocation, List<String>>> quotedValuesAt(
       Document document, Set<SourceLocation> locations) {
-    return nodes(document)
-        .filter(node -> locations.contains(node.getSourceLocation()))
-        .collect(
-            Collectors.groupingBy(
-                Node::getSourceLocation,
-                Collectors.flatMapping(
-                    node -> nodes(node).flatMap(RequestErrorRedactionInstrumentation::quoted),
-                    Collectors.toList())));
+    var quoting = new Quoting();
+    var quotedValues = new HashMap<SourceLocation, List<String>>();
+    var located =
+        nodes(document).filter(node -> locations.contains(node.getSourceLocation())).toList();
+    for (var node : located) {
+      var quoted = quotedValues.computeIfAbsent(node.getSourceLocation(), _ -> new ArrayList<>());
+      if (!quoting.quote(node, quoted)) {
+        return Optional.empty();
+      }
+    }
+
+    return Optional.of(quotedValues);
   }
 
   private static Stream<Node<?>> nodes(Node<?> node) {
@@ -175,22 +192,45 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
         node.getChildren().stream().flatMap(RequestErrorRedactionInstrumentation::nodes));
   }
 
-  // graphql-java quotes a rejected value as its syntax node, and a scalar's own message may quote
-  // its literal text.
-  private static Stream<String> quoted(Node<?> node) {
-    if (!(node instanceof Value<?> value)) {
-      return Stream.empty();
-    }
+  private static Stream<String> literal(Value<?> value) {
+    return switch (value) {
+      case StringValue string -> Stream.of(string.getValue());
+      case IntValue integer -> Stream.of(integer.getValue().toString());
+      case FloatValue decimal -> Stream.of(decimal.getValue().toString());
+      case BooleanValue bool -> Stream.of(String.valueOf(bool.isValue()));
+      case EnumValue enumValue -> Stream.of(enumValue.getName());
+      default -> Stream.empty();
+    };
+  }
 
-    var literal =
-        switch (value) {
-          case StringValue string -> Stream.of(string.getValue());
-          case IntValue integer -> Stream.of(integer.getValue().toString());
-          case FloatValue decimal -> Stream.of(decimal.getValue().toString());
-          case BooleanValue bool -> Stream.of(String.valueOf(bool.isValue()));
-          case EnumValue enumValue -> Stream.of(enumValue.getName());
-          default -> Stream.<String>empty();
-        };
-    return Stream.concat(Stream.of(value.toString()), literal).map(text -> "'" + text + "'");
+  // A value prints every value inside it again, so printing each value of a literal nested n deep
+  // prints that literal n times over. Values are quoted innermost first, under one limit for the
+  // whole request, so that a value is printed only once all the values inside it fit.
+  private static final class Quoting {
+
+    private long left = QUOTED_LENGTH_LIMIT;
+
+    // Whether every value under the node fits within the limit.
+    private boolean quote(Node<?> node, List<String> quoted) {
+      for (var child : node.getChildren()) {
+        if (!quote(child, quoted)) {
+          return false;
+        }
+      }
+
+      if (!(node instanceof Value<?> value)) {
+        return true;
+      }
+
+      // graphql-java quotes a rejected value as its syntax node, and a scalar's own message may
+      // quote its literal text.
+      var quotes =
+          Stream.concat(Stream.of(value.toString()), literal(value))
+              .map(text -> "'" + text + "'")
+              .toList();
+      left -= quotes.stream().mapToLong(String::length).sum();
+      quoted.addAll(quotes);
+      return left >= 0;
+    }
   }
 }
