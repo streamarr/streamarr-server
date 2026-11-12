@@ -596,6 +596,9 @@ class SegmentFolderLeftoversTest {
 
       startOf(leftoversInMemory(pointedElsewhereOnceItReadsASessionsMark.getPath(link.toString())));
 
+      assertThat(Files.readSymbolicLink(link))
+          .as("the link was pointed at the other folder while the start deleted")
+          .isEqualTo(otherFolder);
       assertThat(movie).hasBinaryContent(MEDIA);
       assertThat(markedFolder.resolve(sessionName)).doesNotExist();
     }
