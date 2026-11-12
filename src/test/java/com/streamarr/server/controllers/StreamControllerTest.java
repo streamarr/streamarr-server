@@ -30,18 +30,24 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.streaming.DirectPlayMetrics;
 import com.streamarr.server.services.streaming.DirectPlaySourceService;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
+import com.streamarr.server.services.streaming.FileBackedStoredSegment;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.StoredSegment;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import lombok.Builder;
@@ -845,6 +851,61 @@ class StreamControllerTest {
     assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILENAME_ATTR)).isNull();
   }
 
+  @Test
+  @DisplayName("Should commit the answer's headers when the segment is handed to Tomcat")
+  void shouldCommitAnswersHeadersWhenSegmentIsHandedToTomcat(@TempDir Path segmentFolder)
+      throws Exception {
+    var store = storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+
+    var result =
+        overStore(store)
+            .perform(segmentRequest().requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILENAME_ATTR)).isNotNull();
+    assertThat(result.getResponse().isCommitted()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should close the opened segment when the segment is handed to Tomcat")
+  void shouldCloseOpenedSegmentWhenSegmentIsHandedToTomcat(@TempDir Path segmentFolder)
+      throws Exception {
+    var store =
+        new OpenCountingStore(storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5}));
+
+    var result =
+        overStore(store)
+            .perform(segmentRequest().requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILENAME_ATTR)).isNotNull();
+    assertThat(store.openSegmentCount()).isZero();
+  }
+
+  // RFC 9110 section 14.1.2: a range without a last position runs to the representation's end.
+  @Test
+  @DisplayName("Should hand the rest of the segment to Tomcat when a range has no last position")
+  void shouldHandRestOfSegmentToTomcatWhenRangeHasNoLastPosition(@TempDir Path segmentFolder)
+      throws Exception {
+    var store = storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+
+    var result =
+        overStore(store)
+            .perform(
+                segmentRequest()
+                    .header(HttpHeaders.RANGE, "bytes=3-")
+                    .requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
+            .andExpect(status().isPartialContent())
+            .andReturn();
+
+    assertThat(result.getResponse().getHeader(HttpHeaders.CONTENT_RANGE)).isEqualTo("bytes 3-4/5");
+    assertThat(result.getResponse().getHeader(HttpHeaders.CONTENT_LENGTH)).isEqualTo("2");
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILE_START_ATTR)).isEqualTo(3L);
+    assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILE_END_ATTR)).isEqualTo(5L);
+  }
+
   private static MockHttpServletRequestBuilder segmentRequest() {
     return get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID);
   }
@@ -870,5 +931,71 @@ class StreamControllerTest {
 
   private AuthenticatedIdentity boundIdentity() {
     return defaultIdentityBuilder().streamSessionId(boundStreamSession.get()).build();
+  }
+
+  /** Opens segments through a local segment store and counts the ones not closed yet. */
+  private static final class OpenCountingStore implements SegmentStore {
+
+    private final LocalSegmentStore store;
+    private final Set<StoredSegment> openSegments = ConcurrentHashMap.newKeySet();
+
+    private OpenCountingStore(LocalSegmentStore store) {
+      this.store = store;
+    }
+
+    private int openSegmentCount() {
+      return openSegments.size();
+    }
+
+    @Override
+    public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
+      return store.openSegment(sessionId, segmentName).map(this::counted);
+    }
+
+    // A local segment store opens file-backed segments; the counted one stays file-backed, so
+    // the controller still hands it to Tomcat.
+    private StoredSegment counted(StoredSegment opened) {
+      var file = (FileBackedStoredSegment) opened;
+      var counted =
+          new FileBackedStoredSegment() {
+            @Override
+            public Path path() {
+              return file.path();
+            }
+
+            @Override
+            public long length() {
+              return file.length();
+            }
+
+            @Override
+            public InputStream newInputStream() {
+              return file.newInputStream();
+            }
+
+            @Override
+            public void close() {
+              file.close();
+              openSegments.remove(this);
+            }
+          };
+      openSegments.add(counted);
+      return counted;
+    }
+
+    @Override
+    public boolean segmentExists(UUID sessionId, String segmentName) {
+      return store.segmentExists(sessionId, segmentName);
+    }
+
+    @Override
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+      return store.prepareSegment(sessionId, segmentName);
+    }
+
+    @Override
+    public void deleteSession(UUID sessionId) {
+      store.deleteSession(sessionId);
+    }
   }
 }
