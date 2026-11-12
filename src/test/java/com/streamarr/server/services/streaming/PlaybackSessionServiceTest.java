@@ -64,6 +64,7 @@ import com.streamarr.server.services.streaming.events.RequestedVariantChangedEve
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
+import com.streamarr.server.support.BoundedTask;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
@@ -3028,6 +3029,41 @@ class PlaybackSessionServiceTest {
     assertThatThrownBy(() -> service.start(start))
         .isInstanceOf(PlaybackSessionClosedException.class);
     assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should interrupt a format attempt that still starts when the service closes")
+  void shouldInterruptAFormatAttemptThatStillStartsWhenTheServiceCloses() throws Exception {
+    var playback =
+        PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
+            .streamingService(streams)
+            .authorityGate(authority)
+            .maximumFormatAttempts(2)
+            .clock(clock)
+            .build();
+    var command = startCommand().build();
+    var initial = accepted(playback.start(command));
+    var starting = new CountDownLatch(1);
+    var interrupted = new CountDownLatch(1);
+    streams.beforeNextCreation = _ -> waitUntilInterrupted(starting, interrupted);
+    playback.reportFormatFailure(report(initial, command).build()).orElseThrow();
+    assertThat(starting.await(5, TimeUnit.SECONDS)).isTrue();
+
+    BoundedTask.runWithin(Duration.ofSeconds(5), playback::close);
+
+    assertThat(interrupted.getCount()).isZero();
+  }
+
+  // A format attempt's start that waits for its probe or its worker, which only its interrupt ends.
+  private static void waitUntilInterrupted(CountDownLatch starting, CountDownLatch interrupted) {
+    starting.countDown();
+    try {
+      new CountDownLatch(1).await();
+    } catch (InterruptedException _) {
+      interrupted.countDown();
+      Thread.currentThread().interrupt();
+    }
   }
 
   @Test

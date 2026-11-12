@@ -320,6 +320,16 @@ kubectl apply -f /tmp/streamarr-deployment.yaml
 
 To encode on NVIDIA GPUs in worker pods, see <<_kubernetes_gpus>>.
 
+== Stopping the server
+
+When the server receives SIGTERM, it answers each segment request that it holds with `503 Service Unavailable`, which the player retries.
+It stops its background schedulers, its scheduled tasks and its web server together, and waits at most 5 s for all of them (`spring.lifecycle.timeout-per-shutdown-phase`).
+A running probe, keyframe packet scan, bitrate scan, library operation or artwork step gets 3 s to end (`db-scheduler.shutdown-max-wait`), then the server interrupts it.
+The server releases each interrupted execution without counting a failure, so it runs as soon as a server starts again.
+The server then closes its playback sessions and its database connections and waits at most 1 s for each.
+Compose and the example Kubernetes manifest give the server 15 s to stop.
+If the platform kills the server before it stops, its running executions run again once a server finds them dead, about 60 s later.
+
 == GPU encoding
 
 The worker can encode video on an NVIDIA GPU.

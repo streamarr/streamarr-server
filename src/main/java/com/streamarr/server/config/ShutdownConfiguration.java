@@ -13,4 +13,9 @@ public class ShutdownConfiguration {
   public SimpleAsyncTaskSchedulerCustomizer scheduledTasksStopWithTheBackgroundWork() {
     return scheduler -> scheduler.setPhase(BackgroundWorkStop.PHASE);
   }
+
+  @Bean
+  public static BoundedConnectionPoolClose boundedConnectionPoolClose() {
+    return new BoundedConnectionPoolClose();
+  }
 }
