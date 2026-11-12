@@ -110,9 +110,8 @@ class ManagerInvitationExpiryNotificationsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should read the request as expired from its expiry before the sweep stores the expiry")
-  void shouldReadTheRequestAsExpiredFromItsExpiryBeforeTheSweepStoresIt() throws Exception {
+  @DisplayName("Should read the request as expired when its expiry passes before the sweep")
+  void shouldReadTheRequestAsExpiredWhenItsExpiryPassesBeforeTheSweep() throws Exception {
     var issued = steps.invite(sam, alex, mara.account().getEmail());
     runOut(issued);
 
