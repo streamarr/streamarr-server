@@ -41,6 +41,7 @@ class AccountRemoval {
   private final ProfileRepository profileRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileShareLifecycle shareLifecycle;
+  private final NotificationDismissals notificationDismissals;
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileManagerInvitationRepository managerInvitationRepository;
   private final AccountInvitationRepository accountInvitationRepository;
@@ -166,6 +167,7 @@ class AccountRemoval {
                 authSessionRepository.clearProfileSelectionFromLiveSessions(
                     profileId, share.getHouseholdId()));
     shareLifecycle.announceDeletionWithProfile(profileId, now);
+    notificationDismissals.profileDeleted(profileId);
     profileRepository.deleteById(profileId);
     profileRepository.flush();
   }

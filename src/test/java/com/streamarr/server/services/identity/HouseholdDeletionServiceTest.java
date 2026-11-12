@@ -668,6 +668,7 @@ class HouseholdDeletionServiceTest {
             profiles,
             shares,
             new ProfileShareLifecycle(shares, shareEvents),
+            new NotificationDismissals(managerInvitations, shareEvents),
             managers,
             managerInvitations,
             accountInvitations,

@@ -121,6 +121,14 @@ public class FakeProfileManagerInvitationRepository
         invitation -> recipientAccountId.equals(invitation.getRecipientAccountId()), reason, now);
   }
 
+  @Override
+  public List<UUID> findIdsByProfileId(UUID profileId) {
+    return database.values().stream()
+        .filter(invitation -> profileId.equals(invitation.getProfileId()))
+        .map(ProfileManagerInvitation::getId)
+        .toList();
+  }
+
   private int invalidate(Predicate<ProfileManagerInvitation> scope, String reason, Instant now) {
     database.values().stream()
         .filter(invitation -> invitation.getStatus() == ProfileManagerInvitationStatus.PENDING)

@@ -51,6 +51,7 @@ public class ProfileLifecycleService {
   private final AccountInvitationRepository accountInvitationRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileShareLifecycle shareLifecycle;
+  private final NotificationDismissals notificationDismissals;
   private final AuthSessionRepository authSessionRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final MutationTransactions mutationTransactions;
@@ -179,6 +180,7 @@ public class ProfileLifecycleService {
                           profileId, share.getHouseholdId()));
           invalidateProfileBoundArtifacts(profileId, PROFILE_DELETED, now);
           shareLifecycle.announceDeletionWithProfile(profileId, now);
+          notificationDismissals.profileDeleted(profileId);
           if (!profileRepository.tryDeleteUnlinked(profileId)) {
             throw profileDeletionRejection(profileId);
           }
