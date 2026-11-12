@@ -108,7 +108,7 @@ class AccountLifecycleServiceTest {
               profiles,
               shares,
               new ProfileShareLifecycle(shares, shareEvents),
-              new NotificationDismissals(managerInvitations, shareEvents),
+              new NotificationDismissals(shares, managerInvitations, shareEvents),
               managers,
               managerInvitations,
               accountInvitations,

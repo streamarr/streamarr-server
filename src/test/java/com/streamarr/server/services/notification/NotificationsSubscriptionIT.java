@@ -622,6 +622,28 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should deliver the dismissal of its waiting request when a HouseholdAdmin is demoted")
+  void shouldDeliverTheDismissalWhenAHouseholdAdminIsDemoted() throws Exception {
+    var offer = steps.offer(sam, kai(), riverside);
+    var request = requestFor(riversideAdmin, offer);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    var outcome =
+        accountAdministration.revokeHouseholdAdmin(
+            authTestSupport.freshIdentityOf(serverAdmin), riversideAdmin.account().getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var dismissed = nextChange(socket);
+    assertThat(onlyChange(dismissed).path("notificationId").asString())
+        .isEqualTo(request.id().toString());
+    assertThat(onlyChange(dismissed).path("edge").isNull()).isTrue();
+    assertThat(dismissed.path("unreadNotificationCount").asInt()).isZero();
+    assertThat(requestFor(riverside, offer).resolution()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should deliver the request's expiry when the sweep stores the offer's expiry")
   void shouldDeliverTheRequestsExpiryWhenTheSweepStoresTheOffersExpiry() throws Exception {
     var offer = steps.offer(sam, kai(), riverside);

@@ -410,6 +410,15 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
+  public List<UUID> findPendingOfferIdsInto(UUID householdId, Instant now) {
+    return dsl.select(PROFILE_HOUSEHOLD_SHARE.ID)
+        .from(PROFILE_HOUSEHOLD_SHARE)
+        .where(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
+        .and(readsAs(ProfileShareStatus.PENDING, val(now.atOffset(ZoneOffset.UTC))))
+        .fetch(PROFILE_HOUSEHOLD_SHARE.ID);
+  }
+
+  @Override
   public boolean hasActiveOrPendingShares(UUID profileId, Instant now) {
     var pendingAndLive =
         PROFILE_HOUSEHOLD_SHARE

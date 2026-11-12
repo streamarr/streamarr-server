@@ -29,6 +29,9 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** Whether the Profile has any ACTIVE share or unexpired PENDING share, read as a scalar. */
   boolean hasActiveOrPendingShares(UUID profileId, Instant now);
 
+  /** The ids of the offers into the Household that are pending and unexpired at the instant. */
+  List<UUID> findPendingOfferIdsInto(UUID householdId, Instant now);
+
   /** The shares the filter keeps into its Household, beyond the seek, by creation, then ID. */
   List<Row<ProfileHouseholdShare>> rowsIntoHousehold(HouseholdShareFilter filter, Seek seek);
 
