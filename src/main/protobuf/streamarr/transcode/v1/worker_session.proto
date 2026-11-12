@@ -886,6 +886,12 @@ message WorkerSessionAccepted {
   // with PROBE_FAILURE_RESULT_TOO_LARGE. A value of 0 states no limit, and the
   // worker then applies no limit of its own (ADR 0062).
   uint32 measured_keyframe_interval_limit = 6;
+  // This field holds the length in bytes of the longest encoded
+  // ProbeAttemptResult that the server accepts in a probe report. When a
+  // result is longer, the worker fails the probe with
+  // PROBE_FAILURE_RESULT_TOO_LARGE. A value of 0 states no limit, and the
+  // worker then applies no limit of its own (ADR 0062).
+  uint64 probe_result_length_limit_bytes = 7;
 }
 
 message StartVariantCommand {
@@ -1616,8 +1622,10 @@ enum ProbeFailure {
   // A current worker never sends this value, because a canceled attempt has no
   // ProbeAttemptReport (ADR 0062).
   PROBE_FAILURE_CANCELLED = 6;
-  // The result would exceed the session message limit. The server stores this
-  // outcome until the file or the probe version changes.
+  // The probe report or its result exceeds the length limit that
+  // WorkerSessionAccepted states, or a bitrate scan chunk's measurement exceeds
+  // measured_keyframe_interval_limit. The server stores this outcome of a probe
+  // until the file or the probe version changes (ADR 0062).
   PROBE_FAILURE_RESULT_TOO_LARGE = 7;
   // Every unit of the capacity was busy, so ffprobe never started. The server
   // keeps the probe queued.

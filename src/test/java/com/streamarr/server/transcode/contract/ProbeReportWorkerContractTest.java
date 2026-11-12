@@ -132,12 +132,14 @@ class ProbeReportWorkerContractTest {
                 "probe_report_limit",
                 "probe_report_length_limit_bytes",
                 "keyframe_limit",
-                "measured_keyframe_interval_limit"))
+                "measured_keyframe_interval_limit",
+                "probe_result_length_limit_bytes"))
         .containsExactly(
             tuple("probe_report_limit", 3, Type.UINT32, false, false),
             tuple("probe_report_length_limit_bytes", 4, Type.UINT64, false, false),
             tuple("keyframe_limit", 5, Type.UINT32, false, false),
-            tuple("measured_keyframe_interval_limit", 6, Type.UINT32, false, false));
+            tuple("measured_keyframe_interval_limit", 6, Type.UINT32, false, false),
+            tuple("probe_result_length_limit_bytes", 7, Type.UINT64, false, false));
   }
 
   @Test
