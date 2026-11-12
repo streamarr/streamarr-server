@@ -6,7 +6,7 @@ import java.util.List;
 import lombok.NonNull;
 
 /**
- * What a change of a Profile's kind or content limit, or a new Profile, would lock in one
+ * What a change of a Profile's kind or Content Ceiling, or a new Profile, would lock in one
  * Household: the other Profiles locked there after it that are not locked now, by name, and whether
  * the changed or new Profile itself would be newly locked there.
  */

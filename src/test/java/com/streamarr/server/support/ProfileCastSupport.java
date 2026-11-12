@@ -130,8 +130,8 @@ public class ProfileCastSupport {
   }
 
   /**
-   * A member of the HouseholdAdmin's Household whose Personal Profile has a content limit, so that
-   * the HouseholdAdmin manages it.
+   * A member of the HouseholdAdmin's Household whose Personal Profile has a Content Ceiling, so
+   * that the HouseholdAdmin supervises it.
    */
   public TestIdentity supervisedMemberOf(TestIdentity householdAdmin) {
     var member = authTestSupport.createHouseholdMemberIdentity(householdAdmin);
