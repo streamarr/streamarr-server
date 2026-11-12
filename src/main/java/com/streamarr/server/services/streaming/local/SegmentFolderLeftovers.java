@@ -5,12 +5,9 @@ import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutco
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Refused;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileStore;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
@@ -22,7 +19,6 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import lombok.Builder;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -58,8 +54,9 @@ public class SegmentFolderLeftovers {
    * holds nothing of a running store.
    *
    * <p>It refuses a folder that is the top of a file system, that is the home folder or lies above
-   * it, or that is a media folder or lies above or below one, and it creates nothing there. It
-   * refuses every folder when the media folders cannot be read.
+   * it, that is a media folder or lies above or below one, or that a file system is mounted in, and
+   * it creates nothing there. It refuses every folder when the media folders or the mount table
+   * cannot be read.
    *
    * <p>It deletes only in a folder that carries its mark, and it marks only a folder that holds no
    * other entry. There it deletes a stream session's directory only when a store marked the
@@ -110,7 +107,12 @@ public class SegmentFolderLeftovers {
       return Optional.of(SegmentFolderRefusal.HOME_FOLDER);
     }
 
-    return mediaFolderRefusal(folder);
+    var mediaFolderRefusal = mediaFolderRefusal(folder);
+    if (mediaFolderRefusal.isPresent()) {
+      return mediaFolderRefusal;
+    }
+
+    return mountPointRefusal(folder);
   }
 
   private Optional<SegmentFolderRefusal> mediaFolderRefusal(Path folder) throws IOException {
@@ -128,6 +130,27 @@ public class SegmentFolderLeftovers {
       if (media.startsWith(folder) || folder.startsWith(media)) {
         return Optional.of(SegmentFolderRefusal.MEDIA_FOLDER);
       }
+    }
+
+    return Optional.empty();
+  }
+
+  // A delete would empty a file system that is mounted in the folder. A second mount of the folder's
+  // own file system crosses no device boundary, so only the mount table shows every mount.
+  private Optional<SegmentFolderRefusal> mountPointRefusal(Path folder) {
+    List<Path> mountPoints;
+    try {
+      mountPoints = MountPoints.in(mountTable);
+    } catch (IOException | RuntimeException e) {
+      log.warn("Failed to read the mount table {}", mountTable, e);
+      return Optional.of(SegmentFolderRefusal.UNKNOWN_MOUNT_POINTS);
+    }
+
+    var mountedInside =
+        mountPoints.stream()
+            .anyMatch(mountPoint -> mountPoint.startsWith(folder) && !mountPoint.equals(folder));
+    if (mountedInside) {
+      return Optional.of(SegmentFolderRefusal.MOUNT_POINT_INSIDE);
     }
 
     return Optional.empty();
@@ -235,7 +258,9 @@ public class SegmentFolderLeftovers {
           && SESSION_DIRECTORY_NAME.matcher(name).matches()
           && Files.isRegularFile(
               entry.resolve(LocalSegmentStore.SESSION_MARK_NAME), LinkOption.NOFOLLOW_LINKS)) {
-        return deleteDirectory(entry);
+        // Deletes a soft link itself, never what it points to.
+        MoreFiles.deleteRecursively(entry);
+        return Leftover.DELETED;
       }
 
       if (attributes.isRegularFile() && PreparedSegmentFile.isUploadName(name)) {
@@ -250,47 +275,9 @@ public class SegmentFolderLeftovers {
     }
   }
 
-  private Leftover deleteDirectory(Path directory) throws IOException {
-    if (holdsAnotherFileSystem(directory)) {
-      log.warn(
-          "A leftover of the segment folder holds another file system, so it stays: {}", directory);
-      return Leftover.REMAINING;
-    }
-
-    // Deletes a soft link itself, never what it points to.
-    MoreFiles.deleteRecursively(directory);
-    return Leftover.DELETED;
-  }
-
-  // A file system that is mounted on the directory or below it is not the segment folder's.
-  private boolean holdsAnotherFileSystem(Path directory) throws IOException {
-    var mounts = new OtherFileSystems(Files.getFileStore(segmentFolder));
-    Files.walkFileTree(directory, mounts);
-    return mounts.found;
-  }
-
   private enum Leftover {
     DELETED,
     REMAINING,
     NOT_A_LEFTOVER
-  }
-
-  // Walks without following soft links and stops at the first directory of another file system.
-  @RequiredArgsConstructor
-  private static final class OtherFileSystems extends SimpleFileVisitor<Path> {
-
-    private final FileStore foldersFileStore;
-    private boolean found;
-
-    @Override
-    public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes)
-        throws IOException {
-      if (Files.getFileStore(directory).equals(foldersFileStore)) {
-        return FileVisitResult.CONTINUE;
-      }
-
-      found = true;
-      return FileVisitResult.TERMINATE;
-    }
   }
 }

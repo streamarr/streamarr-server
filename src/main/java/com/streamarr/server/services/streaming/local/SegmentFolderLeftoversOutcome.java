@@ -20,7 +20,7 @@ public sealed interface SegmentFolderLeftoversOutcome {
    * The delete ran.
    *
    * @param deleted the stream sessions' directories and unpublished uploads that it deleted
-   * @param remaining those that it could not delete, or that lie on another file system
+   * @param remaining those that it could not delete
    */
   record Deleted(int deleted, int remaining) implements SegmentFolderLeftoversOutcome {
 

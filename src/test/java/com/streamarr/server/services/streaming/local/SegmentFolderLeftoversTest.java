@@ -438,6 +438,57 @@ class SegmentFolderLeftoversTest {
     assertThat(leftover).isDirectory();
   }
 
+  // A bind mount of the folder's own file system crosses no device boundary, so only the mount
+  // table shows it.
+  @Test
+  @DisplayName(
+      "Should refuse the folder and keep what is mounted there when a file system is mounted in a"
+          + " leftover")
+  void shouldRefuseTheFolderAndKeepWhatIsMountedThereWhenAFileSystemIsMountedInALeftover()
+      throws IOException {
+    startOf(segmentFolder);
+    var session = leftSessionIn(segmentFolder);
+    var mountPoint = Files.createDirectory(session.resolve("library"));
+    var movie = Files.write(mountPoint.resolve("movie.mkv"), MEDIA);
+
+    var outcome =
+        startOf(
+            leftoversOf(segmentFolder)
+                .mountTable(mountTableListing(Path.of("/"), mountPoint.toRealPath())));
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.MOUNT_POINT_INSIDE));
+    assertThat(movie).hasBinaryContent(MEDIA);
+  }
+
+  @Test
+  @DisplayName("Should refuse the folder when the mount table cannot be read")
+  void shouldRefuseTheFolderWhenTheMountTableCannotBeRead() {
+    startOf(segmentFolder);
+    var session = leftSessionIn(segmentFolder);
+
+    var outcome =
+        startOf(leftoversOf(segmentFolder).mountTable(machine.resolve("missing-mountinfo")));
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.UNKNOWN_MOUNT_POINTS));
+    assertThat(session).isDirectory();
+  }
+
+  // A volume of its own for segments, such as a tmpfs, is mounted on the folder itself.
+  @Test
+  @DisplayName("Should delete leftovers when a file system is mounted on the folder itself")
+  void shouldDeleteLeftoversWhenAFileSystemIsMountedOnTheFolderItself() throws IOException {
+    startOf(segmentFolder);
+    var session = leftSessionIn(segmentFolder);
+
+    var outcome =
+        startOf(
+            leftoversOf(segmentFolder)
+                .mountTable(mountTableListing(Path.of("/"), segmentFolder.toRealPath())));
+
+    assertThat(outcome).isEqualTo(new Deleted(1, 0));
+    assertThat(session).doesNotExist();
+  }
+
   @Test
   @DisplayName(
       "Should keep a folder outside the segment folder when a leftover stream session's directory"
@@ -681,7 +732,9 @@ class SegmentFolderLeftoversTest {
   private Path mountTableListing(Path... mountPoints) {
     var lines =
         Arrays.stream(mountPoints)
-            .map(mountPoint -> "36 25 8:1 / " + mountPoint + " rw,relatime shared:1 - ext4 /dev/sda1 rw")
+            .map(
+                mountPoint ->
+                    "36 25 8:1 / " + mountPoint + " rw,relatime shared:1 - ext4 /dev/sda1 rw")
             .toList();
     try {
       return Files.write(machine.resolve("mountinfo-" + UUID.randomUUID()), lines);

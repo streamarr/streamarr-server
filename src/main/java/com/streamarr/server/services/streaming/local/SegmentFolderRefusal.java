@@ -12,6 +12,13 @@ public enum SegmentFolderRefusal {
   MEDIA_FOLDER,
   /** The server could not read the library folders, so it cannot tell them from the folder. */
   UNKNOWN_MEDIA_FOLDERS,
+  /** A file system is mounted in the folder or below it, so what lies there is not the server's. */
+  MOUNT_POINT_INSIDE,
+  /**
+   * The server could not read its mount table, so it cannot tell whether a file system is mounted
+   * in the folder. Only Linux has the table.
+   */
+  UNKNOWN_MOUNT_POINTS,
   /** The folder held other entries before a segment store used it, so it carries no mark. */
   UNMARKED_FOLDER,
   /** Another server process that is running uses the folder. */
