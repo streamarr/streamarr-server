@@ -30,12 +30,12 @@ class LivePrincipalAuthorityContributor implements FactContributor {
   @Override
   public void contribute(
       AuthenticatedIdentity identity, AuthorizationCheck check, EntitySlice slice) {
-    authorityFacts(identity, check)
-        .ifPresent(
-            facts -> {
-              slice.principalAttribute(ENABLED, new PrimBool(facts.enabled()));
-              slice.principalAttribute(SERVER_ADMIN, new PrimBool(facts.serverAdmin()));
-            });
+    authorityFacts(identity, check).ifPresent(facts -> describe(slice, facts));
+  }
+
+  private static void describe(EntitySlice slice, AccountAuthorityFacts facts) {
+    slice.principalAttribute(ENABLED, new PrimBool(facts.enabled()));
+    slice.principalAttribute(SERVER_ADMIN, new PrimBool(facts.serverAdmin()));
   }
 
   private Optional<AccountAuthorityFacts> authorityFacts(

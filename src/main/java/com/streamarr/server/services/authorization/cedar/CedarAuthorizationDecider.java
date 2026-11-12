@@ -61,31 +61,41 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
     var authorizationContext = "unplanned intent";
     try {
       var plan = planning.get();
-      var check = plan.check();
-      authorizationContext = check.action().toString();
-      var slice = sliceAssembler.assemble(identity, check);
-      var entities = slice.entities();
-      var sliceViolation = sliceViolation(entities);
-      if (sliceViolation.isPresent()) {
-        return failClosed(FailureCause.INVALID_SLICE, check, sliceViolation.get());
-      }
+      authorizationContext = plan.check().action().toString();
+      return decideOn(identity, plan, sliceAssembler.assemble(identity, plan.check()));
+    } catch (Exception e) {
+      return failClosedOn(e, authorizationContext);
+    }
+  }
 
-      if (!check.action().requiresFreshReauthentication()) {
-        return evaluate(check, slice, entities, plan.value());
-      }
+  private <T> Decision<T> decideOn(
+      AuthenticatedIdentity identity, IntentPlan<T> plan, EntitySlice slice) throws AuthException {
+    var check = plan.check();
+    var entities = slice.entities();
+    var sliceViolation = sliceViolation(entities);
+    if (sliceViolation.isPresent()) {
+      return failClosed(FailureCause.INVALID_SLICE, check, sliceViolation.get());
+    }
 
-      return decideWithFreshness(identity, check, slice, entities, plan.value());
-    } catch (InvalidEntitySliceException e) {
+    if (!check.action().requiresFreshReauthentication()) {
+      return evaluate(check, slice, entities, plan.value());
+    }
+
+    return decideWithFreshness(identity, check, slice, entities, plan.value());
+  }
+
+  private <T> Decision<T> failClosedOn(Exception failure, String authorizationContext) {
+    if (failure instanceof InvalidEntitySliceException) {
       log.error(
           "Authorization failed closed for {} ({}): {}",
           authorizationContext,
           FailureCause.INVALID_SLICE,
-          e.getMessage());
+          failure.getMessage());
       return countFailClosed(FailureCause.INVALID_SLICE);
-    } catch (Exception e) {
-      log.error("Authorization failed closed for {} (ENGINE_FAILURE)", authorizationContext, e);
-      return countFailClosed(FailureCause.ENGINE_FAILURE);
     }
+
+    log.error("Authorization failed closed for {} (ENGINE_FAILURE)", authorizationContext, failure);
+    return countFailClosed(FailureCause.ENGINE_FAILURE);
   }
 
   /** The schema violations of an assembled slice, or empty when it validates. */

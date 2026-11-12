@@ -44,16 +44,21 @@ class SliceAssembler {
   }
 
   EntitySlice assemble(AuthenticatedIdentity identity, AuthorizationCheck check) {
-    var slice = new EntitySlice(CedarIds.account(identity.accountId()), check.resource());
-    // Stamped on every slice, not through a fact family: the device forbid must see the flag on
-    // every action, and an absent fact would read as "not device-bound" — failing open.
-    slice.principalAttribute(
-        SignedPrincipalContextContributor.DEVICE_BOUND, new PrimBool(identity.deviceBound()));
+    var slice = newSlice(identity, check);
     check
         .action()
         .facts()
         .forEach(requirement -> contributors.get(requirement).contribute(identity, check, slice));
 
+    return slice;
+  }
+
+  private static EntitySlice newSlice(AuthenticatedIdentity identity, AuthorizationCheck check) {
+    var slice = new EntitySlice(CedarIds.account(identity.accountId()), check.resource());
+    // Stamped on every slice, not through a fact family: the device forbid must see the flag on
+    // every action, and an absent fact would read as "not device-bound" — failing open.
+    slice.principalAttribute(
+        SignedPrincipalContextContributor.DEVICE_BOUND, new PrimBool(identity.deviceBound()));
     return slice;
   }
 }
