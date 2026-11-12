@@ -80,7 +80,7 @@ class ProfileManagementNotifications {
             .kind(ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_RECEIVED)
             .subject(SubjectReference.profileManagerInvitation(invitation.invitationId()))
             .resolution(settled.resolution())
-            .answer(settled.answer())
+            .answer(settled.answer().<RequestAnswer>map(answer -> answer))
             .at(change.changedAt())
             .build());
   }
@@ -95,7 +95,8 @@ class ProfileManagementNotifications {
   }
 
   /** How an invitation's request resolves from the status a write after the issue left. */
-  private record Settlement(RequestResolution resolution, Optional<RequestAnswer> answer) {
+  private record Settlement(
+      RequestResolution resolution, Optional<ProfileManagerInvitationAnswer> answer) {
 
     // A write after the issue leaves an invitation pending only when it invalidates the invitation
     // for its Account alone, which may no longer answer it although the Profile's managers still
