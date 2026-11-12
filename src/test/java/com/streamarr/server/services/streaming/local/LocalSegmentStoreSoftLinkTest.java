@@ -57,8 +57,9 @@ class LocalSegmentStoreSoftLinkTest {
             .build();
     try (var fileSystem = Jimfs.newFileSystem(withoutSecureDirectoryStreams)) {
       var folder = fileSystem.getPath("/segments");
+      var lock = new SegmentFolderLock();
 
-      assertThatThrownBy(() -> new LocalSegmentStore(folder, new SegmentFolderLock()))
+      assertThatThrownBy(() -> new LocalSegmentStore(folder, lock))
           .isInstanceOf(UnsupportedSegmentFolderException.class)
           .hasMessageContaining("/segments");
     }
@@ -69,8 +70,9 @@ class LocalSegmentStoreSoftLinkTest {
   void shouldFailWhenTheSegmentFolderCannotBeCreated() throws IOException {
     var regularFile = Files.createFile(outside.resolve("not-a-folder"));
     var folder = regularFile.resolve("segments");
+    var lock = new SegmentFolderLock();
 
-    assertThatThrownBy(() -> new LocalSegmentStore(folder, new SegmentFolderLock()))
+    assertThatThrownBy(() -> new LocalSegmentStore(folder, lock))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessageContaining(folder.toString());
   }
