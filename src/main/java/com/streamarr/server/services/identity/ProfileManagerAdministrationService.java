@@ -59,6 +59,7 @@ public class ProfileManagerAdministrationService {
   private static final String RESOURCE_ACCOUNT_ID = "accountId";
 
   private final AuthorizationService authorizationService;
+  private final ProfileAuthorityExplanation authorityExplanation;
   private final ProfileManagerInvitationRepository invitationRepository;
   private final ProfileManagerInvitationLifecycle invitationLifecycle;
   private final ProfileManagerRepository profileManagerRepository;
@@ -155,13 +156,16 @@ public class ProfileManagerAdministrationService {
         _ -> Optional.empty());
   }
 
+  // Not-found when the caller may not read the Profile; when it may, why only the Profile's
+  // managers may invite, or FORBIDDEN.
   private Optional<ManagerRejections.Invite> inviteRefusal(
       AuthenticatedIdentity identity, UUID profileId) {
     return refusalOf(
         identity,
         new Intent.InviteProfileManager(profileId),
-        AuthorizationRefusal.Response.hiddenUnless(
-            () -> mayViewProfile(identity, profileId), ManagerRejections.ProfileNotFound::new));
+        AuthorizationRefusal.Response.<ManagerRejections.Invite>hiddenUnless(
+                () -> mayViewProfile(identity, profileId), ManagerRejections.ProfileNotFound::new)
+            .visibleAs(() -> authorityExplanation.managersOnly(identity, profileId)));
   }
 
   public Outcome<ProfileManagerInvitation, ManagerRejections.Cancel> cancelManagerInvitation(

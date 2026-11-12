@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.mutation.sharing;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
+import com.streamarr.server.services.identity.ProfileRejections;
 import com.streamarr.server.services.identity.ShareCodeRejections;
 import com.streamarr.server.services.identity.ShareRejections;
 import com.streamarr.server.services.serversettings.ChangeLifetimeRejection;
@@ -30,6 +31,16 @@ class ShareErrorsTest {
           softly
               .assertThat(ShareErrors.toOfferError(new ShareRejections.AlreadyShared()))
               .isExactlyInstanceOf(ProfileAlreadySharedError.class);
+          softly
+              .assertThat(
+                  ShareErrors.toOfferError(
+                      new ProfileRejections.ManagersOnly(
+                          ProfileRejections.ManagersOnlyReason.NOT_MANAGER)))
+              .isEqualTo(
+                  new ProfileManagersOnlyError(
+                      "Only the Profile's managers may do this; supervising it does not cover"
+                          + " this.",
+                      ProfileRejections.ManagersOnlyReason.NOT_MANAGER));
         });
   }
 

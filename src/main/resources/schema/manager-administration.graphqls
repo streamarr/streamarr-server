@@ -144,6 +144,7 @@ type InviteProfileManagerPayload {
 "The refusals inviteProfileManager may answer with, in userErrors."
 union InviteProfileManagerError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | EmailRequiredError
   | EmailInvalidError
   | ManagerInvitationLimitReachedError

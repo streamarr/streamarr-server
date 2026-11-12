@@ -181,7 +181,12 @@ type Mutation {
     present one code, exactly one is made. A code that does not work gets ShareCodeRefusedError,
     which names no Household. Each offer is a credential attempt by the Account that presents the
     code, counted as lookUpShareCode counts it; a device-bound session and a disabled Account get
-    FORBIDDEN. A newer offer of the same Profile to the same Household replaces a pending one.
+    FORBIDDEN. A newer offer of the same Profile to the same Household replaces a pending one. The
+    Profile's managers and ServerAdmins may offer it; someone's own unrestricted Personal Profile
+    only that Account or a ServerAdmin. A caller who may read profileAdministration of the Profile
+    only as a HouseholdAdmin where it is available gets ProfileManagersOnlyError; any other caller
+    who may read it but may not offer it, a manager offering someone's own Personal Profile
+    included, gets FORBIDDEN; everyone else gets ProfileNotFoundError.
     """
     offerProfileShare(input: OfferProfileShareInput!): OfferProfileSharePayload
     """
@@ -261,8 +266,10 @@ type Mutation {
     any case, replaces a pending one. At most ten invitations wait for one Profile
     (ManagerInvitationLimitReachedError), those that nobody can accept included. The invitation
     waits for the invitation lifetime that a ServerAdmin sets. The code appears once, in this
-    answer. A caller who may read profileAdministration of the Profile but may not invite gets
-    FORBIDDEN; everyone else, a device-bound session included, gets ProfileNotFoundError.
+    answer. A caller who may read profileAdministration of the Profile only as a HouseholdAdmin
+    where it is available gets ProfileManagersOnlyError; any other caller who may read it but may
+    not invite, a ServerAdmin included, gets FORBIDDEN; everyone else, a device-bound session
+    included, gets ProfileNotFoundError.
     """
     inviteProfileManager(input: InviteProfileManagerInput!): InviteProfileManagerPayload
     """
