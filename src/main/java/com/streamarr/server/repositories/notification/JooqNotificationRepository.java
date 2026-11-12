@@ -111,6 +111,11 @@ public class JooqNotificationRepository implements NotificationRepository {
         .fetch(JooqNotificationRepository::changed);
   }
 
+  @Override
+  public void deleteOfRecipient(RecipientReference recipient) {
+    dsl.deleteFrom(NOTIFICATION).where(ofRecipient(recipient)).execute();
+  }
+
   private static Condition selected(DismissalSelector.Targets targets) {
     return switch (targets) {
       case DismissalSelector.ById(var notificationIds) -> NOTIFICATION.ID.in(notificationIds);

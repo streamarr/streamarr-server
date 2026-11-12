@@ -2,6 +2,7 @@ package com.streamarr.server.services.notification;
 
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.events.notification.DismissNotificationsEvent;
+import com.streamarr.server.services.events.notification.NotificationRecipientDeletedEvent;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.notification.events.ChangedNotification;
@@ -48,6 +49,12 @@ public class NotificationIntake {
   @Transactional(propagation = Propagation.MANDATORY)
   public void onDismiss(DismissNotificationsEvent dismissal) {
     announce(notificationRepository.dismiss(dismissal.selector()));
+  }
+
+  @EventListener
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void onRecipientDeleted(NotificationRecipientDeletedEvent deletion) {
+    notificationRepository.deleteOfRecipient(deletion.recipient());
   }
 
   private void announce(List<ChangedNotification> changed) {

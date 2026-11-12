@@ -16,6 +16,7 @@ import com.streamarr.server.domain.notification.RequestAnswer;
 import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.services.events.notification.DismissNotificationsEvent;
 import com.streamarr.server.services.events.notification.DismissalSelector;
+import com.streamarr.server.services.events.notification.NotificationRecipientDeletedEvent;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareEndedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
@@ -704,6 +705,33 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
 
     assertThat(announced()).hasSize(3);
     assertThat(announced().getLast().notifications()).containsExactlyInAnyOrderElementsOf(lost);
+  }
+
+  @Test
+  @DisplayName(
+      "Should delete every Notification of the recipient and no other when its recipient is"
+          + " deleted")
+  void shouldDeleteEveryNotificationOfTheRecipientAndNoOtherWhenItsRecipientIsDeleted() {
+    tell(offeredTheo().recipients(Set.of(sam, kai)).build());
+    tell(
+        answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED))
+            .recipients(Set.of(sam, kai))
+            .build());
+
+    publish(new NotificationRecipientDeletedEvent(sam));
+
+    assertThat(rows.of(sam)).isEmpty();
+    assertThat(rows.of(kai)).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should announce no change when a recipient is deleted")
+  void shouldAnnounceNoChangeWhenARecipientIsDeleted() {
+    tell(offeredTheo().build());
+
+    publish(new NotificationRecipientDeletedEvent(sam));
+
+    assertThat(announced()).hasSize(1);
   }
 
   private void dismiss(DismissalSelector selector) {
