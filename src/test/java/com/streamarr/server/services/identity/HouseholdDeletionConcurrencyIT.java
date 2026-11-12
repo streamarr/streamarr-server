@@ -518,7 +518,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
                       () ->
                           accountLifecycle.transferAccount(
                               identity,
-                              transferTo(
+                              departureTo(
                                   departing.account().getId(),
                                   departureDestination.household().getId())))
                   .deletion(
@@ -584,7 +584,7 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
                       () ->
                           accountLifecycle.transferAccount(
                               identity,
-                              transferTo(
+                              departureTo(
                                   departing.account().getId(),
                                   departureDestination.household().getId())))
                   .deletion(
@@ -732,6 +732,18 @@ class HouseholdDeletionConcurrencyIT extends AbstractIntegrationTest {
         .accountId(accountId)
         .destinationHouseholdId(destinationHouseholdId)
         .sourceHouseholdAccess(SourceHouseholdAccess.END)
+        .reason("relocated")
+        .build();
+  }
+
+  // A departure that ended its Personal Profile's share into the Household would tell the final
+  // Account, a HouseholdAdmin, that the share ended, and so wait for the competitor that holds that
+  // Account's row. Keeping a visit ends no share and tells nobody.
+  private static TransferAccountCommand departureTo(UUID accountId, UUID destinationHouseholdId) {
+    return TransferAccountCommand.builder()
+        .accountId(accountId)
+        .destinationHouseholdId(destinationHouseholdId)
+        .sourceHouseholdAccess(SourceHouseholdAccess.KEEP_AS_VISITOR)
         .reason("relocated")
         .build();
   }

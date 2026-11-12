@@ -5,6 +5,7 @@ import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
+import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.domain.notification.RequestAnswer;
 import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -12,6 +13,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
+import com.streamarr.server.services.events.notification.ProfileShareEndedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
@@ -52,7 +54,11 @@ class SharingNotifications {
       case ShareAction.Offered() -> tellOffer(change);
       case ShareAction.Answered(var answeredBy) -> answer(change, answeredBy);
       case ShareAction.OfferStoppedWaiting _ -> resolveRequests(change);
-      case ShareAction.Ending _, ShareAction.Other _ -> {}
+      case ShareAction.EndedBySide(var endedBy) ->
+          tellEnd(change, endedBy, sideThatEnded(change.share(), endedBy));
+      case ShareAction.EndedByServer(var endedBy) ->
+          tellEnd(change, endedBy, ProfileShareEndedBy.SERVER);
+      case ShareAction.EndedWithHousehold _, ShareAction.Other _ -> {}
     }
   }
 
@@ -105,6 +111,42 @@ class SharingNotifications {
             .kind(SharingNotificationKinds.PROFILE_SHARE_ANSWERED)
             .snapshot(new ProfileShareAnsweredSnapshot(profileNameOf(change.share()), answer))
             .build());
+  }
+
+  // An Account that administers the Household ends the share for the Household's side, even when
+  // it also manages the Profile.
+  private ProfileShareEndedBy sideThatEnded(ChangedShare share, UUID endedBy) {
+    return householdSide(share).contains(endedBy)
+        ? ProfileShareEndedBy.HOUSEHOLD_SIDE
+        : ProfileShareEndedBy.OFFERING_SIDE;
+  }
+
+  private void tellEnd(ProfileShareChangedEvent change, UUID endedBy, ProfileShareEndedBy side) {
+    var told = toldOfEnd(change.share(), side);
+    told.remove(endedBy);
+    events.publishEvent(
+        tellAbout(change, told)
+            .kind(SharingNotificationKinds.PROFILE_SHARE_ENDED)
+            .snapshot(new ProfileShareEndedSnapshot(profileNameOf(change.share()), side))
+            .build());
+  }
+
+  /**
+   * The side that did not end the share, or both sides when the server ended it. An Account on both
+   * sides is one recipient, so it is told once.
+   */
+  private Set<UUID> toldOfEnd(ChangedShare share, ProfileShareEndedBy endedBy) {
+    return switch (endedBy) {
+      case HOUSEHOLD_SIDE -> offeringSide(share);
+      case OFFERING_SIDE -> householdSide(share);
+      case SERVER -> bothSides(share);
+    };
+  }
+
+  private Set<UUID> bothSides(ChangedShare share) {
+    var both = householdSide(share);
+    both.addAll(offeringSide(share));
+    return both;
   }
 
   private TellNotificationEvent.TellNotificationEventBuilder tellAbout(
