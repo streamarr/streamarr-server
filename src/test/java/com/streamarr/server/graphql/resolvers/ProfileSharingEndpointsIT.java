@@ -444,9 +444,9 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should answer a declined offer as missing to the Household it was offered to, before and"
-          + " after its Profile is deleted")
-  void shouldAnswerDeclinedOfferAsMissingToTargetHouseholdBeforeAndAfterItsProfileIsDeleted()
+      "Should answer a declined offer as missing when the Household it was offered to asks before"
+          + " and after its Profile is deleted")
+  void shouldAnswerDeclinedOfferAsMissingWhenTargetHouseholdAsksBeforeAndAfterItsProfileIsDeleted()
       throws Exception {
     var orphan = unsharedManagedProfile();
     var shareId = offer(orphan, host.household().getId());
@@ -714,10 +714,9 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should answer share-not-found to the HouseholdAdmin whose end loses to another end of the"
+      "Should answer share-not-found when the HouseholdAdmin's end loses to another end of the"
           + " share")
-  void shouldAnswerShareNotFoundToHouseholdAdminWhoseEndLosesToAnotherEndOfTheShare()
-      throws Exception {
+  void shouldAnswerShareNotFoundWhenHouseholdAdminsEndLosesToAnotherEnd() throws Exception {
     var orphan = managedOrphan();
     var shareId = UUID.fromString(offer(orphan, host.household().getId()));
     accept(host, shareId);
@@ -751,9 +750,9 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should answer share-not-found to the HouseholdAdmin whose rejection waits while the offer is"
+      "Should answer share-not-found when the HouseholdAdmin's rejection waits while the offer is"
           + " deleted")
-  void shouldAnswerShareNotFoundToHouseholdAdminWhoseRejectionWaitsWhileTheOfferIsDeleted()
+  void shouldAnswerShareNotFoundWhenHouseholdAdminsRejectionWaitsWhileOfferIsDeleted()
       throws Exception {
     var orphan = managedOrphan();
     var shareId = UUID.fromString(offer(orphan, host.household().getId()));
@@ -783,9 +782,9 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should answer share-not-found to an unrelated Account whose acceptance waits while the"
+      "Should answer share-not-found when an unrelated Account's acceptance waits while the"
           + " Profile is deleted")
-  void shouldAnswerShareNotFoundToUnrelatedAccountWhoseAcceptanceWaitsWhileTheProfileIsDeleted()
+  void shouldAnswerShareNotFoundWhenUnrelatedAccountsAcceptanceWaitsWhileProfileIsDeleted()
       throws Exception {
     var orphan = managedOrphan();
     var shareId = offer(orphan, host.household().getId());

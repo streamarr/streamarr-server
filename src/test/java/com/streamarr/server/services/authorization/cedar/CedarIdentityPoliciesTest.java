@@ -1660,8 +1660,9 @@ class CedarIdentityPoliciesTest {
   class Batches {
 
     @Test
-    @DisplayName("Should allow in a batch exactly the reads that are each allowed alone")
-    void shouldAllowInBatchExactlyTheReadsThatAreEachAllowedAlone() {
+    @DisplayName(
+        "Should allow exactly the reads each allowed alone when reads are decided in a batch")
+    void shouldAllowExactlyTheReadsEachAllowedAloneWhenReadsAreDecidedInBatch() {
       var managed = managedBy(account, ProfileFixture.defaultProfileBuilder());
       var managedKid = managedBy(account, ProfileFixture.kidProfileBuilder());
       var hosted = profiles.save(ProfileFixture.defaultProfileBuilder().build());
