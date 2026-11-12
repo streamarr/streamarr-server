@@ -72,8 +72,9 @@ import org.junit.jupiter.params.provider.MethodSource;
  * through the real transcode decision, stream session and playlist. The encode continues on a
  * software encoder of the codec family in the same range and bit depth when one on a worker with a
  * free slot writes them. Otherwise a 10-bit SDR encode continues there in 8 bits, which keeps its
- * range. A PQ or HLG encode never continues in SDR: Auto gives the range up as it does after a
- * format error during the encode, and a fixed quality ends playback (ADR 0013).
+ * range. A PQ or HLG encode never continues in SDR on the software encoder: Auto and a fixed
+ * quality give the range up in a new format attempt, as Auto does after a format error during the
+ * encode, and name HDR_NOT_KEPT (ADR 0013).
  */
 @Tag("UnitTest")
 @DisplayName("Hardware Encoder Failure Range Tests")
@@ -158,33 +159,34 @@ class HardwareEncoderFailureRangeTest {
                         source, Named.of("1080p", options(VideoQuality.FULL_HD_1080P, null)))));
   }
 
-  // A fixed quality is a manual choice, which the server never replaces silently (ADR 0013).
+  // A fixed quality is a manual choice, which the server never replaces silently, and SDR is better
+  // than no video: the encode that cannot continue in its HDR range counts as failed, the next
+  // format attempt plays 8-bit SDR in the same fixed quality, and the answer names the change (ADR
+  // 0013).
   @ParameterizedTest(name = "{0}")
-  @MethodSource("fixedQualitiesWhoseSoftwareEncoderCannotWriteTheFormat")
+  @MethodSource("fixedQualitiesWhoseSoftwareEncoderCannotWriteTheHdrRange")
   @DisplayName(
-      "Should end playback without starting another encode when the hardware encoder of a fixed"
-          + " quality fails and no software encoder writes the encode's PQ or HLG range")
-  void shouldEndPlaybackWithoutAnotherEncodeWhenAFixedQualitysSoftwareEncoderCannotWriteTheFormat(
+      "Should play 8-bit SDR and name HDR_NOT_KEPT when the hardware encoder of a fixed quality"
+          + " fails and no software encoder writes the encode's HDR range")
+  void shouldPlay8BitSdrAndNameHdrNotKeptWhenAFixedQualitysSoftwareEncoderCannotWriteItsRange(
       MediaProbe source, Set<VideoEncodeFeature> softwareFeatures, StreamingOptions options) {
     connectTheFailingWorker(softwareFeatures);
     probes.setDefaultProbe(source);
     var hardware = accepted(playback.start(start(options)));
 
-    var failed = failTheHardwareEncoderOf(hardware);
+    var sdr = failTheHardwareEncoderOf(hardware);
 
-    assertThat(failed.currentFormatAttempt())
-        .isInstanceOfSatisfying(
-            PlaybackFormatAttempt.Failed.class,
-            attempt ->
-                assertThat(attempt.reason())
-                    .isEqualTo(
-                        new PlaybackSessionFailure.CreationRejected(
-                            new CreateStreamSessionRejection.NoEligibleVideoFormat())));
-    assertThat(workers.getStartedRequests()).hasSize(1);
-    assertThat(failed.decisions()).hasSize(1);
+    assertThat(plannedEncode().bitDepth()).isEqualTo(8);
+    assertThat(plannedEncode().dynamicRange()).isEqualTo(VideoDynamicRange.SDR);
+    assertThat(sessionOf(sdr).getVideoRange()).isEqualTo(VideoRange.SDR);
+    assertThat(sdr.formatAttemptCount()).isEqualTo(2);
+    assertThat(sdr.playbackChoice()).isEqualTo(options.quality());
+    assertThat(sdr.formatChange()).contains(PlaybackFormatChange.HDR_NOT_KEPT);
+    assertThat(sdr.decisions()).extracting(PlaybackDecision::formatAttempt).containsExactly(1, 2);
+    assertThat(sdr.decisions().getLast().reasons()).startsWith(DecisionReason.ENCODE_FAILED);
   }
 
-  static Stream<Arguments> fixedQualitiesWhoseSoftwareEncoderCannotWriteTheFormat() {
+  static Stream<Arguments> fixedQualitiesWhoseSoftwareEncoderCannotWriteTheHdrRange() {
     var hd = VideoQuality.FULL_HD_1080P;
     return Stream.of(
         Arguments.of(
@@ -212,6 +214,33 @@ class HardwareEncoderFailureRangeTest {
                 profile5Source()),
             TEN_BIT_AND_PQ,
             options(hd, null)));
+  }
+
+  // The capacity error stays for a fixed quality when not even an 8-bit SDR encode can start.
+  @Test
+  @DisplayName(
+      "Should end a fixed quality's playback for lack of capacity when its PQ encode cannot"
+          + " continue in software and no worker has a free slot for an SDR encode")
+  void shouldEndAFixedQualitysPlaybackForLackOfCapacityWhenNoWorkerHasASlotForAnSdrEncode() {
+    connectTheFailingWorker(NO_ENCODE_FEATURE);
+    probes.setDefaultProbe(sourceOf(CompatibleBase.PQ));
+    var hardware =
+        accepted(
+            playback.start(start(options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.HDR))));
+    workers.limitJobSlots(FAILING_WORKER, 0);
+
+    var failed = failTheHardwareEncoderOf(hardware);
+
+    assertThat(failed.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Failed.class,
+            attempt ->
+                assertThat(attempt.reason())
+                    .isEqualTo(
+                        new PlaybackSessionFailure.CreationRejected(
+                            new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
+                                PROPERTIES.maxConcurrentTranscodes()))));
+    assertThat(workers.getStartedRequests()).hasSize(1);
   }
 
   // In Auto an SDR picture that plays is better than an error, so the encode that cannot continue
@@ -463,43 +492,18 @@ class HardwareEncoderFailureRangeTest {
   }
 
   // Only a software encoder on a worker that can take the encode now keeps the range.
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("autoAndAFixedQualityWithTheHdrChoice")
   @DisplayName(
-      "Should end a fixed quality's playback for lack of capacity when the only software encoder"
-          + " that writes PQ runs on a worker without a free slot")
-  void shouldEndAFixedQualitysPlaybackForLackOfCapacityWhenThePqSoftwareEncodersWorkerIsFull() {
+      "Should play 8-bit SDR on the failed worker when the only software encoder that writes PQ"
+          + " runs on a worker without a free slot")
+  void shouldPlay8BitSdrOnTheFailedWorkerWhenThePqSoftwareEncodersWorkerIsFull(
+      StreamingOptions options) {
     connectTheFailingWorker(NO_ENCODE_FEATURE);
     connectAnotherWorker(EVERY_ENCODE_FEATURE);
     workers.limitJobSlots(OTHER_WORKER, 0);
     probes.setDefaultProbe(sourceOf(CompatibleBase.PQ));
-    var hardware =
-        accepted(
-            playback.start(start(options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.HDR))));
-
-    var failed = failTheHardwareEncoderOf(hardware);
-
-    assertThat(failed.currentFormatAttempt())
-        .isInstanceOfSatisfying(
-            PlaybackFormatAttempt.Failed.class,
-            attempt ->
-                assertThat(attempt.reason())
-                    .isEqualTo(
-                        new PlaybackSessionFailure.CreationRejected(
-                            new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
-                                PROPERTIES.maxConcurrentTranscodes()))));
-    assertThat(workers.getStartedRequests()).hasSize(1);
-  }
-
-  @Test
-  @DisplayName(
-      "Should play 8-bit SDR on the failed worker in Auto when the only software encoder that"
-          + " writes PQ runs on a worker without a free slot")
-  void shouldPlay8BitSdrOnTheFailedWorkerInAutoWhenThePqSoftwareEncodersWorkerIsFull() {
-    connectTheFailingWorker(NO_ENCODE_FEATURE);
-    connectAnotherWorker(EVERY_ENCODE_FEATURE);
-    workers.limitJobSlots(OTHER_WORKER, 0);
-    probes.setDefaultProbe(sourceOf(CompatibleBase.PQ));
-    var hardware = accepted(playback.start(start(options(VideoQuality.AUTO, null))));
+    var hardware = accepted(playback.start(start(options)));
 
     var sdr = failTheHardwareEncoderOf(hardware);
 
@@ -507,6 +511,15 @@ class HardwareEncoderFailureRangeTest {
     assertThat(plannedEncode().bitDepth()).isEqualTo(8);
     assertThat(workerOfTheStartedEncode()).contains(FAILING_WORKER);
     assertThat(sdr.formatAttemptCount()).isEqualTo(2);
+    assertThat(sdr.formatChange()).contains(PlaybackFormatChange.HDR_NOT_KEPT);
+  }
+
+  static Stream<Named<StreamingOptions>> autoAndAFixedQualityWithTheHdrChoice() {
+    return Stream.of(
+        Named.of("Auto", options(VideoQuality.AUTO, null)),
+        Named.of(
+            "1080p with the HDR choice",
+            options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.HDR)));
   }
 
   // ADR 0044: with one worker, the software encode runs on that worker. The failed job attempt has

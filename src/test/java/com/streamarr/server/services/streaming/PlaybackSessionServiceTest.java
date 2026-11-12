@@ -1148,28 +1148,39 @@ class PlaybackSessionServiceTest {
     assertThat(streams.getAllSessions()).isEmpty();
   }
 
-  // A fixed quality never gives its range up, so the rejected continuation ends playback, and the
-  // playback session's listeners hear of that end.
+  // A fixed quality whose PQ encode cannot continue in software plays SDR in a new format attempt,
+  // and the playback session's listeners hear of that change before the SDR encode starts.
   @Test
   @DisplayName(
-      "Should announce the end of playback when no stream session can continue a fixed quality's"
-          + " PQ encode in software")
-  void shouldAnnounceTheEndOfPlaybackWhenNoStreamSessionCanContinueAFixedQualitysPqEncode() {
+      "Should announce the SDR encode before it starts when no stream session can continue a fixed"
+          + " quality's PQ encode in software")
+  void shouldAnnounceTheSdrEncodeBeforeItStartsWhenNoStreamSessionCanContinueAPqEncode() {
     streams.copiesTheSource = false;
     streams.encodeFormat = EncodeFormat.hdr(VideoRange.PQ);
     var command = startCommand().options(qualityOptions(VideoQuality.HIGH_720P)).build();
     var initial = accepted(service.start(command));
     streams.rejection = new CreateStreamSessionRejection.NoEligibleVideoFormat();
     var changesWhenTheContinuationStarted = new AtomicLong();
-    streams.beforeNextCreation = _ -> changesWhenTheContinuationStarted.set(changesOf(initial));
+    var changesWhenTheSdrEncodeStarted = new AtomicLong();
+    streams.beforeNextCreation =
+        _ -> {
+          changesWhenTheContinuationStarted.set(changesOf(initial));
+          streams.beforeNextCreation =
+              _ -> {
+                streams.rejection = null;
+                streams.encodeFormat = EncodeFormat.SDR_8_BIT;
+                changesWhenTheSdrEncodeStarted.set(changesOf(initial));
+              };
+        };
 
     service.onRequestedVariantHardwareEncoderFailed(
         hardwareEncoderFailure(initial.currentFormatAttempt().streamSessionId()));
 
-    var changesAfterTheRejection = changesOf(initial);
-    var failed = service.access(request(initial, command)).orElseThrow();
-    assertThat(failed.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Failed.class);
-    assertThat(changesAfterTheRejection).isEqualTo(changesWhenTheContinuationStarted.get() + 1);
+    var sdr = service.access(request(initial, command)).orElseThrow();
+    assertThat(sdr.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(sdr.formatAttemptCount()).isEqualTo(2);
+    assertThat(changesWhenTheSdrEncodeStarted.get())
+        .isEqualTo(changesWhenTheContinuationStarted.get() + 1);
   }
 
   // A playback session that closed while its software continuation started reserves nothing more.

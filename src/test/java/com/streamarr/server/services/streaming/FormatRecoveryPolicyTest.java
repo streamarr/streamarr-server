@@ -1,11 +1,17 @@
 package com.streamarr.server.services.streaming;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Format Recovery Policy Tests")
@@ -28,5 +34,73 @@ class FormatRecoveryPolicyTest {
     var choice = PlayingChoice.requested(VideoQuality.HIGH_720P);
 
     assertThatNullPointerException().isThrownBy(() -> policy.after(choice, null, 1));
+  }
+
+  // SDR is better than no video, so a fixed quality gives the HDR range up when no stream session
+  // can continue its encode in software in that range (ADR 0013).
+  @ParameterizedTest
+  @MethodSource("hdrFormats")
+  @DisplayName(
+      "Should encode the fixed quality again when no stream session can continue its HDR encode"
+          + " in software")
+  void shouldEncodeTheFixedQualityAgainWhenNoStreamSessionCanContinueItsHdrEncodeInSoftware(
+      EncodeFormat format) {
+    var choice = PlayingChoice.requested(VideoQuality.HIGH_720P);
+
+    var next = policy.after(choice, continuationRejected(format), 1);
+
+    assertThat(next).isEqualTo(new NextFormatAttempt.Encode(choice));
+  }
+
+  static Stream<EncodeFormat> hdrFormats() {
+    return Stream.of(EncodeFormat.hdr(VideoRange.PQ), EncodeFormat.hdr(VideoRange.HLG));
+  }
+
+  @Test
+  @DisplayName(
+      "Should end a fixed quality's playback when no stream session can continue its 10-bit SDR"
+          + " encode in software")
+  void shouldEndAFixedQualitysPlaybackWhenNoStreamSessionCanContinueIts10BitSdrEncode() {
+    var failed = continuationRejected(EncodeFormat.SDR_10_BIT);
+
+    var next = policy.after(PlayingChoice.requested(VideoQuality.HIGH_720P), failed, 1);
+
+    assertThat(next).isEqualTo(new NextFormatAttempt.Fail(failed.reason()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should end a fixed quality's playback when the player rejects the format of its PQ encode")
+  void shouldEndAFixedQualitysPlaybackWhenThePlayerRejectsTheFormatOfItsPqEncode() {
+    var rejected = new PlaybackSessionFailure.FixedFormatFailed(PlaybackFormatFailure.DECODE_ERROR);
+    var failed =
+        new FailedFormatAttempt(
+            rejected, new FailedFormatAttempt.Encode("av1", EncodeFormat.hdr(VideoRange.PQ)));
+
+    var next = policy.after(PlayingChoice.requested(VideoQuality.HIGH_720P), failed, 1);
+
+    assertThat(next).isEqualTo(new NextFormatAttempt.Fail(rejected));
+  }
+
+  @Test
+  @DisplayName(
+      "Should end a fixed quality's playback for its spent budget when no stream session can"
+          + " continue its HDR encode in software")
+  void
+      shouldEndAFixedQualitysPlaybackForItsSpentBudgetWhenNoStreamSessionCanContinueItsHdrEncode() {
+    var failed = continuationRejected(EncodeFormat.hdr(VideoRange.PQ));
+
+    var next = policy.after(PlayingChoice.requested(VideoQuality.HIGH_720P), failed, 4);
+
+    assertThat(next)
+        .isEqualTo(new NextFormatAttempt.Fail(new PlaybackSessionFailure.AttemptsExhausted()));
+  }
+
+  // The stream session that would continue the encode in software was refused.
+  private static FailedFormatAttempt continuationRejected(EncodeFormat format) {
+    return new FailedFormatAttempt(
+        new PlaybackSessionFailure.CreationRejected(
+            new CreateStreamSessionRejection.NoEligibleVideoFormat()),
+        new FailedFormatAttempt.Encode("av1", format));
   }
 }
