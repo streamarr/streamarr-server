@@ -419,23 +419,24 @@ public record MediaProbe(
   }
 
   /**
-   * Whether the chosen video stream ends at least {@code margin} before the session's audio stream
-   * ends, by their probed end times (ADR 0037, early ends). A stream session delivers only those
-   * two streams, so no other stream of the file, such as an audio track that the session does not
-   * play, makes either one end early, however long it runs. A stream whose end time the probe does
-   * not state never ends early, and never makes the other end early, so in a file without audio the
-   * video never ends early.
+   * Whether the chosen video stream's probed end time lies at least {@code margin} before the
+   * {@link #mediaEnd}, to which every media playlist of the session runs (ADR 0037, early ends).
+   * Where a keyframe packet scan read the ends of the two streams that the session delivers, the
+   * media end is the later of them, so no other stream of the file, such as an audio track that the
+   * session does not play, makes the video end early. Where no scan read them, the media end is the
+   * container's duration, which the longest stream of the file sets. A stream whose end time the
+   * probe does not state never ends early.
    */
   public boolean videoEndsEarly(@NonNull Duration margin) {
-    return endsEarly(chosenVideoStream(), sessionAudioStream(), margin);
+    return endsEarly(chosenVideoStream(), margin);
   }
 
   /**
-   * Whether the session's audio stream ends at least {@code margin} before the chosen video stream
-   * ends, by the rule of {@link #videoEndsEarly}.
+   * Whether the session's audio stream ends at least {@code margin} before the media end, by the
+   * rule of {@link #videoEndsEarly}.
    */
   public boolean sessionAudioEndsEarly(@NonNull Duration margin) {
-    return endsEarly(sessionAudioStream(), chosenVideoStream(), margin);
+    return endsEarly(sessionAudioStream(), margin);
   }
 
   // The session plays the first audio stream that the probe lists.
@@ -448,15 +449,12 @@ public record MediaProbe(
         facts -> streams.stream().filter(s -> s.index() == facts.streamIndex()).findFirst());
   }
 
-  private static boolean endsEarly(
-      Optional<StreamInfo> stream, Optional<StreamInfo> other, Duration margin) {
-    var end = stream.flatMap(StreamInfo::endTime);
-    var otherEnd = other.flatMap(StreamInfo::endTime);
-    if (end.isEmpty() || otherEnd.isEmpty()) {
-      return false;
-    }
-
-    return otherEnd.get().compareTo(end.get().plus(margin)) >= 0;
+  private boolean endsEarly(Optional<StreamInfo> stream, Duration margin) {
+    var mediaEnd = mediaEnd();
+    return stream
+        .flatMap(StreamInfo::endTime)
+        .filter(end -> mediaEnd.compareTo(end.plus(margin)) >= 0)
+        .isPresent();
   }
 
   /**

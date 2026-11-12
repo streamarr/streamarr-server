@@ -928,9 +928,9 @@ class TranscodeDecisionReasonTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("earlyEndingStreams")
   @DisplayName(
-      "Should encode a delivered stream only when it ends at least one segment before the other"
-          + " stream that the session delivers")
-  void shouldEncodeADeliveredStreamOnlyWhenItEndsAtLeastOneSegmentBeforeTheOtherDeliveredStream(
+      "Should encode a delivered stream only when it ends at least one segment before the session's"
+          + " media end")
+  void shouldEncodeADeliveredStreamOnlyWhenItEndsAtLeastOneSegmentBeforeTheSessionsMediaEnd(
       Source source, boolean copiesVideo, AudioMode audio, List<DecisionReason> expected) {
     var decision = decide(source.probe(), defaultDeclarationBuilder().build());
 
@@ -939,7 +939,8 @@ class TranscodeDecisionReasonTest {
     assertThat(decision.reasons()).containsExactlyElementsOf(expected);
   }
 
-  // The source's container is 10 minutes long, cut into 6 s segments.
+  // The source's container is 10 minutes long, cut into 6 s segments. Only its header states where
+  // each stream ends, so the session's media ends at the container's duration.
   static Stream<Arguments> earlyEndingStreams() {
     var tenMinutes = Duration.ofMinutes(10);
     var oneSegmentEarlier = tenMinutes.minusSeconds(6);
@@ -976,22 +977,23 @@ class TranscodeDecisionReasonTest {
         Arguments.of(
             Named.of(
                 "video and audio that end one segment before an audio track that the session does"
-                    + " not play",
+                    + " not play, which sets the container's duration",
                 Source.builder()
                     .videoEnd(oneSegmentEarlier)
                     .audioEnd(oneSegmentEarlier)
                     .secondAudioEnd(tenMinutes)
                     .build()),
-            true,
-            AudioMode.COPY,
-            List.of()),
+            false,
+            AudioMode.TRANSCODE,
+            List.of(DecisionReason.VIDEO_ENDS_EARLY, DecisionReason.AUDIO_ENDS_EARLY)),
         Arguments.of(
             Named.of(
-                "audio whose end the probe states beside video whose end it does not",
+                "audio that ends long before the container's duration, beside video whose end the"
+                    + " probe does not state",
                 Source.builder().audioEnd(Duration.ofSeconds(20)).build()),
             true,
-            AudioMode.COPY,
-            List.of()),
+            AudioMode.TRANSCODE,
+            List.of(DecisionReason.AUDIO_ENDS_EARLY)),
         Arguments.of(
             Named.of(
                 "audio that ends early beside video that the client cannot copy",
