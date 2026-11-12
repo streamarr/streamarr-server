@@ -393,6 +393,15 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public List<UUID> findPendingOfferIdsInto(UUID householdId, Instant now) {
+    return database.values().stream()
+        .filter(share -> share.getHouseholdId().equals(householdId))
+        .filter(share -> share.statusAt(now) == ProfileShareStatus.PENDING)
+        .map(ProfileHouseholdShare::getId)
+        .toList();
+  }
+
+  @Override
   public List<ProfileHouseholdShare> findByProfileId(UUID profileId) {
     return database.values().stream()
         .filter(share -> share.getProfileId().equals(profileId))

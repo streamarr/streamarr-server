@@ -48,6 +48,7 @@ public class AccountAdministrationService {
   private final PasswordResetCodeRepository passwordResetCodeRepository;
   private final ProfileHouseholdShareRepository profileHouseholdShareRepository;
   private final ProfileShareLifecycle shareLifecycle;
+  private final NotificationDismissals notificationDismissals;
   private final ShareCodeIssuerAuthority shareCodeIssuers;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
@@ -119,7 +120,12 @@ public class AccountAdministrationService {
         TransitionPlan.<AdministrationRejections.RevokeHouseholdAdmin>builder()
             .operation("revokeHouseholdAdmin")
             .transition(() -> userAccountRepository.tryDemoteToHouseholdMember(accountId))
-            .afterTransition(() -> shareCodeIssuers.afterIssuerChanged(accountId, clock.instant()))
+            .afterTransition(
+                () -> {
+                  var now = clock.instant();
+                  dismissRequestsOfFormerHouseholdAdmin(accountId, now);
+                  shareCodeIssuers.afterIssuerChanged(accountId, now);
+                })
             .notFound(AdministrationRejections.AccountNotFound::new)
             .constraint(CHK_HOUSEHOLD_ADMIN, AdministrationRejections.LastHouseholdAdmin::new)
             .build());
@@ -176,6 +182,17 @@ public class AccountAdministrationService {
             .transition(() -> userAccountRepository.tryRename(accountId, displayName.strip()))
             .notFound(AdministrationRejections.AccountNotFound::new)
             .build());
+  }
+
+  // The demotion holds the Account's row, so an offer that read the role first has committed its
+  // request, and one that reads it later no longer tells the Account.
+  private void dismissRequestsOfFormerHouseholdAdmin(UUID accountId, Instant now) {
+    userAccountRepository
+        .findById(accountId)
+        .ifPresent(
+            account ->
+                notificationDismissals.householdAdminRoleLost(
+                    accountId, account.getHouseholdId(), now));
   }
 
   private <R> Outcome<UserAccount, R> transition(

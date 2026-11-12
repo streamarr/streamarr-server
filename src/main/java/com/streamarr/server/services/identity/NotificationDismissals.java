@@ -1,14 +1,19 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.services.events.notification.DismissNotificationsEvent;
 import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.NotificationRecipientDeletedEvent;
 import com.streamarr.server.services.events.notification.RecipientReference;
+import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.events.notification.SubjectReference;
+import java.time.Instant;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
@@ -23,8 +28,30 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 class NotificationDismissals {
 
+  private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileManagerInvitationRepository managerInvitationRepository;
   private final ApplicationEventPublisher events;
+
+  /**
+   * The Account lost the HouseholdAdmin role in the Household, by demotion or by moving away, so
+   * the offers still pending into it are no longer its to decide: its requests about them that no
+   * event has resolved go. Its news and its resolved requests stay, and so does a request whose
+   * offer's time has run out, which reads as history.
+   */
+  void householdAdminRoleLost(UUID accountId, UUID householdId, Instant now) {
+    var offers = shareRepository.findPendingOfferIdsInto(householdId, now);
+    if (offers.isEmpty()) {
+      return;
+    }
+
+    dismiss(
+        DismissalSelector.bySubject(
+                offers.stream().map(SubjectReference::profileShare).collect(Collectors.toSet()))
+            .recipient(Optional.of(RecipientReference.account(accountId)))
+            .kinds(Set.of(SharingNotificationKinds.PROFILE_SHARE_OFFERED))
+            .form(Optional.of(DismissalSelector.DismissedForm.WAITING_REQUESTS))
+            .build());
+  }
 
   /**
    * Everything said about a Profile about to be deleted, and about its ProfileManager invitations,

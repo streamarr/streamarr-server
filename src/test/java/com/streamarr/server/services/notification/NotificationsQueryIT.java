@@ -25,6 +25,7 @@ import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
+import com.streamarr.server.services.identity.AccountAdministrationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
@@ -85,6 +86,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private ProfileSharingService sharing;
+  @Autowired private AccountAdministrationService accountAdministration;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
@@ -475,6 +477,110 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath(
                 "$.data.householdShares.edges[*].node.id", not(hasItem(share.getId().toString()))));
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the waiting requests out of the list and the count when their recipient is"
+          + " demoted")
+  void shouldLeaveTheWaitingRequestsOutOfTheListAndCountWhenItsRecipientIsDemoted()
+      throws Exception {
+    steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    steps.offer(sam, steps.profileManagedBy("Ollie", sam, sam), riverside);
+
+    demote(riversideAdmin);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(0)));
+    assertThat(rows.of(accountOf(riverside))).hasSize(2);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the resolved requests and the news when a HouseholdAdmin is demoted, and only"
+          + " the waiting request leaves")
+  void shouldKeepTheResolvedRequestsAndNewsWhenAHouseholdAdminIsDemoted() throws Exception {
+    var ended = steps.accept(riverside, steps.offer(sam, sam.profile(), riverside));
+    sharing.endProfileShare(authTestSupport.identityOf(sam), ended.getId());
+    var rejected = steps.offer(sam, steps.profileManagedBy("Ollie", sam, sam), riverside);
+    sharing.rejectProfileShare(authTestSupport.identityOf(riverside), rejected.getId());
+    steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+
+    demote(riversideAdmin);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(1))
+        .andExpect(
+            jsonPath(
+                "$.data.notifications.edges[*].node.__typename",
+                contains(
+                    "ProfileShareOfferedNotification",
+                    "ProfileShareEndedNotification",
+                    "ProfileShareOfferedNotification")))
+        .andExpect(
+            jsonPath(
+                "$.data.notifications.edges[*].node.resolution", contains("DECIDED", "DECIDED")))
+        .andExpect(
+            jsonPath(
+                "$.data.notifications.edges[*].node.shareId",
+                contains(
+                    rejected.getId().toString(),
+                    ended.getId().toString(),
+                    ended.getId().toString())));
+  }
+
+  @Test
+  @DisplayName(
+      "Should give no request back when a demoted HouseholdAdmin is promoted again while the offer"
+          + " waits")
+  void shouldGiveNoRequestBackWhenADemotedHouseholdAdminIsPromotedAgain() throws Exception {
+    steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    demote(riversideAdmin);
+
+    steps.promoted(riversideAdmin);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(0)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a request that reads as expired when its recipient is demoted, as the history"
+          + " of an offer that is over")
+  void shouldKeepARequestThatReadsAsExpiredWhenItsRecipientIsDemoted() throws Exception {
+    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    steps.lapse(offer);
+    transactionTemplate.executeWithoutResult(
+        _ -> rows.lapse(SubjectReference.profileShare(offer.getId())));
+
+    demote(riversideAdmin);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("EXPIRED"));
+  }
+
+  /** A ServerAdmin takes the Account's HouseholdAdmin role away. */
+  private void demote(TestIdentity householdAdmin) {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    assertThat(
+            accountAdministration.revokeHouseholdAdmin(
+                authTestSupport.freshIdentityOf(serverAdmin), householdAdmin.account().getId()))
+        .isInstanceOf(Outcome.Accepted.class);
   }
 
   /** The reader's one Notification names the Profile, in its line too, by the name. */
