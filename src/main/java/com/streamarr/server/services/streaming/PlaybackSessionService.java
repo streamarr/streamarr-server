@@ -131,7 +131,8 @@ public class PlaybackSessionService implements AutoCloseable {
    * The format attempt that a reservation starts: its stream session and the video operations it
    * may use. It plays {@code choice}, or {@code choiceWhenEncoding} once it turns out to encode the
    * video. {@code softwareEncodeCodecFamily} names the codec family that it encodes in software
-   * after a hardware encoder failure.
+   * after a hardware encoder failure. {@code spendsAFormatAttempt} says whether it counts against
+   * the maximum number of format attempts.
    */
   @Builder
   private record ReservedFormatAttempt(
@@ -139,12 +140,14 @@ public class PlaybackSessionService implements AutoCloseable {
       @NonNull VideoFormatConstraint videoFormatConstraint,
       @NonNull PlayingChoice choice,
       @NonNull PlayingChoice choiceWhenEncoding,
-      @NonNull Optional<String> softwareEncodeCodecFamily) {
+      @NonNull Optional<String> softwareEncodeCodecFamily,
+      boolean spendsAFormatAttempt) {
 
     // Lombok builder defaults — its generated setters assign them
     @SuppressWarnings("java:S9438")
     private static class ReservedFormatAttemptBuilder {
       private Optional<String> softwareEncodeCodecFamily = Optional.empty();
+      private boolean spendsAFormatAttempt = true;
     }
   }
 
@@ -879,7 +882,8 @@ public class PlaybackSessionService implements AutoCloseable {
                 .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                 .choice(playback.choice)
                 .choiceWhenEncoding(playback.choice)
-                .softwareEncodeCodecFamily(Optional.of(codecFamily))));
+                .softwareEncodeCodecFamily(Optional.of(codecFamily))
+                .spendsAFormatAttempt(false)));
   }
 
   // A failed HDR or 10-bit encode keeps its format out of every later format attempt, in every
@@ -969,7 +973,7 @@ public class PlaybackSessionService implements AutoCloseable {
     playback.choice = next.choice();
     playback.lastAccessedAt = clock.instant();
     playback.current = new PlaybackFormatAttempt.Pending(childId);
-    if (next.softwareEncodeCodecFamily().isEmpty()) {
+    if (next.spendsAFormatAttempt()) {
       playback.formatAttemptCount++;
     }
 
