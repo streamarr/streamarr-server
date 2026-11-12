@@ -227,29 +227,46 @@ class TranscodeDecisionServiceTest {
   }
 
   // ADR 0050: a player moves only between variants of one codec family, so the codec preference,
-  // which puts a hardware AV1 encoder first, does not choose the lower variants' codec family. A
-  // codec family that failed earlier in the playback session stays out, and no other takes its
-  // place.
+  // which puts a hardware AV1 encoder first, does not choose the lower variants' codec family.
   @Test
   @DisplayName(
       "Should encode the lower variants beside an Auto copy in the copy's codec family when the"
-          + " codec preference puts another first, and list none once that codec family failed")
-  void shouldEncodeTheLowerVariantsBesideAnAutoCopyInTheCopysCodecFamilyUnlessItFailedEarlier() {
-    var request =
-        TranscodeDecisionRequest.builder()
-            .source(probe("h264", "aac"))
-            .capabilityDeclaration(declaring(AV1, H264))
-            .encodableVideoCodecFamilies(Set.of("h264", "av1"))
-            .hardwareEncodableVideoCodecFamilies(HARDWARE_AV1);
+          + " codec preference puts another codec family first")
+  void shouldEncodeTheLowerVariantsInTheCopysCodecFamilyWhenThePreferencePutsAnotherFamilyFirst() {
+    var decision = service.decide(h264CopyBesideAPreferredAv1Encoder().build()).orElseThrow();
 
-    var inTheCopysFamily = service.decide(request.build()).orElseThrow();
-    var afterH264Failed =
-        service.decide(request.excludedEncodeCodecFamilies(Set.of("h264")).build()).orElseThrow();
-
-    assertThat(inTheCopysFamily.lowerVariantEncode())
+    assertThat(decision.lowerVariantEncode())
         .contains(new LowerVariantEncode(EncodeCodecProfile.H264_HIGH, EncodeFormat.SDR_8_BIT));
-    assertThat(afterH264Failed.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
-    assertThat(afterH264Failed.lowerVariantEncode()).isEmpty();
+  }
+
+  // A codec family that failed earlier in the playback session stays out, and no other takes its
+  // place beside the copy.
+  @Test
+  @DisplayName(
+      "Should copy without lower variants when the copy's codec family failed earlier in the"
+          + " playback session")
+  void shouldCopyWithoutLowerVariantsWhenTheCopysCodecFamilyFailedEarlier() {
+    var decision =
+        service
+            .decide(
+                h264CopyBesideAPreferredAv1Encoder()
+                    .excludedEncodeCodecFamilies(Set.of("h264"))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.lowerVariantEncode()).isEmpty();
+  }
+
+  // An Auto request for an H.264 source from a client that plays AV1 and H.264, beside a hardware
+  // AV1 encoder that the codec preference puts first.
+  private TranscodeDecisionRequest.TranscodeDecisionRequestBuilder
+      h264CopyBesideAPreferredAv1Encoder() {
+    return TranscodeDecisionRequest.builder()
+        .source(probe("h264", "aac"))
+        .capabilityDeclaration(declaring(AV1, H264))
+        .encodableVideoCodecFamilies(Set.of("h264", "av1"))
+        .hardwareEncodableVideoCodecFamilies(HARDWARE_AV1);
   }
 
   // ADR 0050: the lower variants encode only once the player switches to one, so the encode
