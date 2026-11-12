@@ -563,6 +563,58 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should tell the Household only that an offer expired when its time runs out while a"
+          + " ServerAdmin deletes its Profile")
+  void shouldTellHouseholdOnlyThatOfferExpiredWhenItsTimeRunsOutWhileItsProfileIsDeleted()
+      throws Exception {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var orphan = managedProfile();
+    var shareId = offer(orphan);
+    nextShare(hostSocket, shareId);
+    var serverAdmin = adminIdentity();
+    // The deletion withdraws the Profile's manager invitations before its offers.
+    var invitationId = pendingManagerInvitation(orphan);
+
+    var deleted =
+        runOutWhileDeletionWaits(
+            row("profile_manager_invitation", invitationId),
+            () -> administrativelyDeleteProfile(serverAdmin, orphan),
+            shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/administrativelyDeleteProfile/profileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    assertHeardOnlyExpiry(changesUntil(hostSocket, laterId), shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household only that an offer expired when its time runs out while its"
+          + " offerer deletes their Account")
+  void shouldTellHouseholdOnlyThatOfferExpiredWhenItsTimeRunsOutWhileItsOffererDeletesAccount()
+      throws Exception {
+    var visitor = authTestSupport.createHouseholdMemberIdentity(owner);
+    identities.add(visitor);
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var shareId = offer(visitor, visitor.profile(), host.household().getId());
+    nextShare(hostSocket, shareId);
+    // The deletion revokes the Account's sessions before it withdraws the offers it made.
+    var sessionId = sessionSelecting(visitor, visitor.profile());
+
+    var deleted =
+        runOutWhileDeletionWaits(
+            row("auth_session", sessionId), () -> deleteMyAccount(visitor), shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/deleteMyAccount/accountId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(visitor.account().getId().toString());
+    assertHeardOnlyExpiry(changesUntil(hostSocket, laterId), shareId);
+  }
+
+  @Test
+  @DisplayName(
       "Should deliver the share's removal to the Profile's managers when its Household is deleted")
   void shouldDeliverTheSharesRemovalToTheProfilesManagersWhenItsHouseholdIsDeleted() {
     var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
@@ -676,6 +728,36 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
             change -> change.path("share").path("status").asString())
         .containsExactlyInAnyOrder(tuple(offerId, "INVALIDATED"), tuple(lapsedId, "EXPIRED"));
     offerChanges.forEach(change -> assertPartiesHidden(change.path("share")));
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a moved HouseholdAdmin only that an offer expired when its time runs out while a"
+          + " ServerAdmin deletes their former Household")
+  void shouldTellMovedHouseholdAdminOnlyThatOfferExpiredWhenItsTimeRunsOutWhileHouseholdIsDeleted()
+      throws Exception {
+    var departing = identity();
+    var refuge = identity();
+    var departingSocket = subscribedSocket(authTestSupport.accountBearer(departing));
+    var shareId = offer(managedProfile(), departing);
+    nextShare(departingSocket, shareId);
+    var managed = managedProfile();
+    grantManagement(departing, managed);
+    var serverAdmin = adminIdentity();
+
+    // The deletion locks the Household before it withdraws the offers into it.
+    var deleted =
+        runOutWhileDeletionWaits(
+            row("household", departing.household().getId()),
+            () -> transferLastAccountAndDeleteHousehold(serverAdmin, departing, refuge),
+            shareId);
+    var laterId = offer(managed);
+
+    assertThat(
+            deleted.at("/data/transferLastAccountAndDeleteHousehold/deletedHouseholdId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(departing.household().getId().toString());
+    assertHeardOnlyExpiry(changesUntil(departingSocket, laterId), shareId);
   }
 
   @Test
@@ -942,6 +1024,26 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     }
   }
 
+  /**
+   * Holds a row the deletion writes before it withdraws the offer, lets the offer's time run out
+   * while the deletion waits for that row, after the deletion first read the time, then lets the
+   * deletion finish; answers the deletion's response.
+   */
+  private JsonNode runOutWhileDeletionWaits(
+      RowLockTarget heldRow, Callable<JsonNode> deletion, String shareId) throws Exception {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var held = lockRow(heldRow)) {
+      var deleting = executor.submit(deletion);
+      awaitWaitersBehind(jdbcTemplate, held.backendPid(), 1);
+      var offer = shareRepository.findById(UUID.fromString(shareId)).orElseThrow();
+      offer.setExpiresAt(Instant.now());
+      shareRepository.saveAndFlush(offer);
+
+      held.release();
+      return deleting.get(10, TimeUnit.SECONDS);
+    }
+  }
+
   // The host ends a share into its own Household, whatever the answer.
   private JsonNode endAsHost(String shareId) {
     return http.execute(
@@ -1161,6 +1263,20 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     assertThat(share.path("offeredByDisplayName").isNull()).as("offerer in %s", share).isTrue();
     assertThat(share.path("household").isNull()).as("household in %s", share).isTrue();
     assertThat(share.path("invalidationReason").isNull()).as("reason in %s", share).isTrue();
+  }
+
+  // The offer was over before the deletion withdrew anything: its Household hears that it
+  // expired, without who was asking, and nothing else of it.
+  private static void assertHeardOnlyExpiry(List<JsonNode> changes, String shareId) {
+    var ofOffer =
+        changes.stream()
+            .filter(change -> shareId.equals(change.path("shareId").asString()))
+            .toList();
+    assertThat(ofOffer)
+        .as("changes in %s", changes)
+        .extracting(change -> change.path("share").path("status").asString())
+        .containsExactly("EXPIRED");
+    assertPartiesHidden(ofOffer.getFirst().path("share"));
   }
 
   private static JsonNode nextChange(GraphQlTransportWsTestClient socket) {
