@@ -13,6 +13,7 @@ import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
@@ -20,6 +21,7 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.Context;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -189,6 +191,23 @@ final class ReportingWorker {
                 .setProbeAttemptId(request.getProbeAttemptId())
                 .setProbeVersion(request.getProbeVersion())
                 .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA));
+  }
+
+  /** Adds this many keyframes to the report, each 90,000 ticks after the one before. */
+  static ProbeAttemptReport.Builder withKeyframes(
+      ProbeAttemptReport.Builder report, int keyframes) {
+    return report
+        .addAllKeyframePresentationTimeDeltas(Collections.nCopies(keyframes, 90_000L))
+        .addAllKeyframeDecodeTimeDeltas(Collections.nCopies(keyframes, 90_000L));
+  }
+
+  /** One stream with this many keyframe intervals, each of 1,000 bytes in one packet. */
+  static StreamMeasurementIntervals intervals(int streamIndex, int intervals) {
+    return StreamMeasurementIntervals.newBuilder()
+        .setStreamIndex(streamIndex)
+        .addAllKeyframeIntervalBytes(Collections.nCopies(intervals, 1_000))
+        .addAllKeyframeIntervalPacketCounts(Collections.nCopies(intervals, 1))
+        .build();
   }
 
   /** Sends the event on the worker session. */

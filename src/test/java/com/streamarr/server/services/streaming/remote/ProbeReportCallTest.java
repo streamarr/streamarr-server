@@ -1,6 +1,8 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.services.streaming.remote.ReportingWorker.intervals;
 import static com.streamarr.server.services.streaming.remote.ReportingWorker.invalidMedia;
+import static com.streamarr.server.services.streaming.remote.ReportingWorker.withKeyframes;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -16,7 +18,6 @@ import com.streamarr.transcode.v1.ProbePriority;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ReportProbeAttemptRequest;
 import com.streamarr.transcode.v1.ReportProbeAttemptResponse;
-import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.Status;
 import java.time.Duration;
@@ -1169,22 +1170,6 @@ class ProbeReportCallTest {
     return withKeyframes(invalidMedia(request), LIMITS.keyframeLimit())
         .addStreamMeasurementIntervals(intervals(0, 3))
         .addStreamMeasurementIntervals(intervals(1, 3))
-        .build();
-  }
-
-  private static ProbeAttemptReport.Builder withKeyframes(
-      ProbeAttemptReport.Builder report, int keyframes) {
-    return report
-        .addAllKeyframePresentationTimeDeltas(Collections.nCopies(keyframes, 90_000L))
-        .addAllKeyframeDecodeTimeDeltas(Collections.nCopies(keyframes, 90_000L));
-  }
-
-  /** One stream with this many keyframe intervals, each of 1,000 bytes in one packet. */
-  private static StreamMeasurementIntervals intervals(int streamIndex, int intervals) {
-    return StreamMeasurementIntervals.newBuilder()
-        .setStreamIndex(streamIndex)
-        .addAllKeyframeIntervalBytes(Collections.nCopies(intervals, 1_000))
-        .addAllKeyframeIntervalPacketCounts(Collections.nCopies(intervals, 1))
         .build();
   }
 }
