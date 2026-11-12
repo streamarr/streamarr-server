@@ -80,7 +80,7 @@ public class ImageService {
       for (var variant : variants) {
         var imageId = UUID.randomUUID();
         var relativePath =
-            buildRelativePath(entityType, entityId, imageType, fileNameOf(variant, imageId));
+            relativeFolderOf(entityType, entityId, imageType) + "/" + fileNameOf(variant, imageId);
         var absolutePath = resolveAbsolutePath(relativePath);
 
         Files.createDirectories(absolutePath.getParent());
@@ -332,14 +332,10 @@ public class ImageService {
     return relativePaths.stream().map(this::resolveAbsolutePath).toList();
   }
 
-  private String buildRelativePath(
-      ImageEntityType entityType, UUID entityId, ImageType imageType, String fileName) {
+  private static String relativeFolderOf(
+      ImageEntityType entityType, UUID entityId, ImageType imageType) {
     return String.join(
-        "/",
-        entityType.name().toLowerCase(),
-        entityId.toString(),
-        imageType.name().toLowerCase(),
-        fileName);
+        "/", entityType.name().toLowerCase(), entityId.toString(), imageType.name().toLowerCase());
   }
 
   private static String fileNameOf(GeneratedVariant variant, UUID imageId) {
