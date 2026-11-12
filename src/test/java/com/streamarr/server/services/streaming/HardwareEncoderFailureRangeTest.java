@@ -59,6 +59,8 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
+import lombok.Builder;
+import lombok.NonNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Named;
@@ -421,14 +423,13 @@ class HardwareEncoderFailureRangeTest {
       "Should end playback for lack of capacity when the hardware AV1 encoder refused and no worker"
           + " has a software encoder of AV1, the only codec family that the client declares")
   void shouldEndPlaybackForLackOfCapacityWhenNoWorkerHasASoftwareEncoderOfTheClientsOnlyFamily(
-      Set<VideoEncodeFeature> hardwareAv1Features,
-      EncodeFormat hardwareFormat,
-      StreamingOptions options) {
-    workers.setTargetEncoders(FAILING_WORKER, List.of(av1Nvenc(hardwareAv1Features), libx264()));
+      HardwareAv1Encode encode) {
+    workers.setTargetEncoders(
+        FAILING_WORKER, List.of(av1Nvenc(encode.hardwareAv1Features()), libx264()));
     workers.setTargetSoftwareEncoders(FAILING_WORKER, List.of(libx264()));
     probes.setDefaultProbe(sourceOf(CompatibleBase.PQ));
-    var hardware = accepted(playback.start(start(options, av1AloneClient())));
-    assertThat(lastStartedDecision().videoEncodeFormat()).isEqualTo(hardwareFormat);
+    var hardware = accepted(playback.start(start(encode.options(), encode.client())));
+    assertThat(lastStartedDecision().videoEncodeFormat()).isEqualTo(encode.format());
 
     var failed = refuseTheHardwareEncoderOf(hardware);
 
@@ -445,21 +446,41 @@ class HardwareEncoderFailureRangeTest {
   }
 
   static Stream<Arguments> encodesOfAClientThatDeclaresAv1Alone() {
-    var pq = EncodeFormat.hdr(VideoRange.PQ);
     return Stream.of(
+        Arguments.of(Named.of("a PQ encode in Auto", pqEncodeInAutoBuilder().build())),
         Arguments.of(
-            Named.of("a PQ encode in Auto", EVERY_ENCODE_FEATURE),
-            pq,
-            options(VideoQuality.AUTO, null)),
+            Named.of(
+                "a PQ encode in 1080p with HDR chosen",
+                pqEncodeInAutoBuilder()
+                    .options(options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.HDR))
+                    .build())),
         Arguments.of(
-            Named.of("a PQ encode in 1080p with HDR chosen", EVERY_ENCODE_FEATURE),
-            pq,
-            options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.HDR)),
-        Arguments.of(
-            Named.of("an 8-bit SDR encode in Auto", NO_ENCODE_FEATURE),
-            EncodeFormat.SDR_8_BIT,
-            options(VideoQuality.AUTO, null)));
+            Named.of(
+                "an 8-bit SDR encode in Auto",
+                pqEncodeInAutoBuilder()
+                    .hardwareAv1Features(NO_ENCODE_FEATURE)
+                    .format(EncodeFormat.SDR_8_BIT)
+                    .build())));
   }
+
+  // The PQ encode in Auto of a client that declares AV1 alone, on a hardware AV1 encoder that
+  // writes every 10-bit and HDR output.
+  private static HardwareAv1Encode.HardwareAv1EncodeBuilder pqEncodeInAutoBuilder() {
+    return HardwareAv1Encode.builder()
+        .client(av1AloneClient())
+        .hardwareAv1Features(EVERY_ENCODE_FEATURE)
+        .format(EncodeFormat.hdr(VideoRange.PQ))
+        .options(options(VideoQuality.AUTO, null));
+  }
+
+  // The encode that a playback session starts for this client and these options, on a hardware AV1
+  // encoder that lists these encode features.
+  @Builder
+  private record HardwareAv1Encode(
+      @NonNull ClientCapabilityDeclaration client,
+      @NonNull Set<VideoEncodeFeature> hardwareAv1Features,
+      @NonNull EncodeFormat format,
+      @NonNull StreamingOptions options) {}
 
   @Test
   @DisplayName(
