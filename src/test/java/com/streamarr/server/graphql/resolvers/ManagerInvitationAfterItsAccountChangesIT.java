@@ -246,6 +246,40 @@ class ManagerInvitationAfterItsAccountChangesIT extends AbstractIntegrationTest 
   @EnumSource(
       value = Change.class,
       names = {"RESTRICTED", "GRANTED_MANAGEMENT"})
+  @DisplayName(
+      "Should refuse the decline and keep it waiting to its managers when its Account changed")
+  void shouldRefuseTheDeclineAndKeepItWaitingToItsManagersWhenItsAccountChanged(Change change)
+      throws Exception {
+    var toMara = invite(mara.account().getEmail());
+    change(change);
+
+    var decline =
+        graphql(
+                authTestSupport.accountBearer(mara),
+                """
+                mutation { declineManagerInvitation(input: {invitationId: "%s"}) {
+                  userErrors { __typename } } }
+                """
+                    .formatted(toMara))
+            .at("/data/declineManagerInvitation/userErrors/0/__typename");
+
+    assertThat(decline.asString("")).isEqualTo("InvitationNotPendingError");
+    assertThat(pendingFor(sam, alex)).containsExactly(toMara);
+    assertThat(
+            graphql(
+                    authTestSupport.accountBearer(sam),
+                    "query { notifications(first: 50) { edges { node { __typename } } } }")
+                .at("/data/notifications/edges")
+                .valueStream()
+                .map(edge -> edge.at("/node/__typename").asString()))
+        .as("what the inviter is told")
+        .doesNotContain("ProfileManagerInvitationAnsweredNotification");
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = Change.class,
+      names = {"RESTRICTED", "GRANTED_MANAGEMENT"})
   @DisplayName("Should resolve its Account's request as withdrawn when its Account changes")
   void shouldResolveItsAccountsRequestAsWithdrawnWhenItsAccountChanges(Change change)
       throws Exception {
