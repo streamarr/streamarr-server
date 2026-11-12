@@ -82,10 +82,26 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
       "Should add the figures to the unread news, and take the later name and time, when a later"
           + " scan of the library finishes")
   void shouldAddTheFiguresToTheUnreadNewsWhenALaterScanOfTheLibraryFinishes() {
-    tell(SCAN_OR_REFRESH_FINISHED, new ScanOrRefreshFinishedSnapshot("Movies", 3, 1, 0), EARLIER);
+    tell(
+        SCAN_OR_REFRESH_FINISHED,
+        ScanOrRefreshFinishedSnapshot.builder()
+            .libraryName("Movies")
+            .titlesAdded(3)
+            .titlesRemoved(1)
+            .filesSkipped(0)
+            .build(),
+        EARLIER);
     var made = rows.of(ava).getFirst();
 
-    tell(SCAN_OR_REFRESH_FINISHED, new ScanOrRefreshFinishedSnapshot("Films", 2, 0, 4), LATER);
+    tell(
+        SCAN_OR_REFRESH_FINISHED,
+        ScanOrRefreshFinishedSnapshot.builder()
+            .libraryName("Films")
+            .titlesAdded(2)
+            .titlesRemoved(0)
+            .filesSkipped(4)
+            .build(),
+        LATER);
 
     assertThat(rows.of(ava))
         .singleElement()
@@ -93,7 +109,14 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
             updated -> {
               assertThat(updated.id()).isEqualTo(made.id());
               assertThat(updated.snapshot())
-                  .isEqualTo(document(new ScanOrRefreshFinishedSnapshot("Films", 5, 1, 4)));
+                  .isEqualTo(
+                      document(
+                          ScanOrRefreshFinishedSnapshot.builder()
+                              .libraryName("Films")
+                              .titlesAdded(5)
+                              .titlesRemoved(1)
+                              .filesSkipped(4)
+                              .build()));
               assertThat(updated.latestEventAt()).isEqualTo(LATER);
               assertThat(updated.readAt()).isEmpty();
             });
@@ -104,16 +127,39 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
       "Should add the figures and keep the later name and time when an earlier scan's news arrives"
           + " late")
   void shouldAddTheFiguresAndKeepTheLaterNameAndTimeWhenAnEarlierScansNewsArrivesLate() {
-    tell(SCAN_OR_REFRESH_FINISHED, new ScanOrRefreshFinishedSnapshot("Films", 2, 0, 4), LATER);
+    tell(
+        SCAN_OR_REFRESH_FINISHED,
+        ScanOrRefreshFinishedSnapshot.builder()
+            .libraryName("Films")
+            .titlesAdded(2)
+            .titlesRemoved(0)
+            .filesSkipped(4)
+            .build(),
+        LATER);
 
-    tell(SCAN_OR_REFRESH_FINISHED, new ScanOrRefreshFinishedSnapshot("Movies", 3, 1, 0), EARLIER);
+    tell(
+        SCAN_OR_REFRESH_FINISHED,
+        ScanOrRefreshFinishedSnapshot.builder()
+            .libraryName("Movies")
+            .titlesAdded(3)
+            .titlesRemoved(1)
+            .filesSkipped(0)
+            .build(),
+        EARLIER);
 
     assertThat(rows.of(ava))
         .singleElement()
         .satisfies(
             updated -> {
               assertThat(updated.snapshot())
-                  .isEqualTo(document(new ScanOrRefreshFinishedSnapshot("Films", 5, 1, 4)));
+                  .isEqualTo(
+                      document(
+                          ScanOrRefreshFinishedSnapshot.builder()
+                              .libraryName("Films")
+                              .titlesAdded(5)
+                              .titlesRemoved(1)
+                              .filesSkipped(4)
+                              .build()));
               assertThat(updated.latestEventAt()).isEqualTo(LATER);
             });
   }
@@ -121,7 +167,13 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should make one news for each recipient when a library kind is told")
   void shouldMakeOneNewsForEachRecipientWhenALibraryKindIsTold() {
-    var snapshot = new ScanOrRefreshFinishedSnapshot("Movies", 3, 1, 0);
+    var snapshot =
+        ScanOrRefreshFinishedSnapshot.builder()
+            .libraryName("Movies")
+            .titlesAdded(3)
+            .titlesRemoved(1)
+            .filesSkipped(0)
+            .build();
 
     publish(
         TellNotificationEvent.builder()
@@ -139,7 +191,15 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should keep the two library kinds side by side when both are told about a library")
   void shouldKeepTheTwoLibraryKindsSideBySideWhenBothAreToldAboutALibrary() {
-    tell(SCAN_OR_REFRESH_FINISHED, new ScanOrRefreshFinishedSnapshot("Movies", 3, 1, 0), EARLIER);
+    tell(
+        SCAN_OR_REFRESH_FINISHED,
+        ScanOrRefreshFinishedSnapshot.builder()
+            .libraryName("Movies")
+            .titlesAdded(3)
+            .titlesRemoved(1)
+            .filesSkipped(0)
+            .build(),
+        EARLIER);
 
     tell(UNMATCHED_ITEMS, new UnmatchedItemsSnapshot("Movies", 14), EARLIER);
 
@@ -153,10 +213,22 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
       "Should make new news with only the later figures when the ServerAdmin read the earlier news"
           + " about the library")
   void shouldMakeNewNewsWhenTheServerAdminReadTheEarlierNewsAboutTheLibrary() {
-    var first = new ScanOrRefreshFinishedSnapshot("Movies", 3, 1, 0);
+    var first =
+        ScanOrRefreshFinishedSnapshot.builder()
+            .libraryName("Movies")
+            .titlesAdded(3)
+            .titlesRemoved(1)
+            .filesSkipped(0)
+            .build();
     tell(SCAN_OR_REFRESH_FINISHED, first, EARLIER);
     markRead(ava);
-    var later = new ScanOrRefreshFinishedSnapshot("Movies", 2, 0, 4);
+    var later =
+        ScanOrRefreshFinishedSnapshot.builder()
+            .libraryName("Movies")
+            .titlesAdded(2)
+            .titlesRemoved(0)
+            .filesSkipped(4)
+            .build();
 
     tell(SCAN_OR_REFRESH_FINISHED, later, LATER);
 
@@ -192,7 +264,13 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
             .kind(SCAN_OR_REFRESH_FINISHED)
             .subject(movies)
             .recipients(Set.of(ava, ben))
-            .snapshot(new ScanOrRefreshFinishedSnapshot("Movies", 3, 1, 0))
+            .snapshot(
+                ScanOrRefreshFinishedSnapshot.builder()
+                    .libraryName("Movies")
+                    .titlesAdded(3)
+                    .titlesRemoved(1)
+                    .filesSkipped(0)
+                    .build())
             .at(EARLIER)
             .build());
     tell(UNMATCHED_ITEMS, new UnmatchedItemsSnapshot("Movies", 14), EARLIER);
@@ -209,7 +287,12 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
     var pastThePeriod = Instant.now().minus(Duration.ofDays(91));
     tell(
         SCAN_OR_REFRESH_FINISHED,
-        new ScanOrRefreshFinishedSnapshot("Movies", 3, 1, 0),
+        ScanOrRefreshFinishedSnapshot.builder()
+            .libraryName("Movies")
+            .titlesAdded(3)
+            .titlesRemoved(1)
+            .filesSkipped(0)
+            .build(),
         pastThePeriod);
     markRead(ava);
     tell(UNMATCHED_ITEMS, new UnmatchedItemsSnapshot("Movies", 14), pastThePeriod);
