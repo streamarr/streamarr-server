@@ -76,13 +76,7 @@ class RequestErrorRedactionInstrumentationTest {
   void shouldKeepLineAndColumnWithoutValueWhenDocumentDoesNotParse(String document) {
     var error = singleError(ExecutionInput.newExecutionInput(document).build());
 
-    var location = error.getLocations().getFirst();
-    assertThat(error.getErrorType()).isEqualTo(ErrorType.InvalidSyntax);
-    assertThat(error.getMessage())
-        .contains("line %d column %d".formatted(location.getLine(), location.getColumn()));
-    assertThat(error.toSpecification().toString())
-        .doesNotContain(CODE)
-        .doesNotContain(CODE.replace("-", ""));
+    assertSyntaxErrorAtItsLineAndColumnWithout(error, CODE, CODE.replace("-", ""));
   }
 
   @Test
@@ -160,5 +154,14 @@ class RequestErrorRedactionInstrumentationTest {
     var errors = graphQL.execute(input).getErrors();
     assertThat(errors).hasSize(1);
     return errors.getFirst();
+  }
+
+  private static void assertSyntaxErrorAtItsLineAndColumnWithout(
+      GraphQLError error, String... values) {
+    var location = error.getLocations().getFirst();
+    assertThat(error.getErrorType()).isEqualTo(ErrorType.InvalidSyntax);
+    assertThat(error.getMessage())
+        .contains("line %d column %d".formatted(location.getLine(), location.getColumn()));
+    assertThat(error.toSpecification().toString()).doesNotContain(values);
   }
 }
