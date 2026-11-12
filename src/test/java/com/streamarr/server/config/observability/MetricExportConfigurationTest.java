@@ -3,6 +3,7 @@ package com.streamarr.server.config.observability;
 import static com.streamarr.server.config.observability.OtlpExports.attribute;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.registry.otlp.OtlpConfig;
 import io.micrometer.registry.otlp.OtlpMeterRegistry;
@@ -13,6 +14,8 @@ import io.opentelemetry.instrumentation.spring.autoconfigure.OpenTelemetryAutoCo
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.sdk.autoconfigure.spi.ResourceProvider;
 import io.opentelemetry.sdk.resources.Resource;
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -46,7 +49,9 @@ class MetricExportConfigurationTest {
                   SimpleMetricsExportAutoConfiguration.class,
                   OpenTelemetryAutoConfiguration.class))
           .withUserConfiguration(
-              OtlpMetricsEndpointConfiguration.class, OtlpMetricsResourceConfiguration.class)
+              OtlpMetricsEndpointConfiguration.class,
+              OtlpMetricsResourceConfiguration.class,
+              OtlpMetricsShutdownConfiguration.class)
           // The starter's SDK builds its resource; its span and log exporters stay quiet here.
           .withPropertyValues("otel.traces.exporter=none", "otel.logs.exporter=none");
 
@@ -258,6 +263,29 @@ class MetricExportConfigurationTest {
                                 "management.opentelemetry.map-environment-variables",
                                 Boolean.class))
                     .isFalse());
+  }
+
+  // Spring Boot closes the meter registries as soon as the context closes, before the server stops
+  // anything else, and the OTLP registry publishes once more as it closes. The silent store accepts
+  // the connection and never answers.
+  @Test
+  @DisplayName("Should close within two seconds when the metrics store does not answer")
+  void shouldCloseWithinTwoSecondsWhenTheMetricsStoreDoesNotAnswer() throws Exception {
+    try (var silentStore = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
+      CONTEXT_RUNNER
+          .withPropertyValues(
+              "spring.profiles.active=observability",
+              "otel.exporter.otlp.endpoint=http://127.0.0.1:" + silentStore.getLocalPort())
+          .run(
+              context -> {
+                context
+                    .getBean(OtlpMeterRegistry.class)
+                    .counter("metric_export_test.shutdown")
+                    .increment();
+
+                BoundedTask.runWithin(Duration.ofSeconds(2), context::close);
+              });
+    }
   }
 
   // Registered before the auto-configurations, so the meter registry is built before the SDK.
