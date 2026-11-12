@@ -38,6 +38,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -64,6 +65,9 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
   @Autowired private ApplicationEventPublisher eventPublisher;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+
+  @Value("${notifications.retention-sweep-batch-size}")
+  private int batchSize;
 
   private final RecipientReference sam = RecipientReference.account(UUID.randomUUID());
   private final RecipientReference kai = RecipientReference.account(UUID.randomUUID());
@@ -225,7 +229,8 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should delete every aged history and keep the rest when there is more of it than one batch")
   void shouldDeleteEveryAgedHistoryAndKeepTheRestWhenThereIsMoreOfItThanOneBatch() {
-    IntStream.range(0, 5).forEach(_ -> tell(answered(aShare(), PAST_THE_PERIOD).build()));
+    IntStream.range(0, 2 * batchSize + 1)
+        .forEach(_ -> tell(answered(aShare(), PAST_THE_PERIOD).build()));
     markRead(sam);
     var unread = aShare();
     tell(answered(unread, PAST_THE_PERIOD).build());
