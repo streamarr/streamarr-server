@@ -544,6 +544,29 @@ class SegmentFolderLeftoversTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should delete the rest of a leftover at a later start when an earlier start could not delete"
+          + " all of it")
+  void shouldDeleteTheRestOfALeftoverAtALaterStartWhenAnEarlierStartCouldNotDeleteAllOfIt()
+      throws IOException {
+    startOf(segmentFolder);
+    var leftover = leftover(segmentFolder);
+    var lockedVariantDirectory = lock(leftover.resolve("720p"));
+    try {
+      assumeFalse(
+          Files.isWritable(lockedVariantDirectory), "folder permissions apply to the test user");
+      startOf(segmentFolder);
+    } finally {
+      unlock(lockedVariantDirectory);
+    }
+
+    var outcome = startOf(segmentFolder);
+
+    assertThat(leftover).doesNotExist();
+    assertThat(outcome).isEqualTo(new Deleted(1, 0));
+  }
+
   // A folder elsewhere that holds a directory with a leftover's name was never the server's.
   @Test
   @DisplayName(
@@ -862,12 +885,15 @@ class SegmentFolderLeftoversTest {
     T apply(LocalSegmentStore store) throws IOException;
   }
 
-  private static void leftover(Path folder) {
-    leftByAnEndedProcess(
+  // A stream session's directory with a segment in a variant directory.
+  private static Path leftover(Path folder) {
+    return leftByAnEndedProcess(
         folder,
-        store ->
-            Files.write(
-                store.getOutputDirectory(UUID.randomUUID(), "720p").resolve("0.m4s"), SEGMENT));
+        store -> {
+          var sessionId = UUID.randomUUID();
+          Files.write(store.getOutputDirectory(sessionId, "720p").resolve("0.m4s"), SEGMENT);
+          return store.getOutputDirectory(sessionId);
+        });
   }
 
   private Path firstListedDirectory() throws IOException {

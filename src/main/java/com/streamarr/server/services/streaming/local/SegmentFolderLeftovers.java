@@ -315,7 +315,8 @@ public class SegmentFolderLeftovers {
   }
 
   // The directory opens without following a soft link, and its mark is checked through the handle
-  // that deletes it.
+  // that deletes it. The mark goes last, so that a later start still deletes the rest of a
+  // directory that this start could not delete whole.
   private static Leftover deleteIfMarkedSession(SecureDirectoryStream<Path> folder, Path name)
       throws IOException {
     try (var session = folder.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS)) {
@@ -324,7 +325,9 @@ public class SegmentFolderLeftovers {
         return Leftover.NOT_A_LEFTOVER;
       }
 
-      deleteEachEntry(session);
+      deleteEach(
+          session, namesIn(session).stream().filter(entry -> !entry.equals(sessionMark)).toList());
+      session.deleteFile(sessionMark);
     }
 
     folder.deleteDirectory(name);
@@ -332,9 +335,10 @@ public class SegmentFolderLeftovers {
   }
 
   // Goes on past an entry that it cannot delete, so that it frees what it can, then throws.
-  private static void deleteEachEntry(SecureDirectoryStream<Path> directory) throws IOException {
+  private static void deleteEach(SecureDirectoryStream<Path> directory, List<Path> names)
+      throws IOException {
     var failures = new ArrayList<IOException>();
-    for (var name : namesIn(directory)) {
+    for (var name : names) {
       try {
         delete(directory, name);
       } catch (IOException e) {
@@ -357,7 +361,7 @@ public class SegmentFolderLeftovers {
     }
 
     try (var subdirectory = directory.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS)) {
-      deleteEachEntry(subdirectory);
+      deleteEach(subdirectory, namesIn(subdirectory));
     }
 
     directory.deleteDirectory(name);
