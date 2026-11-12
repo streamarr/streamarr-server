@@ -118,6 +118,7 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
         "/data/transferProfile/userErrors");
 
     assertWithdrawnAndAnnounced(invitationId);
+    assertRequestWithdrawn(mara, invitationId);
   }
 
   @Test
@@ -162,6 +163,7 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
         "/data/removeProfileManager/userErrors");
 
     assertWithdrawnAndAnnounced(invitationId);
+    assertRequestWithdrawn(mara, invitationId);
   }
 
   @Test
@@ -316,6 +318,24 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
         .containsExactly(
             new ManagerInvitationAction.Issued(),
             new ManagerInvitationAction.InvalidatedForItsAccount());
+  }
+
+  private void assertRequestWithdrawn(TestIdentity named, UUID invitationId) throws Exception {
+    assertThat(
+            read(
+                    authTestSupport.accountBearer(named),
+                    """
+                    query { notifications(first: 50) { edges { node {
+                      ... on ProfileManagerInvitationReceivedNotification {
+                        resolution invitationId } } } } }
+                    """)
+                .at("/data/notifications/edges")
+                .valueStream()
+                .map(edge -> edge.path("node"))
+                .filter(
+                    node -> node.path("invitationId").asString("").equals(invitationId.toString())))
+        .singleElement()
+        .satisfies(node -> assertThat(node.path("resolution").asString()).isEqualTo("WITHDRAWN"));
   }
 
   private UUID invite(TestIdentity inviter, UUID profileId, TestIdentity invitee) throws Exception {
