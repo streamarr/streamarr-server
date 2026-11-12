@@ -1,6 +1,5 @@
 package com.streamarr.server.services.identity;
 
-import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -10,6 +9,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -18,26 +18,26 @@ import com.streamarr.server.services.auth.ManagerInvitationExpirySweeper;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
+import com.streamarr.server.support.ControlledClockConfiguration;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import com.streamarr.server.support.ProfileCastSupport;
 import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
-import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 
 /**
  * Of two writes that meet at one invitation to manage a Profile, exactly one takes effect (ADR 0024
@@ -46,8 +46,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Tag("IntegrationTest")
 @DisplayName("Manager Invitation Decision Race Integration Tests")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Import(ControlledClockConfiguration.class)
 class ManagerInvitationDecisionRaceIT extends AbstractIntegrationTest {
 
+  @Autowired private MutableClock clock;
   @Autowired private ProfileManagerAdministrationService managerService;
   @Autowired private ManagerInvitationExpirySweeper expirySweeper;
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
@@ -56,8 +59,6 @@ class ManagerInvitationDecisionRaceIT extends AbstractIntegrationTest {
   @Autowired private ProfileCastSupport cast;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
-  @Autowired private TransactionTemplate transactionTemplate;
-  @Autowired private DSLContext dsl;
 
   private TestIdentity sam;
   private TestIdentity mara;
@@ -65,6 +66,7 @@ class ManagerInvitationDecisionRaceIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    clock.advance(Duration.between(clock.instant(), Instant.now()));
     sam = authTestSupport.createIdentity();
     mara = authTestSupport.createIdentity();
     alex = cast.profileManagedBy(sam, ProfileFixture.defaultProfileBuilder().name("Alex"));
@@ -125,17 +127,11 @@ class ManagerInvitationDecisionRaceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should grant no management when the sweep stores the expiry first")
   void shouldGrantNoManagementWhenTheSweepStoresTheExpiryFirst() throws Exception {
-    var invitationId = invite(mara.account().getEmail()).getId();
-    var expiresAt = Instant.now().plusSeconds(2);
-    transactionTemplate.executeWithoutResult(
-        _ ->
-            dsl.update(PROFILE_MANAGER_INVITATION)
-                .set(PROFILE_MANAGER_INVITATION.EXPIRES_AT, expiresAt.atOffset(ZoneOffset.UTC))
-                .where(PROFILE_MANAGER_INVITATION.ID.eq(invitationId))
-                .execute());
+    var invitation = invite(mara.account().getEmail());
+    var invitationId = invitation.getId();
 
     // The acceptance starts while the invitation is live and waits at the Profile's row, which the
-    // sweep never takes; the sweep stores the expiry while it waits.
+    // sweep never takes; the clock passes the expiry and the sweep stores it while it waits.
     Outcome<ProfileManagerInvitation, ManagerRejections.Accept> outcome;
     try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
         var profileLock = lockRow(row("profile", alex.getId()))) {
@@ -145,7 +141,7 @@ class ManagerInvitationDecisionRaceIT extends AbstractIntegrationTest {
       await()
           .atMost(Duration.ofSeconds(10))
           .until(() -> waitersBehind(jdbcTemplate, profileLock.backendPid(), "%profile%") == 1);
-      await().atMost(Duration.ofSeconds(10)).until(() -> Instant.now().isAfter(expiresAt));
+      clock.advance(Duration.between(clock.instant(), invitation.getExpiresAt().plusSeconds(1)));
       expirySweeper.sweep();
       assertThat(statusOf(invitationId)).isEqualTo(ProfileManagerInvitationStatus.EXPIRED);
 
