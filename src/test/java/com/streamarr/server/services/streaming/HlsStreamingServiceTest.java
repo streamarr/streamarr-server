@@ -155,6 +155,7 @@ import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -8077,13 +8078,17 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
-  @Test
+  // The client played the encode that the continuation continues, and a worker stops offering a
+  // hardware encoder that failed before it reports the failure (ADR 0044).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("av1EncodersOfAWorkerWithoutASoftwareAv1Encoder")
   @DisplayName(
       "Should refuse a software continuation for lack of capacity when no worker has a software"
           + " encoder of its codec family")
-  void
-      shouldRefuseASoftwareContinuationForLackOfCapacityWhenNoWorkerHasASoftwareEncoderOfItsFamily() {
+  void shouldRefuseASoftwareContinuationForLackOfCapacityWhenNoWorkerHasASoftwareEncoderOfItsFamily(
+      List<WorkerVerifiedEncoder> av1Encoders) {
     useAnHdr10SourceAndAnAv1WorkerWithoutASoftwareEncoder();
+    transcodeExecutor.setTargetEncoders(AV1_WORKER, av1Encoders);
 
     var outcome =
         service.createSession(
@@ -8099,6 +8104,13 @@ class HlsStreamingServiceTest {
             Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
     assertThat(capacityRefusals("no_software_encoder_after_hardware_failure")).isOne();
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  static Stream<Arguments> av1EncodersOfAWorkerWithoutASoftwareAv1Encoder() {
+    return Stream.of(
+        Arguments.of(
+            Named.of("the worker still offers the failed hardware encoder", List.of(av1Nvenc()))),
+        Arguments.of(Named.of("the worker withdrew the failed hardware encoder", List.of())));
   }
 
   // The failed hardware encoder writes no PQ, so it could not encode for a client that takes AV1

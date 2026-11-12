@@ -414,24 +414,26 @@ class HardwareEncoderFailureRangeTest {
     assertThat(h264.formatAttemptCount()).isEqualTo(2);
   }
 
-  // The hardware encoder that refused still encodes what the client plays, so the client's
-  // declaration is not what ends playback. No worker can take the software encode, as when every
-  // worker is full.
-  @ParameterizedTest(name = "{0}")
+  // The client played what the hardware encoder wrote, whether the worker keeps offering that
+  // encoder or withdrew it, so the client's declaration is not what ends playback. No worker can
+  // take the software encode, as when every worker is full.
+  @ParameterizedTest(name = "{0}, {1}")
   @MethodSource("encodesOfAClientThatDeclaresAv1Alone")
   @DisplayName(
-      "Should end playback for lack of capacity when the hardware AV1 encoder refused and no worker"
-          + " has a software encoder of AV1, the only codec family that the client declares")
+      "Should end playback for lack of capacity when the hardware AV1 encoder refused or failed and"
+          + " no worker has a software encoder of AV1, the only codec family that the client"
+          + " declares")
   void shouldEndPlaybackForLackOfCapacityWhenNoWorkerHasASoftwareEncoderOfTheClientsOnlyFamily(
-      HardwareAv1Encode encode) {
+      HardwareAv1Encode encode, HardwareEncoderFault fault) {
+    softwareEncodersOfTheFailingWorker = List.of(libx264());
     workers.setTargetEncoders(
         FAILING_WORKER, List.of(av1Nvenc(encode.hardwareAv1Features()), libx264()));
-    workers.setTargetSoftwareEncoders(FAILING_WORKER, List.of(libx264()));
+    workers.setTargetSoftwareEncoders(FAILING_WORKER, softwareEncodersOfTheFailingWorker);
     probes.setDefaultProbe(sourceOf(CompatibleBase.PQ));
     var hardware = accepted(playback.start(start(encode.options(), encode.client())));
     assertThat(lastStartedDecision().videoEncodeFormat()).isEqualTo(encode.format());
 
-    var failed = refuseTheHardwareEncoderOf(hardware);
+    var failed = endTheHardwareEncodeOf(hardware, fault);
 
     assertThat(failed.currentFormatAttempt())
         .isInstanceOfSatisfying(
@@ -446,25 +448,46 @@ class HardwareEncoderFailureRangeTest {
   }
 
   static Stream<Arguments> encodesOfAClientThatDeclaresAv1Alone() {
-    return Stream.of(
-        Arguments.of(Named.of("a PQ encode in Auto", pqEncodeInAutoBuilder().build())),
-        Arguments.of(
+    var encodes =
+        Stream.of(
+            Named.of("a PQ encode in Auto", pqEncodeInAutoBuilder().build()),
             Named.of(
                 "a PQ encode in 1080p with HDR chosen",
                 pqEncodeInAutoBuilder()
                     .options(options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.HDR))
-                    .build())),
-        Arguments.of(
+                    .build()),
             Named.of(
                 "an 8-bit SDR encode in Auto",
                 pqEncodeInAutoBuilder()
                     .hardwareAv1Features(NO_ENCODE_FEATURE)
                     .format(EncodeFormat.SDR_8_BIT)
-                    .build())),
-        Arguments.of(
+                    .build()),
             Named.of(
                 "a PQ encode in Auto for a client that takes AV1 only in PQ",
-                pqEncodeInAutoBuilder().client(av1InPqAloneClient()).build())));
+                pqEncodeInAutoBuilder().client(av1InPqAloneClient()).build()));
+    return encodes.flatMap(
+        encode ->
+            Stream.of(
+                Arguments.of(
+                    encode, Named.of("refused and still offered", HardwareEncoderFault.REFUSED)),
+                Arguments.of(
+                    encode, Named.of("failed and withdrawn", HardwareEncoderFault.FAILED))));
+  }
+
+  // How the hardware encoder ends its job attempt (ADR 0044).
+  private enum HardwareEncoderFault {
+    // It refuses the encode at the driver's session limit, and the worker keeps offering it.
+    REFUSED,
+    // It fails, and the worker stops offering it before the worker reports the failure.
+    FAILED
+  }
+
+  private PlaybackSessionSnapshot endTheHardwareEncodeOf(
+      PlaybackSessionSnapshot playing, HardwareEncoderFault fault) {
+    return switch (fault) {
+      case REFUSED -> refuseTheHardwareEncoderOf(playing);
+      case FAILED -> failTheHardwareEncoderOf(playing);
+    };
   }
 
   // The PQ encode in Auto of a client that declares AV1 alone, on a hardware AV1 encoder that

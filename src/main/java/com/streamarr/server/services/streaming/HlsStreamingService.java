@@ -436,12 +436,25 @@ public class HlsStreamingService implements StreamingService {
     // After a hardware encoder failure, a worker runs the codec family's encode only on a software
     // encoder of it (ADR 0044). When no worker has one but the failed hardware encoder writes what
     // the client plays, the client's declaration is not what refuses the stream session.
-    if (encodeCandidateWithoutTheMissingSoftwareEncoder(request).isPresent()) {
+    if (isContinuationWithoutASoftwareEncoder(request)
+        || encodeCandidateWithoutTheMissingSoftwareEncoder(request).isPresent()) {
       return refuseForLackOfCapacity(CapacityRefusal.NO_SOFTWARE_ENCODER_AFTER_HARDWARE_FAILURE);
     }
 
     encodeCandidateMissingAnEncoder(request).ifPresent(this::countMissingEncoderSession);
     return new CreateStreamSessionRejection.NoEligibleVideoFormat();
+  }
+
+  // The client played the encode that a software continuation continues. The worker stops offering
+  // a failed hardware encoder before it reports the failure, so no connected worker may still offer
+  // the encoder that wrote it.
+  private static boolean isContinuationWithoutASoftwareEncoder(TranscodeDecisionRequest request) {
+    return request
+        .softwareContinuation()
+        .filter(
+            continuation ->
+                hasNoEncoderOf(request.verifiedVideoEncoders(), continuation.codecFamily()))
+        .isPresent();
   }
 
   // The encode that the verified encoders could run if a codec family that encodes in software but
