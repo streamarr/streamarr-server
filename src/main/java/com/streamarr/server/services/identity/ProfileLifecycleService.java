@@ -220,7 +220,8 @@ public class ProfileLifecycleService {
   private void invalidateProfileBoundArtifacts(UUID profileId, String reason, Instant now) {
     accountInvitationRepository.invalidatePendingByProfileId(profileId, reason, now);
     managerInvitationRepository.invalidatePendingByProfileId(profileId, reason, now);
-    shareLifecycle.invalidatePendingByProfileId(profileId, reason, now);
+    // Read after any wait above, so an offer whose time ran out meanwhile is stored as expired.
+    shareLifecycle.invalidatePendingByProfileId(profileId, reason, clock.instant());
   }
 
   private Optional<TransferRejections.TransferProfile> localManagerRefusal(
