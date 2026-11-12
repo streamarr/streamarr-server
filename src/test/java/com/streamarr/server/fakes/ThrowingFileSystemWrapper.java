@@ -38,8 +38,8 @@ import java.util.function.Supplier;
 /**
  * A FileSystem wrapper that throws a configurable RuntimeException during Files.walk() iteration.
  * Used to test error handling when file system traversal fails mid-stream, and to run a hook before
- * each access check or after each attribute read. Its directory streams are secure where the
- * wrapped file system's are.
+ * each access check, after each attribute read or after each channel open. Its directory streams
+ * are secure where the wrapped file system's are.
  *
  * <p>Jimfs cannot simulate permission errors, so this wrapper intercepts directory stream iteration
  * and throws the configured exception after each directory stream returns a set number of entries.
@@ -98,7 +98,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
    */
   public static ThrowingFileSystemWrapper runningBeforeEachAccessCheck(
       FileSystem delegate, Consumer<Path> beforeAccessCheck) {
-    return neverFailing(delegate, new Hooks(beforeAccessCheck, _ -> {}));
+    return neverFailing(delegate, new Hooks(beforeAccessCheck, _ -> {}, _ -> {}));
   }
 
   /**
@@ -108,14 +108,23 @@ public class ThrowingFileSystemWrapper extends FileSystem {
    */
   public static ThrowingFileSystemWrapper runningAfterEachAttributeReadOf(
       FileSystem delegate, String fileName, Runnable afterRead) {
-    return neverFailing(
-        delegate,
-        new Hooks(
-            _ -> {},
-            path ->
-                Optional.ofNullable(path.getFileName())
-                    .filter(name -> name.toString().equals(fileName))
-                    .ifPresent(_ -> afterRead.run())));
+    return neverFailing(delegate, new Hooks(_ -> {}, runningFor(fileName, afterRead), _ -> {}));
+  }
+
+  /**
+   * Returns a wrapper that never fails and runs {@code afterOpen} each time it has opened a channel
+   * to a file named {@code fileName}, through a path or through a secure directory stream.
+   */
+  public static ThrowingFileSystemWrapper runningAfterEachChannelOpenOf(
+      FileSystem delegate, String fileName, Runnable afterOpen) {
+    return neverFailing(delegate, new Hooks(_ -> {}, _ -> {}, runningFor(fileName, afterOpen)));
+  }
+
+  private static Consumer<Path> runningFor(String fileName, Runnable hook) {
+    return path ->
+        Optional.ofNullable(path.getFileName())
+            .filter(name -> name.toString().equals(fileName))
+            .ifPresent(_ -> hook.run());
   }
 
   private static ThrowingFileSystemWrapper neverFailing(FileSystem delegate, Hooks hooks) {
@@ -142,7 +151,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
         exceptionSupplier,
         entriesBeforeFailure,
         laterAttributeReadFailure,
-        new Hooks(_ -> {}, _ -> {}));
+        new Hooks(_ -> {}, _ -> {}, _ -> {}));
   }
 
   private ThrowingFileSystemWrapper(
@@ -160,7 +169,10 @@ public class ThrowingFileSystemWrapper extends FileSystem {
   }
 
   // Each hook receives a path of the wrapped file system.
-  private record Hooks(Consumer<Path> beforeAccessCheck, Consumer<Path> afterAttributeRead) {}
+  private record Hooks(
+      Consumer<Path> beforeAccessCheck,
+      Consumer<Path> afterAttributeRead,
+      Consumer<Path> afterChannelOpen) {}
 
   private void throwIfALaterAttributeReadFails(Path path) throws IOException {
     if (pathsWithReadAttributes.add(path)) {
@@ -399,7 +411,9 @@ public class ThrowingFileSystemWrapper extends FileSystem {
     public FileChannel newFileChannel(
         Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs)
         throws IOException {
-      return delegate.newFileChannel(unwrap(path), options, attrs);
+      var channel = delegate.newFileChannel(unwrap(path), options, attrs);
+      fileSystem.hooks.afterChannelOpen().accept(unwrap(path));
+      return channel;
     }
 
     @Override
@@ -426,7 +440,9 @@ public class ThrowingFileSystemWrapper extends FileSystem {
     public SeekableByteChannel newByteChannel(
         Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs)
         throws IOException {
-      return delegate.newByteChannel(unwrap(path), options, attrs);
+      var channel = delegate.newByteChannel(unwrap(path), options, attrs);
+      fileSystem.hooks.afterChannelOpen().accept(unwrap(path));
+      return channel;
     }
 
     @Override
@@ -545,7 +561,10 @@ public class ThrowingFileSystemWrapper extends FileSystem {
     public SeekableByteChannel newByteChannel(
         Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs)
         throws IOException {
-      return delegate.newByteChannel(ThrowingFileSystemProvider.unwrap(path), options, attrs);
+      var unwrapped = ThrowingFileSystemProvider.unwrap(path);
+      var channel = delegate.newByteChannel(unwrapped, options, attrs);
+      fileSystem.hooks.afterChannelOpen().accept(unwrapped);
+      return channel;
     }
 
     @Override
