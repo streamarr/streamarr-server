@@ -11,8 +11,10 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
+import com.streamarr.server.support.ManagerInvitationSteps;
 import com.streamarr.server.support.ProfileCastSupport;
 import com.streamarr.server.support.StatementCount;
 import java.time.Duration;
@@ -70,6 +72,7 @@ class InviteByEmailIT extends AbstractIntegrationTest {
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private ProfileManagerAdministrationService managerAdministration;
 
   private final List<TestIdentity> identities = new ArrayList<>();
   private TestIdentity sam;
@@ -281,6 +284,79 @@ class InviteByEmailIT extends AbstractIntegrationTest {
 
     assertThat(answer.at("/invitation/status").asString()).isEqualTo("CANCELED");
     assertThat(pendingForAlex().at("/data/pendingManagerInvitationsForProfile/edges")).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse with ManagerInvitationLimitReachedError when ten invitations wait for the"
+          + " Profile")
+  void shouldRefuseWithManagerInvitationLimitReachedErrorWhenTenWaitForTheProfile()
+      throws Exception {
+    inviteTen();
+
+    var answer = invite(addressOf(Invitee.NO_ACCOUNT));
+
+    assertThat(answer.at("/data/inviteProfileManager/userErrors/0/__typename").asString())
+        .isEqualTo("ManagerInvitationLimitReachedError");
+    assertThat(answer.at("/data/inviteProfileManager/issued").isNull()).isTrue();
+    assertThat(pendingForAlex().at("/data/pendingManagerInvitationsForProfile/edges").size())
+        .isEqualTo(10);
+  }
+
+  @Test
+  @DisplayName(
+      "Should invite again when ten wait and one has expired before the sweep stores its expiry")
+  void shouldInviteAgainWhenTenWaitAndOneHasExpiredBeforeTheSweep() throws Exception {
+    var first = inviteTen().getFirst();
+    ManagerInvitationSteps.builder()
+        .management(managerAdministration)
+        .auth(authTestSupport)
+        .invitations(invitationRepository)
+        .transactions(transactionTemplate)
+        .build()
+        .lapse(invitationRepository.findById(UUID.fromString(first)).orElseThrow());
+
+    var answer = invite(addressOf(Invitee.NO_ACCOUNT));
+
+    assertThat(answer.at("/data/inviteProfileManager/userErrors")).isEmpty();
+    assertThat(answer.at(invitationPath("status")).asString()).isEqualTo("PENDING");
+  }
+
+  @Test
+  @DisplayName(
+      "Should replace rather than refuse when ten wait and the same address is invited in another"
+          + " case")
+  void shouldReplaceRatherThanRefuseWhenTenWaitAndTheSameAddressIsInvitedInAnotherCase()
+      throws Exception {
+    var address = "again.%s@example.com".formatted(UUID.randomUUID());
+    var replaced = invite(address).at(invitationPath("id")).asString();
+    for (var i = 0; i < 9; i++) {
+      invite(addressOf(Invitee.NO_ACCOUNT));
+    }
+
+    var answer = invite(address.toUpperCase(Locale.ROOT));
+
+    assertThat(answer.at("/data/inviteProfileManager/userErrors")).isEmpty();
+    var waiting =
+        pendingForAlex()
+            .at("/data/pendingManagerInvitationsForProfile/edges")
+            .valueStream()
+            .map(edge -> edge.at("/node/id").asString())
+            .toList();
+    assertThat(waiting)
+        .hasSize(10)
+        .doesNotContain(replaced)
+        .contains(answer.at(invitationPath("id")).asString());
+  }
+
+  /** Ten invitations to Alex, to addresses nobody has, by their ids in the order sent. */
+  private List<String> inviteTen() throws Exception {
+    var ids = new ArrayList<String>();
+    for (var i = 0; i < 10; i++) {
+      ids.add(invite(addressOf(Invitee.NO_ACCOUNT)).at(invitationPath("id")).asString());
+    }
+
+    return ids;
   }
 
   private String addressOf(Invitee invitee) {
