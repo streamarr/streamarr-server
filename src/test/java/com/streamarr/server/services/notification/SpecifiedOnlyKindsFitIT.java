@@ -119,9 +119,8 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should tell every ServerAdmin, the one that started it included, when a scan finishes")
-  void shouldTellEveryServerAdminTheOneThatStartedItIncludedWhenAScanFinishes() {
+  @DisplayName("Should make one news for each recipient when a library kind is told")
+  void shouldMakeOneNewsForEachRecipientWhenALibraryKindIsTold() {
     var snapshot = new ScanOrRefreshFinishedSnapshot("Movies", 3, 1, 0);
 
     publish(
