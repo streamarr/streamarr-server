@@ -1662,8 +1662,7 @@ final class LiveWorkerConnectionRegistry {
     // mismatch on the same encoder backend, an invalid specification on every worker, a Dolby
     // Vision conversion failure on the same picture, and a first segment that opened late on the
     // same read of the source. Every attempt of a copy cuts the same keyframe-merged segments, so
-    // it
-    // repeats a segment over the cap too (ADR 0037).
+    // it repeats a segment over the cap too (ADR 0037).
     private static Optional<TranscodeFailure> terminalFailure(
         VariantJob job, JobAttemptFailed failed) {
       return switch (failed.getFailure()) {
