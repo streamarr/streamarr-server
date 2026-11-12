@@ -1,8 +1,8 @@
 package com.streamarr.server.fixtures;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeLearnedStreamEndRepository;
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;

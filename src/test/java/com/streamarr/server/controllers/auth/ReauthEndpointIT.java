@@ -9,15 +9,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.config.security.AuthCookies;
-import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.properties.AuthTokenProperties;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.TokenClaims;
 import com.streamarr.server.services.auth.TokenContext;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.web.AuthCookies;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;

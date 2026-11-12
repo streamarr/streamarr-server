@@ -1,6 +1,9 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryOperation;
+import com.streamarr.server.domain.LibraryOperationConclusion;
+import com.streamarr.server.domain.LibraryOperationEnd;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;

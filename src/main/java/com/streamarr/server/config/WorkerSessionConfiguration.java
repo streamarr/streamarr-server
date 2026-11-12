@@ -1,5 +1,6 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.properties.WorkerSessionProperties;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionKeepalive;

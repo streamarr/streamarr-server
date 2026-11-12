@@ -1,5 +1,6 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.properties.RemoteTranscodeProperties;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;

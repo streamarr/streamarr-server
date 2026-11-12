@@ -3,8 +3,6 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.security.AuthTokenProperties;
-import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.AccountInvitationReoffer;
@@ -38,6 +36,8 @@ import com.streamarr.server.fakes.PlainPasswordEncoder;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.properties.AuthTokenProperties;
+import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.auth.AccountInvitationService.InvitationCodeCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;

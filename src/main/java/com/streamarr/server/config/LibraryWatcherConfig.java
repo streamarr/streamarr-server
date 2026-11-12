@@ -1,5 +1,6 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.properties.LibraryWatcherProperties;
 import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.library.FileStabilityChecker;
 import com.streamarr.server.services.library.PollingFileStabilityChecker;

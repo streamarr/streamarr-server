@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import com.streamarr.server.graphql.dto.ActiveStreamDto;
+import com.streamarr.server.properties.SubscriptionProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.Getter;
 import org.springframework.stereotype.Component;

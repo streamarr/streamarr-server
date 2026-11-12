@@ -3,6 +3,7 @@ package com.streamarr.server.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.properties.WorkerSessionProperties;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;

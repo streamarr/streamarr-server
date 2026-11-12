@@ -8,6 +8,7 @@ import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.NewLibraryOperation;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;

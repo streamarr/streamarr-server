@@ -1,6 +1,6 @@
 package com.streamarr.server.services.authorization.cedar;
 
-import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.properties.AuthTokenProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ReauthenticationFreshness;
 import java.time.Clock;

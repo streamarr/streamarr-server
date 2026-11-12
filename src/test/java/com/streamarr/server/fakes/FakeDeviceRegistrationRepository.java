@@ -2,9 +2,9 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;

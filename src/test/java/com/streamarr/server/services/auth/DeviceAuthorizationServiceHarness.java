@@ -1,11 +1,11 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.config.CanonicalBaseUrl;
-import com.streamarr.server.config.security.AuthTokenProperties;
-import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeServerBootstrapRepository;
+import com.streamarr.server.properties.AuthTokenProperties;
+import com.streamarr.server.properties.CanonicalBaseUrl;
+import com.streamarr.server.properties.DeviceAuthProperties;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;

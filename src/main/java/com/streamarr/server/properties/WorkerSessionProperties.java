@@ -1,0 +1,20 @@
+package com.streamarr.server.properties;
+
+import java.time.Duration;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
+
+@ConfigurationProperties(prefix = "streaming.worker-session")
+public record WorkerSessionProperties(
+    @DefaultValue("127.0.0.1") String address,
+    @DefaultValue("9090") int port,
+    @DefaultValue("1m") Duration probeTimeout,
+    @DefaultValue("30m") Duration keyframeScanTimeout,
+    @DefaultValue("5m") Duration bitrateScanChunkTimeout,
+    @DefaultValue("5s") Duration probeCancellationTimeout,
+    @DefaultValue("10s") Duration startReportTimeout,
+    @DefaultValue Keepalive keepalive) {
+
+  public record Keepalive(
+      @DefaultValue("30s") Duration time, @DefaultValue("10s") Duration timeout) {}
+}

@@ -5,8 +5,8 @@ import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
+import com.streamarr.server.properties.DeviceAuthProperties;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupportConfig;

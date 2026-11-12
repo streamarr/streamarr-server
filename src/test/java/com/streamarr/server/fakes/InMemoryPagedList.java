@@ -1,9 +1,9 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.services.pagination.ListOrder;
+import com.streamarr.server.domain.pagination.ListOrder;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.services.pagination.PagedList;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import java.util.List;
 
 /** Fixed rows of one scope, read the way a Keyset seek reads them in PostgreSQL. */

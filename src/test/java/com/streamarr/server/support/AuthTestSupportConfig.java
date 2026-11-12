@@ -1,6 +1,6 @@
 package com.streamarr.server.support;
 
-import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.properties.AuthTokenProperties;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;

@@ -2,6 +2,7 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.artwork.ArtworkRun;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import lombok.Builder;
 import lombok.NonNull;

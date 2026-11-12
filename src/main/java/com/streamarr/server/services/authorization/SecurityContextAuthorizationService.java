@@ -1,11 +1,11 @@
 package com.streamarr.server.services.authorization;
 
-import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.StreamarrAuthenticationToken;
 import com.streamarr.server.services.auth.TokenScope;
 import java.time.Instant;
 import java.util.UUID;

@@ -4,9 +4,9 @@ import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvi
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.properties.Argon2Properties;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AccountInvitationService.InvitationCodeCommand;

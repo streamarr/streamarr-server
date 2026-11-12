@@ -3,6 +3,8 @@ package com.streamarr.server.config.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.properties.AuthCookieProperties;
+import com.streamarr.server.web.AuthCookiePolicy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

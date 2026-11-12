@@ -4,6 +4,8 @@ import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION
 
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MediaEntityFixture;
 import com.streamarr.server.fixtures.SessionProgressFixture;
@@ -12,8 +14,6 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PagedListContract;

@@ -4,10 +4,10 @@ import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECU
 
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.tables.records.SecurityAuditEventRecord;
 import com.streamarr.server.repositories.Keyset;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;

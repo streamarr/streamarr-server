@@ -3,6 +3,7 @@ package com.streamarr.server.services.pagination;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.streamarr.server.domain.pagination.PaginationDirection;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

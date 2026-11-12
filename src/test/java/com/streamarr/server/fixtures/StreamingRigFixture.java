@@ -1,7 +1,7 @@
 package com.streamarr.server.fixtures;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;

@@ -3,6 +3,7 @@ package com.streamarr.server.config.security;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.web.AuthCookies;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;

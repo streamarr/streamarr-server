@@ -6,12 +6,12 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.awaitility.Awaitility.await;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.support.BoundedTask;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;

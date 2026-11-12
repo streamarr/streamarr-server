@@ -1,6 +1,6 @@
 package com.streamarr.server.controllers.auth;
 
-import com.streamarr.server.config.security.TokenSigningKeys;
+import com.streamarr.server.services.auth.TokenSigningKeys;
 import java.time.Duration;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
