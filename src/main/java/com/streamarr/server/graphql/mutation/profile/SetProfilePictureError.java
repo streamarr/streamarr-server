@@ -5,4 +5,5 @@ import com.streamarr.server.graphql.mutation.MutationError;
 /**
  * The {@code SetProfilePictureError} union; record names are the schema type names DGS resolves by.
  */
-public sealed interface SetProfilePictureError extends MutationError permits ProfileNotFoundError {}
+public sealed interface SetProfilePictureError extends MutationError
+    permits ProfileNotFoundError, ProfileManagersOnlyError {}

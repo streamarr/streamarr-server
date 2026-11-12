@@ -68,7 +68,8 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
         userErrors { __typename ... on MutationError { message }
           ... on InputMutationError { inputPath }
           ... on TooManyAudioLanguagesError { maximum }
-          ... on RepeatedAudioLanguageError { language } } } }
+          ... on RepeatedAudioLanguageError { language }
+          ... on ProfileManagersOnlyError { reason } } } }
       """;
 
   private static final String ME_LANGUAGE_PREFERENCES =
@@ -297,15 +298,18 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
             .path("languagePreferences"));
   }
 
-  @ParameterizedTest(name = "{0}")
-  @EnumSource(
-      value = Reader.class,
-      names = {"SERVER_ADMIN_THAT_DOES_NOT_MANAGE_IT", "HOUSEHOLD_ADMIN_THAT_HAS_IT_SELECTED"})
+  @Test
+  @DisplayName("Should forbid the change when a ServerAdmin reads the preferences without managing")
+  void shouldForbidChangeWhenServerAdminReadsPreferencesWithoutManaging() throws Exception {
+    assertForbidden(readingOf(Reader.SERVER_ADMIN_THAT_DOES_NOT_MANAGE_IT));
+  }
+
+  @Test
   @DisplayName(
-      "Should forbid the change when a reader of the preferences does not manage the Profile")
-  void shouldForbidChangeWhenReaderOfPreferencesDoesNotManageProfile(Reader reader)
-      throws Exception {
-    assertForbidden(readingOf(reader));
+      "Should say only the Profile's managers may change it when a supervising admin has the"
+          + " Profile selected")
+  void shouldSayOnlyManagersMayChangeItWhenSupervisingAdminHasProfileSelected() throws Exception {
+    assertOnlyManagersMay(readingOf(Reader.HOUSEHOLD_ADMIN_THAT_HAS_IT_SELECTED), "NOT_MANAGER");
   }
 
   @ParameterizedTest(name = "{0}")
@@ -316,10 +320,26 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
         "HOUSEHOLD_ADMIN_THAT_ONLY_SUPERVISES_A_RESTRICTED_PROFILE"
       })
   @DisplayName(
-      "Should forbid the change when a HouseholdAdmin only hosts or supervises the Profile")
-  void shouldForbidChangeWhenHouseholdAdminOnlyHostsOrSupervisesProfile(Outsider admin)
-      throws Exception {
-    assertForbidden(readingOf(admin));
+      "Should say only the Profile's managers may change it when a HouseholdAdmin only hosts or"
+          + " supervises the Profile")
+  void shouldSayOnlyManagersMayChangeItWhenHouseholdAdminOnlyHostsOrSupervisesProfile(
+      Outsider admin) throws Exception {
+    assertOnlyManagersMay(
+        readingOf(admin),
+        admin == Outsider.HOUSEHOLD_ADMIN_THAT_ONLY_HOSTS_AN_UNRESTRICTED_VISITOR
+            ? "NOT_RESTRICTED"
+            : "NOT_MANAGER");
+  }
+
+  private void assertOnlyManagersMay(Reading reading, String reason) throws Exception {
+    var answer = changePreferences(reading.bearer(), idOf(reading.profile()), "DE, EN");
+
+    assertThat(answer.path("languagePreferences").isNull()).isTrue();
+    assertThat(answer.path("userErrors").values()).hasSize(1);
+    assertThat(answer.at("/userErrors/0/__typename").asString())
+        .isEqualTo("ProfileManagersOnlyError");
+    assertThat(answer.at("/userErrors/0/reason").asString()).isEqualTo(reason);
+    assertThat(storedPreferencesOf(reading.profile())).isEqualTo(STORED);
   }
 
   @ParameterizedTest(name = "{0}")

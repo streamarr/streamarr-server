@@ -58,6 +58,7 @@ public class ProfileAdministrationService {
       "chk_restricted_account_holds_no_authority";
 
   private final AuthorizationService authorizationService;
+  private final ProfileAuthorityExplanation authorityExplanation;
   private final ProfileRepository profileRepository;
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileHouseholdShareRepository shareRepository;
@@ -436,7 +437,7 @@ public class ProfileAdministrationService {
                   AuthorizationRefusal.Response.<ProfileRejections.DeleteProfile>hiddenUnless(
                           () -> mayViewProfile(identity, profileId),
                           ProfileRejections.ProfileNotFound::new)
-                      .visibleAs(() -> Optional.of(new ProfileRejections.ProfileNotDeletable()))
+                      .visibleAs(() -> Optional.of(deletionRefusal(identity, profileId)))
                       .reauthenticatedAs(ProfileRejections.ReauthenticationRequired::new));
           if (refusal.isPresent()) {
             throw new MutationRejection(refusal.get());
@@ -542,18 +543,33 @@ public class ProfileAdministrationService {
                   AuthorizationRefusal.Response.<ProfileRejections.ChangeProfilePolicy>hiddenUnless(
                           () -> mayViewProfile(identity, profileId),
                           ProfileRejections.ProfileNotFound::new)
+                      .visibleAs(() -> authorityExplanation.managersOnly(identity, profileId))
                       .reauthenticatedAs(ProfileRejections.ReauthenticationRequired::new)));
     };
   }
 
-  /** The shared error contract for ordinary edits: FORBIDDEN when visible, not-found when not. */
+  /**
+   * The shared error contract for ordinary edits: not-found when the caller may not read the
+   * Profile; when it may, why only the Profile's managers may make the change, or FORBIDDEN.
+   */
   private Optional<ProfileRejections.EditRefusal> editRefusal(
       AuthenticatedIdentity identity, Intent.UnitIntent intent, UUID profileId) {
     return refusalOf(
         identity,
         intent,
-        AuthorizationRefusal.Response.hiddenUnless(
-            () -> mayViewProfile(identity, profileId), ProfileRejections.ProfileNotFound::new));
+        AuthorizationRefusal.Response.<ProfileRejections.EditRefusal>hiddenUnless(
+                () -> mayViewProfile(identity, profileId), ProfileRejections.ProfileNotFound::new)
+            .visibleAs(() -> authorityExplanation.managersOnly(identity, profileId)));
+  }
+
+  // A caller that may read the Profile learns why it may not delete it: only its managers may, or
+  // what deletion needs.
+  private ProfileRejections.DeleteProfile deletionRefusal(
+      AuthenticatedIdentity identity, UUID profileId) {
+    return authorityExplanation
+        .managersOnly(identity, profileId)
+        .map(ProfileRejections.DeleteProfile.class::cast)
+        .orElseGet(ProfileRejections.ProfileNotDeletable::new);
   }
 
   private Optional<ProfileRejections.AdministrativelyResetProfilePin> resetRefusal(

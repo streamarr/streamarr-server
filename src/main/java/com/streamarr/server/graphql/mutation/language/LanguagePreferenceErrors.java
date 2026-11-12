@@ -17,6 +17,7 @@ public final class LanguagePreferenceErrors {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ ->
           new ProfileNotFoundError("No such Profile.", InputPath.of("profileId"));
+      case ProfileRejections.ManagersOnly managersOnly -> ProfileManagersOnlyError.of(managersOnly);
       case ProfileRejections.PreferredAudioLanguagesRefused(var reason) ->
           toPreferredAudioLanguagesError(reason);
     };
