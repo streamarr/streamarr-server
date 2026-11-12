@@ -322,13 +322,25 @@ To encode on NVIDIA GPUs in worker pods, see <<_kubernetes_gpus>>.
 
 == Stopping the server
 
-When the server receives SIGTERM, it answers each segment request that it holds with `503 Service Unavailable`, which the player retries.
-It stops its background schedulers, its scheduled tasks and its web server together, and waits at most 5 s for all of them (`spring.lifecycle.timeout-per-shutdown-phase`).
+The server stops within about 10 s of SIGTERM.
+Compose and the example Kubernetes manifest give it 15 s.
+
+. The server interrupts the metrics publish in flight, and its last publish gets at most 1 s.
+. It answers each segment request that it holds with `503 Service Unavailable`.
+The web player then asks for the playback status; a dropped connection would end its playback.
+. It stops its background schedulers, its scheduled tasks and its web server together, and waits at most 5 s for all of them (`spring.lifecycle.timeout-per-shutdown-phase`).
 A running probe, keyframe packet scan, bitrate scan, library operation or artwork step gets 3 s to end (`db-scheduler.shutdown-max-wait`), then the server interrupts it.
-The server releases each interrupted execution without counting a failure, so it runs as soon as a server starts again.
-The server then closes its playback sessions and its database connections and waits at most 1 s for each.
-Compose and the example Kubernetes manifest give the server 15 s to stop.
+The server releases each execution that the interrupt cut off without counting a failure, so it runs as soon as a server starts again.
+. It then closes its playback sessions, its subscription deliveries and its database connections, and waits at most 1 s for each.
+It ends the downloads of its TMDB clients without waiting.
+
+A web request that the 5 s do not end, such as a stream session request that waits for a probe, holds the web server's stop to the end of the 5 s, and Tomcat then waits 2 s more for it.
+With PostgreSQL stopped or not answering, the slowest measured stop took about 9 s.
+
 If the platform kills the server before it stops, its running executions run again once a server finds them dead, about 60 s later.
+
+Compose stops the worker before the server, because the worker shares the server's network.
+A probe that the worker was running then ends as a temporary failure: the server stores it and retries the probe after a backoff of a few seconds.
 
 == GPU encoding
 

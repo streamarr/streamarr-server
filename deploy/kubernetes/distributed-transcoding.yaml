@@ -93,8 +93,9 @@ spec:
         app.kubernetes.io/component: control-plane
     spec:
       serviceAccountName: streamarr-server
-      # The server stops its background work and its web server within 5 s, then closes its
-      # sessions and connections. The rest of the grace period is margin.
+      # The server stops within about 10 s: its background work and its web server within 5 s,
+      # then bounded closes of its sessions and connections. See "Stopping the server" in
+      # docs/distributed-transcoding.adoc.
       terminationGracePeriodSeconds: 15
       containers:
         - name: server
