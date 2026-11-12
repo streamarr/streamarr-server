@@ -103,7 +103,7 @@ public class SegmentFolderLeftovers {
       return Optional.of(SegmentFolderRefusal.FILE_SYSTEM_ROOT);
     }
 
-    if (resolved(homeFolder).startsWith(folder)) {
+    if (isAtOrAbove(folder, homeFolder)) {
       return Optional.of(SegmentFolderRefusal.HOME_FOLDER);
     }
 
@@ -125,9 +125,7 @@ public class SegmentFolderLeftovers {
     }
 
     for (var mediaFolder : folders) {
-      var media = resolved(mediaFolder);
-      // Path.startsWith compares whole names, so /media/movies2 does not start with /media/movies.
-      if (media.startsWith(folder) || folder.startsWith(media)) {
+      if (isAtOrAbove(folder, mediaFolder) || isAtOrAbove(mediaFolder, folder)) {
         return Optional.of(SegmentFolderRefusal.MEDIA_FOLDER);
       }
     }
@@ -156,17 +154,46 @@ public class SegmentFolderLeftovers {
     return Optional.empty();
   }
 
+  // Whether `upper` is `lower` or a folder above it. Path.startsWith compares whole names, so
+  // /media/movies2 does not lie in /media/movies. The folders are compared as files too: a bind
+  // mount, or a spelling that a case-insensitive file system folds, is a second name for a folder
+  // that no real path resolves.
+  private static boolean isAtOrAbove(Path upper, Path lower) throws IOException {
+    var upperPath = resolved(upper);
+    var lowerPath = resolved(lower);
+    if (lowerPath.startsWith(upperPath)) {
+      return true;
+    }
+
+    if (Files.notExists(upperPath)) {
+      return false;
+    }
+
+    for (var folder = nearestExisting(lowerPath); folder != null; folder = folder.getParent()) {
+      if (Files.isSameFile(folder, upperPath)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   // The path with the soft links of its existing folders resolved. A folder that does not exist
   // yet has no real path, and a soft link above it can lead into a folder that the path does not
   // name.
   private static Path resolved(Path path) throws IOException {
     var absolute = path.toAbsolutePath();
+    var existing = nearestExisting(absolute);
+    return existing.toRealPath().resolve(existing.relativize(absolute)).normalize();
+  }
+
+  private static Path nearestExisting(Path absolute) {
     var existing = absolute;
     while (existing.getParent() != null && Files.notExists(existing)) {
       existing = existing.getParent();
     }
 
-    return existing.toRealPath().resolve(existing.relativize(absolute)).normalize();
+    return existing;
   }
 
   // Only one start at a time holds the lock alone, so two starts never write the mark at once.
