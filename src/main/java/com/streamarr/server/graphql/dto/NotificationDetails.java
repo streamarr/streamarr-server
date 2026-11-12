@@ -5,6 +5,7 @@ import com.streamarr.server.domain.notification.RequestAnswer;
 import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.domain.notification.StoredNotification;
 import com.streamarr.server.domain.notification.SubjectReference;
+import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationReceivedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareEndedBy;
@@ -59,6 +60,8 @@ public record NotificationDetails(
           details.profileName(profileName).endedBy(endedBy).build();
       case ProfileManagerInvitationReceivedSnapshot(var profileName, var answer) ->
           details.profileName(profileName).answer(answer.orElse(null)).build();
+      case ProfileManagerInvitationAnsweredSnapshot(var profileName, var answer) ->
+          details.profileName(profileName).answer(answer).build();
       default -> details.build();
     };
   }
