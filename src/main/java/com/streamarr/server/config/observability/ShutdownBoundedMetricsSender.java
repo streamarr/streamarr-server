@@ -80,11 +80,8 @@ final class ShutdownBoundedMetricsSender implements OtlpMetricsSender {
       sender.interrupt();
       throw stopped;
     } catch (ExecutionException failure) {
-      if (failure.getCause() instanceof Exception cause) {
-        throw cause;
-      }
-
-      throw failure;
+      // The sender above fails the future only with the Exception that the store threw.
+      throw (Exception) failure.getCause();
     }
   }
 }
