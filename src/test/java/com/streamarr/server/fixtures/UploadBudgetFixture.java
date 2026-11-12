@@ -21,6 +21,11 @@ public final class UploadBudgetFixture {
         }
 
         @Override
+        public boolean isALoneAutoCopyOverTheShare(StreamSession session) {
+          return false;
+        }
+
+        @Override
         public UploadBudgetUse useOf(StreamSession session) {
           return UploadBudgetUse.BUDGET_OFF;
         }

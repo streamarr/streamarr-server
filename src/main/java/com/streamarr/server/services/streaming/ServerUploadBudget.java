@@ -4,6 +4,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
@@ -107,6 +108,25 @@ public class ServerUploadBudget implements UploadBudget {
         .filter(variant -> !withheld.contains(variant))
         .findFirst()
         .orElseThrow();
+  }
+
+  @Override
+  public boolean isALoneAutoCopyOverTheShare(StreamSession session) {
+    if (!isALoneAutoCopy(session)) {
+      return false;
+    }
+
+    var remaining = remainingShare(session);
+    return remaining.isPresent()
+        && average(session, StreamSession.defaultVariant()) > remaining.getAsLong();
+  }
+
+  // An HLS stream session without variants copies the video without lower variants, since every
+  // encode lists its ladder. Original stays exempt, and a copy beside lower variants plays through
+  // them when it does not fit.
+  private static boolean isALoneAutoCopy(StreamSession session) {
+    return session.getVariants().isEmpty()
+        && ViewerLimits.of(session.getOptions()).quality() == VideoQuality.AUTO;
   }
 
   /**

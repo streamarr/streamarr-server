@@ -186,6 +186,15 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var admission = admission(request, decisionWithSessionAudio);
+    var admitted =
+        newSession(command, mediaFile, probe)
+            .transcodeDecision(admission.decision())
+            .variants(admission.variants())
+            .build();
+    if (uploadBudget.isALoneAutoCopyOverTheShare(admitted)) {
+      admission = encodeAdmittedNow(request).orElse(admission);
+    }
+
     var sessionId = command.streamSessionId();
     var refusal = capacityRefusalFor(admission.decision());
     // A left variant only serves its own player's switch back, so it never keeps a new stream
@@ -288,6 +297,19 @@ public class HlsStreamingService implements StreamingService {
         .decide(freeNow)
         .filter(decision -> encodeRejection(freeNow, decision).isEmpty())
         .map(decision -> admission(freeNow, decision));
+  }
+
+  // An Auto copy without lower variants that does not fit the upload budget is decided again as an
+  // encode, whose ladder the budget can size. The budget never refuses playback, so the copy stays
+  // when no encode can start now.
+  private Optional<Admission> encodeAdmittedNow(TranscodeDecisionRequest request) {
+    var encodeOnly =
+        request.toBuilder().videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY).build();
+    return transcodeDecisionService
+        .decide(encodeOnly)
+        .filter(decision -> encodeRejection(encodeOnly, decision).isEmpty())
+        .filter(decision -> capacityRefusalFor(decision).isEmpty())
+        .map(decision -> admission(encodeOnly, decision));
   }
 
   // Why no worker can run the decision's encode, whatever slots are free.

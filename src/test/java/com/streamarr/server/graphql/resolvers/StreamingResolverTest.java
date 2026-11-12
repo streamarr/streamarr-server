@@ -2822,6 +2822,11 @@ class StreamingResolverTest {
     }
 
     @Override
+    public boolean isALoneAutoCopyOverTheShare(StreamSession session) {
+      return false;
+    }
+
+    @Override
     public UploadBudgetUse useOf(StreamSession session) {
       return use;
     }

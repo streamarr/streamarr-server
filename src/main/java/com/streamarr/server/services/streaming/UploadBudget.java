@@ -21,6 +21,14 @@ public interface UploadBudget {
    */
   String topKeptVariant(StreamSession session);
 
+  /**
+   * Whether an HLS stream session copies the video in Auto without lower variants, and its copy's
+   * average exceeds what the streams' share leaves beside the other counted stream sessions. Such a
+   * stream session is decided again as an encode when the server creates it. False while the budget
+   * is off, for a stream session on the local network, and in Original.
+   */
+  boolean isALoneAutoCopyOverTheShare(StreamSession session);
+
   /** Whether the stream session counts against the budget now, and why it does not. */
   UploadBudgetUse useOf(StreamSession session);
 }

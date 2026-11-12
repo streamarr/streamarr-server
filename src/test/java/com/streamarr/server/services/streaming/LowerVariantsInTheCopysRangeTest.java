@@ -920,13 +920,14 @@ class LowerVariantsInTheCopysRangeTest {
 
   // The upload budget leaves the copy out of the playlist that the player read, so it plays the
   // lower variants alone. The copy alone that replaces the stream session is created as any stream
-  // session is, so the budget sizes it again: the copy is its lowest variant, so it stays, and the
-  // budget's start rule starts it.
+  // session is, so the budget decides it again: its 5 Mb/s average exceeds the 3.8 Mb/s that 80% of
+  // 11 Mb/s leaves beside the other copy, so the replacement encodes. Its playlist leaves out the
+  // 1080p rung, which does not fit either, and creating it starts the first-listed 480p.
   @Test
   @DisplayName(
-      "Should create the copy alone through the upload budget when a lower variant fails while the"
+      "Should encode the replacement through the upload budget when a lower variant fails while the"
           + " budget leaves the copy out")
-  void shouldCreateTheCopyAloneThroughTheUploadBudgetWhenALowerVariantFailsWhileItLeavesItOut() {
+  void shouldEncodeTheReplacementThroughTheUploadBudgetWhenALowerVariantFailsWhileItLeavesItOut() {
     var settings = ServerSettingsFixture.defaultServerSettings();
     var budgeted = budgetedPlayback(settings);
     workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(encoder("h264", "libx264")));
@@ -957,14 +958,18 @@ class LowerVariantsInTheCopysRangeTest {
                     .identity(command.identity())
                     .build())
             .orElseThrow();
-    var copyAlone = sessionOf(after);
+    var replacement = sessionOf(after);
     assertThat(servedFirst)
         .containsExactly("720p/stream.m3u8?t=t", "480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
-    assertThat(copyAlone.getSessionId()).isNotEqualTo(replacedId);
+    assertThat(replacement.getSessionId()).isNotEqualTo(replacedId);
     assertThat(after.formatAttemptCount()).isEqualTo(1);
-    assertThat(listedUris(playlists.generateMultivariantPlaylist(copyAlone, "t")))
-        .containsExactly("stream.m3u8?t=t");
-    assertThat(workers.isRunning(copyAlone.getSessionId(), "default")).isTrue();
+    assertThat(after.decisions().getLast().reasons())
+        .first()
+        .isEqualTo(DecisionReason.LOWER_VARIANT_FAILED);
+    assertThat(replacement.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(listedUris(playlists.generateMultivariantPlaylist(replacement, "t")))
+        .containsExactly("480p/stream.m3u8?t=t", "720p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
+    assertThat(workers.isRunning(replacement.getSessionId(), "480p")).isTrue();
   }
 
   // ADR 0050 for an AV1 copy: a hardware AV1 encoder that writes every range runs beside H.265 and
