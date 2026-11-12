@@ -1353,9 +1353,8 @@ class CedarIdentityPoliciesTest {
 
     @Test
     @DisplayName(
-        "Should let only the named Account read an invitation, and never from a device-bound"
-            + " session")
-    void shouldLetOnlyTheNamedAccountReadAnInvitationAndNeverFromADeviceBoundSession() {
+        "Should let only the named Account read an invitation when its session is not device-bound")
+    void shouldLetOnlyTheNamedAccountReadAnInvitationWhenItsSessionIsNotDeviceBound() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
       var invitation =
           new Intent.ViewReceivedManagerInvitation(

@@ -83,8 +83,8 @@ class ManagerInvitationExpirySweeperIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should expire an invitation nobody can answer as any other")
-  void shouldExpireAnInvitationNobodyCanAnswerAsAnyOther() {
+  @DisplayName("Should expire it as any other when nobody can answer the invitation")
+  void shouldExpireItAsAnyOtherWhenNobodyCanAnswerTheInvitation() {
     var unanswerable = invitation(Optional.empty(), "nobody@example.com", Duration.ofMinutes(-1));
 
     sweeper.sweep();

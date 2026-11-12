@@ -297,10 +297,8 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should forbid a lookup from a device-bound session before the code is counted as an"
-          + " attempt")
-  void shouldForbidALookupFromADeviceBoundSessionBeforeTheCodeIsCountedAsAnAttempt()
-      throws Exception {
+      "Should forbid the lookup before counting an attempt when the session is device-bound")
+  void shouldForbidTheLookupBeforeCountingAnAttemptWhenTheSessionIsDeviceBound() throws Exception {
     var issued = issueManagerInvitation(managedOrphan());
 
     graphql(

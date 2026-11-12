@@ -106,8 +106,8 @@ class ManagerInvitationPageIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should let the Profile's managers and a ServerAdmin read the invitation")
-  void shouldLetTheProfilesManagersAndAServerAdminReadTheInvitation() throws Exception {
+  @DisplayName("Should show the invitation when the Profile's managers or a ServerAdmin read it")
+  void shouldShowTheInvitationWhenTheProfilesManagersOrAServerAdminReadIt() throws Exception {
     var invitationId = invite(sam, alex, mara).path("id").asString();
     var serverAdmin = track(authTestSupport.createAdminIdentity());
 

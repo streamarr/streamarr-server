@@ -99,9 +99,10 @@ class ProfileManagersIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should leave the own Account out when its Personal Profile is supervised, and show it"
-          + " nothing")
-  void shouldLeaveTheOwnAccountOutWhenItsPersonalProfileIsSupervised() throws Exception {
+      "Should leave the own Account out and show it nothing when its Personal Profile is"
+          + " supervised")
+  void shouldLeaveTheOwnAccountOutAndShowItNothingWhenItsPersonalProfileIsSupervised()
+      throws Exception {
     var supervised = track(cast.supervisedMemberOf(alex));
 
     assertThat(managers(alex, supervised.profile()))

@@ -24,8 +24,8 @@ class ManagerInvitationPartiesServiceTest {
       new ManagerInvitationPartiesService(profiles, accounts);
 
   @Test
-  @DisplayName("Should show the parties' current names while the Profile and inviter exist")
-  void shouldShowThePartiesCurrentNamesWhileTheProfileAndInviterExist() {
+  @DisplayName("Should show the parties' current names when the Profile and inviter exist")
+  void shouldShowThePartiesCurrentNamesWhenTheProfileAndInviterExist() {
     var alex = profiles.save(ProfileFixture.defaultProfileBuilder().name("Alex Smith").build());
     var sam =
         accounts.save(AccountFixture.defaultAccountBuilder().displayName("Sam Smith").build());
@@ -39,8 +39,8 @@ class ManagerInvitationPartiesServiceTest {
   }
 
   @Test
-  @DisplayName("Should show the stored names once the Profile and inviter are deleted")
-  void shouldShowTheStoredNamesOnceTheProfileAndInviterAreDeleted() {
+  @DisplayName("Should show the stored names when the Profile and inviter are deleted")
+  void shouldShowTheStoredNamesWhenTheProfileAndInviterAreDeleted() {
     var cleared = new ManagerInvitationParties(Optional.empty(), "Alex", Optional.empty(), "Sam");
     var vanished =
         new ManagerInvitationParties(
