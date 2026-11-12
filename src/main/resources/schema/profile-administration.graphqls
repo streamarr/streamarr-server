@@ -78,21 +78,42 @@ enum ProfileAuthority {
     SUPERVISES
 }
 
-"What a change of a Profile's kind or content limit, or a new Profile, would lock (ADR 0024 §PIN safety)."
+"""
+What a change of a Profile's kind or Content Ceiling, or a new Profile, would lock (ADR 0024 §PIN
+safety), as the asking Account may already see it. The change itself is never refused for what it
+locks.
+"""
 type ProfileLockPreview {
     """
+    Whether the changed Profile, or the new one, would itself be locked until it has a PIN in any
+    Household where it is available, whether or not households names that Household. A changed
+    Profile that is locked there already does not count.
+    """
+    locksThisProfile: Boolean!
+    """
     One entry for each Household where something would be locked that is not locked now, among the
-    Households whose Profile picker the asking Account may already see: its own Household and those
-    its Personal Profile visits, its own first. Other Households are left out. The change itself is
-    never refused for what it locks.
+    Households where the asking Account may already see that the Profile is available: those it
+    may use, every Household where the changed Profile is available when it manages that Profile,
+    and every one for a ServerAdmin. A new Profile's Household is always listed. Its own Household
+    comes first, then the others by name.
     """
     households: [HouseholdLockPreview!]!
+    """
+    Whether Profiles that households does not name would be locked too: Profiles in a Household it
+    leaves out, and Profiles in a listed Household that the asking Account may not see there. It
+    says neither which, nor how many, nor where.
+    """
+    otherProfilesWillLock: Boolean!
 }
 
 "What a change, or a new Profile, would lock in one Household."
 type HouseholdLockPreview {
     household: HouseholdSummary!
-    "The other Profiles that would be locked there until each has a PIN, by name."
+    """
+    The other Profiles that would be locked there until each has a PIN, by name: those the asking
+    Account may see there, because it may use the Household, manages the Profile, or is a
+    ServerAdmin. otherProfilesWillLock says whether there are more.
+    """
     profiles: [LockedProfile!]!
     """
     Whether the changed Profile, or the new one, would itself be locked there until it has a PIN.
