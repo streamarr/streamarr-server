@@ -39,6 +39,10 @@ class SegmentFolderLeftoversTest {
   private static final String SESSION_MARK_NAME = ".streamarr-stream-session";
   private static final String LOCK_NAME = ".streamarr-segment-folder.lock";
 
+  // The mount table of a process that sees only the root file system.
+  private static final String ROOT_FILE_SYSTEM =
+      "22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw\n";
+
   @TempDir Path segmentFolder;
   @TempDir Path outside;
   @TempDir Path machine;
@@ -453,7 +457,13 @@ class SegmentFolderLeftoversTest {
     var outcome =
         startOf(
             leftoversOf(segmentFolder)
-                .mountTable(mountTableListing(Path.of("/"), mountPoint.toRealPath())));
+                .mountTable(
+                    mountTableOf(
+                        """
+                        22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw
+                        41 22 8:1 /srv/media %s rw,relatime shared:1 - ext4 /dev/sda1 rw
+                        """,
+                        mountPoint)));
 
     assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.MOUNT_POINT_INSIDE));
     assertThat(movie).hasBinaryContent(MEDIA);
@@ -482,7 +492,13 @@ class SegmentFolderLeftoversTest {
     var outcome =
         startOf(
             leftoversOf(segmentFolder)
-                .mountTable(mountTableListing(Path.of("/"), segmentFolder.toRealPath())));
+                .mountTable(
+                    mountTableOf(
+                        """
+                        22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw
+                        41 22 0:41 / %s rw,nosuid,nodev shared:2 - tmpfs tmpfs rw
+                        """,
+                        segmentFolder)));
 
     assertThat(outcome).isEqualTo(new Deleted(1, 0));
     assertThat(session).doesNotExist();
@@ -577,9 +593,9 @@ class SegmentFolderLeftoversTest {
       shouldKeepAnotherFoldersFilesWhenTheSegmentFoldersSoftLinkIsPointedThereWhileTheStartDeletes()
           throws IOException {
     try (var fileSystem = Jimfs.newFileSystem(Configuration.unix())) {
-      mountTableAt(
+      tableAt(
           Files.createDirectories(fileSystem.getPath("/proc/self")).resolve("mountinfo"),
-          fileSystem.getPath("/"));
+          ROOT_FILE_SYSTEM);
       var markedFolder = Files.createDirectories(fileSystem.getPath("/var/lib/streamarr/segments"));
       var link =
           Files.createSymbolicLink(
@@ -887,7 +903,7 @@ class SegmentFolderLeftoversTest {
         .segmentFolder(folder)
         .homeFolder(fileSystem.getPath(outside.resolve("home").toString()))
         .mediaFolders(() -> List.of(fileSystem.getPath(outside.resolve("media").toString())))
-        .mountTable(fileSystem.getPath(mountTableListing(Path.of("/")).toString()))
+        .mountTable(fileSystem.getPath(mountTableOf(ROOT_FILE_SYSTEM).toString()))
         .lock(new SegmentFolderLock());
   }
 
@@ -903,20 +919,33 @@ class SegmentFolderLeftoversTest {
         .mountTable(fileSystem.getPath("/proc/self/mountinfo"));
   }
 
-  // A mount table in the format of /proc/self/mountinfo that lists these mount points.
-  private Path mountTableListing(Path... mountPoints) {
-    return mountTableAt(machine.resolve("mountinfo-" + UUID.randomUUID()), mountPoints);
+  // A mount table in the format of /proc/self/mountinfo. Each %s in the lines takes the real path
+  // of one of the mount points, escaped as the kernel escapes it.
+  private Path mountTableOf(String lines, Path... mountPoints) {
+    var escapedMountPoints =
+        Arrays.stream(mountPoints).map(SegmentFolderLeftoversTest::escapedRealPath).toArray();
+    return tableAt(
+        machine.resolve("mountinfo-" + UUID.randomUUID()), lines.formatted(escapedMountPoints));
   }
 
-  private static Path mountTableAt(Path table, Path... mountPoints) {
-    var lines =
-        Arrays.stream(mountPoints)
-            .map(
-                mountPoint ->
-                    "36 25 8:1 / " + mountPoint + " rw,relatime shared:1 - ext4 /dev/sda1 rw")
-            .toList();
+  private static Path tableAt(Path table, String lines) {
     try {
-      return Files.write(table, lines);
+      return Files.writeString(table, lines);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  // The kernel writes a space, tab, newline or backslash in a path as a backslash and three octal
+  // digits.
+  private static String escapedRealPath(Path path) {
+    try {
+      return path.toRealPath()
+          .toString()
+          .replace("\\", "\\134")
+          .replace(" ", "\\040")
+          .replace("\t", "\\011")
+          .replace("\n", "\\012");
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
