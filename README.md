@@ -43,6 +43,13 @@ Playback and media probing require the [standalone transcode worker](https://git
 See [Distributed Transcoding](docs/distributed-transcoding.adoc) for Docker Compose and Kubernetes deployments using the checked-in `worker-image.env` pin.
 Live library-administration changes use GraphQL subscriptions over a WebSocket on `/graphql`; a reverse proxy must pass WebSocket upgrades. See [GraphQL Subscriptions](docs/graphql-subscriptions.adoc).
 
+### TLS
+
+Terminate TLS at a reverse proxy or ingress and let it reach the server over plain HTTP.
+Set `SERVER_FORWARD_HEADERS_STRATEGY` to `NATIVE` or `FRAMEWORK` behind a trusted proxy so the server sees the original scheme and host.
+On a plain HTTP connection the server hands stored segment files to the kernel to send, without copying them through the JVM.
+Spring Boot's `server.ssl.*` properties still work when the server must terminate TLS itself; segments are then encrypted in the JVM and that saving is lost.
+
 ## Contributing
 
 See [Contributing](CONTRIBUTING.adoc) for the development process, commit conventions, and code style.

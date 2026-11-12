@@ -17,6 +17,7 @@ import com.streamarr.server.services.streaming.StreamingService;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.InputStream;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 @RestController
 @RequestMapping("/api/stream")
@@ -100,6 +102,10 @@ public class StreamController {
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   public ResponseEntity<Resource> getInitSegment(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
@@ -123,6 +129,10 @@ public class StreamController {
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   public ResponseEntity<Resource> getSegment(
       @PathVariable UUID sessionId, @PathVariable String segmentName) {
@@ -169,6 +179,10 @@ public class StreamController {
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
   public ResponseEntity<Resource> getVariantInitSegment(
       @PathVariable UUID sessionId, @PathVariable String variantLabel) {
@@ -202,6 +216,10 @@ public class StreamController {
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
   public ResponseEntity<Resource> getVariantSegment(
       @PathVariable UUID sessionId,
       @PathVariable String variantLabel,
@@ -269,16 +287,12 @@ public class StreamController {
     }
 
     var resource = new OpenedSourceResource(source.get());
-    // Spring's own 416 still writes the whole file as its body.
-    if (range != null && !isSatisfiable(range, resource)) {
-      return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-          .header(HttpHeaders.CONTENT_RANGE, "bytes */" + resource.contentLength())
-          .build();
-    }
-
-    return ResponseEntity.ok()
-        .contentType(MediaType.parseMediaType(source.get().container().getMediaType()))
-        .body(resource);
+    return unsatisfiableRangeAnswer(range, resource, resource.contentLength())
+        .orElseGet(
+            () ->
+                ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(source.get().container().getMediaType()))
+                    .body(resource));
   }
 
   /**
@@ -322,6 +336,19 @@ public class StreamController {
         .registerDestructionCallback(opened.getName(), close, RequestAttributes.SCOPE_REQUEST);
   }
 
+  // Spring's own 416 still writes the whole resource as its body.
+  private static Optional<ResponseEntity<Resource>> unsatisfiableRangeAnswer(
+      String range, Resource resource, long length) {
+    if (range == null || isSatisfiable(range, resource)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+            .header(HttpHeaders.CONTENT_RANGE, "bytes */" + length)
+            .build());
+  }
+
   private static boolean isSatisfiable(String range, Resource resource) {
     try {
       HttpRange.toResourceRegions(HttpRange.parseRanges(range), resource);
@@ -347,7 +374,17 @@ public class StreamController {
 
   private static ResponseEntity<Resource> segmentAnswer(StoredSegment segment) {
     closeWhenRequestCompletes(StoredSegment.class, segment::close);
-    return ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(new StoredSegmentResource(segment));
+    var request = currentRequest();
+    var resource = new StoredSegmentResource(segment);
+    var range = request.getHeader(HttpHeaders.RANGE);
+    return unsatisfiableRangeAnswer(range, resource, segment.length())
+        .or(() -> TomcatSendfile.answer(request, segment, MP4_MEDIA_TYPE))
+        .orElseGet(() -> ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(resource));
+  }
+
+  private static HttpServletRequest currentRequest() {
+    return ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
+        .getRequest();
   }
 
   private boolean hasNoVariant(StreamSession session, String variantLabel) {
