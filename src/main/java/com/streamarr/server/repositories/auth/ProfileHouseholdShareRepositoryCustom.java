@@ -11,6 +11,7 @@ import com.streamarr.server.domain.pagination.Seek;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -46,6 +47,12 @@ public interface ProfileHouseholdShareRepositoryCustom {
   /** The share where the Profile's shares that the filter keeps list it; empty if not kept. */
   Optional<Row<ProfileHouseholdShare>> findRowOfProfile(
       UUID profileId, ShareStatusFilter filter, UUID shareId);
+
+  /**
+   * How many shares the filter keeps into each of the Households, in one statement; a Household
+   * with none is left out.
+   */
+  Map<UUID, Integer> countIntoHouseholds(Set<UUID> householdIds, ShareStatusFilter filter);
 
   /**
    * The PENDING share of the Profile into the Household becomes CANCELED (EXPIRED when already

@@ -10,6 +10,7 @@ import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.support.AuthTestSupport;
@@ -21,7 +22,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
@@ -195,6 +198,37 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
     var found = shareRepository.findPendingOfferIdsInto(away.getId(), now);
 
     assertThat(found).containsExactly(pending.getId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should count the shares the filter keeps into each Household when asked for several")
+  void shouldCountTheSharesTheFilterKeepsIntoEachHouseholdWhenAskedForSeveral() {
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var home = householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var away = householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var quiet =
+        householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var unasked =
+        householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var first =
+        profileRepository.saveAndFlush(
+            ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    var second =
+        profileRepository.saveAndFlush(
+            ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    shareRepository.saveAndFlush(offer(first.getId(), home.getId(), now.plusSeconds(60)));
+    shareRepository.saveAndFlush(offer(second.getId(), home.getId(), now.plusSeconds(60)));
+    shareRepository.saveAndFlush(offer(first.getId(), away.getId(), now.plusSeconds(60)));
+    shareRepository.saveAndFlush(offer(second.getId(), away.getId(), now.minusSeconds(1)));
+    shareRepository.saveAndFlush(offer(first.getId(), unasked.getId(), now.plusSeconds(60)));
+
+    var counts =
+        shareRepository.countIntoHouseholds(
+            Set.of(home.getId(), away.getId(), quiet.getId()),
+            new ShareStatusFilter(Set.of(ProfileShareStatus.PENDING), now));
+
+    assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(home.getId(), 2, away.getId(), 1));
   }
 
   private ProfileShareStatus statusOf(ProfileHouseholdShare share) {
