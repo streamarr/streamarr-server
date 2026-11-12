@@ -99,13 +99,14 @@ class ProfileShareLifecycleTest {
       expected.put(ChangedShare.of(share), status.isLive());
     }
 
-    // An offer past its expiry that the sweep has not reached is announced as it is stored.
+    // An offer past its expiry that the sweep has not reached is announced as the change that ends
+    // it, the expiry the sweep would have stored.
     var lapsed =
         shares.save(
             pending(UUID.randomUUID()).profileId(profileId).expiresAt(NOW.minusSeconds(1)).build());
-    expected.put(ChangedShare.of(lapsed), true);
+    expected.put(expiredAs(lapsed), true);
 
-    lifecycle.announceDeletionWithProfile(profileId);
+    lifecycle.announceDeletionWithProfile(profileId, NOW);
 
     assertThat(liveness()).containsExactlyInAnyOrderEntriesOf(expected);
   }
@@ -123,6 +124,12 @@ class ProfileShareLifecycleTest {
                 .householdId(offer.getHouseholdId())
                 .status(ProfileShareStatus.REJECTED)
                 .build());
+    var lapsed =
+        shares.save(
+            pending(UUID.randomUUID())
+                .householdId(offer.getHouseholdId())
+                .expiresAt(NOW.minusSeconds(1))
+                .build());
     var left = shares.save(pending(UUID.randomUUID()).status(ProfileShareStatus.ACTIVE).build());
     var ended =
         shares.save(
@@ -131,13 +138,14 @@ class ProfileShareLifecycleTest {
                 .status(ProfileShareStatus.ENDED)
                 .build());
 
-    lifecycle.announceDeletionWithHousehold(offer.getHouseholdId());
+    lifecycle.announceDeletionWithHousehold(offer.getHouseholdId(), NOW);
     lifecycle.announceMove(left.getProfileId(), left.getHouseholdId(), ended.getHouseholdId());
 
     assertThat(liveness())
         .containsOnly(
             Map.entry(ChangedShare.of(offer), true),
             Map.entry(ChangedShare.of(rejected), false),
+            Map.entry(expiredAs(lapsed), true),
             Map.entry(ChangedShare.of(left), true),
             Map.entry(ChangedShare.of(ended), false));
   }
@@ -270,7 +278,7 @@ class ProfileShareLifecycleTest {
                 .build());
     shares.save(pending(UUID.randomUUID()).build());
 
-    lifecycle.announceDeletionWithProfile(offer.getProfileId());
+    lifecycle.announceDeletionWithProfile(offer.getProfileId(), NOW);
 
     assertThat(announced())
         .containsExactlyInAnyOrder(ChangedShare.of(offer), ChangedShare.of(ended));
@@ -289,7 +297,7 @@ class ProfileShareLifecycleTest {
                 .build());
     shares.save(pending(UUID.randomUUID()).build());
 
-    lifecycle.announceDeletionWithHousehold(offer.getHouseholdId());
+    lifecycle.announceDeletionWithHousehold(offer.getHouseholdId(), NOW);
 
     assertThat(announced())
         .containsExactlyInAnyOrder(ChangedShare.of(offer), ChangedShare.of(rejected));
@@ -326,6 +334,11 @@ class ProfileShareLifecycleTest {
     return events.getEventsOfType(ProfileShareChangedEvent.class).stream()
         .map(ProfileShareChangedEvent::share)
         .toList();
+  }
+
+  private static ChangedShare expiredAs(ProfileHouseholdShare lapsed) {
+    return new ChangedShare(
+        lapsed.getId(), lapsed.getProfileId(), lapsed.getHouseholdId(), ProfileShareStatus.EXPIRED);
   }
 
   private static ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> pending(UUID offerer) {

@@ -442,6 +442,47 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should deliver the expiry and not the deletion to the Household when the Profile of an offer"
+          + " whose time ran out is deleted before the sweep")
+  void shouldDeliverExpiryAndNotDeletionToHouseholdWhenProfileOfLapsedOfferIsDeletedBeforeSweep() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    // An offer whose time ran out is no longer pending, so its Profile may be deleted, though the
+    // offer stays stored pending until the sweep reaches it.
+    var orphan = unsharedManagedProfile();
+    var shareId = offer(orphan);
+    nextShare(hostSocket, shareId);
+    var lapsed = shareRepository.findById(UUID.fromString(shareId)).orElseThrow();
+    lapsed.setExpiresAt(Instant.now().minusSeconds(1));
+    shareRepository.saveAndFlush(lapsed);
+
+    var deleted =
+        http.execute(
+            authTestSupport.freshAccountBearer(owner),
+            """
+            mutation { deleteProfile(input: {profileId: "%s"}) {
+              deletedProfileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()));
+    assertThat(deleted.at("/data/deleteProfile/deletedProfileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    var ending = changesUntil(hostSocket, shareId).getLast();
+    var laterId = offer(managedProfile());
+
+    // The offer was over before its Profile went: the Household hears that it expired, and not
+    // that the Profile was deleted.
+    assertThat(ending.path("share").path("status").asString())
+        .as("change in %s", ending)
+        .isEqualTo("EXPIRED");
+    assertPartiesHidden(ending.path("share"));
+    assertThat(changesUntil(hostSocket, laterId))
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(shareId);
+  }
+
+  @Test
+  @DisplayName(
       "Should deliver the share's removal to the Profile's managers when its Household is deleted")
   void shouldDeliverTheSharesRemovalToTheProfilesManagersWhenItsHouseholdIsDeleted() {
     var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));

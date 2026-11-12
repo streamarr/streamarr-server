@@ -170,7 +170,7 @@ public class ProfileLifecycleService {
                       authSessionRepository.clearProfileSelectionFromLiveSessions(
                           profileId, share.getHouseholdId()));
           invalidateProfileBoundArtifacts(profileId, PROFILE_DELETED, now);
-          shareLifecycle.announceDeletionWithProfile(profileId);
+          shareLifecycle.announceDeletionWithProfile(profileId, now);
           if (!profileRepository.tryDeleteUnlinked(profileId)) {
             throw profileDeletionRejection(profileId);
           }
