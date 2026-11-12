@@ -22,7 +22,10 @@ public class TmdbHttpClientConfiguration {
     return HttpCache.newBuilder().cacheOnMemory(cacheSizeMb * 1024 * 1024).build();
   }
 
-  @Bean("tmdb")
+  // The server's stop ends the downloads still running. A client's close would wait for every
+  // response body still arriving, and the cached client waits even for a download whose thread
+  // was interrupted.
+  @Bean(name = "tmdb", destroyMethod = "shutdownNow")
   HttpClient tmdbHttpClient(
       @Value("${tmdb.api.requests-per-second:35}") double requestsPerSecond,
       @Value("${tmdb.api.request-timeout-seconds:30}") long requestTimeoutSeconds,
@@ -60,7 +63,7 @@ public class TmdbHttpClientConfiguration {
     }
   }
 
-  @Bean("tmdbHealth")
+  @Bean(name = "tmdbHealth", destroyMethod = "shutdownNow")
   HttpClient tmdbHealthHttpClient(TmdbHealthProperties properties) {
     return Methanol.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
