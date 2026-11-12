@@ -563,6 +563,58 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should tell the Household once that a share is over when it ends while a ServerAdmin's"
+          + " deletion waits for the Profile")
+  void shouldTellHouseholdOnceThatShareIsOverWhenItEndsWhileDeletionWaitsForProfile()
+      throws Exception {
+    var orphan = managedProfile();
+    var shareId = offer(orphan);
+    decide("acceptProfileShare", shareId);
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var serverAdmin = adminIdentity();
+
+    var deleted =
+        endWhileDeletionWaitsForProfile(
+            orphan, () -> administrativelyDeleteProfile(serverAdmin, orphan), shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/administrativelyDeleteProfile/profileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    var changes = changesUntil(hostSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .extracting(change -> change.path("shareId").asString())
+        .containsOnlyOnce(shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household once that a visit is over when it ends while the visitor's"
+          + " Account deletion waits for their Profile")
+  void shouldTellHouseholdOnceThatVisitIsOverWhenItEndsWhileAccountDeletionWaitsForProfile()
+      throws Exception {
+    var visitor = authTestSupport.createHouseholdMemberIdentity(owner);
+    identities.add(visitor);
+    var shareId = activeVisit(visitor.profile());
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+
+    var deleted =
+        endWhileDeletionWaitsForProfile(visitor.profile(), () -> deleteMyAccount(visitor), shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/deleteMyAccount/accountId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(visitor.account().getId().toString());
+    var changes = changesUntil(hostSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .extracting(change -> change.path("shareId").asString())
+        .containsOnlyOnce(shareId);
+  }
+
+  @Test
+  @DisplayName(
       "Should tell the Household only that an offer expired when its time runs out while a"
           + " ServerAdmin deletes its Profile")
   void shouldTellHouseholdOnlyThatOfferExpiredWhenItsTimeRunsOutWhileItsProfileIsDeleted()
@@ -1020,6 +1072,37 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
       held.release();
       ending.get(10, TimeUnit.SECONDS);
+      return deleting.get(10, TimeUnit.SECONDS);
+    }
+  }
+
+  /**
+   * Holds the Profile's row FOR SHARE, so a deletion that locks the Profile waits there, and has
+   * the host end the share meanwhile: the end's own share lock on the Profile does not conflict, so
+   * the end commits while the deletion waits. Then lets the deletion finish; answers its response.
+   */
+  private JsonNode endWhileDeletionWaitsForProfile(
+      Profile profile, Callable<JsonNode> deletion, String shareId) throws Exception {
+    var profileRow =
+        RowLockTarget.builder()
+            .dataSource(dataSource)
+            .table("profile")
+            .rowId(profile.getId())
+            .shared(true)
+            .build();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var held = lockRow(profileRow)) {
+      var deleting = executor.submit(deletion);
+      awaitWaitersBehind(jdbcTemplate, held.backendPid(), 1);
+      var ended = executor.submit(() -> endAsHost(shareId)).get(10, TimeUnit.SECONDS);
+      assertThat(
+              shareRepository
+                  .findById(UUID.fromString(shareId))
+                  .map(ProfileHouseholdShare::getStatus))
+          .as("share while the deletion waits, after %s", ended)
+          .contains(ProfileShareStatus.ENDED);
+
+      held.release();
       return deleting.get(10, TimeUnit.SECONDS);
     }
   }
