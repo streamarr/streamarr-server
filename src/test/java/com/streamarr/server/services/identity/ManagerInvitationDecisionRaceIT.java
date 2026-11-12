@@ -172,7 +172,7 @@ class ManagerInvitationDecisionRaceIT extends AbstractIntegrationTest {
                 managerService.inviteProfileManager(
                     identity(sam), alex.getId(), "Mara@Example.com"));
 
-    assertThat(outcomes).allMatch(Outcome.Accepted.class::isInstance);
+    assertThat(outcomes).hasSize(2).allMatch(Outcome.Accepted.class::isInstance);
     assertThat(invitationRepository.findAll())
         .filteredOn(invitation -> alex.getId().equals(invitation.getProfileId()))
         .extracting(ProfileManagerInvitation::getStatus)

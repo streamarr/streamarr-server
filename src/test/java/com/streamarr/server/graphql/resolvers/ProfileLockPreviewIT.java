@@ -182,7 +182,7 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
     assertThat(preview.path("households"))
         .extracting(
             household -> household.path("household").path("id").asString(),
-            household -> lockedIds(household))
+            ProfileLockPreviewIT::lockedIds)
         .containsExactly(
             tuple(
                 smith.household().getId().toString(),
@@ -206,7 +206,7 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
     assertThat(preview.path("households"))
         .extracting(
             household -> household.path("household").path("id").asString(),
-            household -> lockedIds(household))
+            ProfileLockPreviewIT::lockedIds)
         .containsExactlyInAnyOrder(
             tuple(
                 smith.household().getId().toString(),
