@@ -1,5 +1,6 @@
 package com.streamarr.server.services.notification;
 
+import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -11,12 +12,9 @@ import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
 import java.time.Clock;
-import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -94,23 +92,27 @@ public class NotificationService {
   }
 
   /**
-   * A committed change to the Account's Notifications as the Account reads it now: each of the
-   * change's Notifications at its place in the list, or gone, and the unread count. It decides
-   * nothing: the Account's access to its Notifications was decided when it began to follow them.
+   * One Notification of a committed change as the Account reads it now, at its place in the list,
+   * or empty once it no longer exists. It decides nothing: the Account's access to its
+   * Notifications was decided when it began to follow them.
    */
   @Transactional(readOnly = true)
-  public NotificationsChangeRead changeOf(
-      @NonNull AuthenticatedIdentity identity, @NonNull Collection<UUID> notificationIds) {
-    var recipient = RecipientReference.account(identity.accountId());
-    var kept =
-        notificationRepository.rowsOfRecipientWithIds(recipient, notificationIds).stream()
-            .collect(Collectors.toMap(row -> row.item().id(), Function.identity()));
-    return new NotificationsChangeRead(
-        notificationIds.stream()
-            .distinct()
-            .map(id -> new NotificationsChangeRead.Changed(id, Optional.ofNullable(kept.get(id))))
-            .toList(),
-        unreadCountOf(identity.accountId()));
+  public Optional<Row<StoredNotification>> changedNotification(
+      @NonNull AuthenticatedIdentity identity, @NonNull UUID notificationId) {
+    return notificationRepository
+        .rowsOfRecipientWithIds(
+            RecipientReference.account(identity.accountId()), List.of(notificationId))
+        .stream()
+        .findFirst();
+  }
+
+  /**
+   * The Account's unread count after a committed change. It decides nothing: the Account's access
+   * to its Notifications was decided when it began to follow them.
+   */
+  @Transactional(readOnly = true)
+  public int unreadCountAfterChange(@NonNull AuthenticatedIdentity identity) {
+    return unreadCountOf(identity.accountId());
   }
 
   private int unreadCountOf(UUID accountId) {

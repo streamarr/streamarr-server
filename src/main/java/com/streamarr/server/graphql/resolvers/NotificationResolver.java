@@ -13,7 +13,7 @@ import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.NotificationDetails;
-import com.streamarr.server.graphql.dto.NotificationsChangeDetails;
+import com.streamarr.server.graphql.dto.OrderedEdge;
 import com.streamarr.server.graphql.inputs.MarkNotificationsReadInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.notification.MarkNotificationsReadPayload;
@@ -22,8 +22,8 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.events.notification.NotificationKind;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.notification.NotificationService;
-import com.streamarr.server.services.notification.NotificationsChangeRead;
 import com.streamarr.server.services.notification.NotificationsList;
+import com.streamarr.server.services.notification.StoredNotification;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.MediaOrder;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -75,32 +75,12 @@ public class NotificationResolver {
         NotificationResolver::orderOf);
   }
 
-  /**
-   * A change's Notifications as the schema shows them: each with the query's edge, or a null edge
-   * once it no longer exists.
-   */
-  NotificationsChangeDetails changeDetails(UUID accountId, NotificationsChangeRead change) {
-    var now = clock.instant();
-    var list = listOf(accountId);
-    return new NotificationsChangeDetails(
-        change.notifications().stream()
-            .map(
-                changed ->
-                    new NotificationsChangeDetails.NotificationChangeDetails(
-                        changed.notificationId(),
-                        changed
-                            .row()
-                            .map(
-                                row ->
-                                    connections.toEdge(
-                                        new Row<>(
-                                            NotificationDetails.from(row.item(), now),
-                                            row.position()),
-                                        list,
-                                        NotificationResolver::orderOf))
-                            .orElse(null)))
-            .toList(),
-        change.unreadCount());
+  /** The edge the notifications query gives the Notification, read for the Account at once. */
+  OrderedEdge<NotificationDetails> edgeOf(UUID accountId, Row<StoredNotification> row) {
+    return connections.toEdge(
+        new Row<>(NotificationDetails.from(row.item(), clock.instant()), row.position()),
+        listOf(accountId),
+        NotificationResolver::orderOf);
   }
 
   @DgsQuery

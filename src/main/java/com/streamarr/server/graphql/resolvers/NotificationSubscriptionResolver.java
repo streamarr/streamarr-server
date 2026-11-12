@@ -17,23 +17,19 @@ public class NotificationSubscriptionResolver {
 
   private final AuthorizationService authorizationService;
   private final NotificationService notificationService;
-  private final NotificationResolver notificationResolver;
   private final KeyedSubscriptionBroadcaster<UUID, NotificationsChange>
       notificationsChangeBroadcaster;
 
   // The Account comes from the token that opened the socket, never from an argument. Access is
-  // decided once, when the field opens; each change is then read from the Account's own rows, and
-  // a Notification that no longer exists arrives with a null edge.
+  // decided once, when the field opens. The stream carries only the ids of each change; its fields
+  // read the Account's own rows when the change is delivered, so a read that fails is an error at
+  // that field alone and the operation goes on.
   @DgsSubscription
   public Publisher<NotificationsChangeDetails> notificationsChanged() {
     var identity = authorizationService.currentIdentity();
     notificationService.requireViewNotifications(identity);
     return notificationsChangeBroadcaster
         .register(identity.accountId())
-        .map(
-            change ->
-                notificationResolver.changeDetails(
-                    identity.accountId(),
-                    notificationService.changeOf(identity, change.notificationIds())));
+        .map(change -> new NotificationsChangeDetails(identity, change.notificationIds()));
   }
 }

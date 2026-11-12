@@ -10,13 +10,17 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.repositories.notification.JooqNotificationRepository;
+import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
+import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
@@ -53,13 +57,16 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,8 +75,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
@@ -156,6 +167,8 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private MeterRegistry meterRegistry;
+
+  @Autowired private UnreadCountFailures unreadCountFailures;
 
   private final List<TestIdentity> identities = new ArrayList<>();
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
@@ -916,6 +929,36 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should null the unread count with an error at its path, and deliver the next change on the"
+          + " same operation, when the count cannot be read")
+  void shouldNullTheUnreadCountAndDeliverTheNextChangeWhenTheCountCannotBeRead() {
+    var socket = subscribedSocket(authTestSupport.accountBearer(theo));
+    unreadCountFailures.failTheNextCount();
+
+    var first = tellSentinel(theo).get(accountOf(theo));
+    var failed = socket.nextMessageFor(OPERATION);
+    var second = tellSentinel(theo).get(accountOf(theo));
+    var delivered = nextChange(socket);
+
+    assertThat(failed.path("type").asString()).isEqualTo("next");
+    assertThat(failed.path("payload").path("errors").valueStream())
+        .singleElement()
+        .satisfies(
+            error ->
+                assertThat(error.path("path").valueStream().map(JsonNode::asString))
+                    .containsExactly(FIELD, "unreadNotificationCount"));
+    var withoutCount = failed.path("payload").path("data").path(FIELD);
+    assertThat(withoutCount.path("unreadNotificationCount").isNull()).isTrue();
+    assertThat(onlyChange(withoutCount).path("notificationId").asString())
+        .isEqualTo(first.toString());
+    assertThat(onlyChange(withoutCount).path("edge").isNull()).isFalse();
+    assertThat(onlyChange(delivered).path("notificationId").asString())
+        .isEqualTo(second.toString());
+    assertThat(delivered.path("unreadNotificationCount").asInt()).isEqualTo(2);
+  }
+
+  @Test
   @DisplayName("Should refuse notificationsChanged with FORBIDDEN when the session is device-bound")
   void shouldRefuseNotificationsChangedWithForbiddenWhenTheSessionIsDeviceBound() {
     var socket = connect(authTestSupport.deviceBoundProfileBearer(riversideAdmin));
@@ -1083,5 +1126,87 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   private TestIdentity track(TestIdentity identity) {
     identities.add(identity);
     return identity;
+  }
+
+  @TestConfiguration(proxyBeanMethods = false)
+  static class UnreadCountFailureConfiguration {
+
+    @Bean
+    @Primary
+    UnreadCountFailures unreadCountFailures(JooqNotificationRepository stored) {
+      return new UnreadCountFailures(stored);
+    }
+  }
+
+  /** The module's table, whose unread count a test can make fail once. */
+  @RequiredArgsConstructor
+  static final class UnreadCountFailures implements NotificationRepository {
+
+    private final NotificationRepository stored;
+    private final AtomicBoolean failNextCount = new AtomicBoolean();
+
+    void failTheNextCount() {
+      failNextCount.set(true);
+    }
+
+    @Override
+    public int countUnread(RecipientReference recipient, Instant now) {
+      if (failNextCount.compareAndSet(true, false)) {
+        throw new DataAccessResourceFailureException("The unread count could not be read");
+      }
+
+      return stored.countUnread(recipient, now);
+    }
+
+    @Override
+    public List<ChangedNotification> tellNews(TellNotificationEvent tell) {
+      return stored.tellNews(tell);
+    }
+
+    @Override
+    public List<ChangedNotification> tellRequests(TellNotificationEvent tell) {
+      return stored.tellRequests(tell);
+    }
+
+    @Override
+    public List<ChangedNotification> resolve(ResolveRequestsEvent resolution) {
+      return stored.resolve(resolution);
+    }
+
+    @Override
+    public List<ChangedNotification> dismiss(DismissalSelector selector) {
+      return stored.dismiss(selector);
+    }
+
+    @Override
+    public void deleteOfRecipient(RecipientReference recipient) {
+      stored.deleteOfRecipient(recipient);
+    }
+
+    @Override
+    public int deleteHistoryBefore(Instant cutoff, Instant now, int limit) {
+      return stored.deleteHistoryBefore(cutoff, now, limit);
+    }
+
+    // The tests' stored rows take the name Row.
+    @Override
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
+    public List<com.streamarr.server.domain.pagination.Row<StoredNotification>> rowsOfRecipient(
+        RecipientReference recipient, Seek seek) {
+      return stored.rowsOfRecipient(recipient, seek);
+    }
+
+    @Override
+    @SuppressWarnings("checkstyle:fullyQualifiedName")
+    public List<com.streamarr.server.domain.pagination.Row<StoredNotification>>
+        rowsOfRecipientWithIds(RecipientReference recipient, Collection<UUID> notificationIds) {
+      return stored.rowsOfRecipientWithIds(recipient, notificationIds);
+    }
+
+    @Override
+    public List<ChangedNotification> markRead(
+        RecipientReference recipient, Collection<UUID> notificationIds, Instant now) {
+      return stored.markRead(recipient, notificationIds, now);
+    }
   }
 }
