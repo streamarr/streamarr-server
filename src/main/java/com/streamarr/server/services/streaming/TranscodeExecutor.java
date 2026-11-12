@@ -168,7 +168,7 @@ public interface TranscodeExecutor {
    * The software encoders of connected, source-accessible workers with a free slot, with the encode
    * features that each lists. A software encode after a hardware encoder failure runs only on a
    * software encoder, so it continues only when one of these encoders writes the failed encode's
-   * range and bit depth (ADR 0044, ADR 0013).
+   * range (ADR 0044, ADR 0013).
    */
   List<WorkerVerifiedEncoder> encodableSoftwareVideoEncoders();
 

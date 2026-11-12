@@ -1237,6 +1237,24 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.SDR_8_BIT);
   }
 
+  // 8-bit SDR keeps the range of a 10-bit SDR encode (ADR 0013).
+  @Test
+  @DisplayName(
+      "Should plan 8-bit SDR with the software encoder when a software continuation continues a"
+          + " 10-bit SDR encode and no software encoder writes 10 bits")
+  void shouldPlan8BitSdrWhenASoftwareContinuationContinuesA10BitSdrEncodeWithout10BitSoftware() {
+    var decision =
+        service
+            .decide(
+                softwareContinuationOfA10BitSource(
+                        CompatibleBase.SDR, EncodeFormat.SDR_10_BIT, Set.of())
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.SDR_8_BIT);
+    assertThat(decision.softwareEncoder()).isTrue();
+  }
+
   // An AV1 encode of a 10-bit HEVC source in the compatible base for a client that declares AV1
   // with SDR and PQ at 10 bits, continued on a software AV1 encoder that lists the encode features.
   private TranscodeDecisionRequest.TranscodeDecisionRequestBuilder

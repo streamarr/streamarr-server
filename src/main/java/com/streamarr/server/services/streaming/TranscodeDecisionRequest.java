@@ -22,7 +22,7 @@ import lombok.NonNull;
  * names why the format attempt does not direct-play the source file, and the decision names them
  * before its own reasons. {@code softwareContinuation} names the encode that the decision continues
  * with the software encoder after a hardware encoder failed. The decision may encode its codec
- * family alone (ADR 0044), in its format alone (ADR 0013).
+ * family alone (ADR 0044), in its range alone (ADR 0013).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecisionRequest(
@@ -55,6 +55,15 @@ public record TranscodeDecisionRequest(
     verifiedVideoEncoders =
         Stream.concat(verifiedVideoEncoders.stream(), videoEncoders.stream()).distinct().toList();
     directPlayRefusals = List.copyOf(directPlayRefusals);
+  }
+
+  /**
+   * Whether an encode may plan this format: it did not fail earlier in the playback session, and a
+   * software continuation keeps the failed encode's range in it.
+   */
+  public boolean mayEncode(EncodeFormat format) {
+    return !excludedEncodeFormats.contains(format)
+        && softwareContinuation.map(continuation -> continuation.mayEncode(format)).orElse(true);
   }
 
   // Lombok builder defaults — its generated setters assign them
