@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.av1EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
@@ -426,8 +427,9 @@ class HlsVariantSwitchSmokeTest {
         Named.of("an HDR10 H.265 source with B-frames", HDR10_WITH_B_FRAMES));
   }
 
-  // What every switching player sees, whichever variant it ends on: each played segment opens on a
-  // keyframe and signals the source's range and bit depth.
+  // What every switching player sees, whichever variant it ends on. The copy and the encode stay
+  // in the copy's codec family (ADR 0050), and each played segment opens on a keyframe and signals
+  // the source's range and bit depth.
   private static void assertSwitchedSegmentsPlayAsTheSource(SwitchingPlayback playback) {
     var source = playback.source();
     var copied = playback.playlists().get(Variant.COPIED);
@@ -467,6 +469,10 @@ class HlsVariantSwitchSmokeTest {
         .flatExtracting(ReadMedia::pictures)
         .as("the segments played from the 360p variant decode to none of the source's pictures")
         .doesNotContainAnyElementsOf(source.pictures());
+    assertThat(played)
+        .extracting(ReadMedia::videoCodecs)
+        .as("each played segment is in the copy's codec family")
+        .containsOnly(source.videoCodecs());
     assertThat(played)
         .extracting(ReadMedia::rangeSignalling)
         .as("each played segment signals the source's range and bit depth")
@@ -536,8 +542,9 @@ class HlsVariantSwitchSmokeTest {
         .build();
   }
 
-  // A player of H.264 in 8-bit SDR and of H.265 up to 10 bits in SDR, PQ and HLG: Auto copies the
-  // source and encodes the 360p variant in the copy's range and bit depth.
+  // A player of H.264 in 8-bit SDR and of H.265 and AV1 up to 10 bits in SDR, PQ and HLG: Auto
+  // copies the source and encodes the 360p variant in the copy's range and bit depth. The codec
+  // preference puts AV1 before H.265, so only the copy's codec family makes that variant H.265.
   private static SwitchedSource hdr10Source(String fileName, String x265Parameters) {
     var arguments = new ArrayList<>(NOISY_480P_PICTURE_AND_TONE);
     arguments.addAll(
@@ -555,6 +562,7 @@ class HlsVariantSwitchSmokeTest {
             "-tag:v",
             "hvc1"));
     arguments.addAll(AAC_IN_MATROSKA);
+    var everyRange = List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG);
     return SwitchedSource.builder()
         .fileName(fileName)
         .generatorArguments(List.copyOf(arguments))
@@ -563,10 +571,8 @@ class HlsVariantSwitchSmokeTest {
                 .video(
                     List.of(
                         h264EntryBuilder().build(),
-                        hevcEntryBuilder()
-                            .compatibleBases(
-                                List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
-                            .build()))
+                        hevcEntryBuilder().compatibleBases(everyRange).build(),
+                        av1EntryBuilder().compatibleBases(everyRange).build()))
                 .build())
         .videoRange("PQ")
         .build();
@@ -762,6 +768,10 @@ class HlsVariantSwitchSmokeTest {
       List<String> pictures,
       ProbedPackets packets,
       Map<String, String> rangeSignalling) {
+
+    List<String> videoCodecs() {
+      return packets.codecsOf(VIDEO);
+    }
 
     long decodedFrameCount() {
       return pictures.size();
