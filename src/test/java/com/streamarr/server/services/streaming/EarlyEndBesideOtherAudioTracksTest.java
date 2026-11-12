@@ -189,10 +189,11 @@ class EarlyEndBesideOtherAudioTracksTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("sessionsOnFilesWhoseHeaderAloneStatesTheEnds")
   @DisplayName(
-      "Should encode a delivered stream that ends at least one segment before the container's"
-          + " duration when no keyframe packet scan read the ends")
-  void shouldEncodeADeliveredStreamThatEndsASegmentBeforeTheContainersDurationWhenNoScanReadTheEnds(
-      Session session) {
+      "Should encode a delivered stream only when it ends at least one segment before a track that"
+          + " sets the container's duration when no keyframe packet scan read the ends")
+  void
+      shouldEncodeADeliveredStreamOnlyWhenItEndsASegmentBeforeATrackThatSetsTheContainersDurationWhenNoScanReadTheEnds(
+          Session session) {
     accepted(playback.start(sessionStart(session, seedWithHeaderEnds(session.file()))));
 
     assertStartedAsExpected(session);
@@ -229,7 +230,19 @@ class EarlyEndBesideOtherAudioTracksTest {
                 .advertisedEnd(LATE_END)),
         session(
             "a file whose one track ends with the video",
-            copied().file(videoToTheEarlyEnd(ENGLISH_TO_THE_EARLY_END)).advertisedEnd(EARLY_END)));
+            copied().file(videoToTheEarlyEnd(ENGLISH_TO_THE_EARLY_END)).advertisedEnd(EARLY_END)),
+        // No stream has media after 10 s, so a copy that runs short there ends playback normally
+        // (ADR 0052) instead of an encode that holds the picture and pads silence up to 17 s.
+        session(
+            "a file whose container's duration runs a segment past every stream's end",
+            copied()
+                .file(
+                    SourceFile.builder()
+                        .videoEnd(EARLY_END)
+                        .audioTracks(List.of(ENGLISH_TO_THE_EARLY_END))
+                        .statedDuration(LATE_END)
+                        .build())
+                .advertisedEnd(LATE_END)));
   }
 
   private void assertStartedAsExpected(Session session) {
@@ -518,10 +531,11 @@ class EarlyEndBesideOtherAudioTracksTest {
   /**
    * A Matroska file: H.264 High video at stream 0 that ends at {@code videoEnd}, whose keyframes
    * open every 2 s, then the audio tracks in the listed order. The container's duration is the
-   * latest stream end.
+   * latest stream end, or {@code statedDuration} when the header states one past every stream.
    */
   @Builder
-  private record SourceFile(Duration videoEnd, List<AudioTrack> audioTracks) {
+  private record SourceFile(
+      Duration videoEnd, List<AudioTrack> audioTracks, Duration statedDuration) {
 
     MediaProbe probeWithHeaderEnds() {
       var ends =
@@ -596,6 +610,10 @@ class EarlyEndBesideOtherAudioTracksTest {
     }
 
     private Duration containerDuration() {
+      if (statedDuration != null) {
+        return statedDuration;
+      }
+
       return streamEnds().stream()
           .map(SourceStreamEnd::endTime)
           .max(Duration::compareTo)
