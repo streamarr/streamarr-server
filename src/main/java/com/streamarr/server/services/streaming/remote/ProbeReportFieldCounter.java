@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.WireFormat;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import java.util.Optional;
 import java.util.function.IntFunction;
 
@@ -18,6 +19,9 @@ final class ProbeReportFieldCounter {
   /** A rule that the bytes of a probe report break. */
   enum BrokenRule {
     RESULT_LENGTH("Worker probe report's result is longer than the result length limit"),
+    KEYFRAMES("Worker probe report holds more keyframes than the keyframe limit"),
+    MEASURED_KEYFRAME_INTERVALS(
+        "Worker probe report holds more measured keyframe intervals than the limit"),
     OVERLONG_VARINT("Worker probe report holds a varint longer than ten bytes"),
     INVALID_TAG("Worker probe report holds a tag of field number zero or of no wire type"),
     GROUP("Worker probe report holds a group"),
@@ -39,6 +43,10 @@ final class ProbeReportFieldCounter {
   private static final int LONGEST_VARINT_BYTES = 10;
 
   private final long resultLengthLimitBytes;
+  private final Count presentationTimeDeltas;
+  private final Count decodeTimeDeltas;
+  private final Count intervalBytes;
+  private final Count intervalPacketCounts;
   private final Message report;
   private long resultBytes;
   // Unset while the bytes keep every rule.
@@ -46,7 +54,13 @@ final class ProbeReportFieldCounter {
 
   ProbeReportFieldCounter(ProbeReportLimits limits, long reportLengthBytes) {
     resultLengthLimitBytes = limits.resultLengthLimitBytes();
-    report = new Message(reportLengthBytes, ProbeReportFieldCounter::reportField);
+    presentationTimeDeltas = new Count(limits.keyframeLimit(), BrokenRule.KEYFRAMES);
+    decodeTimeDeltas = new Count(limits.keyframeLimit(), BrokenRule.KEYFRAMES);
+    intervalBytes =
+        new Count(limits.measuredKeyframeIntervalLimit(), BrokenRule.MEASURED_KEYFRAME_INTERVALS);
+    intervalPacketCounts =
+        new Count(limits.measuredKeyframeIntervalLimit(), BrokenRule.MEASURED_KEYFRAME_INTERVALS);
+    report = new Message(reportLengthBytes, this::reportField);
   }
 
   /** Reads the next bytes of the probe report. */
@@ -68,9 +82,22 @@ final class ProbeReportFieldCounter {
     return Optional.ofNullable(broken);
   }
 
-  private static Field reportField(int number) {
+  private Field reportField(int number) {
     return switch (number) {
       case ProbeAttemptReport.RESULT_FIELD_NUMBER -> new Result();
+      case ProbeAttemptReport.KEYFRAME_PRESENTATION_TIME_DELTAS_FIELD_NUMBER ->
+          presentationTimeDeltas;
+      case ProbeAttemptReport.KEYFRAME_DECODE_TIME_DELTAS_FIELD_NUMBER -> decodeTimeDeltas;
+      case ProbeAttemptReport.STREAM_MEASUREMENT_INTERVALS_FIELD_NUMBER -> new MeasuredStream();
+      default -> new Skipped();
+    };
+  }
+
+  private Field measuredStreamField(int number) {
+    return switch (number) {
+      case StreamMeasurementIntervals.KEYFRAME_INTERVAL_BYTES_FIELD_NUMBER -> intervalBytes;
+      case StreamMeasurementIntervals.KEYFRAME_INTERVAL_PACKET_COUNTS_FIELD_NUMBER ->
+          intervalPacketCounts;
       default -> new Skipped();
     };
   }
@@ -94,17 +121,41 @@ final class ProbeReportFieldCounter {
   /** The probe report's result, whose length counts and whose bytes the counter skips. */
   private record Result() implements Field {}
 
+  /** One measured stream of the probe report, whose fields the counter reads. */
+  private record MeasuredStream() implements Field {}
+
   /** A field whose bytes the counter skips. */
   private record Skipped() implements Field {}
+
+  /** A repeated scalar field whose entries count against a limit, packed or not. */
+  private final class Count implements Field {
+    private final long limit;
+    private final BrokenRule rule;
+    private long entries;
+
+    private Count(long limit, BrokenRule rule) {
+      this.limit = limit;
+      this.rule = rule;
+    }
+
+    private void add() {
+      entries++;
+      if (entries > limit) {
+        breakRule(rule);
+      }
+    }
+  }
 
   private enum Step {
     TAG,
     VARINT,
     LENGTH,
-    SKIP
+    SKIP,
+    PACKED,
+    MEASURED_STREAM
   }
 
-  /** Reads one message of the wire format, a byte at a time. */
+  /** Reads one message of the wire format, a byte at a time: the report, or a measured stream. */
   private final class Message {
     private final IntFunction<Field> fields;
     // The bytes of the message that have not arrived.
@@ -114,6 +165,10 @@ final class ProbeReportFieldCounter {
     private int varintBytes;
     private Field field;
     private long fieldUnread;
+    // Set while the message reads a packed run of this count's entries.
+    private Count packed;
+    // Set while the message reads one of its measured streams.
+    private Message measuredStream;
 
     private Message(long length, IntFunction<Field> fields) {
       this.unread = length;
@@ -127,6 +182,8 @@ final class ProbeReportFieldCounter {
         case VARINT -> readVarintValue(b);
         case LENGTH -> readLength(b);
         case SKIP -> readSkipped();
+        case PACKED -> readPacked(b);
+        case MEASURED_STREAM -> readMeasuredStream(b);
       }
     }
 
@@ -160,9 +217,14 @@ final class ProbeReportFieldCounter {
     }
 
     private void readVarintValue(byte b) {
-      if (addToVarint(b)) {
-        takeVarint();
-        step = Step.TAG;
+      if (!addToVarint(b)) {
+        return;
+      }
+
+      takeVarint();
+      step = Step.TAG;
+      if (field instanceof Count count) {
+        count.add();
       }
     }
 
@@ -177,22 +239,73 @@ final class ProbeReportFieldCounter {
         return;
       }
 
-      if (field instanceof Result) {
-        addToResult(length);
+      fieldUnread = length;
+      step =
+          switch (field) {
+            case Result _ -> {
+              addToResult(length);
+              yield Step.SKIP;
+            }
+            case Count count -> {
+              packed = count;
+              yield Step.PACKED;
+            }
+            case MeasuredStream _ -> {
+              measuredStream =
+                  new Message(length, ProbeReportFieldCounter.this::measuredStreamField);
+              yield Step.MEASURED_STREAM;
+            }
+            case Skipped _ -> Step.SKIP;
+          };
+      if (length == 0) {
+        endField();
       }
-
-      skip(length);
     }
 
     private void skip(int length) {
       fieldUnread = length;
-      step = length == 0 ? Step.TAG : Step.SKIP;
+      step = Step.SKIP;
     }
 
     private void readSkipped() {
       fieldUnread--;
       if (fieldUnread == 0) {
-        step = Step.TAG;
+        endField();
+      }
+    }
+
+    private void readPacked(byte b) {
+      fieldUnread--;
+      if (addToVarint(b)) {
+        takeVarint();
+        packed.add();
+      }
+
+      if (fieldUnread == 0) {
+        endField();
+      }
+    }
+
+    private void readMeasuredStream(byte b) {
+      fieldUnread--;
+      measuredStream.read(b);
+      if (fieldUnread == 0) {
+        endField();
+      }
+    }
+
+    private void endField() {
+      var endsBetweenFields =
+          switch (step) {
+            case PACKED -> varintBytes == 0;
+            case MEASURED_STREAM -> measuredStream.isBetweenFields();
+            default -> true;
+          };
+      step = Step.TAG;
+      packed = null;
+      measuredStream = null;
+      if (!endsBetweenFields) {
+        breakRule(BrokenRule.ENDS_INSIDE_A_FIELD);
       }
     }
 

@@ -634,8 +634,9 @@ class ProbeReportCallTest {
       throws Exception {
     var worker = ReportingWorker.connectedTo(LIMITS);
     var probe = worker.dispatch();
-    // A worker of another probe version may also build its report by other rules.
-    var report = withKeyframes(invalidMedia(probe.request()), LIMITS.keyframeLimit() + 1);
+    // A worker of another probe version may also build its report by other rules, such as the
+    // rules that the server checks once it has decoded the report.
+    var report = withKeyframes(invalidMedia(probe.request()), 2).addKeyframeDecodeTimeDeltas(1);
     report.getResultBuilder().setProbeVersion(ReportingWorker.PROBE_VERSION + 1);
 
     var call = worker.report(probe.request(), report.build());

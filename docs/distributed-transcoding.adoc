@@ -230,11 +230,11 @@ The server refuses to start when a limit or the idle timeout is not positive, wh
 The first message of a report call names the worker session, the worker and the probe attempt, and states the length of the probe report.
 The server reads the report call only when that message names a probe attempt that the worker's live session runs and that no other report call reports. It refuses any other report call with `PERMISSION_DENIED`, or with `ALREADY_EXISTS` when another report call already reports the attempt.
 The server reads one message at a time and reads the fields of the probe report as they arrive, without decoding them.
-It ends the report call at the first message after which the result is longer than the result length limit, or after which the bytes break the protobuf wire format, and frees the probe report's room in the budget at once.
+It ends the report call at the first message after which the result is longer than the result length limit, the keyframes exceed the keyframe limit, or the measured keyframe intervals exceed their limit, or after which the bytes break the protobuf wire format, and frees the probe report's room in the budget at once.
 After the last message it decodes the probe report, checks it against the worker contract, and answers once with the probe attempt and the length that it accepted.
 A probe report breaks the worker contract when it exceeds a stated limit, when its bytes number more or fewer than its first message stated, or when its bytes do not decode.
 The server then ends that report call with `INVALID_ARGUMENT`, and the violation counts toward the three consecutive contract violations that end a probe's retries. The worker session and its other probes continue.
-A probe report of another probe version than the server asked for fails its probe as misconfigured, and its report call ends with `FAILED_PRECONDITION`.
+A probe report of another probe version than the server asked for fails its probe as misconfigured, and its report call ends with `FAILED_PRECONDITION`, unless the probe report breaks a stated limit or the wire format, which the server finds before it decodes the probe version.
 When a report call ends without the server's answer and without a contract violation, the probe fails as on a lost worker and runs again. A message of a report call above the 128 KiB limit of one message ends only that report call, in this way.
 A worker also sends `ProbeAttemptEndedWithoutReport` when a report call ended without the server's answer.
 A probe attempt keeps its unit of the worker's probe capacity until its report call ends or that event names the attempt.

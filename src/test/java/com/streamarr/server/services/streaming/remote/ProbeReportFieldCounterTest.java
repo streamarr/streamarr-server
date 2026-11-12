@@ -13,8 +13,11 @@ import com.google.protobuf.WireFormat;
 import com.streamarr.server.services.streaming.remote.ProbeReportFieldCounter.BrokenRule;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
@@ -159,7 +163,24 @@ class ProbeReportFieldCounterTest {
         arguments("the end of a group", bytes(0x0c), BrokenRule.GROUP),
         arguments("wire type 6", bytes(0x0e), BrokenRule.INVALID_TAG),
         arguments("wire type 7", bytes(0x0f), BrokenRule.INVALID_TAG),
-        arguments("field number zero", bytes(0x02), BrokenRule.INVALID_TAG));
+        arguments("field number zero", bytes(0x02), BrokenRule.INVALID_TAG),
+        arguments(
+            "a varint of eleven bytes in a packed run",
+            bytes(0x12, 11).concat(repeated(0x80, 10)),
+            BrokenRule.OVERLONG_VARINT),
+        arguments(
+            "a packed run that ends inside an entry",
+            bytes(0x12, 1, 0x80),
+            BrokenRule.ENDS_INSIDE_A_FIELD),
+        arguments(
+            "a measured stream that ends inside one of its fields",
+            bytes(0x22, 1, 0x10),
+            BrokenRule.ENDS_INSIDE_A_FIELD),
+        arguments(
+            "a field of a measured stream that is longer than the measured stream",
+            bytes(0x22, 2, 0x12, 1),
+            BrokenRule.FIELD_PAST_ITS_END),
+        arguments("a group inside a measured stream", bytes(0x22, 1, 0x0b), BrokenRule.GROUP));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -181,6 +202,153 @@ class ProbeReportFieldCounterTest {
         arguments("a length", bytes(0x0a, 0x80)),
         arguments("a fixed64 value", bytes(0x11, 0, 0, 0)),
         arguments("a fixed32 value", bytes(0x15, 0)));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(CountedList.class)
+  @DisplayName(
+      "Should break the list's limit at the byte that ends its first entry beyond the limit when"
+          + " the probe report arrives split at any byte")
+  void shouldBreakListsLimitAtByteThatEndsItsFirstEntryBeyondLimitWhenReportArrivesSplitAtAnyByte(
+      CountedList list) {
+    // The last byte ends the first entry beyond the limit.
+    var bytes = list.beyondTheLimit().toByteString();
+
+    for (var split = 0; split < bytes.size(); split++) {
+      var counter = counterOf(bytes);
+
+      assertThat(counter.read(bytes.substring(0, split))).as("bytes before %d", split).isEmpty();
+      assertThat(counter.read(bytes.substring(split)))
+          .as("bytes from %d", split)
+          .contains(list.rule);
+    }
+  }
+
+  private enum CountedList {
+    KEYFRAME_PRESENTATION_TIME_DELTAS(BrokenRule.KEYFRAMES) {
+      @Override
+      ProbeAttemptReport beyondTheLimit() {
+        return ProbeAttemptReport.newBuilder()
+            .addAllKeyframePresentationTimeDeltas(
+                Collections.nCopies(LIMITS.keyframeLimit() + 1, 90_000L))
+            .build();
+      }
+    },
+    KEYFRAME_DECODE_TIME_DELTAS(BrokenRule.KEYFRAMES) {
+      @Override
+      ProbeAttemptReport beyondTheLimit() {
+        return ProbeAttemptReport.newBuilder()
+            .addAllKeyframeDecodeTimeDeltas(
+                Collections.nCopies(LIMITS.keyframeLimit() + 1, 90_000L))
+            .build();
+      }
+    },
+    KEYFRAME_INTERVAL_BYTES(BrokenRule.MEASURED_KEYFRAME_INTERVALS) {
+      @Override
+      ProbeAttemptReport beyondTheLimit() {
+        // Two measured streams share the intervals.
+        return ProbeAttemptReport.newBuilder()
+            .addStreamMeasurementIntervals(
+                StreamMeasurementIntervals.newBuilder()
+                    .setStreamIndex(0)
+                    .addAllKeyframeIntervalBytes(
+                        Collections.nCopies(LIMITS.measuredKeyframeIntervalLimit(), 1_000)))
+            .addStreamMeasurementIntervals(
+                StreamMeasurementIntervals.newBuilder()
+                    .setStreamIndex(1)
+                    .addKeyframeIntervalBytes(1_000))
+            .build();
+      }
+    },
+    KEYFRAME_INTERVAL_PACKET_COUNTS(BrokenRule.MEASURED_KEYFRAME_INTERVALS) {
+      @Override
+      ProbeAttemptReport beyondTheLimit() {
+        return ProbeAttemptReport.newBuilder()
+            .addStreamMeasurementIntervals(
+                StreamMeasurementIntervals.newBuilder()
+                    .setStreamIndex(0)
+                    .addAllKeyframeIntervalPacketCounts(
+                        Collections.nCopies(LIMITS.measuredKeyframeIntervalLimit(), 1_000)))
+            .addStreamMeasurementIntervals(
+                StreamMeasurementIntervals.newBuilder()
+                    .setStreamIndex(1)
+                    .addKeyframeIntervalPacketCounts(1_000))
+            .build();
+      }
+    };
+
+    private final BrokenRule rule;
+
+    CountedList(BrokenRule rule) {
+      this.rule = rule;
+    }
+
+    /** A probe report whose last byte ends the first entry of the list beyond its limit. */
+    abstract ProbeAttemptReport beyondTheLimit();
+  }
+
+  @Test
+  @DisplayName(
+      "Should count the keyframes of each list, packed or not, over every occurrence of the list"
+          + " in any order")
+  void shouldCountKeyframesOfEachListPackedOrNotOverEveryOccurrenceOfListInAnyOrder()
+      throws IOException {
+    var out = ByteString.newOutput();
+    var fields = CodedOutputStream.newInstance(out);
+    // One presentation time delta on its own, then three decode time deltas in a packed run.
+    fields.writeSInt64(ProbeAttemptReport.KEYFRAME_PRESENTATION_TIME_DELTAS_FIELD_NUMBER, 1);
+    packed(fields, ProbeAttemptReport.KEYFRAME_DECODE_TIME_DELTAS_FIELD_NUMBER, 3);
+    fields.writeByteArray(ProbeAttemptReport.RESULT_FIELD_NUMBER, new byte[0]);
+    // Two more presentation time deltas in a packed run reach the limit of three.
+    packed(fields, ProbeAttemptReport.KEYFRAME_PRESENTATION_TIME_DELTAS_FIELD_NUMBER, 2);
+    fields.flush();
+    var atTheLimits = out.toByteString();
+    var fourthPresentationTimeDelta = bytes(0x10, 0x02);
+    var counter = counter(atTheLimits.size() + fourthPresentationTimeDelta.size());
+
+    var read = counter.read(atTheLimits);
+    var beyondTheLimit = counter.read(fourthPresentationTimeDelta);
+
+    assertThat(read).isEmpty();
+    assertThat(beyondTheLimit).contains(BrokenRule.KEYFRAMES);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count the measured keyframe intervals of each list, packed or not, over every"
+          + " measured stream")
+  void shouldCountMeasuredKeyframeIntervalsOfEachListPackedOrNotOverEveryMeasuredStream()
+      throws IOException {
+    // Three interval bytes and four interval packet counts, packed or not, in two streams.
+    var first = new ByteArrayOutputStream();
+    var firstFields = CodedOutputStream.newInstance(first);
+    firstFields.writeUInt32(StreamMeasurementIntervals.KEYFRAME_INTERVAL_BYTES_FIELD_NUMBER, 1);
+    packed(firstFields, StreamMeasurementIntervals.KEYFRAME_INTERVAL_PACKET_COUNTS_FIELD_NUMBER, 3);
+    firstFields.writeUInt32(StreamMeasurementIntervals.STREAM_INDEX_FIELD_NUMBER, 0);
+    firstFields.flush();
+    var second = new ByteArrayOutputStream();
+    var secondFields = CodedOutputStream.newInstance(second);
+    packed(secondFields, StreamMeasurementIntervals.KEYFRAME_INTERVAL_BYTES_FIELD_NUMBER, 2);
+    secondFields.writeUInt32(
+        StreamMeasurementIntervals.KEYFRAME_INTERVAL_PACKET_COUNTS_FIELD_NUMBER, 1);
+    secondFields.flush();
+    var out = ByteString.newOutput();
+    var fields = CodedOutputStream.newInstance(out);
+    fields.writeByteArray(
+        ProbeAttemptReport.STREAM_MEASUREMENT_INTERVALS_FIELD_NUMBER, first.toByteArray());
+    fields.writeByteArray(
+        ProbeAttemptReport.STREAM_MEASUREMENT_INTERVALS_FIELD_NUMBER, second.toByteArray());
+    fields.flush();
+    var atTheLimits = out.toByteString();
+    // A third stream with one interval packet count goes beyond the limit of four.
+    var fifthPacketCount = bytes(0x22, 2, 0x18, 0x01);
+    var counter = counter(atTheLimits.size() + fifthPacketCount.size());
+
+    var read = counter.read(atTheLimits);
+    var beyondTheLimit = counter.read(fifthPacketCount);
+
+    assertThat(read).isEmpty();
+    assertThat(beyondTheLimit).contains(BrokenRule.MEASURED_KEYFRAME_INTERVALS);
   }
 
   @Test
@@ -236,6 +404,16 @@ class ProbeReportFieldCounterTest {
         .addStreamMeasurementIntervals(intervals(0, 2))
         .addStreamMeasurementIntervals(intervals(1, 2))
         .build();
+  }
+
+  /** Writes a packed run of this many entries, each one byte. */
+  private static void packed(CodedOutputStream fields, int fieldNumber, int entries)
+      throws IOException {
+    fields.writeTag(fieldNumber, WireFormat.WIRETYPE_LENGTH_DELIMITED);
+    fields.writeUInt32NoTag(entries);
+    for (var entry = 0; entry < entries; entry++) {
+      fields.writeUInt32NoTag(1);
+    }
   }
 
   private static ProbeReportFieldCounter counterOf(ByteString report) {

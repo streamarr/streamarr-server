@@ -1,20 +1,27 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.server.services.streaming.remote.ReportingWorker.intervals;
+import static com.streamarr.server.services.streaming.remote.ReportingWorker.invalidMedia;
 import static com.streamarr.server.services.streaming.remote.ReportingWorker.reportWithResultOfLength;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import io.grpc.Status;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 @Tag("UnitTest")
 @DisplayName("Probe Report Call Limits Tests")
@@ -59,6 +66,98 @@ class ProbeReportCallLimitsTest {
         .isInstanceOf(ExecutionException.class)
         .hasCauseExactlyInstanceOf(ProbeContractViolationException.class);
     assertThat(worker.isConnected()).isTrue();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(CountedList.class)
+  @DisplayName(
+      "Should end the report call at the message after which a list holds more entries than its"
+          + " limit, before its last message")
+  void shouldEndReportCallAtMessageAfterWhichListHoldsMoreEntriesThanItsLimitBeforeLastMessage(
+      CountedList list) throws Exception {
+    var worker = ReportingWorker.connectedTo(LIMITS);
+    var probe = worker.dispatch();
+    var beyondTheLimit = list.beyondTheLimit().build().toByteString();
+    var result = invalidMedia(probe.request()).build().toByteString();
+    var call = worker.openReportCall();
+    call.sendMetadata(
+        worker
+            .metadata(probe.request())
+            .setReportLengthBytes((long) beyondTheLimit.size() + result.size()));
+
+    call.sendData(beyondTheLimit);
+
+    assertThat(call.refusal()).isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThat(call.unreadDemand()).as("The server asks for no message after the list").isZero();
+    assertThatThrownBy(() -> probe.outcome().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseExactlyInstanceOf(ProbeContractViolationException.class);
+  }
+
+  private enum CountedList {
+    KEYFRAME_PRESENTATION_TIME_DELTAS {
+      @Override
+      ProbeAttemptReport.Builder beyondTheLimit() {
+        return ProbeAttemptReport.newBuilder()
+            .addAllKeyframePresentationTimeDeltas(
+                Collections.nCopies(LIMITS.keyframeLimit() + 1, 90_000L));
+      }
+    },
+    KEYFRAME_DECODE_TIME_DELTAS {
+      @Override
+      ProbeAttemptReport.Builder beyondTheLimit() {
+        return ProbeAttemptReport.newBuilder()
+            .addAllKeyframeDecodeTimeDeltas(
+                Collections.nCopies(LIMITS.keyframeLimit() + 1, 90_000L));
+      }
+    },
+    KEYFRAME_INTERVAL_BYTES {
+      @Override
+      ProbeAttemptReport.Builder beyondTheLimit() {
+        return ProbeAttemptReport.newBuilder()
+            .addStreamMeasurementIntervals(intervals(0, LIMITS.measuredKeyframeIntervalLimit()))
+            .addStreamMeasurementIntervals(
+                StreamMeasurementIntervals.newBuilder()
+                    .setStreamIndex(1)
+                    .addKeyframeIntervalBytes(1_000));
+      }
+    },
+    KEYFRAME_INTERVAL_PACKET_COUNTS {
+      @Override
+      ProbeAttemptReport.Builder beyondTheLimit() {
+        return ProbeAttemptReport.newBuilder()
+            .addStreamMeasurementIntervals(intervals(0, LIMITS.measuredKeyframeIntervalLimit()))
+            .addStreamMeasurementIntervals(
+                StreamMeasurementIntervals.newBuilder()
+                    .setStreamIndex(1)
+                    .addKeyframeIntervalPacketCounts(1));
+      }
+    };
+
+    /** Probe report fields that hold one entry of the list beyond its limit. */
+    abstract ProbeAttemptReport.Builder beyondTheLimit();
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail the probe as a contract violation, not as misconfigured, when a probe report of"
+          + " another probe version breaks a stated limit")
+  void shouldFailProbeAsContractViolationNotAsMisconfiguredWhenReportOfAnotherVersionBreaksLimit()
+      throws Exception {
+    var worker = ReportingWorker.connectedTo(LIMITS);
+    var probe = worker.dispatch();
+    var report =
+        CountedList.KEYFRAME_DECODE_TIME_DELTAS
+            .beyondTheLimit()
+            .mergeFrom(invalidMedia(probe.request()).build());
+    report.getResultBuilder().setProbeVersion(ReportingWorker.PROBE_VERSION + 1);
+
+    var call = worker.report(probe.request(), report.build());
+
+    assertThat(call.refusal()).isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThatThrownBy(() -> probe.outcome().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseExactlyInstanceOf(ProbeContractViolationException.class);
   }
 
   @Test
