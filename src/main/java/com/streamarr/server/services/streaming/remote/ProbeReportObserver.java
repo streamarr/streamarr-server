@@ -230,13 +230,20 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
             Status.FAILED_PRECONDITION.withDescription(
                 "Probe report names another probe version than the server asked for"));
       }
-      case ProbeReportContract.Kept _ -> {
-        // The caller of the dispatch maps and stores the outcome on its own thread, after the
-        // answer.
-        attempt.complete(report);
-        answer();
-      }
+      case ProbeReportContract.Kept _ -> answerIfCompleted(report);
     }
+  }
+
+  // The caller of the dispatch maps and stores the outcome on its own thread, after the answer.
+  private void answerIfCompleted(ProbeAttemptReport report) {
+    if (!attempt.complete(report)) {
+      end(
+          Status.PERMISSION_DENIED.withDescription(
+              "Probe report's probe attempt ended before the report completed it"));
+      return;
+    }
+
+    answer();
   }
 
   private void answer() {

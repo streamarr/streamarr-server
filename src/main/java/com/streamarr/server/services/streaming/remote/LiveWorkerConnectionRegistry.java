@@ -1413,8 +1413,8 @@ final class LiveWorkerConnectionRegistry {
       }
 
       @Override
-      public void complete(ProbeAttemptReport report) {
-        end(
+      public boolean complete(ProbeAttemptReport report) {
+        return end(
             () -> {
               pending.complete(report);
               countIfNoFreeCapacity(report.getResult());
@@ -1436,9 +1436,9 @@ final class LiveWorkerConnectionRegistry {
         end(() -> pending.failForRetry(reason));
       }
 
-      private void end(Runnable ending) {
+      private boolean end(Runnable ending) {
         if (!activeProbes.remove(attemptId, pending)) {
-          return;
+          return false;
         }
 
         try {
@@ -1446,6 +1446,8 @@ final class LiveWorkerConnectionRegistry {
         } finally {
           pendingProbes.remove(attemptId, pending.result());
         }
+
+        return true;
       }
     }
 

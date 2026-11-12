@@ -24,7 +24,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
@@ -779,6 +782,77 @@ class ProbeReportCallTest {
     };
 
     abstract void arriveOn(ReportCall call) throws Exception;
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(AttemptEnd.class)
+  @DisplayName(
+      "Should end the report call without an answer when its probe attempt ends after the half-close"
+          + " arrives and before the probe report completes the attempt")
+  void shouldEndReportCallWithoutAnswerWhenItsAttemptEndsBeforeProbeReportCompletesIt(
+      AttemptEnd end) throws Exception {
+    var worker = ReportingWorker.connectedTo(LIMITS);
+    var probe = worker.dispatch();
+    var bytes = invalidMedia(probe.request()).build().toByteString();
+    var call = worker.openReportCall();
+    call.sendMetadata(worker.metadata(probe.request()).setReportLengthBytes(bytes.size()));
+    call.sendData(bytes);
+    assertThat(probe.outcome()).isInstanceOf(CompletableFuture.class);
+    var claimed = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    // The server settles the outcome on the thread that ends the attempt, so this parks that thread
+    // after the end has claimed the attempt and before it ends the attempt's report call.
+    ((CompletableFuture<ProbeAttemptReport>) probe.outcome())
+        .whenComplete((_, _) -> parkUntil(claimed, release));
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var ending = executor.submit(() -> end.end(worker, probe.request()));
+      try {
+        assertThat(claimed.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(call.isOpen()).as("The attempt's end has not reached its report call").isTrue();
+        call.halfClose();
+      } finally {
+        release.countDown();
+      }
+
+      ending.get(5, TimeUnit.SECONDS);
+    }
+
+    // The call's fake fails the test when the server ends one call twice.
+    assertThat(call.refusal()).isEqualTo(Status.Code.PERMISSION_DENIED);
+    assertThatThrownBy(() -> probe.outcome().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .cause()
+        .isExactlyInstanceOf(ProbeExecutionException.class)
+        .asInstanceOf(InstanceOfAssertFactories.type(ProbeExecutionException.class))
+        .extracting(ProbeExecutionException::reason)
+        .isEqualTo(ItemFailureReason.TEMPORARY);
+  }
+
+  private enum AttemptEnd {
+    THE_WORKERS_EVENT {
+      @Override
+      void end(ReportingWorker worker, ProbeRequest request) {
+        worker.endWithoutReport(request);
+      }
+    },
+    THE_END_OF_THE_WORKER_SESSION {
+      @Override
+      void end(ReportingWorker worker, ProbeRequest request) {
+        worker.disconnect();
+      }
+    };
+
+    abstract void end(ReportingWorker worker, ProbeRequest request);
+  }
+
+  private static void parkUntil(CountDownLatch parked, CountDownLatch release) {
+    parked.countDown();
+    try {
+      assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   @Test

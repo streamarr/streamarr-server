@@ -14,8 +14,11 @@ interface ReportedProbeAttempt {
   /** The request that started the attempt. */
   ProbeRequest request();
 
-  /** Ends the attempt with the probe report. */
-  void complete(ProbeAttemptReport report);
+  /**
+   * Ends the attempt with the probe report. Returns false when another end has already ended the
+   * attempt.
+   */
+  boolean complete(ProbeAttemptReport report);
 
   /** Ends the attempt as misconfigured: the report names another probe version than the request. */
   void failForAnotherVersion(ProbeAttemptResult reported);
