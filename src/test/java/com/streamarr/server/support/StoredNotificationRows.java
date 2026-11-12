@@ -8,7 +8,6 @@ import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -51,19 +50,6 @@ public final class StoredNotificationRows {
                 .where(NOTIFICATION.RECIPIENT_TYPE.eq(recipient.type()))
                 .and(NOTIFICATION.RECIPIENT_ID.eq(recipient.id()))
                 .execute());
-  }
-
-  /**
-   * Moves the expiry of the requests about the subject a second into the past, as a subject whose
-   * time ran out would have told them, with nothing stored about it since.
-   */
-  public void lapse(SubjectReference subject) {
-    dsl.update(NOTIFICATION)
-        .set(NOTIFICATION.EXPIRES_AT, OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1))
-        .where(NOTIFICATION.SUBJECT_TYPE.eq(subject.type()))
-        .and(NOTIFICATION.SUBJECT_ID.eq(subject.id()))
-        .and(NOTIFICATION.EXPIRES_AT.isNotNull())
-        .execute();
   }
 
   /** The document a snapshot is stored as, to compare with a stored row's. */

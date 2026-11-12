@@ -21,7 +21,6 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
@@ -74,7 +73,6 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
 
   @Autowired private ProfileSharingService sharing;
   @Autowired private ProfileShareLifecycle shareLifecycle;
-  @Autowired private ProfileShareExpirySweeper expirySweeper;
   @Autowired private AccountAdministrationService accountAdministration;
   @Autowired private AccountLifecycleService accountLifecycle;
   @Autowired private HouseholdDeletionService householdDeletion;
@@ -390,36 +388,6 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should resolve the requests as expired when the expiry sweep stores the offer's expiry")
-  void shouldResolveTheRequestsAsExpiredWhenTheExpirySweepStoresTheOffersExpiry() {
-    var offer = steps.offer(sam, sam.profile(), riverside);
-    steps.lapse(offer);
-
-    expirySweeper.sweep();
-
-    assertThat(stored(offer).getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
-    assertExpired(offer);
-  }
-
-  @Test
-  @DisplayName(
-      "Should resolve the requests as expired when a rejection comes after the offer's time ran"
-          + " out")
-  void shouldResolveTheRequestsAsExpiredWhenARejectionComesAfterTheOffersTimeRanOut() {
-    var offer = steps.offer(sam, sam.profile(), riverside);
-    steps.lapse(offer);
-    // A ServerAdmin still reads an offer whose time ran out, so its rejection reaches the offer.
-    var serverAdmin = track(authTestSupport.createAdminIdentity());
-
-    var outcome = sharing.rejectProfileShare(identityOf(serverAdmin), offer.getId());
-
-    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
-    assertThat(stored(offer).getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
-    assertExpired(offer);
-  }
-
-  @Test
-  @DisplayName(
       "Should resolve the request as withdrawn when an Account transfer makes the offer its"
           + " Profile's home share")
   void shouldResolveTheRequestAsWithdrawnWhenAnAccountTransferMakesTheOfferItsProfilesHomeShare() {
@@ -568,50 +536,17 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
         .containsExactlyInAnyOrder(account(sam), account(serverAdmin));
   }
 
-  @ParameterizedTest
-  @EnumSource(Unanswered.class)
-  @DisplayName("Should tell nobody anything new when the offer is canceled or expires")
-  void shouldTellNobodyAnythingNewWhenTheOfferIsCanceledOrExpires(Unanswered how) {
+  @Test
+  @DisplayName("Should tell nobody anything new when the offer is canceled")
+  void shouldTellNobodyAnythingNewWhenTheOfferIsCanceled() {
     var offer = steps.offer(sam, sam.profile(), riverside);
 
-    switch (how) {
-      case CANCELED -> sharing.cancelProfileShare(identityOf(sam), offer.getId());
-      case EXPIRED -> {
-        steps.lapse(offer);
-        expirySweeper.sweep();
-      }
-    }
+    sharing.cancelProfileShare(identityOf(sam), offer.getId());
 
-    assertThat(stored(offer).getStatus()).isEqualTo(how.status);
+    assertThat(stored(offer).getStatus()).isEqualTo(ProfileShareStatus.CANCELED);
     assertThat(rows.about(SubjectReference.profileShare(offer.getId())))
         .extracting(Row::kind)
         .containsOnly(OFFERED);
-  }
-
-  /** How an offer stops waiting with nobody answering it. */
-  enum Unanswered {
-    CANCELED(ProfileShareStatus.CANCELED),
-    EXPIRED(ProfileShareStatus.EXPIRED);
-
-    private final ProfileShareStatus status;
-
-    Unanswered(ProfileShareStatus status) {
-      this.status = status;
-    }
-  }
-
-  @Test
-  @DisplayName(
-      "Should tell nobody anything new when a rejection comes after the offer's time ran out")
-  void shouldTellNobodyAnythingNewWhenARejectionComesAfterTheOffersTimeRanOut() {
-    var offer = steps.offer(sam, sam.profile(), riverside);
-    steps.lapse(offer);
-    var serverAdmin = track(authTestSupport.createAdminIdentity());
-
-    sharing.rejectProfileShare(identityOf(serverAdmin), offer.getId());
-
-    assertThat(stored(offer).getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
-    assertThat(answersAbout(offer)).isEmpty();
   }
 
   @Test
@@ -927,10 +862,6 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
 
   private void assertWithdrawn(ProfileHouseholdShare offer) {
     assertResolvedWithoutAnAnswer(offer, "WITHDRAWN");
-  }
-
-  private void assertExpired(ProfileHouseholdShare offer) {
-    assertResolvedWithoutAnAnswer(offer, "EXPIRED");
   }
 
   // Every recipient's request resolves at once, at the instant the share records.
