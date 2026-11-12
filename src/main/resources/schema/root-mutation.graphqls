@@ -123,10 +123,10 @@ type Mutation {
     Deletes a Profile with its watch history, progress and preferences, for good. Only its last
     direct manager may, with a recent password (ReauthenticationRequiredError), and only while it is
     nobody's Personal Profile (ProfileAdministration.linked), has no active or pending share in any
-    Household, its own included (profileShares with statuses [PENDING, ACTIVE]), and no other
-    Account holds a direct grant for it (profileManagers). Pending invitations to manage it
-    (pendingManagerInvitationsForProfile) are invalidated with it. A ServerAdmin has no shortcut
-    here; administrativelyDeleteProfile is its override. A caller who may read profileAdministration
+    Household, its own included (profileShares with statuses [PENDING, ACTIVE]), no other Account
+    holds a direct grant for it (profileManagers), and no invitation to manage it waits
+    (pendingManagerInvitationsForProfile) until it is canceled or expires. A ServerAdmin has no
+    shortcut here; administrativelyDeleteProfile is its override. A caller who may read profileAdministration
     of the Profile but may not delete it gets ProfileNotDeletableError; everyone else, a device-
     bound session included, gets ProfileNotFoundError.
     """

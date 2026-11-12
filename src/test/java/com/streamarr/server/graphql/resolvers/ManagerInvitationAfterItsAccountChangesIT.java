@@ -217,6 +217,32 @@ class ManagerInvitationAfterItsAccountChangesIT extends AbstractIntegrationTest 
         .isEmpty();
   }
 
+  @ParameterizedTest
+  @EnumSource(
+      value = Change.class,
+      names = {"DELETED", "RESTRICTED"})
+  @DisplayName(
+      "Should block deleting its Profile, as any waiting invitation, when its Account changes")
+  void shouldBlockDeletingItsProfileAsAnyWaitingInvitationWhenItsAccountChanges(Change change)
+      throws Exception {
+    var kit =
+        cast.unavailableProfileManagedBy(sam, ProfileFixture.defaultProfileBuilder().name("Kit"));
+    steps.invite(sam, kit, mara.account().getEmail());
+    change(change);
+
+    var refusal =
+        graphql(
+                authTestSupport.freshAccountBearer(sam),
+                """
+                mutation { deleteProfile(input: {profileId: "%s"}) {
+                  deletedProfileId userErrors { __typename } } }
+                """
+                    .formatted(kit.getId()))
+            .at("/data/deleteProfile/userErrors/0/__typename");
+
+    assertThat(refusal.asString()).isEqualTo("ProfileNotDeletableError");
+  }
+
   private void change(Change change) throws Exception {
     switch (change) {
       case DELETED ->

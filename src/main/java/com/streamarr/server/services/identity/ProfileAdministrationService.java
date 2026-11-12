@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
@@ -65,6 +66,7 @@ public class ProfileAdministrationService {
   private final UserAccountRepository userAccountRepository;
   private final AccountInvitationRepository accountInvitationRepository;
   private final ProfileManagerInvitationLifecycle managerInvitationLifecycle;
+  private final ProfileManagerInvitationRepository managerInvitationRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final ProfilePinHasher profilePinHasher;
   private final MutationTransactions mutationTransactions;
@@ -413,6 +415,12 @@ public class ProfileAdministrationService {
                   Optional.of(ProfileRejections.ReauthenticationRequired::new));
           if (refusal.isPresent()) {
             throw new MutationRejection(refusal.get());
+          }
+
+          // An invitation that still waits to the Profile's managers blocks, even one invalidated
+          // for its Account, so deletion never tells them what became of that Account (ADR 0024).
+          if (managerInvitationRepository.existsWaitingForProfile(profileId, clock.instant())) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotDeletable());
           }
 
           profileRepository.lockProfileDeletionAcrossHouseholds(profileId);
