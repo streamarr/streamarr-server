@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -44,15 +45,18 @@ public class ProfileReaderDetailsService {
     var relations = profileRepository.relationsTo(reader.accountId(), profileIds);
     var inspectsEveryHousehold =
         !relations.isEmpty() && authorizationService.isAllowed(reader, new Intent.ViewHouseholds());
+    Predicate<ProfileReaderRelation> showsTheHousehold =
+        relation -> inspectsEveryHousehold || knowsTheHousehold(relation);
     var shown =
         relations.stream()
-            .filter(relation -> inspectsEveryHousehold || knowsTheHousehold(relation))
+            .filter(showsTheHousehold)
             .map(ProfileReaderRelation::householdId)
             .collect(Collectors.toSet());
     var households =
         householdRepository.findAllById(shown).stream()
             .collect(Collectors.toMap(Household::getId, Function.identity()));
 
+    // Decided for each Profile: one Profile shows its Household for no other Profile from there.
     var details = new HashMap<UUID, ProfileReaderDetails>();
     relations.forEach(
         relation ->
@@ -60,7 +64,7 @@ public class ProfileReaderDetailsService {
                 relation.profileId(),
                 new ProfileReaderDetails(
                     relation.authority(),
-                    shown.contains(relation.householdId())
+                    showsTheHousehold.test(relation)
                         ? Optional.ofNullable(households.get(relation.householdId()))
                         : Optional.empty())));
     return details;
