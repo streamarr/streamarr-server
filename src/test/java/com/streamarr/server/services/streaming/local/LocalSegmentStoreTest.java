@@ -61,7 +61,8 @@ class LocalSegmentStoreTest {
 
     var outputDir = store.getOutputDirectory(sessionId);
 
-    assertThat(outputDir).exists().isDirectory().hasParentRaw(tempDir);
+    // The store writes into the folder's real path, which a temporary folder on macOS is not.
+    assertThat(outputDir).exists().isDirectory().hasParent(tempDir);
   }
 
   @Test

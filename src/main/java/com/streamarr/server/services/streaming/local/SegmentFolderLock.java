@@ -21,6 +21,9 @@ public final class SegmentFolderLock implements AutoCloseable {
   static final String NAME = ".streamarr-segment-folder.lock";
 
   private FileChannel channel;
+  // The real path of the folder whose lock the channel holds, read once when the channel opens: a
+  // soft link on the folder's path that is pointed elsewhere later leads no write out of it.
+  private Path lockedFolder;
   private boolean heldShared;
 
   /**
@@ -44,11 +47,11 @@ public final class SegmentFolderLock implements AutoCloseable {
    * Holds the folder's lock shared until this lock closes, so that no other server process's start
    * deletes what this process writes there. It waits while another process's start holds the lock
    * alone. It returns the folder whose lock it holds, the only folder that this process may write
-   * into.
+   * into: the real path of the folder that this lock was first used for.
    */
   public synchronized Path holdShared(Path folder) throws IOException {
     if (heldShared) {
-      return folder;
+      return lockedFolder;
     }
 
     try {
@@ -58,7 +61,7 @@ public final class SegmentFolderLock implements AutoCloseable {
     }
 
     heldShared = true;
-    return folder;
+    return lockedFolder;
   }
 
   private Optional<FileLock> tryLockAlone(Path folder) throws IOException {
@@ -73,9 +76,10 @@ public final class SegmentFolderLock implements AutoCloseable {
   // Never through a soft link in the lock's place.
   private FileChannel channel(Path folder) throws IOException {
     if (channel == null) {
+      lockedFolder = folder.toRealPath();
       channel =
           FileChannel.open(
-              folder.resolve(NAME),
+              lockedFolder.resolve(NAME),
               StandardOpenOption.CREATE,
               StandardOpenOption.READ,
               StandardOpenOption.WRITE,

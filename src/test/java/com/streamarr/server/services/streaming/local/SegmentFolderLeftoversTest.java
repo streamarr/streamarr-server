@@ -639,6 +639,61 @@ class SegmentFolderLeftoversTest {
     }
   }
 
+  // The running process holds the lock of the folder that the link named at its start, so its
+  // store keeps writing there.
+  @Test
+  @DisplayName(
+      "Should keep a running server process's stream sessions when its segment folder's soft link is"
+          + " pointed at another server process's folder after its start")
+  void
+      shouldKeepARunningServerProcesssStreamSessionsWhenItsSegmentFoldersSoftLinkIsPointedAtAnotherServerProcesssFolderAfterItsStart()
+          throws IOException {
+    var otherFolder = Files.createDirectory(outside.resolve("segments"));
+    startOf(otherFolder);
+    var link = Files.createSymbolicLink(machine.resolve("segments"), segmentFolder);
+    try (var runningProcessLock = new SegmentFolderLock()) {
+      leftoversOf(link).lock(runningProcessLock).build().delete();
+      pointAt(link, otherFolder);
+      var runningSession =
+          new LocalSegmentStore(link, runningProcessLock).getOutputDirectory(UUID.randomUUID());
+
+      var otherFoldersStart = startOf(otherFolder);
+      var firstFoldersStart = startOf(segmentFolder);
+
+      assertThat(runningSession).isDirectory();
+      assertThat(otherFoldersStart).isEqualTo(new Deleted(0, 0));
+      assertThat(firstFoldersStart).isEqualTo(new Refused(SegmentFolderRefusal.IN_USE));
+    }
+  }
+
+  // A process whose start ran nothing on the folder, as on the shared folder, holds the lock of the
+  // folder that the link named at its store's first write.
+  @Test
+  @DisplayName(
+      "Should keep a running server process's later stream sessions when its segment folder's soft"
+          + " link is pointed at another server process's folder after its store's first write")
+  void
+      shouldKeepARunningServerProcesssLaterStreamSessionsWhenItsSegmentFoldersSoftLinkIsPointedAtAnotherServerProcesssFolderAfterItsStoresFirstWrite()
+          throws IOException {
+    startOf(segmentFolder);
+    var otherFolder = Files.createDirectory(outside.resolve("segments"));
+    startOf(otherFolder);
+    var link = Files.createSymbolicLink(machine.resolve("segments"), segmentFolder);
+    try (var runningProcessLock = new SegmentFolderLock()) {
+      var runningStore = new LocalSegmentStore(link, runningProcessLock);
+      runningStore.getOutputDirectory(UUID.randomUUID());
+      pointAt(link, otherFolder);
+      var laterSession = runningStore.getOutputDirectory(UUID.randomUUID());
+
+      var otherFoldersStart = startOf(otherFolder);
+      var firstFoldersStart = startOf(segmentFolder);
+
+      assertThat(laterSession).isDirectory();
+      assertThat(otherFoldersStart).isEqualTo(new Deleted(0, 0));
+      assertThat(firstFoldersStart).isEqualTo(new Refused(SegmentFolderRefusal.IN_USE));
+    }
+  }
+
   // On macOS a listing that is open while entries of its folder are deleted skips some of a few
   // hundred entries.
   @Test
