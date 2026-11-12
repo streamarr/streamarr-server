@@ -36,6 +36,7 @@ import com.streamarr.server.services.events.watchprogress.WatchStateChangedEvent
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -550,6 +551,65 @@ class SessionProgressServiceTest {
       assertThat(progress.getPercentComplete()).isEqualTo(50.0);
     }
 
+    // A player that can select an audio track inside a directly played file switches tracks in
+    // place, and the server sees only byte-range requests (ADR 0045). A stop at 55 s is 92 % of the
+    // session's audio track, and 46 % of the file's other audio track.
+    @Test
+    @DisplayName(
+        "Should keep a resume position when direct play stops before the end of a longer audio"
+            + " track that the file holds")
+    void shouldKeepAResumePositionWhenDirectPlayStopsBeforeTheEndOfALongerAudioTrack() {
+      var session =
+          addSessionOfAFileWhoseSecondAudioTrackEndsLater(
+              StreamSessionFixture.directPlaySessionBuilder()
+                  .directPlayAudioTrackPosition(OptionalInt.of(0)));
+
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 55, PlaybackState.STOPPED);
+
+      assertThat(watchHistoryRepository.count()).isZero();
+      assertThat(sessionProgressRepository.findBySessionId(session.getSessionId()))
+          .get()
+          .extracting(SessionProgress::getPositionSeconds)
+          .isEqualTo(55);
+    }
+
+    @Test
+    @DisplayName(
+        "Should measure direct-play progress against the end of the file's longest audio track")
+    void shouldMeasureDirectPlayProgressAgainstTheEndOfTheFilesLongestAudioTrack() {
+      var session =
+          addSessionOfAFileWhoseSecondAudioTrackEndsLater(
+              StreamSessionFixture.directPlaySessionBuilder()
+                  .directPlayAudioTrackPosition(OptionalInt.of(0)));
+
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 60, PlaybackState.PLAYING);
+
+      var progress =
+          sessionProgressRepository.findBySessionId(session.getSessionId()).orElseThrow();
+      assertThat(progress.getDurationSeconds()).isEqualTo(120);
+      assertThat(progress.getPercentComplete()).isEqualTo(50.0);
+    }
+
+    // An HLS stream session delivers its own audio track only, so the file's other audio track
+    // cannot play in it.
+    @Test
+    @DisplayName(
+        "Should mark a file watched when an HLS session stops near the end of its own audio track"
+            + " and another audio track ends later")
+    void shouldMarkAFileWatchedWhenAnHlsSessionStopsNearTheEndOfItsOwnAudioTrack() {
+      var session =
+          addSessionOfAFileWhoseSecondAudioTrackEndsLater(
+              StreamSessionFixture.defaultSessionBuilder());
+
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 55, PlaybackState.STOPPED);
+
+      assertThat(watchHistoryRepository.count()).isOne();
+      assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
+    }
+
     private StreamSession addSessionScannedToEndAt(
         Duration containerDuration, Duration scannedAudioEnd) {
       return addSessionWithLearnedEnds(
@@ -580,12 +640,36 @@ class SessionProgressServiceTest {
                   List.of(
                       learned.streamIndex(0).endTime(audioEnd.minusMillis(42)).build(),
                       learned.streamIndex(1).endTime(audioEnd).build()));
+      return addSession(
+          StreamSessionFixture.defaultSessionBuilder().mediaFileId(mediaFileId).mediaProbe(probe));
+    }
+
+    // A session of a file whose header states 120 s. A keyframe packet scan read the video and the
+    // session's audio track to 60 s, and the file's second audio track to 120 s.
+    private StreamSession addSessionOfAFileWhoseSecondAudioTrackEndsLater(
+        StreamSession.StreamSessionBuilder delivery) {
+      var mediaFileId = UUID.randomUUID();
+      var scanned = learnedEnd().fromPacketScan(true).mediaFileId(mediaFileId);
+      var probe =
+          StreamSessionFixture.defaultProbeBuilder()
+              .duration(Duration.ofSeconds(120))
+              .streams(
+                  List.of(
+                      StreamInfo.builder().index(0).codecType("video").build(),
+                      StreamInfo.builder().index(1).codecType("audio").build(),
+                      StreamInfo.builder().index(2).codecType("audio").build()))
+              .build()
+              .withLearnedEndTimes(
+                  List.of(
+                      scanned.streamIndex(0).endTime(Duration.ofSeconds(60)).build(),
+                      scanned.streamIndex(1).endTime(Duration.ofSeconds(60)).build(),
+                      scanned.streamIndex(2).endTime(Duration.ofSeconds(120)).build()));
+      return addSession(delivery.mediaFileId(mediaFileId).mediaProbe(probe));
+    }
+
+    private StreamSession addSession(StreamSession.StreamSessionBuilder builder) {
       var session =
-          StreamSessionFixture.defaultSessionBuilder()
-              .mediaFileId(mediaFileId)
-              .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
-              .mediaProbe(probe)
-              .build();
+          builder.authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID)).build();
       runtimeRegistry.save(session);
       saveMediaFileForSession(session);
       return session;

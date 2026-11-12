@@ -116,6 +116,18 @@ public class StreamSession {
         .orElse(VideoRange.SDR);
   }
 
+  /**
+   * Where the media that the stream session delivers ends (ADR 0037, media end). An HLS stream
+   * session delivers its own audio track only, and a direct-play stream session every audio track
+   * of the file.
+   */
+  public Duration getMediaEnd() {
+    return switch (delivery) {
+      case HLS -> mediaProbe.mediaEnd();
+      case DIRECT_PLAY -> mediaProbe.directPlayMediaEnd();
+    };
+  }
+
   public boolean isOwnedBy(UUID candidateProfileId) {
     return authority.profileId().equals(candidateProfileId);
   }
