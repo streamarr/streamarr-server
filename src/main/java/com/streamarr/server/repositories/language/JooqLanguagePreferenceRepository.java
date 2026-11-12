@@ -45,18 +45,17 @@ public class JooqLanguagePreferenceRepository implements LanguagePreferenceRepos
     return dsl.select(PROFILE.AUDIO_LANGUAGES, PROFILE.SUBTITLE_LANGUAGE, PROFILE.SUBTITLE_MODE)
         .from(PROFILE)
         .where(PROFILE.ID.eq(profileId))
-        .fetchOptional(
-            row ->
-                ProfileLanguagePreferences.builder()
-                    .audioLanguages(
-                        Arrays.stream(row.get(PROFILE.AUDIO_LANGUAGES))
-                            .map(Language::valueOf)
-                            .toList())
-                    .subtitleLanguage(
-                        Optional.ofNullable(row.get(PROFILE.SUBTITLE_LANGUAGE))
-                            .map(Language::valueOf))
-                    .subtitleMode(SubtitlePreferenceMode.valueOf(row.get(PROFILE.SUBTITLE_MODE)))
-                    .build());
+        .fetchOptional(JooqLanguagePreferenceRepository::toPreferences);
+  }
+
+  private static ProfileLanguagePreferences toPreferences(Record row) {
+    return ProfileLanguagePreferences.builder()
+        .audioLanguages(
+            Arrays.stream(row.get(PROFILE.AUDIO_LANGUAGES)).map(Language::valueOf).toList())
+        .subtitleLanguage(
+            Optional.ofNullable(row.get(PROFILE.SUBTITLE_LANGUAGE)).map(Language::valueOf))
+        .subtitleMode(SubtitlePreferenceMode.valueOf(row.get(PROFILE.SUBTITLE_MODE)))
+        .build();
   }
 
   @Override
