@@ -14,4 +14,26 @@ public record NotificationKind(
     @NonNull String name,
     @NonNull NotificationForm form,
     @NonNull String subjectType,
-    @NonNull Class<? extends NotificationSnapshot> snapshotType) {}
+    @NonNull Class<? extends NotificationSnapshot> snapshotType) {
+
+  /**
+   * @throws IllegalArgumentException when the subject is not of this kind's subject type
+   */
+  void requireAbout(SubjectReference subject) {
+    if (!subjectType.equals(subject.type())) {
+      throw new IllegalArgumentException(
+          "A %s Notification is about a %s, not a %s".formatted(name, subjectType, subject.type()));
+    }
+  }
+
+  /**
+   * @throws IllegalArgumentException when the snapshot is not of this kind's record type
+   */
+  void requireSnapshot(NotificationSnapshot snapshot) {
+    if (!snapshotType.isInstance(snapshot)) {
+      throw new IllegalArgumentException(
+          "A %s Notification keeps a %s, not a %s"
+              .formatted(name, snapshotType.getSimpleName(), snapshot.getClass().getSimpleName()));
+    }
+  }
+}
