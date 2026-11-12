@@ -75,15 +75,15 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
 
   private NextFormatAttempt afterAFixedQualitysFailure(
       PlayingChoice choice, FailedFormatAttempt failed, int formatAttemptCount) {
-    return switch (failed.output()) {
-      case FailedFormatAttempt.EncodeWithoutSoftwareContinuation _ ->
-          encodeWithinBudget(choice, formatAttemptCount);
-      case FailedFormatAttempt.Encode _ -> new NextFormatAttempt.Fail(failed.reason());
-      case FailedFormatAttempt.DirectPlay _,
-          FailedFormatAttempt.Copy _,
-          FailedFormatAttempt.DolbyVisionCopyOnAnHdrBase _ ->
-          encodeWithinBudget(choiceWhenEncodingAfterACopy(choice), formatAttemptCount);
-    };
+    if (failed.output() instanceof FailedFormatAttempt.EncodeWithoutSoftwareContinuation) {
+      return encodeWithinBudget(choice, formatAttemptCount);
+    }
+
+    if (failed.output() instanceof FailedFormatAttempt.Encode) {
+      return new NextFormatAttempt.Fail(failed.reason());
+    }
+
+    return encodeWithinBudget(choiceWhenEncodingAfterACopy(choice), formatAttemptCount);
   }
 
   // The stripped copy keeps the source's PQ or HLG base, so Auto announces nothing. Original and a
