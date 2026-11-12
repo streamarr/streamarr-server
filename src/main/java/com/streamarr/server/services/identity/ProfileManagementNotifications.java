@@ -1,6 +1,5 @@
 package com.streamarr.server.services.identity;
 
-import com.streamarr.server.domain.auth.ChangedManagerInvitation;
 import com.streamarr.server.domain.auth.ManagerInvitationAction;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.domain.notification.RecipientReference;
@@ -17,6 +16,7 @@ import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -66,7 +66,7 @@ class ProfileManagementNotifications {
                     .collect(Collectors.toSet()))
             .snapshot(
                 new ProfileManagerInvitationReceivedSnapshot(
-                    profileNameOf(invitation), Optional.empty()))
+                    profileNameOf(invitation.profileId()), Optional.empty()))
             .at(change.changedAt())
             .subjectExpiresAt(Optional.of(invitation.expiresAt()))
             .build());
@@ -107,18 +107,17 @@ class ProfileManagementNotifications {
             .subject(SubjectReference.profileManagerInvitation(invitation.invitationId()))
             .recipients(Set.of(RecipientReference.account(invitation.inviterAccountId())))
             .snapshot(
-                new ProfileManagerInvitationAnsweredSnapshot(profileNameOf(invitation), answer))
+                new ProfileManagerInvitationAnsweredSnapshot(
+                    profileNameOf(invitation.profileId()), answer))
             .at(change.changedAt())
             .build());
   }
 
-  private String profileNameOf(ChangedManagerInvitation invitation) {
+  private String profileNameOf(UUID profileId) {
     return profileRepository
-        .findNameById(invitation.profileId())
+        .findNameById(profileId)
         .orElseThrow(
-            () ->
-                new IllegalStateException(
-                    "The invited Profile %s does not exist".formatted(invitation.profileId())));
+            () -> new IllegalStateException("The Profile %s does not exist".formatted(profileId)));
   }
 
   /** How an invitation's request resolves from the status a write after the issue left. */
