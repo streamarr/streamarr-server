@@ -97,6 +97,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
@@ -7973,28 +7974,144 @@ class HlsStreamingServiceTest {
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
+  // The budget's encode keeps the copy's PQ when the client plays an HDR encode that a worker's
+  // encoder writes. The Dolby Vision copy stays alone beside an H.265 encoder that writes PQ,
+  // because no encode writes Dolby Vision, and the HDR10 H.265 copy stays alone beside an AV1
+  // encoder that writes PQ, because its lower variants keep its codec family (ADR 0050).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("loneCopiesBesideAnHdrEncode")
+  @DisplayName(
+      "Should keep the copy's HDR when the upload budget turns an Auto copy without lower variants"
+          + " into an encode and an HDR encode that the client plays fits the remaining share")
+  void shouldKeepTheCopysHdrWhenTheBudgetEncodesALoneAutoCopyAndAnHdrEncodeFitsTheShare(
+      LoneCopyBesideAnHdrEncode lone) {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, less than this
+    // copy's 5 Mb/s average. The HDR encode's 360p (0.925 Mb/s average) fits it.
+    transcodeExecutor.setTargetEncoders(ExecutionTargetId.LOCAL, lone.encoders());
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session = createLoneCopySession(lone.copy(), VideoQuality.AUTO);
+
+    var decision = session.getTranscodeDecision();
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.videoCodecFamily()).isEqualTo(lone.encodeCodecFamily());
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.hdr(VideoRange.PQ));
+    assertThat(listedVariants(session)).containsExactly("360p/stream.m3u8?t=t");
+  }
+
+  static Stream<LoneCopyBesideAnHdrEncode> loneCopiesBesideAnHdrEncode() {
+    return Stream.of(
+        new LoneCopyBesideAnHdrEncode(dolbyVisionCopy(), List.of(libx264(), writingPq(libx265()))),
+        new LoneCopyBesideAnHdrEncode(
+            new LoneCopy(
+                "an HDR10 H.265 copy beside an AV1 encoder that writes PQ",
+                hdr10HevcProbe(),
+                declarationBuilderFor(H264)
+                    .video(
+                        List.of(
+                            h264EntryBuilder().build(),
+                            hevcEntryBuilder()
+                                .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                                .build(),
+                            av1EntryBuilder()
+                                .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                                .build()))
+                    .build()),
+            List.of(libx264(), writingPq(libsvtav1()))));
+  }
+
+  // Giving HDR up would not bring the stream within the share: an SDR encode's 360p costs the same
+  // 800 kb/s of video in every codec profile, and the budget keeps the lowest variant either way.
+  @Test
+  @DisplayName(
+      "Should keep the copy's HDR at the encode's lowest variant when the upload budget turns an"
+          + " Auto copy without lower variants into an encode and no variant fits the share")
+  void shouldKeepTheCopysHdrAtTheLowestVariantWhenNoVariantOfTheBudgetsEncodeFitsTheShare() {
+    // 80% of 7 Mb/s leaves 0.6 Mb/s beside the active copy's 5 Mb/s average, less than the HDR
+    // encode's 360p (0.925 Mb/s average).
+    transcodeExecutor.setTargetEncoders(
+        ExecutionTargetId.LOCAL, List.of(libx264(), writingPq(libx265())));
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(7);
+
+    var session = createLoneCopySession(dolbyVisionCopy(), VideoQuality.AUTO);
+
+    var decision = session.getTranscodeDecision();
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.hdr(VideoRange.PQ));
+    assertThat(listedVariants(session)).containsExactly("360p/stream.m3u8?t=t");
+  }
+
+  // No worker's encoder writes PQ here, so the client has no HDR encode to play, and the budget's
+  // encode gives HDR up.
+  @Test
+  @DisplayName(
+      "Should encode 8-bit SDR when the upload budget turns an HDR10 Auto copy without lower"
+          + " variants into an encode and no worker's encoder writes PQ")
+  void shouldEncodeEightBitSdrWhenTheBudgetEncodesALoneHdrCopyAndNoEncoderWritesPq() {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, less than this
+    // copy's 5 Mb/s average.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session = createLoneCopySession(hdr10Copy(), VideoQuality.AUTO);
+
+    var decision = session.getTranscodeDecision();
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.SDR_8_BIT);
+  }
+
+  /** A lone copy, the encoders that the worker lists beside it, and the HDR encode's family. */
+  private record LoneCopyBesideAnHdrEncode(LoneCopy copy, List<WorkerVerifiedEncoder> encoders) {
+
+    String encodeCodecFamily() {
+      return encoders.getLast().backend().codecFamily();
+    }
+
+    @Override
+    public String toString() {
+      return copy.toString();
+    }
+  }
+
+  private static WorkerVerifiedEncoder writingPq(WorkerVerifiedEncoder encoder) {
+    return WorkerVerifiedEncoder.builder()
+        .backend(encoder.backend())
+        .keyframeVerified(encoder.keyframeVerified())
+        .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+        .build();
+  }
+
   // Two copies of a 5 Mb/s HDR10 source that Auto lists without lower variants: no verified
   // encoder writes H.265 in PQ here, and no encode writes Dolby Vision (ADR 0013).
   static Stream<LoneCopy> autoCopiesWithoutLowerVariants() {
-    return Stream.of(
-        new LoneCopy("an HDR10 copy", hdr10HevcProbe(), pqDeclaration()),
-        new LoneCopy(
-            "a copy that the playlist describes as Dolby Vision",
-            profile81HevcProbe(),
-            declarationBuilderFor(H264)
-                .video(
-                    List.of(
-                        h264EntryBuilder().build(),
-                        hevcEntryBuilder()
-                            .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
-                            .dolbyVisionProfiles(
-                                List.of(
-                                    DolbyVisionProfileCapability.builder()
-                                        .profile(DolbyVisionProfile.PROFILE_8_1)
-                                        .maxLevel(6)
-                                        .build()))
-                            .build()))
-                .build()));
+    return Stream.of(hdr10Copy(), dolbyVisionCopy());
+  }
+
+  private static LoneCopy hdr10Copy() {
+    return new LoneCopy("an HDR10 copy", hdr10HevcProbe(), pqDeclaration());
+  }
+
+  private static LoneCopy dolbyVisionCopy() {
+    return new LoneCopy(
+        "a copy that the playlist describes as Dolby Vision",
+        profile81HevcProbe(),
+        declarationBuilderFor(H264)
+            .video(
+                List.of(
+                    h264EntryBuilder().build(),
+                    hevcEntryBuilder()
+                        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                        .dolbyVisionProfiles(
+                            List.of(
+                                DolbyVisionProfileCapability.builder()
+                                    .profile(DolbyVisionProfile.PROFILE_8_1)
+                                    .maxLevel(6)
+                                    .build()))
+                        .build()))
+            .build());
   }
 
   private record LoneCopy(String name, MediaProbe source, ClientCapabilityDeclaration declaration) {

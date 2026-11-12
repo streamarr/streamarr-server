@@ -301,7 +301,9 @@ public class HlsStreamingService implements StreamingService {
 
   // An Auto copy without lower variants that does not fit the upload budget is decided again as an
   // encode, whose ladder the budget can size. The budget never refuses playback, so the copy stays
-  // when no encode can start now.
+  // when no encode can start now. The encode keeps the copy's HDR whenever the client plays an HDR
+  // encode that a worker writes: an SDR encode's lowest variant costs as much, so giving HDR up
+  // would not bring the stream within the share.
   private Optional<Admission> encodeAdmittedNow(TranscodeDecisionRequest request) {
     var encodeOnly =
         request.toBuilder().videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY).build();
