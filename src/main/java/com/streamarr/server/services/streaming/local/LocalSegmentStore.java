@@ -154,7 +154,16 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   public Path getOutputDirectory(UUID sessionId) {
-    return sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
+    var sessionDir = sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
+
+    try {
+      // A soft link can take this folder's place after the store created it. A variant folder
+      // created through that soft link would sit outside the segment folder.
+      requireFolder(sessionDir);
+      return sessionDir;
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed to reuse session directory", e);
+    }
   }
 
   public Path getOutputDirectory(UUID sessionId, String variantLabel) {

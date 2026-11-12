@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+import com.google.common.io.MoreFiles;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Feature;
 import com.google.common.jimfs.Jimfs;
@@ -200,6 +201,28 @@ class LocalSegmentStoreSoftLinkTest {
     var sessionId = UUID.randomUUID();
     store.storeSegment(sessionId, "init.mp4", "ftyp moov".getBytes());
     Files.createSymbolicLink(segmentFolder.resolve(sessionId.toString()).resolve("720p"), outside);
+
+    var failure = catchThrowable(() -> store.storeSegment(sessionId, "720p/segment0.m4s", UPLOAD));
+
+    assertThat(outside).as("the folder that the soft link points to").isEmptyDirectory();
+    assertThat(failure).isInstanceOf(UncheckedIOException.class);
+    assertThat(entryNames(segmentFolder))
+        .as("no temporary upload file remains in the segment folder")
+        .containsExactly(sessionId.toString());
+  }
+
+  @Test
+  @DisplayName(
+      "Should store no variant's segment in the folder that a soft link points to when the soft"
+          + " link replaces a stream session's folder after the stream session stored a segment")
+  void shouldStoreNoVariantSegmentInTheFolderASoftLinkPointsToWhenItReplacesAStreamSessionsFolder()
+      throws IOException {
+    var store = new LocalSegmentStore(segmentFolder);
+    var sessionId = UUID.randomUUID();
+    store.storeSegment(sessionId, "init.mp4", "ftyp moov".getBytes());
+    var sessionFolder = segmentFolder.resolve(sessionId.toString());
+    MoreFiles.deleteRecursively(sessionFolder);
+    Files.createSymbolicLink(sessionFolder, outside);
 
     var failure = catchThrowable(() -> store.storeSegment(sessionId, "720p/segment0.m4s", UPLOAD));
 
