@@ -56,6 +56,7 @@ class ProfilePolicyPlanner {
       case Intent.SetProfileContentCeiling set ->
           new ProfilePolicyTarget(current.kind(), set.maximumAllowedRatingAge());
       case Intent.ClearProfileContentCeiling _ -> new ProfilePolicyTarget(current.kind(), null);
+      case Intent.SetProfilePolicy set -> set.target();
     };
   }
 

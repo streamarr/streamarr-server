@@ -1,6 +1,7 @@
 package com.streamarr.server.services.authorization;
 
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import java.util.UUID;
 
 /**
@@ -142,7 +143,10 @@ public sealed interface Intent {
    * mutation must write.
    */
   sealed interface ProfilePolicyChange extends Intent
-      permits ChangeProfileKind, SetProfileContentCeiling, ClearProfileContentCeiling {
+      permits ChangeProfileKind,
+          SetProfileContentCeiling,
+          ClearProfileContentCeiling,
+          SetProfilePolicy {
 
     UUID profileId();
   }
@@ -153,6 +157,13 @@ public sealed interface Intent {
       implements ProfilePolicyChange {}
 
   record ClearProfileContentCeiling(UUID profileId) implements ProfilePolicyChange {}
+
+  /**
+   * Give a Profile a kind and Content Ceiling at once. No mutation makes both changes in one step;
+   * the lock preview asks it, so that it previews only a change the caller may make.
+   */
+  record SetProfilePolicy(UUID profileId, ProfilePolicyTarget target)
+      implements ProfilePolicyChange {}
 
   /** Set or remove a Profile's PIN: managers and supervising admins. */
   record ManageProfilePin(UUID profileId) implements UnitIntent {}

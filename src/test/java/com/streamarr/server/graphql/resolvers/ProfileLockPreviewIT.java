@@ -135,6 +135,32 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should answer null when a member previews making its own Personal Profile a Kid, which only"
+          + " a ServerAdmin may do")
+  void shouldAnswerNullWhenAMemberPreviewsAChangeOnlyAServerAdminMayMake() throws Exception {
+    cast.profileManagedBy(
+        smith, ProfileFixture.kidProfileBuilder().name("Kit").maximumAllowedRatingAge(12));
+    var pat = track(authTestSupport.createHouseholdMemberIdentity(smith));
+
+    for (var ceiling : List.of("7", "12", "16")) {
+      assertThat(
+              preview(authTestSupport.accountBearer(pat), pat.profile(), ProfileKind.KID, ceiling)
+                  .isNull())
+          .isTrue();
+    }
+  }
+
+  @Test
+  @DisplayName("Should answer null when a manager previews a negative content ceiling")
+  void shouldAnswerNullWhenAManagerPreviewsANegativeContentCeiling() throws Exception {
+    var sam = cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder().name("Sam"));
+
+    assertThat(preview(authTestSupport.accountBearer(smith), sam, ProfileKind.KID, "-1").isNull())
+        .isTrue();
+  }
+
+  @Test
   @DisplayName("Should answer null when a device-bound session of the manager asks")
   void shouldAnswerNullWhenADeviceBoundSessionOfTheManagerAsks() throws Exception {
     var sam = cast.profileManagedBy(smith, ProfileFixture.defaultProfileBuilder().name("Sam"));
@@ -194,6 +220,15 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
 
     assertThat(
             creationPreview(authTestSupport.accountBearer(member), ProfileKind.KID, "10").isNull())
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer null when a HouseholdAdmin previews adding a negative content ceiling")
+  void shouldAnswerNullWhenAHouseholdAdminPreviewsAddingANegativeContentCeiling() throws Exception {
+    assertThat(
+            creationPreview(authTestSupport.accountBearer(smith), ProfileKind.KID, "-1").isNull())
         .isTrue();
   }
 
