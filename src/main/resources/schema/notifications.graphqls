@@ -148,6 +148,33 @@ enum ProfileShareEndedBy {
     SERVER
 }
 
+"""
+An Account invited the recipient to manage a Profile. Recipient: the Account that had the invited
+address and could accept the invitation when it was issued. It decides on
+managerInvitation(invitationId:), which needs no code; this Notification never carries one.
+"""
+type ProfileManagerInvitationReceivedNotification implements RequestNotification & Notification {
+    id: ID!
+    message: String!
+    createdAt: String!
+    latestEventAt: String!
+    unread: Boolean!
+    expiresAt: String
+    resolution: RequestResolution
+    resolvedAt: String
+    "The id of the ProfileManager invitation, for managerInvitation(invitationId:)."
+    invitationId: ID!
+    "The Profile's name when the invitation was issued. A later rename does not change it."
+    profileName: String!
+    "Whether the invitation was accepted or declined, once resolution is DECIDED. Null otherwise."
+    answer: ProfileManagerInvitationAnswer
+}
+
+enum ProfileManagerInvitationAnswer {
+    ACCEPTED
+    DECLINED
+}
+
 type NotificationConnection {
     edges: [NotificationEdge]!
     pageInfo: PageInfo!

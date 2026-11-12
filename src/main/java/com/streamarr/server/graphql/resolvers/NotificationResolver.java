@@ -21,6 +21,7 @@ import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.notification.MarkNotificationsReadPayload;
 import com.streamarr.server.graphql.mutation.notification.NotificationErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.events.notification.ProfileManagementNotificationKinds;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.notification.NotificationService;
 import com.streamarr.server.services.notification.NotificationsList;
@@ -52,7 +53,9 @@ public class NotificationResolver {
           SharingNotificationKinds.PROFILE_SHARE_OFFERED.name(), "ProfileShareOfferedNotification",
           SharingNotificationKinds.PROFILE_SHARE_ANSWERED.name(),
               "ProfileShareAnsweredNotification",
-          SharingNotificationKinds.PROFILE_SHARE_ENDED.name(), "ProfileShareEndedNotification");
+          SharingNotificationKinds.PROFILE_SHARE_ENDED.name(), "ProfileShareEndedNotification",
+          ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_RECEIVED.name(),
+              "ProfileManagerInvitationReceivedNotification");
 
   private final NotificationService notificationService;
   private final AuthorizationService authorizationService;
