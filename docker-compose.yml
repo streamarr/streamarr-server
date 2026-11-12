@@ -26,6 +26,9 @@ services:
       STREAMING_WORKER_SESSION_PORT: ${STREAMARR_WORKER_SESSION_PORT:-9090}
       STREAMING_REMOTE_SOURCE_NAMESPACE_ID: ${STREAMARR_SOURCE_NAMESPACE_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}
       STREAMING_REMOTE_SOURCE_ROOT: /media
+      # Only this server uses the folder, so at its start the server deletes what a server process
+      # that ended without stopping left there.
+      STREAMING_SEGMENT_BASE_PATH: /tmp/streamarr-server/segments
       # Spring Boot's OTLP meter registry sends every Micrometer meter to Prometheus every 10 s, at
       # the OTLP endpoint followed by /v1/metrics. The OpenTelemetry SDK stays disabled, so the
       # server produces no spans or log records: Compose runs no backend for them. The metrics'

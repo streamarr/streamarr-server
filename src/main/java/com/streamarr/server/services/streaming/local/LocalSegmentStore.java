@@ -1,7 +1,9 @@
 package com.streamarr.server.services.streaming.local;
 
+import com.google.common.io.MoreFiles;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.exceptions.UnsupportedSegmentFolderException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
@@ -10,10 +12,10 @@ import com.streamarr.server.services.streaming.StoredSegment;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,7 +29,20 @@ public class LocalSegmentStore implements SegmentStore {
   private final MutexFactory<Path> publicationLocks = new MutexFactory<>();
 
   public LocalSegmentStore(Path baseDir) {
+    if (!deletesWithoutFollowingSoftLinks(baseDir)) {
+      throw new UnsupportedSegmentFolderException(baseDir);
+    }
+
     this.baseDir = baseDir;
+  }
+
+  // MoreFiles.deleteRecursively deletes nothing on a file system without secure directory streams.
+  private static boolean deletesWithoutFollowingSoftLinks(Path segmentFolder) {
+    try (var entries = Files.newDirectoryStream(Files.createDirectories(segmentFolder))) {
+      return entries instanceof SecureDirectoryStream;
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed to open segment folder: " + segmentFolder, e);
+    }
   }
 
   @Override
@@ -198,15 +213,9 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   private void deleteDirectoryRecursively(Path dir) {
-    try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
-      for (var entry : stream) {
-        if (!Files.isDirectory(entry)) {
-          Files.deleteIfExists(entry);
-          continue;
-        }
-        deleteDirectoryRecursively(entry);
-      }
-      Files.deleteIfExists(dir);
+    try {
+      // Deletes a soft link itself, never what it points to.
+      MoreFiles.deleteRecursively(dir);
     } catch (IOException e) {
       log.warn("Failed to clean up session directory: {}", dir, e);
     }
