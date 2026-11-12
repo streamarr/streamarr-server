@@ -8,7 +8,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
@@ -60,6 +59,11 @@ class InviteByEmailIT extends AbstractIntegrationTest {
         edges { node { %s } } } }
       """;
 
+  private static final String READ =
+      """
+      query { managerInvitation(invitationId: "%s") { %s } }
+      """;
+
   private static final String RECEIVED =
       "query { pendingManagerInvitations { edges { node { id } } } }";
 
@@ -76,6 +80,7 @@ class InviteByEmailIT extends AbstractIntegrationTest {
 
   private final List<TestIdentity> identities = new ArrayList<>();
   private TestIdentity sam;
+  private TestIdentity alexsAccount;
   private Profile alex;
 
   /** Who, if anyone, has the address that Sam types. */
@@ -84,6 +89,7 @@ class InviteByEmailIT extends AbstractIntegrationTest {
     ELIGIBLE_ACCOUNT,
     SUPERVISED_ACCOUNT,
     MANAGING_ACCOUNT,
+    THE_PROFILES_OWN_ACCOUNT,
     THE_INVITERS_OWN_ADDRESS,
     DISABLED_ACCOUNT
   }
@@ -92,7 +98,11 @@ class InviteByEmailIT extends AbstractIntegrationTest {
   void setUp() {
     sam = track(authTestSupport.createIdentity());
     cast.rename(sam, "Sam");
-    alex = cast.profileManagedBy(sam, ProfileFixture.defaultProfileBuilder().name("Alex"));
+    // Alex is a Personal Profile, so the Account that manages it as its own is an address too.
+    alexsAccount = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    alex = alexsAccount.profile();
+    cast.rename(alex, "Alex");
+    cast.grant(sam, alex);
   }
 
   @AfterEach
@@ -113,6 +123,7 @@ class InviteByEmailIT extends AbstractIntegrationTest {
 
     var answer = invite(typed);
     var list = pendingForAlex();
+    var read = readAsSam(answer.at(invitationPath("id")).asString());
 
     assertThat(masked(answer.at("/data/inviteProfileManager"), typed.strip()))
         .isEqualTo(
@@ -127,12 +138,19 @@ class InviteByEmailIT extends AbstractIntegrationTest {
             edge ->
                 assertThat(maskedInvitation(edge.path("node"), typed.strip()))
                     .isEqualTo(objectMapper.readTree(maskedInvitation())));
+    assertThat(maskedInvitation(read.at("/data/managerInvitation"), typed.strip()))
+        .isEqualTo(objectMapper.readTree(maskedInvitation()));
   }
 
   @ParameterizedTest
   @EnumSource(
       value = Invitee.class,
-      names = {"SUPERVISED_ACCOUNT", "MANAGING_ACCOUNT", "THE_INVITERS_OWN_ADDRESS"})
+      names = {
+        "SUPERVISED_ACCOUNT",
+        "MANAGING_ACCOUNT",
+        "THE_PROFILES_OWN_ACCOUNT",
+        "THE_INVITERS_OWN_ADDRESS"
+      })
   @DisplayName(
       "Should name no Account when the Account with the address may not accept the invitation")
   void shouldNameNoAccountWhenTheAccountWithTheAddressMayNotAcceptTheInvitation(Invitee invitee)
@@ -158,17 +176,20 @@ class InviteByEmailIT extends AbstractIntegrationTest {
     assertThat(received(holderOf(address))).containsExactly(invitationId.asString());
   }
 
-  @Test
+  @ParameterizedTest
+  @EnumSource(Invitee.class)
   @DisplayName(
-      "Should invite in the same number of statements whether or not an Account can answer")
-  void shouldInviteInTheSameNumberOfStatementsWhetherOrNotAnAccountCanAnswer() throws Exception {
+      "Should invite in as many statements as to an address nobody has when the address is any"
+          + " other")
+  void shouldInviteInAsManyStatementsAsToAnAddressNobodyHasWhenTheAddressIsAnyOther(Invitee invitee)
+      throws Exception {
     var nobody = addressOf(Invitee.NO_ACCOUNT);
-    var mara = addressOf(Invitee.ELIGIBLE_ACCOUNT);
+    var address = addressOf(invitee);
 
     var forNobody = statementCount.statementsWhile(() -> invite(nobody));
-    var forMara = statementCount.statementsWhile(() -> invite(mara));
+    var forAddress = statementCount.statementsWhile(() -> invite(address));
 
-    assertThat(forMara).isEqualTo(forNobody);
+    assertThat(forAddress).isEqualTo(forNobody);
   }
 
   @Test
@@ -369,6 +390,7 @@ class InviteByEmailIT extends AbstractIntegrationTest {
         cast.grant(manager, alex);
         yield manager.account().getEmail();
       }
+      case THE_PROFILES_OWN_ACCOUNT -> alexsAccount.account().getEmail();
       case THE_INVITERS_OWN_ADDRESS -> sam.account().getEmail();
       case DISABLED_ACCOUNT -> {
         var disabled = track(authTestSupport.createIdentity());
@@ -396,6 +418,11 @@ class InviteByEmailIT extends AbstractIntegrationTest {
     return graphql(
         authTestSupport.accountBearer(sam),
         PENDING_FOR_PROFILE.formatted(alex.getId(), INVITATION_FIELDS));
+  }
+
+  private JsonNode readAsSam(String invitationId) throws Exception {
+    return graphql(
+        authTestSupport.accountBearer(sam), READ.formatted(invitationId, INVITATION_FIELDS));
   }
 
   private List<String> received(TestIdentity identity) throws Exception {
