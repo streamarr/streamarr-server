@@ -561,7 +561,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
     steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
     demote(riversideAdmin);
 
-    steps.promoted(riversideAdmin);
+    promote(riversideAdmin);
 
     mockMvc
         .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
@@ -666,6 +666,14 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
     assertThat(
             accountAdministration.revokeHouseholdAdmin(
                 authTestSupport.freshIdentityOf(serverAdmin), householdAdmin.account().getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+  }
+
+  private void promote(TestIdentity householdMember) {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    assertThat(
+            accountAdministration.grantHouseholdAdmin(
+                authTestSupport.freshIdentityOf(serverAdmin), householdMember.account().getId()))
         .isInstanceOf(Outcome.Accepted.class);
   }
 
