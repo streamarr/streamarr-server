@@ -77,7 +77,8 @@ final class MountTable {
    * or a second mount of a file system gives a folder more than one path, so the table compares
    * where the paths lead: a file system, and a folder in it. A file system that is mounted at or
    * below the other folder counts as part of that folder. Both paths are absolute and lead through
-   * no soft link.
+   * no soft link. The table cannot see where an overlay mount, or a second network mount of one
+   * remote folder, leads: it shows each of them as a file system of its own.
    *
    * @throws UnknownFolderLocationException if the table does not show where a path leads
    */

@@ -35,7 +35,9 @@ public final class SegmentFolderLock implements AutoCloseable {
 
   private FileChannel channel;
   // The real path of the folder whose lock the channel holds, read once when the channel opens: a
-  // soft link on the folder's path that is pointed elsewhere later leads no write out of it.
+  // soft link on the configured path that is pointed elsewhere later leads no write out of it.
+  // Renaming the folder while the process runs is not supported: a soft link put at this real path
+  // then leads later writes into a folder that this lock does not hold.
   private Path lockedFolder;
   private boolean heldShared;
 

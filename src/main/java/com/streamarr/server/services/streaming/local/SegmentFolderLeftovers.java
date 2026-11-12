@@ -60,9 +60,10 @@ public class SegmentFolderLeftovers {
    * holds nothing of a running store.
    *
    * <p>It refuses a folder that is a root directory, that is the home folder or lies above it, that
-   * is a media folder or lies above or below one under any of their paths, or that a file system is
-   * mounted in, and it creates nothing there. It refuses every folder when the media folders or the
-   * mount table cannot be read, or the mount table does not show where the folders lie.
+   * is a media folder or lies above or below one under any of their paths that the mount table
+   * shows, or that a file system is mounted in, and it creates nothing there. It refuses every
+   * folder when the media folders or the mount table cannot be read, or the mount table does not
+   * show where the folders lie.
    *
    * <p>It deletes only in a folder that carries its mark, and it marks only a folder that holds no
    * other entry. There it deletes a stream session's directory only when a store marked the
