@@ -116,6 +116,38 @@ class ManagerInvitationPageIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should answer null when a HouseholdAdmin who only supervises the Profile reads the"
+          + " invitation")
+  void shouldAnswerNullWhenAHouseholdAdminWhoOnlySupervisesTheProfileReadsTheInvitation()
+      throws Exception {
+    var kit = cast.profileManagedBy(sam, ProfileFixture.kidProfileBuilder().name("Kit"));
+    var invitationId = invite(sam, kit, mara).path("id").asString();
+    var supervisor = cast.secondAdminOf(sam);
+
+    assertThat(invitation(supervisor, invitationId).isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should answer null when the named Account is disabled")
+  void shouldAnswerNullWhenTheNamedAccountIsDisabled() throws Exception {
+    var invitationId = invite(sam, alex, mara).path("id").asString();
+    cast.enable(mara, false);
+
+    assertThat(invitation(mara, invitationId).isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should show the invitation when a manager who did not send it reads it")
+  void shouldShowTheInvitationWhenAManagerWhoDidNotSendItReadsIt() throws Exception {
+    var invitationId = invite(sam, alex, mara).path("id").asString();
+    var kai = track(authTestSupport.createIdentity());
+    cast.grant(kai, alex);
+
+    assertThat(invitation(kai, invitationId).path("id").asString()).isEqualTo(invitationId);
+  }
+
+  @Test
   @DisplayName("Should show the invitation at any status when its named Account reads it")
   void shouldShowTheInvitationAtAnyStatusWhenItsNamedAccountReadsIt() throws Exception {
     var invitationId = invite(sam, alex, mara).path("id").asString();
