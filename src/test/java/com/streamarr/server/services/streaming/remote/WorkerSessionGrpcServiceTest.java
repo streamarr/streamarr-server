@@ -1921,11 +1921,21 @@ class WorkerSessionGrpcServiceTest {
         .isEqualTo(reconnected);
   }
 
-  @ParameterizedTest
-  @ValueSource(booleans = {true, false})
-  @DisplayName("Should publish a job attempt's progress only when its worker session runs it")
-  void shouldPublishAJobAttemptsProgressOnlyWhenItsWorkerSessionRunsIt(boolean running)
-      throws Exception {
+  // A report need not carry an output end: a held encode's keyframe search runs before FFmpeg
+  // writes, and FFmpeg writes nothing while a copy's audio input reads on after the audio's last
+  // packet. Each such report counts the bytes read instead.
+  @ParameterizedTest(name = "running: {0}, the report carries {1}")
+  @CsvSource({
+    "true, KEYFRAME_SEARCH_BYTES_READ",
+    "false, KEYFRAME_SEARCH_BYTES_READ",
+    "true, FFMPEG_BYTES_READ",
+    "false, FFMPEG_BYTES_READ"
+  })
+  @DisplayName(
+      "Should publish a job attempt's progress, whichever bytes read its report carries, only when"
+          + " its worker session runs it")
+  void shouldPublishAJobAttemptsProgressOnlyWhenItsWorkerSessionRunsIt(
+      boolean running, BytesRead bytesRead) throws Exception {
     var events = new CapturingEventPublisher();
     var registry =
         LiveWorkerConnectionRegistry.builder()
@@ -1950,9 +1960,8 @@ class WorkerSessionGrpcServiceTest {
     connection.onNext(
         EstablishWorkerSessionRequest.newBuilder()
             .setJobAttemptProgress(
-                JobAttemptProgress.newBuilder()
-                    .setJobAttemptId(job.getJobAttemptId())
-                    .setKeyframeSearchBytesRead(65_536))
+                bytesRead.in(
+                    JobAttemptProgress.newBuilder().setJobAttemptId(job.getJobAttemptId())))
             .build());
 
     var progressed =
@@ -1963,6 +1972,24 @@ class WorkerSessionGrpcServiceTest {
             .build();
     assertThat(events.getEventsOfType(JobAttemptProgressedEvent.class))
         .isEqualTo(running ? List.of(progressed) : List.of());
+  }
+
+  /** The bytes read that a progress report without an output end carries. */
+  private enum BytesRead {
+    KEYFRAME_SEARCH_BYTES_READ {
+      @Override
+      JobAttemptProgress.Builder in(JobAttemptProgress.Builder progress) {
+        return progress.setKeyframeSearchBytesRead(65_536);
+      }
+    },
+    FFMPEG_BYTES_READ {
+      @Override
+      JobAttemptProgress.Builder in(JobAttemptProgress.Builder progress) {
+        return progress.setFfmpegBytesRead(65_536);
+      }
+    };
+
+    abstract JobAttemptProgress.Builder in(JobAttemptProgress.Builder progress);
   }
 
   @Test

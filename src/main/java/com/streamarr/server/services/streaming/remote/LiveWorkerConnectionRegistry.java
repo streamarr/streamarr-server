@@ -856,8 +856,9 @@ final class LiveWorkerConnectionRegistry {
   }
 
   /**
-   * Publishes a running job attempt's progress, which the worker sends only when the attempt's
-   * output has advanced. A report for an attempt that the current session does not run is ignored.
+   * Publishes a running job attempt's progress, which the worker sends only when a value of the
+   * report has grown: the output's end, or the bytes read where the output cannot grow. A report
+   * for an attempt that the current session does not run is ignored.
    */
   void reportProgress(UUID workerId, UUID workerSessionId, JobAttemptProgress progress) {
     currentConnection(workerId, workerSessionId)

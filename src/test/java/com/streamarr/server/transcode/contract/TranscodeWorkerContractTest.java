@@ -1132,6 +1132,25 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
+      "Should carry the bytes that FFmpeg has read and no output time when a copy that encodes its audio reports its reading as progress")
+  void
+      shouldCarryTheBytesThatFfmpegHasReadAndNoOutputTimeWhenCopyThatEncodesItsAudioReportsItsReadingAsProgress()
+          throws Exception {
+    var reading =
+        JobAttemptProgress.newBuilder()
+            .setJobAttemptId(uuid(UUID.randomUUID()))
+            .setFfmpegBytesRead(3_005_026_741L)
+            .build();
+
+    var parsed = JobAttemptProgress.parseFrom(reading.toByteArray());
+
+    assertThat(parsed.getFfmpegBytesRead()).isEqualTo(3_005_026_741L);
+    assertThat(parsed.hasOutputEnd()).isFalse();
+    assertThat(parsed.getKeyframeSearchBytesRead()).isZero();
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the field numbers and types that workers build against when publishing the progress report")
   void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingTheProgressReport() {
     var event =
@@ -1150,6 +1169,11 @@ class TranscodeWorkerContractTest {
     assertThat(progress.findFieldByName("keyframe_search_bytes_read").getNumber()).isEqualTo(3);
     assertThat(progress.findFieldByName("keyframe_search_bytes_read").getType())
         .isEqualTo(Type.UINT64);
+    assertThat(progress.findFieldByName("ffmpeg_bytes_read"))
+        .as("the field that counts the bytes that an attempt's FFmpeg has read")
+        .isNotNull();
+    assertThat(progress.findFieldByName("ffmpeg_bytes_read").getNumber()).isEqualTo(4);
+    assertThat(progress.findFieldByName("ffmpeg_bytes_read").getType()).isEqualTo(Type.UINT64);
   }
 
   @Test
