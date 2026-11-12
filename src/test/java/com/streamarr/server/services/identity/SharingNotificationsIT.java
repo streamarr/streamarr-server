@@ -1,9 +1,13 @@
 package com.streamarr.server.services.identity;
 
 import static com.streamarr.server.jooq.generated.tables.Notification.NOTIFICATION;
+import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static com.streamarr.server.support.StoredNotificationRows.document;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -50,6 +54,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 
@@ -87,6 +92,7 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private MockMvc mockMvc;
 
   private final List<TestIdentity> identities = new ArrayList<>();
   private final List<UUID> connectedAccountIds = new ArrayList<>();
@@ -234,6 +240,41 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
                         document(new ProfileShareOfferedSnapshot("Ollie", Optional.empty()))))
         .extracting(Row::recipient)
         .containsExactlyInAnyOrder(account(riverside), account(riversideAdmin));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep nothing of the Accounts that acted when an offer and its rejection tell both"
+          + " sides")
+  void shouldKeepNothingOfTheAccountsThatActedWhenAnOfferAndItsRejectionTellBothSides()
+      throws Exception {
+    var offer =
+        UUID.fromString(
+            graphql(
+                sam,
+                "$.data.offerProfileShare.share.id",
+                """
+                mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
+                  share { id } userErrors { __typename } } }
+                """
+                    .formatted(sam.profile().getId(), authTestSupport.shareCodeFor(riverside))));
+
+    graphql(
+        riversideAdmin,
+        "$.data.rejectProfileShare.share.status",
+        """
+        mutation { rejectProfileShare(input: {shareId: "%s"}) {
+          share { status } userErrors { __typename } } }
+        """
+            .formatted(offer));
+
+    var actors =
+        new String[] {
+          sam.account().getId().toString(), riversideAdmin.account().getId().toString()
+        };
+    assertThat(storedCopiesAbout(offer))
+        .hasSize(3)
+        .allSatisfy(stored -> assertThat(stored).doesNotContain(actors));
   }
 
   @Test
@@ -906,6 +947,27 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
                   .isEqualTo(
                       document(new ProfileShareOfferedSnapshot(profileName, Optional.empty())));
             });
+  }
+
+  /** Every column of each copy about the share, as text, without the copy's own recipient. */
+  private List<String> storedCopiesAbout(UUID shareId) {
+    return dsl.fetch(
+            "SELECT recipient_id::text, row_to_json(n)::text FROM notification n WHERE subject_id = ?",
+            shareId)
+        .map(copy -> copy.get(1, String.class).replace(copy.get(0, String.class), ""));
+  }
+
+  /** Runs the operation as the Account, as its client sends it, and answers the value at path. */
+  private String graphql(TestIdentity account, String path, String operation) throws Exception {
+    var body =
+        mockMvc
+            .perform(graphqlRequest(authTestSupport.accountBearer(account), operation))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return JsonPath.read(body, path);
   }
 
   private ProfileHouseholdShare stored(ProfileHouseholdShare share) {

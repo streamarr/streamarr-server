@@ -520,8 +520,14 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
   void shouldLeaveNewsAndRequestsAboutOtherSubjectsAloneWhenARequestResolves() {
     var other = SubjectReference.profileShare(UUID.randomUUID());
     tell(offeredTheo().build());
-    tell(offered(new ProfileShareOfferedSnapshot("Theo", Optional.empty()), other).build());
-    tell(answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED)).build());
+    tell(
+        offered(new ProfileShareOfferedSnapshot("Theo", Optional.empty()), other)
+            .at(EVENT.plusSeconds(1))
+            .build());
+    tell(
+        answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED))
+            .at(EVENT.plusSeconds(2))
+            .build());
 
     publish(decided(EVENT.plusSeconds(60)).build());
 
@@ -661,7 +667,7 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
 
     assertThat(rows.of(sam))
         .extracting(Row::subject, Row::form)
-        .containsExactly(tuple(share, "NEWS"), tuple(resolved, "REQUEST"));
+        .containsExactlyInAnyOrder(tuple(share, "NEWS"), tuple(resolved, "REQUEST"));
   }
 
   @Test

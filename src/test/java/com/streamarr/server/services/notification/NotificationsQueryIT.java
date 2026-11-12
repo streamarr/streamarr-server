@@ -269,7 +269,6 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
     var latestEvent = firstEvent.plus(Duration.ofMinutes(1));
     var news = tellNews(riversideAdmin, subject, firstEvent);
     tellNews(riversideAdmin, subject, latestEvent);
-    var madeAt = rows.about(subject).getFirst().createdAt();
 
     mockMvc
         .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
@@ -278,7 +277,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.id").value(news.toString()))
         .andExpect(
-            jsonPath("$.data.notifications.edges[0].node.createdAt").value(madeAt.toString()))
+            jsonPath("$.data.notifications.edges[0].node.createdAt").value(firstEvent.toString()))
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.latestEventAt")
                 .value(latestEvent.toString()));

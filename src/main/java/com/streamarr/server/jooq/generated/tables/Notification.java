@@ -66,26 +66,6 @@ public class Notification extends TableImpl<NotificationRecord> {
     public final TableField<NotificationRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false).defaultValue(DSL.field(DSL.raw("gen_random_uuid()"), SQLDataType.UUID)), this, "");
 
     /**
-     * The column <code>public.notification.created_on</code>.
-     */
-    public final TableField<NotificationRecord, OffsetDateTime> CREATED_ON = createField(DSL.name("created_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
-
-    /**
-     * The column <code>public.notification.created_by</code>.
-     */
-    public final TableField<NotificationRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID, this, "");
-
-    /**
-     * The column <code>public.notification.last_modified_on</code>.
-     */
-    public final TableField<NotificationRecord, OffsetDateTime> LAST_MODIFIED_ON = createField(DSL.name("last_modified_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
-
-    /**
-     * The column <code>public.notification.last_modified_by</code>.
-     */
-    public final TableField<NotificationRecord, UUID> LAST_MODIFIED_BY = createField(DSL.name("last_modified_by"), SQLDataType.UUID, this, "");
-
-    /**
      * The column <code>public.notification.recipient_type</code>.
      */
     public final TableField<NotificationRecord, String> RECIPIENT_TYPE = createField(DSL.name("recipient_type"), SQLDataType.CLOB.nullable(false), this, "");
@@ -119,6 +99,11 @@ public class Notification extends TableImpl<NotificationRecord> {
      * The column <code>public.notification.snapshot</code>.
      */
     public final TableField<NotificationRecord, JSONB> SNAPSHOT = createField(DSL.name("snapshot"), SQLDataType.JSONB.nullable(false), this, "");
+
+    /**
+     * The column <code>public.notification.first_event_at</code>.
+     */
+    public final TableField<NotificationRecord, OffsetDateTime> FIRST_EVENT_AT = createField(DSL.name("first_event_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false), this, "");
 
     /**
      * The column <code>public.notification.latest_event_at</code>.

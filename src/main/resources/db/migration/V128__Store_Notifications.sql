@@ -1,8 +1,9 @@
 -- Notifications (ADR 0063). A Notification keeps what one recipient was told when something
 -- happened to a subject, made inside the transaction of the event that told it. Its kind fixes its
 -- form: a request waits for a decision on its subject and stores how it resolved, which only the
--- subject's events write; news stays unread until its recipient marks it read. created_on is when
--- the first event made it, and latest_event_at moves with each later event of its kind.
+-- subject's events write; news stays unread until its recipient marks it read. first_event_at is
+-- when the first event made it, and latest_event_at moves with each later event of its kind. A
+-- Notification is not an audit record, so it keeps no Account that acted.
 --
 -- The recipient and the subject are references, a type and an id, and neither is a foreign key:
 -- the module learns of a deleted subject or recipient from events, never from the database. The
@@ -15,25 +16,22 @@ CREATE TYPE request_resolution AS ENUM ('DECIDED', 'WITHDRAWN', 'EXPIRED');
 
 CREATE TABLE notification
 (
-    id               UUID                     NOT NULL DEFAULT gen_random_uuid(),
-    created_on       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    created_by       UUID,
-    last_modified_on TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    last_modified_by UUID,
-    recipient_type   TEXT                     NOT NULL,
-    recipient_id     UUID                     NOT NULL,
-    kind             TEXT                     NOT NULL,
-    form             notification_form        NOT NULL,
-    subject_type     TEXT                     NOT NULL,
-    subject_id       UUID                     NOT NULL,
-    snapshot         JSONB                    NOT NULL,
-    latest_event_at  TIMESTAMP WITH TIME ZONE NOT NULL,
-    read_at          TIMESTAMP WITH TIME ZONE,
+    id              UUID                     NOT NULL DEFAULT gen_random_uuid(),
+    recipient_type  TEXT                     NOT NULL,
+    recipient_id    UUID                     NOT NULL,
+    kind            TEXT                     NOT NULL,
+    form            notification_form        NOT NULL,
+    subject_type    TEXT                     NOT NULL,
+    subject_id      UUID                     NOT NULL,
+    snapshot        JSONB                    NOT NULL,
+    first_event_at  TIMESTAMP WITH TIME ZONE NOT NULL,
+    latest_event_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    read_at         TIMESTAMP WITH TIME ZONE,
     -- A request's state: null while no event has resolved it, and its subject's expiry, from which
     -- it reads as expired before any event says so.
-    resolution       request_resolution,
-    resolved_at      TIMESTAMP WITH TIME ZONE,
-    expires_at       TIMESTAMP WITH TIME ZONE,
+    resolution      request_resolution,
+    resolved_at     TIMESTAMP WITH TIME ZONE,
+    expires_at      TIMESTAMP WITH TIME ZONE,
     CONSTRAINT notification_pkey PRIMARY KEY (id),
     CONSTRAINT chk_notification_news_has_no_request_state
         CHECK (form = 'REQUEST'
@@ -68,6 +66,3 @@ CREATE INDEX idx_notification_subject ON notification (subject_type, subject_id)
 
 -- Retention.
 CREATE INDEX idx_notification_latest_event ON notification (latest_event_at);
-
-CREATE TRIGGER fill_audit_columns BEFORE INSERT OR UPDATE ON notification
-    FOR EACH ROW EXECUTE FUNCTION fill_audit_columns();

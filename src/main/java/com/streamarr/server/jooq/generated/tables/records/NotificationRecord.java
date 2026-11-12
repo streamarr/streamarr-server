@@ -39,227 +39,185 @@ public class NotificationRecord extends UpdatableRecordImpl<NotificationRecord> 
     }
 
     /**
-     * Setter for <code>public.notification.created_on</code>.
-     */
-    public void setCreatedOn(OffsetDateTime value) {
-        set(1, value);
-    }
-
-    /**
-     * Getter for <code>public.notification.created_on</code>.
-     */
-    public OffsetDateTime getCreatedOn() {
-        return (OffsetDateTime) get(1);
-    }
-
-    /**
-     * Setter for <code>public.notification.created_by</code>.
-     */
-    public void setCreatedBy(UUID value) {
-        set(2, value);
-    }
-
-    /**
-     * Getter for <code>public.notification.created_by</code>.
-     */
-    public UUID getCreatedBy() {
-        return (UUID) get(2);
-    }
-
-    /**
-     * Setter for <code>public.notification.last_modified_on</code>.
-     */
-    public void setLastModifiedOn(OffsetDateTime value) {
-        set(3, value);
-    }
-
-    /**
-     * Getter for <code>public.notification.last_modified_on</code>.
-     */
-    public OffsetDateTime getLastModifiedOn() {
-        return (OffsetDateTime) get(3);
-    }
-
-    /**
-     * Setter for <code>public.notification.last_modified_by</code>.
-     */
-    public void setLastModifiedBy(UUID value) {
-        set(4, value);
-    }
-
-    /**
-     * Getter for <code>public.notification.last_modified_by</code>.
-     */
-    public UUID getLastModifiedBy() {
-        return (UUID) get(4);
-    }
-
-    /**
      * Setter for <code>public.notification.recipient_type</code>.
      */
     public void setRecipientType(String value) {
-        set(5, value);
+        set(1, value);
     }
 
     /**
      * Getter for <code>public.notification.recipient_type</code>.
      */
     public String getRecipientType() {
-        return (String) get(5);
+        return (String) get(1);
     }
 
     /**
      * Setter for <code>public.notification.recipient_id</code>.
      */
     public void setRecipientId(UUID value) {
-        set(6, value);
+        set(2, value);
     }
 
     /**
      * Getter for <code>public.notification.recipient_id</code>.
      */
     public UUID getRecipientId() {
-        return (UUID) get(6);
+        return (UUID) get(2);
     }
 
     /**
      * Setter for <code>public.notification.kind</code>.
      */
     public void setKind(String value) {
-        set(7, value);
+        set(3, value);
     }
 
     /**
      * Getter for <code>public.notification.kind</code>.
      */
     public String getKind() {
-        return (String) get(7);
+        return (String) get(3);
     }
 
     /**
      * Setter for <code>public.notification.form</code>.
      */
     public void setForm(NotificationForm value) {
-        set(8, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>public.notification.form</code>.
      */
     public NotificationForm getForm() {
-        return (NotificationForm) get(8);
+        return (NotificationForm) get(4);
     }
 
     /**
      * Setter for <code>public.notification.subject_type</code>.
      */
     public void setSubjectType(String value) {
-        set(9, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>public.notification.subject_type</code>.
      */
     public String getSubjectType() {
-        return (String) get(9);
+        return (String) get(5);
     }
 
     /**
      * Setter for <code>public.notification.subject_id</code>.
      */
     public void setSubjectId(UUID value) {
-        set(10, value);
+        set(6, value);
     }
 
     /**
      * Getter for <code>public.notification.subject_id</code>.
      */
     public UUID getSubjectId() {
-        return (UUID) get(10);
+        return (UUID) get(6);
     }
 
     /**
      * Setter for <code>public.notification.snapshot</code>.
      */
     public void setSnapshot(JSONB value) {
-        set(11, value);
+        set(7, value);
     }
 
     /**
      * Getter for <code>public.notification.snapshot</code>.
      */
     public JSONB getSnapshot() {
-        return (JSONB) get(11);
+        return (JSONB) get(7);
+    }
+
+    /**
+     * Setter for <code>public.notification.first_event_at</code>.
+     */
+    public void setFirstEventAt(OffsetDateTime value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for <code>public.notification.first_event_at</code>.
+     */
+    public OffsetDateTime getFirstEventAt() {
+        return (OffsetDateTime) get(8);
     }
 
     /**
      * Setter for <code>public.notification.latest_event_at</code>.
      */
     public void setLatestEventAt(OffsetDateTime value) {
-        set(12, value);
+        set(9, value);
     }
 
     /**
      * Getter for <code>public.notification.latest_event_at</code>.
      */
     public OffsetDateTime getLatestEventAt() {
-        return (OffsetDateTime) get(12);
+        return (OffsetDateTime) get(9);
     }
 
     /**
      * Setter for <code>public.notification.read_at</code>.
      */
     public void setReadAt(OffsetDateTime value) {
-        set(13, value);
+        set(10, value);
     }
 
     /**
      * Getter for <code>public.notification.read_at</code>.
      */
     public OffsetDateTime getReadAt() {
-        return (OffsetDateTime) get(13);
+        return (OffsetDateTime) get(10);
     }
 
     /**
      * Setter for <code>public.notification.resolution</code>.
      */
     public void setResolution(RequestResolution value) {
-        set(14, value);
+        set(11, value);
     }
 
     /**
      * Getter for <code>public.notification.resolution</code>.
      */
     public RequestResolution getResolution() {
-        return (RequestResolution) get(14);
+        return (RequestResolution) get(11);
     }
 
     /**
      * Setter for <code>public.notification.resolved_at</code>.
      */
     public void setResolvedAt(OffsetDateTime value) {
-        set(15, value);
+        set(12, value);
     }
 
     /**
      * Getter for <code>public.notification.resolved_at</code>.
      */
     public OffsetDateTime getResolvedAt() {
-        return (OffsetDateTime) get(15);
+        return (OffsetDateTime) get(12);
     }
 
     /**
      * Setter for <code>public.notification.expires_at</code>.
      */
     public void setExpiresAt(OffsetDateTime value) {
-        set(16, value);
+        set(13, value);
     }
 
     /**
      * Getter for <code>public.notification.expires_at</code>.
      */
     public OffsetDateTime getExpiresAt() {
-        return (OffsetDateTime) get(16);
+        return (OffsetDateTime) get(13);
     }
 
     // -------------------------------------------------------------------------
@@ -285,14 +243,10 @@ public class NotificationRecord extends UpdatableRecordImpl<NotificationRecord> 
     /**
      * Create a detached, initialised NotificationRecord
      */
-    public NotificationRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String recipientType, UUID recipientId, String kind, NotificationForm form, String subjectType, UUID subjectId, JSONB snapshot, OffsetDateTime latestEventAt, OffsetDateTime readAt, RequestResolution resolution, OffsetDateTime resolvedAt, OffsetDateTime expiresAt) {
+    public NotificationRecord(UUID id, String recipientType, UUID recipientId, String kind, NotificationForm form, String subjectType, UUID subjectId, JSONB snapshot, OffsetDateTime firstEventAt, OffsetDateTime latestEventAt, OffsetDateTime readAt, RequestResolution resolution, OffsetDateTime resolvedAt, OffsetDateTime expiresAt) {
         super(Notification.NOTIFICATION);
 
         setId(id);
-        setCreatedOn(createdOn);
-        setCreatedBy(createdBy);
-        setLastModifiedOn(lastModifiedOn);
-        setLastModifiedBy(lastModifiedBy);
         setRecipientType(recipientType);
         setRecipientId(recipientId);
         setKind(kind);
@@ -300,6 +254,7 @@ public class NotificationRecord extends UpdatableRecordImpl<NotificationRecord> 
         setSubjectType(subjectType);
         setSubjectId(subjectId);
         setSnapshot(snapshot);
+        setFirstEventAt(firstEventAt);
         setLatestEventAt(latestEventAt);
         setReadAt(readAt);
         setResolution(resolution);

@@ -74,7 +74,7 @@ public final class StoredNotificationRows {
   private List<Row> rowsWhere(Condition condition) {
     return dsl.selectFrom(NOTIFICATION)
         .where(condition)
-        .orderBy(NOTIFICATION.CREATED_ON, NOTIFICATION.ID)
+        .orderBy(NOTIFICATION.FIRST_EVENT_AT, NOTIFICATION.ID)
         .fetch(StoredNotificationRows::rowOf);
   }
 
@@ -86,7 +86,7 @@ public final class StoredNotificationRows {
         .form(stored.getForm().getLiteral())
         .subject(new SubjectReference(stored.getSubjectType(), stored.getSubjectId()))
         .snapshot(JSON.readTree(stored.getSnapshot().data()))
-        .createdAt(stored.getCreatedOn().toInstant())
+        .createdAt(stored.getFirstEventAt().toInstant())
         .latestEventAt(stored.getLatestEventAt().toInstant())
         .readAt(instant(stored.getReadAt()))
         .resolution(Optional.ofNullable(stored.getResolution()).map(Enum::name))
