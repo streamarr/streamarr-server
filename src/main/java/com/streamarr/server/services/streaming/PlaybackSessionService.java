@@ -271,12 +271,10 @@ public class PlaybackSessionService implements AutoCloseable {
       String variantLabel,
       LowerVariantFailure failure) {}
 
-  /**
-   * A failure of an encoded lower variant beside the copy that plays leaves the copy alone: the
-   * stream session withdraws its lower variants and the playback session keeps its format attempt,
-   * its range and its budget of format attempts (ADR 0050). Answers whether the failure was such a
-   * variant's, so that no recovery follows it. A failure of the copy itself is not.
-   */
+  // A failure of an encoded lower variant beside the copy that plays leaves the copy alone: the
+  // stream session withdraws its lower variants and the playback session keeps its format attempt,
+  // its range and its budget of format attempts (ADR 0050). Answers whether the failure was such a
+  // variant's, so that no recovery follows it. A failure of the copy itself is not.
   private boolean tryWithdrawLowerVariants(LowerVariantFailureReport report) {
     var failedBesideTheCopy =
         locked(
