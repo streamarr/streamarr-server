@@ -48,19 +48,21 @@ public final class ReleaseAtShutdown implements ExecutionInterceptor {
   }
 
   // db-scheduler runs the completion after the task returned, outside this interceptor, so the
-  // shutdown's interrupt can arrive between the two.
+  // shutdown's interrupt can arrive before the completion begins or while it runs.
   private <T> CompletionHandler<T> releasedIfItFailsAtShutdown(
       CompletionHandler<T> completion, ExecutionContext executionContext) {
     return (complete, operations) -> {
-      if (!isShuttingDown(executionContext)) {
-        completion.complete(complete, operations);
-        return;
+      if (isShuttingDown(executionContext)) {
+        clearTheShutdownsInterrupt();
       }
 
-      clearTheShutdownsInterrupt();
       try {
         completion.complete(complete, operations);
       } catch (RuntimeException failure) {
+        if (!isShuttingDown(executionContext)) {
+          throw failure;
+        }
+
         log.warn(
             "Releasing {}, whose completion failed while its scheduler shut down",
             executionContext.getExecution(),

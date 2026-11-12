@@ -29,17 +29,23 @@ import com.streamarr.server.services.library.KeyframePacketScanRequests;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.support.BoundedTask;
+import com.streamarr.server.support.PostgresLockTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeRequest;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -78,6 +84,7 @@ class ServerShutdownIT extends AbstractIntegrationTest {
   @Autowired private MediaFileRepository mediaFiles;
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private DataSource dataSource;
 
   private final List<ConfigurableApplicationContext> servers = new ArrayList<>();
   private final List<MediaFile> createdFiles = new ArrayList<>();
@@ -132,23 +139,60 @@ class ServerShutdownIT extends AbstractIntegrationTest {
       throws Exception {
     var held = heldWork();
     var server = startServer();
+    ScheduledRow probeAtStop;
+    ScheduledRow scanAtStop;
     try (var worker = connectedWorker(server)) {
       requestHeldWork(server, held);
       awaitStartedProbeAndScan(worker, held);
+      probeAtStop = scheduledRow(PROBE_TABLE, held.probed());
+      scanAtStop = scheduledRow(KeyframePacketScanScheduler.TABLE_NAME, held.scanned());
       BoundedTask.runWithin(STOP_BOUND, server::close);
     }
 
     assertThat(scheduledRow(PROBE_TABLE, held.probed()))
-        .as("The probe is claimable at once and counts no failure")
-        .isEqualTo(new ScheduledRow(false, 0));
+        .as("The probe is claimable at once, at its due time, and counts no failure")
+        .isEqualTo(new ScheduledRow(false, 0, probeAtStop.executionTime()));
     assertThat(scheduledRow(KeyframePacketScanScheduler.TABLE_NAME, held.scanned()))
-        .as("The keyframe packet scan is claimable at once and counts no failure")
-        .isEqualTo(new ScheduledRow(false, 0));
+        .as("The keyframe packet scan is claimable at once, at its due time, and counts no failure")
+        .isEqualTo(new ScheduledRow(false, 0, scanAtStop.executionTime()));
 
     var restarted = startServer();
     try (var worker = connectedWorker(restarted)) {
       awaitStartedProbeAndScan(worker, held);
     }
+  }
+
+  // The worker answers that it has no free unit, so the probe stores nothing, and its completion
+  // locks the media file's row to defer it. The test holds that row, so the completion waits from
+  // before the shutdown until the shutdown's interrupt ends the wait.
+  @Test
+  @DisplayName(
+      "Should release a probe without a failure, at its due time, when its completion began before"
+          + " the shutdown and waits until the shutdown's interrupt")
+  void shouldReleaseAProbeWhenItsCompletionBeganBeforeTheShutdownAndWaitsUntilTheInterrupt()
+      throws Exception {
+    var probed = createMediaFile("probed.mkv");
+    var server = startServer();
+    ScheduledRow atStop;
+    try (var worker = connectedWorker(server)) {
+      requestProbe(server, probed);
+      var started = worker.nextResponse(CLAIM_BOUND);
+      assertThat(started.hasStartProbe()).as("The server starts a probe: %s", started).isTrue();
+      atStop = scheduledRow(PROBE_TABLE, probed);
+
+      try (var held = PostgresLockTestSupport.lockRow(mediaFileRow(probed));
+          var observer = dataSource.getConnection()) {
+        worker.reply(noFreeUnit(started.getStartProbe().getRequest()));
+        PostgresLockTestSupport.awaitBlockedBackendPid(
+            observer, held.backendPid(), "transactionid");
+
+        BoundedTask.runWithin(STOP_BOUND, server::close);
+      }
+    }
+
+    assertThat(scheduledRow(PROBE_TABLE, probed))
+        .as("The probe is claimable at once, at its due time, and counts no failure")
+        .isEqualTo(new ScheduledRow(false, 0, atStop.executionTime()));
   }
 
   // Spring stops the lifecycles of one phase together and waits for them all for at most the
@@ -299,10 +343,32 @@ class ServerShutdownIT extends AbstractIntegrationTest {
             FilepathCodec.decode(file.getFilepathUri()), BasicFileAttributes.class));
   }
 
+  private RowLockTarget mediaFileRow(MediaFile file) {
+    return RowLockTarget.builder()
+        .dataSource(dataSource)
+        .table("media_file")
+        .rowId(file.getId())
+        .build();
+  }
+
+  private static ProbeAttemptResult noFreeUnit(ProbeRequest request) {
+    return ProbeAttemptResult.newBuilder()
+        .setProbeAttemptId(request.getProbeAttemptId())
+        .setProbeVersion(request.getProbeVersion())
+        .setFailure(ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY)
+        .build();
+  }
+
   private ScheduledRow scheduledRow(String table, MediaFile file) {
     return jdbc.queryForObject(
-        "SELECT picked, consecutive_failures FROM " + table + " WHERE task_instance = ?",
-        (row, _) -> new ScheduledRow(row.getBoolean("picked"), row.getInt("consecutive_failures")),
+        "SELECT picked, consecutive_failures, execution_time FROM "
+            + table
+            + " WHERE task_instance = ?",
+        (row, _) ->
+            new ScheduledRow(
+                row.getBoolean("picked"),
+                row.getInt("consecutive_failures"),
+                row.getTimestamp("execution_time").toInstant()),
         file.getId().toString());
   }
 
@@ -313,7 +379,7 @@ class ServerShutdownIT extends AbstractIntegrationTest {
 
   private record HeldWork(MediaFile probed, MediaFile scanned) {}
 
-  private record ScheduledRow(boolean picked, int consecutiveFailures) {}
+  private record ScheduledRow(boolean picked, int consecutiveFailures, Instant executionTime) {}
 
   // The test context framework keeps test configuration out of a test's own context. A server
   // started by hand has no such filter, so it gets this one.

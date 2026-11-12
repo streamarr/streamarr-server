@@ -139,6 +139,29 @@ class ReleaseAtShutdownTest {
   }
 
   @Test
+  @DisplayName(
+      "Should release the execution, with the shutdown's interrupt cleared, when its completion"
+          + " began while its scheduler ran and the shutdown's interrupt fails it")
+  void shouldReleaseTheExecutionWhenItsCompletionBeganWhileItsSchedulerRanAndTheInterruptFailsIt() {
+    var picked =
+        picked(
+            (_, _) ->
+                (_, _) -> {
+                  // The completion waits for a row lock until the scheduler stops and interrupts
+                  // it, and the interrupt ends the wait.
+                  schedulerState.setIsShuttingDown();
+                  Thread.currentThread().interrupt();
+                  throw new IllegalStateException("The interrupt closed the connection");
+                });
+
+    complete(picked, executeThroughTheRelease(picked));
+
+    assertThat(Thread.currentThread().isInterrupted()).isFalse();
+    assertThat(tasks.released()).containsExactly(picked.execution());
+    assertThat(tasks.removed()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should let a completion's failure through when the scheduler runs")
   void shouldLetACompletionsFailureThroughWhenTheSchedulerRuns() {
     var picked = picked((_, _) -> removedUnlessInterrupted());
