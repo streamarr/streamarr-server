@@ -171,6 +171,32 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
         });
   }
 
+  @Test
+  @DisplayName(
+      "Should find only the offers into the Household still pending at the instant when finding"
+          + " its pending offers")
+  void shouldFindOnlyTheOffersIntoTheHouseholdStillPendingWhenFindingItsPendingOffers() {
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var home = householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var away = householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var elsewhere =
+        householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var kai =
+        profileRepository.saveAndFlush(
+            ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    var ollie =
+        profileRepository.saveAndFlush(
+            ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    var pending =
+        shareRepository.saveAndFlush(offer(kai.getId(), away.getId(), now.plusSeconds(60)));
+    shareRepository.saveAndFlush(offer(ollie.getId(), away.getId(), now.minusSeconds(1)));
+    shareRepository.saveAndFlush(offer(kai.getId(), elsewhere.getId(), now.plusSeconds(60)));
+
+    var found = shareRepository.findPendingOfferIdsInto(away.getId(), now);
+
+    assertThat(found).containsExactly(pending.getId());
+  }
+
   private ProfileShareStatus statusOf(ProfileHouseholdShare share) {
     return shareRepository.findByIdAndReloadFromDatabase(share.getId()).orElseThrow().getStatus();
   }
