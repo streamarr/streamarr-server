@@ -47,7 +47,9 @@ class NotificationServiceTest {
       new FakeProfileHouseholdShareRepository();
   private final FakeAuthorizationService authorization = new FakeAuthorizationService(identity);
   private final NotificationReads reads =
-      new NotificationReads(new ShareNotifications(shares, new ProfileShareGuard(authorization)));
+      new NotificationReads(
+          new ShareNotifications(
+              shares, new ProfileShareGuard(authorization), Clock.fixed(NOW, ZoneOffset.UTC)));
   private final NotificationService service =
       new NotificationService(
           authorization,
@@ -65,7 +67,7 @@ class NotificationServiceTest {
     authorization.decideUnitWith(
         intent ->
             switch (intent) {
-              case Intent.ViewHouseholdAdministration(var householdId)
+              case Intent.ViewProfileShareNotification(var householdId, var _, var _)
                   when householdId.equals(HIDDEN_HOUSEHOLD) ->
                   new Decision.Denied<>(Decision.DenialReason.POLICY);
               case Intent.ViewProfileShareHouseholds _ ->

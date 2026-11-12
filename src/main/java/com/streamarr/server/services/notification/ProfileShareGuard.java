@@ -1,6 +1,7 @@
 package com.streamarr.server.services.notification;
 
 import com.streamarr.server.domain.notification.GuardedNotification;
+import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -16,17 +17,22 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * The guard of the sharing kinds (ADR 0063 §The sharing kinds): the share's read rule, that the
- * recipient may view the Profile's shares, as its ProfileManagers and ServerAdmins may, or the
- * target Household's administration. These are the questions that decide who may see one share (ADR
- * 0024). Viewing the Profile's administration is not enough: a HouseholdAdmin of any Household that
- * hosts the Profile may, and a share into another Household is not theirs. Cedar decides it for the
- * recipient Account from the Account's stored relationships, never from a token's claims.
+ * The guard of the sharing kinds (ADR 0063 §The sharing kinds), decided by Cedar for the recipient
+ * Account from the Account's stored relationships, never from a token's claims. A reader passes in
+ * one of two ways. It may read the share now, by ADR 0024's rule for reading one share: a
+ * ProfileManager of the share's Profile or a ServerAdmin at every status, which is the question the
+ * share mutations ask of the offering side ({@code viewProfileShareHouseholds}), or a
+ * HouseholdAdmin of the target Household while the offer is pending and not expired or the share is
+ * active. Or the Notification was addressed to the Household's side, and the reader administers the
+ * target Household now. The stored side decides, never the kind. The Household's side is one
+ * question, the Cedar action of its own that carries the share's liveness and the stored side as
+ * its context. Viewing the Profile's administration is never enough: a HouseholdAdmin of every
+ * Household that hosts the Profile may, and a share into another Household is not theirs.
  *
- * <p>A batch asks each recipient's question about one Profile or one Household once. The side with
- * fewer distinct values among a recipient's Notifications is asked first, so a page of requests
- * into one Household, or of news about one Profile, needs a fixed number of decisions however long
- * it is.
+ * <p>A batch asks each recipient's question about one Profile, or one Household with the same
+ * liveness and side, once. The side with fewer distinct questions among a recipient's Notifications
+ * is asked first, so a page of requests into one Household, or of news about one Profile, needs a
+ * fixed number of decisions however long it is.
  */
 @Component
 @RequiredArgsConstructor
@@ -60,14 +66,13 @@ class ProfileShareGuard {
     private RecipientDecisions(UUID recipient, List<GuardedNotification> notifications) {
       this.recipient = recipient;
       this.householdFirst =
-          distinct(notifications, GuardedNotification::householdId)
-              <= distinct(notifications, GuardedNotification::profileId);
+          distinct(notifications, RecipientDecisions::householdSide)
+              <= distinct(notifications, RecipientDecisions::offeringSide);
     }
 
     NotificationVisibility visibility(GuardedNotification notification) {
-      Intent.UnitIntent profile = new Intent.ViewProfileShareHouseholds(notification.profileId());
-      Intent.UnitIntent household =
-          new Intent.ViewHouseholdAdministration(notification.householdId());
+      var profile = offeringSide(notification);
+      var household = householdSide(notification);
       var first = decide(householdFirst ? household : profile);
       if (first instanceof Decision.Allowed<AuthorizationUnit>) {
         return NotificationVisibility.SHOWN;
@@ -89,9 +94,21 @@ class ProfileShareGuard {
           intent, asked -> authorizationService.decideForAccount(recipient, asked));
     }
 
+    private static Intent.UnitIntent offeringSide(GuardedNotification notification) {
+      return new Intent.ViewProfileShareHouseholds(notification.profileId());
+    }
+
+    private static Intent.UnitIntent householdSide(GuardedNotification notification) {
+      return new Intent.ViewProfileShareNotification(
+          notification.householdId(),
+          notification.shareLive(),
+          notification.addressedTo() == ProfileShareSide.HOUSEHOLD_SIDE);
+    }
+
     private static long distinct(
-        List<GuardedNotification> notifications, Function<GuardedNotification, UUID> id) {
-      return notifications.stream().map(id).distinct().count();
+        List<GuardedNotification> notifications,
+        Function<GuardedNotification, Intent.UnitIntent> question) {
+      return notifications.stream().map(question).distinct().count();
     }
   }
 }

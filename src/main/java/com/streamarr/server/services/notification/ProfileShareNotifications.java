@@ -87,8 +87,8 @@ class ProfileShareNotifications {
                 .map(
                     request ->
                         new ReadNotification(
-                            request.notificationId(),
-                            request.recipientAccountId(),
+                            request.getId(),
+                            request.getRecipientAccountId(),
                             ReadNotification.Read.RESOLVED))
                 .toList()));
   }

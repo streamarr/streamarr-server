@@ -23,7 +23,9 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.TestFixtureWork;
@@ -67,6 +69,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private ProfileSharingService sharing;
+  @Autowired private ProfileManagerAdministrationService profileManagement;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
@@ -234,6 +237,32 @@ class NotificationMarksIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
 
     assertThat(stored(request).getReadAt()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave unread news told to the offering side when its recipient stopped managing the"
+          + " Profile before the share ended and has since become a HouseholdAdmin of the Household"
+          + " the share was into")
+  void shouldLeaveUnreadOfferingSideNewsWhenItsRecipientNowAdministersTheTargetHousehold()
+      throws Exception {
+    var brook = track(authTestSupport.createHouseholdMemberIdentity(riverside));
+    var kai = steps.profileManagedBy("Kai", sam, sam, brook);
+    var share = steps.accept(riverside, steps.offer(brook, kai, riverside));
+    assertThat(
+            profileManagement.relinquishProfileManagement(
+                authTestSupport.identityOf(brook), kai.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    assertThat(sharing.endProfileShare(authTestSupport.identityOf(riverside), share.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    var news = notificationFor(brook, share);
+
+    mark(steps.promoted(brook), news.getId())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
+
+    assertThat(stored(news).getReadAt()).isEmpty();
   }
 
   @Test

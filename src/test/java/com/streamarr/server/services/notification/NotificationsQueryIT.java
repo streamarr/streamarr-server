@@ -4,7 +4,11 @@ import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -569,6 +573,104 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
             jsonPath(
                 "$.data.notifications.edges[*].node.share.id",
                 contains(intoBrook.getId().toString())));
+  }
+
+  @Test
+  @DisplayName(
+      "Should neither list nor count news told to the offering side when its recipient stopped"
+          + " managing the Profile before the share ended and has since become a HouseholdAdmin of"
+          + " the Household the share was into")
+  void shouldNeitherListNorCountOfferingSideNewsWhenItsRecipientNowAdministersTheTargetHousehold()
+      throws Exception {
+    var brook = track(authTestSupport.createHouseholdMemberIdentity(riverside));
+    var kai = steps.profileManagedBy("Kai", sam, sam, brook);
+    var share = steps.accept(riverside, steps.offer(brook, kai, riverside));
+    assertThat(
+            profileManagement.relinquishProfileManagement(
+                authTestSupport.identityOf(brook), kai.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    assertThat(sharing.endProfileShare(authTestSupport.identityOf(riverside), share.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    assertThat(notificationRepository.findAll())
+        .anyMatch(told -> told.getRecipientAccountId().equals(brook.account().getId()));
+    var promoted = steps.promoted(brook);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(promoted), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.notifications.edges").isEmpty());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep giving the Household's side its end news and its resolved request, with the"
+          + " share as the end left it and neither its Profile nor its offerer, when a ProfileManager"
+          + " ends the share")
+  void shouldKeepGivingTheHouseholdsSideItsNotificationsWhenAProfileManagerEndsTheShare()
+      throws Exception {
+    var rowan = track(authTestSupport.createHouseholdMemberIdentity(riverside));
+    var share =
+        steps.accept(
+            riverside, steps.offer(sam, steps.profileManagedBy("Kai", sam, sam, rowan), riverside));
+    assertThat(sharing.endProfileShare(authTestSupport.identityOf(rowan), share.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    var bearer = authTestSupport.accountBearer(riversideAdmin);
+
+    mockMvc
+        .perform(
+            graphqlRequest(
+                bearer,
+                """
+                query {
+                  unreadNotificationCount
+                  notifications(first: 10) { edges { node {
+                    __typename unread
+                    ... on RequestNotification { resolution }
+                    ... on ProfileShareOfferedNotification {
+                      share { id status endedAt profile { id } offeredByDisplayName }
+                    }
+                    ... on ProfileShareEndedNotification {
+                      endedBy share { id status endedAt profile { id } offeredByDisplayName }
+                    }
+                  } } }
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(1))
+        .andExpect(
+            jsonPath(
+                "$.data.notifications.edges[*].node.__typename",
+                contains("ProfileShareEndedNotification", "ProfileShareOfferedNotification")))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.endedBy").value("OFFERING_SIDE"))
+        .andExpect(jsonPath("$.data.notifications.edges[1].node.resolution").value("DECIDED"))
+        .andExpect(
+            jsonPath(
+                "$.data.notifications.edges[*].node.share.id",
+                contains(share.getId().toString(), share.getId().toString())))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[*].node.share.status", contains("ENDED", "ENDED")))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[*].node.share.endedAt", everyItem(notNullValue())))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[*].node.share.profile", everyItem(nullValue())))
+        .andExpect(
+            jsonPath(
+                "$.data.notifications.edges[*].node.share.offeredByDisplayName",
+                everyItem(nullValue())));
+    mockMvc
+        .perform(
+            graphqlRequest(
+                bearer,
+                "query { householdShares(householdId: \"%s\") { edges { node { id } } } }"
+                    .formatted(riverside.household().getId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath(
+                "$.data.householdShares.edges[*].node.id", not(hasItem(share.getId().toString()))));
   }
 
   // Requests to Riverside's HouseholdAdmin about offers into Kai's Household, each of its own

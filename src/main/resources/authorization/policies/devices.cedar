@@ -26,7 +26,9 @@ when { principal has deviceBound && principal.deviceBound };
 @id("device-bound-sessions-receive-no-notifications")
 forbid (
   principal,
-  action in Streamarr::Action::"notifications",
+  action in
+    [Streamarr::Action::"notifications",
+     Streamarr::Action::"viewProfileShareNotification"],
   resource
 )
 when { principal has deviceBound && principal.deviceBound };

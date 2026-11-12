@@ -7,6 +7,7 @@ import com.streamarr.server.domain.notification.ShareNotification;
 import com.streamarr.server.domain.notification.SubjectNotification;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -17,8 +18,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * The sharing kinds' Notifications read with the shares they are about, and guarded by the share's
- * read rule ({@link ProfileShareGuard}). Each batch reads its shares in one query.
+ * The sharing kinds' Notifications read with the shares they are about, and guarded by their own
+ * guard ({@link ProfileShareGuard}), from each share as it stands when the batch is read and the
+ * side each Notification was addressed to. Each batch reads its shares in one query.
  */
 @Component
 @RequiredArgsConstructor
@@ -26,11 +28,12 @@ class ShareNotifications implements NotificationSubjects {
 
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileShareGuard guard;
+  private final Clock clock;
 
   @Override
   public List<SubjectNotification> shown(List<Notification> notifications) {
     var read = withShares(notifications);
-    var visibilities = guard.visibilities(read.stream().map(ShareNotifications::guarded).toList());
+    var visibilities = guard.visibilities(guarded(read));
     return read.stream()
         .filter(notification -> shown(visibilities, notification))
         .<SubjectNotification>map(notification -> notification)
@@ -39,8 +42,7 @@ class ShareNotifications implements NotificationSubjects {
 
   @Override
   public Map<UUID, NotificationVisibility> visibilities(List<Notification> notifications) {
-    return guard.visibilities(
-        withShares(notifications).stream().map(ShareNotifications::guarded).toList());
+    return guard.visibilities(guarded(withShares(notifications)));
   }
 
   // A Notification whose share was deleted meanwhile is gone with it.
@@ -59,12 +61,20 @@ class ShareNotifications implements NotificationSubjects {
         .toList();
   }
 
-  private static GuardedNotification guarded(ShareNotification notification) {
-    return new GuardedNotification(
-        notification.notification().getId(),
-        notification.notification().getRecipientAccountId(),
-        notification.share().getProfileId(),
-        notification.share().getHouseholdId());
+  private List<GuardedNotification> guarded(List<ShareNotification> notifications) {
+    var now = clock.instant();
+    return notifications.stream()
+        .map(
+            read ->
+                GuardedNotification.builder()
+                    .notificationId(read.notification().getId())
+                    .recipientAccountId(read.notification().getRecipientAccountId())
+                    .profileId(read.share().getProfileId())
+                    .householdId(read.share().getHouseholdId())
+                    .shareLive(read.share().statusAt(now).isLive())
+                    .addressedTo(read.notification().getAddressedTo())
+                    .build())
+        .toList();
   }
 
   private static boolean shown(
