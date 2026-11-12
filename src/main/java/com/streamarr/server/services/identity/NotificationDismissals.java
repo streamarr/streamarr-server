@@ -3,6 +3,8 @@ package com.streamarr.server.services.identity;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.services.events.notification.DismissNotificationsEvent;
 import com.streamarr.server.services.events.notification.DismissalSelector;
+import com.streamarr.server.services.events.notification.NotificationRecipientDeletedEvent;
+import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import java.util.HashSet;
 import java.util.Set;
@@ -12,9 +14,10 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 /**
- * Asks the Notifications module to dismiss what an identity change takes away (ADR 0063
- * §Dismissal). The identity domain owns each reason and works out each selector from its own
- * records, inside the transaction of the change, so the dismissal commits or rolls back with it.
+ * Asks the Notifications module to dismiss what an identity change takes away, and to delete a
+ * deleted Account's own Notifications (ADR 0063 §Dismissal). The identity domain owns each reason
+ * and works out each selector from its own records, inside the transaction of the change, so the
+ * dismissal commits or rolls back with it.
  */
 @Component
 @RequiredArgsConstructor
@@ -44,6 +47,15 @@ class NotificationDismissals {
    */
   void householdDeleted(UUID householdId) {
     dismiss(DismissalSelector.bySubject(Set.of(SubjectReference.household(householdId))).build());
+  }
+
+  /**
+   * The Account is being deleted, so its own Notifications go with it. Nothing is pushed: its
+   * sessions end with it, and no other Account's Notification holds its name.
+   */
+  void recipientDeleted(UUID accountId) {
+    events.publishEvent(
+        new NotificationRecipientDeletedEvent(RecipientReference.account(accountId)));
   }
 
   private void dismiss(DismissalSelector selector) {

@@ -192,6 +192,8 @@ class AccountRemoval {
     if (!userAccountRepository.tryDelete(account.getId(), account.getHouseholdId())) {
       throw new AccountRemovalConflictException();
     }
+
+    notificationDismissals.recipientDeleted(account.getId());
   }
 
   /**
