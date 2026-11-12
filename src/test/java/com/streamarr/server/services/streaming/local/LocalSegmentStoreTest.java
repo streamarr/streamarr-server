@@ -400,6 +400,7 @@ class LocalSegmentStoreTest {
       var stored = StoredSegments.bytes(store, sessionId, VARIANT_MEDIA_SEGMENT);
       assertThat(readsAfterPublication)
           .as("bytes each contender read after its own publication in round %s", round)
+          .hasSize(CONTENDERS)
           .allSatisfy(read -> assertThat(read).isEqualTo(stored));
     }
   }
