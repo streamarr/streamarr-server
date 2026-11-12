@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql;
 
+import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQLError;
 import graphql.ParseAndValidate;
@@ -15,10 +16,12 @@ import graphql.language.Node;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Value;
+import graphql.parser.ParserOptions;
 import graphql.validation.ValidationError;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -28,18 +31,37 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * Keeps argument values out of validation errors. graphql-java rejects a document before any data
- * fetcher runs and quotes the value it rejects, and that value may be a credential: a share code,
- * an invitation code, a PIN. Every value written under the node an error points at becomes {@code
- * 'REDACTED'} in its message, so the message still names the argument and what is wrong with it. It
- * runs first, so that every instrumentation after it, among them DGS's, which turns these errors
- * into typed errors that keep the message, reads the redacted message.
+ * Keeps request values out of the errors graphql-java raises before any data fetcher runs, for a
+ * document that does not parse or does not pass validation. Their messages quote what the request
+ * wrote, and that may be a credential: a share code, an invitation code, a PIN. A syntax error
+ * keeps its line and column and leaves out the token the parser stopped at. Every value written
+ * under the node a validation error points at becomes {@code 'REDACTED'} in its message, so the
+ * message still names the argument and what is wrong with it. It runs first, so that every
+ * instrumentation after it, among them DGS's, which turns these errors into typed errors that keep
+ * the message, reads the redacted message.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentation {
 
   private static final String REDACTED = "'REDACTED'";
+
+  // graphql-java parses a request with the parser options its context holds, and with its
+  // operation defaults when it holds none.
+  @Override
+  public ExecutionInput instrumentExecutionInput(
+      ExecutionInput executionInput,
+      InstrumentationExecutionParameters parameters,
+      InstrumentationState state) {
+    var context = executionInput.getGraphQLContext();
+    var parserOptions =
+        Optional.ofNullable(context.<ParserOptions>get(ParserOptions.class))
+            .orElseGet(ParserOptions::getDefaultOperationParserOptions);
+    context.put(
+        ParserOptions.class,
+        parserOptions.transform(options -> options.redactTokenParserErrorMessages(true)));
+    return executionInput;
+  }
 
   @Override
   public CompletableFuture<ExecutionResult> instrumentExecutionResult(
