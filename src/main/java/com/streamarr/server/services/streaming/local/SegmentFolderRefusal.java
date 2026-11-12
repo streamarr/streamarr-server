@@ -4,7 +4,9 @@ import java.util.Locale;
 
 /** Why the server deletes no leftovers in a segment folder that only this server uses. */
 public enum SegmentFolderRefusal {
-  /** The folder is the top of a file system. */
+  /**
+   * The folder is a root directory, such as {@code /}. A folder that a volume is mounted on is not.
+   */
   FILE_SYSTEM_ROOT,
   /** The folder is the home folder of the server's user, or a folder above it. */
   HOME_FOLDER,

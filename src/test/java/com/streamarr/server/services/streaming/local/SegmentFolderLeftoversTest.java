@@ -678,8 +678,8 @@ class SegmentFolderLeftoversTest {
   }
 
   @Test
-  @DisplayName("Should refuse the folder and create nothing when it is a file system's top folder")
-  void shouldRefuseTheFolderAndCreateNothingWhenItIsAFileSystemsTopFolder() throws IOException {
+  @DisplayName("Should refuse the folder and create nothing when it is the root directory")
+  void shouldRefuseTheFolderAndCreateNothingWhenItIsTheRootDirectory() throws IOException {
     try (var fileSystem = Jimfs.newFileSystem(Configuration.unix())) {
       var top = fileSystem.getPath("/");
 

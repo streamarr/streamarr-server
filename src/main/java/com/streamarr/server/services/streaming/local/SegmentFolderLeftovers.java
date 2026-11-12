@@ -53,7 +53,7 @@ public class SegmentFolderLeftovers {
    * Deletes the leftovers. Call it before the folder's segment store exists, so that the folder
    * holds nothing of a running store.
    *
-   * <p>It refuses a folder that is the top of a file system, that is the home folder or lies above
+   * <p>It refuses a folder that is a root directory, that is the home folder or lies above
    * it, that is a media folder or lies above or below one, or that a file system is mounted in, and
    * it creates nothing there. It refuses every folder when the media folders or the mount table
    * cannot be read.
