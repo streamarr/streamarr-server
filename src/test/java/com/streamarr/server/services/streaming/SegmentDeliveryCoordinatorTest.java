@@ -431,9 +431,21 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName(
-      "Should answer a request for a missing segment as cancelled when the server already shuts down")
-  void shouldAnswerARequestForAMissingSegmentAsCancelledWhenTheServerAlreadyShutsDown()
+      "Should answer a request for a missing segment as cancelled at once when the server already"
+          + " shuts down")
+  void shouldAnswerARequestForAMissingSegmentAsCancelledAtOnceWhenTheServerAlreadyShutsDown()
       throws Exception {
+    // A stall deadline far past the wait, so only the shutdown ends the request within it.
+    properties =
+        StreamingProperties.builder()
+            .maxConcurrentTranscodes(3)
+            .targetSegmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
+            .producerStallThreshold(Duration.ofMinutes(1))
+            .build();
+    var rig = rigWith(transcodeExecutor);
+    lifecycle = rig.lifecycle();
+    coordinator = rig.coordinator();
     var sessionId = startedSession().getSessionId();
     upload(sessionId, "segment0.m4s", new byte[] {1});
     heldRequests().wakeEveryRequestForShutdown();
@@ -443,6 +455,7 @@ class SegmentDeliveryCoordinatorTest {
             () -> coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment1.m4s"))) {
       assertThat(missing.await(Duration.ofSeconds(2))).isEqualTo(new SegmentDelivery.Cancelled());
     }
+
     assertThat(coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment0.m4s"))
         .isEqualTo(new SegmentDelivery.Ready(new byte[] {1}));
   }

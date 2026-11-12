@@ -18,8 +18,11 @@ class BackgroundWorkStopTest {
   private static final Duration BOUND = Duration.ofSeconds(5);
 
   @Test
-  @DisplayName("Should return before the stop ends and call back once it ended")
-  void shouldReturnBeforeTheStopEndsAndCallBackOnceItEnded() throws Exception {
+  @DisplayName(
+      "Should return before the stop ends and call back once it ended when the stop runs on its own"
+          + " thread")
+  void shouldReturnBeforeTheStopEndsAndCallBackOnceItEndedWhenTheStopRunsOnItsOwnThread()
+      throws Exception {
     var stopMayEnd = new CountDownLatch(1);
     var calledBack = new CountDownLatch(1);
 
@@ -47,8 +50,10 @@ class BackgroundWorkStopTest {
 
   // Each stop waits until the other has started, so they end only when they run at once.
   @Test
-  @DisplayName("Should run every stop at once and return once each has returned")
-  void shouldRunEveryStopAtOnceAndReturnOnceEachHasReturned() throws Exception {
+  @DisplayName(
+      "Should run every stop at once and return once each has returned when the stops run together")
+  void shouldRunEveryStopAtOnceAndReturnOnceEachHasReturnedWhenTheStopsRunTogether()
+      throws Exception {
     var started = new CountDownLatch(2);
     var ended = new CountDownLatch(2);
     Runnable stop =

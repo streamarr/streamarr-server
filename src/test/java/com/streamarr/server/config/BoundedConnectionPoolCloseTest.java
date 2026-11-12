@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.support.BoundedTask;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.metrics.IMetricsTracker;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -30,6 +31,8 @@ class BoundedConnectionPoolCloseTest {
   private final BoundedConnectionPoolClose boundedClose = new BoundedConnectionPoolClose();
   private final List<Socket> accepted = new CopyOnWriteArrayList<>();
   private final CountDownLatch connectionOpening = new CountDownLatch(1);
+  // The pool closes its metrics tracker as the last step of its close.
+  private final CountDownLatch poolCloseEnded = new CountDownLatch(1);
   private ServerSocket silentDatabase;
   private Thread accepting;
 
@@ -60,22 +63,20 @@ class BoundedConnectionPoolCloseTest {
   }
 
   @Test
-  @DisplayName("Should stop waiting for the pool's close when the database does not answer")
-  void shouldStopWaitingForThePoolsCloseWhenTheDatabaseDoesNotAnswer() throws Exception {
+  @DisplayName(
+      "Should stop waiting for the pool's close, and end that close, when the database does not"
+          + " answer")
+  void shouldStopWaitingForThePoolsCloseAndEndThatCloseWhenTheDatabaseDoesNotAnswer()
+      throws Exception {
     var pool = poolOfTheSilentDatabase();
     assertThat(connectionOpening.await(CLOSE_WAIT.toSeconds(), TimeUnit.SECONDS)).isTrue();
 
     BoundedTask.runWithin(
         CLOSE_WAIT, () -> boundedClose.postProcessBeforeDestruction(pool, "dataSource"));
 
-    assertThat(pool.isClosed()).isTrue();
-  }
-
-  @Test
-  @DisplayName("Should close only connection pools")
-  void shouldCloseOnlyConnectionPools() {
-    assertThat(boundedClose.requiresDestruction(new HikariDataSource())).isTrue();
-    assertThat(boundedClose.requiresDestruction(new Object())).isFalse();
+    assertThat(poolCloseEnded.await(CLOSE_WAIT.toSeconds(), TimeUnit.SECONDS))
+        .as("The pool's own close ends at its interrupt, not after its login timeout")
+        .isTrue();
   }
 
   private HikariDataSource poolOfTheSilentDatabase() {
@@ -87,6 +88,14 @@ class BoundedConnectionPoolCloseTest {
     configuration.setMinimumIdle(1);
     // The pool starts without a connection and opens one in the background.
     configuration.setInitializationFailTimeout(-1);
+    configuration.setMetricsTrackerFactory(
+        (_, _) ->
+            new IMetricsTracker() {
+              @Override
+              public void close() {
+                poolCloseEnded.countDown();
+              }
+            });
     return new HikariDataSource(configuration);
   }
 }

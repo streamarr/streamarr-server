@@ -29,16 +29,16 @@ class ServerShutdownDeploymentTest {
   private static final Duration GRACE_PERIOD = Duration.ofSeconds(15);
 
   @Test
-  @DisplayName("Should give the Compose server 15 seconds to stop")
-  void shouldGiveTheComposeServerFifteenSecondsToStop() throws IOException {
+  @DisplayName("Should give the server 15 seconds to stop when Compose runs it")
+  void shouldGiveTheServerFifteenSecondsToStopWhenComposeRunsIt() throws IOException {
     var server = yaml(Path.of("docker-compose.yml")).path("services").path("streamarr-server");
 
     assertThat(server.path("stop_grace_period").asString()).isEqualTo("15s");
   }
 
   @Test
-  @DisplayName("Should give the Kubernetes server pod 15 seconds to stop")
-  void shouldGiveTheKubernetesServerPodFifteenSecondsToStop() throws IOException {
+  @DisplayName("Should give the server 15 seconds to stop when the Kubernetes manifest runs it")
+  void shouldGiveTheServerFifteenSecondsToStopWhenTheKubernetesManifestRunsIt() throws IOException {
     var podSpec = kubernetesServerDeployment().path("spec").path("template").path("spec");
 
     assertThat(podSpec.path("terminationGracePeriodSeconds").asLong())

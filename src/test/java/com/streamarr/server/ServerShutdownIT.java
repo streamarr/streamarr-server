@@ -1,8 +1,13 @@
 package com.streamarr.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
+import com.streamarr.server.config.ArtworkPrioritySchedulers;
+import com.streamarr.server.config.BoundedConnectionPoolClose;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
+import com.streamarr.server.config.LibraryOperationScheduler;
+import com.streamarr.server.config.ProbeSchedulerStop;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
@@ -34,6 +39,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,10 +50,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.context.TypeExcludeFilter;
 import org.springframework.boot.test.context.TestComponent;
+import org.springframework.boot.web.server.context.WebServerGracefulShutdownLifecycle;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.type.classreading.MetadataReader;
 import org.springframework.core.type.classreading.MetadataReaderFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.concurrent.SimpleAsyncTaskScheduler;
 
 /**
  * Starts the server as a process starts it, with its schedulers running, lets an unanswering worker
@@ -58,7 +66,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @DisplayName("Server shutdown integration tests")
 class ServerShutdownIT extends AbstractIntegrationTest {
 
-  // The maintainer's decision: the server stops within about 10 s of SIGTERM in every case.
+  // The deployments give the server 15 s to stop; it stops within about 10 s in every case.
   private static final Duration STOP_BOUND = Duration.ofSeconds(10);
   // Far below the 60 s after which db-scheduler finds an execution that no server holds dead.
   private static final Duration CLAIM_BOUND = Duration.ofSeconds(20);
@@ -104,7 +112,7 @@ class ServerShutdownIT extends AbstractIntegrationTest {
 
     try (var worker = connectedWorker(server)) {
       requestHeldWork(server, held);
-      awaitStartedProbeAndScan(worker);
+      awaitStartedProbeAndScan(worker, held);
 
       var stopping = System.nanoTime();
       BoundedTask.runWithin(STOP_BOUND, server::close);
@@ -126,7 +134,7 @@ class ServerShutdownIT extends AbstractIntegrationTest {
     var server = startServer();
     try (var worker = connectedWorker(server)) {
       requestHeldWork(server, held);
-      awaitStartedProbeAndScan(worker);
+      awaitStartedProbeAndScan(worker, held);
       BoundedTask.runWithin(STOP_BOUND, server::close);
     }
 
@@ -139,8 +147,30 @@ class ServerShutdownIT extends AbstractIntegrationTest {
 
     var restarted = startServer();
     try (var worker = connectedWorker(restarted)) {
-      awaitStartedProbeAndScan(worker);
+      awaitStartedProbeAndScan(worker, held);
     }
+  }
+
+  // Spring stops the lifecycles of one phase together and waits for them all for at most the
+  // phase's timeout. A lifecycle in another phase stops only after that wait.
+  @Test
+  @DisplayName(
+      "Should stop the background schedulers and the scheduled tasks in the web server's graceful"
+          + " shutdown phase, and bound the connection pool's close, when the server stops")
+  void shouldStopTheBackgroundWorkInTheWebServersGracefulShutdownPhaseWhenTheServerStops() {
+    var server = startServer();
+
+    var webServerPhase = server.getBean(WebServerGracefulShutdownLifecycle.class).getPhase();
+    assertThat(
+            Stream.of(
+                    LibraryOperationScheduler.class,
+                    ArtworkPrioritySchedulers.class,
+                    KeyframePacketScanScheduler.class,
+                    ProbeSchedulerStop.class,
+                    SimpleAsyncTaskScheduler.class)
+                .map(lifecycle -> server.getBean(lifecycle).getPhase()))
+        .containsOnly(webServerPhase);
+    assertThat(server.getBeansOfType(BoundedConnectionPoolClose.class)).hasSize(1);
   }
 
   // A probe of one file and a keyframe packet scan of another. The scan's file holds a stored
@@ -192,14 +222,21 @@ class ServerShutdownIT extends AbstractIntegrationTest {
   }
 
   // The worker never answers, so the probe and the scan run until the shutdown cuts them off.
-  private static void awaitStartedProbeAndScan(LoopbackProbeWorker worker) throws Exception {
+  private static void awaitStartedProbeAndScan(LoopbackProbeWorker worker, HeldWork held)
+      throws Exception {
     var started = new ArrayList<ProbeRequest>();
-    started.add(worker.nextResponse(CLAIM_BOUND).getStartProbe().getRequest());
-    started.add(worker.nextResponse(CLAIM_BOUND).getStartProbe().getRequest());
+    while (started.size() < 2) {
+      var response = worker.nextResponse(CLAIM_BOUND);
+      assertThat(response).as("The server starts a probe").isNotNull();
+      assertThat(response.hasStartProbe()).as("The server starts a probe: %s", response).isTrue();
+      started.add(response.getStartProbe().getRequest());
+    }
 
     assertThat(started)
-        .extracting(ProbeRequest::getScanKeyframePackets)
-        .containsExactlyInAnyOrder(false, true);
+        .extracting(
+            request -> request.getSource().getRelativeKey(), ProbeRequest::getScanKeyframePackets)
+        .containsExactlyInAnyOrder(
+            tuple(held.probed().getFilename(), false), tuple(held.scanned().getFilename(), true));
   }
 
   private static LoopbackProbeWorker connectedWorker(ConfigurableApplicationContext server)
