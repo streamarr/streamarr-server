@@ -616,6 +616,20 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep another recipient's Notification when a dismissal by id is narrowed to a"
+          + " recipient")
+  void shouldKeepAnotherRecipientsNotificationWhenADismissalByIdIsNarrowedToARecipient() {
+    tell(offeredTheo().recipients(Set.of(sam, kai)).build());
+    var kaisRequest = onlyRowOf(kai).id();
+
+    dismiss(DismissalSelector.byId(Set.of(kaisRequest)).recipient(Optional.of(sam)).build());
+
+    assertThat(rows.of(kai)).extracting(Row::id).containsExactly(kaisRequest);
+    assertThat(rows.of(sam)).hasSize(1);
+  }
+
+  @Test
   @DisplayName("Should delete only the kinds named when the dismissal is narrowed to kinds")
   void shouldDeleteOnlyTheKindsNamedWhenTheDismissalIsNarrowedToKinds() {
     tell(answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED)).build());
