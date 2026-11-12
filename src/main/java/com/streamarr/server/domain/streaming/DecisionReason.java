@@ -128,13 +128,14 @@ public enum DecisionReason {
    */
   AUDIO_LOWERED_FOR_BITRATE_LIMIT,
   /**
-   * The source's video ends at least one target segment duration before the session's audio, so the
-   * encode holds its last frame to the end (ADR 0037, early ends).
+   * The source's video ends at least one target segment duration before the session's media end, to
+   * which every media playlist runs, so the encode holds its last frame to that end (ADR 0037,
+   * early ends).
    */
   VIDEO_ENDS_EARLY,
   /**
-   * The session's audio ends at least one target segment duration before the source's video, so the
-   * encode pads it with silence to the end (ADR 0037, early ends).
+   * The session's audio ends at least one target segment duration before the session's media end,
+   * so the encode pads it with silence to that end (ADR 0037, early ends).
    */
   AUDIO_ENDS_EARLY,
   /** The probe's facts name no single source container that a declaration can list. */
