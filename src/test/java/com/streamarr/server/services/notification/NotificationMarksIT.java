@@ -28,6 +28,7 @@ import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
+import com.streamarr.server.support.ShareSteps;
 import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.time.Instant;

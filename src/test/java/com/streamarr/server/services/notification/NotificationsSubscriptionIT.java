@@ -34,6 +34,8 @@ import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
+import com.streamarr.server.support.ProfileConnections;
+import com.streamarr.server.support.ShareSteps;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
 import java.util.List;

@@ -19,6 +19,7 @@ import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.ServerSettingsTestSupport;
+import com.streamarr.server.support.ShareSteps;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;

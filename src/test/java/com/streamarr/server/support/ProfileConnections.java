@@ -1,4 +1,4 @@
-package com.streamarr.server.services.notification;
+package com.streamarr.server.support;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -8,7 +8,6 @@ import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
-import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import java.util.List;
 import java.util.UUID;
@@ -20,7 +19,7 @@ import lombok.NonNull;
  * its recipient accepts it, and deletes what the connection left behind.
  */
 @Builder
-final class ProfileConnections {
+public final class ProfileConnections {
 
   @NonNull private final CredentialIssuanceService credentialIssuance;
   @NonNull private final AccountInvitationService accountInvitations;
@@ -34,7 +33,7 @@ final class ProfileConnections {
    * Household, and the invitation is accepted: the Profile becomes the new Account's Personal
    * Profile. Answers the new Account's id.
    */
-  UUID connect(Profile profile, TestIdentity serverAdmin, TestIdentity reofferedTo) {
+  public UUID connect(Profile profile, TestIdentity serverAdmin, TestIdentity reofferedTo) {
     var issued =
         credentialIssuance
             .issueAccountInvitationForProfile(
@@ -65,7 +64,7 @@ final class ProfileConnections {
   }
 
   /** Deletes the invitations sent to the recipient, and the Account that accepted one. */
-  void deleteConnected() {
+  public void deleteConnected() {
     invitations.findAll().stream()
         .filter(invitation -> recipientEmail.equalsIgnoreCase(invitation.getRecipientEmail()))
         .forEach(invitations::delete);
