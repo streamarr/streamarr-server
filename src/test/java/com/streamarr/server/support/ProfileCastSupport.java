@@ -84,6 +84,16 @@ public class ProfileCastSupport {
     transactionTemplate.executeWithoutResult(_ -> saveGrant(manager, profile));
   }
 
+  /** Enables or disables the identity's Account, as a ServerAdmin does. */
+  public void enable(TestIdentity identity, boolean enabled) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
+          account.setEnabled(enabled);
+          userAccountRepository.saveAndFlush(account);
+        });
+  }
+
   /** Gives the identity's Account the display name. */
   public void rename(TestIdentity identity, String displayName) {
     transactionTemplate.executeWithoutResult(
@@ -106,14 +116,17 @@ public class ProfileCastSupport {
 
   /** Another HouseholdAdmin of the identity's Household, whose Personal Profile is an Adult. */
   public TestIdentity secondAdminOf(TestIdentity householdOf) {
-    var admin = authTestSupport.createHouseholdMemberIdentity(householdOf);
-    transactionTemplate.executeWithoutResult(
-        _ -> {
-          var account = userAccountRepository.findById(admin.account().getId()).orElseThrow();
-          account.setHouseholdRole(HouseholdRole.ADMIN);
-          userAccountRepository.saveAndFlush(account);
-        });
-    return admin;
+    var member = authTestSupport.createHouseholdMemberIdentity(householdOf);
+    var admin =
+        transactionTemplate.execute(
+            _ -> {
+              var account = userAccountRepository.findById(member.account().getId()).orElseThrow();
+              account.setHouseholdRole(HouseholdRole.ADMIN);
+              return userAccountRepository.saveAndFlush(account);
+            });
+    // Its tokens sign the role, so the identity carries the Account as it is now.
+    return new TestIdentity(
+        admin, member.household(), member.profile(), member.session(), member.rawRefreshToken());
   }
 
   /**
