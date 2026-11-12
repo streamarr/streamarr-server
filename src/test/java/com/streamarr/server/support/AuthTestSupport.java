@@ -244,12 +244,14 @@ public class AuthTestSupport {
         .value();
   }
 
+  /**
+   * Like {@link #accountBearer}, but recently reauthenticated, and capped by an Account token
+   * issued on the same clock, so it stays fresh for a test that moves the clock.
+   */
   public String freshAccountBearer(TestIdentity identity) {
-    return accessTokenIssuer
-        .issueReauthenticated(
-            contextBuilder(identity).profileId(Optional.empty()).build(),
-            Instant.now().plus(Duration.ofMinutes(10)))
-        .value();
+    var context = contextBuilder(identity).profileId(Optional.empty()).build();
+    var source = accessTokenIssuer.issue(context);
+    return accessTokenIssuer.issueReauthenticated(context, source.expiresAt()).value();
   }
 
   /** The identity a request bearing {@link #accountBearer} resolves to at the service boundary. */
