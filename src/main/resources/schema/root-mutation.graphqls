@@ -91,9 +91,10 @@ type Mutation {
     Removes a Profile's Content Ceiling. An Adult left without one is unrestricted: only its
     managers and ServerAdmins may do that, with a recent password (ReauthenticationRequiredError). A
     Kid stays restricted without a Content Ceiling, so a HouseholdAdmin who supervises it where it
-    is available may also remove its Content Ceiling. profilePolicyChangePreview first says which Profiles the change would
-    lock. A caller who may read profileAdministration of the Profile but may not do this gets
-    FORBIDDEN; everyone else, a device-bound session included, gets ProfileNotFoundError.
+    is available may also remove its Content Ceiling. profilePolicyChangePreview first says which
+    Profiles the change would lock. A caller who may read profileAdministration of the Profile but
+    may not do this gets FORBIDDEN; everyone else, a device-bound session included, gets
+    ProfileNotFoundError.
     """
     removeProfileMaximumAllowedRatingAge(input: RemoveProfileMaximumAllowedRatingAgeInput!): RemoveProfileMaximumAllowedRatingAgePayload
     """
@@ -108,9 +109,9 @@ type Mutation {
     Removes a Profile's PIN. Its managers and a HouseholdAdmin who supervises the restricted Profile
     where it is available. Refused with ProfilePinRequiredError while removing it would lock the
     Profile in a Household where it is available; the refusal names that Household only to a caller
-    who may use it, manages the Profile or is a ServerAdmin. A caller who may read profileAdministration of the
-    Profile but may not do this gets FORBIDDEN; everyone else, a device-bound session included, gets
-    ProfileNotFoundError.
+    who may use it, manages the Profile or is a ServerAdmin. A caller who may read
+    profileAdministration of the Profile but may not do this gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ProfileNotFoundError.
     """
     removeProfilePin(input: RemoveProfilePinInput!): RemoveProfilePinPayload
     """
@@ -127,9 +128,9 @@ type Mutation {
     Household, its own included (profileShares with statuses [PENDING, ACTIVE]), no other Account
     holds a direct grant for it (profileManagers), and no invitation to manage it waits
     (pendingManagerInvitationsForProfile) until it is canceled or expires. A ServerAdmin has no
-    shortcut here; administrativelyDeleteProfile is its override. A caller who may read profileAdministration
-    of the Profile but may not delete it gets ProfileNotDeletableError; everyone else, a device-
-    bound session included, gets ProfileNotFoundError.
+    shortcut here; administrativelyDeleteProfile is its override. A caller who may read
+    profileAdministration of the Profile but may not delete it gets ProfileNotDeletableError;
+    everyone else, a device-bound session included, gets ProfileNotFoundError.
     """
     deleteProfile(input: DeleteProfileInput!): DeleteProfilePayload
     """
@@ -252,9 +253,9 @@ type Mutation {
     """
     cancelManagerInvitation(input: CancelManagerInvitationInput!): CancelManagerInvitationPayload
     """
-    Finds the invitation to manage a Profile that a code belongs to, so that the Account it names can
-    accept or decline it by id; the code itself decides nothing. Any signed-in Account may look a
-    code up, but only the Account the invitation names gets the invitation: a code that does not
+    Finds the invitation to manage a Profile that a code belongs to, so that the Account it names
+    can accept or decline it by id; the code itself decides nothing. Any signed-in Account may look
+    a code up, but only the Account the invitation names gets the invitation: a code that does not
     work and a code for an invitation that names another Account both get
     ManagerInvitationNotFoundError. A device-bound session and a disabled Account get FORBIDDEN.
     Every lookup counts as a credential attempt by the Account that presents the code. After too
