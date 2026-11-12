@@ -4,6 +4,7 @@ import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.NonNull;
 
@@ -14,6 +15,13 @@ public record WorkerVerifiedCodecFamilies(
 
   public WorkerVerifiedCodecFamilies {
     codecFamilies = Set.copyOf(codecFamilies);
+  }
+
+  /** The codec families that at least one of these workers encodes with a verified encoder. */
+  public static Set<String> codecFamiliesOf(List<WorkerVerifiedCodecFamilies> workers) {
+    return workers.stream()
+        .flatMap(worker -> worker.codecFamilies().stream())
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   /**
