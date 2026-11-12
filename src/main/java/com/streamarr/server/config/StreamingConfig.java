@@ -56,11 +56,13 @@ public class StreamingConfig {
 
   @Bean
   public LocalSegmentStore segmentStore(StreamingProperties properties) {
-    // Before the store exists, so the folder holds nothing of a running store.
+    // The store creates the folder, so the server decides whether it owns a folder that exists.
+    // Nothing uses the store before this method returns, so the folder holds nothing of it yet.
+    var store = new LocalSegmentStore(Path.of(properties.segmentBasePath()));
     properties
         .ownedSegmentFolder()
         .ifPresent(segmentFolder -> new SegmentFolderLeftovers(segmentFolder).delete());
-    return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
+    return store;
   }
 
   @Bean
