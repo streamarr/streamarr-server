@@ -2,6 +2,7 @@ package com.streamarr.server.services.pagination;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.pagination.PaginationDirection;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;

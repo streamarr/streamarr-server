@@ -1,4 +1,4 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.domain;
 
 import java.util.UUID;
 import lombok.NonNull;

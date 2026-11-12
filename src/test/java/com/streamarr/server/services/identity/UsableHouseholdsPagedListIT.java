@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.auth.Household;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.SortDirection;
+import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.fixtures.ProfileHouseholdShareFixture;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -12,9 +15,6 @@ import com.streamarr.server.services.identity.IdentityQueryService.UsableHouseho
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.SortDirection;
-import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PagedListContract;
 import java.util.ArrayList;

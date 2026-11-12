@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
+import com.streamarr.server.domain.LibraryOperationRejection;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.MediaFile;

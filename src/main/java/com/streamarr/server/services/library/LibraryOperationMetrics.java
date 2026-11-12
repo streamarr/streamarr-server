@@ -1,5 +1,7 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.domain.LibraryOperationConclusion;
+import com.streamarr.server.domain.LibraryOperationKind;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;

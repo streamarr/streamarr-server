@@ -1,5 +1,6 @@
 package com.streamarr.server.services.pagination;
 
+import com.streamarr.server.domain.pagination.PaginationDirection;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import java.util.Optional;
 import org.apache.commons.lang3.StringUtils;

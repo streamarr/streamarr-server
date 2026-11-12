@@ -1,6 +1,5 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.domain;
 
-import com.streamarr.server.domain.LibraryStatus;
 import lombok.NonNull;
 
 /** Why a library refused to start a scan or a refresh, or refused removeLibrary. */

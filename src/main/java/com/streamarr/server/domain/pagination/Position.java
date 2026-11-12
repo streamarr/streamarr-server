@@ -1,4 +1,4 @@
-package com.streamarr.server.services.pagination;
+package com.streamarr.server.domain.pagination;
 
 import java.util.UUID;
 import lombok.NonNull;

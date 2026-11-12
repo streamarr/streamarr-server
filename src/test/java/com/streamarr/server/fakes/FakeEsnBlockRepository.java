@@ -1,9 +1,9 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.EsnBlock;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.auth.EsnBlockRepository;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;

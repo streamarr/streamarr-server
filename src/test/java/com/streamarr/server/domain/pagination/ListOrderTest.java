@@ -1,4 +1,4 @@
-package com.streamarr.server.services.pagination;
+package com.streamarr.server.domain.pagination;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

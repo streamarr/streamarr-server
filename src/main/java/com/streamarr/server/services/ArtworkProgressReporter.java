@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.media.ArtworkBacklog;
+import com.streamarr.server.domain.media.ArtworkPriority;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import java.time.Clock;

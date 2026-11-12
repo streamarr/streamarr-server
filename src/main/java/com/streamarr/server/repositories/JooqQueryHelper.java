@@ -14,10 +14,10 @@ import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.BaseAuditableEntity;
-import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.SortValue;
+import com.streamarr.server.domain.pagination.OrderMediaBy;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.SortValue;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.time.temporal.Temporal;

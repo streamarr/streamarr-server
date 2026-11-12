@@ -1,6 +1,5 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.domain;
 
-import com.streamarr.server.domain.LibraryStatus;
 import java.util.Locale;
 
 /** The kind of work a library operation does. */
@@ -20,7 +19,7 @@ public enum LibraryOperationKind {
   }
 
   /** The value that tags this kind on library-operation metrics. */
-  String tagValue() {
+  public String tagValue() {
     return name().toLowerCase(Locale.ROOT);
   }
 }

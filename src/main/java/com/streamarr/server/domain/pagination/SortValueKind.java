@@ -1,4 +1,4 @@
-package com.streamarr.server.services.pagination;
+package com.streamarr.server.domain.pagination;
 
 /** The type of value a list sorts by. */
 public enum SortValueKind {

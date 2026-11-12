@@ -1,11 +1,11 @@
 package com.streamarr.server.support;
 
+import com.streamarr.server.domain.LibraryOperationConclusion;
+import com.streamarr.server.domain.LibraryOperationEnd;
+import com.streamarr.server.domain.NewLibraryOperation;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryOperationRepository.StoreOutcome;
 import com.streamarr.server.services.audit.SystemWork;
-import com.streamarr.server.services.library.LibraryOperationConclusion;
-import com.streamarr.server.services.library.LibraryOperationEnd;
-import com.streamarr.server.services.library.NewLibraryOperation;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;

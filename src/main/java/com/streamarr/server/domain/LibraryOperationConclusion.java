@@ -1,6 +1,5 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.domain;
 
-import com.streamarr.server.domain.LibraryStatus;
 import java.util.Locale;
 
 /** How a library operation ends. */
@@ -32,7 +31,7 @@ public enum LibraryOperationConclusion {
     };
   }
 
-  String tagValue() {
+  public String tagValue() {
     return name().toLowerCase(Locale.ROOT);
   }
 }

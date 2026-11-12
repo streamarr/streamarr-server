@@ -1,12 +1,13 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.config.ArtworkPrioritySchedulers;
+import com.streamarr.server.domain.media.ArtworkSources;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageRefreshMode;
+import com.streamarr.server.domain.media.ImageSource.TmdbImageSource;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.PersonRepository;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
-import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;

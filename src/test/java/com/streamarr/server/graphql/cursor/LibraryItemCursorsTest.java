@@ -4,12 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.domain.pagination.MediaFilter;
+import com.streamarr.server.domain.pagination.OrderMediaBy;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.SortDirection;
+import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.domain.streaming.WatchStatus;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.SortDirection;
-import com.streamarr.server.services.pagination.SortValue;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.UnaryOperator;

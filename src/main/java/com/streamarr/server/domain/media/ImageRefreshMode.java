@@ -1,4 +1,4 @@
-package com.streamarr.server.services.metadata;
+package com.streamarr.server.domain.media;
 
 public enum ImageRefreshMode {
   PRESERVE,

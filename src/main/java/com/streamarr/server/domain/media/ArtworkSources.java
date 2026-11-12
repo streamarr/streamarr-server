@@ -1,9 +1,5 @@
-package com.streamarr.server.services;
+package com.streamarr.server.domain.media;
 
-import com.streamarr.server.domain.media.ArtworkTarget;
-import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.services.metadata.events.ImageSource;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
