@@ -1,10 +1,16 @@
 package com.streamarr.server.services.metadata;
 
+import static com.streamarr.server.fakes.TestImages.createGifImage;
+import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
+import static com.streamarr.server.fakes.TestImages.decode;
+import static com.streamarr.server.fakes.TestImages.formatNameOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.data.Offset.offset;
+import static org.junit.jupiter.api.Named.named;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
@@ -18,15 +24,19 @@ import com.streamarr.server.exceptions.ImageProcessingException;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 import java.util.Optional;
+import java.util.stream.Stream;
 import javax.imageio.ImageIO;
 import lombok.Builder;
 import net.coobird.thumbnailator.Thumbnails;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Image Variant Service Tests")
@@ -159,15 +169,36 @@ class ImageVariantServiceTest {
     }
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("imagesWithTransparentPixels")
+  @DisplayName("Should encode every variant so that it decodes when image has transparent pixels")
+  void shouldEncodeEveryVariantSoThatItDecodesWhenImageHasTransparentPixels(byte[] imageData) {
+    var variants = imageVariantService.generateVariants(imageData, ImageType.LOGO);
+
+    assertThat(variants)
+        .hasSize(4)
+        .allSatisfy(
+            variant -> assertThat(decode(variant.data())).as(variant.variant().name()).isNotNull());
+  }
+
+  private static Stream<Named<byte[]>> imagesWithTransparentPixels() {
+    return Stream.of(
+        named("a transparent border", createPngImageWithTransparentBorder()),
+        named("every pixel transparent", createTransparentPngImage()));
+  }
+
   @ParameterizedTest
   @EnumSource(ImageType.class)
-  @DisplayName("Should generate four variants when given any ImageType")
-  void shouldGenerateFourVariantsWhenGivenAnyImageType(ImageType imageType) {
+  @DisplayName("Should generate four JPEG variants that decode when given any ImageType")
+  void shouldGenerateFourJpegVariantsThatDecodeWhenGivenAnyImageType(ImageType imageType) {
     var imageData = createTestImage(600, 900);
 
     var variants = imageVariantService.generateVariants(imageData, imageType);
 
-    assertThat(variants).hasSize(4);
+    assertThat(variants)
+        .hasSize(4)
+        .allSatisfy(variant -> assertThat(formatNameOf(variant.data())).isEqualTo("jpeg"))
+        .allSatisfy(variant -> assertThat(decode(variant.data())).isNotNull());
   }
 
   @Test
@@ -330,17 +361,41 @@ class ImageVariantServiceTest {
   }
 
   @Test
+  @DisplayName("Should throw when image data is neither JPEG nor PNG")
+  void shouldThrowWhenImageDataIsNeitherJpegNorPng() {
+    var imageData = createGifImage();
+
+    assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
+        .isInstanceOf(ImageProcessingException.class);
+  }
+
+  @Test
   @DisplayName("Should throw when image data is corrupt")
   void shouldThrowWhenImageDataIsCorrupt() {
+    var pngCutAfterItsSignature = Arrays.copyOf(createSolidPngImage(600, 900, 0x00A0A0), 16);
+
     assertThatThrownBy(
-            () -> imageVariantService.generateVariants(new byte[] {0, 1, 2}, ImageType.POSTER))
+            () -> imageVariantService.generateVariants(pngCutAfterItsSignature, ImageType.POSTER))
         .isInstanceOf(ImageProcessingException.class);
+  }
+
+  @Test
+  @DisplayName("Should throw when no reader decodes the image data")
+  void shouldThrowWhenNoReaderDecodesImageData() {
+    var imageData = createTestImage(600, 900);
+
+    try (var mockedImageIO = mockStatic(ImageIO.class)) {
+      mockedImageIO.when(() -> ImageIO.read(any(InputStream.class))).thenReturn(null);
+
+      assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
+          .isInstanceOf(ImageProcessingException.class);
+    }
   }
 
   @Test
   @DisplayName("Should wrap IOException when image reading fails")
   void shouldWrapIOExceptionWhenImageReadingFails() {
-    var imageData = new byte[] {1, 2, 3};
+    var imageData = createTestImage(600, 900);
 
     try (var mockedImageIO = mockStatic(ImageIO.class)) {
       mockedImageIO

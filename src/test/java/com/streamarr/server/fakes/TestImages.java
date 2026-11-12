@@ -1,16 +1,39 @@
 package com.streamarr.server.fakes;
 
 import java.awt.Color;
+import java.awt.Transparency;
 import java.awt.color.ColorSpace;
 import java.awt.color.ICC_Profile;
 import java.awt.image.BufferedImage;
+import java.awt.image.ComponentColorModel;
+import java.awt.image.DataBuffer;
+import java.awt.image.IndexColorModel;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Locale;
+import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageTypeSpecifier;
+import javax.imageio.metadata.IIOMetadataNode;
 
 public final class TestImages {
+
+  /** The opaque colour that the images with a transparent border show at their centre. */
+  public static final int OPAQUE_TEAL = 0xFF00A0A0;
+
+  /** The opaque grey that the grayscale images with an alpha channel show at their centre. */
+  public static final int OPAQUE_MID_GRAY = 0xFF808080;
+
+  private static final int TRANSPARENT = 0;
+  private static final int TEAL_ONE_STEP_SHORT_OF_OPAQUE = 0xFE00A0A0;
+  private static final int BORDERED_WIDTH = 400;
+  private static final int BORDERED_HEIGHT = 200;
+  private static final String PNG_METADATA_FORMAT = "javax_imageio_png_1.0";
 
   private TestImages() {}
 
@@ -61,12 +84,288 @@ public final class TestImages {
     return writePng(new BufferedImage(185, 278, BufferedImage.TYPE_INT_ARGB));
   }
 
+  /**
+   * A logo-like PNG: an opaque teal rectangle over the middle half of each axis, and transparent
+   * pixels everywhere else.
+   */
+  public static byte[] createPngImageWithTransparentBorder() {
+    var image = new BufferedImage(BORDERED_WIDTH, BORDERED_HEIGHT, BufferedImage.TYPE_INT_ARGB);
+    var graphics = image.createGraphics();
+    graphics.setColor(new Color(OPAQUE_TEAL, true));
+    graphics.fillRect(
+        BORDERED_WIDTH / 4, BORDERED_HEIGHT / 4, BORDERED_WIDTH / 2, BORDERED_HEIGHT / 2);
+    graphics.dispose();
+
+    return writePng(image);
+  }
+
+  /** The same picture as a palette PNG, whose transparency is a palette entry. */
+  public static byte[] createPalettePngImageWithTransparentBorder() {
+    var palette =
+        new IndexColorModel(
+            1, 2, new int[] {TRANSPARENT, OPAQUE_TEAL}, 0, true, 0, DataBuffer.TYPE_BYTE);
+    var image =
+        new BufferedImage(BORDERED_WIDTH, BORDERED_HEIGHT, BufferedImage.TYPE_BYTE_BINARY, palette);
+    for (var y = BORDERED_HEIGHT / 4; y < BORDERED_HEIGHT * 3 / 4; y++) {
+      for (var x = BORDERED_WIDTH / 4; x < BORDERED_WIDTH * 3 / 4; x++) {
+        image.getRaster().setSample(x, y, 0, 1);
+      }
+    }
+
+    return writePng(image);
+  }
+
+  /** A PNG that stores an alpha channel in which every pixel is opaque. */
+  public static byte[] createOpaquePngImageWithAlphaChannel() {
+    var image = new BufferedImage(600, 900, BufferedImage.TYPE_INT_ARGB);
+    var graphics = image.createGraphics();
+    graphics.setColor(new Color(OPAQUE_TEAL, true));
+    graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+    graphics.dispose();
+
+    return writePng(image);
+  }
+
+  /** An opaque teal PNG in which exactly one pixel, at the centre, is one step short of opaque. */
+  public static byte[] createPngImageWithOneTranslucentPixel() {
+    var image = new BufferedImage(600, 900, BufferedImage.TYPE_INT_ARGB);
+    var graphics = image.createGraphics();
+    graphics.setColor(new Color(OPAQUE_TEAL, true));
+    graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+    graphics.dispose();
+    image.setRGB(300, 450, TEAL_ONE_STEP_SHORT_OF_OPAQUE);
+
+    return writePng(image);
+  }
+
+  /**
+   * A teal palette PNG in which exactly one pixel, at the centre, uses a palette entry that is one
+   * step short of opaque. Every other pixel uses the opaque entry.
+   */
+  public static byte[] createPalettePngImageWithOneTranslucentPixel() {
+    var palette =
+        new IndexColorModel(
+            1,
+            2,
+            new int[] {OPAQUE_TEAL, TEAL_ONE_STEP_SHORT_OF_OPAQUE},
+            0,
+            true,
+            -1,
+            DataBuffer.TYPE_BYTE);
+    var image = new BufferedImage(600, 900, BufferedImage.TYPE_BYTE_BINARY, palette);
+    image.getRaster().setSample(300, 450, 0, 1);
+
+    return writePng(image);
+  }
+
+  /** A solid teal PNG with 16 bits for each of red, green and blue, and no alpha channel. */
+  public static byte[] createSixteenBitOpaquePngImage() {
+    var colorModel =
+        new ComponentColorModel(
+            ColorSpace.getInstance(ColorSpace.CS_sRGB),
+            false,
+            false,
+            Transparency.OPAQUE,
+            DataBuffer.TYPE_USHORT);
+    var raster = colorModel.createCompatibleWritableRaster(600, 900);
+    var tealRow = new int[raster.getWidth()];
+    Arrays.fill(tealRow, 0xA0A0);
+    for (var y = 0; y < raster.getHeight(); y++) {
+      raster.setSamples(0, y, raster.getWidth(), 1, 1, tealRow);
+      raster.setSamples(0, y, raster.getWidth(), 1, 2, tealRow);
+    }
+
+    return writePng(new BufferedImage(colorModel, raster, false, null));
+  }
+
+  /**
+   * A solid teal PNG with 16 bits for each of red, green, blue and alpha. Every alpha sample is
+   * fully opaque except one, which is one step below: 65534 of 65535. That sample rounds to fully
+   * opaque in 8 bits.
+   */
+  public static byte[] createSixteenBitPngImageWithOneAlphaSampleBelowOpaque() {
+    var image = sixteenBitTealImageWithOpaqueAlphaChannel();
+    image.getRaster().setSample(300, 450, 3, 0xFFFE);
+
+    return writePng(image);
+  }
+
+  /** A solid teal PNG with 16 bits for each of red, green, blue and alpha, all fully opaque. */
+  public static byte[] createSixteenBitOpaquePngImageWithAlphaChannel() {
+    return writePng(sixteenBitTealImageWithOpaqueAlphaChannel());
+  }
+
+  private static BufferedImage sixteenBitTealImageWithOpaqueAlphaChannel() {
+    var colorModel =
+        new ComponentColorModel(
+            ColorSpace.getInstance(ColorSpace.CS_sRGB),
+            true,
+            false,
+            Transparency.TRANSLUCENT,
+            DataBuffer.TYPE_USHORT);
+    var raster = colorModel.createCompatibleWritableRaster(600, 900);
+    var tealRow = new int[raster.getWidth()];
+    var opaqueRow = new int[raster.getWidth()];
+    Arrays.fill(tealRow, 0xA0A0);
+    Arrays.fill(opaqueRow, 0xFFFF);
+    for (var y = 0; y < raster.getHeight(); y++) {
+      raster.setSamples(0, y, raster.getWidth(), 1, 1, tealRow);
+      raster.setSamples(0, y, raster.getWidth(), 1, 2, tealRow);
+      raster.setSamples(0, y, raster.getWidth(), 1, 3, opaqueRow);
+    }
+
+    return new BufferedImage(colorModel, raster, false, null);
+  }
+
+  /**
+   * A logo-like PNG with one 8-bit grey sample and one 8-bit alpha sample for each pixel: an opaque
+   * mid-grey rectangle over the middle half of each axis, and transparent pixels everywhere else.
+   */
+  public static byte[] createGrayscalePngImageWithTransparentBorder() {
+    return writePng(
+        withTransparentBorder(opaqueMidGrayImageWithAlphaChannel(DataBuffer.TYPE_BYTE)));
+  }
+
+  /** The same picture with 16 bits for each grey sample and each alpha sample. */
+  public static byte[] createSixteenBitGrayscalePngImageWithTransparentBorder() {
+    return writePng(
+        withTransparentBorder(opaqueMidGrayImageWithAlphaChannel(DataBuffer.TYPE_USHORT)));
+  }
+
+  /** A mid-grey PNG with a grey sample and an alpha sample for each pixel, all fully opaque. */
+  public static byte[] createGrayscaleOpaquePngImageWithAlphaChannel() {
+    return writePng(opaqueMidGrayImageWithAlphaChannel(DataBuffer.TYPE_BYTE));
+  }
+
+  private static BufferedImage opaqueMidGrayImageWithAlphaChannel(int dataType) {
+    var colorModel =
+        new ComponentColorModel(
+            ColorSpace.getInstance(ColorSpace.CS_GRAY),
+            true,
+            false,
+            Transparency.TRANSLUCENT,
+            dataType);
+    var raster = colorModel.createCompatibleWritableRaster(BORDERED_WIDTH, BORDERED_HEIGHT);
+    var sampleBits = DataBuffer.getDataTypeSize(dataType);
+    var midGrayRow = new int[BORDERED_WIDTH];
+    var opaqueRow = new int[BORDERED_WIDTH];
+    Arrays.fill(midGrayRow, 0x8080 >> (16 - sampleBits));
+    Arrays.fill(opaqueRow, (1 << sampleBits) - 1);
+    for (var y = 0; y < BORDERED_HEIGHT; y++) {
+      raster.setSamples(0, y, BORDERED_WIDTH, 1, 0, midGrayRow);
+      raster.setSamples(0, y, BORDERED_WIDTH, 1, 1, opaqueRow);
+    }
+
+    return new BufferedImage(colorModel, raster, false, null);
+  }
+
+  private static BufferedImage withTransparentBorder(BufferedImage image) {
+    var alphaBand = image.getAlphaRaster();
+    var transparentRow = new int[BORDERED_WIDTH];
+    for (var y = 0; y < BORDERED_HEIGHT; y++) {
+      var isCentreRow = y >= BORDERED_HEIGHT / 4 && y < BORDERED_HEIGHT * 3 / 4;
+      var borderWidth = isCentreRow ? BORDERED_WIDTH / 4 : BORDERED_WIDTH;
+      alphaBand.setSamples(0, y, borderWidth, 1, 0, transparentRow);
+      alphaBand.setSamples(BORDERED_WIDTH - borderWidth, y, borderWidth, 1, 0, transparentRow);
+    }
+
+    return image;
+  }
+
+  /**
+   * The same picture as a PNG with one 8-bit grey sample for each pixel and no alpha channel. Its
+   * border is black, and its tRNS chunk names black as the transparent grey level.
+   */
+  public static byte[] createGrayscalePngImageWithTransparentGrayLevel() {
+    var image = new BufferedImage(BORDERED_WIDTH, BORDERED_HEIGHT, BufferedImage.TYPE_BYTE_GRAY);
+    for (var y = BORDERED_HEIGHT / 4; y < BORDERED_HEIGHT * 3 / 4; y++) {
+      for (var x = BORDERED_WIDTH / 4; x < BORDERED_WIDTH * 3 / 4; x++) {
+        image.getRaster().setSample(x, y, 0, 0x80);
+      }
+    }
+
+    var transparentGrayLevel = new IIOMetadataNode("tRNS_Grayscale");
+    transparentGrayLevel.setAttribute("gray", "0");
+    var transparency = new IIOMetadataNode("tRNS");
+    transparency.appendChild(transparentGrayLevel);
+
+    var writer = ImageIO.getImageWritersByFormatName("png").next();
+    var outputStream = new ByteArrayOutputStream();
+    try (var imageOutput = ImageIO.createImageOutputStream(outputStream)) {
+      var metadata =
+          writer.getDefaultImageMetadata(ImageTypeSpecifier.createFromRenderedImage(image), null);
+      var chunks = metadata.getAsTree(PNG_METADATA_FORMAT);
+      chunks.appendChild(transparency);
+      metadata.setFromTree(PNG_METADATA_FORMAT, chunks);
+      writer.setOutput(imageOutput);
+      writer.write(new IIOImage(image, null, metadata));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    } finally {
+      writer.dispose();
+    }
+
+    return outputStream.toByteArray();
+  }
+
+  /** A PNG with one 8-bit grey sample for each pixel and no alpha channel. */
+  public static byte[] createGrayscalePngImage() {
+    return writePng(new BufferedImage(600, 900, BufferedImage.TYPE_BYTE_GRAY));
+  }
+
+  /** A PNG with one 16-bit grey sample for each pixel, which no JPEG encoder accepts. */
+  public static byte[] createSixteenBitGrayscalePngImage() {
+    return writePng(new BufferedImage(600, 900, BufferedImage.TYPE_USHORT_GRAY));
+  }
+
+  public static byte[] createGifImage() {
+    return write(new BufferedImage(600, 900, BufferedImage.TYPE_INT_RGB), "gif");
+  }
+
+  public static BufferedImage decode(byte[] imageData) {
+    try {
+      return ImageIO.read(new ByteArrayInputStream(imageData));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  /** The lower-case name of the format that ImageIO reads the bytes as, such as png or jpeg. */
+  public static String formatNameOf(byte[] imageData) {
+    try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(imageData))) {
+      return ImageIO.getImageReaders(input).next().getFormatName().toLowerCase(Locale.ROOT);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  /** The number of color samples that each pixel has, without alpha: 1 for grey, 3 for RGB. */
+  public static int colorComponentCountOf(byte[] imageData) {
+    return decode(imageData).getColorModel().getNumColorComponents();
+  }
+
+  public static int alphaOfCornerPixel(byte[] imageData) {
+    return decode(imageData).getRGB(0, 0) >>> 24;
+  }
+
+  public static int centrePixelOf(byte[] imageData) {
+    var image = decode(imageData);
+    return image.getRGB(image.getWidth() / 2, image.getHeight() / 2);
+  }
+
   private static byte[] writePng(BufferedImage image) {
+    return write(image, "png");
+  }
+
+  private static byte[] write(BufferedImage image, String formatName) {
     try (var outputStream = new ByteArrayOutputStream()) {
-      ImageIO.write(image, "png", outputStream);
+      if (!ImageIO.write(image, formatName, outputStream)) {
+        throw new IllegalStateException("No " + formatName + " writer accepts the test image");
+      }
+
       return outputStream.toByteArray();
     } catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new UncheckedIOException(e);
     }
   }
 

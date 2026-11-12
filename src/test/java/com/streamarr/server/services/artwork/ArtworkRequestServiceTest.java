@@ -1,10 +1,14 @@
 package com.streamarr.server.services.artwork;
 
+import static com.streamarr.server.fakes.TestImages.createGifImage;
+import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitGrayscalePngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.junit.jupiter.api.Named.named;
 
 import com.streamarr.server.domain.media.ArtworkPriority;
 import com.streamarr.server.domain.media.ArtworkSources;
@@ -12,6 +16,7 @@ import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageRefreshMode;
+import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageSource;
 import com.streamarr.server.domain.media.ImageSource.TmdbImageSource;
 import com.streamarr.server.domain.media.ImageType;
@@ -27,12 +32,14 @@ import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fakes.TestImages;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.support.BoundedTask;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLTransientConnectionException;
@@ -46,6 +53,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -144,6 +152,31 @@ class ArtworkRequestServiceTest {
           .isEqualTo(FinishedImageCounts.builder().saved(1).failed(1).build());
       assertThat(failureReasonOf(movieId, ImageType.POSTER))
           .isEqualTo(ItemFailureReason.DOWNLOAD_FAILED);
+      assertThat(artwork.scheduling().pendingTargets()).isEmpty();
+    }
+
+    static Stream<Named<byte[]>> imagesThatCannotBeStored() {
+      return Stream.of(
+          named("an image that is neither JPEG nor PNG", createGifImage()),
+          named("a resized image that no encoder accepts", createSixteenBitGrayscalePngImage()));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("imagesThatCannotBeStored")
+    @DisplayName(
+        "Should finish the step as invalid media and store nothing when the image cannot be stored")
+    void shouldFinishTheStepAsInvalidMediaAndStoreNothingWhenTheImageCannotBeStored(
+        byte[] imageData) {
+      var movieId = UUID.randomUUID();
+      imageDownloader.setImageData(imageData);
+
+      requestPrimaryArtwork(movieArtwork(movieId, POSTER));
+
+      assertThat(failureReasonOf(movieId, ImageType.POSTER))
+          .isEqualTo(ItemFailureReason.INVALID_MEDIA);
+      assertThat(imageRepository.findByEntityIdAndEntityType(movieId, ImageEntityType.MOVIE))
+          .isEmpty();
+      assertThat(artwork.fileSystem().getPath("/data/images")).doesNotExist();
       assertThat(artwork.scheduling().pendingTargets()).isEmpty();
     }
 
@@ -561,6 +594,32 @@ class ArtworkRequestServiceTest {
       assertThat(imageRepository.findByEntityIdAndEntityType(entityId, entityType))
           .extracting(Image::getImageType)
           .containsOnly(imageType);
+    }
+
+    @Test
+    @DisplayName("Should store a transparent company logo as PNG variants at each configured width")
+    void shouldStoreTransparentCompanyLogoAsPngVariantsAtEachConfiguredWidth() {
+      var companyId = UUID.randomUUID();
+      var sources =
+          ArtworkSources.builder()
+              .targetId(companyId)
+              .targetType(ImageEntityType.COMPANY)
+              .sources(List.of(new TmdbImageSource(ImageType.LOGO, "/logo.png")))
+              .build();
+      imageDownloader.setImageData(createPngImageWithTransparentBorder());
+
+      artworkRequestService.requestBackgroundArtwork(sources, ImageRefreshMode.PRESERVE);
+
+      assertThat(imageRepository.findByEntityIdAndEntityType(companyId, ImageEntityType.COMPANY))
+          .filteredOn(image -> image.getVariant() != ImageSize.ORIGINAL)
+          .extracting(ArtworkRequestServiceTest.this::storedBytesOf)
+          .as("format, width and corner alpha of each resized logo")
+          .extracting(
+              TestImages::formatNameOf,
+              imageData -> TestImages.decode(imageData).getWidth(),
+              TestImages::alphaOfCornerPixel)
+          .containsExactlyInAnyOrder(
+              tuple("png", 92, 0), tuple("png", 185, 0), tuple("png", 500, 0));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -1368,6 +1427,14 @@ class ArtworkRequestServiceTest {
             "scan", ImageRefreshMode.PRESERVE, UUID.randomUUID());
     artworkRequestService.requestPrimaryArtwork(run, sources);
     return artwork.closeAndAwait(run);
+  }
+
+  private byte[] storedBytesOf(Image image) {
+    try {
+      return Files.readAllBytes(artwork.fileSystem().getPath("/data/images", image.getPath()));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 
   private List<Path> storedFiles() throws IOException {

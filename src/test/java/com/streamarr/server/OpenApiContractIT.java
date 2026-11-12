@@ -200,6 +200,8 @@ class OpenApiContractIT extends AbstractIntegrationTest {
       textBlock =
           """
       /api/images/{imageId}, image/jpeg
+      /api/images/{imageId}, image/png
+      /api/images/{imageId}, application/octet-stream
       /api/stream/{sessionId}/init.mp4, video/mp4
       /api/stream/{sessionId}/{variantLabel}/init.mp4, video/mp4
       /api/stream/{sessionId}/{segmentName}, video/mp4

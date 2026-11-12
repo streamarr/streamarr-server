@@ -1,13 +1,35 @@
 package com.streamarr.server.services.artwork;
 
+import static com.streamarr.server.fakes.TestImages.OPAQUE_MID_GRAY;
+import static com.streamarr.server.fakes.TestImages.OPAQUE_TEAL;
+import static com.streamarr.server.fakes.TestImages.alphaOfCornerPixel;
+import static com.streamarr.server.fakes.TestImages.centrePixelOf;
+import static com.streamarr.server.fakes.TestImages.colorComponentCountOf;
+import static com.streamarr.server.fakes.TestImages.createGrayscaleOpaquePngImageWithAlphaChannel;
+import static com.streamarr.server.fakes.TestImages.createGrayscalePngImage;
+import static com.streamarr.server.fakes.TestImages.createGrayscalePngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createGrayscalePngImageWithTransparentGrayLevel;
+import static com.streamarr.server.fakes.TestImages.createOpaquePngImageWithAlphaChannel;
+import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithOneTranslucentPixel;
+import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createPngImageWithOneTranslucentPixel;
+import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitGrayscalePngImage;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitGrayscalePngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitOpaquePngImage;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitOpaquePngImageWithAlphaChannel;
+import static com.streamarr.server.fakes.TestImages.createSixteenBitPngImageWithOneAlphaSampleBelowOpaque;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTestImageWithMismatchedColorProfile;
 import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
+import static com.streamarr.server.fakes.TestImages.formatNameOf;
 import static com.streamarr.server.fixtures.ArtworkStepsAttemptFixture.attemptFor;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
+import static org.junit.jupiter.api.Named.named;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -15,24 +37,30 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.exceptions.ImageStorageException;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fixtures.AmbientArtworkFixture;
 import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.services.metadata.ImageVariantService;
+import java.awt.Color;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -142,6 +170,192 @@ class ImageServiceTest {
         .filteredOn(image -> image.getVariant() == ImageSize.SMALL)
         .singleElement()
         .satisfies(image -> assertThat(image.getAmbientColors()).isEmpty());
+  }
+
+  @Test
+  @DisplayName("Should store resized variants as transparent PNG when image has transparent pixels")
+  void shouldStoreResizedVariantsAsTransparentPngWhenImageHasTransparentPixels() {
+    var result = processLogo(createPngImageWithTransparentBorder());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(ImageServiceTest::assertPngWithTransparentBorder);
+  }
+
+  @Test
+  @DisplayName(
+      "Should store resized variants as transparent PNG when transparency is a palette entry")
+  void shouldStoreResizedVariantsAsTransparentPngWhenTransparencyIsPaletteEntry() {
+    var result = processLogo(createPalettePngImageWithTransparentBorder());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(ImageServiceTest::assertPngWithTransparentBorder);
+  }
+
+  @Test
+  @DisplayName("Should store resized variants as PNG when a single pixel is not fully opaque")
+  void shouldStoreResizedVariantsAsPngWhenSinglePixelIsNotFullyOpaque() {
+    var result = processPoster(createPngImageWithOneTranslucentPixel());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(imageData -> assertThat(formatNameOf(imageData)).isEqualTo("png"));
+  }
+
+  @Test
+  @DisplayName("Should store resized variants as PNG when one palette pixel is not fully opaque")
+  void shouldStoreResizedVariantsAsPngWhenOnePalettePixelIsNotFullyOpaque() {
+    var result = processPoster(createPalettePngImageWithOneTranslucentPixel());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(imageData -> assertThat(formatNameOf(imageData)).isEqualTo("png"));
+  }
+
+  @Test
+  @DisplayName("Should store resized variants as PNG when one 16-bit alpha sample is below opaque")
+  void shouldStoreResizedVariantsAsPngWhenOneSixteenBitAlphaSampleIsBelowOpaque() {
+    var result = processPoster(createSixteenBitPngImageWithOneAlphaSampleBelowOpaque());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(imageData -> assertThat(formatNameOf(imageData)).isEqualTo("png"));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("grayscaleImagesWithTransparentBorder")
+  @DisplayName("Should keep the gray level in PNG variants when grayscale image has transparency")
+  void shouldKeepGrayLevelInPngVariantsWhenGrayscaleImageHasTransparency(byte[] imageData) {
+    var result = processLogo(imageData);
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(ImageServiceTest::assertPngOfMidGrayWithTransparentBorder);
+  }
+
+  private static Stream<Named<byte[]>> grayscaleImagesWithTransparentBorder() {
+    return Stream.of(
+        named("8-bit gray and alpha samples", createGrayscalePngImageWithTransparentBorder()),
+        named(
+            "16-bit gray and alpha samples",
+            createSixteenBitGrayscalePngImageWithTransparentBorder()),
+        named(
+            "a transparent gray level in a tRNS chunk",
+            createGrayscalePngImageWithTransparentGrayLevel()));
+  }
+
+  @Test
+  @DisplayName("Should keep the gray level in JPEG variants when grayscale alpha is fully opaque")
+  void shouldKeepGrayLevelInJpegVariantsWhenGrayscaleAlphaIsFullyOpaque() {
+    var result = processLogo(createGrayscaleOpaquePngImageWithAlphaChannel());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(imageData -> assertJpegOfSolidColor(imageData, new Color(OPAQUE_MID_GRAY)));
+  }
+
+  @Test
+  @DisplayName("Should omit BlurHash when image has transparent pixels")
+  void shouldOmitBlurHashWhenImageHasTransparentPixels() {
+    var result = processLogo(createPngImageWithTransparentBorder());
+
+    assertThat(result.images())
+        .hasSize(4)
+        .allSatisfy(image -> assertThat(image.getBlurHash()).isNull());
+  }
+
+  @Test
+  @DisplayName("Should omit ambient colors when image has transparent pixels")
+  void shouldOmitAmbientColorsWhenImageHasTransparentPixels() {
+    var result = processLogo(createPngImageWithTransparentBorder());
+
+    assertThat(result.images())
+        .hasSize(4)
+        .allSatisfy(image -> assertThat(image.getAmbientColors()).isEmpty());
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("opaqueImagesThatResizeWithAlphaChannel")
+  @DisplayName("Should store resized variants as JPEG when every pixel is opaque")
+  void shouldStoreResizedVariantsAsJpegWhenEveryPixelIsOpaque(byte[] imageData) {
+    var result = processPoster(imageData);
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(ImageServiceTest::assertJpegOfSolidTeal);
+  }
+
+  private static Stream<Named<byte[]>> opaqueImagesThatResizeWithAlphaChannel() {
+    return Stream.of(
+        named(
+            "alpha channel in which every pixel is opaque", createOpaquePngImageWithAlphaChannel()),
+        named("16-bit color samples without an alpha channel", createSixteenBitOpaquePngImage()),
+        named(
+            "16-bit color samples with a fully opaque alpha channel",
+            createSixteenBitOpaquePngImageWithAlphaChannel()));
+  }
+
+  @Test
+  @DisplayName("Should store resized variants as grayscale JPEG when image is 8-bit grayscale")
+  void shouldStoreResizedVariantsAsGrayscaleJpegWhenImageIsEightBitGrayscale() {
+    var result = processPoster(createGrayscalePngImage());
+
+    assertThat(resizedVariantFilesOf(result))
+        .hasSize(3)
+        .allSatisfy(ImageServiceTest::assertGrayscaleJpeg);
+  }
+
+  @Test
+  @DisplayName(
+      "Should compute the BlurHash of the picture without alpha when alpha channel is fully opaque")
+  void shouldComputeBlurHashOfPictureWithoutAlphaWhenAlphaChannelIsFullyOpaque() {
+    var withoutAlphaChannel = processPoster(createSolidPngImage(600, 900, 0x00A0A0));
+
+    var withOpaqueAlphaChannel = processPoster(createOpaquePngImageWithAlphaChannel());
+
+    assertThat(smallOf(withOpaqueAlphaChannel).getBlurHash())
+        .isNotBlank()
+        .isEqualTo(smallOf(withoutAlphaChannel).getBlurHash());
+  }
+
+  @Test
+  @DisplayName("Should compute ambient colors when alpha channel is fully opaque")
+  void shouldComputeAmbientColorsWhenAlphaChannelIsFullyOpaque() {
+    var result = processPoster(createOpaquePngImageWithAlphaChannel());
+
+    assertThat(smallOf(result).getAmbientColors())
+        .hasValueSatisfying(colors -> assertThat(colors.primary()).isEqualTo("#00a0a0"));
+  }
+
+  @Test
+  @DisplayName("Should fail without storing files when no encoder accepts a resized variant")
+  void shouldFailWithoutStoringFilesWhenNoEncoderAcceptsResizedVariant() {
+    var imageData = createSixteenBitGrayscalePngImage();
+
+    assertThatThrownBy(() -> processPoster(imageData)).isInstanceOf(ImageProcessingException.class);
+
+    assertThat(fileSystem.getPath("/data/images")).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should name every variant file as PNG when image has transparent pixels")
+  void shouldNameEveryVariantFileAsPngWhenImageHasTransparentPixels() {
+    var result = processLogo(createPngImageWithTransparentBorder());
+
+    assertThat(result.images())
+        .hasSize(4)
+        .allSatisfy(image -> assertThat(image.getPath()).endsWith("-" + image.getId() + ".png"));
+  }
+
+  @Test
+  @DisplayName("Should name the original file by its own format when resized variants are JPEG")
+  void shouldNameOriginalFileByItsOwnFormatWhenResizedVariantsAreJpeg() {
+    var result = processPoster(createSolidPngImage(600, 900, 0x00A0A0));
+
+    assertThat(result.images())
+        .extracting(image -> image.getVariant() + extensionOf(image))
+        .containsExactlyInAnyOrder("SMALL.jpg", "MEDIUM.jpg", "LARGE.jpg", "ORIGINAL.png");
   }
 
   @Test
@@ -663,5 +877,72 @@ class ImageServiceTest {
                 imageService.processImage(
                     imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE))
         .isInstanceOf(ImageStorageException.class);
+  }
+
+  private ImageService.ProcessedImage processLogo(byte[] imageData) {
+    return imageService.processImage(
+        imageData, ImageType.LOGO, UUID.randomUUID(), ImageEntityType.COMPANY);
+  }
+
+  private ImageService.ProcessedImage processPoster(byte[] imageData) {
+    return imageService.processImage(
+        imageData, ImageType.POSTER, UUID.randomUUID(), ImageEntityType.MOVIE);
+  }
+
+  private List<byte[]> resizedVariantFilesOf(ImageService.ProcessedImage processed) {
+    return processed.images().stream()
+        .filter(image -> image.getVariant() != ImageSize.ORIGINAL)
+        .map(this::storedBytesOf)
+        .toList();
+  }
+
+  private byte[] storedBytesOf(Image image) {
+    try {
+      return imageService.readImageFile(image);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  private static Image smallOf(ImageService.ProcessedImage processed) {
+    return processed.images().stream()
+        .filter(image -> image.getVariant() == ImageSize.SMALL)
+        .findFirst()
+        .orElseThrow();
+  }
+
+  // The part of the stored file's name after the image id.
+  private static String extensionOf(Image image) {
+    var imageId = image.getId().toString();
+    return image.getPath().substring(image.getPath().indexOf(imageId) + imageId.length());
+  }
+
+  private static void assertPngWithTransparentBorder(byte[] imageData) {
+    assertThat(formatNameOf(imageData)).isEqualTo("png");
+    assertThat(alphaOfCornerPixel(imageData)).as("corner alpha").isZero();
+    assertThat(centrePixelOf(imageData)).as("centre pixel").isEqualTo(OPAQUE_TEAL);
+  }
+
+  private static void assertGrayscaleJpeg(byte[] imageData) {
+    assertThat(formatNameOf(imageData)).isEqualTo("jpeg");
+    assertThat(colorComponentCountOf(imageData)).as("color components").isEqualTo(1);
+  }
+
+  private static void assertPngOfMidGrayWithTransparentBorder(byte[] imageData) {
+    assertThat(formatNameOf(imageData)).isEqualTo("png");
+    assertThat(alphaOfCornerPixel(imageData)).as("corner alpha").isZero();
+    assertThat(centrePixelOf(imageData)).as("centre pixel").isEqualTo(OPAQUE_MID_GRAY);
+  }
+
+  private static void assertJpegOfSolidTeal(byte[] imageData) {
+    assertJpegOfSolidColor(imageData, new Color(OPAQUE_TEAL));
+  }
+
+  private static void assertJpegOfSolidColor(byte[] imageData, Color expected) {
+    assertThat(formatNameOf(imageData)).isEqualTo("jpeg");
+    var centre = new Color(centrePixelOf(imageData));
+    assertThat(centre.getRed()).as("red").isCloseTo(expected.getRed(), within(4));
+    assertThat(centre.getGreen()).as("green").isCloseTo(expected.getGreen(), within(4));
+    assertThat(centre.getBlue()).as("blue").isCloseTo(expected.getBlue(), within(4));
   }
 }
