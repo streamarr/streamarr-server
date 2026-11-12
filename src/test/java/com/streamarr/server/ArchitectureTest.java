@@ -96,6 +96,7 @@ import com.streamarr.server.services.library.architecturefixture.SystemWorkThrea
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryTimer;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryVirtualThreadStart;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.SystemWorkThreads;
+import com.streamarr.server.services.notification.architecturefixture.ShareChangeListenerFixture;
 import com.streamarr.server.services.streaming.remote.architecturefixture.AllowedWorkerProtocolFixture;
 import com.streamarr.transcode.engine.architecturefixture.EngineImplementationFixture;
 import com.streamarr.transcode.probe.architecturefixture.ProbeImplementationFixture;
@@ -475,9 +476,10 @@ class ArchitectureTest {
   @ArchTest
   static final ArchRule onlyTheShareLifecycleMayWriteShares = onlyTheShareLifecycleMayWriteShares();
 
-  // The Notifications module (ADR 0063) depends on no other domain's package, only on the shared
-  // events package and the server's shared parts, and reads no table it does not own. Other
-  // domains tell it what happened; it never asks them.
+  // The Notifications module (ADR 0063) depends on no other domain's package, only on its own
+  // events in the shared events package and the server's shared parts, and reads no table it does
+  // not own. Other domains tell it what happened; it hears no other domain's events and never asks
+  // them.
   @ArchTest
   static final ArchRule notificationsMustKeepToTheirOwnPackagesAndTable =
       notificationsMustKeepToTheirOwnPackagesAndTable();
@@ -758,6 +760,17 @@ class ArchitectureTest {
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("ProfileHouseholdShareRepository")
         .hasMessageContaining("PROFILE_HOUSEHOLD_SHARE");
+  }
+
+  @Test
+  @DisplayName("Should reject a Notifications class when it hears another domain's event")
+  void shouldRejectANotificationsClassWhenItHearsAnotherDomainsEvent() {
+    var shareListener = new ClassFileImporter().importClasses(ShareChangeListenerFixture.class);
+    var rule = notificationsMustKeepToTheirOwnPackagesAndTable();
+
+    assertThatThrownBy(() -> rule.check(shareListener))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("ProfileShareChangedEvent");
   }
 
   @Test
@@ -1115,7 +1128,7 @@ class ArchitectureTest {
                 .or(resideInAnyPackage(module))
                 .or(
                     resideInAnyPackage(
-                        "com.streamarr.server.services.events..",
+                        "com.streamarr.server.services.events.notification..",
                         "com.streamarr.server.domain.pagination..",
                         "com.streamarr.server.services.pagination..",
                         "com.streamarr.server.services.mutation..",
@@ -1132,8 +1145,8 @@ class ArchitectureTest {
                         NotificationForm.class,
                         RequestResolution.class)))
         .as(
-            "The Notifications module depends only on its own packages, the shared events package"
-                + " and the server's shared parts, and reads only its own table");
+            "The Notifications module depends only on its own packages, its own events in the shared"
+                + " events package and the server's shared parts, and reads only its own table");
   }
 
   private static ArchRule onlyCreditServiceMaySaveCredits() {
