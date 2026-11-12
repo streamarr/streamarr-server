@@ -227,6 +227,8 @@ class SegmentFolderLeftoversTest {
     var fileNamedLikeASession =
         Files.write(segmentFolder.resolve(UUID.randomUUID().toString()), "data".getBytes());
     var directoryNamedLikeAnUpload = Files.createDirectory(segmentFolder.resolve(".upload-1.tmp"));
+    var fileWithOnlyAnUploadsPrefix =
+        Files.write(segmentFolder.resolve(".upload-3"), "data".getBytes());
     var outsideFile = Files.write(outside.resolve("movie.mkv"), "media".getBytes());
     var linkNamedLikeASession =
         Files.createSymbolicLink(segmentFolder.resolve(UUID.randomUUID().toString()), outside);
@@ -239,6 +241,7 @@ class SegmentFolderLeftoversTest {
     assertThat(otherDirectory).exists();
     assertThat(fileNamedLikeASession).exists();
     assertThat(directoryNamedLikeAnUpload).exists();
+    assertThat(fileWithOnlyAnUploadsPrefix).exists();
     assertThat(linkNamedLikeASession).isSymbolicLink();
     assertThat(linkNamedLikeAnUpload).isSymbolicLink();
     assertThat(outsideFile).exists();
