@@ -66,6 +66,8 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
   private static final String WAITING_SHARE_TRANSITION = "update%profile_household_share";
   private static final String WAITING_SESSION_LOCK = "auth_session%for update";
   private static final String WAITING_PROFILE_LOCK = "profile%for share";
+  private static final String WAITING_ACCOUNT_DISABLEMENT = "update%user_account";
+  private static final String WAITING_MANAGER_REMOVAL = "delete%profile_manager";
   private static final String WAITING_COMMIT = "COMMIT";
   private static final Duration BOUND = Duration.ofSeconds(10);
 
@@ -265,7 +267,8 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
                                     .andReturn()
                                     .getResponse()
                                     .getContentAsString());
-                var revokedBeforeRelease = completedWithin(disablement, Duration.ofSeconds(2));
+                var revokedBeforeRelease =
+                    finishedBeforeWaitingOn(disablement, WAITING_ACCOUNT_DISABLEMENT);
                 if (revokedBeforeRelease) {
                   assertThat(
                           objectMapper
@@ -363,7 +366,7 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
                                 });
                             return null;
                           });
-              var removedBeforeRelease = completedWithin(removal, Duration.ofSeconds(2));
+              var removedBeforeRelease = finishedBeforeWaitingOn(removal, WAITING_MANAGER_REMOVAL);
 
               held.release().run();
               outcomeOf(end, "share termination after manager removal");
@@ -511,13 +514,20 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
         .get(0, int.class);
   }
 
-  private static boolean completedWithin(Future<?> future, Duration timeout) throws Exception {
+  /**
+   * Waits until the work finishes or a backend waits on a lock at the statement it was expected to
+   * wait at, and answers whether it finished.
+   */
+  private boolean finishedBeforeWaitingOn(Future<?> work, String queryFragment) {
     try {
-      future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-      return true;
-    } catch (TimeoutException _) {
-      return false;
+      await().atMost(BOUND).until(() -> work.isDone() || waitingOn(queryFragment) > 0);
+    } catch (ConditionTimeoutException timeout) {
+      throw new AssertionError(
+          "neither finished nor waiting on '" + queryFragment + "'. Activity:\n" + activity(),
+          timeout);
     }
+
+    return work.isDone();
   }
 
   private UUID offerAsOwner(Profile profile, AuthTestSupport.TestIdentity target) throws Exception {
