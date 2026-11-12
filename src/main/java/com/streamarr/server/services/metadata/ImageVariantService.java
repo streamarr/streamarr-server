@@ -23,6 +23,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.IntPredicate;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import lombok.Builder;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.stereotype.Service;
@@ -175,17 +177,25 @@ public class ImageVariantService {
   }
 
   private BufferedImage decodeImage(byte[] imageData) {
-    BufferedImage image;
-    try {
-      image = ImageIO.read(new ByteArrayInputStream(imageData));
+    try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(imageData))) {
+      var readers = ImageIO.getImageReaders(input);
+      if (!readers.hasNext()) {
+        throw new ImageProcessingException("Failed to decode image data.");
+      }
+
+      return read(readers.next(), input);
     } catch (IOException e) {
       throw new ImageProcessingException(e);
     }
+  }
 
-    if (image == null) {
-      throw new ImageProcessingException("Failed to decode image data.");
+  private static BufferedImage read(ImageReader reader, ImageInputStream input) throws IOException {
+    try {
+      reader.setInput(input, true, true);
+      return reader.read(0);
+    } finally {
+      reader.dispose();
     }
-    return image;
   }
 
   private BufferedImage resize(BufferedImage source, int targetWidth) {

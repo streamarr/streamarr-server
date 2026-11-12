@@ -25,8 +25,8 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.exceptions.ImageProcessingException;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -437,7 +437,9 @@ class ImageVariantServiceTest {
     var imageData = createTestImage(600, 900);
 
     try (var mockedImageIO = mockStatic(ImageIO.class)) {
-      mockedImageIO.when(() -> ImageIO.read(any(InputStream.class))).thenReturn(null);
+      mockedImageIO
+          .when(() -> ImageIO.getImageReaders(any()))
+          .thenReturn(Collections.emptyIterator());
 
       assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
           .isInstanceOf(ImageProcessingException.class);
@@ -445,19 +447,15 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should wrap IOException when image reading fails")
-  void shouldWrapIOExceptionWhenImageReadingFails() {
-    var imageData = createTestImage(600, 900);
+  @DisplayName("Should wrap IOException when the pixel data is cut short")
+  void shouldWrapIOExceptionWhenPixelDataIsCutShort() {
+    var png = createSolidPngImage(600, 900, 0x00A0A0);
+    var pngCutInItsPixelData = Arrays.copyOf(png, png.length / 2);
 
-    try (var mockedImageIO = mockStatic(ImageIO.class)) {
-      mockedImageIO
-          .when(() -> ImageIO.read(any(InputStream.class)))
-          .thenThrow(new IOException("disk error"));
-
-      assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
-          .isInstanceOf(ImageProcessingException.class)
-          .hasCauseInstanceOf(IOException.class);
-    }
+    assertThatThrownBy(
+            () -> imageVariantService.generateVariants(pngCutInItsPixelData, ImageType.POSTER))
+        .isInstanceOf(ImageProcessingException.class)
+        .hasCauseInstanceOf(IOException.class);
   }
 
   @SuppressWarnings("unchecked")
