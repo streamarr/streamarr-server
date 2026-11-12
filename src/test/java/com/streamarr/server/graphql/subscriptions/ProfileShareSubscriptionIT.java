@@ -615,15 +615,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     grantManagement(departing, managed);
     var serverAdmin = adminIdentity();
 
-    var deleted =
-        http.execute(
-            authTestSupport.freshAccountBearer(serverAdmin),
-            """
-            mutation { transferLastAccountAndDeleteHousehold(input: {householdId: "%s",
-              destinationHouseholdId: "%s", reason: "closing"}) {
-              deletedHouseholdId userErrors { __typename } } }
-            """
-                .formatted(departing.household().getId(), refuge.household().getId()));
+    var deleted = transferLastAccountAndDeleteHousehold(serverAdmin, departing, refuge);
     assertThat(
             deleted.at("/data/transferLastAccountAndDeleteHousehold/deletedHouseholdId").asString())
         .as("deletion in %s", deleted)
@@ -872,6 +864,21 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
         mutation { deleteMyAccount(input: {confirmation: "DELETE"}) {
           accountId userErrors { __typename } } }
         """);
+  }
+
+  /** A ServerAdmin moves the Household's last Account to the refuge and deletes the Household. */
+  private JsonNode transferLastAccountAndDeleteHousehold(
+      AuthTestSupport.TestIdentity serverAdmin,
+      AuthTestSupport.TestIdentity departing,
+      AuthTestSupport.TestIdentity refuge) {
+    return http.execute(
+        authTestSupport.freshAccountBearer(serverAdmin),
+        """
+        mutation { transferLastAccountAndDeleteHousehold(input: {householdId: "%s",
+          destinationHouseholdId: "%s", reason: "closing"}) {
+          deletedHouseholdId userErrors { __typename } } }
+        """
+            .formatted(departing.household().getId(), refuge.household().getId()));
   }
 
   /** The owner's pending invitation for the host to manage the Profile too. */
