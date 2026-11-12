@@ -79,6 +79,11 @@ public class ProfileManagerInvitation extends BaseAuditableEntity<ProfileManager
     return status;
   }
 
+  /** Whether the Account is the one the invitation names, the only one that may answer it. */
+  public boolean isAddressedTo(UUID accountId) {
+    return accountId.equals(recipientAccountId);
+  }
+
   /** The status as its invited Account and ServerAdmin read it, who see every invalidation. */
   public ProfileManagerInvitationStatus statusToItsAccountAt(Instant now) {
     if (recipientInvalidatedAt != null) {

@@ -36,7 +36,7 @@ class ManagerInvitationPageIT extends AbstractIntegrationTest {
 
   private static final String FIELDS =
       "id profileId profileName inviterAccountId inviterDisplayName recipientEmail status"
-          + " expiresAt";
+          + " expiresAt addressedToReader";
 
   private static final String INVITATION =
       "query { managerInvitation(invitationId: \"%s\") { %s } }";
@@ -145,6 +145,38 @@ class ManagerInvitationPageIT extends AbstractIntegrationTest {
     cast.grant(kai, alex);
 
     assertThat(invitation(kai, invitationId).path("id").asString()).isEqualTo(invitationId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should say the invitation is addressed to the reader only when its named Account reads it")
+  void shouldSayTheInvitationIsAddressedToTheReaderOnlyWhenItsNamedAccountReadsIt()
+      throws Exception {
+    var issued = invite(sam, alex, mara);
+    var invitationId = issued.path("id").asString();
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+
+    assertThat(issued.path("addressedToReader").asBoolean()).isFalse();
+    assertThat(invitation(mara, invitationId).path("addressedToReader").asBoolean()).isTrue();
+    assertThat(invitation(sam, invitationId).path("addressedToReader").asBoolean()).isFalse();
+    assertThat(invitation(serverAdmin, invitationId).path("addressedToReader").asBoolean())
+        .isFalse();
+    assertThat(
+            graphql(
+                    authTestSupport.accountBearer(mara),
+                    "query { pendingManagerInvitations { edges { node { addressedToReader } } } }")
+                .at("/data/pendingManagerInvitations/edges/0/node/addressedToReader")
+                .asBoolean())
+        .isTrue();
+    assertThat(
+            graphql(
+                    authTestSupport.accountBearer(sam),
+                    "query { pendingManagerInvitationsForProfile(profileId: \"%s\") { edges { node {"
+                            .formatted(alex.getId())
+                        + " addressedToReader } } } }")
+                .at("/data/pendingManagerInvitationsForProfile/edges/0/node/addressedToReader")
+                .asBoolean())
+        .isFalse();
   }
 
   @Test

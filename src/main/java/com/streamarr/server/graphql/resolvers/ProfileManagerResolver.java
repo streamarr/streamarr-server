@@ -79,9 +79,13 @@ public class ProfileManagerResolver {
 
   @DgsQuery
   public ManagerInvitationDetails managerInvitation(@InputArgument String invitationId) {
+    var identity = authorizationService.currentIdentity();
     return managerService
-        .managerInvitation(authorizationService.currentIdentity(), Ids.parseUuid(invitationId))
-        .map(reading -> ManagerInvitationDetails.from(reading.invitation(), reading.status()))
+        .managerInvitation(identity, Ids.parseUuid(invitationId))
+        .map(
+            reading ->
+                ManagerInvitationDetails.from(
+                    reading.invitation(), reading.status(), identity.accountId()))
         .orElse(null);
   }
 
@@ -212,7 +216,8 @@ public class ProfileManagerResolver {
   }
 
   private ManagerInvitationDetails invitationDetails(ProfileManagerInvitation invitation) {
-    return ManagerInvitationDetails.from(invitation, clock.instant());
+    return ManagerInvitationDetails.from(
+        invitation, clock.instant(), authorizationService.currentIdentity().accountId());
   }
 
   private ManagerInvitationCodeCommand managerInvitationCode(

@@ -67,6 +67,12 @@ type ManagerInvitationDetails {
     status: ProfileManagerInvitationStatus!
     "When the invitation stops waiting for an answer, as an ISO-8601 instant."
     expiresAt: String!
+    """
+    Whether the reader is the Account the invitation names, the only one that may accept or decline
+    it. False for the Profile's managers and for ServerAdmins, so it never says whether an Account
+    has the address the invitation was sent to.
+    """
+    addressedToReader: Boolean!
 }
 
 "A page of invitations to manage a Profile."
