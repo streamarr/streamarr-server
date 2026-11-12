@@ -89,4 +89,25 @@ class FakeProfileHouseholdShareRepositoryTest {
               assertThat(offer.getInvalidationReason()).isEmpty();
             });
   }
+
+  @Test
+  @DisplayName("Should leave an offer as stored when invalidating it after its time ran out")
+  void shouldLeaveOfferAsStoredWhenInvalidatingItAfterItsTimeRanOut() {
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var lapsedOffer =
+        fake.save(
+            ProfileHouseholdShare.builder()
+                .profileId(UUID.randomUUID())
+                .householdId(UUID.randomUUID())
+                .status(ProfileShareStatus.PENDING)
+                .offeredByAccountId(UUID.randomUUID())
+                .expiresAt(now)
+                .build());
+
+    var invalidated = fake.tryInvalidatePending(lapsedOffer.getId(), "offerer left", now);
+
+    assertThat(invalidated).isEmpty();
+    assertThat(lapsedOffer.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
+    assertThat(lapsedOffer.getInvalidationReason()).isEmpty();
+  }
 }
