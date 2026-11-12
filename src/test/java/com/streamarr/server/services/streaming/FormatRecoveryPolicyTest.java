@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.streaming.VideoRange;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -68,18 +69,30 @@ class FormatRecoveryPolicyTest {
     assertThat(next).isEqualTo(new NextFormatAttempt.Fail(failed.reason()));
   }
 
-  @Test
-  @DisplayName(
-      "Should end a fixed quality's playback when the player rejects the format of its PQ encode")
-  void shouldEndAFixedQualitysPlaybackWhenThePlayerRejectsTheFormatOfItsPqEncode() {
-    var rejected = new PlaybackSessionFailure.FixedFormatFailed(PlaybackFormatFailure.DECODE_ERROR);
+  // Only an encode that no software encoder could continue encodes again, whatever the reason of
+  // the failure says.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("failuresOfAnEncode")
+  @DisplayName("Should end a fixed quality's playback when its PQ encode fails")
+  void shouldEndAFixedQualitysPlaybackWhenItsPqEncodeFails(PlaybackSessionFailure reason) {
     var failed =
         new FailedFormatAttempt(
-            rejected, new FailedFormatAttempt.Encode("av1", EncodeFormat.hdr(VideoRange.PQ)));
+            reason, new FailedFormatAttempt.Encode("av1", EncodeFormat.hdr(VideoRange.PQ)));
 
     var next = policy.after(PlayingChoice.requested(VideoQuality.HIGH_720P), failed, 1);
 
-    assertThat(next).isEqualTo(new NextFormatAttempt.Fail(rejected));
+    assertThat(next).isEqualTo(new NextFormatAttempt.Fail(reason));
+  }
+
+  static Stream<Named<PlaybackSessionFailure>> failuresOfAnEncode() {
+    return Stream.of(
+        Named.of(
+            "the player rejects its format",
+            new PlaybackSessionFailure.FixedFormatFailed(PlaybackFormatFailure.DECODE_ERROR)),
+        Named.of(
+            "a stream session is refused",
+            new PlaybackSessionFailure.CreationRejected(
+                new CreateStreamSessionRejection.NoEligibleVideoFormat())));
   }
 
   @Test
@@ -96,11 +109,10 @@ class FormatRecoveryPolicyTest {
         .isEqualTo(new NextFormatAttempt.Fail(new PlaybackSessionFailure.AttemptsExhausted()));
   }
 
-  // The stream session that would continue the encode in software was refused.
   private static FailedFormatAttempt continuationRejected(EncodeFormat format) {
     return new FailedFormatAttempt(
         new PlaybackSessionFailure.CreationRejected(
             new CreateStreamSessionRejection.NoEligibleVideoFormat()),
-        new FailedFormatAttempt.Encode("av1", format));
+        new FailedFormatAttempt.EncodeWithoutSoftwareContinuation("av1", format));
   }
 }

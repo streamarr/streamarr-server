@@ -26,4 +26,12 @@ record FailedFormatAttempt(@NonNull PlaybackSessionFailure reason, @NonNull Outp
 
   /** The format attempt encoded the video in this codec family and format. */
   record Encode(@NonNull String codecFamily, @NonNull EncodeFormat format) implements Output {}
+
+  /**
+   * The format attempt encoded the video in this codec family and format until its hardware encoder
+   * failed, and the stream session that would continue the encode in software was refused (ADR
+   * 0044).
+   */
+  record EncodeWithoutSoftwareContinuation(
+      @NonNull String codecFamily, @NonNull EncodeFormat format) implements Output {}
 }

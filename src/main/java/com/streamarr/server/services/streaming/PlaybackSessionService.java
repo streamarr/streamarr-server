@@ -830,7 +830,8 @@ public class PlaybackSessionService implements AutoCloseable {
       case FailedFormatAttempt.DirectPlay _ -> DecisionReason.DIRECT_PLAY_FAILED;
       case FailedFormatAttempt.Copy _, FailedFormatAttempt.DolbyVisionCopyOnAnHdrBase _ ->
           DecisionReason.COPY_FAILED;
-      case FailedFormatAttempt.Encode _ -> DecisionReason.ENCODE_FAILED;
+      case FailedFormatAttempt.Encode _, FailedFormatAttempt.EncodeWithoutSoftwareContinuation _ ->
+          DecisionReason.ENCODE_FAILED;
     };
   }
 
@@ -1022,10 +1023,12 @@ public class PlaybackSessionService implements AutoCloseable {
       return Optional.empty();
     }
 
-    var failedEncode =
-        new FailedFormatAttempt.Encode(
-            continuation.get().codecFamily(), continuation.get().format());
+    var refused = continuation.get();
+    excludeFailedEncode(playback, refused.codecFamily(), refused.format());
     playback.startedFormatAttempts--;
+    var failedEncode =
+        new FailedFormatAttempt.EncodeWithoutSoftwareContinuation(
+            refused.codecFamily(), refused.format());
     return Optional.of(
         reserveAfterFailedAttempt(
             playback, attempt.streamId(), new FailedFormatAttempt(rejection, failedEncode)));

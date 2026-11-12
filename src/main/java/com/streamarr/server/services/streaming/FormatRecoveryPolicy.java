@@ -75,23 +75,17 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
 
   private NextFormatAttempt afterAFixedQualitysFailure(
       PlayingChoice choice, FailedFormatAttempt failed, int formatAttemptCount) {
-    if (isHdrEncodeWithoutSoftwareContinuation(failed)) {
-      return encodeWithinBudget(choice, formatAttemptCount);
-    }
-
-    if (failed.output() instanceof FailedFormatAttempt.Encode) {
-      return new NextFormatAttempt.Fail(failed.reason());
-    }
-
-    return encodeWithinBudget(choiceWhenEncodingAfterACopy(choice), formatAttemptCount);
-  }
-
-  // A refused stream session fails an encode only when it would have continued that encode in
-  // software after a hardware encoder failure.
-  private static boolean isHdrEncodeWithoutSoftwareContinuation(FailedFormatAttempt failed) {
-    return failed.reason() instanceof PlaybackSessionFailure.CreationRejected
-        && failed.output() instanceof FailedFormatAttempt.Encode(var _, var format)
-        && format.isHdr();
+    return switch (failed.output()) {
+      case FailedFormatAttempt.EncodeWithoutSoftwareContinuation(var _, var format)
+          when format.isHdr() ->
+          encodeWithinBudget(choice, formatAttemptCount);
+      case FailedFormatAttempt.Encode _, FailedFormatAttempt.EncodeWithoutSoftwareContinuation _ ->
+          new NextFormatAttempt.Fail(failed.reason());
+      case FailedFormatAttempt.DirectPlay _,
+          FailedFormatAttempt.Copy _,
+          FailedFormatAttempt.DolbyVisionCopyOnAnHdrBase _ ->
+          encodeWithinBudget(choiceWhenEncodingAfterACopy(choice), formatAttemptCount);
+    };
   }
 
   // The stripped copy keeps the source's PQ or HLG base, so Auto announces nothing. Original and a
