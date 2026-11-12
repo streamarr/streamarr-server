@@ -349,7 +349,7 @@ class UnmeasuredCopyListenerTest {
 
   /**
    * A raise that runs on after its interrupt until the test finishes it, and then fails as an
-   * interrupted statement does.
+   * interrupted wait for a pooled connection does.
    */
   private static final class RaiseThatOutlivesItsInterrupt
       implements BitrateScanPriorityRepository {
@@ -376,7 +376,7 @@ class UnmeasuredCopyListenerTest {
       }
 
       Thread.currentThread().interrupt();
-      throw new IllegalStateException("The statement's connection closed at the interrupt");
+      throw new IllegalStateException("Interrupted during connection acquisition");
     }
 
     private void finish() {

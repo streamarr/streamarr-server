@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitBlockedBackendPidRunning;
 import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -66,15 +67,18 @@ class UnmeasuredCopyListenerShutdownIT extends AbstractIntegrationTest {
     dsl.deleteFrom(SCAN_TABLE).execute();
   }
 
+  // An interrupt would close the raise's socket instead. PostgreSQL does not notice a closed socket
+  // while the backend waits for a lock, so the backend would wait on behind the holder.
   @Test
   @DisplayName(
-      "Should cancel the raise and close while the scan's row stays locked when the server shuts"
-          + " down")
-  void shouldCancelTheRaiseAndCloseWhileTheScansRowStaysLockedWhenTheServerShutsDown()
+      "Should end the raise's wait for the scan's row and close while the row stays locked when"
+          + " the server shuts down")
+  void shouldEndTheRaisesWaitForTheScansRowAndCloseWhileTheRowStaysLockedWhenTheServerShutsDown()
       throws Exception {
     requestBitrateScan();
     var listener = new UnmeasuredCopyListener(priorities, meters);
     boolean rowLockedAfterTheClose;
+    int raisesWaitingForTheRowAfterTheClose;
 
     try (var holder = pool.getConnection();
         var observer = pool.getConnection()) {
@@ -86,9 +90,11 @@ class UnmeasuredCopyListenerShutdownIT extends AbstractIntegrationTest {
       BoundedTask.runWithin(CLOSE_BOUND, listener::close);
       meters.awaitCounted("cancelled");
 
+      raisesWaitingForTheRowAfterTheClose = waitersBehind(observer, backendPid(holder), RAISE);
       rowLockedAfterTheClose = !tryLockBitrateScan(observer, LOCK_BITRATE_SCAN_UNLESS_LOCKED);
     }
 
+    assertThat(raisesWaitingForTheRowAfterTheClose).isZero();
     assertThat(rowLockedAfterTheClose).isTrue();
     assertThat(meters.countOf("failed")).isZero();
   }

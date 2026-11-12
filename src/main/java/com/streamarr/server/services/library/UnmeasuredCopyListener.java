@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.repositories.CancellableDatabaseWork;
 import com.streamarr.server.repositories.media.BitrateScanPriorityRepository;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.events.library.UnmeasuredCopyStartedEvent;
@@ -29,18 +30,17 @@ import org.springframework.stereotype.Component;
 public class UnmeasuredCopyListener implements AutoCloseable {
 
   static final String MOVED_SCANS_METRIC = "streamarr.probes.bitrate_scans_moved_forward";
-  // An interrupted raise ends within milliseconds and then counts its outcome. Without this wait
-  // the meter registry, which closes after the listener, could close before the count.
+  // A cancelled raise ends within milliseconds and then counts its outcome. Without this wait the
+  // meter registry, which closes after the listener, could close before the count.
   private static final Duration CLOSE_BOUND = Duration.ofSeconds(1);
 
   private final BitrateScanPriorityRepository priorities;
   private final MeterRegistry meterRegistry;
   // The listener runs on the thread that starts the stream session. A raise can wait for the
-  // scan's row lock, and waiting there would hold back the playback request. The threads are
-  // virtual: an interrupt closes the socket that such a thread reads, which ends a statement that
-  // waits for a row. A platform thread would wait on.
+  // scan's row lock, and waiting there would hold back the playback request.
   private final ExecutorService raises =
       SystemWork.newExecutorRunningAsSystemActor("bitrate-scan-raise-");
+  private final CancellableDatabaseWork raiseStatements = new CancellableDatabaseWork();
   // One raise per file runs at a time: a second one would wait for the same row to write the same
   // priority.
   private final Set<UUID> filesWithARunningRaise = ConcurrentHashMap.newKeySet();
@@ -76,20 +76,25 @@ public class UnmeasuredCopyListener implements AutoCloseable {
   }
 
   // Nothing waits for this thread, so the count is the only outcome of a raise that fails, for
-  // whatever reason. A scan that cannot move keeps its place. A raise that close interrupted is
-  // cancelled, not failed: the server shut down before the raise got its row or its connection.
+  // whatever reason. A scan that cannot move keeps its place. A raise that close cancelled is not
+  // failed: the server shut down before the raise got its row or its connection.
   private String raise(UUID mediaFileId) {
     try {
-      if (priorities.tryRaisePriority(mediaFileId, BitrateScanPriority.COPIED_BY_STREAM_SESSION)) {
+      var raised =
+          raiseStatements.call(
+              () ->
+                  priorities.tryRaisePriority(
+                      mediaFileId, BitrateScanPriority.COPIED_BY_STREAM_SESSION));
+      if (raised.isEmpty()) {
+        return "cancelled";
+      }
+
+      if (raised.get()) {
         return "moved";
       }
 
       return "unchanged";
     } catch (RuntimeException failure) {
-      if (raises.isShutdown()) {
-        return "cancelled";
-      }
-
       log.warn("Could not move the bitrate scan of media file {} forward", mediaFileId, failure);
       return "failed";
     }
@@ -100,16 +105,21 @@ public class UnmeasuredCopyListener implements AutoCloseable {
   }
 
   /**
-   * Interrupts every raise already started, so a shutdown never waits for a scan's row or for a
-   * pooled connection, and returns once they have ended or after one second. A later unmeasured
-   * copy moves no scan.
+   * Cancels every raise already started, so a shutdown never waits for a scan's row or for a pooled
+   * connection, and returns once they have ended or after one second. A later unmeasured copy moves
+   * no scan.
    */
   @Override
   public void close() {
-    raises.shutdownNow();
+    raises.shutdown();
+    var cancelled = raiseStatements.cancel();
+    if (cancelled > 0) {
+      log.info("Raises of bitrate scans cancelled at shutdown: {}", cancelled);
+    }
+
     try {
       if (!raises.awaitTermination(CLOSE_BOUND.toMillis(), TimeUnit.MILLISECONDS)) {
-        log.warn("A raise of a bitrate scan still ran {} after its interrupt", CLOSE_BOUND);
+        log.warn("A raise of a bitrate scan still ran {} after its cancel", CLOSE_BOUND);
       }
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
