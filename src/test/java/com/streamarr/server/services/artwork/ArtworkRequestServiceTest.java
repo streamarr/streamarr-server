@@ -1,5 +1,6 @@
 package com.streamarr.server.services.artwork;
 
+import static com.streamarr.server.fakes.TestImages.createBlackGrayscalePngImage;
 import static com.streamarr.server.fakes.TestImages.createGifImage;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createSixteenBitGrayscalePngImage;
@@ -139,12 +140,23 @@ class ArtworkRequestServiceTest {
       assertThat(imageDownloader.getDownloadCount()).isZero();
     }
 
-    @Test
-    @DisplayName("Should finish the step with a download failure when the host answers not found")
-    void shouldFinishTheStepWithADownloadFailureWhenTheHostAnswersNotFound() {
+    static Stream<Named<ImageDownloadException>> downloadsThatARetryWouldRepeat() {
+      return Stream.of(
+          named(
+              "the host answers not found",
+              new ImageDownloadException(404, "/poster.jpg", Optional.empty())),
+          named(
+              "the image body exceeds the download limit",
+              ImageDownloadException.bodyOverLimit("/poster.jpg", 50 * 1024 * 1024)));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("downloadsThatARetryWouldRepeat")
+    @DisplayName("Should finish the step with a download failure when a retry would repeat it")
+    void shouldFinishTheStepWithADownloadFailureWhenARetryWouldRepeatIt(
+        ImageDownloadException failure) {
       var movieId = UUID.randomUUID();
-      imageDownloader.failDownloadWith(
-          "/poster.jpg", new ImageDownloadException(404, "/poster.jpg", Optional.empty()));
+      imageDownloader.failDownloadWith("/poster.jpg", failure);
 
       var summary = requestPrimaryArtwork(movieArtwork(movieId, POSTER, BACKDROP));
 
@@ -158,7 +170,10 @@ class ArtworkRequestServiceTest {
     static Stream<Named<byte[]>> imagesThatCannotBeStored() {
       return Stream.of(
           named("an image that is neither JPEG nor PNG", createGifImage()),
-          named("a resized image that no encoder accepts", createSixteenBitGrayscalePngImage()));
+          named("a resized image that no encoder accepts", createSixteenBitGrayscalePngImage()),
+          named(
+              "an image with one row more than 8K's pixel count",
+              createBlackGrayscalePngImage(7680, 4321)));
     }
 
     @ParameterizedTest(name = "{0}")
