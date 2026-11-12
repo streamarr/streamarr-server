@@ -103,9 +103,9 @@ public class ServerSettingsService {
   }
 
   /**
-   * How long the server keeps Notification history, and the unread news that its guard hides, after
-   * its latest event. The retention sweep reads the setting for the system, not for a caller, so
-   * this read is not authorized.
+   * How long the server keeps Notification history, the news that its recipient read and the
+   * requests that resolved, after its latest event. The retention sweep reads the setting for the
+   * system, not for a caller, so this read is not authorized.
    */
   public Duration notificationRetention() {
     return notificationRetentionOf(storedSettings()).duration();

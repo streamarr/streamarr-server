@@ -15,8 +15,9 @@ import java.util.UUID;
 
 /**
  * The Notifications module's own table (ADR 0063 §How the server builds it). Every write runs in
- * the caller's transaction, touches no other table, and answers the Notifications it changed. Every
- * read selects one recipient's rows and looks at nothing else.
+ * the caller's transaction, touches no other table, and answers the Notifications it changed, apart
+ * from the deletions that are pushed to nobody: a deleted recipient's and retention's. Every read
+ * selects one recipient's rows and looks at nothing else.
  */
 public interface NotificationRepository {
 
@@ -49,6 +50,13 @@ public interface NotificationRepository {
 
   /** Deletes every Notification of the recipient. */
   void deleteOfRecipient(RecipientReference recipient);
+
+  /**
+   * Deletes up to {@code limit} Notifications of history whose latest event is before the cutoff,
+   * and answers how many: news that its recipient read, and requests that an event resolved or that
+   * read as expired at the instant. The delete states history and age in its own condition.
+   */
+  int deleteHistoryBefore(Instant cutoff, Instant now, int limit);
 
   /**
    * Up to the seek's limit of the recipient's Notifications beyond its position, newest latest
