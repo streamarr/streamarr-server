@@ -121,15 +121,15 @@ class ManagerInvitationsByEmailMigrationIT extends AbstractIntegrationTest {
     migrations().load().migrate();
   }
 
-  // Baselining at V134 applies only this change's migration to the hand-built table.
+  // Baselining at V135 applies only this change's migration to the hand-built table.
   private FluentConfiguration migrations() {
     return Flyway.configure()
         .configuration(flyway.getConfiguration())
         .schemas(schema)
         .defaultSchema(schema)
-        .baselineVersion("134")
+        .baselineVersion("135")
         .baselineOnMigrate(true)
-        .target("135");
+        .target("136");
   }
 
   private static String actorIs(UUID actor) {
