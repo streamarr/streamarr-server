@@ -58,7 +58,7 @@ public class SessionProgressService {
 
     // Progress is measured against the media end, where the stream session's media ends. The
     // duration that a container header states can lie far past it, or be missing.
-    var durationSeconds = (int) session.getMediaProbe().mediaEnd().toSeconds();
+    var durationSeconds = (int) session.getMediaEnd().toSeconds();
     if (durationSeconds <= 0) {
       return;
     }
