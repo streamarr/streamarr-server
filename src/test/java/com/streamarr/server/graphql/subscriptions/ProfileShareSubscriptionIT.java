@@ -147,6 +147,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
         .extracting(share -> share.path("status").asString())
         .containsExactly("PENDING", "ACTIVE", "ENDED");
     assertThat(List.of(offeredToHost, acceptedForHost))
+        .hasSize(2)
         .allSatisfy(
             share -> {
               assertThat(share.path("profile").path("name").asString()).isEqualTo(orphan.getName());
@@ -158,6 +159,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     // Once the share has ended, its Household no longer sees the Profile or who offered it.
     assertPartiesHidden(endedForHost);
     assertThat(List.of(offeredToOwner, endedForOwner))
+        .hasSize(2)
         .allSatisfy(
             share -> {
               assertThat(share.path("profile").path("name").asString()).isEqualTo(orphan.getName());
@@ -183,6 +185,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     var ownForHost = nextShare(hostSocket, ownId);
 
     assertThat(List.of(visitForHost, visitForOwner, ownForHost))
+        .hasSize(3)
         .allSatisfy(share -> assertThat(share.path("profile").isObject()).isTrue());
     assertThat(visitForHost.path("visitor").isBoolean()).isTrue();
     assertThat(visitForHost.path("visitor").asBoolean()).isTrue();
@@ -208,6 +211,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     var canceledForOwner = nextShareWithStatus(ownerSocket, canceledId, "CANCELED");
 
     assertThat(List.of(declinedForOwner, canceledForOwner))
+        .hasSize(2)
         .allSatisfy(
             share -> {
               assertThat(share.path("profile").path("name").asString()).isEqualTo(orphan.getName());

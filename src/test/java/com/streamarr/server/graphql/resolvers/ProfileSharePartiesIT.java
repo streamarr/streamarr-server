@@ -196,6 +196,7 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     // The visitor mark is part of the share's Profile: whoever sees one sees the other.
     assertThat(List.of(forHost, forServerAdmin, forOwner))
         .flatMap(ProfileSharePartiesIT::edges)
+        .hasSize(6)
         .allSatisfy(node -> assertThat(node.path("profile").isObject()).isTrue());
   }
 
@@ -365,6 +366,7 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     // ADR 0024: a Household that turned someone down, or that a person left, sees none of them.
     assertThat(edges(forHost))
         .extracting(node -> node.path("id").asString())
+        .hasSize(1)
         .doesNotContain(shareId);
     assertThat(edges(forHostByStatus)).isEmpty();
     assertThat(forServerAdmin.path("status").asString()).isEqualTo(status.name());
