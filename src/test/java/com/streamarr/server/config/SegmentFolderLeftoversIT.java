@@ -107,6 +107,7 @@ class SegmentFolderLeftoversIT extends AbstractIntegrationTest {
           .segmentFolder(SEGMENT_FOLDER)
           .homeFolder(TEMPORARY_FOLDER.resolve("home"))
           .mediaFolders(List::of)
+          .mountTable(Path.of("/proc/self/mountinfo"))
           .lock(lock)
           .build()
           .delete();

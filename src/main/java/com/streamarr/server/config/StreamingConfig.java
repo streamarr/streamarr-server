@@ -101,6 +101,8 @@ public class StreamingConfig {
         .segmentFolder(segmentFolder.get())
         .homeFolder(Path.of(System.getProperty("user.home")))
         .mediaFolders(mediaFolders::all)
+        // Only Linux has it.
+        .mountTable(Path.of("/proc/self/mountinfo"))
         .lock(lock)
         .build()
         .delete();

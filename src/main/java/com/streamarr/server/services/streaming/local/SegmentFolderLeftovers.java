@@ -47,6 +47,9 @@ public class SegmentFolderLeftovers {
   // The media root and every library's folder, read when the delete runs.
   @NonNull private final Supplier<List<Path>> mediaFolders;
 
+  // The mount table of this server process, in the format of /proc/self/mountinfo.
+  @NonNull private final Path mountTable;
+
   // The lock of this server process, which its segment store holds shared once it writes.
   @NonNull private final SegmentFolderLock lock;
 

@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -38,6 +39,7 @@ class SegmentFolderLeftoversTest {
 
   @TempDir Path segmentFolder;
   @TempDir Path outside;
+  @TempDir Path machine;
 
   @Test
   @DisplayName("Should delete a stream session's directory when an earlier store left it")
@@ -622,7 +624,8 @@ class SegmentFolderLeftoversTest {
               SegmentFolderLeftovers.builder()
                   .segmentFolder(top)
                   .homeFolder(fileSystem.getPath("/home/streamarr"))
-                  .mediaFolders(() -> List.of(fileSystem.getPath("/media"))));
+                  .mediaFolders(() -> List.of(fileSystem.getPath("/media")))
+                  .mountTable(fileSystem.getPath("/proc/self/mountinfo")));
 
       assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.FILE_SYSTEM_ROOT));
       assertThat(top.resolve(MARK_NAME)).doesNotExist();
@@ -657,13 +660,34 @@ class SegmentFolderLeftoversTest {
         .isThrownBy(() -> leftoversOf(segmentFolder).mediaFolders(null).build());
   }
 
+  @Test
+  @DisplayName("Should reject a missing mount table when created")
+  void shouldRejectAMissingMountTableWhenCreated() {
+    assertThatNullPointerException()
+        .isThrownBy(() -> leftoversOf(segmentFolder).mountTable(null).build());
+  }
+
   // The start of a server process whose home folder and media folders lie elsewhere.
   private SegmentFolderLeftovers.SegmentFolderLeftoversBuilder leftoversOf(Path folder) {
     return SegmentFolderLeftovers.builder()
         .segmentFolder(folder)
         .homeFolder(outside.resolve("home"))
         .mediaFolders(() -> List.of(outside.resolve("media")))
+        .mountTable(mountTableListing(Path.of("/")))
         .lock(new SegmentFolderLock());
+  }
+
+  // A mount table in the format of /proc/self/mountinfo that lists these mount points.
+  private Path mountTableListing(Path... mountPoints) {
+    var lines =
+        Arrays.stream(mountPoints)
+            .map(mountPoint -> "36 25 8:1 / " + mountPoint + " rw,relatime shared:1 - ext4 /dev/sda1 rw")
+            .toList();
+    try {
+      return Files.write(machine.resolve("mountinfo-" + UUID.randomUUID()), lines);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 
   private SegmentFolderLeftoversOutcome startOf(Path folder) {
