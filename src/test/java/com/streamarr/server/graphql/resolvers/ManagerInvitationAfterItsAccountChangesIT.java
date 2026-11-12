@@ -245,6 +245,33 @@ class ManagerInvitationAfterItsAccountChangesIT extends AbstractIntegrationTest 
   @ParameterizedTest
   @EnumSource(
       value = Change.class,
+      names = {"RESTRICTED", "GRANTED_MANAGEMENT"})
+  @DisplayName("Should resolve its Account's request as withdrawn when its Account changes")
+  void shouldResolveItsAccountsRequestAsWithdrawnWhenItsAccountChanges(Change change)
+      throws Exception {
+    var toMara = invite(mara.account().getEmail());
+
+    change(change);
+
+    assertThat(
+            graphql(
+                    authTestSupport.accountBearer(mara),
+                    """
+                    query { notifications(first: 50) { edges { node {
+                      ... on ProfileManagerInvitationReceivedNotification {
+                        resolution invitationId } } } } }
+                    """)
+                .at("/data/notifications/edges")
+                .valueStream()
+                .map(edge -> edge.path("node"))
+                .filter(node -> node.path("invitationId").asString("").equals(toMara.toString())))
+        .singleElement()
+        .satisfies(node -> assertThat(node.path("resolution").asString()).isEqualTo("WITHDRAWN"));
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = Change.class,
       names = {"DELETED", "RESTRICTED"})
   @DisplayName(
       "Should block deleting its Profile, as any waiting invitation, when its Account changes")

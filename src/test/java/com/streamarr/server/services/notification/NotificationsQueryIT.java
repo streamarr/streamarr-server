@@ -227,6 +227,37 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should read the invitation request's resolution, its time and the answer when it is decided")
+  void shouldReadTheInvitationRequestsResolutionItsTimeAndTheAnswerWhenItIsDecided()
+      throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam);
+    var invitationId =
+        invitationSteps.invite(sam, kai, riversideAdmin.account().getEmail()).invitation().getId();
+    assertThat(
+            profileManagement.acceptManagerInvitation(
+                authTestSupport.identityOf(riversideAdmin), invitationId))
+        .isInstanceOf(Outcome.Accepted.class);
+    var decidedAt = invitationRepository.findById(invitationId).orElseThrow().getDecidedAt();
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(false))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("DECIDED"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.resolvedAt").value(decidedAt.toString()))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.invitationAnswer").value("ACCEPTED"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.message")
+                .value("The invitation to manage “Kai” was accepted."));
+  }
+
+  @Test
+  @DisplayName(
       "Should read the request's resolution, its time and the answer when the offer is decided")
   void shouldReadTheRequestsResolutionTimeAndAnswerWhenTheOfferIsDecided() throws Exception {
     var kai = steps.profileManagedBy("Kai", sam, sam);

@@ -1,0 +1,177 @@
+package com.streamarr.server.services.identity;
+
+import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
+import static com.streamarr.server.support.StoredNotificationRows.document;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasSize;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.SubjectReference;
+import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
+import com.streamarr.server.services.auth.ManagerInvitationExpirySweeper;
+import com.streamarr.server.services.events.notification.ProfileManagerInvitationReceivedSnapshot;
+import com.streamarr.server.services.identity.ProfileManagerAdministrationService.IssuedManagerInvitation;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupport.TestIdentity;
+import com.streamarr.server.support.ControlledClockConfiguration;
+import com.streamarr.server.support.ManagerInvitationSteps;
+import com.streamarr.server.support.ProfileCastSupport;
+import com.streamarr.server.support.StoredNotificationRows;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import org.jooq.DSLContext;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.support.TransactionTemplate;
+
+/**
+ * The request about an invitation to manage a Profile whose time runs out (ADR 0063 §Requests), on
+ * a clock the tests move past the invitation's expiry: the request reads as expired from its expiry
+ * on, and the sweep that stores the invitation's expiry resolves it as expired, at the expiry.
+ */
+@Tag("IntegrationTest")
+@DisplayName("Manager Invitation Expiry Notifications Integration Tests")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Import(ControlledClockConfiguration.class)
+class ManagerInvitationExpiryNotificationsIT extends AbstractIntegrationTest {
+
+  private static final String NOTIFICATIONS =
+      """
+      query {
+        unreadNotificationCount
+        notifications(first: 10) {
+          edges {
+            node {
+              __typename unread message
+              ... on RequestNotification { expiresAt resolution resolvedAt }
+            }
+          }
+        }
+      }
+      """;
+
+  @Autowired private MutableClock clock;
+  @Autowired private MockMvc mockMvc;
+  @Autowired private ProfileManagerAdministrationService profileManagement;
+  @Autowired private ProfileManagerInvitationRepository invitationRepository;
+  @Autowired private ManagerInvitationExpirySweeper expirySweeper;
+  @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private ProfileCastSupport cast;
+  @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private DSLContext dsl;
+
+  private final List<TestIdentity> identities = new ArrayList<>();
+  private ManagerInvitationSteps steps;
+  private StoredNotificationRows rows;
+  private TestIdentity sam;
+  private TestIdentity mara;
+  private Profile alex;
+
+  @BeforeEach
+  void setUp() {
+    clock.advance(Duration.between(clock.instant(), Instant.now()));
+    steps =
+        ManagerInvitationSteps.builder()
+            .management(profileManagement)
+            .auth(authTestSupport)
+            .invitations(invitationRepository)
+            .transactions(transactionTemplate)
+            .build();
+    rows = new StoredNotificationRows(dsl);
+    sam = track(authTestSupport.createIdentity());
+    mara = track(authTestSupport.createIdentity());
+    alex = cast.profileManagedBy(sam, ProfileFixture.defaultProfileBuilder().name("Alex"));
+  }
+
+  @AfterEach
+  void tearDown() {
+    rows.deleteOf(
+        identities.stream().map(ManagerInvitationExpiryNotificationsIT::accountOf).toList());
+    invitationRepository.deleteAll();
+    identities.reversed().forEach(authTestSupport::deleteIdentity);
+  }
+
+  @Test
+  @DisplayName(
+      "Should read the request as expired from its expiry before the sweep stores the expiry")
+  void shouldReadTheRequestAsExpiredFromItsExpiryBeforeTheSweepStoresIt() throws Exception {
+    var issued = steps.invite(sam, alex, mara.account().getEmail());
+    runOut(issued);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(mara), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(false))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("EXPIRED"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.resolvedAt")
+                .value(stored(issued).getExpiresAt().toString()))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.message")
+                .value("The invitation to manage “Alex” expired."));
+  }
+
+  @Test
+  @DisplayName(
+      "Should resolve the request as expired at the invitation's expiry when the sweep stores it")
+  void shouldResolveTheRequestAsExpiredAtTheInvitationsExpiryWhenTheSweepStoresIt() {
+    var issued = steps.invite(sam, alex, mara.account().getEmail());
+    runOut(issued);
+
+    expirySweeper.sweep();
+
+    var expired = stored(issued);
+    assertThat(expired.getStatus()).isEqualTo(ProfileManagerInvitationStatus.EXPIRED);
+    assertThat(rows.about(SubjectReference.profileManagerInvitation(issued.invitation().getId())))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.recipient()).isEqualTo(accountOf(mara));
+              assertThat(request.resolution()).contains("EXPIRED");
+              assertThat(request.resolvedAt()).contains(expired.getExpiresAt());
+              assertThat(request.snapshot())
+                  .isEqualTo(
+                      document(
+                          new ProfileManagerInvitationReceivedSnapshot("Alex", Optional.empty())));
+            });
+  }
+
+  /** Moves the clock a second past the invitation's expiry. */
+  private void runOut(IssuedManagerInvitation issued) {
+    clock.advance(Duration.between(clock.instant(), stored(issued).getExpiresAt().plusSeconds(1)));
+  }
+
+  private ProfileManagerInvitation stored(IssuedManagerInvitation issued) {
+    return invitationRepository.findById(issued.invitation().getId()).orElseThrow();
+  }
+
+  private static RecipientReference accountOf(TestIdentity identity) {
+    return RecipientReference.account(identity.account().getId());
+  }
+
+  private TestIdentity track(TestIdentity identity) {
+    identities.add(identity);
+    return identity;
+  }
+}
