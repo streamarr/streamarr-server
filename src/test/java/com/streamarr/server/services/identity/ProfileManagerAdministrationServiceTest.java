@@ -46,7 +46,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -546,30 +545,18 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should preserve a replacement when stale acceptance finds its inviter gone")
-  void shouldPreserveReplacementWhenStaleAcceptanceFindsItsInviterGone() {
+  @DisplayName(
+      "Should invalidate only the stale invitation when its acceptance finds its inviter gone")
+  void shouldInvalidateOnlyTheStaleInvitationWhenItsAcceptanceFindsItsInviterGone() {
     var stale =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
-    managers.tryRevokeDirectManagement(inviter.getId(), orphan.getId());
     var replacementInviter = eligibleAccount(UUID.randomUUID());
     managers.tryGrantDirectManagement(replacementInviter.getId(), orphan.getId());
-    var replacement =
-        new AtomicReference<ProfileManagerAdministrationService.IssuedManagerInvitation>();
-    authorization.decideUnitWith(
-        intent -> {
-          if (intent instanceof Intent.AcceptManagerInvitation) {
-            var replacementIdentity =
-                AuthenticatedIdentityFixture.accountScopedBuilder()
-                    .accountId(replacementInviter.getId())
-                    .build();
-            replacement.set(
-                issued(
-                    service.inviteProfileManager(
-                        replacementIdentity, orphan.getId(), recipient.getEmail())));
-          }
-
-          return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
-        });
+    // To the same Account for the same Profile, at another address it has had.
+    var other =
+        invitations.save(
+            pendingInvitation(orphan.getId(), recipient.getId(), replacementInviter.getId()));
+    managers.tryRevokeDirectManagement(inviter.getId(), orphan.getId());
 
     assertThat(
             rejectionOf(
@@ -577,8 +564,7 @@ class ProfileManagerAdministrationServiceTest {
         .isInstanceOf(ManagerRejections.InvitationNotPending.class);
     assertThat(invitations.findById(stale.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
-    assertThat(
-            invitations.findById(replacement.get().invitation().getId()).orElseThrow().getStatus())
+    assertThat(invitations.findById(other.getId()).orElseThrow().statusToItsAccountAt(NOW))
         .isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 
