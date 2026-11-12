@@ -1,5 +1,6 @@
 package com.streamarr.server.services.events.notification;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
@@ -18,6 +19,22 @@ class TellNotificationEventTest {
   private static final Instant EVENT = Instant.parse("2026-11-12T10:00:00Z");
 
   private final SubjectReference share = SubjectReference.profileShare(UUID.randomUUID());
+
+  @Test
+  @DisplayName(
+      "Should build a tell of news when its snapshot and subject match its kind and it carries no"
+          + " expiry")
+  void shouldBuildATellOfNewsWhenItsSnapshotAndSubjectMatchItsKindAndItCarriesNoExpiry() {
+    assertThatCode(() -> answered().build()).doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName(
+      "Should build a tell of a request when its snapshot and subject match its kind and it carries"
+          + " its subject's expiry")
+  void shouldBuildATellOfARequestWhenItsSnapshotAndSubjectMatchItsKindAndItCarriesAnExpiry() {
+    assertThatCode(() -> offered().build()).doesNotThrowAnyException();
+  }
 
   @Test
   @DisplayName("Should refuse a tell when its snapshot is not of its kind's type")

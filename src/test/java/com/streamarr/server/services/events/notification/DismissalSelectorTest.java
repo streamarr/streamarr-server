@@ -1,8 +1,10 @@
 package com.streamarr.server.services.events.notification;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
@@ -19,6 +21,24 @@ class DismissalSelectorTest {
     return Stream.of(
         Named.of("no id", () -> DismissalSelector.byId(Set.of())),
         Named.of("no subject", () -> DismissalSelector.bySubject(Set.of())));
+  }
+
+  static Stream<Named<ThrowingCallable>> selectorsNamingSomething() {
+    return Stream.of(
+        Named.of("an id", () -> DismissalSelector.byId(Set.of(UUID.randomUUID())).build()),
+        Named.of(
+            "a subject",
+            () ->
+                DismissalSelector.bySubject(
+                        Set.of(SubjectReference.profileShare(UUID.randomUUID())))
+                    .build()));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("selectorsNamingSomething")
+  @DisplayName("Should build a selector when it names an id or a subject")
+  void shouldBuildASelectorWhenItNamesAnIdOrASubject(ThrowingCallable selector) {
+    assertThatCode(selector).doesNotThrowAnyException();
   }
 
   @ParameterizedTest(name = "{0}")
