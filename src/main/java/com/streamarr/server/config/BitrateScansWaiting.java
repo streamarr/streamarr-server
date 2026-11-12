@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 import lombok.Builder;
 import lombok.NonNull;
@@ -34,7 +35,7 @@ public final class BitrateScansWaiting implements MeterBinder, SmartLifecycle {
   // The next count begins one refresh interval after the last one ends, so by this age the next
   // count has run about one refresh interval without an end.
   private final long staleAfterNanos;
-  private volatile LastCount lastCount = NO_COUNT;
+  private final AtomicReference<LastCount> lastCount = new AtomicReference<>(NO_COUNT);
   // Guarded by this monitor.
   private ScheduledExecutorService refreshes;
 
@@ -84,7 +85,7 @@ public final class BitrateScansWaiting implements MeterBinder, SmartLifecycle {
   }
 
   private double reported() {
-    var last = lastCount;
+    var last = lastCount.get();
     if (nanoClock.nanoTime() - last.beganNanos() > staleAfterNanos) {
       return Double.NaN;
     }
@@ -95,9 +96,9 @@ public final class BitrateScansWaiting implements MeterBinder, SmartLifecycle {
   private void refresh() {
     var began = nanoClock.nanoTime();
     try {
-      lastCount = new LastCount((double) count.getAsLong(), began);
+      lastCount.set(new LastCount((double) count.getAsLong(), began));
     } catch (RuntimeException e) {
-      lastCount = NO_COUNT;
+      lastCount.set(NO_COUNT);
       log.debug("Counting the waiting bitrate scans failed.", e);
     }
   }
