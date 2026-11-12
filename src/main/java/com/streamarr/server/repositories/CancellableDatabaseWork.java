@@ -53,7 +53,8 @@ public final class CancellableDatabaseWork {
   }
 
   /**
-   * Cancels every call that runs and every later one. Returns how many running calls it cancelled.
+   * Cancels every call that runs and every later one. Returns how many running calls it cancelled,
+   * without waiting for PostgreSQL to receive the request that cancels a running statement.
    */
   public int cancel() {
     cancelled = true;
@@ -102,11 +103,19 @@ public final class CancellableDatabaseWork {
         return;
       }
 
+      // The driver sends the cancel request over a connection of its own and waits for PostgreSQL
+      // to close it, for up to its cancelSignalTimeout of 10 s. The statement does not return
+      // before its request is sent, so the request cannot reach later work on its connection.
+      var running = statement;
+      Thread.ofVirtual().name("database-work-cancel").start(() -> requestCancel(running));
+    }
+
+    private static void requestCancel(Statement running) {
       try {
-        statement.cancel();
+        running.cancel();
       } catch (SQLException _) {
-        // The statement has ended, or the cancel request could not reach PostgreSQL. The caller
-        // bounds its own wait for the work.
+        // The statement's connection has closed, which ended the statement too. The driver drops a
+        // cancel request that cannot reach PostgreSQL, and the caller bounds its wait for the work.
       }
     }
   }

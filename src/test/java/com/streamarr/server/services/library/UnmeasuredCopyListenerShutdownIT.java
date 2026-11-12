@@ -16,6 +16,7 @@ import com.streamarr.server.repositories.media.BitrateScanPriorityRepository;
 import com.streamarr.server.repositories.media.JooqBitrateScanPriorityRepository;
 import com.streamarr.server.services.events.library.UnmeasuredCopyStartedEvent;
 import com.streamarr.server.support.BoundedTask;
+import com.streamarr.server.support.HeldCancelRequests;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
@@ -97,6 +98,38 @@ class UnmeasuredCopyListenerShutdownIT extends AbstractIntegrationTest {
 
     assertThat(raisesWaitingForTheRowAfterTheClose).isZero();
     assertThat(rowLockedAfterTheClose).isTrue();
+    assertThat(meters.countOf("failed")).isZero();
+  }
+
+  // PostgreSQL's driver waits up to its cancelSignalTimeout of 10 s for PostgreSQL to answer a
+  // cancel request, which outlasts the close's bound.
+  @Test
+  @DisplayName(
+      "Should close within its bound and cancel the raise once the request arrives when the network"
+          + " holds the cancel request")
+  void shouldCloseWithinItsBoundAndCancelTheRaiseOnceTheRequestArrivesWhenTheNetworkHoldsIt()
+      throws Exception {
+    requestBitrateScan();
+
+    try (var network = HeldCancelRequests.inFrontOf(pool.getJdbcUrl());
+        var proxiedPool = singleConnectionPoolAt(network.jdbcUrl());
+        var holder = pool.getConnection();
+        var observer = pool.getConnection()) {
+      var listener =
+          new UnmeasuredCopyListener(
+              new JooqBitrateScanPriorityRepository(dsl.configuration().derive(proxiedPool).dsl()),
+              meters);
+      holder.setAutoCommit(false);
+      assertThat(tryLockBitrateScan(holder, LOCK_BITRATE_SCAN)).isTrue();
+      listener.onUnmeasuredCopyStarted(new UnmeasuredCopyStartedEvent(mediaFileId));
+      awaitBlockedBackendPidRunning(observer, backendPid(holder), RAISE);
+
+      BoundedTask.runWithin(CLOSE_BOUND, listener::close);
+      network.awaitHeldCancelRequest();
+      network.release();
+      meters.awaitCounted("cancelled");
+    }
+
     assertThat(meters.countOf("failed")).isZero();
   }
 

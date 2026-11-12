@@ -8,6 +8,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.support.BoundedTask;
+import com.streamarr.server.support.HeldCancelRequests;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.SQLException;
@@ -36,6 +37,10 @@ class CancellableDatabaseWorkIT extends AbstractIntegrationTest {
   // A wait that no cancel ends lasts the statement's 30 s of pg_sleep, or the pool's connection
   // timeout.
   private static final Duration BOUND = Duration.ofSeconds(10);
+  // The driver sends a cancel request over a connection of its own and waits for PostgreSQL to
+  // close it, for up to its cancelSignalTimeout of 10 s. A cancel that waited for a held request
+  // would outlast this bound.
+  private static final Duration CANCEL_BOUND = Duration.ofSeconds(5);
   private static final String LONG_STATEMENT = "SELECT pg_sleep(30)";
 
   @Autowired private DSLContext dsl;
@@ -74,6 +79,36 @@ class CancellableDatabaseWorkIT extends AbstractIntegrationTest {
     assertThat(result).isEmpty();
     assertThat(cancelledCalls).isOne();
     assertThat(singleConnectionsBackend()).isEqualTo(connectionBefore);
+  }
+
+  @Test
+  @DisplayName(
+      "Should return from the cancel before PostgreSQL gets the cancel request when the network"
+          + " holds the request")
+  void shouldReturnFromTheCancelBeforePostgresGetsTheCancelRequestWhenTheNetworkHoldsIt()
+      throws Exception {
+    Optional<Integer> result;
+    int cancelledCalls;
+
+    try (var network = HeldCancelRequests.inFrontOf(pool.getJdbcUrl());
+        var proxiedPool = singleConnectionPoolAt(network.jdbcUrl())) {
+      var connection = backendOf(proxiedPool);
+      var context = contextOver(proxiedPool);
+      try (var running =
+          BoundedTask.start(() -> work.call(() -> context.execute(LONG_STATEMENT)))) {
+        awaitSleeping(connection);
+        try (var cancelling = BoundedTask.start(work::cancel)) {
+          cancelledCalls = cancelling.await(CANCEL_BOUND);
+        }
+
+        network.awaitHeldCancelRequest();
+        network.release();
+        result = running.await(BOUND);
+      }
+    }
+
+    assertThat(cancelledCalls).isOne();
+    assertThat(result).isEmpty();
   }
 
   @Test
