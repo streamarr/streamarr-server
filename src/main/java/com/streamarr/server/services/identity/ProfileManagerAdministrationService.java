@@ -5,6 +5,7 @@ import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationsFilter;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
@@ -216,7 +217,7 @@ public class ProfileManagerAdministrationService {
 
     var invitation = found.get();
     var now = clock.instant();
-    if (invitation.statusAt(now) != ProfileManagerInvitationStatus.PENDING) {
+    if (invitation.statusToItsAccountAt(now) != ProfileManagerInvitationStatus.PENDING) {
       return Outcome.rejected(new ManagerRejections.InvitationNotPending());
     }
 
@@ -445,7 +446,11 @@ public class ProfileManagerAdministrationService {
             eligibleManagerRejection(constraint, ManagerRejections.EligibleManagerRequired::new));
   }
 
-  /** A page of the Profile's pending manager invitations, newest first; hidden reads as empty. */
+  /**
+   * A page of the Profile's pending manager invitations, newest first; hidden reads as empty. An
+   * invitation invalidated because of what became of its invited Account still waits here for the
+   * Profile's managers, and not for a ServerAdmin, who reads it as invalidated (ADR 0024).
+   */
   public ListPage<ProfileManagerInvitation> pendingManagerInvitationsForProfile(
       AuthenticatedIdentity identity, UUID profileId, PageRequest request) {
     // A decision about a Profile that does not exist fails rather than denies.
@@ -455,7 +460,10 @@ public class ProfileManagerAdministrationService {
       return ListPage.empty();
     }
 
-    return Pager.page(profileManagerInvitationsList, profileId, request);
+    return Pager.page(
+        profileManagerInvitationsList,
+        new ProfileManagerInvitationsFilter(profileId, !readsAsServerAdmin(identity)),
+        request);
   }
 
   /**
@@ -473,20 +481,39 @@ public class ProfileManagerAdministrationService {
 
   /**
    * One invitation at any status, for its named Account, the managers of its Profile and
-   * ServerAdmins; empty for everyone else and when no invitation has the id.
+   * ServerAdmins; empty for everyone else and when no invitation has the id. Its named Account and
+   * a ServerAdmin read every invalidation; the Profile's managers read an invitation invalidated
+   * because of what became of its invited Account as still waiting (ADR 0024 §Read authorization).
    */
-  public Optional<ProfileManagerInvitation> managerInvitation(
+  public Optional<ManagerInvitationReading> managerInvitation(
       AuthenticatedIdentity identity, UUID invitationId) {
     return invitationRepository
         .findById(invitationId)
-        .filter(
-            invitation ->
-                authorizationService.isAllowed(
-                        identity, new Intent.ViewReceivedManagerInvitation(invitationId))
-                    || (invitation.getProfileId() != null
-                        && authorizationService.isAllowed(
-                            identity,
-                            new Intent.ViewManagerInvitations(invitation.getProfileId()))));
+        .flatMap(invitation -> readingOf(identity, invitation));
+  }
+
+  private Optional<ManagerInvitationReading> readingOf(
+      AuthenticatedIdentity identity, ProfileManagerInvitation invitation) {
+    var now = clock.instant();
+    if (authorizationService.isAllowed(
+            identity, new Intent.ViewReceivedManagerInvitation(invitation.getId()))
+        || readsAsServerAdmin(identity)) {
+      return Optional.of(
+          new ManagerInvitationReading(invitation, invitation.statusToItsAccountAt(now)));
+    }
+
+    if (invitation.getProfileId() != null
+        && authorizationService.isAllowed(
+            identity, new Intent.ViewManagerInvitations(invitation.getProfileId()))) {
+      return Optional.of(new ManagerInvitationReading(invitation, invitation.statusAt(now)));
+    }
+
+    return Optional.empty();
+  }
+
+  // ServerAdmin authority, read live, is what viewing every Household takes.
+  private boolean readsAsServerAdmin(AuthenticatedIdentity identity) {
+    return authorizationService.isAllowed(identity, new Intent.ViewHouseholds());
   }
 
   private void removeDisputedAuthority(
@@ -547,8 +574,8 @@ public class ProfileManagerAdministrationService {
               () -> {
                 if (invitation == null
                     || !opaqueCodes.matches(presented.get(), invitation.getSecretDigest())
-                    || invitation.getStatus() != ProfileManagerInvitationStatus.PENDING
-                    || !invitation.getExpiresAt().isAfter(clock.instant())) {
+                    || invitation.statusToItsAccountAt(clock.instant())
+                        != ProfileManagerInvitationStatus.PENDING) {
                   throw new InvalidOneTimeCodeException();
                 }
 

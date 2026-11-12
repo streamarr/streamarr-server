@@ -12,6 +12,7 @@ import static org.jooq.impl.DSL.val;
 import com.streamarr.server.domain.auth.ChangedManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationsFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.tables.records.ProfileManagerInvitationRecord;
@@ -49,15 +50,19 @@ public class ProfileManagerInvitationRepositoryCustomImpl
 
   @Override
   public List<Row<ProfileManagerInvitation>> rowsPendingForProfile(
-      UUID profileId, Instant now, Seek seek) {
-    return rowsPendingBeyond(PROFILE_MANAGER_INVITATION.PROFILE_ID.eq(profileId), now, seek);
+      ProfileManagerInvitationsFilter filter, Instant now, Seek seek) {
+    var ofTheProfile = PROFILE_MANAGER_INVITATION.PROFILE_ID.eq(filter.profileId());
+    return rowsPendingBeyond(
+        filter.asItsManagersReadThem() ? ofTheProfile : ofTheProfile.and(answerable()), now, seek);
   }
 
   @Override
   public List<Row<ProfileManagerInvitation>> rowsPendingForRecipient(
       UUID recipientAccountId, Instant now, Seek seek) {
     return rowsPendingBeyond(
-        PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId), now, seek);
+        PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId).and(answerable()),
+        now,
+        seek);
   }
 
   private List<Row<ProfileManagerInvitation>> rowsPendingBeyond(
@@ -90,31 +95,42 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   }
 
   private Optional<ChangedManagerInvitation> tryTransitionPending(
-      UUID invitationId, ProfileManagerInvitationStatus target, Instant now) {
+      Condition which, ProfileManagerInvitationStatus target, Instant now) {
     return onlyChanged(
         changed(
             dsl.update(PROFILE_MANAGER_INVITATION)
                 .set(PROFILE_MANAGER_INVITATION.STATUS, jooqStatus(target))
                 .set(PROFILE_MANAGER_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
-                .where(PROFILE_MANAGER_INVITATION.ID.eq(invitationId))
+                .where(which)
                 .and(pending())
                 .and(PROFILE_MANAGER_INVITATION.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC)))
                 .returning(CHANGED_INVITATION)));
   }
 
+  // The inviter cancels an invitation that still waits to the Profile's side, whatever became of
+  // the Account it names.
   @Override
   public Optional<ChangedManagerInvitation> tryCancelPending(UUID invitationId, Instant now) {
-    return tryTransitionPending(invitationId, ProfileManagerInvitationStatus.CANCELED, now);
+    return tryTransitionPending(
+        PROFILE_MANAGER_INVITATION.ID.eq(invitationId),
+        ProfileManagerInvitationStatus.CANCELED,
+        now);
   }
 
   @Override
   public Optional<ChangedManagerInvitation> tryAcceptPending(UUID invitationId, Instant now) {
-    return tryTransitionPending(invitationId, ProfileManagerInvitationStatus.ACCEPTED, now);
+    return tryTransitionPending(
+        PROFILE_MANAGER_INVITATION.ID.eq(invitationId).and(answerable()),
+        ProfileManagerInvitationStatus.ACCEPTED,
+        now);
   }
 
   @Override
   public Optional<ChangedManagerInvitation> tryDeclinePending(UUID invitationId, Instant now) {
-    return tryTransitionPending(invitationId, ProfileManagerInvitationStatus.DECLINED, now);
+    return tryTransitionPending(
+        PROFILE_MANAGER_INVITATION.ID.eq(invitationId).and(answerable()),
+        ProfileManagerInvitationStatus.DECLINED,
+        now);
   }
 
   @Override
@@ -138,7 +154,7 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   @Override
   public List<ChangedManagerInvitation> invalidatePendingByProfileIdAndRecipientAccountId(
       UUID profileId, UUID recipientAccountId, String reason, Instant now) {
-    return invalidate(
+    return invalidateForItsAccount(
         PROFILE_MANAGER_INVITATION
             .PROFILE_ID
             .eq(profileId)
@@ -175,7 +191,7 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   @Override
   public List<ChangedManagerInvitation> invalidatePendingByRecipientAccountId(
       UUID recipientAccountId, String reason, Instant now) {
-    return invalidate(
+    return invalidateForItsAccount(
         PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId), reason, now);
   }
 
@@ -197,6 +213,24 @@ public class ProfileManagerInvitationRepositoryCustomImpl
                 .set(PROFILE_MANAGER_INVITATION.DECIDED_AT, now.atOffset(ZoneOffset.UTC))
                 .where(scope)
                 .and(pending())
+                .returning(CHANGED_INVITATION));
+    return Stream.concat(expired.stream(), invalidated.stream()).toList();
+  }
+
+  // The status keeps what the Profile's side reads, to which the invitation still waits.
+  private List<ChangedManagerInvitation> invalidateForItsAccount(
+      Condition scope, String reason, Instant now) {
+    var expired = materializeExpiredPending(scope, now);
+    var invalidated =
+        changed(
+            dsl.update(PROFILE_MANAGER_INVITATION)
+                .set(
+                    PROFILE_MANAGER_INVITATION.RECIPIENT_INVALIDATED_AT,
+                    now.atOffset(ZoneOffset.UTC))
+                .set(PROFILE_MANAGER_INVITATION.RECIPIENT_INVALIDATION_REASON, reason)
+                .where(scope)
+                .and(pending())
+                .and(answerable())
                 .returning(CHANGED_INVITATION));
     return Stream.concat(expired.stream(), invalidated.stream()).toList();
   }
@@ -243,6 +277,11 @@ public class ProfileManagerInvitationRepositoryCustomImpl
 
   private static Condition pending() {
     return PROFILE_MANAGER_INVITATION.STATUS.eq(PENDING);
+  }
+
+  // Not invalidated for its invited Account, which could still answer it.
+  private static Condition answerable() {
+    return PROFILE_MANAGER_INVITATION.RECIPIENT_INVALIDATED_AT.isNull();
   }
 
   // The domain and generated jOOQ status enums share a simple name.

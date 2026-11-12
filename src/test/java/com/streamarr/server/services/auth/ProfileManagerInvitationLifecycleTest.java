@@ -146,9 +146,9 @@ class ProfileManagerInvitationLifecycleTest {
             (lifecycle, invitation) ->
                 lifecycle.tryInvalidatePending(invitation.getId(), REASON, NOW)),
         write(
-            "replace",
-            invalidated,
-            stoppedWaiting,
+            "invalidate for an Account that becomes or stops being a manager",
+            ProfileManagerInvitationStatus.PENDING,
+            new ManagerInvitationAction.InvalidatedForItsAccount(),
             (lifecycle, invitation) ->
                 lifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
                     invitation.getProfileId(), invitation.getRecipientAccountId(), REASON, NOW)),
@@ -173,9 +173,9 @@ class ProfileManagerInvitationLifecycleTest {
                 lifecycle.invalidatePendingInvitedBy(
                     invitation.getInviterAccountId(), REASON, NOW)),
         write(
-            "invalidate the invitations naming an Account",
-            invalidated,
-            stoppedWaiting,
+            "invalidate for an Account that is deleted or becomes ineligible",
+            ProfileManagerInvitationStatus.PENDING,
+            new ManagerInvitationAction.InvalidatedForItsAccount(),
             (lifecycle, invitation) ->
                 lifecycle.invalidatePendingByRecipientAccountId(
                     invitation.getRecipientAccountId(), REASON, NOW)));

@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.domain.auth.ChangedManagerInvitation;
 import com.streamarr.server.domain.auth.ManagerInvitationAction;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.services.events.auth.ProfileManagerInvitationChangedEvent;
 import java.time.Instant;
@@ -79,10 +80,14 @@ public class ProfileManagerInvitationLifecycle {
             profileId, email, reason, now));
   }
 
-  /** Withdraws the pending invitation to manage the Profile that names the Account. */
+  /**
+   * Invalidates, for the Account alone, the pending invitations to manage the Profile that name it:
+   * the Account became or stopped being one of the Profile's ProfileManagers. To the Profile's
+   * ProfileManagers each still waits (ADR 0024 §Invitations).
+   */
   public void invalidatePendingByProfileIdAndRecipientAccountId(
       UUID profileId, UUID recipientAccountId, String reason, Instant now) {
-    announceStoppedWaiting(
+    announceInvalidatedForItsAccount(
         invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
             profileId, recipientAccountId, reason, now));
   }
@@ -107,10 +112,14 @@ public class ProfileManagerInvitationLifecycle {
         invitationRepository.invalidatePendingInvitedBy(inviterAccountId, reason, now));
   }
 
-  /** Withdraws every pending invitation that names the Account. */
+  /**
+   * Invalidates, for the Account alone, every pending invitation that names it: the Account is
+   * deleted or became ineligible. To each Profile's ProfileManagers each still waits (ADR 0024
+   * §Invitations).
+   */
   public void invalidatePendingByRecipientAccountId(
       UUID recipientAccountId, String reason, Instant now) {
-    announceStoppedWaiting(
+    announceInvalidatedForItsAccount(
         invitationRepository.invalidatePendingByRecipientAccountId(
             recipientAccountId, reason, now));
   }
@@ -128,6 +137,19 @@ public class ProfileManagerInvitationLifecycle {
         invitation ->
             events.publishEvent(new ProfileManagerInvitationChangedEvent(invitation, action)));
     return changed.isPresent();
+  }
+
+  // An invitation that still waits to the Profile's side was invalidated for its Account alone;
+  // the rest are the lapsed invitations in scope, whose expiry was stored.
+  private void announceInvalidatedForItsAccount(List<ChangedManagerInvitation> invitations) {
+    invitations.forEach(
+        invitation ->
+            events.publishEvent(
+                new ProfileManagerInvitationChangedEvent(
+                    invitation,
+                    invitation.status() == ProfileManagerInvitationStatus.PENDING
+                        ? new ManagerInvitationAction.InvalidatedForItsAccount()
+                        : new ManagerInvitationAction.StoppedWaiting())));
   }
 
   private void announceStoppedWaiting(List<ChangedManagerInvitation> invitations) {

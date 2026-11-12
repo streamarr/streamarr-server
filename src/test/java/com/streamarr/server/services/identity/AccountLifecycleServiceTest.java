@@ -473,13 +473,15 @@ class AccountLifecycleServiceTest {
 
     deleteAccount(caller);
 
+    // Its named Account reads every invalidation; one for that Account alone still waits to the
+    // Profile's managers (ADR 0024 §Invitations).
     assertThat(managerInvitations.findById(target.getId()))
         .get()
-        .extracting(ProfileManagerInvitation::getStatus)
+        .extracting(invitation -> invitation.statusToItsAccountAt(NOW))
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(managerInvitations.findById(unrelated.getId()))
         .get()
-        .extracting(ProfileManagerInvitation::getStatus)
+        .extracting(invitation -> invitation.statusToItsAccountAt(NOW))
         .isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 

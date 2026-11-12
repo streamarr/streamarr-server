@@ -968,8 +968,12 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
             profileManagerRepository.existsByAccountIdAndProfileId(
                 recipient.account().getId(), orphan.getId()))
         .isFalse();
+    // Its Account can no longer answer it; to the Profile's managers it still waits.
     assertThat(
-            invitationRepository.findById(UUID.fromString(restorableId)).orElseThrow().getStatus())
+            invitationRepository
+                .findById(UUID.fromString(restorableId))
+                .orElseThrow()
+                .statusToItsAccountAt(Instant.now()))
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isEqualTo(2);
     assertAuditEvent(

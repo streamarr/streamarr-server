@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.auth.ChangedManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationsFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
@@ -20,15 +21,27 @@ public class FakeProfileManagerInvitationRepository
 
   @Override
   public List<Row<ProfileManagerInvitation>> rowsPendingForProfile(
-      UUID profileId, Instant now, Seek seek) {
-    return rowsPending(invitation -> profileId.equals(invitation.getProfileId()), now, seek);
+      ProfileManagerInvitationsFilter filter, Instant now, Seek seek) {
+    return rowsPending(
+        invitation ->
+            filter.profileId().equals(invitation.getProfileId())
+                && (filter.asItsManagersReadThem() || answerable(invitation)),
+        now,
+        seek);
   }
 
   @Override
   public List<Row<ProfileManagerInvitation>> rowsPendingForRecipient(
       UUID recipientAccountId, Instant now, Seek seek) {
     return rowsPending(
-        invitation -> recipientAccountId.equals(invitation.getRecipientAccountId()), now, seek);
+        invitation ->
+            recipientAccountId.equals(invitation.getRecipientAccountId()) && answerable(invitation),
+        now,
+        seek);
+  }
+
+  private static boolean answerable(ProfileManagerInvitation invitation) {
+    return invitation.getRecipientInvalidatedAt() == null;
   }
 
   private List<Row<ProfileManagerInvitation>> rowsPending(
@@ -65,7 +78,8 @@ public class FakeProfileManagerInvitationRepository
     var invitation = database.get(invitationId);
     if (invitation == null
         || invitation.getStatus() != ProfileManagerInvitationStatus.PENDING
-        || !invitation.getExpiresAt().isAfter(now)) {
+        || !invitation.getExpiresAt().isAfter(now)
+        || (target != ProfileManagerInvitationStatus.CANCELED && !answerable(invitation))) {
       return Optional.empty();
     }
 
@@ -109,7 +123,7 @@ public class FakeProfileManagerInvitationRepository
   @Override
   public List<ChangedManagerInvitation> invalidatePendingByProfileIdAndRecipientAccountId(
       UUID profileId, UUID recipientAccountId, String reason, Instant now) {
-    return invalidate(
+    return invalidateForItsAccount(
         invitation ->
             profileId.equals(invitation.getProfileId())
                 && recipientAccountId.equals(invitation.getRecipientAccountId()),
@@ -144,7 +158,7 @@ public class FakeProfileManagerInvitationRepository
   @Override
   public List<ChangedManagerInvitation> invalidatePendingByRecipientAccountId(
       UUID recipientAccountId, String reason, Instant now) {
-    return invalidate(
+    return invalidateForItsAccount(
         invitation -> recipientAccountId.equals(invitation.getRecipientAccountId()), reason, now);
   }
 
@@ -177,6 +191,25 @@ public class FakeProfileManagerInvitationRepository
           invitation.setDecidedAt(now);
         });
     return Stream.concat(expired.stream(), pending.stream().map(ChangedManagerInvitation::of))
+        .toList();
+  }
+
+  private List<ChangedManagerInvitation> invalidateForItsAccount(
+      Predicate<ProfileManagerInvitation> scope, String reason, Instant now) {
+    var expired = materializeExpiredPending(scope, now);
+    var answerable =
+        database.values().stream()
+            .filter(scope)
+            .filter(
+                invitation -> invitation.statusAt(now) == ProfileManagerInvitationStatus.PENDING)
+            .filter(FakeProfileManagerInvitationRepository::answerable)
+            .toList();
+    answerable.forEach(
+        invitation -> {
+          invitation.setRecipientInvalidatedAt(now);
+          invitation.setRecipientInvalidationReason(reason);
+        });
+    return Stream.concat(expired.stream(), answerable.stream().map(ChangedManagerInvitation::of))
         .toList();
   }
 

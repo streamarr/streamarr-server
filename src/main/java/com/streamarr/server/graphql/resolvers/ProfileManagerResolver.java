@@ -81,7 +81,7 @@ public class ProfileManagerResolver {
   public ManagerInvitationDetails managerInvitation(@InputArgument String invitationId) {
     return managerService
         .managerInvitation(authorizationService.currentIdentity(), Ids.parseUuid(invitationId))
-        .map(this::invitationDetails)
+        .map(reading -> ManagerInvitationDetails.from(reading.invitation(), reading.status()))
         .orElse(null);
   }
 
