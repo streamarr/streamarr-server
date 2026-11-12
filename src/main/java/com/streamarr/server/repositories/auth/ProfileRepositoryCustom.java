@@ -62,6 +62,14 @@ public interface ProfileRepositoryCustom {
    */
   Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId);
 
+  /**
+   * Locks the Profile and, when an Account has the address, that Account's Personal Profile, in
+   * their id order and in one statement whatever the address, so two invitations that each name the
+   * other's inviter wait for each other rather than deadlock (ADR 0024: one global lock order).
+   * Whether the Profile exists.
+   */
+  boolean lockForInvitationTo(UUID profileId, String email);
+
   /** Locks and confirms the Profile is unrestricted for a Share sovereignty decision. */
   boolean lockIfUnrestricted(UUID profileId);
 

@@ -114,7 +114,12 @@ public class ProfileManagerAdministrationService {
     var now = clock.instant();
     return mutationTransactions.write(
         () -> {
-          lockProfile(profileId, ManagerRejections.ProfileNotFound::new);
+          // With the invitee's own Profile, in one global order: two Accounts may invite each
+          // other.
+          if (!profileRepository.lockForInvitationTo(profileId, address)) {
+            throw new MutationRejection(new ManagerRejections.ProfileNotFound());
+          }
+
           var currentRefusal = inviteRefusal(identity, profileId);
           if (currentRefusal.isPresent()) {
             throw new MutationRejection(currentRefusal.get());

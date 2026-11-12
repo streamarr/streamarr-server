@@ -237,6 +237,11 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
+  public boolean lockForInvitationTo(UUID profileId, String email) {
+    return findById(profileId).isPresent();
+  }
+
+  @Override
   public Set<UUID> availableAmong(UUID householdId, Collection<UUID> profileIds) {
     return findAvailableInHousehold(householdId).stream()
         .map(Profile::getId)

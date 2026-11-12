@@ -32,7 +32,11 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -44,6 +48,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntSupplier;
+import javax.sql.DataSource;
 import lombok.Builder;
 import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
@@ -56,6 +62,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -77,6 +84,8 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private AuthTestSupport.TestIdentity owner;
   private AuthTestSupport.TestIdentity recipient;
@@ -1054,6 +1063,66 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                     .build());
           }
         });
+  }
+
+  @Test
+  @DisplayName(
+      "Should issue both invitations when two Accounts invite each other to manage their own"
+          + " Profiles at once")
+  void shouldIssueBothInvitationsWhenTwoAccountsInviteEachOtherToManageTheirOwnProfilesAtOnce()
+      throws Exception {
+    try (var heldOwners = lockProfileRow(owner.profile().getId());
+        var heldRecipients = lockProfileRow(recipient.profile().getId());
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var ownerInvites = executor.submit(() -> inviteToOwnProfile(owner, recipient));
+      var recipientInvites = executor.submit(() -> inviteToOwnProfile(recipient, owner));
+      awaitWaiters(() -> waitersBehind(heldOwners) + waitersBehind(heldRecipients), 2);
+
+      // In turn: each invite then holds one Profile, and the other waits for it, whatever its
+      // order.
+      heldOwners.release();
+      awaitWaiters(() -> waitersBehind(heldRecipients), 2);
+      heldRecipients.release();
+
+      for (var invited : List.of(ownerInvites, recipientInvites)) {
+        var answer = invited.get(30, TimeUnit.SECONDS);
+        assertThat(answer.at("/errors").isMissingNode()).as(answer.toString()).isTrue();
+        assertThat(answer.at("/data/inviteProfileManager/issued/invitation/status").asString())
+            .isEqualTo("PENDING");
+      }
+    }
+  }
+
+  private HeldRowLock lockProfileRow(UUID profileId) throws SQLException {
+    return PostgresLockTestSupport.lockRow(
+        RowLockTarget.builder().dataSource(dataSource).table("profile").rowId(profileId).build());
+  }
+
+  private JsonNode inviteToOwnProfile(
+      AuthTestSupport.TestIdentity inviter, AuthTestSupport.TestIdentity invitee) throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(inviter),
+                """
+                mutation { inviteProfileManager(input: {profileId: "%s", email: "%s"}) {
+                  issued { invitation { status } } userErrors { __typename } } }
+                """
+                    .formatted(inviter.profile().getId(), invitee.account().getEmail()))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response);
+  }
+
+  private int waitersBehind(HeldRowLock held) {
+    return PostgresLockTestSupport.waitersBehind(jdbcTemplate, held.backendPid(), "%");
+  }
+
+  private static void awaitWaiters(IntSupplier waiters, int expected) {
+    Awaitility.await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(() -> assertThat(waiters.getAsInt()).isEqualTo(expected));
   }
 
   private List<JsonNode> raceGraphql(
