@@ -28,10 +28,6 @@ public class SegmentFolderLeftovers {
   private static final Pattern SESSION_DIRECTORY_NAME =
       Pattern.compile("[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}");
 
-  // PreparedSegmentFile gives an unpublished upload this prefix and suffix.
-  private static final String UPLOAD_PREFIX = ".upload-";
-  private static final String UPLOAD_SUFFIX = ".tmp";
-
   @NonNull private final Path segmentFolder;
 
   /**
@@ -112,15 +108,11 @@ public class SegmentFolderLeftovers {
         return;
       }
 
-      if (attributes.isRegularFile() && isUploadName(name)) {
+      if (attributes.isRegularFile() && PreparedSegmentFile.isUploadName(name)) {
         Files.delete(entry);
       }
     } catch (IOException e) {
       log.warn("Failed to delete a leftover of the segment folder: {}", entry, e);
     }
-  }
-
-  private static boolean isUploadName(String name) {
-    return name.startsWith(UPLOAD_PREFIX) && name.endsWith(UPLOAD_SUFFIX);
   }
 }
