@@ -13,6 +13,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ManagerInvitationExpirySweeper;
 import com.streamarr.server.services.mutation.Outcome;
@@ -52,9 +53,11 @@ class ManagerInvitationDecisionRaceIT extends AbstractIntegrationTest {
 
   @Autowired private MutableClock clock;
   @Autowired private ProfileManagerAdministrationService managerService;
+  @Autowired private ProfileAdministrationService profileService;
   @Autowired private ManagerInvitationExpirySweeper expirySweeper;
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
+  @Autowired private ProfileRepository profileRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private ProfileCastSupport cast;
   @Autowired private DataSource dataSource;
@@ -174,6 +177,47 @@ class ManagerInvitationDecisionRaceIT extends AbstractIntegrationTest {
         .extracting(ProfileManagerInvitation::getStatus)
         .containsExactlyInAnyOrder(
             ProfileManagerInvitationStatus.PENDING, ProfileManagerInvitationStatus.INVALIDATED);
+  }
+
+  @Test
+  @DisplayName("Should refuse deleting the Profile when an invitation to manage it is issued first")
+  void shouldRefuseDeletingTheProfileWhenAnInvitationToManageItIsIssuedFirst() throws Exception {
+    var kit =
+        cast.unavailableProfileManagedBy(sam, ProfileFixture.defaultProfileBuilder().name("Kit"));
+    var inviter = identity(sam);
+    var deleter = authTestSupport.freshIdentityOf(sam);
+
+    // The invitation waits at the Profile's row first and the deletion behind it, so PostgreSQL
+    // gives the row to the invitation first; the deletion must then find it waiting.
+    Outcome<?, ?> invited;
+    Outcome<?, ?> deleted;
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
+        var profileLock = lockRow(row("profile", kit.getId()))) {
+      var invitation =
+          executor.submit(
+              () ->
+                  managerService.inviteProfileManager(
+                      inviter, kit.getId(), mara.account().getEmail()));
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .until(() -> waitersBehind(jdbcTemplate, profileLock.backendPid(), "%profile%") == 1);
+      var deletion = executor.submit(() -> profileService.deleteProfile(deleter, kit.getId()));
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .until(() -> waitersBehind(jdbcTemplate, profileLock.backendPid(), "%profile%") == 2);
+
+      profileLock.release();
+      invited = invitation.get(10, TimeUnit.SECONDS);
+      deleted = deletion.get(10, TimeUnit.SECONDS);
+    }
+
+    assertThat(invited).isInstanceOf(Outcome.Accepted.class);
+    assertThat(deleted).isEqualTo(Outcome.rejected(new ProfileRejections.ProfileNotDeletable()));
+    assertThat(profileRepository.existsById(kit.getId())).isTrue();
+    assertThat(invitationRepository.findAll())
+        .filteredOn(invitation -> kit.getId().equals(invitation.getProfileId()))
+        .extracting(ProfileManagerInvitation::getStatus)
+        .containsExactly(ProfileManagerInvitationStatus.PENDING);
   }
 
   /** Runs both writes while the row is held, waits until both wait behind it, then releases it. */
