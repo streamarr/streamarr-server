@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
+import lombok.Builder;
+import lombok.NonNull;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.jooq.DSLContext;
@@ -25,6 +27,7 @@ class ManagerInvitationsByEmailMigrationIT extends AbstractIntegrationTest {
 
   private static final UUID INVITER_ID = UUID.fromString("5f0c2a8e-7d41-4b6a-9c3e-1e2d3f4a5b6c");
   private static final UUID ALEX_ID = UUID.fromString("0b7e4c1d-2a3f-4e5d-8c9b-1a2b3c4d5e6f");
+  private static final UUID KIT_ID = UUID.fromString("7c2d9e4f-5a6b-4c3d-9e8f-2b1a0c9d8e7f");
 
   private final String schema =
       "manager_email_migration_" + UUID.randomUUID().toString().replace("-", "");
@@ -87,6 +90,39 @@ class ManagerInvitationsByEmailMigrationIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep an older invitation pending when the newer one under its address waits for"
+          + " another Profile")
+  void shouldKeepAnOlderInvitationPendingWhenTheNewerOneUnderItsAddressWaitsForAnotherProfile()
+      throws SQLException {
+    var toKit =
+        store(invitationTo(KIT_ID).createdOn("2026-11-01T12:00:00Z").email("mara@example.com"));
+    storePending("2026-11-02T12:00:00Z", "Mara@Example.com");
+
+    migrate();
+
+    assertThat(statusOf(toKit)).isEqualTo("PENDING");
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep an older invitation pending when the newer one for its Profile and address was"
+          + " answered")
+  void shouldKeepAnOlderInvitationPendingWhenTheNewerOneForItsProfileAndAddressWasAnswered()
+      throws SQLException {
+    var older = storePending("2026-11-01T12:00:00Z", "mara@example.com");
+    store(
+        invitationTo(ALEX_ID)
+            .status("ACCEPTED")
+            .createdOn("2026-11-02T12:00:00Z")
+            .email("Mara@Example.com"));
+
+    migrate();
+
+    assertThat(statusOf(older)).isEqualTo("PENDING");
+  }
+
+  @Test
   @DisplayName("Should let a pending invitation name no Account when the migration has run")
   void shouldLetAPendingInvitationNameNoAccountWhenTheMigrationHasRun() throws SQLException {
     migrate();
@@ -105,16 +141,34 @@ class ManagerInvitationsByEmailMigrationIT extends AbstractIntegrationTest {
   }
 
   private UUID storePending(String createdOn, String email) throws SQLException {
+    return store(invitationTo(ALEX_ID).createdOn(createdOn).email(email));
+  }
+
+  private UUID store(StoredInvitation.StoredInvitationBuilder invitation) throws SQLException {
+    var stored = invitation.build();
     var id = UUID.randomUUID();
     execute(
         actorIs(INVITER_ID),
         """
         INSERT INTO profile_manager_invitation
-          (id, created_on, profile_id, inviter_account_id, recipient_account_id, recipient_email)
-        VALUES ('%s', '%s', '%s', '%s', '%s', '%s')
+          (id, created_on, profile_id, inviter_account_id, recipient_account_id, recipient_email,
+           status)
+        VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s')
         """
-            .formatted(id, createdOn, ALEX_ID, INVITER_ID, UUID.randomUUID(), email));
+            .formatted(
+                id,
+                stored.createdOn(),
+                stored.profileId(),
+                INVITER_ID,
+                UUID.randomUUID(),
+                stored.email(),
+                stored.status()));
     return id;
+  }
+
+  /** A pending invitation from this test's inviter to manage the Profile. */
+  private static StoredInvitation.StoredInvitationBuilder invitationTo(UUID profileId) {
+    return StoredInvitation.builder().profileId(profileId).status("PENDING");
   }
 
   private void migrate() {
@@ -169,4 +223,11 @@ class ManagerInvitationsByEmailMigrationIT extends AbstractIntegrationTest {
       connection.commit();
     }
   }
+
+  @Builder
+  private record StoredInvitation(
+      @NonNull UUID profileId,
+      @NonNull String createdOn,
+      @NonNull String email,
+      @NonNull String status) {}
 }
