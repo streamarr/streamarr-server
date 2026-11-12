@@ -82,7 +82,8 @@ public class SegmentFolderLeftovers {
     }
   }
 
-  // Deletes what holds the mark's place first, so that the write never follows a soft link there.
+  // Replaces whatever holds the mark's place. CREATE_NEW fails on a soft link there, where a plain
+  // write would overwrite the file that the link points to.
   private void writeMark() throws IOException {
     Files.deleteIfExists(mark());
     Files.writeString(mark(), markedFolder(), StandardOpenOption.CREATE_NEW);

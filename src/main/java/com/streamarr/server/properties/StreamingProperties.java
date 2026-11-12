@@ -150,7 +150,8 @@ public record StreamingProperties(
     try {
       return Files.isSameFile(segmentFolder, SHARED_SEGMENT_FOLDER);
     } catch (NoSuchFileException _) {
-      // One of the two does not exist yet, so the named folder holds no leftovers.
+      // One of the two is missing. A missing shared folder cannot be the named one, and a missing
+      // named folder holds nothing to delete.
       return false;
     } catch (IOException _) {
       // The server cannot tell the two apart, so it deletes nothing in the named folder.
