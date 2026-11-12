@@ -3,6 +3,7 @@ package com.streamarr.server.services;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Person;
@@ -11,7 +12,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
+import com.streamarr.server.services.artwork.ArtworkRequestService;
 import com.streamarr.server.services.metadata.MetadataResult;
 import jakarta.persistence.EntityManager;
 import java.util.List;

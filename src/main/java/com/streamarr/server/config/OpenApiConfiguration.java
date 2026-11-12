@@ -2,10 +2,10 @@ package com.streamarr.server.config;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
 
-import com.streamarr.server.config.security.AuthCookies;
-import com.streamarr.server.config.security.StreamarrBearerTokenResolver;
 import com.streamarr.server.controllers.auth.AuthErrorResponse;
 import com.streamarr.server.services.auth.TokenScope;
+import com.streamarr.server.web.AuthCookies;
+import com.streamarr.server.web.StreamarrBearerTokenResolver;
 import io.swagger.v3.core.converter.AnnotatedType;
 import io.swagger.v3.core.converter.ModelConverters;
 import io.swagger.v3.oas.models.OpenAPI;

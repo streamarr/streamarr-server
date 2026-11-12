@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DecimalSeconds;
@@ -15,6 +14,7 @@ import com.streamarr.server.domain.streaming.VideoEncodeDecision;
 import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoStreamCopy;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
+import com.streamarr.server.properties.StreamingProperties;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.OptionalDouble;

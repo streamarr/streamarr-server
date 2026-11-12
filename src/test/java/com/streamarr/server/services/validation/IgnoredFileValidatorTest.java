@@ -3,7 +3,7 @@ package com.streamarr.server.services.validation;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.streamarr.server.config.LibraryScanProperties;
+import com.streamarr.server.properties.LibraryScanProperties;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;

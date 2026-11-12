@@ -1,10 +1,10 @@
 package com.streamarr.server.graphql.mutation.library;
 
+import com.streamarr.server.domain.LibraryOperationKind;
+import com.streamarr.server.domain.LibraryOperationRejection;
+import com.streamarr.server.domain.LibraryOperationStopRejection;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.graphql.mutation.InputPath;
-import com.streamarr.server.services.library.LibraryOperationKind;
-import com.streamarr.server.services.library.LibraryOperationRejection;
-import com.streamarr.server.services.library.LibraryOperationStopRejection;
 
 /** The exhaustive mapping from a library's refusal to the schema error types. */
 public final class LibraryOperationErrors {

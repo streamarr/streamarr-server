@@ -1,13 +1,13 @@
 package com.streamarr.server.fixtures;
 
+import com.streamarr.server.domain.media.ArtworkSources;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ArtworkTarget;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageRefreshMode;
+import com.streamarr.server.domain.media.NewArtworkRequest;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
-import com.streamarr.server.services.ArtworkSources;
-import com.streamarr.server.services.NewArtworkRequest;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;

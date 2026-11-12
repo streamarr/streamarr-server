@@ -9,11 +9,11 @@ import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.PersonRepository;
-import com.streamarr.server.services.ArtworkRequestService;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.CreditService;
 import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.PersonService;
+import com.streamarr.server.services.artwork.ArtworkRequestService;
 import lombok.Builder;
 
 public final class CreditServiceFixture {

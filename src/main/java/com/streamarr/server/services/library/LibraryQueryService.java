@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.domain.pagination.MediaFilter;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
@@ -10,7 +11,6 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.pagination.ListPage;
-import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.PageRequest;
 import java.util.Collection;
 import java.util.List;
@@ -19,6 +19,8 @@ import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Builder
@@ -42,6 +44,17 @@ public class LibraryQueryService {
   /** Returns the libraries with the given ids; an id without a library is left out. */
   public List<Library> findByIds(Collection<UUID> libraryIds) {
     return libraries.findAllById(libraryIds);
+  }
+
+  /**
+   * Reads the library's latest committed row in a new read-only transaction. The new transaction
+   * suspends the caller's, so the caller's persistence context cannot supply its own copy of the
+   * library. An after-commit listener still holds that context, and its copy can predate a status
+   * that jOOQ wrote. The returned library is detached.
+   */
+  @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+  public Optional<Library> findLatestCommitted(UUID libraryId) {
+    return libraries.findById(libraryId);
   }
 
   /**

@@ -6,6 +6,7 @@ import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import com.streamarr.server.services.streaming.PeakSegmentBitRate.SegmentSize;
@@ -220,21 +221,43 @@ final class VideoCopyBandwidth {
 
     var segments = BigInteger.valueOf(playlist.segmentCount());
     var videoBytes = SegmentFraming.segmentBytes(segments).add(trackBytes(video.get(), segments));
+    var durationSeconds = playlist.durationSeconds();
     return switch (audio.mode()) {
-      case NONE -> Optional.of(averageBitRate(videoBytes, playlist));
+      case NONE -> Optional.of(averageBitRate(videoBytes, durationSeconds));
       case COPY ->
           copiedAudio(source)
               .map(
-                  copied -> averageBitRate(videoBytes.add(trackBytes(copied, segments)), playlist));
+                  copied ->
+                      averageBitRate(
+                          videoBytes.add(trackBytes(copied, segments)), durationSeconds));
       case TRANSCODE ->
           encodedAudioFrames(source, audio)
-              .map(encoded -> encoded.over(playlist.durationSeconds(), true))
+              .map(encoded -> encoded.over(durationSeconds, true))
               .map(
                   frames ->
                       averageBitRate(
-                          videoBytes.add(SegmentFraming.trackBytes(segments, frames)), playlist))
+                          videoBytes.add(SegmentFraming.trackBytes(segments, frames)),
+                          durationSeconds))
               .map(bitRate -> saturatedSum(bitRate, audio.bitrate()));
     };
+  }
+
+  /**
+   * The bitrate that a copied audio track's measured bytes come to over a media playlist: the bytes
+   * × 8 divided by the sum of the playlist's EXTINF durations (ADR 0054). It counts no segment
+   * framing. Empty when the server did not measure the track or the playlist lists no media
+   * segment. The copy carries the source's first audio stream.
+   */
+  static Optional<Long> copiedAudioBitrate(
+      @NonNull MediaProbe source, @NonNull MediaSegmentTimeline timeline) {
+    var durationSeconds =
+        ExtinfDurations.of(timeline).stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+    if (durationSeconds.signum() <= 0) {
+      return Optional.empty();
+    }
+
+    return copiedAudio(source)
+        .map(copied -> averageBitRate(BigInteger.valueOf(copied.measuredBytes()), durationSeconds));
   }
 
   private static Optional<MeasuredStream> measuredVideo(MediaProbe source) {
@@ -287,11 +310,11 @@ final class VideoCopyBandwidth {
         new EncodedAudioFrames(encoder.get().frameSamples(), encoder.get().primingSamples(), rate));
   }
 
-  /** The bytes in bits per second of the playlist's EXTINF durations, rounded up. */
-  private static long averageBitRate(BigInteger bytes, CopyMediaPlaylist playlist) {
+  /** The bytes in bits per second of a media playlist's EXTINF durations, rounded up. */
+  private static long averageBitRate(BigInteger bytes, BigDecimal durationSeconds) {
     var bitRate =
         new BigDecimal(bytes.shiftLeft(3))
-            .divide(playlist.durationSeconds(), 0, RoundingMode.CEILING)
+            .divide(durationSeconds, 0, RoundingMode.CEILING)
             .toBigIntegerExact();
     return bitRate.min(BigInteger.valueOf(Long.MAX_VALUE)).longValueExact();
   }

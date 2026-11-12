@@ -1,12 +1,12 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.pagination.ListOrder;
+import com.streamarr.server.domain.pagination.MediaFilter;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.pagination.ListOrder;
-import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.PagedList;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

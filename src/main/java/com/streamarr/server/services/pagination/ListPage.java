@@ -1,5 +1,6 @@
 package com.streamarr.server.services.pagination;
 
+import com.streamarr.server.domain.pagination.Row;
 import java.util.List;
 import java.util.function.Function;
 import lombok.NonNull;

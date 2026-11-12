@@ -2,11 +2,11 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
+import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
-import com.streamarr.server.services.pagination.SortValue;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;

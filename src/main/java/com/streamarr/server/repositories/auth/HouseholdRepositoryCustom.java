@@ -1,8 +1,8 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.Household;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;

@@ -6,13 +6,13 @@ import static org.awaitility.Awaitility.await;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
-import com.streamarr.server.config.LibraryWatcherProperties;
-import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fakes.VirtualTimeSleeper;
+import com.streamarr.server.properties.LibraryWatcherProperties;
+import com.streamarr.server.properties.ProbeSchedulingProperties;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
 import com.streamarr.server.services.streaming.FfprobeService;

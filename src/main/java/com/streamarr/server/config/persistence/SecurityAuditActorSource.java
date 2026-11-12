@@ -1,8 +1,8 @@
 package com.streamarr.server.config.persistence;
 
-import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.audit.AuditActor;
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.auth.StreamarrAuthenticationToken;
 import java.util.Optional;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;

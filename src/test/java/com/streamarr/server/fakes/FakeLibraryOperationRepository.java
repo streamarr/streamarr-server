@@ -1,18 +1,18 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryOperation;
+import com.streamarr.server.domain.LibraryOperationConclusion;
+import com.streamarr.server.domain.LibraryOperationEnd;
+import com.streamarr.server.domain.LibraryOperationKind;
+import com.streamarr.server.domain.LibraryOperationRejection;
+import com.streamarr.server.domain.LibraryOperationStop;
+import com.streamarr.server.domain.LibraryOperationStopRejection;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.NewLibraryOperation;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.repositories.LibraryOperationRepository;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.services.library.LibraryOperation;
-import com.streamarr.server.services.library.LibraryOperationConclusion;
-import com.streamarr.server.services.library.LibraryOperationEnd;
-import com.streamarr.server.services.library.LibraryOperationKind;
-import com.streamarr.server.services.library.LibraryOperationRejection;
-import com.streamarr.server.services.library.LibraryOperationStop;
-import com.streamarr.server.services.library.LibraryOperationStopRejection;
-import com.streamarr.server.services.library.NewLibraryOperation;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

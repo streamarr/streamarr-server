@@ -4,7 +4,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSe
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.fakes.AdvanceableSystemClock;
@@ -12,6 +11,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.properties.StreamingProperties;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;

@@ -9,7 +9,7 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.repositories.SkippedFileRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.ArtworkRunWaiter;
+import com.streamarr.server.services.artwork.ArtworkRunWaiter;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.concurrency.AdmittedTaskReport;
 import com.streamarr.server.services.concurrency.MutexFactory;

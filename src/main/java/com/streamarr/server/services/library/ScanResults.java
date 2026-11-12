@@ -2,7 +2,7 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.task.RequestedProbeResult;
-import com.streamarr.server.services.ArtworkRunSummary;
+import com.streamarr.server.services.artwork.ArtworkRunSummary;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;

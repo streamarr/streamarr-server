@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import com.streamarr.server.domain.media.ProbeVersion;
+import com.streamarr.server.properties.RemoteTranscodeProperties;
 import com.streamarr.server.services.streaming.BitrateScanner;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;

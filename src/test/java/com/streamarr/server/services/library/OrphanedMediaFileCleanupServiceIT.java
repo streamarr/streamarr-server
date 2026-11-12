@@ -20,7 +20,7 @@ import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.artwork.ImageService;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import java.io.IOException;
 import java.nio.file.Files;

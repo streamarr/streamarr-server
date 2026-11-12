@@ -2,21 +2,19 @@ package com.streamarr.server.graphql.subscriptions;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.graphql.dto.RemovedLibrary;
-import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
+import com.streamarr.server.services.library.LibraryQueryService;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Turns committed library changes into libraryStatusChanged, libraryAdded and libraryRemoved
@@ -30,31 +28,16 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class LibraryEventListener {
 
   static final String PUBLICATION_FAILURES_METRIC =
       "streamarr.graphql.subscriptions.publication_failures";
 
-  private final LibraryRepository libraryRepository;
+  private final LibraryQueryService libraryQueries;
   private final LibraryBroadcasters broadcasters;
   private final MeterRegistry meterRegistry;
-  private final TransactionTemplate committedReads;
   private final MutexFactory<UUID> statusPublicationLocks = new MutexFactory<>();
-
-  public LibraryEventListener(
-      LibraryRepository libraryRepository,
-      LibraryBroadcasters broadcasters,
-      MeterRegistry meterRegistry,
-      PlatformTransactionManager transactionManager) {
-    this.libraryRepository = libraryRepository;
-    this.broadcasters = broadcasters;
-    this.meterRegistry = meterRegistry;
-    // An AFTER_COMMIT listener still sees the committed transaction's persistence context, whose
-    // copy of the library can predate a status that jOOQ wrote. A new transaction reads the row.
-    this.committedReads = new TransactionTemplate(transactionManager);
-    this.committedReads.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-    this.committedReads.setReadOnly(true);
-  }
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onLibraryStatusChanged(LibraryStatusChangedEvent event) {
@@ -90,7 +73,7 @@ public class LibraryEventListener {
   // The read's own transaction closes its persistence context, so delivery threads resolve a
   // detached library. A builder copy would drop the audit columns, which entity builders discard.
   private Optional<Library> currentLibrary(UUID libraryId) {
-    return committedReads.execute(_ -> libraryRepository.findById(libraryId));
+    return libraryQueries.findLatestCommitted(libraryId);
   }
 
   private void publish(SubscriptionBroadcaster<?> broadcaster, Runnable publication) {

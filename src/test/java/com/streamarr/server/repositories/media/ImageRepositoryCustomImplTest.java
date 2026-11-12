@@ -2,9 +2,9 @@ package com.streamarr.server.repositories.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.fixtures.ArtworkStepsAttemptFixture;
 import com.streamarr.server.fixtures.ImageFixture;
+import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
 import java.util.List;
 import java.util.UUID;

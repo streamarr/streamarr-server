@@ -1,6 +1,6 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.properties.AuthTokenProperties;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;

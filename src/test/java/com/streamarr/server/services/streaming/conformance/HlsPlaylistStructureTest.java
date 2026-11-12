@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming.conformance;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
@@ -15,6 +14,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import java.time.Duration;
 import java.util.List;
