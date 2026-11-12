@@ -1,15 +1,22 @@
 package com.streamarr.server.repositories.notification;
 
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
+import com.streamarr.server.services.notification.StoredNotification;
 import com.streamarr.server.services.notification.events.ChangedNotification;
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * The Notifications module's own table (ADR 0063 §How the server builds it). Every write runs in
- * the caller's transaction, touches no other table, and answers the Notifications it changed.
+ * the caller's transaction, touches no other table, and answers the Notifications it changed. Every
+ * read selects one recipient's rows and looks at nothing else.
  */
 public interface NotificationRepository {
 
@@ -42,4 +49,27 @@ public interface NotificationRepository {
 
   /** Deletes every Notification of the recipient. */
   void deleteOfRecipient(RecipientReference recipient);
+
+  /**
+   * Up to the seek's limit of the recipient's Notifications beyond its position, newest latest
+   * event first and ties by id in the same direction, nearest first.
+   */
+  List<Row<StoredNotification>> rowsOfRecipient(RecipientReference recipient, Seek seek);
+
+  /** Those of the given Notifications that the recipient has, each at its place in the list. */
+  List<Row<StoredNotification>> rowsOfRecipientWithIds(
+      RecipientReference recipient, Collection<UUID> notificationIds);
+
+  /**
+   * How many of the recipient's Notifications are unread at the instant: news it has not read, and
+   * requests it has not read that no event resolved and whose expiry has not passed.
+   */
+  int countUnread(RecipientReference recipient, Instant now);
+
+  /**
+   * Marks read at the instant those of the given Notifications that are the recipient's and unread
+   * then, writing nothing else, so an update in place that commits first keeps what it stored.
+   */
+  List<ChangedNotification> markRead(
+      RecipientReference recipient, Collection<UUID> notificationIds, Instant now);
 }

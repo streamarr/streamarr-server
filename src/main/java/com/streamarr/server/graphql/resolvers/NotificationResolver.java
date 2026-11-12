@@ -1,13 +1,10 @@
 package com.streamarr.server.graphql.resolvers;
 
 import com.netflix.graphql.dgs.DgsComponent;
-import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.DgsTypeResolver;
 import com.netflix.graphql.dgs.InputArgument;
-import com.streamarr.server.domain.notification.NotificationKind;
-import com.streamarr.server.domain.notification.ProfileShareLine;
 import com.streamarr.server.domain.pagination.OrderMediaBy;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.Row;
@@ -22,9 +19,11 @@ import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.notification.MarkNotificationsReadPayload;
 import com.streamarr.server.graphql.mutation.notification.NotificationErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.events.notification.NotificationKind;
+import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.notification.NotificationService;
+import com.streamarr.server.services.notification.NotificationsChangeRead;
 import com.streamarr.server.services.notification.NotificationsList;
-import com.streamarr.server.services.notification.NotificationsShown;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.MediaOrder;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -32,15 +31,15 @@ import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The signed-in Account's Notifications (ADR 0063). A Notification shows the Profile's name its
- * recipient was told and a line worded from it and the facts it keeps; nothing reads the share for
- * either.
+ * The signed-in Account's Notifications (ADR 0063). A Notification shows what its recipient was
+ * told and its subject's id, never the subject: a client opens the subject through its own queries.
  */
 @DgsComponent
 @RequiredArgsConstructor
@@ -48,6 +47,12 @@ public class NotificationResolver {
 
   private static final String LIST = "notifications";
   private static final int DEFAULT_PAGE_SIZE = 20;
+  private static final Map<String, String> TYPES =
+      Map.of(
+          SharingNotificationKinds.PROFILE_SHARE_OFFERED.name(), "ProfileShareOfferedNotification",
+          SharingNotificationKinds.PROFILE_SHARE_ANSWERED.name(),
+              "ProfileShareAnsweredNotification",
+          SharingNotificationKinds.PROFILE_SHARE_ENDED.name(), "ProfileShareEndedNotification");
 
   private final NotificationService notificationService;
   private final AuthorizationService authorizationService;
@@ -70,22 +75,32 @@ public class NotificationResolver {
         NotificationResolver::orderOf);
   }
 
-  /** A change's shown Notifications as the schema shows them, each with the query's edge. */
-  NotificationsChangeDetails changeDetails(NotificationsShown shown) {
+  /**
+   * A change's Notifications as the schema shows them: each with the query's edge, or a null edge
+   * once it no longer exists.
+   */
+  NotificationsChangeDetails changeDetails(UUID accountId, NotificationsChangeRead change) {
     var now = clock.instant();
+    var list = listOf(accountId);
     return new NotificationsChangeDetails(
-        shown.notifications().stream()
+        change.notifications().stream()
             .map(
-                row -> {
-                  var list = listOf(row.item().notification().getRecipientAccountId());
-                  var details =
-                      new Row<>(NotificationDetails.from(row.item(), now), row.position());
-                  return new NotificationsChangeDetails.NotificationChangeDetails(
-                      row.item().notification().getId(),
-                      connections.toEdge(details, list, NotificationResolver::orderOf));
-                })
+                changed ->
+                    new NotificationsChangeDetails.NotificationChangeDetails(
+                        changed.notificationId(),
+                        changed
+                            .row()
+                            .map(
+                                row ->
+                                    connections.toEdge(
+                                        new Row<>(
+                                            NotificationDetails.from(row.item(), now),
+                                            row.position()),
+                                        list,
+                                        NotificationResolver::orderOf))
+                            .orElse(null)))
             .toList(),
-        shown.unreadCount());
+        change.unreadCount());
   }
 
   @DgsQuery
@@ -129,44 +144,23 @@ public class NotificationResolver {
     return typeOf(notification.kind());
   }
 
-  @DgsData(parentType = "ProfileShareOfferedNotification", field = "profileName")
-  @DgsData(parentType = "ProfileShareAnsweredNotification", field = "profileName")
-  @DgsData(parentType = "ProfileShareEndedNotification", field = "profileName")
-  public String profileName(DataFetchingEnvironment dfe) {
-    NotificationDetails notification = dfe.getSource();
-    return notification.keptProfileName();
-  }
-
-  @DgsData(parentType = "ProfileShareOfferedNotification", field = "message")
-  @DgsData(parentType = "ProfileShareAnsweredNotification", field = "message")
-  @DgsData(parentType = "ProfileShareEndedNotification", field = "message")
-  public String message(DataFetchingEnvironment dfe) {
-    NotificationDetails notification = dfe.getSource();
-    return ProfileShareLine.builder()
-        .kind(notification.kind())
-        .profileName(notification.keptProfileName())
-        .answer(notification.answer())
-        .endedBy(notification.endedBy())
-        .build()
-        .text();
-  }
-
   private static ListIdentity listOf(UUID accountId) {
     return new ListIdentity(LIST, accountId);
   }
 
   // The list sorts by an instant, as the Library's ADDED order does, so the edge reuses that
-  // order's
-  // key in the list's own direction.
+  // order's key in the list's own direction.
   private static MediaOrder orderOf(Position position) {
     return MediaOrder.at(OrderMediaBy.ADDED, NotificationsList.NEWEST_FIRST.direction(), position);
   }
 
+  // Each kind the server sends has its concrete type. A kind with none fails its own node alone.
   private static String typeOf(NotificationKind kind) {
-    return switch (kind) {
-      case PROFILE_SHARE_OFFERED -> "ProfileShareOfferedNotification";
-      case PROFILE_SHARE_ANSWERED -> "ProfileShareAnsweredNotification";
-      case PROFILE_SHARE_ENDED -> "ProfileShareEndedNotification";
-    };
+    var type = TYPES.get(kind.name());
+    if (type == null) {
+      throw new IllegalStateException("No schema type shows the %s kind".formatted(kind.name()));
+    }
+
+    return type;
   }
 }

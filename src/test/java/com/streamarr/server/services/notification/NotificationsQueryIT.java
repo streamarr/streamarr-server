@@ -4,49 +4,50 @@ import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.auth.ProfileHouseholdShare;
-import com.streamarr.server.domain.notification.NotificationDraft;
-import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
-import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.repositories.notification.ShareNotificationRepository;
-import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
+import com.streamarr.server.services.events.notification.DismissNotificationsEvent;
+import com.streamarr.server.services.events.notification.DismissalSelector;
+import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
+import com.streamarr.server.services.events.notification.RecipientReference;
+import com.streamarr.server.services.events.notification.SharingNotificationKinds;
+import com.streamarr.server.services.events.notification.SubjectReference;
+import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.ShareSteps;
-import jakarta.persistence.EntityManagerFactory;
+import com.streamarr.server.support.StoredNotificationRows;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
-import org.hibernate.SessionFactory;
+import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -54,8 +55,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Notifications Query Integration Tests")
 class NotificationsQueryIT extends AbstractIntegrationTest {
 
-  private static final int COUNTED_RUNS = 3;
-
+  // An offer's answer is nullable and an answer's is not, so each takes its own name.
   private static final String NOTIFICATIONS =
       """
       query {
@@ -66,10 +66,10 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
             orderKey
             node {
               __typename id message createdAt latestEventAt unread
-              ... on RequestNotification { expiresAt resolution }
-              ... on ProfileShareOfferedNotification { profileName share { id status } }
-              ... on ProfileShareAnsweredNotification { profileName answer share { id } }
-              ... on ProfileShareEndedNotification { profileName endedBy share { id } }
+              ... on RequestNotification { expiresAt resolution resolvedAt }
+              ... on ProfileShareOfferedNotification { profileName shareId offerAnswer: answer }
+              ... on ProfileShareAnsweredNotification { profileName shareId answer }
+              ... on ProfileShareEndedNotification { profileName shareId endedBy }
             }
           }
           pageInfo { hasNextPage endCursor }
@@ -77,27 +77,33 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
       }
       """;
 
+  private static final String PAGE =
+      """
+      query { notifications(first: %d%s) {
+        edges { cursor node { id } } pageInfo { hasNextPage } } }
+      """;
+
   @Autowired private MockMvc mockMvc;
   @Autowired private ProfileSharingService sharing;
-  @Autowired private ProfileManagerAdministrationService profileManagement;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
-  @Autowired private EntityManagerFactory entityManagerFactory;
-  @Autowired private ShareNotificationRepository notificationRepository;
+  @Autowired private ApplicationEventPublisher eventPublisher;
+  @Autowired private DSLContext dsl;
 
   private final List<TestIdentity> identities = new ArrayList<>();
   private TestIdentity sam;
   private TestIdentity riverside;
   private TestIdentity riversideAdmin;
   private ShareSteps steps;
-  private int offeredProfiles;
+  private StoredNotificationRows rows;
 
   @BeforeEach
   void setUp() {
+    rows = new StoredNotificationRows(dsl);
     steps =
         ShareSteps.builder()
             .sharing(sharing)
@@ -116,15 +122,17 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @AfterEach
   void tearDown() {
+    rows.deleteOf(identities.stream().map(NotificationsQueryIT::accountOf).toList());
     identities.reversed().forEach(authTestSupport::deleteIdentity);
   }
 
   @Test
   @DisplayName(
-      "Should list a waiting request with its line, the Profile's name and the offer when a"
+      "Should list a waiting request with its share's id, the Profile's name and its line when a"
           + " Profile is offered to the reader's Household")
-  void shouldListAWaitingRequestWithItsLineWhenAProfileIsOfferedToTheReadersHousehold()
-      throws Exception {
+  void
+      shouldListAWaitingRequestWithItsShareIdNameAndLineWhenAProfileIsOfferedToTheReadersHousehold()
+          throws Exception {
     var kai = steps.profileManagedBy("Kai", sam, sam);
     var offer = steps.offer(sam, kai, riverside);
     // The database keeps microseconds; a clock with finer ticks gives the offer in memory more.
@@ -143,15 +151,40 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
             jsonPath("$.data.notifications.edges[0].node.message")
                 .value("“Kai” was offered to your Household."))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.shareId").value(offer.getId().toString()))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(true))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").doesNotExist())
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolvedAt").doesNotExist())
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.offerAnswer").doesNotExist())
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.expiresAt").value(storedExpiry.toString()))
-        .andExpect(
-            jsonPath("$.data.notifications.edges[0].node.share.id").value(offer.getId().toString()))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.share.status").value("PENDING"))
         .andExpect(jsonPath("$.data.notifications.edges[0].orderKey").isString())
         .andExpect(jsonPath("$.data.notifications.pageInfo.hasNextPage").value(false));
+  }
+
+  @Test
+  @DisplayName(
+      "Should read the request's resolution, its time and the answer once the offer is decided")
+  void shouldReadTheRequestsResolutionTimeAndAnswerOnceItIsDecided() throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam);
+    var offer = steps.accept(riverside, steps.offer(sam, kai, riverside));
+    var decidedAt = shareRepository.findById(offer.getId()).orElseThrow().getDecidedAt();
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(false))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("DECIDED"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.resolvedAt").value(decidedAt.toString()))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.offerAnswer").value("ACCEPTED"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.message")
+                .value("The offer of “Kai” to your Household was accepted."));
   }
 
   @Test
@@ -172,7 +205,11 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
           + " and the sweep has not stored it")
   void shouldLeaveARequestOutOfTheCountAndReadItAsExpiredWhenItsOffersTimeRanOutBeforeTheSweep()
       throws Exception {
-    steps.lapse(steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside));
+    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    var subject = SubjectReference.profileShare(offer.getId());
+    steps.lapse(offer);
+    transactionTemplate.executeWithoutResult(_ -> rows.lapse(subject));
+    var expiry = rows.about(subject).getFirst().expiresAt();
 
     mockMvc
         .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
@@ -181,24 +218,53 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
         .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(false))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("EXPIRED"));
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("EXPIRED"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.resolvedAt")
+                .value(expiry.orElseThrow().toString()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should read the resolved request as read under the name it was told when its offer was"
+          + " rejected and the Profile was renamed")
+  void shouldReadTheResolvedRequestAsReadUnderTheNameItWasToldWhenItsOfferWasRejected()
+      throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam);
+    var offer = steps.offer(sam, kai, riverside);
+    sharing.rejectProfileShare(authTestSupport.identityOf(riverside), offer.getId());
+    rename(kai, "Kai Renamed");
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(false))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("DECIDED"))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.offerAnswer").value("REJECTED"))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.message")
+                .value("The offer of “Kai” to your Household was declined."));
   }
 
   @Test
   @DisplayName(
       "Should give the time of the first event and the time of the latest when news is told again")
   void shouldGiveTheTimeOfTheFirstEventAndTheTimeOfTheLatestWhenNewsIsToldAgain() throws Exception {
-    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    var subject = aShare();
     var firstEvent = Instant.now().plus(Duration.ofMinutes(1)).truncatedTo(ChronoUnit.MICROS);
     var latestEvent = firstEvent.plus(Duration.ofMinutes(1));
-    var news = tellNews(riversideAdmin, offer, firstEvent);
-    var madeAt = notificationRepository.findById(news).orElseThrow().getCreatedOn();
-    tellNews(riversideAdmin, offer, latestEvent);
+    var news = tellNews(riversideAdmin, subject, firstEvent);
+    tellNews(riversideAdmin, subject, latestEvent);
+    var madeAt = rows.about(subject).getFirst().createdAt();
 
     mockMvc
         .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.id").value(news.toString()))
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.createdAt").value(madeAt.toString()))
@@ -213,11 +279,11 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
           + " equal times by id")
   void shouldGiveANewerNotificationAnOrderKeyThatSortsBeforeAnOlderOnesAndOrderEqualTimesById()
       throws Exception {
-    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
     var later = Instant.now().plus(Duration.ofMinutes(1));
-    requestAgain(riversideAdmin, offer, later);
-    requestAgain(riversideAdmin, offer, later.plus(Duration.ofMinutes(1)));
-    requestAgain(riversideAdmin, offer, later.plus(Duration.ofMinutes(1)));
+    tellNews(riversideAdmin, aShare(), later);
+    tellNews(riversideAdmin, aShare(), later.plus(Duration.ofMinutes(1)));
+    tellNews(riversideAdmin, aShare(), later.plus(Duration.ofMinutes(1)));
 
     var page =
         mockMvc
@@ -242,9 +308,8 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
           + " Account has twenty-one")
   void shouldReturnTwentyNotificationsAndSayMoreFollowWhenFirstIsNotGivenAndTheAccountHasMore()
       throws Exception {
-    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
-    for (var made = 1; made <= 20; made++) {
-      requestAgain(riversideAdmin, offer, Instant.now().plus(Duration.ofMinutes(made)));
+    for (var made = 1; made <= 21; made++) {
+      tellNews(riversideAdmin, aShare(), Instant.now().plus(Duration.ofMinutes(made)));
     }
 
     mockMvc
@@ -256,49 +321,6 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.notifications.edges", hasSize(20)))
         .andExpect(jsonPath("$.data.notifications.pageInfo.hasNextPage").value(true));
-  }
-
-  @Test
-  @DisplayName(
-      "Should read the resolved request as read under the kept name when its offer was rejected"
-          + " and the Profile was renamed")
-  void shouldReadTheResolvedRequestAsReadUnderTheKeptNameWhenItsOfferWasRejected()
-      throws Exception {
-    var kai = steps.profileManagedBy("Kai", sam, sam);
-    var offer = steps.offer(sam, kai, riverside);
-    sharing.rejectProfileShare(authTestSupport.identityOf(riverside), offer.getId());
-    rename(kai, "Kai Renamed");
-
-    mockMvc
-        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(false))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("DECIDED"))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
-        .andExpect(
-            jsonPath("$.data.notifications.edges[0].node.message")
-                .value("“Kai” was offered to your Household."));
-  }
-
-  @Test
-  @DisplayName(
-      "Should neither list nor count the request when its recipient no longer administers the"
-          + " Household, even on a token that still names the role")
-  void shouldNeitherListNorCountTheRequestWhenItsRecipientNoLongerAdministersTheHousehold()
-      throws Exception {
-    var bearer = authTestSupport.accountBearer(riversideAdmin);
-    steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
-    transactionTemplate.executeWithoutResult(
-        _ -> userAccountRepository.tryDemoteToHouseholdMember(riversideAdmin.account().getId()));
-
-    mockMvc
-        .perform(graphqlRequest(bearer, NOTIFICATIONS))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
-        .andExpect(jsonPath("$.data.notifications.edges").isEmpty());
   }
 
   @Test
@@ -323,23 +345,14 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
           + " argument")
   void shouldContinueAfterThePreviousPagesLastNotificationWhenItsCursorIsTheAfterArgument()
       throws Exception {
-    var first = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
-    var second = steps.offer(sam, steps.profileManagedBy("Ollie", sam, sam), riverside);
+    var older = tellNews(riversideAdmin, aShare(), Instant.now());
+    var newer = tellNews(riversideAdmin, aShare(), Instant.now().plus(Duration.ofMinutes(1)));
     var bearer = authTestSupport.accountBearer(riversideAdmin);
     var firstPage =
         mockMvc
-            .perform(
-                graphqlRequest(
-                    bearer,
-                    """
-                    query { notifications(first: 1) {
-                      edges { cursor node { ... on ProfileShareOfferedNotification { share { id } } } }
-                      pageInfo { hasNextPage } } }
-                    """))
+            .perform(graphqlRequest(bearer, PAGE.formatted(1, "")))
             .andExpect(jsonPath("$.errors").doesNotExist())
-            .andExpect(
-                jsonPath("$.data.notifications.edges[0].node.share.id")
-                    .value(second.getId().toString()))
+            .andExpect(jsonPath("$.data.notifications.edges[0].node.id").value(newer.toString()))
             .andExpect(jsonPath("$.data.notifications.pageInfo.hasNextPage").value(true))
             .andReturn();
     String cursor =
@@ -347,15 +360,41 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
             firstPage.getResponse().getContentAsString(), "$.data.notifications.edges[0].cursor");
 
     mockMvc
-        .perform(
-            graphqlRequest(
-                bearer,
-                "query { notifications(first: 1, after: \"%s\") { edges { node { ... on ProfileShareOfferedNotification { share { id } } } } pageInfo { hasNextPage } } }"
-                    .formatted(cursor)))
+        .perform(graphqlRequest(bearer, PAGE.formatted(1, after(cursor))))
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(
-            jsonPath("$.data.notifications.edges[0].node.share.id").value(first.getId().toString()))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.id").value(older.toString()))
         .andExpect(jsonPath("$.data.notifications.pageInfo.hasNextPage").value(false));
+  }
+
+  @Test
+  @DisplayName(
+      "Should start after the cursor's place when the Notification it named has since moved to the"
+          + " top")
+  void shouldStartAfterTheCursorsPlaceWhenTheNotificationItNamedMovedToTheTop() throws Exception {
+    var oldest = tellNews(riversideAdmin, aShare(), Instant.now());
+    var named = aShare();
+    tellNews(riversideAdmin, named, Instant.now().plus(Duration.ofMinutes(1)));
+    var newest = tellNews(riversideAdmin, aShare(), Instant.now().plus(Duration.ofMinutes(2)));
+    var cursor = cursorAfterFirst(2);
+    var moved = tellNews(riversideAdmin, named, Instant.now().plus(Duration.ofMinutes(3)));
+
+    assertPageAfter(cursor, oldest);
+    assertThat(firstPageIds(10)).containsExactly(moved, newest, oldest);
+  }
+
+  @Test
+  @DisplayName(
+      "Should start after the cursor's place when the Notification it named has since been"
+          + " dismissed")
+  void shouldStartAfterTheCursorsPlaceWhenTheNotificationItNamedWasDismissed() throws Exception {
+    var oldest = tellNews(riversideAdmin, aShare(), Instant.now());
+    var named = tellNews(riversideAdmin, aShare(), Instant.now().plus(Duration.ofMinutes(1)));
+    var newest = tellNews(riversideAdmin, aShare(), Instant.now().plus(Duration.ofMinutes(2)));
+    var cursor = cursorAfterFirst(2);
+    publish(new DismissNotificationsEvent(DismissalSelector.byId(Set.of(named)).build()));
+
+    assertPageAfter(cursor, oldest);
+    assertThat(firstPageIds(10)).containsExactly(newest, oldest);
   }
 
   @Test
@@ -392,120 +431,9 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should read a page of many Notifications in as many statements as a page of a few when"
-          + " they name different Profiles")
-  void shouldReadAPageOfManyNotificationsInAsManyStatementsWhenTheyNameDifferentProfiles()
-      throws Exception {
-    var bearer = authTestSupport.accountBearer(riversideAdmin);
-    offerProfiles(2);
-    var few = statementsWhile(() -> readsPage(bearer, 2));
-    offerProfiles(4);
-
-    var many = statementsWhile(() -> readsPage(bearer, 6));
-
-    assertThat(many).isEqualTo(few);
-  }
-
-  @Test
-  @DisplayName(
-      "Should read a page in as many statements when many of the reader's Notifications are hidden"
-          + " from it as when few are")
-  void shouldReadAPageInAsManyStatementsWhenManyOfTheReadersNotificationsAreHiddenAsWhenFewAre()
-      throws Exception {
-    var bearer = authTestSupport.accountBearer(riversideAdmin);
-    var kai = track(authTestSupport.createIdentity());
-    steps.offer(sam, steps.profileManagedBy("Ollie", sam, sam), riverside);
-    hideFromRiversideAdmin(2, kai);
-    var few = statementsWhile(() -> readsPage(bearer, 1));
-    hideFromRiversideAdmin(24, kai);
-
-    var many = statementsWhile(() -> readsPage(bearer, 1));
-
-    assertThat(many).isEqualTo(few);
-  }
-
-  @Test
-  @DisplayName(
-      "Should list and count the request again when its recipient administers the Household again")
-  void shouldListAndCountTheRequestAgainWhenItsRecipientAdministersTheHouseholdAgain()
-      throws Exception {
-    var bearer = authTestSupport.accountBearer(riversideAdmin);
-    steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
-    transactionTemplate.executeWithoutResult(
-        _ -> userAccountRepository.tryDemoteToHouseholdMember(riversideAdmin.account().getId()));
-    mockMvc
-        .perform(graphqlRequest(bearer, NOTIFICATIONS))
-        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0));
-
-    steps.promoted(riversideAdmin);
-
-    mockMvc
-        .perform(graphqlRequest(bearer, NOTIFICATIONS))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.unreadNotificationCount").value(1))
-        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)));
-  }
-
-  @Test
-  @DisplayName(
-      "Should neither list nor count news about a share when its offerer stopped managing the"
-          + " Profile and only administers another Household that hosts it")
-  void shouldNeitherListNorCountNewsAboutAShareWhenItsOffererStoppedManagingTheProfile()
-      throws Exception {
-    var brook = track(authTestSupport.createIdentity());
-    var kai = steps.profileManagedBy("Kai", sam, sam, brook);
-    var intoBrook = steps.accept(brook, steps.offer(sam, kai, brook));
-    steps.accept(riverside, steps.offer(brook, kai, riverside));
-    assertThat(
-            profileManagement.relinquishProfileManagement(
-                authTestSupport.identityOf(brook), kai.getId()))
-        .isInstanceOf(Outcome.Accepted.class);
-
-    mockMvc
-        .perform(graphqlRequest(authTestSupport.accountBearer(brook), NOTIFICATIONS))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
-        .andExpect(
-            jsonPath(
-                "$.data.notifications.edges[*].node.share.id",
-                contains(intoBrook.getId().toString())));
-  }
-
-  @Test
-  @DisplayName(
-      "Should neither list nor count news told to the offering side when its recipient stopped"
-          + " managing the Profile before the share ended and has since become a HouseholdAdmin of"
-          + " the Household the share was into")
-  void shouldNeitherListNorCountOfferingSideNewsWhenItsRecipientNowAdministersTheTargetHousehold()
-      throws Exception {
-    var brook = track(authTestSupport.createHouseholdMemberIdentity(riverside));
-    var kai = steps.profileManagedBy("Kai", sam, sam, brook);
-    var share = steps.accept(riverside, steps.offer(brook, kai, riverside));
-    assertThat(
-            profileManagement.relinquishProfileManagement(
-                authTestSupport.identityOf(brook), kai.getId()))
-        .isInstanceOf(Outcome.Accepted.class);
-    assertThat(sharing.endProfileShare(authTestSupport.identityOf(riverside), share.getId()))
-        .isInstanceOf(Outcome.Accepted.class);
-    assertThat(notificationRepository.findAll())
-        .anyMatch(told -> told.getRecipientAccountId().equals(brook.account().getId()));
-    var promoted = steps.promoted(brook);
-
-    mockMvc
-        .perform(graphqlRequest(authTestSupport.accountBearer(promoted), NOTIFICATIONS))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
-        .andExpect(jsonPath("$.data.notifications.edges").isEmpty());
-  }
-
-  @Test
-  @DisplayName(
       "Should keep giving the Household's side its end news and its resolved request, with the"
-          + " share as the end left it and neither its Profile nor its offerer, when a ProfileManager"
-          + " ends the share")
+          + " share's id and the Profile's name, while the share queries no longer show the share,"
+          + " when a ProfileManager ends the share")
   void shouldKeepGivingTheHouseholdsSideItsNotificationsWhenAProfileManagerEndsTheShare()
       throws Exception {
     var rowan = track(authTestSupport.createHouseholdMemberIdentity(riverside));
@@ -517,24 +445,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
     var bearer = authTestSupport.accountBearer(riversideAdmin);
 
     mockMvc
-        .perform(
-            graphqlRequest(
-                bearer,
-                """
-                query {
-                  unreadNotificationCount
-                  notifications(first: 10) { edges { node {
-                    __typename unread
-                    ... on RequestNotification { resolution }
-                    ... on ProfileShareOfferedNotification {
-                      share { id status endedAt profile { id } offeredByDisplayName }
-                    }
-                    ... on ProfileShareEndedNotification {
-                      endedBy share { id status endedAt profile { id } offeredByDisplayName }
-                    }
-                  } } }
-                }
-                """))
+        .perform(graphqlRequest(bearer, NOTIFICATIONS))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.unreadNotificationCount").value(1))
@@ -543,21 +454,16 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
                 "$.data.notifications.edges[*].node.__typename",
                 contains("ProfileShareEndedNotification", "ProfileShareOfferedNotification")))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.endedBy").value("OFFERING_SIDE"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.message")
+                .value("“Kai” is no longer shared with your Household."))
         .andExpect(jsonPath("$.data.notifications.edges[1].node.resolution").value("DECIDED"))
         .andExpect(
             jsonPath(
-                "$.data.notifications.edges[*].node.share.id",
+                "$.data.notifications.edges[*].node.shareId",
                 contains(share.getId().toString(), share.getId().toString())))
         .andExpect(
-            jsonPath("$.data.notifications.edges[*].node.share.status", contains("ENDED", "ENDED")))
-        .andExpect(
-            jsonPath("$.data.notifications.edges[*].node.share.endedAt", everyItem(notNullValue())))
-        .andExpect(
-            jsonPath("$.data.notifications.edges[*].node.share.profile", everyItem(nullValue())))
-        .andExpect(
-            jsonPath(
-                "$.data.notifications.edges[*].node.share.offeredByDisplayName",
-                everyItem(nullValue())));
+            jsonPath("$.data.notifications.edges[*].node.profileName", contains("Kai", "Kai")));
     mockMvc
         .perform(
             graphqlRequest(
@@ -569,37 +475,6 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath(
                 "$.data.householdShares.edges[*].node.id", not(hasItem(share.getId().toString()))));
-  }
-
-  // Requests to Riverside's HouseholdAdmin about offers into Kai's Household, each of its own
-  // Profile and newer than the rest; Riverside's HouseholdAdmin may read none of them.
-  private void hideFromRiversideAdmin(int count, TestIdentity kai) {
-    for (var made = 0; made < count; made++) {
-      offeredProfiles++;
-      var offer =
-          steps.offer(sam, steps.profileManagedBy("Hidden " + offeredProfiles, sam, sam), kai);
-      var at = Instant.now().plus(Duration.ofMinutes(offeredProfiles));
-      transactionTemplate.executeWithoutResult(
-          _ ->
-              notificationRepository.insert(
-                  NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
-                      .recipientAccountId(riversideAdmin.account().getId())
-                      .kind(NotificationKind.PROFILE_SHARE_OFFERED)
-                      .subjectId(offer.getId())
-                      .facts(ProfileShareFacts.offered("Hidden"))
-                      .at(at)
-                      .build()));
-    }
-  }
-
-  /** The page reads without an error, and holds as many Notifications as its unread count. */
-  private void readsPage(String bearer, int unread) throws Exception {
-    mockMvc
-        .perform(graphqlRequest(bearer, NOTIFICATIONS))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.unreadNotificationCount").value(unread))
-        .andExpect(jsonPath("$.data.notifications.edges", hasSize(unread)));
   }
 
   /** The reader's one Notification names the Profile, in its line too, by the name. */
@@ -616,41 +491,83 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
                 containsString("“%s”".formatted(profileName))));
   }
 
-  /** News to the recipient that the offer was accepted, stored as the writer stores news. */
-  private UUID tellNews(TestIdentity recipient, ProfileHouseholdShare offer, Instant at) {
-    return transactionTemplate.execute(
-        _ ->
-            notificationRepository
-                .upsertUnreadNews(
-                    NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
-                        .recipientAccountId(recipient.account().getId())
-                        .kind(NotificationKind.PROFILE_SHARE_ANSWERED)
-                        .subjectId(offer.getId())
-                        .facts(ProfileShareFacts.answered("Kai", ProfileShareAnswer.ACCEPTED))
-                        .at(at)
-                        .build())
-                .notificationId());
+  /** The cursor of the last of the first page of the given size. */
+  private String cursorAfterFirst(int size) throws Exception {
+    var page =
+        mockMvc
+            .perform(
+                graphqlRequest(
+                    authTestSupport.accountBearer(riversideAdmin), PAGE.formatted(size, "")))
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andExpect(jsonPath("$.data.notifications.edges", hasSize(size)))
+            .andReturn();
+    return JsonPath.read(
+        page.getResponse().getContentAsString(),
+        "$.data.notifications.edges[%d].cursor".formatted(size - 1));
   }
 
-  /** One more request to the recipient about the offer, its event at the instant. */
-  private void requestAgain(TestIdentity recipient, ProfileHouseholdShare offer, Instant at) {
-    transactionTemplate.executeWithoutResult(
-        _ ->
-            notificationRepository.insert(
-                NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
-                    .recipientAccountId(recipient.account().getId())
-                    .kind(NotificationKind.PROFILE_SHARE_OFFERED)
-                    .subjectId(offer.getId())
-                    .facts(ProfileShareFacts.offered("Kai"))
-                    .at(at)
-                    .build()));
+  private void assertPageAfter(String cursor, UUID... ids) throws Exception {
+    mockMvc
+        .perform(
+            graphqlRequest(
+                authTestSupport.accountBearer(riversideAdmin), PAGE.formatted(10, after(cursor))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath(
+                "$.data.notifications.edges[*].node.id",
+                contains(Arrays.stream(ids).map(UUID::toString).toArray())));
   }
 
-  private void offerProfiles(int count) {
-    for (var made = 0; made < count; made++) {
-      offeredProfiles++;
-      steps.offer(sam, steps.profileManagedBy("Kai " + offeredProfiles, sam, sam), riverside);
-    }
+  private List<UUID> firstPageIds(int size) throws Exception {
+    var page =
+        mockMvc
+            .perform(
+                graphqlRequest(
+                    authTestSupport.accountBearer(riversideAdmin), PAGE.formatted(size, "")))
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn();
+    List<String> ids =
+        JsonPath.read(
+            page.getResponse().getContentAsString(), "$.data.notifications.edges[*].node.id");
+    return ids.stream().map(UUID::fromString).toList();
+  }
+
+  private static String after(String cursor) {
+    return ", after: \"%s\"".formatted(cursor);
+  }
+
+  /**
+   * News to the recipient that an offer about the subject was accepted, told as a domain tells it,
+   * and the id of the recipient's news about the subject.
+   */
+  private UUID tellNews(TestIdentity recipient, SubjectReference subject, Instant at) {
+    publish(
+        TellNotificationEvent.builder()
+            .kind(SharingNotificationKinds.PROFILE_SHARE_ANSWERED)
+            .subject(subject)
+            .recipients(Set.of(accountOf(recipient)))
+            .snapshot(new ProfileShareAnsweredSnapshot("Kai", ProfileShareAnswer.ACCEPTED))
+            .at(at)
+            .build());
+    return rows.about(subject).stream()
+        .filter(row -> row.recipient().equals(accountOf(recipient)))
+        .reduce((_, last) -> last)
+        .orElseThrow()
+        .id();
+  }
+
+  private void publish(Object event) {
+    transactionTemplate.executeWithoutResult(_ -> eventPublisher.publishEvent(event));
+  }
+
+  // A share the module never looks up: news about it is all a list needs.
+  private static SubjectReference aShare() {
+    return SubjectReference.profileShare(UUID.randomUUID());
+  }
+
+  private static RecipientReference accountOf(TestIdentity identity) {
+    return RecipientReference.account(identity.account().getId());
   }
 
   private void rename(Profile profile, String name) {
@@ -665,36 +582,5 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
   private TestIdentity track(TestIdentity identity) {
     identities.add(identity);
     return identity;
-  }
-
-  private interface Request {
-    void run() throws Exception;
-  }
-
-  // Hibernate statistics are global, so the count holds only while no other test uses the context.
-  // A background thread can add a statement of its own to one run; the fewest over a few runs is
-  // the request's.
-  private long statementsWhile(Request request) throws Exception {
-    var fewest = Long.MAX_VALUE;
-    for (var run = 0; run < COUNTED_RUNS; run++) {
-      fewest = Math.min(fewest, statementsOfOneRun(request));
-    }
-
-    return fewest;
-  }
-
-  private long statementsOfOneRun(Request request) throws Exception {
-    var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
-    var previouslyEnabled = statistics.isStatisticsEnabled();
-    statistics.setStatisticsEnabled(true);
-    statistics.clear();
-
-    try {
-      request.run();
-      return statistics.getPrepareStatementCount();
-    } finally {
-      statistics.clear();
-      statistics.setStatisticsEnabled(previouslyEnabled);
-    }
   }
 }

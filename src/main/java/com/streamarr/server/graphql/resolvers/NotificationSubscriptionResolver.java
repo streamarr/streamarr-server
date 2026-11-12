@@ -21,19 +21,19 @@ public class NotificationSubscriptionResolver {
   private final KeyedSubscriptionBroadcaster<UUID, NotificationsChange>
       notificationsChangeBroadcaster;
 
-  // The Account comes from the token that opened the socket, never from an argument. Each change
-  // is decided as it is delivered: one whose Notifications the guard all hides is not delivered.
+  // The Account comes from the token that opened the socket, never from an argument. Access is
+  // decided once, when the field opens; each change is then read from the Account's own rows, and
+  // a Notification that no longer exists arrives with a null edge.
   @DgsSubscription
   public Publisher<NotificationsChangeDetails> notificationsChanged() {
     var identity = authorizationService.currentIdentity();
     notificationService.requireViewNotifications(identity);
     return notificationsChangeBroadcaster
         .register(identity.accountId())
-        .<NotificationsChangeDetails>handle(
-            (change, sink) ->
-                notificationService
-                    .shownChange(identity, change.notificationIds())
-                    .map(notificationResolver::changeDetails)
-                    .ifPresent(sink::next));
+        .map(
+            change ->
+                notificationResolver.changeDetails(
+                    identity.accountId(),
+                    notificationService.changeOf(identity, change.notificationIds())));
   }
 }

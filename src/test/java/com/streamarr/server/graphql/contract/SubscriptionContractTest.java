@@ -95,7 +95,7 @@ class SubscriptionContractTest {
     assertThat(descriptionOf(subscriptionField(NOTIFICATIONS_FIELD)))
         .contains("access token that opened the socket")
         .contains("The same access as notifications")
-        .contains("guarded from the Account's live relationships")
+        .contains("decided once when the field opens")
         .doesNotContain("ViewProfileActivity");
   }
 

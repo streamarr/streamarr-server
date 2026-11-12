@@ -8,6 +8,8 @@ import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,6 +43,29 @@ public final class StoredNotificationRows {
             .and(NOTIFICATION.RECIPIENT_ID.eq(recipient.id())));
   }
 
+  /** Deletes the recipients' Notifications, which outlive the test's Accounts. */
+  public void deleteOf(Collection<RecipientReference> recipients) {
+    recipients.forEach(
+        recipient ->
+            dsl.deleteFrom(NOTIFICATION)
+                .where(NOTIFICATION.RECIPIENT_TYPE.eq(recipient.type()))
+                .and(NOTIFICATION.RECIPIENT_ID.eq(recipient.id()))
+                .execute());
+  }
+
+  /**
+   * Moves the expiry of the requests about the subject a second into the past, as a subject whose
+   * time ran out would have told them, with nothing stored about it since.
+   */
+  public void lapse(SubjectReference subject) {
+    dsl.update(NOTIFICATION)
+        .set(NOTIFICATION.EXPIRES_AT, OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1))
+        .where(NOTIFICATION.SUBJECT_TYPE.eq(subject.type()))
+        .and(NOTIFICATION.SUBJECT_ID.eq(subject.id()))
+        .and(NOTIFICATION.EXPIRES_AT.isNotNull())
+        .execute();
+  }
+
   /** The document a snapshot is stored as, to compare with a stored row's. */
   public static JsonNode document(NotificationSnapshot snapshot) {
     return JSON.valueToTree(snapshot);
@@ -61,6 +86,7 @@ public final class StoredNotificationRows {
         .form(stored.getForm().getLiteral())
         .subject(new SubjectReference(stored.getSubjectType(), stored.getSubjectId()))
         .snapshot(JSON.readTree(stored.getSnapshot().data()))
+        .createdAt(stored.getCreatedOn().toInstant())
         .latestEventAt(stored.getLatestEventAt().toInstant())
         .readAt(instant(stored.getReadAt()))
         .resolution(Optional.ofNullable(stored.getResolution()).map(Enum::name))
@@ -82,6 +108,7 @@ public final class StoredNotificationRows {
       String form,
       SubjectReference subject,
       JsonNode snapshot,
+      Instant createdAt,
       Instant latestEventAt,
       Optional<Instant> readAt,
       Optional<String> resolution,
