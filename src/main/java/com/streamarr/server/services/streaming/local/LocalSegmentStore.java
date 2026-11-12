@@ -153,31 +153,6 @@ public class LocalSegmentStore implements SegmentStore {
     }
   }
 
-  public Path getOutputDirectory(UUID sessionId) {
-    var sessionDir = sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
-
-    try {
-      // A soft link can take this folder's place after the store created it. A variant folder
-      // created through that soft link would sit outside the segment folder.
-      requireFolder(sessionDir);
-      return sessionDir;
-    } catch (IOException e) {
-      throw new UncheckedIOException("Failed to reuse session directory", e);
-    }
-  }
-
-  public Path getOutputDirectory(UUID sessionId, String variantLabel) {
-    var sessionDir = getOutputDirectory(sessionId);
-    var variantDir = sessionDir.resolve(variantLabel);
-
-    try {
-      createOrReuseFolder(variantDir);
-      return variantDir;
-    } catch (IOException e) {
-      throw new UncheckedIOException("Failed to create variant directory", e);
-    }
-  }
-
   @Override
   public void deleteSession(UUID sessionId) {
     var dir = sessionDirs.remove(sessionId);
@@ -212,6 +187,19 @@ public class LocalSegmentStore implements SegmentStore {
     }
 
     return Optional.of(resolved);
+  }
+
+  private Path getOutputDirectory(UUID sessionId) {
+    var sessionDir = sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
+
+    try {
+      // A soft link can take this folder's place after the store created it. A variant folder
+      // created through that soft link would sit outside the segment folder.
+      requireFolder(sessionDir);
+      return sessionDir;
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed to reuse session directory", e);
+    }
   }
 
   private Path createSessionDirectory(UUID sessionId) {
