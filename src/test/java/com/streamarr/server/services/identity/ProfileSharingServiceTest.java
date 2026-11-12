@@ -442,6 +442,42 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should answer not-found to every verb when the caller may make the change but may not read"
+          + " the share")
+  void shouldAnswerNotFoundToEveryVerbWhenCallerMayMakeChangeButMayNotReadShare() {
+    var offered = pendingShare();
+    var active = activeShare();
+    authorization.decideUnitWith(intent -> readsShare(intent) ? denied() : allowed());
+    var caller = identity();
+
+    assertThat(
+            List.of(
+                answerOf(() -> service.acceptProfileShare(caller, active.getId())),
+                answerOf(() -> service.rejectProfileShare(caller, active.getId())),
+                answerOf(() -> service.cancelProfileShare(caller, active.getId())),
+                answerOf(() -> service.endProfileShare(caller, offered.getId())),
+                answerOf(
+                    () ->
+                        service.administrativelyEndProfileShare(
+                            caller, offered.getId(), "closing"))))
+        .containsOnly("ShareNotFound");
+  }
+
+  @Test
+  @DisplayName("Should cancel the offer when its offerer may no longer read it and it is pending")
+  void shouldCancelOfferWhenItsOffererMayNoLongerReadItAndItIsPending() {
+    var offer = pendingShare();
+    authorization.decideUnitWith(intent -> readsShare(intent) ? denied() : allowed());
+
+    var canceled = service.cancelProfileShare(identity(), offer.getId());
+
+    assertThat(canceled).isInstanceOf(Outcome.Accepted.class);
+    assertThat(shares.findById(offer.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.CANCELED);
+  }
+
+  @Test
   @DisplayName("Should fail closed when Household-share authorization is unavailable")
   void shouldFailClosedWhenHouseholdShareAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
@@ -1122,6 +1158,11 @@ class ProfileSharingServiceTest {
   private static boolean readsSharesThatAreOver(Intent.UnitIntent intent) {
     return intent instanceof Intent.ViewHouseholdShareHistory
         || intent instanceof Intent.ViewProfileShareHouseholds;
+  }
+
+  // Every authority that reads a share: those above and its Household's HouseholdAdmins.
+  private static boolean readsShare(Intent.UnitIntent intent) {
+    return readsSharesThatAreOver(intent) || intent instanceof Intent.ViewHouseholdAdministration;
   }
 
   @Test

@@ -288,7 +288,9 @@ No share with that id that the caller may see. Once an offer is declined, cancel
 withdrawn, or a share has ended, the target Household's HouseholdAdmins get this too, as for a share
 that no longer exists, unless they manage the Profile or are ServerAdmins. A HouseholdAdmin who
 only hosts the Profile gets it for every share of the Profile into another Household, at every
-status, required by Account membership or not.
+status, required by Account membership or not. An Account that offered a share, and may no longer
+read it because it stopped managing the Profile, gets it too unless the offer is still pending,
+which it may still cancel.
 """
 type ShareNotFoundError implements InputMutationError & MutationError {
     message: String!
