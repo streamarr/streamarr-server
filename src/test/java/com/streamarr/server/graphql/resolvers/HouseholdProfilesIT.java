@@ -140,6 +140,23 @@ class HouseholdProfilesIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should list every available Profile when a ServerAdmin reads a Household it does not belong"
+          + " to")
+  void shouldListEveryAvailableProfileWhenAServerAdminReadsAHouseholdItDoesNotBelongTo()
+      throws Exception {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var alex = cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder().name("Alex"));
+    var mara = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Mara"));
+    cast.makeAvailable(mara, smith);
+    cast.unavailableProfileManagedBy(smith, ProfileFixture.defaultProfileBuilder().name("Theo"));
+
+    assertThat(householdProfiles(serverAdmin, smith))
+        .extracting(row -> row.path("profile").path("id").asString())
+        .containsExactlyInAnyOrder(idOf(alex), idOf(mara), idOf(smith.profile()));
+  }
+
+  @Test
   @DisplayName("Should give an empty list when the reader's own Personal Profile is supervised")
   void shouldGiveAnEmptyListWhenTheReadersOwnPersonalProfileIsSupervised() throws Exception {
     var supervised = cast.supervisedMemberOf(smith);

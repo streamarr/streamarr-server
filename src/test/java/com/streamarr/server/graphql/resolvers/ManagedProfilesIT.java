@@ -110,6 +110,31 @@ class ManagedProfilesIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should list only the Profiles it manages when a ServerAdmin reads")
+  void shouldListOnlyTheProfilesItManagesWhenAServerAdminReads() throws Exception {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    cast.profileManagedBy(sam, ProfileFixture.kidProfileBuilder().name("Alex"));
+    var mara = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Mara"));
+    cast.grant(serverAdmin, mara);
+
+    assertThat(managedProfiles(serverAdmin))
+        .extracting(node -> node.path("id").asString())
+        .containsExactlyInAnyOrder(
+            serverAdmin.profile().getId().toString(), mara.getId().toString());
+  }
+
+  @Test
+  @DisplayName("Should leave out a Kid it only supervises when a HouseholdAdmin reads")
+  void shouldLeaveOutAKidItOnlySupervisesWhenAHouseholdAdminReads() throws Exception {
+    var otherAdmin = cast.secondAdminOf(sam);
+    cast.profileManagedBy(otherAdmin, ProfileFixture.kidProfileBuilder().name("Alex"));
+
+    assertThat(managedProfiles(sam))
+        .extracting(node -> node.path("id").asString())
+        .containsExactly(sam.profile().getId().toString());
+  }
+
+  @Test
   @DisplayName("Should list nothing when the Account's own Personal Profile is supervised")
   void shouldListNothingWhenTheAccountsOwnPersonalProfileIsSupervised() throws Exception {
     var supervised = cast.supervisedMemberOf(sam);
