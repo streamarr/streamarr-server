@@ -102,7 +102,8 @@ class RemoteProbeResultKeyframesMapperTest {
   @ParameterizedTest
   @CsvSource({
     "KEYFRAMES_UNAVAILABLE_REASON_KEYFRAME_WITHOUT_TIMESTAMP,KEYFRAME_WITHOUT_TIMESTAMP",
-    "KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES,NO_KEYFRAMES"
+    "KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES,NO_KEYFRAMES",
+    "KEYFRAMES_UNAVAILABLE_REASON_TOO_MANY_KEYFRAMES,TOO_MANY_KEYFRAMES"
   })
   @DisplayName("Should report unavailable keyframes when the worker cannot report positions")
   void shouldReportUnavailableKeyframesWhenWorkerCannotReportPositions(
