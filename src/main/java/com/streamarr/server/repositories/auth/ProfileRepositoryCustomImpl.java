@@ -319,14 +319,19 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
 
   @Override
   public boolean lockForInvitationTo(UUID profileId, String email) {
-    var inviteesProfile =
-        DSL.select(USER_ACCOUNT.PERSONAL_PROFILE_ID)
-            .from(USER_ACCOUNT)
-            .where(lower(USER_ACCOUNT.EMAIL).eq(lower(DSL.val(email))));
+    return lockWithPersonalProfileOfAccount(
+        profileId, lower(USER_ACCOUNT.EMAIL).eq(lower(DSL.val(email))));
+  }
+
+  // Whether the Profile exists, having locked it and the Personal Profile of the Account that
+  // matches, if any.
+  private boolean lockWithPersonalProfileOfAccount(UUID profileId, Condition account) {
+    var accountsProfile =
+        DSL.select(USER_ACCOUNT.PERSONAL_PROFILE_ID).from(USER_ACCOUNT).where(account);
     // PostgreSQL locks the rows as the sort returns them, so in id order.
     return dsl.select(PROFILE.ID)
         .from(PROFILE)
-        .where(PROFILE.ID.eq(profileId).or(PROFILE.ID.in(inviteesProfile)))
+        .where(PROFILE.ID.eq(profileId).or(PROFILE.ID.in(accountsProfile)))
         .orderBy(PROFILE.ID)
         .forUpdate()
         .fetch(PROFILE.ID)
