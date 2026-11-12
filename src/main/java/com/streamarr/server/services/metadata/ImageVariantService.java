@@ -23,6 +23,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.IntPredicate;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import lombok.Builder;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.stereotype.Service;
@@ -34,6 +36,10 @@ public class ImageVariantService {
   private static final int BLUR_HASH_COMPONENT_Y = 3;
   // A 4x3 BlurHash keeps only the lowest frequencies, which a 128-pixel copy still carries.
   private static final int BLUR_HASH_MAX_INPUT_EDGE = 128;
+  // The pixel count of 8K, 7680 x 4320, for the decoded image and for each resized variant. A few
+  // hundred compressed kilobytes can declare more pixels than the heap holds, and a narrow image
+  // grows when it is resized to a variant's width.
+  private static final long MAX_PIXELS = 7680L * 4320;
 
   private static final List<ImageSize> RESIZABLE_SIZES =
       List.of(ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE);
@@ -131,6 +137,7 @@ public class ImageVariantService {
         throw new ImageProcessingException(
             "No width configuration for image size: " + size + " on image type: " + imageType);
       }
+      requireAtMostMaxPixels(targetWidth, heightAtWidth(sourceImage, targetWidth));
       if (transparent) {
         var resized = resizeIntoArgb(sourceImage, targetWidth);
         variants.add(
@@ -175,17 +182,39 @@ public class ImageVariantService {
   }
 
   private BufferedImage decodeImage(byte[] imageData) {
-    BufferedImage image;
-    try {
-      image = ImageIO.read(new ByteArrayInputStream(imageData));
+    try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(imageData))) {
+      var readers = ImageIO.getImageReaders(input);
+      if (!readers.hasNext()) {
+        throw new ImageProcessingException("Failed to decode image data.");
+      }
+
+      return read(readers.next(), input);
     } catch (IOException e) {
       throw new ImageProcessingException(e);
     }
+  }
 
-    if (image == null) {
-      throw new ImageProcessingException("Failed to decode image data.");
+  private static BufferedImage read(ImageReader reader, ImageInputStream input) throws IOException {
+    try {
+      reader.setInput(input, true, true);
+      requireAtMostMaxPixels(reader.getWidth(0), reader.getHeight(0));
+      return reader.read(0);
+    } finally {
+      reader.dispose();
     }
-    return image;
+  }
+
+  private static void requireAtMostMaxPixels(long width, long height) {
+    if (width * height > MAX_PIXELS) {
+      throw new ImageProcessingException(
+          "Image or variant of %dx%d pixels exceeds the limit of %d pixels."
+              .formatted(width, height, MAX_PIXELS));
+    }
+  }
+
+  // Resizing keeps the aspect ratio, so 1 x 8192 pixels resized to 300 wide become 300 x 2457600.
+  private static long heightAtWidth(BufferedImage image, int width) {
+    return (long) image.getHeight() * width / image.getWidth();
   }
 
   private BufferedImage resize(BufferedImage source, int targetWidth) {
