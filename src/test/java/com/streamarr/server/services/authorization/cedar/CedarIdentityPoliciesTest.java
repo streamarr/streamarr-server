@@ -2,6 +2,7 @@ package com.streamarr.server.services.authorization.cedar;
 
 import static com.streamarr.server.fixtures.ProfileHouseholdShareFixture.activeShareBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.cedarpolicy.BasicAuthorizationEngine;
 import com.streamarr.server.domain.auth.AuthSession;
@@ -15,6 +16,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -38,7 +40,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -1648,6 +1652,98 @@ class CedarIdentityPoliciesTest {
       assertThat(
               decide(withReauthenticatedAt(atHome(), Instant.now()), new Intent.DeleteMyAccount()))
           .isEqualTo(DENIED);
+    }
+  }
+
+  @Nested
+  @DisplayName("Batches of reads")
+  class Batches {
+
+    @Test
+    @DisplayName("Should allow in a batch exactly the reads that are each allowed alone")
+    void shouldAllowInBatchExactlyTheReadsThatAreEachAllowedAlone() {
+      var managed = managedBy(account, ProfileFixture.defaultProfileBuilder());
+      var managedKid = managedBy(account, ProfileFixture.kidProfileBuilder());
+      var hosted = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      shares.share(hosted.getId(), account.getHouseholdId(), false);
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      var reads =
+          Set.<Intent.UnitIntent>of(
+              new Intent.ViewProfileShareHouseholds(personal.getId()),
+              new Intent.ViewProfileShareHouseholds(managed.getId()),
+              new Intent.ViewProfileShareHouseholds(managedKid.getId()),
+              new Intent.ViewProfileShareHouseholds(hosted.getId()),
+              new Intent.ViewProfileShareHouseholds(kid.getId()),
+              new Intent.ViewProfileAdministration(hosted.getId()),
+              new Intent.ViewProfileAdministration(kid.getId()),
+              new Intent.ViewManagerInvitations(personal.getId()),
+              new Intent.ViewManagerInvitations(managed.getId()),
+              new Intent.ViewHouseholdAdministration(account.getHouseholdId()),
+              new Intent.ViewHouseholdAdministration(visitedHouseholdId),
+              new Intent.ViewHouseholdShareHistory(account.getHouseholdId()));
+
+      var allowed = authorizationService.allowedAmong(atHome(), reads);
+
+      assertThat(allowed)
+          .isEqualTo(
+              reads.stream()
+                  .filter(read -> authorizationService.isAllowed(atHome(), read))
+                  .collect(Collectors.toSet()))
+          .contains(
+              new Intent.ViewProfileShareHouseholds(personal.getId()),
+              new Intent.ViewProfileShareHouseholds(managedKid.getId()),
+              new Intent.ViewProfileAdministration(hosted.getId()),
+              new Intent.ViewHouseholdAdministration(account.getHouseholdId()))
+          .doesNotContain(
+              new Intent.ViewProfileShareHouseholds(hosted.getId()),
+              new Intent.ViewProfileShareHouseholds(kid.getId()),
+              new Intent.ViewProfileAdministration(kid.getId()),
+              new Intent.ViewHouseholdAdministration(visitedHouseholdId),
+              new Intent.ViewHouseholdShareHistory(account.getHouseholdId()));
+    }
+
+    @Test
+    @DisplayName(
+        "Should not count a supervised Personal Profile as managed in a batch when its own Account"
+            + " asks")
+    void shouldNotCountSupervisedPersonalProfileAsManagedInBatchWhenItsOwnAccountAsks() {
+      personal.setKind(ProfileKind.KID);
+      profiles.save(personal);
+      var reads =
+          Set.<Intent.UnitIntent>of(new Intent.ViewProfileShareHouseholds(personal.getId()));
+
+      assertThat(authorizationService.allowedAmong(member(), reads)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should fail the whole batch closed when one of its Profiles does not exist")
+    void shouldFailWholeBatchClosedWhenOneOfItsProfilesDoesNotExist() {
+      var reads =
+          Set.<Intent.UnitIntent>of(
+              new Intent.ViewProfileShareHouseholds(personal.getId()),
+              new Intent.ViewProfileShareHouseholds(UUID.randomUUID()));
+
+      assertThatThrownBy(() -> authorizationService.allowedAmong(atHome(), reads))
+          .isInstanceOf(AuthorizationUnavailableException.class);
+    }
+
+    @Test
+    @DisplayName("Should fail the whole batch closed when a write is among its reads")
+    void shouldFailWholeBatchClosedWhenWriteIsAmongItsReads() {
+      var batch =
+          Set.<Intent.UnitIntent>of(
+              new Intent.ViewProfileShareHouseholds(personal.getId()),
+              new Intent.OfferProfileShare(personal.getId()));
+
+      assertThatThrownBy(() -> authorizationService.allowedAmong(atHome(), batch))
+          .isInstanceOf(AuthorizationUnavailableException.class);
+    }
+
+    private Profile managedBy(UserAccount manager, Profile.ProfileBuilder<?, ?> builder) {
+      var profile = profiles.save(builder.build());
+      managers.save(
+          ProfileManager.builder().accountId(manager.getId()).profileId(profile.getId()).build());
+      return profile;
     }
   }
 

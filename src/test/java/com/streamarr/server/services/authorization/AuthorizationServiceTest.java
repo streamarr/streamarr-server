@@ -15,7 +15,11 @@ import com.streamarr.server.services.auth.StreamarrAuthenticationToken;
 import com.streamarr.server.services.auth.TokenScope;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -310,6 +314,13 @@ class AuthorizationServiceTest {
     public Decision<ProfilePolicyTransition> decide(
         AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent) {
       return new Decision.Denied<>(Decision.DenialReason.POLICY);
+    }
+
+    @Override
+    public Map<Intent.UnitIntent, Decision<AuthorizationUnit>> decideEach(
+        AuthenticatedIdentity identity, Set<Intent.UnitIntent> intents) {
+      return intents.stream()
+          .collect(Collectors.toMap(Function.identity(), intent -> decide(identity, intent)));
     }
   }
 }

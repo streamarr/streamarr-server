@@ -8,14 +8,19 @@ import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface ProfileHouseholdShareRepositoryCustom {
 
   /** Whether the Profile is available in the Household right now, read as a scalar. */
   boolean isActivelyShared(UUID profileId, UUID householdId);
+
+  /** Which of the Profiles are available in the Household right now, read as scalars. */
+  Set<UUID> findProfileIdsActivelySharedInto(UUID householdId, Collection<UUID> profileIds);
 
   /** Locks and reports the active share used as authorization authority. */
   boolean lockActiveShare(UUID profileId, UUID householdId);
