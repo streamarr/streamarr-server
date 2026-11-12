@@ -69,7 +69,11 @@ public final class ProfileRejections {
    * it tells nothing that caller could not read.
    */
   public record ManagersOnly(@NonNull ManagersOnlyReason reason)
-      implements EditRefusal, ChangeProfilePolicy, DeleteProfile {}
+      implements EditRefusal,
+          ChangeProfilePolicy,
+          DeleteProfile,
+          ManagerRejections.Invite,
+          ShareRejections.Offer {}
 
   /** What a caller refused with {@link ManagersOnly} is to the Profile now. */
   public enum ManagersOnlyReason {

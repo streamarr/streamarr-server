@@ -193,6 +193,7 @@ type OfferProfileSharePayload {
 
 union OfferProfileShareError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ShareCodeRefusedError
   | ProfileAlreadySharedError
 

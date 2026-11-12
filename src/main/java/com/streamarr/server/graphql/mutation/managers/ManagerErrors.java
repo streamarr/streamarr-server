@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.mutation.managers;
 
 import com.streamarr.server.graphql.mutation.InputPath;
 import com.streamarr.server.services.identity.ManagerRejections;
+import com.streamarr.server.services.identity.ProfileRejections;
 
 /** The exhaustive mappings from service rejection to schema error type, one per union. */
 public final class ManagerErrors {
@@ -18,6 +19,7 @@ public final class ManagerErrors {
   public static InviteProfileManagerError toInviteError(ManagerRejections.Invite rejection) {
     return switch (rejection) {
       case ManagerRejections.ProfileNotFound _ -> profileNotFound();
+      case ProfileRejections.ManagersOnly managersOnly -> ProfileManagersOnlyError.of(managersOnly);
       case ManagerRejections.EmailRequired _ ->
           new EmailRequiredError("Enter the person's email address.", InputPath.of(EMAIL));
       case ManagerRejections.EmailInvalid _ ->

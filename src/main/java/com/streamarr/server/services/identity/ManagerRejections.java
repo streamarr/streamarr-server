@@ -6,11 +6,15 @@ public final class ManagerRejections {
   private ManagerRejections() {}
 
   /**
-   * An invitation is refused only for what the inviter can see: the Profile, or the shape of the
-   * address. Nothing about whether an Account has the address refuses it.
+   * An invitation is refused only for what the inviter can see: the Profile, what the inviter is to
+   * it, or the shape of the address. Nothing about whether an Account has the address refuses it.
    */
   public sealed interface Invite
-      permits ProfileNotFound, EmailRequired, EmailInvalid, ManagerInvitationLimitReached {}
+      permits ProfileNotFound,
+          ProfileRejections.ManagersOnly,
+          EmailRequired,
+          EmailInvalid,
+          ManagerInvitationLimitReached {}
 
   public sealed interface Cancel permits ManagerInvitationNotFound, InvitationNotPending {}
 

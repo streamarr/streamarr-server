@@ -12,16 +12,19 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.language.ProfileLanguagePreferences;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.language.LanguagePreferenceRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.ProfileCastSupport;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,6 +36,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Why a caller may no longer act on a Profile it still reads (ADR 0024 §HouseholdAdmin: a
@@ -69,6 +73,7 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
   @Autowired private ProfileCastSupport cast;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
+  @Autowired private ProfileManagerInvitationRepository invitationRepository;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private LanguagePreferenceRepository languagePreferenceRepository;
 
@@ -76,12 +81,14 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
   private TestIdentity smith;
   private TestIdentity cabin;
   private Profile kid;
+  private String lakeShareCode;
 
   @BeforeEach
   void setUp() {
     smith = track(authTestSupport.createIdentity());
     cabin = track(authTestSupport.createIdentity());
     kid = cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder());
+    lakeShareCode = authTestSupport.shareCodeFor(track(authTestSupport.createIdentity()));
   }
 
   @AfterEach
@@ -89,7 +96,10 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
     identities.reversed().forEach(authTestSupport::deleteIdentity);
   }
 
-  /** Every mutation that only some of a Profile's readers may make, and what else it takes. */
+  /**
+   * Every mutation that only some of a Profile's readers may make, and what else it takes given a
+   * live share code.
+   */
   enum ProfileMutation {
     RENAME_PROFILE("renameProfile", ", name: \"Robin\""),
     SET_PROFILE_PICTURE("setProfilePicture", ", picture: \"robin.png\""),
@@ -101,30 +111,43 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
     REMOVE_PROFILE_PIN("removeProfilePin", ""),
     SET_PROFILE_LANGUAGE_PREFERENCES(
         "setProfileLanguagePreferences", ", audioLanguages: [DE], subtitleMode: OFF"),
-    DELETE_PROFILE("deleteProfile", "");
+    DELETE_PROFILE("deleteProfile", ""),
+    INVITE_PROFILE_MANAGER("inviteProfileManager", ", email: \"sam@example.test\""),
+    OFFER_PROFILE_SHARE(
+        "offerProfileShare", shareCode -> ", shareCode: \"%s\"".formatted(shareCode));
 
     private final String field;
-    private final String otherInput;
+    private final UnaryOperator<String> otherInput;
 
     ProfileMutation(String field, String otherInput) {
+      this(field, _ -> otherInput);
+    }
+
+    ProfileMutation(String field, UnaryOperator<String> otherInput) {
       this.field = field;
       this.otherInput = otherInput;
     }
 
-    String request(UUID profileId) {
+    String request(UUID profileId, String shareCode) {
       return """
           mutation { %s(input: {profileId: "%s"%s}) { userErrors { __typename
             ... on MutationError { message } ... on InputMutationError { inputPath }
             ... on ProfileManagersOnlyError { reason } } } }
           """
-          .formatted(field, profileId, otherInput);
+          .formatted(field, profileId, otherInput.apply(shareCode));
     }
   }
 
   @ParameterizedTest(name = "{0}")
   @EnumSource(
       value = ProfileMutation.class,
-      names = {"CHANGE_PROFILE_KIND", "SET_PROFILE_LANGUAGE_PREFERENCES", "DELETE_PROFILE"})
+      names = {
+        "CHANGE_PROFILE_KIND",
+        "SET_PROFILE_LANGUAGE_PREFERENCES",
+        "DELETE_PROFILE",
+        "INVITE_PROFILE_MANAGER",
+        "OFFER_PROFILE_SHARE"
+      })
   @DisplayName(
       "Should say the caller no longer manages the Profile when a ServerAdmin removed its grant and"
           + " it still supervises the Profile")
@@ -198,7 +221,12 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
     TARGET_HOUSEHOLD_ADMIN_OF_A_WAITING_OFFER,
     MEMBER_THAT_HAS_IT_SELECTED,
     DEVICE_BOUND_SESSION_OF_ITS_MANAGER,
-    DISABLED_MANAGER
+    DISABLED_MANAGER;
+
+    /** Neither a device-bound session nor a disabled Account presents a share code at all. */
+    boolean presentsShareCodes() {
+      return this != DEVICE_BOUND_SESSION_OF_ITS_MANAGER && this != DISABLED_MANAGER;
+    }
   }
 
   @ParameterizedTest(name = "{0}")
@@ -212,17 +240,32 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
 
     for (var mutation : ProfileMutation.values()) {
       var forMissing = answer(asking.bearer(), mutation, missing);
-      assertThat(
-              forMissing
-                  .at("/data/%s/userErrors/0/__typename".formatted(mutation.field))
-                  .asString())
+      assertThat(refusalIn(forMissing, mutation))
           .as("%s answers a missing Profile", mutation)
-          .isEqualTo("ProfileNotFoundError");
+          .isEqualTo(missingProfileRefusal(outsider, mutation));
 
       assertThat(answer(asking.bearer(), mutation, asking.profileId()))
           .as("%s answers %s", mutation, outsider)
           .isEqualTo(forMissing);
     }
+  }
+
+  // A caller that presents no share code is refused the offer before any Profile is looked up.
+  private static String missingProfileRefusal(Outsider outsider, ProfileMutation mutation) {
+    if (mutation == ProfileMutation.OFFER_PROFILE_SHARE && !outsider.presentsShareCodes()) {
+      return "FORBIDDEN";
+    }
+
+    return "ProfileNotFoundError";
+  }
+
+  private static String refusalIn(JsonNode answer, ProfileMutation mutation) {
+    var userError = answer.at("/data/%s/userErrors/0/__typename".formatted(mutation.field));
+    if (userError.isMissingNode()) {
+      return answer.at("/errors/0/extensions/code").asString();
+    }
+
+    return userError.asString();
   }
 
   private Asking askingOf(Outsider outsider) throws Exception {
@@ -317,6 +360,7 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
     var bearer = authTestSupport.accountBearer(serverAdmin);
 
     assertForbidden(bearer, ProfileMutation.SET_PROFILE_LANGUAGE_PREFERENCES, kid);
+    assertForbidden(bearer, ProfileMutation.INVITE_PROFILE_MANAGER, kid);
     assertThat(
             answer(bearer, ProfileMutation.DELETE_PROFILE, kid.getId())
                 .at("/data/deleteProfile/userErrors/0/__typename")
@@ -342,6 +386,17 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
         authTestSupport.accountBearer(cabin),
         ProfileMutation.SET_PROFILE_MAXIMUM_ALLOWED_RATING_AGE,
         robin.profile());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep forbidding a manager when it offers someone's own unrestricted Personal Profile")
+  void shouldKeepForbiddingManagerWhenItOffersSovereignPersonalProfile() throws Exception {
+    var robin = authTestSupport.createHouseholdMemberIdentity(smith);
+    cast.grant(cabin, robin.profile());
+
+    assertForbidden(
+        authTestSupport.accountBearer(cabin), ProfileMutation.OFFER_PROFILE_SHARE, robin.profile());
   }
 
   private void assertForbidden(String bearer, ProfileMutation mutation, Profile profile)
@@ -388,12 +443,22 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
       throws Exception {
     var body =
         mockMvc
-            .perform(graphqlRequest(bearer, mutation.request(profileId)))
+            .perform(graphqlRequest(bearer, mutation.request(profileId, lakeShareCode)))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()
             .getContentAsString();
-    return objectMapper.readTree(body);
+    var answer = objectMapper.readTree(body);
+    // Each request has its own id, so it is left out when two answers are compared.
+    answer
+        .path("errors")
+        .forEach(
+            error -> {
+              if (error.get("extensions") instanceof ObjectNode extensions) {
+                extensions.remove("requestId");
+              }
+            });
+    return answer;
   }
 
   private void perform(String bearer, String mutation, String input) throws Exception {
@@ -417,7 +482,9 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
         stored.getMaximumAllowedRatingAge(),
         stored.getPicture(),
         stored.getPinHash(),
-        languagePreferenceRepository.findProfilePreferences(profile.getId()));
+        languagePreferenceRepository.findProfilePreferences(profile.getId()),
+        shareRepository.findByProfileId(profile.getId()).size(),
+        invitationRepository.existsWaitingForProfile(profile.getId(), Instant.now()));
   }
 
   private record StoredState(
@@ -426,7 +493,9 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
       Integer maximumAllowedRatingAge,
       String picture,
       String pinHash,
-      Optional<ProfileLanguagePreferences> languagePreferences) {}
+      Optional<ProfileLanguagePreferences> languagePreferences,
+      int shares,
+      boolean managerInvitationWaiting) {}
 
   private TestIdentity asItIsNow(TestIdentity identity) {
     var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();

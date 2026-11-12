@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.mutation.managers;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.identity.ManagerRejections;
+import com.streamarr.server.services.identity.ProfileRejections;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,14 @@ class ManagerErrorsTest {
   void shouldMapInvitationRejectionsWhenConvertingToSchemaErrors() {
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.ProfileNotFound()))
         .isInstanceOf(ProfileNotFoundError.class);
+    assertThat(
+            ManagerErrors.toInviteError(
+                new ProfileRejections.ManagersOnly(
+                    ProfileRejections.ManagersOnlyReason.NOT_RESTRICTED)))
+        .isEqualTo(
+            new ProfileManagersOnlyError(
+                "The Profile is not restricted, so only its managers may do this.",
+                ProfileRejections.ManagersOnlyReason.NOT_RESTRICTED));
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.EmailRequired()))
         .isInstanceOf(EmailRequiredError.class);
     assertThat(ManagerErrors.toInviteError(new ManagerRejections.EmailInvalid()))

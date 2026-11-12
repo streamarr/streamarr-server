@@ -68,6 +68,7 @@ public class ProfileSharingService {
   private static final String CHK_STRUCTURAL = "chk_structural_share_persists";
 
   private final AuthorizationService authorizationService;
+  private final ProfileAuthorityExplanation authorityExplanation;
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileShareLifecycle shareLifecycle;
   private final ProfileRepository profileRepository;
@@ -115,8 +116,9 @@ public class ProfileSharingService {
         refusalOf(
             identity,
             new Intent.OfferProfileShare(profileId),
-            AuthorizationRefusal.Response.hiddenUnless(
-                () -> mayViewProfile(identity, profileId), ShareRejections.ProfileNotFound::new));
+            AuthorizationRefusal.Response.<ShareRejections.Offer>hiddenUnless(
+                    () -> mayViewProfile(identity, profileId), ShareRejections.ProfileNotFound::new)
+                .visibleAs(() -> authorityExplanation.managersOnly(identity, profileId)));
     refusal.ifPresent(
         rejection -> {
           throw new MutationRejection(rejection);
