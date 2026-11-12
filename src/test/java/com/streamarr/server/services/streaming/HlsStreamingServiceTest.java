@@ -6759,6 +6759,15 @@ class HlsStreamingServiceTest {
   // keyframes at 0, 6 and 12 s, the video's end one frame before the media end, and the audio's
   // end at the media end.
   private MediaFile seedMediaFileScannedToEndAt(Duration containerDuration, Duration mediaEnd) {
+    return seedMediaFileScanned(
+        defaultProbeBuilder().duration(containerDuration).build(),
+        List.of(
+            new SourceStreamEnd(0, mediaEnd.minusMillis(42)), new SourceStreamEnd(1, mediaEnd)));
+  }
+
+  // A media file of the probe, whose keyframe packet scan read keyframes at 0, 6 and 12 s and the
+  // stream ends.
+  private MediaFile seedMediaFileScanned(MediaProbe probe, List<SourceStreamEnd> streamEnds) {
     var file = seedMediaFile();
     var snapshot = new SourceFileSnapshot(1_000_000, Instant.EPOCH);
     probeResults.publish(
@@ -6767,8 +6776,7 @@ class HlsStreamingServiceTest {
             .snapshot(snapshot)
             .probeVersion(ProbeVersion.CURRENT)
             .outcome(
-                ProbeFixture.completeProbeBuilder(
-                        defaultProbeBuilder().duration(containerDuration).build())
+                ProbeFixture.completeProbeBuilder(probe)
                     .keyframes(
                         new KeyframeKnowledge.PacketScanRequired(
                             KeyframePacketScanReason.NO_CONTAINER_INDEX))
@@ -6792,10 +6800,7 @@ class HlsStreamingServiceTest {
                                 new KeyframePosition(6_000, 6_000),
                                 new KeyframePosition(12_000, 12_000)))
                         .build()))
-            .streamEnds(
-                List.of(
-                    new SourceStreamEnd(0, mediaEnd.minusMillis(42)),
-                    new SourceStreamEnd(1, mediaEnd)))
+            .streamEnds(streamEnds)
             .build());
     return file;
   }
