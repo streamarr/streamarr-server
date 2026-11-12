@@ -85,6 +85,7 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
   @Autowired private DSLContext dsl;
 
   private final List<TestIdentity> identities = new ArrayList<>();
+  private final List<UUID> invitationIds = new ArrayList<>();
   private TestIdentity sam;
   private TestIdentity theo;
   private TestIdentity serverAdmin;
@@ -113,6 +114,7 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
   void tearDown() {
     rows.deleteOf(identities.stream().map(NotificationDismissalsIT::accountOf).toList());
     identities.reversed().forEach(authTestSupport::deleteIdentity);
+    invitationRepository.deleteAllById(invitationIds);
   }
 
   @ParameterizedTest
@@ -318,14 +320,17 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
 
   /** An invitation for the Account to manage the Profile, issued by the Profile's manager Sam. */
   private UUID invite(TestIdentity invited, Profile profile) {
-    return profileManagement
-        .inviteProfileManager(
-            authTestSupport.identityOf(sam), profile.getId(), invited.account().getId())
-        .fold(
-            issued -> issued.invitation().getId(),
-            rejection -> {
-              throw new IllegalStateException("The invitation was refused: " + rejection);
-            });
+    var invitationId =
+        profileManagement
+            .inviteProfileManager(
+                authTestSupport.identityOf(sam), profile.getId(), invited.account().getId())
+            .fold(
+                issued -> issued.invitation().getId(),
+                rejection -> {
+                  throw new IllegalStateException("The invitation was refused: " + rejection);
+                });
+    invitationIds.add(invitationId);
+    return invitationId;
   }
 
   /** Tells the recipients that an offer of Kai, the share, was accepted. */
