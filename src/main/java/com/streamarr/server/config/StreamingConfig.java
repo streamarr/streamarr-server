@@ -3,8 +3,10 @@ package com.streamarr.server.config;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.concurrency.NanoClock;
+import com.streamarr.server.services.library.MediaFolders;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.HardwareEncoderFailureListener;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
@@ -31,14 +33,23 @@ import com.streamarr.server.services.streaming.local.FileStoreSegmentFolderSpace
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftovers;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Deleted;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.NoOwnedFolder;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 
 @Configuration
 public class StreamingConfig {
+
+  static final String LEFTOVER_DELETES_METRIC =
+      "streamarr.streaming.segment_folder_leftover_deletes";
+  static final String LEFTOVERS_METRIC = "streamarr.streaming.segment_folder_leftovers";
 
   @Bean
   public PlaybackSessionService playbackSessionService(
@@ -54,14 +65,46 @@ public class StreamingConfig {
         .build();
   }
 
+  /**
+   * Deletes what earlier server processes left in a segment folder that only this server uses, and
+   * keeps what the delete did for the health indicator. It runs as system work while the server
+   * starts, before a stream session can exist.
+   */
   @Bean
+  public SegmentFolderLeftoversOutcome segmentFolderLeftovers(
+      StreamingProperties properties, MediaFolders mediaFolders, MeterRegistry meterRegistry) {
+    var deletes = new AtomicReference<SegmentFolderLeftoversOutcome>();
+    SystemWork.runAsSystemActor(
+        () -> deletes.set(deleteSegmentFolderLeftovers(properties, mediaFolders)));
+    var outcome = deletes.get();
+    meterRegistry.counter(LEFTOVER_DELETES_METRIC, "outcome", outcome.metricTag()).increment();
+    if (outcome instanceof Deleted(var deleted, var remaining)) {
+      meterRegistry.counter(LEFTOVERS_METRIC, "result", "deleted").increment(deleted);
+      meterRegistry.counter(LEFTOVERS_METRIC, "result", "remaining").increment(remaining);
+    }
+
+    return outcome;
+  }
+
+  private static SegmentFolderLeftoversOutcome deleteSegmentFolderLeftovers(
+      StreamingProperties properties, MediaFolders mediaFolders) {
+    var segmentFolder = properties.ownedSegmentFolder();
+    if (segmentFolder.isEmpty()) {
+      return new NoOwnedFolder();
+    }
+
+    return SegmentFolderLeftovers.builder()
+        .segmentFolder(segmentFolder.get())
+        .homeFolder(Path.of(System.getProperty("user.home")))
+        .mediaFolders(mediaFolders::all)
+        .build()
+        .delete();
+  }
+
+  // After the delete, so the folder holds nothing of a running store while the delete runs.
+  @Bean
+  @DependsOn("segmentFolderLeftovers")
   public LocalSegmentStore segmentStore(StreamingProperties properties) {
-    // Before the store exists, so the folder holds nothing of a running store.
-    properties
-        .ownedSegmentFolder()
-        .ifPresent(
-            segmentFolder ->
-                SegmentFolderLeftovers.builder().segmentFolder(segmentFolder).build().delete());
     return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
   }
 

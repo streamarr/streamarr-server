@@ -1,20 +1,28 @@
 package com.streamarr.server.services.streaming.local;
 
 import com.google.common.io.MoreFiles;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Deleted;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Refused;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryIteratorException;
+import java.nio.file.FileStore;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import lombok.Builder;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -34,35 +42,101 @@ public class SegmentFolderLeftovers {
 
   @NonNull private final Path segmentFolder;
 
+  @NonNull private final Path homeFolder;
+
+  // The media root and every library's folder, read when the delete runs.
+  @NonNull private final Supplier<List<Path>> mediaFolders;
+
   /**
    * Deletes the leftovers. Call it before the folder's segment store exists, so that the folder
    * holds nothing of a running store.
+   *
+   * <p>It refuses a folder that is the top of a file system, that is the home folder or lies above
+   * it, or that is a media folder or lies above or below one, and it creates nothing there. It
+   * refuses every folder when the media folders cannot be read.
    *
    * <p>It deletes only in a folder that carries its mark, and it marks only a folder that holds no
    * other entry. A folder that held something else first therefore keeps everything. The mark holds
    * the path of the folder that it marks, so a mark that was copied into another folder marks
    * nothing there. It never throws: what it cannot delete stays.
    */
-  public void delete() {
+  public SegmentFolderLeftoversOutcome delete() {
     try {
+      var refusal = refusal();
+      if (refusal.isPresent()) {
+        return refused(refusal.get());
+      }
+
       Files.createDirectories(segmentFolder);
       if (isMarked()) {
-        deleteEachLeftover();
-        return;
+        return deleteEachLeftover();
       }
 
       if (holdsNoOtherEntry()) {
         writeMark();
-        return;
+        return new Deleted(0, 0);
       }
 
-      log.warn(
-          "The segment folder {} holds entries but no mark of its own, so the server deletes no"
-              + " leftovers there. Give the server an empty folder of its own.",
-          segmentFolder);
-    } catch (IOException | DirectoryIteratorException e) {
+      return refused(SegmentFolderRefusal.UNMARKED_FOLDER);
+    } catch (IOException | RuntimeException e) {
       log.warn("Failed to delete the leftovers in the segment folder {}", segmentFolder, e);
+      return new Refused(SegmentFolderRefusal.UNREADABLE_FOLDER);
     }
+  }
+
+  private Refused refused(SegmentFolderRefusal refusal) {
+    log.warn(
+        "The server deletes no leftovers in the segment folder {}: {}. Give the server an empty"
+            + " folder of its own.",
+        segmentFolder,
+        refusal);
+    return new Refused(refusal);
+  }
+
+  private Optional<SegmentFolderRefusal> refusal() throws IOException {
+    var folder = resolved(segmentFolder);
+    if (folder.getParent() == null) {
+      return Optional.of(SegmentFolderRefusal.FILE_SYSTEM_ROOT);
+    }
+
+    if (resolved(homeFolder).startsWith(folder)) {
+      return Optional.of(SegmentFolderRefusal.HOME_FOLDER);
+    }
+
+    return mediaFolderRefusal(folder);
+  }
+
+  private Optional<SegmentFolderRefusal> mediaFolderRefusal(Path folder) throws IOException {
+    List<Path> folders;
+    try {
+      folders = mediaFolders.get();
+    } catch (RuntimeException e) {
+      log.warn("Failed to read the media folders", e);
+      return Optional.of(SegmentFolderRefusal.UNKNOWN_MEDIA_FOLDERS);
+    }
+
+    for (var mediaFolder : folders) {
+      var media = resolved(mediaFolder);
+      // Path.startsWith compares whole names, so /media/movies2 does not start with /media/movies.
+      if (media.startsWith(folder) || folder.startsWith(media)) {
+        return Optional.of(SegmentFolderRefusal.MEDIA_FOLDER);
+      }
+    }
+
+    return Optional.empty();
+  }
+
+  // The path with the soft links of its existing folders resolved. A folder that does not exist
+  // yet has no real path, and a soft link above it can lead into a folder that the path does not
+  // name.
+  private static Path resolved(Path path) throws IOException {
+    var absolute = path.toAbsolutePath();
+    var existing = absolute;
+    while (existing.getParent() != null && Files.notExists(existing)) {
+      existing = existing.getParent();
+    }
+
+    return existing.toRealPath().resolve(existing.relativize(absolute)).normalize();
   }
 
   // Compared as bytes, so that a mark which is not text reads as the mark of another folder. A
@@ -100,10 +174,15 @@ public class SegmentFolderLeftovers {
     Files.write(mark(), markedFolder(), StandardOpenOption.CREATE_NEW);
   }
 
-  private void deleteEachLeftover() throws IOException {
+  private Deleted deleteEachLeftover() throws IOException {
+    var leftovers = new ArrayList<Leftover>();
     for (var entry : listedEntries()) {
-      deleteIfLeftover(entry);
+      leftovers.add(deleteIfLeftover(entry));
     }
+
+    return new Deleted(
+        Collections.frequency(leftovers, Leftover.DELETED),
+        Collections.frequency(leftovers, Leftover.REMAINING));
   }
 
   // Read to its end before the first delete. MoreFiles.deleteRecursively opens the folder again
@@ -117,23 +196,69 @@ public class SegmentFolderLeftovers {
     return listed;
   }
 
-  private void deleteIfLeftover(Path entry) {
+  private Leftover deleteIfLeftover(Path entry) {
     try {
       var name = entry.getFileName().toString();
       // A soft link is neither a directory nor a regular file here, so it stays.
       var attributes =
           Files.readAttributes(entry, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
       if (attributes.isDirectory() && SESSION_DIRECTORY_NAME.matcher(name).matches()) {
-        // Deletes a soft link itself, never what it points to.
-        MoreFiles.deleteRecursively(entry);
-        return;
+        return deleteDirectory(entry);
       }
 
       if (attributes.isRegularFile() && PreparedSegmentFile.isUploadName(name)) {
         Files.delete(entry);
+        return Leftover.DELETED;
       }
+
+      return Leftover.NOT_A_LEFTOVER;
     } catch (IOException e) {
       log.warn("Failed to delete a leftover of the segment folder: {}", entry, e);
+      return Leftover.REMAINING;
+    }
+  }
+
+  private Leftover deleteDirectory(Path directory) throws IOException {
+    if (holdsAnotherFileSystem(directory)) {
+      log.warn(
+          "A leftover of the segment folder holds another file system, so it stays: {}", directory);
+      return Leftover.REMAINING;
+    }
+
+    // Deletes a soft link itself, never what it points to.
+    MoreFiles.deleteRecursively(directory);
+    return Leftover.DELETED;
+  }
+
+  // A file system that is mounted on the directory or below it is not the segment folder's.
+  private boolean holdsAnotherFileSystem(Path directory) throws IOException {
+    var mounts = new OtherFileSystems(Files.getFileStore(segmentFolder));
+    Files.walkFileTree(directory, mounts);
+    return mounts.found;
+  }
+
+  private enum Leftover {
+    DELETED,
+    REMAINING,
+    NOT_A_LEFTOVER
+  }
+
+  // Walks without following soft links and stops at the first directory of another file system.
+  @RequiredArgsConstructor
+  private static final class OtherFileSystems extends SimpleFileVisitor<Path> {
+
+    private final FileStore foldersFileStore;
+    private boolean found;
+
+    @Override
+    public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes)
+        throws IOException {
+      if (Files.getFileStore(directory).equals(foldersFileStore)) {
+        return FileVisitResult.CONTINUE;
+      }
+
+      found = true;
+      return FileVisitResult.TERMINATE;
     }
   }
 }

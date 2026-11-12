@@ -1,10 +1,13 @@
 package com.streamarr.server.services.streaming.local;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Deleted;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Refused;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -12,7 +15,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -23,6 +28,7 @@ import org.junit.jupiter.api.io.TempDir;
 class SegmentFolderLeftoversTest {
 
   private static final byte[] SEGMENT = "segment".getBytes();
+  private static final byte[] MEDIA = "media".getBytes();
   private static final String MARK_NAME = ".streamarr-segment-folder";
 
   @TempDir Path segmentFolder;
@@ -31,40 +37,54 @@ class SegmentFolderLeftoversTest {
   @Test
   @DisplayName("Should delete a stream session's directory when an earlier store left it")
   void shouldDeleteAStreamSessionsDirectoryWhenAnEarlierStoreLeftIt() {
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
     var sessionId = UUID.randomUUID();
     try (var stored = earlierStore().prepareSegment(sessionId, "720p/0.m4s", SEGMENT)) {
       stored.publish();
     }
 
-    leftoversOf(segmentFolder).delete();
+    var outcome = startOf(segmentFolder);
 
     assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
+    assertThat(outcome).isEqualTo(new Deleted(1, 0));
   }
 
   @Test
   @DisplayName("Should delete an unpublished upload when an earlier store left it")
   void shouldDeleteAnUnpublishedUploadWhenAnEarlierStoreLeftIt() {
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
     // Still open: the store's process ended before it published or discarded the upload.
     try (var _ = earlierStore().prepareSegment(UUID.randomUUID(), "720p/0.m4s", SEGMENT)) {
       assertThat(segmentFolder).isDirectoryContaining("glob:**/.upload-*");
 
-      leftoversOf(segmentFolder).delete();
+      var outcome = startOf(segmentFolder);
 
       assertThat(segmentFolder).isDirectoryNotContaining("glob:**/.upload-*");
+      assertThat(outcome).isEqualTo(new Deleted(1, 0));
     }
+  }
+
+  @Test
+  @DisplayName("Should keep the segment folder itself when it deletes every leftover")
+  void shouldKeepTheSegmentFolderItselfWhenItDeletesEveryLeftover() {
+    startOf(segmentFolder);
+    earlierStore().getOutputDirectory(UUID.randomUUID());
+
+    startOf(segmentFolder);
+
+    assertThat(segmentFolder).isDirectory();
+    assertThat(segmentFolder.resolve(MARK_NAME)).isRegularFile();
   }
 
   @Test
   @DisplayName("Should delete leftovers when it created the segment folder")
   void shouldDeleteLeftoversWhenItCreatedTheSegmentFolder() {
     var created = segmentFolder.resolve("server").resolve("segments");
-    leftoversOf(created).delete();
+    startOf(created);
     var sessionId = UUID.randomUUID();
     new LocalSegmentStore(created).getOutputDirectory(sessionId);
 
-    leftoversOf(created).delete();
+    startOf(created);
 
     assertThat(created.resolve(sessionId.toString())).doesNotExist();
   }
@@ -74,14 +94,13 @@ class SegmentFolderLeftoversTest {
   void shouldKeepEverythingWhenTheFolderHeldOtherEntriesBeforeAStoreUsedIt() throws IOException {
     var directoryNamedLikeASession =
         Files.createDirectory(segmentFolder.resolve(UUID.randomUUID().toString()));
-    var fileInThatDirectory =
-        Files.write(directoryNamedLikeASession.resolve("movie.mkv"), "media".getBytes());
-    var fileNamedLikeAnUpload =
-        Files.write(segmentFolder.resolve(".upload-1.tmp"), "media".getBytes());
+    var fileInThatDirectory = Files.write(directoryNamedLikeASession.resolve("movie.mkv"), MEDIA);
+    var fileNamedLikeAnUpload = Files.write(segmentFolder.resolve(".upload-1.tmp"), MEDIA);
 
-    leftoversOf(segmentFolder).delete();
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
+    var outcome = startOf(segmentFolder);
 
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.UNMARKED_FOLDER));
     assertThat(fileInThatDirectory).exists();
     assertThat(fileNamedLikeAnUpload).exists();
     assertThat(segmentFolder)
@@ -97,11 +116,11 @@ class SegmentFolderLeftoversTest {
   void shouldDeleteLeftoversWhenAnEarlierProcessEndedBeforeItWroteTheFoldersMark()
       throws IOException {
     Files.createFile(segmentFolder.resolve(MARK_NAME));
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
     var sessionId = UUID.randomUUID();
     earlierStore().getOutputDirectory(sessionId);
 
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
 
     assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
   }
@@ -111,11 +130,11 @@ class SegmentFolderLeftoversTest {
   @DisplayName("Should delete leftovers when the folder held only a mark that is not text")
   void shouldDeleteLeftoversWhenTheFolderHeldOnlyAMarkThatIsNotText() throws IOException {
     Files.write(segmentFolder.resolve(MARK_NAME), new byte[] {(byte) 0xC3, 0x28});
-    new SegmentFolderLeftovers(segmentFolder).delete();
+    startOf(segmentFolder);
     var sessionId = UUID.randomUUID();
     earlierStore().getOutputDirectory(sessionId);
 
-    new SegmentFolderLeftovers(segmentFolder).delete();
+    startOf(segmentFolder);
 
     assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
   }
@@ -149,15 +168,15 @@ class SegmentFolderLeftoversTest {
           + " folder")
   void shouldKeepTheFileThatASoftLinkInTheMarksPlacePointsToWhenItMarksTheFolder()
       throws IOException {
-    var outsideFile = Files.write(outside.resolve("movie.mkv"), "media".getBytes());
+    var outsideFile = Files.write(outside.resolve("movie.mkv"), MEDIA);
     Files.createSymbolicLink(segmentFolder.resolve(MARK_NAME), outsideFile);
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
     var sessionId = UUID.randomUUID();
     earlierStore().getOutputDirectory(sessionId);
 
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
 
-    assertThat(outsideFile).hasBinaryContent("media".getBytes());
+    assertThat(outsideFile).hasBinaryContent(MEDIA);
     assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
   }
 
@@ -168,14 +187,13 @@ class SegmentFolderLeftoversTest {
   void shouldKeepEverythingWhenTheFoldersMarkWasCopiedFromAnotherSegmentFolder()
       throws IOException {
     var otherSegmentFolder = outside.resolve("segments");
-    leftoversOf(otherSegmentFolder).delete();
+    startOf(otherSegmentFolder);
     var directoryNamedLikeASession =
         Files.createDirectory(segmentFolder.resolve(UUID.randomUUID().toString()));
-    var fileInThatDirectory =
-        Files.write(directoryNamedLikeASession.resolve("movie.mkv"), "media".getBytes());
+    var fileInThatDirectory = Files.write(directoryNamedLikeASession.resolve("movie.mkv"), MEDIA);
     Files.copy(otherSegmentFolder.resolve(MARK_NAME), segmentFolder.resolve(MARK_NAME));
 
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
 
     assertThat(fileInThatDirectory).exists();
   }
@@ -204,16 +222,15 @@ class SegmentFolderLeftoversTest {
   @Test
   @DisplayName("Should keep everything when the folder's mark is a soft link")
   void shouldKeepEverythingWhenTheFoldersMarkIsASoftLink() throws IOException {
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
     var markOutsideTheFolder =
         Files.move(segmentFolder.resolve(MARK_NAME), outside.resolve(MARK_NAME));
     Files.createSymbolicLink(segmentFolder.resolve(MARK_NAME), markOutsideTheFolder);
     var directoryNamedLikeASession =
         Files.createDirectory(segmentFolder.resolve(UUID.randomUUID().toString()));
-    var fileInThatDirectory =
-        Files.write(directoryNamedLikeASession.resolve("movie.mkv"), "media".getBytes());
+    var fileInThatDirectory = Files.write(directoryNamedLikeASession.resolve("movie.mkv"), MEDIA);
 
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
 
     assertThat(fileInThatDirectory).exists();
   }
@@ -221,7 +238,7 @@ class SegmentFolderLeftoversTest {
   @Test
   @DisplayName("Should keep each entry that no store writes when it deletes leftovers")
   void shouldKeepEachEntryThatNoStoreWritesWhenItDeletesLeftovers() throws IOException {
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
     var otherFile = Files.write(segmentFolder.resolve("notes.txt"), "notes".getBytes());
     var otherDirectory = Files.createDirectory(segmentFolder.resolve("movies"));
     var fileNamedLikeASession =
@@ -229,13 +246,13 @@ class SegmentFolderLeftoversTest {
     var directoryNamedLikeAnUpload = Files.createDirectory(segmentFolder.resolve(".upload-1.tmp"));
     var fileWithOnlyAnUploadsPrefix =
         Files.write(segmentFolder.resolve(".upload-3"), "data".getBytes());
-    var outsideFile = Files.write(outside.resolve("movie.mkv"), "media".getBytes());
+    var outsideFile = Files.write(outside.resolve("movie.mkv"), MEDIA);
     var linkNamedLikeASession =
         Files.createSymbolicLink(segmentFolder.resolve(UUID.randomUUID().toString()), outside);
     var linkNamedLikeAnUpload =
         Files.createSymbolicLink(segmentFolder.resolve(".upload-2.tmp"), outsideFile);
 
-    leftoversOf(segmentFolder).delete();
+    var outcome = startOf(segmentFolder);
 
     assertThat(otherFile).exists();
     assertThat(otherDirectory).exists();
@@ -245,6 +262,7 @@ class SegmentFolderLeftoversTest {
     assertThat(linkNamedLikeASession).isSymbolicLink();
     assertThat(linkNamedLikeAnUpload).isSymbolicLink();
     assertThat(outsideFile).exists();
+    assertThat(outcome).isEqualTo(new Deleted(0, 0));
   }
 
   @Test
@@ -253,22 +271,22 @@ class SegmentFolderLeftoversTest {
           + " links to it")
   void shouldKeepAFolderOutsideTheSegmentFolderWhenALeftoverStreamSessionsDirectoryLinksToIt()
       throws IOException {
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
     var sessionId = UUID.randomUUID();
     var sessionDirectory = earlierStore().getOutputDirectory(sessionId);
-    var outsideFile = Files.write(outside.resolve("movie.mkv"), "media".getBytes());
+    var outsideFile = Files.write(outside.resolve("movie.mkv"), MEDIA);
     Files.createSymbolicLink(sessionDirectory.resolve("link"), outside);
 
-    leftoversOf(segmentFolder).delete();
+    startOf(segmentFolder);
 
-    assertThat(outsideFile).exists();
+    assertThat(outsideFile).hasBinaryContent(MEDIA);
     assertThat(sessionDirectory).doesNotExist();
   }
 
   @Test
-  @DisplayName("Should delete the other leftovers when it cannot delete one")
-  void shouldDeleteTheOtherLeftoversWhenItCannotDeleteOne() throws IOException {
-    leftoversOf(segmentFolder).delete();
+  @DisplayName("Should delete the other leftovers and count the rest when it cannot delete some")
+  void shouldDeleteTheOtherLeftoversAndCountTheRestWhenItCannotDeleteSome() throws IOException {
+    startOf(segmentFolder);
     var store = earlierStore();
     leftover(store);
     leftover(store);
@@ -281,12 +299,13 @@ class SegmentFolderLeftoversTest {
       assumeFalse(
           Files.isWritable(lockedVariantDirectory), "folder permissions apply to the test user");
 
-      assertThatNoException().isThrownBy(leftoversOf(segmentFolder)::delete);
+      var outcome = startOf(segmentFolder);
 
       assertThat(lockedVariantDirectory.resolve("0.m4s")).exists();
       assertThat(segmentFolder)
           .isDirectoryNotContaining(
               entry -> Files.isDirectory(entry) && !entry.equals(undeletable));
+      assertThat(outcome).isEqualTo(new Deleted(2, 1));
     } finally {
       unlock(lockedVariantDirectory);
     }
@@ -297,39 +316,202 @@ class SegmentFolderLeftoversTest {
   @Test
   @DisplayName("Should delete every leftover when the segment folder holds hundreds of them")
   void shouldDeleteEveryLeftoverWhenTheSegmentFolderHoldsHundredsOfThem() throws IOException {
-    new SegmentFolderLeftovers(segmentFolder).delete();
+    startOf(segmentFolder);
     var store = earlierStore();
     for (var i = 0; i < 300; i++) {
       leftover(store);
     }
 
-    new SegmentFolderLeftovers(segmentFolder).delete();
+    var outcome = startOf(segmentFolder);
 
     assertThat(segmentFolder).isDirectoryNotContaining(Files::isDirectory);
+    assertThat(outcome).isEqualTo(new Deleted(300, 0));
   }
 
   @Test
-  @DisplayName("Should not throw when the segment folder cannot be created")
-  void shouldNotThrowWhenTheSegmentFolderCannotBeCreated() throws IOException {
+  @DisplayName(
+      "Should refuse the folder without throwing when the segment folder cannot be created")
+  void shouldRefuseTheFolderWithoutThrowingWhenTheSegmentFolderCannotBeCreated()
+      throws IOException {
     var fileInTheFoldersPlace = Files.write(segmentFolder.resolve("segments"), "data".getBytes());
 
-    assertThatNoException().isThrownBy(leftoversOf(fileInTheFoldersPlace)::delete);
+    var outcome = startOf(fileInTheFoldersPlace);
 
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.UNREADABLE_FOLDER));
     assertThat(fileInTheFoldersPlace).isRegularFile().hasBinaryContent("data".getBytes());
+  }
+
+  @Test
+  @DisplayName("Should refuse the folder when it is a media folder")
+  void shouldRefuseTheFolderWhenItIsAMediaFolder() throws IOException {
+    startOf(segmentFolder);
+    var movie = deletableFileIn(segmentFolder);
+
+    var outcome =
+        leftoversOf(segmentFolder).mediaFolders(() -> List.of(segmentFolder)).build().delete();
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.MEDIA_FOLDER));
+    assertThat(movie).hasBinaryContent(MEDIA);
+  }
+
+  @Test
+  @DisplayName("Should refuse the folder when it holds a media folder")
+  void shouldRefuseTheFolderWhenItHoldsAMediaFolder() throws IOException {
+    startOf(segmentFolder);
+    var movie = deletableFileIn(segmentFolder);
+    var library = segmentFolder.resolve("movies");
+
+    var outcome = leftoversOf(segmentFolder).mediaFolders(() -> List.of(library)).build().delete();
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.MEDIA_FOLDER));
+    assertThat(movie).hasBinaryContent(MEDIA);
+  }
+
+  @Test
+  @DisplayName("Should refuse the folder and create nothing when it lies in a media folder")
+  void shouldRefuseTheFolderAndCreateNothingWhenItLiesInAMediaFolder() {
+    var segmentsInTheLibrary = outside.resolve("segments");
+
+    var outcome =
+        leftoversOf(segmentsInTheLibrary).mediaFolders(() -> List.of(outside)).build().delete();
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.MEDIA_FOLDER));
+    assertThat(segmentsInTheLibrary).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should refuse the folder when a soft link names it and leads into a media folder")
+  void shouldRefuseTheFolderWhenASoftLinkNamesItAndLeadsIntoAMediaFolder() throws IOException {
+    var library = Files.createDirectory(outside.resolve("movies"));
+    startOf(library);
+    var movie = deletableFileIn(library);
+    var link = Files.createSymbolicLink(segmentFolder.resolve("segments"), library);
+
+    var outcome = leftoversOf(link).mediaFolders(() -> List.of(library)).build().delete();
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.MEDIA_FOLDER));
+    assertThat(movie).hasBinaryContent(MEDIA);
+  }
+
+  // Path.startsWith compares whole names: /library/segments2 does not lie in /library/segments.
+  @Test
+  @DisplayName("Should delete leftovers when a media folder's name only starts like the folder's")
+  void shouldDeleteLeftoversWhenAMediaFoldersNameOnlyStartsLikeTheFolders() {
+    var segments = outside.resolve("segments");
+    var library = outside.resolve("segments2");
+    startOf(segments);
+    var sessionId = UUID.randomUUID();
+    new LocalSegmentStore(segments).getOutputDirectory(sessionId);
+
+    var outcome = leftoversOf(segments).mediaFolders(() -> List.of(library)).build().delete();
+
+    assertThat(outcome).isEqualTo(new Deleted(1, 0));
+    assertThat(segments.resolve(sessionId.toString())).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should refuse every folder when the media folders cannot be read")
+  void shouldRefuseEveryFolderWhenTheMediaFoldersCannotBeRead() {
+    startOf(segmentFolder);
+    var sessionId = UUID.randomUUID();
+    earlierStore().getOutputDirectory(sessionId);
+    Supplier<List<Path>> unreadable =
+        () -> {
+          throw new IllegalStateException("The library table cannot be read");
+        };
+
+    var outcome = leftoversOf(segmentFolder).mediaFolders(unreadable).build().delete();
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.UNKNOWN_MEDIA_FOLDERS));
+    assertThat(segmentFolder.resolve(sessionId.toString())).isDirectory();
+  }
+
+  @Test
+  @DisplayName("Should refuse the folder when it is the home folder")
+  void shouldRefuseTheFolderWhenItIsTheHomeFolder() throws IOException {
+    startOf(segmentFolder);
+    var file = deletableFileIn(segmentFolder);
+
+    var outcome = leftoversOf(segmentFolder).homeFolder(segmentFolder).build().delete();
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.HOME_FOLDER));
+    assertThat(file).hasBinaryContent(MEDIA);
+  }
+
+  @Test
+  @DisplayName("Should refuse the folder when it holds the home folder")
+  void shouldRefuseTheFolderWhenItHoldsTheHomeFolder() throws IOException {
+    startOf(segmentFolder);
+    var file = deletableFileIn(segmentFolder);
+    var home = segmentFolder.resolve("home").resolve("streamarr");
+
+    var outcome = leftoversOf(segmentFolder).homeFolder(home).build().delete();
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.HOME_FOLDER));
+    assertThat(file).hasBinaryContent(MEDIA);
+  }
+
+  @Test
+  @DisplayName("Should refuse the folder and create nothing when it is a file system's top folder")
+  void shouldRefuseTheFolderAndCreateNothingWhenItIsAFileSystemsTopFolder() throws IOException {
+    try (var fileSystem = Jimfs.newFileSystem(Configuration.unix())) {
+      var top = fileSystem.getPath("/");
+
+      var outcome =
+          SegmentFolderLeftovers.builder()
+              .segmentFolder(top)
+              .homeFolder(fileSystem.getPath("/home/streamarr"))
+              .mediaFolders(() -> List.of(fileSystem.getPath("/media")))
+              .build()
+              .delete();
+
+      assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.FILE_SYSTEM_ROOT));
+      assertThat(top.resolve(MARK_NAME)).doesNotExist();
+    }
   }
 
   @Test
   @DisplayName("Should reject a missing segment folder when created")
   void shouldRejectAMissingSegmentFolderWhenCreated() {
-    assertThatNullPointerException().isThrownBy(SegmentFolderLeftovers.builder()::build);
+    assertThatNullPointerException()
+        .isThrownBy(() -> leftoversOf(segmentFolder).segmentFolder(null).build());
   }
 
-  private static SegmentFolderLeftovers leftoversOf(Path folder) {
-    return SegmentFolderLeftovers.builder().segmentFolder(folder).build();
+  @Test
+  @DisplayName("Should reject a missing home folder when created")
+  void shouldRejectAMissingHomeFolderWhenCreated() {
+    assertThatNullPointerException()
+        .isThrownBy(() -> leftoversOf(segmentFolder).homeFolder(null).build());
+  }
+
+  @Test
+  @DisplayName("Should reject missing media folders when created")
+  void shouldRejectMissingMediaFoldersWhenCreated() {
+    assertThatNullPointerException()
+        .isThrownBy(() -> leftoversOf(segmentFolder).mediaFolders(null).build());
+  }
+
+  // The start of a server process whose home folder and media folders lie elsewhere.
+  private SegmentFolderLeftovers.SegmentFolderLeftoversBuilder leftoversOf(Path folder) {
+    return SegmentFolderLeftovers.builder()
+        .segmentFolder(folder)
+        .homeFolder(outside.resolve("home"))
+        .mediaFolders(() -> List.of(outside.resolve("media")));
+  }
+
+  private SegmentFolderLeftoversOutcome startOf(Path folder) {
+    return leftoversOf(folder).build().delete();
   }
 
   private LocalSegmentStore earlierStore() {
     return new LocalSegmentStore(segmentFolder);
+  }
+
+  // A file in a stream session's directory that a store wrote, which a start that deletes would
+  // remove with the directory.
+  private static Path deletableFileIn(Path folder) throws IOException {
+    var directory = new LocalSegmentStore(folder).getOutputDirectory(UUID.randomUUID());
+    return Files.write(directory.resolve("movie.mkv"), MEDIA);
   }
 
   private static void leftover(LocalSegmentStore store) throws IOException {
