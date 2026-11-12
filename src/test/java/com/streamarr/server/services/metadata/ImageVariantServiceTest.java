@@ -2,9 +2,11 @@ package com.streamarr.server.services.metadata;
 
 import static com.streamarr.server.fakes.TestImages.createGifImage;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createQuadrantPngImage;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
+import static com.streamarr.server.fakes.TestImages.createVerticalBandsPngImage;
 import static com.streamarr.server.fakes.TestImages.decode;
 import static com.streamarr.server.fakes.TestImages.formatNameOf;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +27,7 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 import javax.imageio.ImageIO;
@@ -64,9 +67,7 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.width()).isEqualTo(185);
+    assertThat(smallVariant(variants).width()).isEqualTo(185);
   }
 
   @Test
@@ -76,9 +77,7 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.width()).isEqualTo(300);
+    assertThat(smallVariant(variants).width()).isEqualTo(300);
   }
 
   @Test
@@ -88,9 +87,7 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.ambientColors())
+    assertThat(smallVariant(variants).ambientColors())
         .isEqualTo(
             Optional.of(
                 AmbientColors.builder()
@@ -149,9 +146,59 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.blurHash()).isNotBlank();
+    assertThat(smallVariant(variants).blurHash()).isNotBlank();
+  }
+
+  @Test
+  @DisplayName("Should hash a thumbnail fitted within 128 pixels when the small variant is wider")
+  void shouldHashThumbnailFittedWithin128PixelsWhenSmallVariantIsWider() {
+    var imageData = createVerticalBandsPngImage(300, 169);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the 128x72
+    // Thumbnailator thumbnail of the 300x169 small variant, and LQI#MwvKQX#2j[fPf7fRfQfQfQfQ for
+    // the small variant itself. Thumbnails squashed to 128x128 or scaled to 128 pixels high hash
+    // differently.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("LRIq$8znQX#LofjZf7jbfQfQfQfQ");
+  }
+
+  @Test
+  @DisplayName("Should hash a thumbnail fitted within 128 pixels when the small variant is taller")
+  void shouldHashThumbnailFittedWithin128PixelsWhenSmallVariantIsTaller() {
+    var imageData = createVerticalBandsPngImage(185, 278);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the 85x128
+    // Thumbnailator thumbnail of the 185x278 small variant, and LRI#MvznQX#2j[fQf7fRfQfQfQfQ for
+    // the small variant itself. Thumbnails squashed to 128x128 or scaled to 128 pixels wide hash
+    // differently.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("LTIqy0z.QX#LoLfPf7fRfQfQfQfQ");
+  }
+
+  @Test
+  @DisplayName("Should hash the small variant itself when it fits within 128 pixels")
+  void shouldHashSmallVariantItselfWhenItFitsWithin128Pixels() {
+    var imageData = createQuadrantPngImage(92, 60);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.LOGO);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the fixture's
+    // own 92x60 pixels, and L=Iq#x|DjsJ.MoNFayofa#ayfQfQ for a 128x83 enlargement of them.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("L=Iq#x|Do0J.MoRiayofa#ayfQfQ");
+  }
+
+  @Test
+  @DisplayName("Should hash the small variant itself when it is one pixel high")
+  void shouldHashSmallVariantItselfWhenItIsOnePixelHigh() {
+    var imageData = createSolidPngImage(300, 1, 0xC0392B);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the fixture's
+    // own 300x1 red pixels, and L00000fQfQfQfQfQfQfQfQfQfQfQ for a black 128x1 strip.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("L~M2rujtfQjt}YjtfQjt}YjtfQjt");
   }
 
   @Test
@@ -320,6 +367,11 @@ class ImageVariantServiceTest {
     var variant = defaultVariantBuilder().data(null).build();
 
     assertThat(variant.toString()).contains("dataLength=0");
+  }
+
+  private static ImageVariantService.GeneratedVariant smallVariant(
+      List<ImageVariantService.GeneratedVariant> variants) {
+    return variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
   }
 
   private static GeneratedVariantBuilder defaultVariantBuilder() {

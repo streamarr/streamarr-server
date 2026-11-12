@@ -80,6 +80,48 @@ public final class TestImages {
     return writePng(image);
   }
 
+  /**
+   * Four flat quadrants split at half the width and height: red top left, blue top right, green
+   * bottom right and yellow bottom left.
+   */
+  public static byte[] createQuadrantPngImage(int width, int height) {
+    var left = width / 2;
+    var top = height / 2;
+    var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+    var graphics = image.createGraphics();
+    graphics.setColor(new Color(0xC0392B));
+    graphics.fillRect(0, 0, left, top);
+    graphics.setColor(new Color(0x2980B9));
+    graphics.fillRect(left, 0, width - left, top);
+    graphics.setColor(new Color(0x27AE60));
+    graphics.fillRect(left, top, width - left, height - top);
+    graphics.setColor(new Color(0xF1C40F));
+    graphics.fillRect(0, top, left, height - top);
+    graphics.dispose();
+
+    return writePng(image);
+  }
+
+  /**
+   * Seven flat vertical bands of near-equal width, left to right: red, blue, yellow, green, purple,
+   * white and black.
+   */
+  public static byte[] createVerticalBandsPngImage(int width, int height) {
+    int[] colors = {0xC0392B, 0x2980B9, 0xF1C40F, 0x27AE60, 0x8E44AD, 0xECF0F1, 0x111111};
+    var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+    var graphics = image.createGraphics();
+    for (var band = 0; band < colors.length; band++) {
+      var left = band * width / colors.length;
+      var right = (band + 1) * width / colors.length;
+      graphics.setColor(new Color(colors[band]));
+      graphics.fillRect(left, 0, right - left, height);
+    }
+
+    graphics.dispose();
+
+    return writePng(image);
+  }
+
   public static byte[] createTransparentPngImage() {
     return writePng(new BufferedImage(185, 278, BufferedImage.TYPE_INT_ARGB));
   }

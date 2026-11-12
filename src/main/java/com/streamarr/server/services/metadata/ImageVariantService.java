@@ -32,6 +32,8 @@ public class ImageVariantService {
 
   private static final int BLUR_HASH_COMPONENT_X = 4;
   private static final int BLUR_HASH_COMPONENT_Y = 3;
+  // A 4x3 BlurHash keeps only the lowest frequencies, which a 128-pixel copy still carries.
+  private static final int BLUR_HASH_MAX_INPUT_EDGE = 128;
 
   private static final List<ImageSize> RESIZABLE_SIZES =
       List.of(ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE);
@@ -204,8 +206,23 @@ public class ImageVariantService {
     }
   }
 
-  private String computeBlurHash(BufferedImage image) {
-    return BlurHash.encode(image, BLUR_HASH_COMPONENT_X, BLUR_HASH_COMPONENT_Y);
+  private String computeBlurHash(BufferedImage smallVariant) {
+    return BlurHash.encode(
+        blurHashInput(smallVariant), BLUR_HASH_COMPONENT_X, BLUR_HASH_COMPONENT_Y);
+  }
+
+  private static BufferedImage blurHashInput(BufferedImage smallVariant) {
+    var fitsWithinInput =
+        smallVariant.getWidth() <= BLUR_HASH_MAX_INPUT_EDGE
+            && smallVariant.getHeight() <= BLUR_HASH_MAX_INPUT_EDGE;
+    // Thumbnailator's progressive resizer draws nothing when it narrows an image that is one pixel
+    // high, so fitting it would hash as black.
+    if (fitsWithinInput || smallVariant.getHeight() == 1) {
+      return smallVariant;
+    }
+
+    return render(
+        Thumbnails.of(smallVariant).size(BLUR_HASH_MAX_INPUT_EDGE, BLUR_HASH_MAX_INPUT_EDGE));
   }
 
   // Reads alpha as the image stores it, one row at a time. A palette holds alpha in its entries.
