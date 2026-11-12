@@ -191,17 +191,21 @@ public class LocalSegmentStore implements SegmentStore {
   private Path createSessionDirectory(UUID sessionId) {
     try {
       var dir = heldFolder().resolve(sessionId.toString());
-      Files.createDirectories(dir);
-      Files.write(
-          dir.resolve(SESSION_MARK_NAME),
-          new byte[0],
-          StandardOpenOption.CREATE,
-          StandardOpenOption.WRITE,
-          LinkOption.NOFOLLOW_LINKS);
+      createMarkedFolder(dir);
       return dir;
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to create session directory", e);
     }
+  }
+
+  private static void createMarkedFolder(Path folder) throws IOException {
+    Files.createDirectories(folder);
+    Files.write(
+        folder.resolve(SESSION_MARK_NAME),
+        new byte[0],
+        StandardOpenOption.CREATE,
+        StandardOpenOption.WRITE,
+        LinkOption.NOFOLLOW_LINKS);
   }
 
   // The folder of each write, whose lock the store holds from its first write, so that no other

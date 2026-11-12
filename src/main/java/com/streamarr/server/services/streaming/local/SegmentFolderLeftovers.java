@@ -383,23 +383,38 @@ public class SegmentFolderLeftovers {
   }
 
   // The directory opens without following a soft link, and its mark is checked through the handle
-  // that deletes it. The mark goes last, so that a later start still deletes the rest of a
-  // directory that this start could not delete whole.
+  // that deletes it.
   private static Leftover deleteIfMarkedSession(SecureDirectoryStream<Path> folder, Path name)
       throws IOException {
     try (var session = folder.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS)) {
-      var sessionMark = name.getFileSystem().getPath(LocalSegmentStore.SESSION_MARK_NAME);
-      if (!isRegularFile(session, sessionMark)) {
+      if (!isMarkedByAStore(session, name)) {
         return Leftover.NOT_A_LEFTOVER;
       }
 
-      deleteEach(
-          session, namesIn(session).stream().filter(entry -> !entry.equals(sessionMark)).toList());
-      session.deleteFile(sessionMark);
+      deleteEntriesThenMark(session, name);
     }
 
     folder.deleteDirectory(name);
     return Leftover.DELETED;
+  }
+
+  private static boolean isMarkedByAStore(SecureDirectoryStream<Path> directory, Path name)
+      throws IOException {
+    return isRegularFile(directory, storeMark(name));
+  }
+
+  // The mark goes last, so that a later start still deletes the rest of a directory that this start
+  // could not delete whole.
+  private static void deleteEntriesThenMark(SecureDirectoryStream<Path> directory, Path name)
+      throws IOException {
+    var mark = storeMark(name);
+    deleteEach(
+        directory, namesIn(directory).stream().filter(entry -> !entry.equals(mark)).toList());
+    directory.deleteFile(mark);
+  }
+
+  private static Path storeMark(Path name) {
+    return name.getFileSystem().getPath(LocalSegmentStore.SESSION_MARK_NAME);
   }
 
   // Goes on past an entry that it cannot delete, so that it frees what it can, then throws.
