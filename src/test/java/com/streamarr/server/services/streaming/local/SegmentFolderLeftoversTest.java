@@ -6,8 +6,11 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -117,6 +120,29 @@ class SegmentFolderLeftoversTest {
     assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
   }
 
+  // A file of more than Integer.MAX_VALUE bytes cannot be read into memory. This one is sparse,
+  // so it takes no space.
+  @Test
+  @DisplayName("Should delete leftovers when the folder held only a mark too large to read")
+  void shouldDeleteLeftoversWhenTheFolderHeldOnlyAMarkTooLargeToRead() throws IOException {
+    try (var mark =
+        FileChannel.open(
+            segmentFolder.resolve(MARK_NAME),
+            StandardOpenOption.CREATE_NEW,
+            StandardOpenOption.WRITE,
+            StandardOpenOption.SPARSE)) {
+      mark.write(ByteBuffer.wrap(new byte[1]), Integer.MAX_VALUE);
+    }
+
+    new SegmentFolderLeftovers(segmentFolder).delete();
+    var sessionId = UUID.randomUUID();
+    earlierStore().getOutputDirectory(sessionId);
+
+    new SegmentFolderLeftovers(segmentFolder).delete();
+
+    assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
+  }
+
   @Test
   @DisplayName(
       "Should keep the file that a soft link in the mark's place points to when it marks the"
@@ -150,6 +176,27 @@ class SegmentFolderLeftoversTest {
     Files.copy(otherSegmentFolder.resolve(MARK_NAME), segmentFolder.resolve(MARK_NAME));
 
     new SegmentFolderLeftovers(segmentFolder).delete();
+
+    assertThat(fileInThatDirectory).exists();
+  }
+
+  // The two paths have the same length, so the copied mark has the size of the folder's own.
+  @Test
+  @DisplayName(
+      "Should keep everything when the folder's mark was copied from a folder with a path of the"
+          + " same length")
+  void shouldKeepEverythingWhenTheFoldersMarkWasCopiedFromAFolderWithAPathOfTheSameLength()
+      throws IOException {
+    var markedFolder = segmentFolder.resolve("a");
+    var folderWithTheCopiedMark = segmentFolder.resolve("b");
+    new SegmentFolderLeftovers(markedFolder).delete();
+    var directoryNamedLikeASession =
+        Files.createDirectories(folderWithTheCopiedMark.resolve(UUID.randomUUID().toString()));
+    var fileInThatDirectory =
+        Files.write(directoryNamedLikeASession.resolve("movie.mkv"), "media".getBytes());
+    Files.copy(markedFolder.resolve(MARK_NAME), folderWithTheCopiedMark.resolve(MARK_NAME));
+
+    new SegmentFolderLeftovers(folderWithTheCopiedMark).delete();
 
     assertThat(fileInThatDirectory).exists();
   }
