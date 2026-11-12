@@ -526,6 +526,62 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should answer a share as missing when its offerer stopped managing the Profile and cancels"
+          + " it, whether it is active, over or not there at all")
+  void shouldAnswerShareAsMissingWhenOffererWhoStoppedManagingProfileCancelsIt() throws Exception {
+    var orphan = managedOrphan();
+    var coManager = authTestSupport.createHouseholdMemberIdentity(owner);
+    var elsewhere = authTestSupport.createIdentity();
+    try {
+      transactionTemplate.executeWithoutResult(
+          _ ->
+              profileManagerRepository.saveAndFlush(
+                  ProfileManager.builder()
+                      .accountId(coManager.account().getId())
+                      .profileId(orphan.getId())
+                      .build()));
+      var active = offer(orphan, host.household().getId());
+      accept(host, UUID.fromString(active));
+      var ended = offer(orphan, elsewhere.household().getId());
+      accept(elsewhere, UUID.fromString(ended));
+      graphql(
+              authTestSupport.accountBearer(elsewhere),
+              """
+              mutation { endProfileShare(input: {shareId: "%s"}) {
+                share { status } userErrors { __typename } } }
+              """
+                  .formatted(ended))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.data.endProfileShare.share.status").value("ENDED"));
+      graphql(
+              authTestSupport.accountBearer(owner),
+              """
+              mutation { relinquishProfileManagement(input: {profileId: "%s"}) {
+                profileId userErrors { __typename } } }
+              """
+                  .formatted(orphan.getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.relinquishProfileManagement.userErrors").isEmpty());
+
+      var answers =
+          List.of(
+              answerOf(owner, "cancelProfileShare", active),
+              answerOf(owner, "cancelProfileShare", ended),
+              answerOf(owner, "cancelProfileShare", UUID.randomUUID().toString()));
+
+      assertThat(answers)
+          .containsExactly("ShareNotFoundError", "ShareNotFoundError", "ShareNotFoundError");
+      assertThat(shareRepository.findById(UUID.fromString(active)).orElseThrow().getStatus())
+          .isEqualTo(ProfileShareStatus.ACTIVE);
+    } finally {
+      authTestSupport.deleteIdentity(elsewhere);
+      authTestSupport.deleteIdentity(coManager);
+    }
+  }
+
   private String savedShare(ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> share) {
     return transactionTemplate
         .execute(_ -> shareRepository.saveAndFlush(share.build()))

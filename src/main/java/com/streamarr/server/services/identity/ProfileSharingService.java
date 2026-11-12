@@ -266,7 +266,7 @@ public class ProfileSharingService {
                 throw new MutationRejection(rejection);
               });
           if (!shareLifecycle.tryDeclinePending(shareId, target, clock.instant())) {
-            throw new MutationRejection(new ShareRejections.ShareNotPending());
+            throw lifecycleRefusal(identity, shareId, ShareRejections.ShareNotPending::new);
           }
 
           return shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
@@ -296,20 +296,21 @@ public class ProfileSharingService {
                   throw new AuthorizationUnavailableException();
             };
     if (!stillAuthorized) {
-      return invalidateUnauthorizedOffer(shareId);
+      return invalidateUnauthorizedOffer(identity, shareId);
     }
 
     if (!shareLifecycle.tryActivatePending(shareId, clock.instant())) {
-      throw new MutationRejection(notPending(shareId));
+      throw lifecycleRefusal(identity, shareId, () -> notPending(shareId));
     }
 
     return shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
   }
 
-  private ProfileHouseholdShare invalidateUnauthorizedOffer(UUID shareId) {
+  private ProfileHouseholdShare invalidateUnauthorizedOffer(
+      AuthenticatedIdentity identity, UUID shareId) {
     if (!shareLifecycle.tryInvalidatePending(
         shareId, ProfileShareLifecycle.OFFERER_NO_LONGER_AUTHORIZED, clock.instant())) {
-      throw new MutationRejection(notPending(shareId));
+      throw lifecycleRefusal(identity, shareId, () -> notPending(shareId));
     }
 
     return shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
@@ -352,7 +353,7 @@ public class ProfileSharingService {
           steps.authorize().run();
           var now = clock.instant();
           if (!shareLifecycle.tryEndActive(shareId, now)) {
-            throw new MutationRejection(steps.notActive().get());
+            throw lifecycleRefusal(identity, shareId, steps.notActive());
           }
 
           var share = shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
@@ -483,6 +484,15 @@ public class ProfileSharingService {
                 mayViewProfileShares(identity, share.getProfileId())
                     || mayViewHousehold(identity, share.getHouseholdId()))
         .orElse(false);
+  }
+
+  // What became of a share is told only to a caller who may read it, even one Cedar allowed: an
+  // offerer may still cancel its pending offer after it stops managing the Profile, and must not
+  // learn from the refusal whether the share it offered is active.
+  private MutationRejection lifecycleRefusal(
+      AuthenticatedIdentity identity, UUID shareId, Supplier<?> refusal) {
+    return new MutationRejection(
+        mayViewShare(identity, shareId) ? refusal.get() : new ShareRejections.ShareNotFound());
   }
 
   private boolean mayViewProfile(AuthenticatedIdentity identity, UUID profileId) {
