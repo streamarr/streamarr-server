@@ -11,6 +11,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -53,7 +54,14 @@ public class LibraryCountsChangedPublisher {
       pushAt = previous.nextAllowedAt();
     }
 
-    scheduler.schedule(() -> pushCounts(libraryId), pushAt);
+    try {
+      scheduler.schedule(() -> pushCounts(libraryId), pushAt);
+    } catch (TaskRejectedException _) {
+      // The server stopped its task scheduler while background work still commits; the
+      // subscribers' connections end with the server.
+      return previous;
+    }
+
     return new Push(pushAt, true);
   }
 

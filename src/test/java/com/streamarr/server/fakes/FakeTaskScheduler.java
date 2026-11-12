@@ -7,6 +7,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.Trigger;
 
@@ -14,6 +15,12 @@ import org.springframework.scheduling.Trigger;
 public class FakeTaskScheduler implements TaskScheduler {
 
   private final List<ScheduledTask> tasks = new CopyOnWriteArrayList<>();
+  private volatile boolean stopped;
+
+  /** Rejects every later task, as Spring's task scheduler does once the server stops it. */
+  public void stop() {
+    stopped = true;
+  }
 
   /** Runs every task due at or before the instant that was not cancelled. */
   public void runTasksDueAt(Instant now) {
@@ -38,6 +45,10 @@ public class FakeTaskScheduler implements TaskScheduler {
 
   @Override
   public ScheduledFuture<?> schedule(Runnable task, Instant startTime) {
+    if (stopped) {
+      throw new TaskRejectedException("The task scheduler has stopped");
+    }
+
     var scheduled = new ScheduledTask(task, startTime);
     tasks.add(scheduled);
     return scheduled;
