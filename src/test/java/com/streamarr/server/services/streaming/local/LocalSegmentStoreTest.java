@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Feature;
 import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.exceptions.FileShrankException;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.services.streaming.SegmentPublication;
@@ -121,8 +122,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should reach end of stream after the remaining byte when an opened segment shrinks")
-  void shouldReachEndOfStreamAfterTheRemainingByteWhenAnOpenedSegmentShrinks() throws IOException {
+  @DisplayName("Should fail the read past the remaining byte when an opened segment shrinks")
+  void shouldFailTheReadPastTheRemainingByteWhenAnOpenedSegmentShrinks() throws IOException {
     var sessionId = UUID.randomUUID();
     var name = "segment0.m4s";
     store.storeSegment(sessionId, name, new byte[] {-1, 2, 3, 4});
@@ -134,7 +135,7 @@ class LocalSegmentStoreTest {
       writer.truncate(1);
 
       assertThat(stream.read()).isEqualTo(255);
-      assertThat(stream.read()).isEqualTo(-1);
+      assertThatThrownBy(stream::read).isInstanceOf(FileShrankException.class);
     }
   }
 

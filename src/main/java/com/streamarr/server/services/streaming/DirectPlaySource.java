@@ -1,7 +1,6 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.SourceContainer;
-import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -71,10 +70,6 @@ public final class DirectPlaySource implements AutoCloseable {
     synchronized (fileLock) {
       file.position(position);
       var read = file.read(target);
-      if (read < 0) {
-        throw new EOFException("The source file ended before its length at open");
-      }
-
       if (read > 0) {
         metrics.countBytesServed(read);
       }

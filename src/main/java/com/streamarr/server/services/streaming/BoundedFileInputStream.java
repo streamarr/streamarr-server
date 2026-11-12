@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.exceptions.FileShrankException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -8,8 +9,8 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
- * An independent cursor over the file's length at open. Closing the stream leaves the file with its
- * owner.
+ * An independent cursor over the file's length at open. A read fails when the file ends before that
+ * length. Closing the stream leaves the file with its owner.
  */
 @RequiredArgsConstructor
 public final class BoundedFileInputStream extends InputStream {
@@ -50,10 +51,11 @@ public final class BoundedFileInputStream extends InputStream {
 
     var wanted = (int) Math.min(count, length - position);
     var read = reader.read(ByteBuffer.wrap(target, offset, wanted), position);
-    if (read > 0) {
-      position += read;
+    if (read < 0) {
+      throw new FileShrankException();
     }
 
+    position += read;
     return read;
   }
 
