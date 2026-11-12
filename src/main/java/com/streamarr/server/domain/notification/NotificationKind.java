@@ -1,4 +1,4 @@
-package com.streamarr.server.services.events.notification;
+package com.streamarr.server.domain.notification;
 
 import lombok.Builder;
 import lombok.NonNull;
@@ -20,7 +20,7 @@ public record NotificationKind(
   /**
    * @throws IllegalArgumentException when the subject is not of this kind's subject type
    */
-  void requireAbout(SubjectReference subject) {
+  public void requireAbout(SubjectReference subject) {
     if (!subjectType.equals(subject.type())) {
       throw new IllegalArgumentException(
           "A %s Notification is about a %s, not a %s".formatted(name, subjectType, subject.type()));
@@ -30,7 +30,7 @@ public record NotificationKind(
   /**
    * @throws IllegalArgumentException when the snapshot is not of this kind's record type
    */
-  void requireSnapshot(NotificationSnapshot snapshot) {
+  public void requireSnapshot(NotificationSnapshot snapshot) {
     if (!snapshotType.isInstance(snapshot)) {
       throw new IllegalArgumentException(
           "A %s Notification keeps a %s, not a %s"

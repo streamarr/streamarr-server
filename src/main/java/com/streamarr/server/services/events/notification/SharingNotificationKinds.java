@@ -1,5 +1,8 @@
 package com.streamarr.server.services.events.notification;
 
+import com.streamarr.server.domain.notification.NotificationForm;
+import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.SubjectReference;
 import java.util.List;
 
 /**

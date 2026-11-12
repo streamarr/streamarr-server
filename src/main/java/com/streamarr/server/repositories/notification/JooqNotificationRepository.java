@@ -14,22 +14,22 @@ import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
+import com.streamarr.server.domain.notification.ChangedNotification;
+import com.streamarr.server.domain.notification.DismissalSelector;
+import com.streamarr.server.domain.notification.NewsUpdate;
+import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.NotificationKinds;
+import com.streamarr.server.domain.notification.NotificationTell;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.RequestSettlement;
+import com.streamarr.server.domain.notification.StoredNotification;
+import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.enums.NotificationForm;
 import com.streamarr.server.jooq.generated.enums.RequestResolution;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
 import com.streamarr.server.repositories.Keyset;
-import com.streamarr.server.services.events.notification.DismissalSelector;
-import com.streamarr.server.services.events.notification.NewsUpdate;
-import com.streamarr.server.services.events.notification.NotificationKind;
-import com.streamarr.server.services.events.notification.RecipientReference;
-import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
-import com.streamarr.server.services.events.notification.SubjectReference;
-import com.streamarr.server.services.events.notification.TellNotificationEvent;
-import com.streamarr.server.services.notification.NotificationKindCatalog;
-import com.streamarr.server.services.notification.StoredNotification;
-import com.streamarr.server.services.notification.events.ChangedNotification;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -69,10 +69,10 @@ public class JooqNotificationRepository implements NotificationRepository {
           .build();
 
   private final DSLContext dsl;
-  private final NotificationKindCatalog catalog;
+  private final NotificationKinds kinds;
 
   @Override
-  public List<ChangedNotification> tellNews(TellNotificationEvent tell) {
+  public List<ChangedNotification> tellNews(NotificationTell tell) {
     var laterOrSame = excluded(NOTIFICATION.LATEST_EVENT_AT).ge(NOTIFICATION.LATEST_EVENT_AT);
     return rowsFor(tell)
         .onConflict(RECIPIENT_KIND_AND_SUBJECT)
@@ -88,7 +88,7 @@ public class JooqNotificationRepository implements NotificationRepository {
   }
 
   @Override
-  public List<ChangedNotification> tellRequests(TellNotificationEvent tell) {
+  public List<ChangedNotification> tellRequests(NotificationTell tell) {
     return rowsFor(tell)
         .onConflict(RECIPIENT_KIND_AND_SUBJECT)
         .where(NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)))
@@ -98,7 +98,7 @@ public class JooqNotificationRepository implements NotificationRepository {
   }
 
   @Override
-  public List<ChangedNotification> resolve(ResolveRequestsEvent resolution) {
+  public List<ChangedNotification> resolve(RequestSettlement resolution) {
     var at = val(resolution.at().atOffset(ZoneOffset.UTC));
     var beforeTheExpiry = NOTIFICATION.EXPIRES_AT.isNull().or(at.lt(NOTIFICATION.EXPIRES_AT));
     var resolved = RequestResolution.valueOf(resolution.resolution().name());
@@ -228,7 +228,7 @@ public class JooqNotificationRepository implements NotificationRepository {
 
   private StoredNotification storedOf(NotificationRecord stored) {
     var kind =
-        catalog
+        kinds
             .kindNamed(stored.getKind())
             .orElseThrow(
                 () ->
@@ -252,10 +252,9 @@ public class JooqNotificationRepository implements NotificationRepository {
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.server.services.events.notification.RequestResolution
-      domainResolutionOf(RequestResolution stored) {
-    return com.streamarr.server.services.events.notification.RequestResolution.valueOf(
-        stored.name());
+  private static com.streamarr.server.domain.notification.RequestResolution domainResolutionOf(
+      RequestResolution stored) {
+    return com.streamarr.server.domain.notification.RequestResolution.valueOf(stored.name());
   }
 
   private static Optional<Instant> instantOf(OffsetDateTime stored) {
@@ -301,7 +300,7 @@ public class JooqNotificationRepository implements NotificationRepository {
   // A decision made before the expiry joins its answer to the snapshot, under the name every
   // request kind's snapshot gives it.
   private static Field<JSONB> snapshotAnswering(
-      ResolveRequestsEvent resolution, Condition beforeTheExpiry) {
+      RequestSettlement resolution, Condition beforeTheExpiry) {
     return resolution
         .answer()
         .map(
@@ -370,7 +369,7 @@ public class JooqNotificationRepository implements NotificationRepository {
           OffsetDateTime,
           OffsetDateTime,
           OffsetDateTime>
-      rowsFor(TellNotificationEvent tell) {
+      rowsFor(NotificationTell tell) {
     var insert =
         dsl.insertInto(
             NOTIFICATION,

@@ -1,4 +1,4 @@
-package com.streamarr.server.services.events.notification;
+package com.streamarr.server.domain.notification;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

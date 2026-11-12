@@ -1,13 +1,13 @@
 package com.streamarr.server.repositories.notification;
 
+import com.streamarr.server.domain.notification.ChangedNotification;
+import com.streamarr.server.domain.notification.DismissalSelector;
+import com.streamarr.server.domain.notification.NotificationTell;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.RequestSettlement;
+import com.streamarr.server.domain.notification.StoredNotification;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
-import com.streamarr.server.services.events.notification.DismissalSelector;
-import com.streamarr.server.services.events.notification.RecipientReference;
-import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
-import com.streamarr.server.services.events.notification.TellNotificationEvent;
-import com.streamarr.server.services.notification.StoredNotification;
-import com.streamarr.server.services.notification.events.ChangedNotification;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -27,14 +27,14 @@ public interface NotificationRepository {
    * identity. The later event's snapshot and time win; an earlier event that arrives late changes
    * nothing. Two tells at the same moment update one Notification.
    */
-  List<ChangedNotification> tellNews(TellNotificationEvent tell);
+  List<ChangedNotification> tellNews(NotificationTell tell);
 
   /**
    * Makes a waiting request for each recipient, with the subject's expiry the tell carries. A
    * request never updates in place: a recipient who already has the request about the subject gets
    * no second one, and nothing of the first changes.
    */
-  List<ChangedNotification> tellRequests(TellNotificationEvent tell);
+  List<ChangedNotification> tellRequests(NotificationTell tell);
 
   /**
    * Settles the requests of the kind about the subject that no event has resolved yet. The
@@ -43,7 +43,7 @@ public interface NotificationRepository {
    * answer; at or after it, the request expired, at its expiry. A request keeps its time and its
    * read state.
    */
-  List<ChangedNotification> resolve(ResolveRequestsEvent resolution);
+  List<ChangedNotification> resolve(RequestSettlement resolution);
 
   /** Deletes the Notifications the selector selects, for every recipient it names or all. */
   List<ChangedNotification> dismiss(DismissalSelector selector);

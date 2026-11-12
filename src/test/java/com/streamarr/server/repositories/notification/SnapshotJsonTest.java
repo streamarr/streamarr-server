@@ -2,8 +2,8 @@ package com.streamarr.server.repositories.notification;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.services.events.notification.NotificationKind;
-import com.streamarr.server.services.events.notification.NotificationSnapshot;
+import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.NotificationSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareEndedBy;

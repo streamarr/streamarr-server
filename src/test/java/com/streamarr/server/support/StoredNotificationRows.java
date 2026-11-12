@@ -2,10 +2,10 @@ package com.streamarr.server.support;
 
 import static com.streamarr.server.jooq.generated.tables.Notification.NOTIFICATION;
 
+import com.streamarr.server.domain.notification.NotificationSnapshot;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
-import com.streamarr.server.services.events.notification.NotificationSnapshot;
-import com.streamarr.server.services.events.notification.RecipientReference;
-import com.streamarr.server.services.events.notification.SubjectReference;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Collection;

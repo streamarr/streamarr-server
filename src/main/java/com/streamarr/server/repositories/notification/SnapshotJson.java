@@ -1,7 +1,7 @@
 package com.streamarr.server.repositories.notification;
 
-import com.streamarr.server.services.events.notification.NotificationKind;
-import com.streamarr.server.services.events.notification.NotificationSnapshot;
+import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.NotificationSnapshot;
 import org.jooq.JSONB;
 import tools.jackson.databind.json.JsonMapper;
 

@@ -1,6 +1,5 @@
-package com.streamarr.server.services.notification.events;
+package com.streamarr.server.domain.notification;
 
-import com.streamarr.server.services.events.notification.RecipientReference;
 import java.util.UUID;
 import lombok.NonNull;
 

@@ -477,9 +477,9 @@ class ArchitectureTest {
   static final ArchRule onlyTheShareLifecycleMayWriteShares = onlyTheShareLifecycleMayWriteShares();
 
   // The Notifications module (ADR 0063) depends on no other domain's package, only on its own
-  // events in the shared events package and the server's shared parts, and reads no table it does
-  // not own. Other domains tell it what happened; it hears no other domain's events and never asks
-  // them.
+  // events in the shared events package, its types in domain and the server's shared parts, and
+  // reads no table it does not own. Other domains tell it what happened; it hears no other domain's
+  // events and never asks them.
   @ArchTest
   static final ArchRule notificationsMustKeepToTheirOwnPackagesAndTable =
       notificationsMustKeepToTheirOwnPackagesAndTable();
@@ -782,7 +782,7 @@ class ArchitectureTest {
 
     assertThatThrownBy(() -> rule.check(moduleBound))
         .isInstanceOf(AssertionError.class)
-        .hasMessageContaining("StoredNotification");
+        .hasMessageContaining("NotificationKindCatalog");
   }
 
   @ParameterizedTest
@@ -1129,6 +1129,7 @@ class ArchitectureTest {
                 .or(
                     resideInAnyPackage(
                         "com.streamarr.server.services.events.notification..",
+                        "com.streamarr.server.domain.notification..",
                         "com.streamarr.server.domain.pagination..",
                         "com.streamarr.server.services.pagination..",
                         "com.streamarr.server.services.mutation..",
@@ -1146,7 +1147,8 @@ class ArchitectureTest {
                         RequestResolution.class)))
         .as(
             "The Notifications module depends only on its own packages, its own events in the shared"
-                + " events package and the server's shared parts, and reads only its own table");
+                + " events package, its types in domain and the server's shared parts, and reads only"
+                + " its own table");
   }
 
   private static ArchRule onlyCreditServiceMaySaveCredits() {

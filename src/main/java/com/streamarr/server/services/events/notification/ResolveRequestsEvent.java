@@ -1,5 +1,11 @@
 package com.streamarr.server.services.events.notification;
 
+import com.streamarr.server.domain.notification.NotificationForm;
+import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.RequestAnswer;
+import com.streamarr.server.domain.notification.RequestResolution;
+import com.streamarr.server.domain.notification.RequestSettlement;
+import com.streamarr.server.domain.notification.SubjectReference;
 import java.time.Instant;
 import java.util.Optional;
 import lombok.Builder;
@@ -17,7 +23,8 @@ public record ResolveRequestsEvent(
     @NonNull SubjectReference subject,
     @NonNull RequestResolution resolution,
     @NonNull Optional<RequestAnswer> answer,
-    @NonNull Instant at) {
+    @NonNull Instant at)
+    implements RequestSettlement {
 
   /**
    * @throws IllegalArgumentException when the kind is news, when the subject is not of the kind's

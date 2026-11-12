@@ -1,4 +1,4 @@
-package com.streamarr.server.services.events.notification;
+package com.streamarr.server.domain.notification;
 
 /**
  * Whether a Notification waits for a decision on its subject or only tells (ADR 0063 §Requests and

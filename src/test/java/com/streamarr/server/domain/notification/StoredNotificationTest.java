@@ -1,14 +1,11 @@
-package com.streamarr.server.services.notification;
+package com.streamarr.server.domain.notification;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
-import com.streamarr.server.services.events.notification.RecipientReference;
-import com.streamarr.server.services.events.notification.RequestResolution;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
-import com.streamarr.server.services.events.notification.SubjectReference;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;

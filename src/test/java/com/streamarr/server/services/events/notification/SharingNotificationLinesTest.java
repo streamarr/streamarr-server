@@ -2,6 +2,8 @@ package com.streamarr.server.services.events.notification;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.notification.NotificationSnapshot;
+import com.streamarr.server.domain.notification.RequestResolution;
 import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;

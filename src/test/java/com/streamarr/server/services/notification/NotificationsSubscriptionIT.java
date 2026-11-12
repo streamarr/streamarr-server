@@ -10,6 +10,13 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
+import com.streamarr.server.domain.notification.ChangedNotification;
+import com.streamarr.server.domain.notification.DismissalSelector;
+import com.streamarr.server.domain.notification.NotificationTell;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.RequestSettlement;
+import com.streamarr.server.domain.notification.StoredNotification;
+import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -19,13 +26,9 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.notification.JooqNotificationRepository;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
-import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
-import com.streamarr.server.services.events.notification.RecipientReference;
-import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
-import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.identity.AccountAdministrationService;
 import com.streamarr.server.services.identity.AccountLifecycleService;
@@ -39,7 +42,6 @@ import com.streamarr.server.services.identity.ProfileManagerAdministrationServic
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.ShareRejections;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.notification.events.ChangedNotification;
 import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
@@ -1100,17 +1102,17 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public List<ChangedNotification> tellNews(TellNotificationEvent tell) {
+    public List<ChangedNotification> tellNews(NotificationTell tell) {
       return stored.tellNews(tell);
     }
 
     @Override
-    public List<ChangedNotification> tellRequests(TellNotificationEvent tell) {
+    public List<ChangedNotification> tellRequests(NotificationTell tell) {
       return stored.tellRequests(tell);
     }
 
     @Override
-    public List<ChangedNotification> resolve(ResolveRequestsEvent resolution) {
+    public List<ChangedNotification> resolve(RequestSettlement resolution) {
       return stored.resolve(resolution);
     }
 

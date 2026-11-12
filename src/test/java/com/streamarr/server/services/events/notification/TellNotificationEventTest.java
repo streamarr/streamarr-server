@@ -3,6 +3,8 @@ package com.streamarr.server.services.events.notification;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.SubjectReference;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;

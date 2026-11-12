@@ -4,15 +4,15 @@ import static com.streamarr.server.jooq.generated.tables.Notification.NOTIFICATI
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.RequestResolution;
+import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
-import com.streamarr.server.services.events.notification.RecipientReference;
-import com.streamarr.server.services.events.notification.RequestResolution;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
-import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.serversettings.ServerSettingsService;

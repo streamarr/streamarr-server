@@ -1,6 +1,7 @@
 package com.streamarr.server.services.notification;
 
-import com.streamarr.server.services.events.notification.NotificationKind;
+import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.NotificationKinds;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import java.util.Map;
 import java.util.Optional;
@@ -15,7 +16,7 @@ import org.springframework.stereotype.Component;
  * contributes. A kind keeps its name for good, so a stored Notification always finds its kind.
  */
 @Component
-public class NotificationKindCatalog {
+public class NotificationKindCatalog implements NotificationKinds {
 
   private final Map<String, NotificationKind> kinds;
 
@@ -25,6 +26,7 @@ public class NotificationKindCatalog {
             .collect(Collectors.toUnmodifiableMap(NotificationKind::name, Function.identity()));
   }
 
+  @Override
   public Optional<NotificationKind> kindNamed(String name) {
     return Optional.ofNullable(kinds.get(name));
   }

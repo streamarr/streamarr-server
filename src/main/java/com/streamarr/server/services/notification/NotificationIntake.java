@@ -1,11 +1,11 @@
 package com.streamarr.server.services.notification;
 
+import com.streamarr.server.domain.notification.ChangedNotification;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.events.notification.DismissNotificationsEvent;
 import com.streamarr.server.services.events.notification.NotificationRecipientDeletedEvent;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
-import com.streamarr.server.services.notification.events.ChangedNotification;
 import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
 import java.util.List;
 import lombok.RequiredArgsConstructor;

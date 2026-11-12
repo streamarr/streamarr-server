@@ -1,10 +1,5 @@
-package com.streamarr.server.services.notification;
+package com.streamarr.server.domain.notification;
 
-import com.streamarr.server.services.events.notification.NotificationKind;
-import com.streamarr.server.services.events.notification.NotificationSnapshot;
-import com.streamarr.server.services.events.notification.RecipientReference;
-import com.streamarr.server.services.events.notification.RequestResolution;
-import com.streamarr.server.services.events.notification.SubjectReference;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;

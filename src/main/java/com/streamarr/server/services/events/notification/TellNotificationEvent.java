@@ -1,5 +1,11 @@
 package com.streamarr.server.services.events.notification;
 
+import com.streamarr.server.domain.notification.NotificationForm;
+import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.NotificationSnapshot;
+import com.streamarr.server.domain.notification.NotificationTell;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.SubjectReference;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
@@ -21,7 +27,8 @@ public record TellNotificationEvent(
     @NonNull Set<RecipientReference> recipients,
     @NonNull NotificationSnapshot snapshot,
     @NonNull Instant at,
-    @NonNull Optional<Instant> subjectExpiresAt) {
+    @NonNull Optional<Instant> subjectExpiresAt)
+    implements NotificationTell {
 
   /**
    * @throws IllegalArgumentException when the subject or the snapshot is not of the kind's type,

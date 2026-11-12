@@ -1,8 +1,8 @@
 package com.streamarr.server.graphql.subscriptions;
 
+import com.streamarr.server.domain.notification.ChangedNotification;
+import com.streamarr.server.domain.notification.RecipientReference;
 import com.streamarr.server.graphql.dto.NotificationsChange;
-import com.streamarr.server.services.events.notification.RecipientReference;
-import com.streamarr.server.services.notification.events.ChangedNotification;
 import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

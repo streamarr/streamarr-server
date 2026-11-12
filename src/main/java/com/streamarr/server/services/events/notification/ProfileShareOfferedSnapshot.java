@@ -1,5 +1,7 @@
 package com.streamarr.server.services.events.notification;
 
+import com.streamarr.server.domain.notification.NotificationSnapshot;
+import com.streamarr.server.domain.notification.RequestResolution;
 import java.util.Optional;
 import lombok.NonNull;
 
