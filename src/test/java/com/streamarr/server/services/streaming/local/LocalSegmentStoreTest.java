@@ -14,9 +14,11 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -115,6 +117,24 @@ class LocalSegmentStoreTest {
       assertThat(second).hasBinaryContent(new byte[] {7, 8, 9});
       assertThat(first.readAllBytes()).containsExactly(8, 9);
       assertThat(first.read()).isEqualTo(-1);
+    }
+  }
+
+  @Test
+  @DisplayName("Should reach end of stream after the remaining byte when an opened segment shrinks")
+  void shouldReachEndOfStreamAfterTheRemainingByteWhenAnOpenedSegmentShrinks() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var name = "segment0.m4s";
+    store.storeSegment(sessionId, name, new byte[] {-1, 2, 3, 4});
+    var path = store.getOutputDirectory(sessionId).resolve(name);
+
+    try (var opened = store.openSegment(sessionId, name).orElseThrow();
+        var stream = opened.newInputStream();
+        var writer = FileChannel.open(path, StandardOpenOption.WRITE)) {
+      writer.truncate(1);
+
+      assertThat(stream.read()).isEqualTo(255);
+      assertThat(stream.read()).isEqualTo(-1);
     }
   }
 
