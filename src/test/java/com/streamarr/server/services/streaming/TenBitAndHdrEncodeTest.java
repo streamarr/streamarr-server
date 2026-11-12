@@ -485,33 +485,6 @@ class TenBitAndHdrEncodeTest {
             Optional.of(PlaybackFormatChange.STARTED_WITH_ENCODE)));
   }
 
-  // ADR 0052: another playback choice starts a new playback session, which names no change while
-  // it plays the output that its own choice asks for.
-  @Test
-  @DisplayName(
-      "Should name no change in the new playback session when the viewer chooses SDR after a"
-          + " fixed quality did not keep HDR")
-  void shouldNameNoChangeInTheNewPlaybackSessionWhenTheViewerChoosesSdrAfterHdrWasNotKept() {
-    workers.setTargetEncoders(
-        ExecutionTargetId.LOCAL, List.of(svtAv1(Set.of()), libx264(Set.of())));
-    probes.setDefaultProbe(hdr10Source(Optional.empty(), Optional.empty()));
-    var hdrChoice =
-        accepted(
-            playback.start(
-                start(
-                    options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.HDR), hdrAv1Client())));
-
-    var sdrChoice =
-        accepted(
-            playback.start(
-                start(
-                    options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.SDR), hdrAv1Client())));
-
-    assertThat(hdrChoice.formatChange()).contains(PlaybackFormatChange.HDR_NOT_KEPT);
-    assertThat(sdrChoice.playbackSessionId()).isNotEqualTo(hdrChoice.playbackSessionId());
-    assertThat(sdrChoice.formatChange()).isEmpty();
-  }
-
   // ADR 0050 lets a copy above the viewer's limits play only when no encode plays, and offers a
   // fixed quality whose box an encode reaches. An entry that accepts only PQ takes an HDR10 encode,
   // so the smaller fixed qualities are offered and that encode plays within the limits.

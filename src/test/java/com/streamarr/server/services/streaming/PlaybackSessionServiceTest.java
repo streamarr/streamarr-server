@@ -1157,28 +1157,25 @@ class PlaybackSessionServiceTest {
   void shouldAnnounceTheSdrEncodeBeforeItStartsWhenNoStreamSessionCanContinueAPqEncode() {
     streams.copiesTheSource = false;
     streams.encodeFormat = EncodeFormat.hdr(VideoRange.PQ);
+    streams.sourceProbe = pqSource();
     var command = startCommand().options(qualityOptions(VideoQuality.HIGH_720P)).build();
     var initial = accepted(service.start(command));
-    streams.rejection = new CreateStreamSessionRejection.NoEligibleVideoFormat();
+    streams.rejectionOfTheNextCreation = new CreateStreamSessionRejection.NoEligibleVideoFormat();
+    streams.encodeFormat = EncodeFormat.SDR_8_BIT;
     var changesWhenTheContinuationStarted = new AtomicLong();
     var changesWhenTheSdrEncodeStarted = new AtomicLong();
-    streams.beforeNextCreation =
-        _ -> {
-          changesWhenTheContinuationStarted.set(changesOf(initial));
-          streams.beforeNextCreation =
-              _ -> {
-                streams.rejection = null;
-                streams.encodeFormat = EncodeFormat.SDR_8_BIT;
-                changesWhenTheSdrEncodeStarted.set(changesOf(initial));
-              };
-        };
+    streams.beforeNextCreation = _ -> changesWhenTheContinuationStarted.set(changesOf(initial));
+    streams.duringNextCreation = _ -> changesWhenTheSdrEncodeStarted.set(changesOf(initial));
 
     service.onRequestedVariantHardwareEncoderFailed(
         hardwareEncoderFailure(initial.currentFormatAttempt().streamSessionId()));
 
     var sdr = service.access(request(initial, command)).orElseThrow();
     assertThat(sdr.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(sdr.decisions().getLast().video().output().videoRange()).isEqualTo(VideoRange.SDR);
     assertThat(sdr.formatAttemptCount()).isEqualTo(2);
+    assertThat(sdr.playbackChoice()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(sdr.formatChange()).contains(PlaybackFormatChange.HDR_NOT_KEPT);
     assertThat(changesWhenTheSdrEncodeStarted.get())
         .isEqualTo(changesWhenTheContinuationStarted.get() + 1);
   }
@@ -3624,6 +3621,8 @@ class PlaybackSessionServiceTest {
     private Consumer<CreateStreamSessionCommand> duringNextCreation;
     private Consumer<CreateStreamSessionCommand> beforeNextCreation;
     private CreateStreamSessionRejection rejection;
+    // Refuses only the next creation, so the creation after it can start.
+    private CreateStreamSessionRejection rejectionOfTheNextCreation;
     private boolean failDestroy;
     private Runnable afterNextDestroy;
     private RuntimeException destroyFailure;
@@ -3648,6 +3647,12 @@ class PlaybackSessionServiceTest {
         var callback = beforeNextCreation;
         beforeNextCreation = null;
         callback.accept(command);
+      }
+
+      if (rejectionOfTheNextCreation != null) {
+        var nextRejection = rejectionOfTheNextCreation;
+        rejectionOfTheNextCreation = null;
+        return Outcome.rejected(nextRejection);
       }
 
       if (rejection != null) {
