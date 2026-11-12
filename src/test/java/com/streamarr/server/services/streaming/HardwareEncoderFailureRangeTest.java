@@ -371,19 +371,12 @@ class HardwareEncoderFailureRangeTest {
   }
 
   static Stream<Arguments> clientsAndTheEncoderOfAutosNextFormatAttempt() {
-    var av1Only =
-        defaultDeclarationBuilder()
-            .video(
-                List.of(
-                    av1EntryBuilder()
-                        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
-                        .build()))
-            .build();
     return Stream.of(
         Arguments.of(
             Named.of("a client that declares H.264 beside AV1", hdrAv1Client()), libx264()),
         Arguments.of(
-            Named.of("a client that declares AV1 alone", av1Only), svtAv1(NO_ENCODE_FEATURE)));
+            Named.of("a client that declares AV1 alone", av1AloneClient()),
+            svtAv1(NO_ENCODE_FEATURE)));
   }
 
   // A worker runs a software encode only on a software encoder of its codec family (ADR 0044), so
@@ -701,6 +694,16 @@ class HardwareEncoderFailureRangeTest {
             .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ, CompatibleBase.HLG))
             .build();
     return defaultDeclarationBuilder().video(List.of(av1, h264EntryBuilder().build())).build();
+  }
+
+  private static ClientCapabilityDeclaration av1AloneClient() {
+    return defaultDeclarationBuilder()
+        .video(
+            List.of(
+                av1EntryBuilder()
+                    .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                    .build()))
+        .build();
   }
 
   // The worker's hardware AV1 encoder writes every 10-bit and HDR output. After that encoder fails,
