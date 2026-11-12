@@ -474,6 +474,12 @@ class TenBitAndHdrEncodeTest {
             Optional.empty()),
         Arguments.of(Named.of("Auto", options(VideoQuality.AUTO, null)), hdr10, Optional.empty()),
         Arguments.of(
+            Named.of(
+                "Auto with an HDR choice, which Auto ignores",
+                options(VideoQuality.AUTO, DynamicRangeChoice.HDR)),
+            hdr10,
+            Optional.empty()),
+        Arguments.of(
             Named.of("Original", options(VideoQuality.ORIGINAL, null)),
             hdr10,
             Optional.of(PlaybackFormatChange.STARTED_WITH_ENCODE)));
