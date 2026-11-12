@@ -114,7 +114,12 @@ public class SegmentFolderLeftovers {
       return Optional.of(SegmentFolderRefusal.HOME_FOLDER);
     }
 
-    var mediaFolderRefusal = mediaFolderRefusal(folder);
+    var folders = readMediaFolders();
+    if (folders.isEmpty()) {
+      return Optional.of(SegmentFolderRefusal.UNKNOWN_MEDIA_FOLDERS);
+    }
+
+    var mediaFolderRefusal = mediaFolderRefusal(folder, folders.get());
     if (mediaFolderRefusal.isPresent()) {
       return mediaFolderRefusal;
     }
@@ -122,16 +127,19 @@ public class SegmentFolderLeftovers {
     return mountPointRefusal(folder);
   }
 
-  private Optional<SegmentFolderRefusal> mediaFolderRefusal(Path folder) throws IOException {
-    List<Path> folders;
+  // Read once per start, so that its checks compare the same folders.
+  private Optional<List<Path>> readMediaFolders() {
     try {
-      folders = mediaFolders.get();
+      return Optional.of(mediaFolders.get());
     } catch (RuntimeException e) {
       log.warn("Failed to read the media folders", e);
-      return Optional.of(SegmentFolderRefusal.UNKNOWN_MEDIA_FOLDERS);
+      return Optional.empty();
     }
+  }
 
-    for (var mediaFolder : folders) {
+  private static Optional<SegmentFolderRefusal> mediaFolderRefusal(
+      Path folder, List<Path> mediaFolders) throws IOException {
+    for (var mediaFolder : mediaFolders) {
       if (isAtOrAbove(folder, mediaFolder) || isAtOrAbove(mediaFolder, folder)) {
         return Optional.of(SegmentFolderRefusal.MEDIA_FOLDER);
       }
