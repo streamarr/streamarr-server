@@ -631,6 +631,83 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should push no Share ended news, only the dismissal of what the offering side was told, when"
+          + " deleting a Household ends its shares")
+  void shouldPushNoShareEndedNewsWhenDeletingAHouseholdEndsItsShares() throws Exception {
+    var lakeside = track(authTestSupport.createIdentity());
+    var share = steps.accept(lakeside, steps.offer(sam, kai(), lakeside));
+    var told = requestFor(sam, share).id().toString();
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var offeringSide = subscribedSocket(authTestSupport.accountBearer(sam));
+
+    var outcome =
+        householdDeletion.transferLastAccountAndDeleteHousehold(
+            authTestSupport.freshIdentityOf(serverAdmin),
+            TransferLastAccountAndDeleteHouseholdCommand.builder()
+                .householdId(lakeside.household().getId())
+                .destinationHouseholdId(serverAdmin.household().getId())
+                .reason("closing")
+                .build());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertDismissed(nextChange(offeringSide), List.of(told));
+    var sentinel = tellSentinel(sam);
+    assertThat(onlyChange(nextChange(offeringSide)).path("notificationId").asString())
+        .isEqualTo(sentinel.get(accountOf(sam)).toString());
+  }
+
+  @Test
+  @DisplayName(
+      "Should push no Share ended news, only the dismissal of what each side was told, when"
+          + " deleting a Profile ends its shares")
+  void shouldPushNoShareEndedNewsWhenDeletingAProfileEndsItsShares() throws Exception {
+    var kai = kai();
+    var share = steps.accept(riverside, steps.offer(sam, kai, riverside));
+    var toldOfferingSide = requestFor(sam, share).id().toString();
+    var toldHouseholdSide = requestFor(riversideAdmin, share).id().toString();
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var offeringSide = subscribedSocket(authTestSupport.accountBearer(sam));
+    var householdSide = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    var outcome =
+        profileLifecycle.administrativelyDeleteProfile(
+            authTestSupport.freshIdentityOf(serverAdmin), kai.getId(), "a duplicate");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertDismissed(nextChange(offeringSide), List.of(toldOfferingSide));
+    assertDismissed(nextChange(householdSide), List.of(toldHouseholdSide));
+    var sentinel = tellSentinel(sam, riversideAdmin);
+    assertThat(onlyChange(nextChange(offeringSide)).path("notificationId").asString())
+        .isEqualTo(sentinel.get(accountOf(sam)).toString());
+    assertThat(onlyChange(nextChange(householdSide)).path("notificationId").asString())
+        .isEqualTo(sentinel.get(accountOf(riversideAdmin)).toString());
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver one Share ended news to an Account on both sides when a ServerAdmin ends the"
+          + " share")
+  void shouldDeliverOneShareEndedNewsToAnAccountOnBothSidesWhenAServerAdminEndsTheShare()
+      throws Exception {
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, riversideAdmin);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var bothSides = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    sharing.administrativelyEndProfileShare(
+        authTestSupport.freshIdentityOf(serverAdmin), share.getId(), "a mistaken share");
+
+    var ended = nextChange(bothSides);
+    assertThat(nodeOf(ended).path("__typename").asString())
+        .isEqualTo("ProfileShareEndedNotification");
+    assertMatchesAFreshQuery(ended, riversideAdmin);
+    var sentinel = tellSentinel(riversideAdmin);
+    assertThat(onlyChange(nextChange(bothSides)).path("notificationId").asString())
+        .isEqualTo(sentinel.get(accountOf(riversideAdmin)).toString());
+  }
+
+  @Test
+  @DisplayName(
       "Should deliver the dismissal of its waiting request when a HouseholdAdmin is demoted")
   void shouldDeliverTheDismissalWhenAHouseholdAdminIsDemoted() throws Exception {
     var offer = steps.offer(sam, kai(), riverside);
