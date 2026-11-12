@@ -74,6 +74,15 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
+  public Set<UUID> lockHouseholdAdminIds(UUID householdId) {
+    return database.values().stream()
+        .filter(account -> householdId.equals(account.getHouseholdId()))
+        .filter(account -> account.getHouseholdRole() == HouseholdRole.ADMIN)
+        .map(UserAccount::getId)
+        .collect(Collectors.toSet());
+  }
+
+  @Override
   public Optional<AccountShareFacts> lockShareFacts(UUID accountId) {
     return findById(accountId)
         .map(
