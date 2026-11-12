@@ -489,6 +489,19 @@ class SegmentFolderLeftoversTest {
     assertThat(session).doesNotExist();
   }
 
+  // Files.createTempFile puts only digits between an upload's prefix and suffix.
+  @Test
+  @DisplayName("Should keep a file that is named like an upload but not as a store names one")
+  void shouldKeepAFileThatIsNamedLikeAnUploadButNotAsAStoreNamesOne() throws IOException {
+    startOf(segmentFolder);
+    var file = Files.write(segmentFolder.resolve(".upload-family-photos.tmp"), MEDIA);
+
+    var outcome = startOf(segmentFolder);
+
+    assertThat(outcome).isEqualTo(new Deleted(0, 0));
+    assertThat(file).hasBinaryContent(MEDIA);
+  }
+
   @Test
   @DisplayName(
       "Should keep a folder outside the segment folder when a leftover stream session's directory"

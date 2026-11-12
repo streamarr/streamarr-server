@@ -6,12 +6,17 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.regex.Pattern;
 import lombok.NonNull;
 
 final class PreparedSegmentFile implements AutoCloseable {
 
   private static final String UPLOAD_PREFIX = ".upload-";
   private static final String UPLOAD_SUFFIX = ".tmp";
+
+  // Files.createTempFile puts an unsigned decimal number between the prefix and the suffix.
+  private static final Pattern UPLOAD_NAME =
+      Pattern.compile(Pattern.quote(UPLOAD_PREFIX) + "[0-9]+" + Pattern.quote(UPLOAD_SUFFIX));
 
   interface FileOperations {
     Path createTemporary(Path directory) throws IOException;
@@ -79,7 +84,7 @@ final class PreparedSegmentFile implements AutoCloseable {
 
   /** Whether {@code fileName} is the name that an upload carries until it is published. */
   static boolean isUploadName(String fileName) {
-    return fileName.startsWith(UPLOAD_PREFIX) && fileName.endsWith(UPLOAD_SUFFIX);
+    return UPLOAD_NAME.matcher(fileName).matches();
   }
 
   static PreparedSegmentFile create(Path directory, byte[] data) throws IOException {
