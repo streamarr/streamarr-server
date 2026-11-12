@@ -12,8 +12,6 @@ import java.util.UUID;
 record AuthorizationCheck(Action action, EntityUID resource, Map<String, Value> context) {
 
   static final String FRESH_REAUTHENTICATION = "freshReauthentication";
-  static final String SHARE_LIVE = "shareLive";
-  static final String ADDRESSED_TO_HOUSEHOLD_SIDE = "addressedToHouseholdSide";
 
   static AuthorizationCheck onServer(Action action) {
     return new AuthorizationCheck(action, CedarIds.server(), Map.of());
@@ -52,18 +50,6 @@ record AuthorizationCheck(Action action, EntityUID resource, Map<String, Value> 
         Action.SELECT_PROFILE,
         CedarIds.profile(profileId),
         Map.of("pinVerified", new PrimBool(pinVerified)));
-  }
-
-  static AuthorizationCheck profileShareNotification(
-      UUID householdId, boolean shareLive, boolean addressedToHouseholdSide) {
-    return new AuthorizationCheck(
-        Action.VIEW_PROFILE_SHARE_NOTIFICATION,
-        CedarIds.household(householdId),
-        Map.of(
-            SHARE_LIVE,
-            new PrimBool(shareLive),
-            ADDRESSED_TO_HOUSEHOLD_SIDE,
-            new PrimBool(addressedToHouseholdSide)));
   }
 
   AuthorizationCheck withFreshReauthentication(boolean fresh) {

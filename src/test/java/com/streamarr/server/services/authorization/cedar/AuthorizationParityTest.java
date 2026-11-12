@@ -278,8 +278,7 @@ class AuthorizationParityTest {
           ADMINISTRATIVELY_DELETE_PROFILE,
           DELETE_HOUSEHOLD,
           VIEW_NOTIFICATIONS,
-          MARK_NOTIFICATIONS_READ,
-          VIEW_PROFILE_SHARE_NOTIFICATION ->
+          MARK_NOTIFICATIONS_READ ->
           throw new AssertionError("not a Server-resource action: " + action);
     };
   }
@@ -385,7 +384,6 @@ class AuthorizationParityTest {
         new Intent.ViewNotifications(),
         new Intent.MarkNotificationsRead(),
         new Intent.ViewNotificationRetention(),
-        new Intent.ChangeNotificationRetention(),
-        new Intent.ViewProfileShareNotification(id, false, true));
+        new Intent.ChangeNotificationRetention());
   }
 }

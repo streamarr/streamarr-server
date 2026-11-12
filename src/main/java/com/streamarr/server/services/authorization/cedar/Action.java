@@ -497,12 +497,6 @@ enum Action {
       "markNotificationsRead",
       ResourceKind.ACCOUNT,
       Authorizes.WRITE,
-      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
-  VIEW_PROFILE_SHARE_NOTIFICATION(
-      "viewProfileShareNotification",
-      ResourceKind.HOUSEHOLD,
-      Authorizes.READ,
-      FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";
