@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.local;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.params.provider.Arguments.argumentSet;
 
 import com.streamarr.server.exceptions.UnknownFolderLocationException;
 import java.io.IOException;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
@@ -141,22 +143,44 @@ class MountTableTest {
     assertThat(liesInTheLibrary).isTrue();
   }
 
-  @Test
-  @DisplayName(
-      "Should place a folder in a library when a file system that is mounted in the library leads"
-          + " to it")
-  void shouldPlaceAFolderInALibraryWhenAFileSystemThatIsMountedInTheLibraryLeadsToIt()
-      throws IOException {
-    var mounts =
-        MountTable.read(
-            tableOf(
-                ROOT_FILE_SYSTEM
-                    + """
-                    60 22 0:61 / /srv/media/nas rw,relatime shared:9 - nfs4 nas:/export rw
-                    61 22 0:61 /cache /segments rw,relatime shared:9 - nfs4 nas:/export rw
-                    """));
+  static Stream<Arguments> mountsThatLeadAFolderIntoTheLibrary() {
+    return Stream.of(
+        argumentSet(
+            "a file system that is mounted in the library leads to the folder",
+            """
+            60 22 0:61 / /srv/media/nas rw,relatime shared:9 - nfs4 nas:/export rw
+            61 22 0:61 /cache /segments rw,relatime shared:9 - nfs4 nas:/export rw
+            """,
+            Path.of("/segments")),
+        // A mount on the point of the mount below it is that mount's child.
+        argumentSet(
+            "the top one of two mounts that are stacked on the folder leads to it",
+            """
+            41 22 0:41 / /segments rw,nosuid shared:2 - tmpfs tmpfs rw
+            42 41 8:1 /srv/media/cache /segments rw - ext4 /dev/sda1 rw
+            """,
+            Path.of("/segments")),
+        // The tmpfs was mounted on /srv/segments/cache first, then the bind mount on /srv/segments
+        // hid it. Both are mounts of the root file system's mount.
+        argumentSet(
+            "the mount on a folder above the folder hides an earlier mount on the folder",
+            """
+            41 22 0:41 / /srv/segments/cache rw,nosuid shared:2 - tmpfs tmpfs rw
+            42 22 8:1 /srv/media /srv/segments rw - ext4 /dev/sda1 rw
+            """,
+            Path.of("/srv/segments/cache")));
+  }
 
-    var liesInTheLibrary = mounts.liesInOrHolds(Path.of("/segments"), Path.of("/srv/media"));
+  @ParameterizedTest
+  @MethodSource("mountsThatLeadAFolderIntoTheLibrary")
+  @DisplayName(
+      "Should place a folder in a library when the mounts on the folder's path lead into the"
+          + " library")
+  void shouldPlaceAFolderInALibraryWhenTheMountsOnTheFoldersPathLeadIntoTheLibrary(
+      String lines, Path folder) throws IOException {
+    var mounts = MountTable.read(tableOf(ROOT_FILE_SYSTEM + lines));
+
+    var liesInTheLibrary = mounts.liesInOrHolds(folder, Path.of("/srv/media"));
 
     assertThat(liesInTheLibrary).isTrue();
   }
@@ -173,48 +197,6 @@ class MountTableTest {
 
     assertThat(mounts.liesInOrHolds(Path.of("/seg ments"), Path.of("/srv/my media"))).isTrue();
     assertThat(mounts.liesInOrHolds(Path.of("/seg ments"), Path.of("/srv/my"))).isFalse();
-  }
-
-  // A mount on the point of the mount below it is that mount's child.
-  @Test
-  @DisplayName("Should place a folder through the top mount when two mounts are stacked on it")
-  void shouldPlaceAFolderThroughTheTopMountWhenTwoMountsAreStackedOnIt() throws IOException {
-    var mounts =
-        MountTable.read(
-            tableOf(
-                ROOT_FILE_SYSTEM
-                    + """
-                    41 22 0:41 / /segments rw,nosuid shared:2 - tmpfs tmpfs rw
-                    42 41 8:1 /srv/media/cache /segments rw - ext4 /dev/sda1 rw
-                    """));
-
-    var liesInTheLibrary = mounts.liesInOrHolds(Path.of("/segments"), Path.of("/srv/media"));
-
-    assertThat(liesInTheLibrary).isTrue();
-  }
-
-  // The tmpfs was mounted on /srv/segments/cache first, then the bind mount on /srv/segments hid
-  // it. Both are mounts of the root file system's mount.
-  @Test
-  @DisplayName(
-      "Should place a folder through the mount on a folder above it when that mount hides an"
-          + " earlier mount on the folder")
-  void
-      shouldPlaceAFolderThroughTheMountOnAFolderAboveItWhenThatMountHidesAnEarlierMountOnTheFolder()
-          throws IOException {
-    var mounts =
-        MountTable.read(
-            tableOf(
-                ROOT_FILE_SYSTEM
-                    + """
-                    41 22 0:41 / /srv/segments/cache rw,nosuid shared:2 - tmpfs tmpfs rw
-                    42 22 8:1 /srv/media /srv/segments rw - ext4 /dev/sda1 rw
-                    """));
-
-    var liesInTheLibrary =
-        mounts.liesInOrHolds(Path.of("/srv/segments/cache"), Path.of("/srv/media"));
-
-    assertThat(liesInTheLibrary).isTrue();
   }
 
   @Test
