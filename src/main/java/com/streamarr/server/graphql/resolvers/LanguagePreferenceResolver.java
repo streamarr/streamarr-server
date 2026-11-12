@@ -24,14 +24,13 @@ import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.language.ClearLanguageOverrideInput;
 import com.streamarr.server.graphql.mutation.language.LanguageOverrideError;
 import com.streamarr.server.graphql.mutation.language.LanguageOverridePayload;
-import com.streamarr.server.graphql.mutation.language.SetLanguagePreferencesError;
+import com.streamarr.server.graphql.mutation.language.LanguagePreferenceErrors;
 import com.streamarr.server.graphql.mutation.language.SetLanguagePreferencesInput;
 import com.streamarr.server.graphql.mutation.language.SetLanguagePreferencesPayload;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.language.LanguageOverrideRejection;
 import com.streamarr.server.services.language.LanguagePreferenceService;
 import com.streamarr.server.services.language.SetLanguageOverrideCommand;
-import com.streamarr.server.services.language.SetLanguagePreferencesRejection;
 import com.streamarr.server.services.mutation.Outcome;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.Map;
@@ -47,7 +46,6 @@ import org.dataloader.DataLoader;
 public class LanguagePreferenceResolver {
 
   private static final String ITEM_ID = "itemId";
-  private static final String AUDIO_LANGUAGES = "audioLanguages";
   private static final String INVALID_ITEM_ID = "Enter a valid item ID.";
   private static final String ITEM_NOT_FOUND = "This item no longer exists.";
 
@@ -73,24 +71,8 @@ public class LanguagePreferenceResolver {
     return MutationPayloads.payload(
         languagePreferenceService.setProfilePreferences(
             authorizationService.currentIdentity(), preferences),
-        LanguagePreferenceResolver::setLanguagePreferencesError,
+        LanguagePreferenceErrors::toPreferredAudioLanguagesError,
         SetLanguagePreferencesPayload::new);
-  }
-
-  private static SetLanguagePreferencesError setLanguagePreferencesError(
-      SetLanguagePreferencesRejection rejection) {
-    return switch (rejection) {
-      case SetLanguagePreferencesRejection.TooManyAudioLanguages(var maximum) ->
-          new SetLanguagePreferencesError.TooManyAudioLanguagesError(
-              "Choose at most %d audio languages.".formatted(maximum),
-              InputPath.of(AUDIO_LANGUAGES),
-              maximum);
-      case SetLanguagePreferencesRejection.RepeatedAudioLanguage(var language, var position) ->
-          new SetLanguagePreferencesError.RepeatedAudioLanguageError(
-              "Choose each audio language once.",
-              InputPath.element(AUDIO_LANGUAGES, position),
-              language);
-    };
   }
 
   /**
