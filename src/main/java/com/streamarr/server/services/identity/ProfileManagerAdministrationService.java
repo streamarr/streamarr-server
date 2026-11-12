@@ -665,16 +665,9 @@ public class ProfileManagerAdministrationService {
   }
 
   /** The invitation is visible to its parties and to whoever may view the Profile's admin. */
+  // Whoever may read the invitation learns that it exists: the read rule of managerInvitation.
   private boolean mayViewInvitation(AuthenticatedIdentity identity, UUID invitationId) {
-    return invitationRepository
-        .findById(invitationId)
-        .map(
-            invitation ->
-                identity.accountId().equals(invitation.getRecipientAccountId())
-                    || identity.accountId().equals(invitation.getInviterAccountId())
-                    || (invitation.getProfileId() != null
-                        && mayViewProfile(identity, invitation.getProfileId())))
-        .orElse(false);
+    return managerInvitation(identity, invitationId).isPresent();
   }
 
   private boolean mayViewProfile(AuthenticatedIdentity identity, UUID profileId) {

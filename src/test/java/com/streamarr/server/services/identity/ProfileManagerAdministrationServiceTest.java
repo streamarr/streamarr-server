@@ -170,7 +170,11 @@ class ProfileManagerAdministrationServiceTest {
   void shouldForbidCancellationWhenUnauthorizedCallerCanViewInvitation() {
     var issued =
         issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
-    authorization.denyAll();
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.ViewReceivedManagerInvitation
+                ? new Decision.Allowed<>(AuthorizationUnit.INSTANCE)
+                : new Decision.Denied<>(Decision.DenialReason.POLICY));
     var caller = recipientIdentity();
     var invitationId = issued.invitation().getId();
 

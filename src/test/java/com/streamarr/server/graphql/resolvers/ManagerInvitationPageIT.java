@@ -129,6 +129,31 @@ class ManagerInvitationPageIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should answer not found when a HouseholdAdmin who only supervises the Profile cancels the"
+          + " invitation")
+  void shouldAnswerNotFoundWhenAHouseholdAdminWhoOnlySupervisesTheProfileCancelsTheInvitation()
+      throws Exception {
+    var kit = cast.profileManagedBy(sam, ProfileFixture.kidProfileBuilder().name("Kit"));
+    var invitationId = invite(sam, kit, mara).path("id").asString();
+    var supervisor = cast.secondAdminOf(sam);
+
+    var answer =
+        graphql(
+                authTestSupport.accountBearer(supervisor),
+                """
+                mutation { cancelManagerInvitation(input: {invitationId: "%s"}) {
+                  invitation { id } userErrors { __typename } } }
+                """
+                    .formatted(invitationId))
+            .at("/data/cancelManagerInvitation");
+
+    assertThat(answer.at("/userErrors/0/__typename").asString())
+        .isEqualTo("ManagerInvitationNotFoundError");
+    assertThat(invitation(sam, invitationId).path("status").asString()).isEqualTo("PENDING");
+  }
+
+  @Test
   @DisplayName("Should answer null when the named Account is disabled")
   void shouldAnswerNullWhenTheNamedAccountIsDisabled() throws Exception {
     var invitationId = invite(sam, alex, mara).path("id").asString();

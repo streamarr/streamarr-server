@@ -245,10 +245,10 @@ type Mutation {
     """
     Withdraws a pending invitation to manage a Profile, one that nobody can accept included. The
     Account that sent it, or a ServerAdmin. An invitation that was already decided, canceled or
-    withdrawn, or that expired, gets InvitationNotPendingError. A caller who may see the invitation
-    (its named Account, or one who may read the Profile's administration) but may not withdraw it
-    gets FORBIDDEN; everyone else, a device-bound session included, gets
-    ManagerInvitationNotFoundError.
+    withdrawn, or that expired, gets InvitationNotPendingError. A caller who may read the invitation
+    (managerInvitation: its named Account, the Profile's managers and ServerAdmins) but may not
+    withdraw it gets FORBIDDEN; everyone else, a HouseholdAdmin who only supervises the Profile and
+    a device-bound session included, gets ManagerInvitationNotFoundError.
     """
     cancelManagerInvitation(input: CancelManagerInvitationInput!): CancelManagerInvitationPayload
     """
