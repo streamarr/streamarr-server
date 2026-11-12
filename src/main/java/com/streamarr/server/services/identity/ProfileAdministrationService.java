@@ -391,16 +391,12 @@ public class ProfileAdministrationService {
   /**
    * Replaces the Profile's own language preferences for one of its managers, whether or not its
    * session has the Profile selected: a manager edits the Profile, and the preferences are the
-   * Profile's (ADR 0024 §ProfileManager).
+   * Profile's (ADR 0024 §ProfileManager). Only a caller that may make the change learns what is
+   * wrong with the audio languages; anyone else gets the refusal it would get for any languages.
    */
   public Outcome<ProfileLanguagePreferences, ProfileRejections.SetProfileLanguagePreferences>
       setProfileLanguagePreferences(
           AuthenticatedIdentity identity, UUID profileId, ProfileLanguagePreferences preferences) {
-    var refused = PreferredAudioLanguagesRule.rejectionOf(preferences.audioLanguages());
-    if (refused.isPresent()) {
-      return Outcome.rejected(new ProfileRejections.PreferredAudioLanguagesRefused(refused.get()));
-    }
-
     return mutationTransactions.write(
         () -> {
           if (!profileRepository.lockById(profileId)) {
@@ -411,6 +407,12 @@ public class ProfileAdministrationService {
               editRefusal(identity, new Intent.SetProfileLanguagePreferences(profileId), profileId);
           if (refusal.isPresent()) {
             throw new MutationRejection(refusal.get());
+          }
+
+          var refused = PreferredAudioLanguagesRule.rejectionOf(preferences.audioLanguages());
+          if (refused.isPresent()) {
+            throw new MutationRejection(
+                new ProfileRejections.PreferredAudioLanguagesRefused(refused.get()));
           }
 
           if (!languagePreferenceRepository.trySetProfilePreferences(profileId, preferences)) {

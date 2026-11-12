@@ -83,6 +83,13 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
         "inputPath": ["profileId"]}]
       """;
 
+  /**
+   * Audio languages a Profile could keep, then too many and a repeated one: a caller that may not
+   * change the preferences gets the same refusal for each.
+   */
+  private static final List<String> ANY_AUDIO_LANGUAGES =
+      List.of("DE, EN", "EN, FR, DE, ES, IT, JA", "EN, FR, EN");
+
   private static final String INVITED_EMAIL = "ana@example.test";
 
   private static final ProfileLanguagePreferences STORED =
@@ -332,13 +339,17 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
   }
 
   private void assertOnlyManagersMay(Reading reading, String reason) throws Exception {
-    var answer = changePreferences(reading.bearer(), idOf(reading.profile()), "DE, EN");
+    for (var audioLanguages : ANY_AUDIO_LANGUAGES) {
+      var answer = changePreferences(reading.bearer(), idOf(reading.profile()), audioLanguages);
 
-    assertThat(answer.path("languagePreferences").isNull()).isTrue();
-    assertThat(answer.path("userErrors").values()).hasSize(1);
-    assertThat(answer.at("/userErrors/0/__typename").asString())
-        .isEqualTo("ProfileManagersOnlyError");
-    assertThat(answer.at("/userErrors/0/reason").asString()).isEqualTo(reason);
+      assertThat(answer.path("languagePreferences").isNull()).isTrue();
+      assertThat(answer.path("userErrors").values()).as(audioLanguages).hasSize(1);
+      assertThat(answer.at("/userErrors/0/__typename").asString())
+          .as(audioLanguages)
+          .isEqualTo("ProfileManagersOnlyError");
+      assertThat(answer.at("/userErrors/0/reason").asString()).isEqualTo(reason);
+    }
+
     assertThat(storedPreferencesOf(reading.profile())).isEqualTo(STORED);
   }
 
@@ -350,14 +361,22 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
         "HOUSEHOLD_ADMIN_THAT_ONLY_HOSTS_AN_UNRESTRICTED_VISITOR",
         "HOUSEHOLD_ADMIN_THAT_ONLY_SUPERVISES_A_RESTRICTED_PROFILE"
       })
-  @DisplayName("Should answer that no such Profile exists when the caller may not read it")
-  void shouldAnswerProfileNotFoundWhenCallerMayNotReadProfile(Outsider outsider) throws Exception {
+  @DisplayName(
+      "Should answer that no such Profile exists when the caller may not read it, whatever audio"
+          + " languages it sends")
+  void shouldAnswerProfileNotFoundWhenCallerMayNotReadProfileWhateverLanguagesItSends(
+      Outsider outsider) throws Exception {
     var reading = readingOf(outsider);
 
-    var answer = changePreferences(reading.bearer(), idOf(reading.profile()), "DE, EN");
+    for (var audioLanguages : ANY_AUDIO_LANGUAGES) {
+      var answer = changePreferences(reading.bearer(), idOf(reading.profile()), audioLanguages);
 
-    assertThat(answer.path("languagePreferences").isNull()).isTrue();
-    assertThat(answer.path("userErrors")).isEqualTo(objectMapper.readTree(PROFILE_NOT_FOUND));
+      assertThat(answer.path("languagePreferences").isNull()).isTrue();
+      assertThat(answer.path("userErrors"))
+          .as("the answer to %s", audioLanguages)
+          .isEqualTo(objectMapper.readTree(PROFILE_NOT_FOUND));
+    }
+
     assertThat(storedPreferencesOf(reading.profile())).isEqualTo(STORED);
   }
 
@@ -410,14 +429,17 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
   }
 
   private void assertForbidden(Reading reading) throws Exception {
-    mockMvc
-        .perform(
-            graphqlRequest(
-                reading.bearer(),
-                SET_PROFILE_LANGUAGE_PREFERENCES.formatted(idOf(reading.profile()), "DE, EN")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"))
-        .andExpect(jsonPath("$.data.setProfileLanguagePreferences").doesNotExist());
+    for (var audioLanguages : ANY_AUDIO_LANGUAGES) {
+      mockMvc
+          .perform(
+              graphqlRequest(
+                  reading.bearer(),
+                  SET_PROFILE_LANGUAGE_PREFERENCES.formatted(
+                      idOf(reading.profile()), audioLanguages)))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"))
+          .andExpect(jsonPath("$.data.setProfileLanguagePreferences").doesNotExist());
+    }
 
     assertThat(storedPreferencesOf(reading.profile())).isEqualTo(STORED);
   }
