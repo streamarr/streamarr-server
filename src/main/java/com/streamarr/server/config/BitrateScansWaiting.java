@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.concurrency.NanoClock;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.MeterBinder;
@@ -18,28 +19,39 @@ import org.springframework.context.SmartLifecycle;
  * Reports the bitrate scans that wait in the scan table (ADR 0054) as the last count read them. A
  * count runs on its own thread once every refresh interval, so a metrics publish reads only memory
  * and never waits for the database. The gauge reports no value, {@code NaN}, before the first count
- * ends and after a count fails.
+ * ends, after a count fails, and once the last count is older than two refresh intervals, as while
+ * a count waits for a database that stopped answering.
  */
 @Slf4j
 public final class BitrateScansWaiting implements MeterBinder, SmartLifecycle {
 
   private static final String WAITING_METRIC = "streamarr.probes.bitrate_scans_waiting";
+  private static final LastCount NO_COUNT = new LastCount(Double.NaN, 0);
 
   private final LongSupplier count;
   private final Duration refreshInterval;
-  private volatile double lastCount = Double.NaN;
+  private final NanoClock nanoClock;
+  // The next count begins one refresh interval after the last one ends, so by this age the next
+  // count has run about one refresh interval without an end.
+  private final long staleAfterNanos;
+  private volatile LastCount lastCount = NO_COUNT;
   // Guarded by this monitor.
   private ScheduledExecutorService refreshes;
 
   @Builder
-  private BitrateScansWaiting(@NonNull LongSupplier count, @NonNull Duration refreshInterval) {
+  private BitrateScansWaiting(
+      @NonNull LongSupplier count,
+      @NonNull Duration refreshInterval,
+      @NonNull NanoClock nanoClock) {
     this.count = count;
     this.refreshInterval = refreshInterval;
+    this.nanoClock = nanoClock;
+    this.staleAfterNanos = refreshInterval.multipliedBy(2).toNanos();
   }
 
   @Override
   public void bindTo(MeterRegistry registry) {
-    Gauge.builder(WAITING_METRIC, () -> lastCount)
+    Gauge.builder(WAITING_METRIC, this::reported)
         .description("Bitrate scans that wait in the scan table for their next chunk, last counted")
         .register(registry);
   }
@@ -71,12 +83,24 @@ public final class BitrateScansWaiting implements MeterBinder, SmartLifecycle {
     return BackgroundWorkStop.PHASE;
   }
 
+  private double reported() {
+    var last = lastCount;
+    if (nanoClock.nanoTime() - last.beganNanos() > staleAfterNanos) {
+      return Double.NaN;
+    }
+
+    return last.waiting();
+  }
+
   private void refresh() {
+    var began = nanoClock.nanoTime();
     try {
-      lastCount = (double) count.getAsLong();
+      lastCount = new LastCount((double) count.getAsLong(), began);
     } catch (RuntimeException e) {
-      lastCount = Double.NaN;
+      lastCount = NO_COUNT;
       log.debug("Counting the waiting bitrate scans failed.", e);
     }
   }
+
+  private record LastCount(double waiting, long beganNanos) {}
 }

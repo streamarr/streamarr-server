@@ -3,6 +3,7 @@ package com.streamarr.server.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import com.streamarr.server.fakes.MutableNanoClock;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -30,6 +31,7 @@ class BitrateScansWaitingTest {
 
   private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
   private final ScanTable scanTable = new ScanTable();
+  private final MutableNanoClock nanoClock = new MutableNanoClock();
   private BitrateScansWaiting waiting;
 
   @AfterEach
@@ -40,7 +42,7 @@ class BitrateScansWaitingTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"count", "refreshInterval"})
+  @ValueSource(strings = {"count", "refreshInterval", "nanoClock"})
   @DisplayName("Should reject the waiting bitrate scans' gauge when a required part is missing")
   void shouldRejectTheWaitingBitrateScansGaugeWhenARequiredPartIsMissing(String missing) {
     var builder = BitrateScansWaiting.builder();
@@ -50,6 +52,10 @@ class BitrateScansWaitingTest {
 
     if (!missing.equals("refreshInterval")) {
       builder.refreshInterval(REFRESH_INTERVAL);
+    }
+
+    if (!missing.equals("nanoClock")) {
+      builder.nanoClock(nanoClock);
     }
 
     assertThatNullPointerException().isThrownBy(builder::build).withMessageContaining(missing);
@@ -101,6 +107,30 @@ class BitrateScansWaitingTest {
     assertThat(reported()).as("A failed count does not end the refreshes").isEqualTo(6);
   }
 
+  // No timeout ends a read from a PostgreSQL that stopped answering after it took the query, so
+  // the count after the last one can run without end.
+  @Test
+  @DisplayName(
+      "Should report no value once the last count is older than two refresh intervals when the next"
+          + " count does not end")
+  void shouldReportNoValueOnceTheLastCountIsOlderThanTwoRefreshIntervalsWhenTheNextCountDoesNotEnd()
+      throws Exception {
+    startCounting(scanTable);
+    scanTable.answerFromNowOn(() -> 3);
+    var unending = new UnendingCount();
+    scanTable.stallFromNowOn(unending);
+
+    try {
+      nanoClock.advance(REFRESH_INTERVAL.multipliedBy(2));
+      assertThat(reported()).as("A count two refresh intervals old is current").isEqualTo(3);
+      nanoClock.advance(Duration.ofNanos(1));
+
+      assertThat(reported()).as("An older count is stale").isNaN();
+    } finally {
+      unending.release();
+    }
+  }
+
   // The count ignores its interrupt, as a database read on a platform thread does, so the stop
   // returns only if it does not wait for the count.
   @Test
@@ -127,7 +157,12 @@ class BitrateScansWaitingTest {
   }
 
   private void startCounting(LongSupplier count) {
-    waiting = BitrateScansWaiting.builder().count(count).refreshInterval(REFRESH_INTERVAL).build();
+    waiting =
+        BitrateScansWaiting.builder()
+            .count(count)
+            .refreshInterval(REFRESH_INTERVAL)
+            .nanoClock(nanoClock)
+            .build();
     waiting.bindTo(registry);
     waiting.start();
   }
@@ -157,6 +192,12 @@ class BitrateScansWaitingTest {
       answer.set(next);
       begunCounts.drainPermits();
       assertThat(begunCounts.tryAcquire(2, BOUND.toSeconds(), TimeUnit.SECONDS)).isTrue();
+    }
+
+    /** Makes every later count wait in {@code unending}, and returns once one does. */
+    void stallFromNowOn(UnendingCount unending) throws InterruptedException {
+      answer.set(unending);
+      unending.awaitStarted();
     }
   }
 

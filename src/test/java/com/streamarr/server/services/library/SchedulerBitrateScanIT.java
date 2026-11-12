@@ -164,7 +164,8 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
     var registry = new SimpleMeterRegistry();
     var waiting =
         new ProbeSchedulingConfiguration()
-            .bitrateScansWaiting(dsl, new BitrateScansWaitingProperties(Duration.ofMillis(50)));
+            .bitrateScansWaiting(
+                dsl, new BitrateScansWaitingProperties(Duration.ofMillis(50)), System::nanoTime);
     waiting.bindTo(registry);
     var files = requestUnchangedFiles(3);
 

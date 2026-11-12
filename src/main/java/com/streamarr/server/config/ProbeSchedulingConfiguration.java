@@ -17,6 +17,7 @@ import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.repositories.media.BitrateScanRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.concurrency.NanoClock;
 import com.streamarr.server.services.library.BitrateScanExecution;
 import com.streamarr.server.services.library.BitrateScanTask;
 import com.streamarr.server.services.library.KeyframePacketScanExecution;
@@ -176,7 +177,7 @@ public class ProbeSchedulingConfiguration {
   /** Reports how many bitrate scans wait in the keyframe packet scan table (ADR 0054). */
   @Bean
   public BitrateScansWaiting bitrateScansWaiting(
-      DSLContext dsl, BitrateScansWaitingProperties properties) {
+      DSLContext dsl, BitrateScansWaitingProperties properties, NanoClock nanoClock) {
     return BitrateScansWaiting.builder()
         .count(
             () ->
@@ -186,6 +187,7 @@ public class ProbeSchedulingConfiguration {
                         .eq(BitrateScanTask.NAME)
                         .and(DSL.field(DSL.name("picked"), Boolean.class).isFalse())))
         .refreshInterval(properties.refreshInterval())
+        .nanoClock(nanoClock)
         .build();
   }
 

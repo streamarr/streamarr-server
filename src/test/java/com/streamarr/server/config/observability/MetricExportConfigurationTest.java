@@ -317,7 +317,8 @@ class MetricExportConfigurationTest {
           new ProbeSchedulingConfiguration()
               .bitrateScansWaiting(
                   DSL.using(stoppedDatabase, SQLDialect.POSTGRES),
-                  new BitrateScansWaitingProperties(null));
+                  new BitrateScansWaitingProperties(null),
+                  System::nanoTime);
       CONTEXT_RUNNER
           .withBean(BitrateScansWaiting.class, () -> bitrateScansWaiting)
           .withBean(OtlpMetricsSender.class, () -> store)
