@@ -22,6 +22,7 @@ import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
 import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -409,6 +410,55 @@ class HardwareEncoderFailureRangeTest {
     assertThat(encoderOfTheStartedEncode(h264)).contains(libx264());
     assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.H264_HIGH);
     assertThat(h264.formatAttemptCount()).isEqualTo(2);
+  }
+
+  // The hardware encoder that refused still encodes what the client plays, so the client's
+  // declaration is not what ends playback. No worker can take the software encode, as when every
+  // worker is full.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("encodesOfAClientThatDeclaresAv1Alone")
+  @DisplayName(
+      "Should end playback for lack of capacity when the hardware AV1 encoder refused and no worker"
+          + " has a software encoder of AV1, the only codec family that the client declares")
+  void shouldEndPlaybackForLackOfCapacityWhenNoWorkerHasASoftwareEncoderOfTheClientsOnlyFamily(
+      Set<VideoEncodeFeature> hardwareAv1Features,
+      EncodeFormat hardwareFormat,
+      StreamingOptions options) {
+    workers.setTargetEncoders(FAILING_WORKER, List.of(av1Nvenc(hardwareAv1Features), libx264()));
+    workers.setTargetSoftwareEncoders(FAILING_WORKER, List.of(libx264()));
+    probes.setDefaultProbe(sourceOf(CompatibleBase.PQ));
+    var hardware = accepted(playback.start(start(options, av1AloneClient())));
+    assertThat(lastStartedDecision().videoEncodeFormat()).isEqualTo(hardwareFormat);
+
+    var failed = refuseTheHardwareEncoderOf(hardware);
+
+    assertThat(failed.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Failed.class,
+            attempt ->
+                assertThat(attempt.reason())
+                    .isEqualTo(
+                        new PlaybackSessionFailure.CreationRejected(
+                            new CreateStreamSessionRejection.TranscodeCapacityUnavailable(
+                                PROPERTIES.maxConcurrentTranscodes()))));
+    assertThat(workers.getStartedRequests()).hasSize(1);
+  }
+
+  static Stream<Arguments> encodesOfAClientThatDeclaresAv1Alone() {
+    var pq = EncodeFormat.hdr(VideoRange.PQ);
+    return Stream.of(
+        Arguments.of(
+            Named.of("a PQ encode in Auto", EVERY_ENCODE_FEATURE),
+            pq,
+            options(VideoQuality.AUTO, null)),
+        Arguments.of(
+            Named.of("a PQ encode in 1080p with HDR chosen", EVERY_ENCODE_FEATURE),
+            pq,
+            options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.HDR)),
+        Arguments.of(
+            Named.of("an 8-bit SDR encode in Auto", NO_ENCODE_FEATURE),
+            EncodeFormat.SDR_8_BIT,
+            options(VideoQuality.AUTO, null)));
   }
 
   @Test
