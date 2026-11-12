@@ -722,10 +722,10 @@ class StreamControllerTest {
   @DisplayName("Should hand the whole segment file to Tomcat when the connection supports sendfile")
   void shouldHandWholeSegmentFileToTomcatWhenConnectionSupportsSendfile(@TempDir Path segmentFolder)
       throws Exception {
-    var segmentFile = storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+    var store = storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
 
     var result =
-        overLocalStore(segmentFolder)
+        overStore(store)
             .perform(segmentRequest().requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
             .andExpect(status().isOk())
             .andReturn();
@@ -734,7 +734,7 @@ class StreamControllerTest {
     assertThat(result.getResponse().getHeader(HttpHeaders.CONTENT_LENGTH)).isEqualTo("5");
     assertThat(result.getResponse().getContentAsByteArray()).isEmpty();
     assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILENAME_ATTR))
-        .isEqualTo(segmentFile.toString());
+        .isEqualTo(segmentFolder.resolve(SESSION_ID.toString()).resolve("segment0.m4s").toString());
     assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILE_START_ATTR)).isEqualTo(0L);
     assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILE_END_ATTR)).isEqualTo(5L);
   }
@@ -743,10 +743,10 @@ class StreamControllerTest {
   @DisplayName("Should hand one byte range of the segment file to Tomcat when a range is requested")
   void shouldHandOneByteRangeOfSegmentFileToTomcatWhenRangeIsRequested(@TempDir Path segmentFolder)
       throws Exception {
-    storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+    var store = storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
 
     var result =
-        overLocalStore(segmentFolder)
+        overStore(store)
             .perform(
                 segmentRequest()
                     .header(HttpHeaders.RANGE, "bytes=1-3")
@@ -766,13 +766,9 @@ class StreamControllerTest {
   void shouldWriteSegmentItselfWhenConnectionDoesNotSupportSendfile(@TempDir Path segmentFolder)
       throws Exception {
     var segmentData = new byte[] {1, 2, 3, 4, 5};
-    storeSegmentLocally(segmentFolder, segmentData);
+    var store = storeSegmentLocally(segmentFolder, segmentData);
 
-    var result =
-        overLocalStore(segmentFolder)
-            .perform(segmentRequest())
-            .andExpect(status().isOk())
-            .andReturn();
+    var result = overStore(store).perform(segmentRequest()).andExpect(status().isOk()).andReturn();
 
     assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(segmentData);
     assertThat(result.getRequest().getAttribute(Globals.SENDFILE_FILENAME_ATTR)).isNull();
@@ -782,10 +778,10 @@ class StreamControllerTest {
   @DisplayName("Should write the ranges itself when several byte ranges are requested")
   void shouldWriteRangesItselfWhenSeveralByteRangesAreRequested(@TempDir Path segmentFolder)
       throws Exception {
-    storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+    var store = storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
 
     var result =
-        overLocalStore(segmentFolder)
+        overStore(store)
             .perform(
                 segmentRequest()
                     .header(HttpHeaders.RANGE, "bytes=0-0,2-2")
@@ -801,10 +797,10 @@ class StreamControllerTest {
   @DisplayName("Should send no segment file when the segment is requested with HEAD")
   void shouldSendNoSegmentFileWhenSegmentIsRequestedWithHead(@TempDir Path segmentFolder)
       throws Exception {
-    storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+    var store = storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
 
     var result =
-        overLocalStore(segmentFolder)
+        overStore(store)
             .perform(
                 request(HttpMethod.HEAD, "/api/stream/{sessionId}/segment0.m4s", SESSION_ID)
                     .requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
@@ -818,10 +814,10 @@ class StreamControllerTest {
   @DisplayName("Should write the empty segment itself when the stored segment has no bytes")
   void shouldWriteEmptySegmentItselfWhenStoredSegmentHasNoBytes(@TempDir Path segmentFolder)
       throws Exception {
-    storeSegmentLocally(segmentFolder, new byte[0]);
+    var store = storeSegmentLocally(segmentFolder, new byte[0]);
 
     var result =
-        overLocalStore(segmentFolder)
+        overStore(store)
             .perform(segmentRequest().requestAttr(Globals.SENDFILE_SUPPORTED_ATTR, true))
             .andExpect(status().isOk())
             .andReturn();
@@ -833,10 +829,10 @@ class StreamControllerTest {
   @DisplayName("Should answer 416 without a body when the requested range starts past the segment")
   void shouldAnswer416WithoutBodyWhenRequestedRangeStartsPastSegment(@TempDir Path segmentFolder)
       throws Exception {
-    storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
+    var store = storeSegmentLocally(segmentFolder, new byte[] {1, 2, 3, 4, 5});
 
     var result =
-        overLocalStore(segmentFolder)
+        overStore(store)
             .perform(
                 segmentRequest()
                     .header(HttpHeaders.RANGE, "bytes=9-")
@@ -853,20 +849,19 @@ class StreamControllerTest {
     return get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID);
   }
 
-  private Path storeSegmentLocally(Path segmentFolder, byte[] segmentData) {
+  private LocalSegmentStore storeSegmentLocally(Path segmentFolder, byte[] segmentData) {
     streamingService.setSession(buildSession());
-    new LocalSegmentStore(segmentFolder).storeSegment(SESSION_ID, "segment0.m4s", segmentData);
-    return segmentFolder.resolve(SESSION_ID.toString()).resolve("segment0.m4s");
+    var store = new LocalSegmentStore(segmentFolder);
+    store.storeSegment(SESSION_ID, "segment0.m4s", segmentData);
+    return store;
   }
 
-  private MockMvc overLocalStore(Path segmentFolder) {
-    var segmentFiles = new LocalSegmentStore(segmentFolder);
-    segmentFiles.getOutputDirectory(SESSION_ID);
+  private MockMvc overStore(SegmentStore store) {
     return MockMvcBuilders.standaloneSetup(
             new StreamController(
                 streamingService,
                 playlistService,
-                coordinatorOver(segmentFiles),
+                coordinatorOver(store),
                 new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN),
                 directPlaySources(),
                 directPlayMetrics))
