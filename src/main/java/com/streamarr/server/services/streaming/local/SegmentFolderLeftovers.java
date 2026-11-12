@@ -146,7 +146,7 @@ public class SegmentFolderLeftovers {
   private Optional<SegmentFolderRefusal> mountPointRefusal(Path folder) {
     List<Path> mountPoints;
     try {
-      mountPoints = MountPoints.in(mountTable);
+      mountPoints = MountTable.read(mountTable).mountPoints();
     } catch (IOException | RuntimeException e) {
       log.warn("Failed to read the mount table {}", mountTable, e);
       return Optional.of(SegmentFolderRefusal.UNKNOWN_MOUNT_POINTS);

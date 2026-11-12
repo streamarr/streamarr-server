@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
-@DisplayName("Mount Points Tests")
-class MountPointsTest {
+@DisplayName("Mount Table Tests")
+class MountTableTest {
 
   @TempDir Path machine;
 
@@ -28,7 +28,7 @@ class MountPointsTest {
             41 36 8:1 /media/movies /tmp/segments/library rw,relatime shared:1 - ext4 /dev/sda1 rw
             """);
 
-    var mountPoints = MountPoints.in(mountTable);
+    var mountPoints = MountTable.read(mountTable).mountPoints();
 
     assertThat(mountPoints)
         .containsExactly(Path.of("/"), Path.of("/tmp"), Path.of("/tmp/segments/library"));
@@ -44,7 +44,7 @@ class MountPointsTest {
     var mountTable =
         tableOf("41 22 8:1 / /media/my\\040movies\\011a\\012b\\134c rw - ext4 /dev/sda1 rw\n");
 
-    var mountPoints = MountPoints.in(mountTable);
+    var mountPoints = MountTable.read(mountTable).mountPoints();
 
     assertThat(mountPoints).containsExactly(Path.of("/media/my movies\ta\nb\\c"));
   }
@@ -54,7 +54,7 @@ class MountPointsTest {
   void shouldRejectTheTableWhenALineHasNoMountPoint() throws IOException {
     var mountTable = tableOf("41 22 8:1 /\n");
 
-    assertThatIllegalArgumentException().isThrownBy(() -> MountPoints.in(mountTable));
+    assertThatIllegalArgumentException().isThrownBy(() -> MountTable.read(mountTable));
   }
 
   private Path tableOf(String lines) throws IOException {

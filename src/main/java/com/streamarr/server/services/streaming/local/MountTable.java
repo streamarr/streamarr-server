@@ -7,8 +7,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** The mount points that a Linux mount table in the format of /proc/self/mountinfo lists. */
-final class MountPoints {
+/** The mounts that a Linux mount table in the format of /proc/self/mountinfo lists. */
+final class MountTable {
 
   /** The mount table of this process. Only Linux has it. */
   static final Path OF_THIS_PROCESS = Path.of("/proc/self/mountinfo");
@@ -20,18 +20,27 @@ final class MountPoints {
   // The fifth field of each line.
   private static final int MOUNT_POINT_FIELD = 4;
 
-  private MountPoints() {}
+  private final List<Path> mountPoints;
+
+  private MountTable(List<Path> mountPoints) {
+    this.mountPoints = mountPoints;
+  }
 
   /**
-   * Reads the mount points in the table.
+   * Reads the table.
    *
    * @throws IOException if the table cannot be read
    * @throws IllegalArgumentException if a line has no mount point
    */
-  static List<Path> in(Path mountTable) throws IOException {
-    try (var lines = Files.lines(mountTable)) {
-      return lines.map(line -> mountTable.getFileSystem().getPath(mountPoint(line))).toList();
+  static MountTable read(Path table) throws IOException {
+    try (var lines = Files.lines(table)) {
+      return new MountTable(
+          lines.map(line -> table.getFileSystem().getPath(mountPoint(line))).toList());
     }
+  }
+
+  List<Path> mountPoints() {
+    return mountPoints;
   }
 
   private static String mountPoint(String line) {
