@@ -514,13 +514,17 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
                 .formatted(code),
             Map.of());
 
+    assertSyntaxErrorAtItsLineAndColumnWithout(response, code);
+  }
+
+  private static void assertSyntaxErrorAtItsLineAndColumnWithout(JsonNode response, String value) {
     var error = errors(response);
     var location = error.path("locations").path(0);
     assertThat(error.path("message").asString())
         .contains(
             "line %d column %d"
                 .formatted(location.path("line").asInt(), location.path("column").asInt()));
-    assertThat(response.toString()).doesNotContain(code);
+    assertThat(response.toString()).doesNotContain(value);
   }
 
   private static String issuedCode(JsonNode payload) {
