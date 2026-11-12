@@ -124,9 +124,11 @@ public class ProfileHouseholdShareRepositoryCustomImpl
 
   @Override
   public Optional<ProfileHouseholdShare> findByIdAndReloadFromDatabase(UUID shareId) {
-    var found = Optional.ofNullable(entityManager.find(ProfileHouseholdShare.class, shareId));
-    found.ifPresent(entityManager::refresh);
-    return found;
+    // The held copy is dropped and the row read again: refreshing a copy whose row another
+    // transaction deleted would fail where the share is simply gone.
+    var held = Optional.ofNullable(entityManager.find(ProfileHouseholdShare.class, shareId));
+    held.ifPresent(entityManager::detach);
+    return held.map(_ -> entityManager.find(ProfileHouseholdShare.class, shareId));
   }
 
   @Override
