@@ -31,6 +31,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
+import com.streamarr.server.support.ManagerInvitationSteps;
 import com.streamarr.server.support.ShareSteps;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.HouseholdNewsSnapshot;
@@ -105,6 +106,7 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
   private TestIdentity theo;
   private TestIdentity serverAdmin;
   private ShareSteps steps;
+  private ManagerInvitationSteps managementSteps;
   private StoredNotificationRows rows;
 
   @BeforeEach
@@ -118,6 +120,13 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
             .managers(profileManagerRepository)
             .shares(shareRepository)
             .accounts(userAccountRepository)
+            .transactions(transactionTemplate)
+            .build();
+    managementSteps =
+        ManagerInvitationSteps.builder()
+            .management(profileManagement)
+            .auth(authTestSupport)
+            .invitations(invitationRepository)
             .transactions(transactionTemplate)
             .build();
     sam = track(authTestSupport.createIdentity());
@@ -146,7 +155,7 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
             profileManagement.acceptManagerInvitation(
                 authTestSupport.identityOf(theo), answered.id()))
         .isInstanceOf(Outcome.Accepted.class);
-    assertThat(removeAdministratively(ollie, theo)).isInstanceOf(Outcome.Accepted.class);
+    managementSteps.removeManagement(serverAdmin, theo, ollie);
     var waiting = SubjectReference.profileManagerInvitation(invite(sam, theo, ollie));
     var removed = SubjectReference.profile(ollie.getId());
     tell(
@@ -473,14 +482,6 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
                 });
     invitationIds.add(invitationId);
     return invitationId;
-  }
-
-  private Outcome<?, ?> removeAdministratively(Profile profile, TestIdentity manager) {
-    return profileManagement.administrativelyRemoveProfileManager(
-        authTestSupport.freshIdentityOf(serverAdmin),
-        profile.getId(),
-        manager.account().getId(),
-        "no longer looks after " + profile.getName());
   }
 
   /** Tells the recipients that an offer of Kai, the share, was accepted. */

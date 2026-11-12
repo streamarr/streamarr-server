@@ -305,14 +305,8 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
   void shouldListTheRemovalWithTheProfilesIdAndNameWhenAnAccountsManagementIsRemoved()
       throws Exception {
     var kai = steps.profileManagedBy("Kai", sam, sam, riversideAdmin);
-    var serverAdmin = track(authTestSupport.createAdminIdentity());
-    assertThat(
-            profileManagement.administrativelyRemoveProfileManager(
-                authTestSupport.freshIdentityOf(serverAdmin),
-                kai.getId(),
-                riversideAdmin.account().getId(),
-                "no longer looks after Kai"))
-        .isInstanceOf(Outcome.Accepted.class);
+    invitationSteps.removeManagement(
+        track(authTestSupport.createAdminIdentity()), riversideAdmin, kai);
 
     mockMvc
         .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
