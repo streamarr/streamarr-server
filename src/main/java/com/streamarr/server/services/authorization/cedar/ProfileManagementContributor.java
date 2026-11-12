@@ -7,6 +7,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.util.UUID;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -46,13 +47,26 @@ class ProfileManagementContributor implements FactContributor {
     }
 
     var restricted = profile.get().isRestricted();
-    var selfManaged =
-        !restricted
-            && userAccountRepository
-                .findById(identity.accountId())
-                .map(account -> profileId.equals(account.getPersonalProfileId()))
-                .orElse(false);
-    var directManager = directlyManages(identity, check, profileId);
+    describe(
+        slice,
+        ProfileManagementFacts.builder()
+            .selfManaged(
+                !restricted
+                    && userAccountRepository
+                        .findById(identity.accountId())
+                        .map(account -> profileId.equals(account.getPersonalProfileId()))
+                        .orElse(false))
+            .directManager(directlyManages(identity, check, profileId))
+            .sovereignPersonal(
+                !restricted && userAccountRepository.findByPersonalProfileId(profileId).isPresent())
+            .availableInPrincipalHousehold(
+                shareRepository.isActivelyShared(profileId, identity.householdId()))
+            .build());
+  }
+
+  private static void describe(EntitySlice slice, ProfileManagementFacts facts) {
+    var selfManaged = facts.selfManaged();
+    var directManager = facts.directManager();
     slice.resourceAttribute(MANAGED_BY_PRINCIPAL, new PrimBool(selfManaged || directManager));
     // Relinquishing needs a stored grant to give up; self-management has no row to relinquish.
     slice.resourceAttribute(DIRECTLY_MANAGED_BY_PRINCIPAL, new PrimBool(directManager));
@@ -62,13 +76,11 @@ class ProfileManagementContributor implements FactContributor {
     // §Profile sharing) — acceptance admits the person, so a retained direct manager cannot offer
     // it. selfManaged implies a sovereign Personal Profile, so the sovereign arm needs only it and
     // the other arm needs only the direct grant.
-    var sovereignPersonal =
-        !restricted && userAccountRepository.findByPersonalProfileId(profileId).isPresent();
     slice.resourceAttribute(
-        OFFERABLE_BY_PRINCIPAL, new PrimBool(sovereignPersonal ? selfManaged : directManager));
+        OFFERABLE_BY_PRINCIPAL,
+        new PrimBool(facts.sovereignPersonal() ? selfManaged : directManager));
     slice.resourceAttribute(
-        AVAILABLE_IN_PRINCIPAL_HOUSEHOLD,
-        new PrimBool(shareRepository.isActivelyShared(profileId, identity.householdId())));
+        AVAILABLE_IN_PRINCIPAL_HOUSEHOLD, new PrimBool(facts.availableInPrincipalHousehold()));
   }
 
   private boolean directlyManages(
@@ -79,4 +91,12 @@ class ProfileManagementContributor implements FactContributor {
 
     return profileManagerRepository.existsByAccountIdAndProfileId(identity.accountId(), profileId);
   }
+
+  /** The principal's relationship to one Profile, as read before it is set on the slice. */
+  @Builder
+  private record ProfileManagementFacts(
+      boolean selfManaged,
+      boolean directManager,
+      boolean sovereignPersonal,
+      boolean availableInPrincipalHousehold) {}
 }
