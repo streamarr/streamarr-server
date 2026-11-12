@@ -53,10 +53,10 @@ public class SegmentFolderLeftovers {
    * Deletes the leftovers. Call it before the folder's segment store exists, so that the folder
    * holds nothing of a running store.
    *
-   * <p>It refuses a folder that is a root directory, that is the home folder or lies above
-   * it, that is a media folder or lies above or below one, or that a file system is mounted in, and
-   * it creates nothing there. It refuses every folder when the media folders or the mount table
-   * cannot be read.
+   * <p>It refuses a folder that is a root directory, that is the home folder or lies above it, that
+   * is a media folder or lies above or below one, or that a file system is mounted in, and it
+   * creates nothing there. It refuses every folder when the media folders or the mount table cannot
+   * be read.
    *
    * <p>It deletes only in a folder that carries its mark, and it marks only a folder that holds no
    * other entry. There it deletes a stream session's directory only when a store marked the
@@ -133,8 +133,9 @@ public class SegmentFolderLeftovers {
     return Optional.empty();
   }
 
-  // A delete would empty a file system that is mounted in the folder. A second mount of the folder's
-  // own file system crosses no device boundary, so only the mount table shows every mount.
+  // A delete would empty a file system that is mounted in the folder. A second mount of the
+  // folder's own file system crosses no device boundary, so only the mount table shows every
+  // mount.
   private Optional<SegmentFolderRefusal> mountPointRefusal(Path folder) {
     List<Path> mountPoints;
     try {
