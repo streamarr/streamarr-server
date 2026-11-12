@@ -8,6 +8,7 @@ import static org.jooq.impl.DSL.greatest;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.row;
+import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
@@ -133,6 +134,22 @@ public class JooqNotificationRepository implements NotificationRepository {
   }
 
   @Override
+  public int deleteHistoryBefore(Instant cutoff, Instant now, int limit) {
+    var agedHistory =
+        NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)).and(historyAt(now));
+    return dsl.deleteFrom(NOTIFICATION)
+        .where(agedHistory)
+        .and(
+            NOTIFICATION.ID.in(
+                select(NOTIFICATION.ID)
+                    .from(NOTIFICATION)
+                    .where(agedHistory)
+                    .orderBy(NOTIFICATION.ID)
+                    .limit(limit)))
+        .execute();
+  }
+
+  @Override
   public List<Row<StoredNotification>> rowsOfRecipient(RecipientReference recipient, Seek seek) {
     return NEWEST_FIRST
         .rowsBeyond(dsl.selectFrom(NOTIFICATION), ofRecipient(recipient), seek)
@@ -185,6 +202,23 @@ public class JooqNotificationRepository implements NotificationRepository {
                 .EXPIRES_AT
                 .isNull()
                 .or(NOTIFICATION.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC))));
+  }
+
+  // History at the instant: news that its recipient read, and a request that an event resolved or
+  // whose expiry has passed. History never stops being history.
+  private static Condition historyAt(Instant now) {
+    var readNews =
+        NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).and(NOTIFICATION.READ_AT.isNotNull());
+    var settledRequest =
+        NOTIFICATION
+            .FORM
+            .eq(inline(NotificationForm.REQUEST))
+            .and(
+                NOTIFICATION
+                    .RESOLUTION
+                    .isNotNull()
+                    .or(NOTIFICATION.EXPIRES_AT.le(now.atOffset(ZoneOffset.UTC))));
+    return readNews.or(settledRequest);
   }
 
   private Row<StoredNotification> rowOf(NotificationRecord stored) {

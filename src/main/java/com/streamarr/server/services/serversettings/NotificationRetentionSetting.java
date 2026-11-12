@@ -5,9 +5,9 @@ import java.util.UUID;
 import lombok.NonNull;
 
 /**
- * How long the server keeps Notification history, and the unread news that its guard hides, after
- * its latest event (ADR 0063), with the range a ServerAdmin can choose from. The id is the server
- * settings row's, so every read and change names the same setting.
+ * How long the server keeps Notification history, the news that its recipient read and the requests
+ * that resolved, after its latest event (ADR 0063), with the range a ServerAdmin can choose from.
+ * The id is the server settings row's, so every read and change names the same setting.
  */
 public record NotificationRetentionSetting(@NonNull UUID id, int days) {
 
