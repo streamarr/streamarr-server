@@ -16,6 +16,8 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.zip.CRC32;
+import java.util.zip.DeflaterOutputStream;
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageTypeSpecifier;
@@ -34,6 +36,7 @@ public final class TestImages {
   private static final int BORDERED_WIDTH = 400;
   private static final int BORDERED_HEIGHT = 200;
   private static final String PNG_METADATA_FORMAT = "javax_imageio_png_1.0";
+  private static final byte[] PNG_SIGNATURE = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
 
   private TestImages() {}
 
@@ -348,6 +351,40 @@ public final class TestImages {
     }
 
     return outputStream.toByteArray();
+  }
+
+  /**
+   * A black PNG with one 8-bit grey sample for each pixel, deflated one row at a time, so that it
+   * takes its compressed size in memory at any dimensions.
+   */
+  public static byte[] createBlackGrayscalePngImage(int width, int height) {
+    var samples = new ByteArrayOutputStream();
+    try (var deflater = new DeflaterOutputStream(samples)) {
+      var filterTypeAndBlackRow = new byte[1 + width];
+      for (var y = 0; y < height; y++) {
+        deflater.write(filterTypeAndBlackRow);
+      }
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+
+    var eightBitGrayscale = ByteBuffer.allocate(13).putInt(width).putInt(height).put((byte) 8);
+    var png = new ByteArrayOutputStream();
+    png.writeBytes(PNG_SIGNATURE);
+    writePngChunk(png, "IHDR", eightBitGrayscale.array());
+    writePngChunk(png, "IDAT", samples.toByteArray());
+    writePngChunk(png, "IEND", new byte[0]);
+    return png.toByteArray();
+  }
+
+  private static void writePngChunk(ByteArrayOutputStream png, String type, byte[] data) {
+    var typeBytes = type.getBytes(StandardCharsets.US_ASCII);
+    var crc = new CRC32();
+    crc.update(typeBytes);
+    crc.update(data);
+    png.writeBytes(ByteBuffer.allocate(8).putInt(data.length).put(typeBytes).array());
+    png.writeBytes(data);
+    png.writeBytes(ByteBuffer.allocate(4).putInt((int) crc.getValue()).array());
   }
 
   /** A PNG with one 8-bit grey sample for each pixel and no alpha channel. */

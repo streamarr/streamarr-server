@@ -2,12 +2,19 @@ package com.streamarr.server.properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -247,5 +254,88 @@ class StreamingPropertiesTest {
     var properties = StreamingProperties.builder().segmentBasePath("/custom/segments").build();
 
     assertThat(properties.segmentBasePath()).isEqualTo("/custom/segments");
+  }
+
+  @ParameterizedTest
+  @NullSource
+  @ValueSource(strings = {"", "  "})
+  @DisplayName("Should own no segment folder when none is configured")
+  void shouldOwnNoSegmentFolderWhenNoneIsConfigured(String configured) {
+    var properties = StreamingProperties.builder().segmentBasePath(configured).build();
+
+    assertThat(properties.ownedSegmentFolder()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should own no segment folder when the shared one is configured by name")
+  void shouldOwnNoSegmentFolderWhenTheSharedOneIsConfiguredByName() {
+    var shared = StreamingProperties.builder().build().segmentBasePath();
+    var properties = StreamingProperties.builder().segmentBasePath(shared).build();
+
+    assertThat(properties.ownedSegmentFolder()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should own no segment folder when the shared one is configured with a dot in its path")
+  void shouldOwnNoSegmentFolderWhenTheSharedOneIsConfiguredWithADotInItsPath() throws IOException {
+    var shared = existingSharedSegmentFolder();
+    var spelledWithADot = shared.getParent().resolve(".").resolve(shared.getFileName());
+    var properties =
+        StreamingProperties.builder().segmentBasePath(spelledWithADot.toString()).build();
+
+    assertThat(properties.ownedSegmentFolder()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should own no segment folder when the shared one is configured by a relative path")
+  void shouldOwnNoSegmentFolderWhenTheSharedOneIsConfiguredByARelativePath() throws IOException {
+    var shared = existingSharedSegmentFolder();
+    var relative = Path.of("").toAbsolutePath().relativize(shared.toAbsolutePath());
+    var properties = StreamingProperties.builder().segmentBasePath(relative.toString()).build();
+
+    assertThat(properties.ownedSegmentFolder()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should own no segment folder when a soft link to the shared one is configured")
+  void shouldOwnNoSegmentFolderWhenASoftLinkToTheSharedOneIsConfigured(@TempDir Path temp)
+      throws IOException {
+    var link = Files.createSymbolicLink(temp.resolve("segments"), existingSharedSegmentFolder());
+    var properties = StreamingProperties.builder().segmentBasePath(link.toString()).build();
+
+    assertThat(properties.ownedSegmentFolder()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should own no segment folder when the server cannot tell it from the shared one")
+  void shouldOwnNoSegmentFolderWhenTheServerCannotTellItFromTheSharedOne(@TempDir Path temp)
+      throws IOException {
+    var closed = Files.createDirectory(temp.resolve("closed"));
+    var configured = Files.createDirectory(closed.resolve("segments"));
+    var properties = StreamingProperties.builder().segmentBasePath(configured.toString()).build();
+    Files.setPosixFilePermissions(closed, PosixFilePermissions.fromString("---------"));
+    try {
+      assumeFalse(Files.isExecutable(closed), "folder permissions apply to the test user");
+
+      assertThat(properties.ownedSegmentFolder()).isEmpty();
+    } finally {
+      Files.setPosixFilePermissions(closed, PosixFilePermissions.fromString("rwx------"));
+    }
+  }
+
+  @Test
+  @DisplayName("Should own the segment folder when one is configured")
+  void shouldOwnTheSegmentFolderWhenOneIsConfigured() {
+    var properties = StreamingProperties.builder().segmentBasePath("/custom/segments").build();
+
+    assertThat(properties.ownedSegmentFolder()).contains(Path.of("/custom/segments"));
+  }
+
+  // Every server that names no segment folder shares this one, so creating it changes nothing for
+  // them.
+  private static Path existingSharedSegmentFolder() throws IOException {
+    return Files.createDirectories(
+        Path.of(StreamingProperties.builder().build().segmentBasePath()));
   }
 }

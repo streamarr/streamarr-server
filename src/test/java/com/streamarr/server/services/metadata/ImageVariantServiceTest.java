@@ -1,5 +1,6 @@
 package com.streamarr.server.services.metadata;
 
+import static com.streamarr.server.fakes.TestImages.createBlackGrayscalePngImage;
 import static com.streamarr.server.fakes.TestImages.createGifImage;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createQuadrantPngImage;
@@ -25,8 +26,8 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.exceptions.ImageProcessingException;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -38,6 +39,7 @@ import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -431,13 +433,57 @@ class ImageVariantServiceTest {
         .isInstanceOf(ImageProcessingException.class);
   }
 
+  @ParameterizedTest
+  @CsvSource({"7680, 4320", "4320, 7680"})
+  @DisplayName("Should generate variants when the image has exactly 8K's pixel count")
+  void shouldGenerateVariantsWhenImageHasExactly8KsPixelCount(int width, int height) {
+    var imageData = createBlackGrayscalePngImage(width, height);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
+
+    assertThat(variants)
+        .filteredOn(variant -> variant.variant() == ImageSize.ORIGINAL)
+        .singleElement()
+        .satisfies(
+            original -> {
+              assertThat(original.width()).isEqualTo(width);
+              assertThat(original.height()).isEqualTo(height);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject the image from its header when it declares one row more than 8K's pixel count")
+  void shouldRejectImageFromItsHeaderWhenItDeclaresOneRowMoreThan8KsPixelCount() {
+    // The 8-byte signature and the 25-byte IHDR chunk, with no pixel data to decode after them.
+    var pngCutAfterItsHeader = Arrays.copyOf(createBlackGrayscalePngImage(7680, 4321), 33);
+
+    assertThatThrownBy(
+            () -> imageVariantService.generateVariants(pngCutAfterItsHeader, ImageType.BACKDROP))
+        .isInstanceOf(ImageProcessingException.class)
+        .hasMessageContaining("7680x4321");
+  }
+
+  @Test
+  @DisplayName("Should reject the image when resizing makes a variant with more than 8K's pixels")
+  void shouldRejectImageWhenResizingMakesAVariantWithMoreThan8KsPixels() {
+    // A backdrop's large variant is 1280 pixels wide, so 4 x 82 pixels grow to 1280 x 26240.
+    var imageData = createBlackGrayscalePngImage(4, 82);
+
+    assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.BACKDROP))
+        .isInstanceOf(ImageProcessingException.class)
+        .hasMessageContaining("1280x26240");
+  }
+
   @Test
   @DisplayName("Should throw when no reader decodes the image data")
   void shouldThrowWhenNoReaderDecodesImageData() {
     var imageData = createTestImage(600, 900);
 
     try (var mockedImageIO = mockStatic(ImageIO.class)) {
-      mockedImageIO.when(() -> ImageIO.read(any(InputStream.class))).thenReturn(null);
+      mockedImageIO
+          .when(() -> ImageIO.getImageReaders(any()))
+          .thenReturn(Collections.emptyIterator());
 
       assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
           .isInstanceOf(ImageProcessingException.class);
@@ -445,19 +491,15 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should wrap IOException when image reading fails")
-  void shouldWrapIOExceptionWhenImageReadingFails() {
-    var imageData = createTestImage(600, 900);
+  @DisplayName("Should wrap IOException when the pixel data is cut short")
+  void shouldWrapIOExceptionWhenPixelDataIsCutShort() {
+    var png = createSolidPngImage(600, 900, 0x00A0A0);
+    var pngCutInItsPixelData = Arrays.copyOf(png, png.length / 2);
 
-    try (var mockedImageIO = mockStatic(ImageIO.class)) {
-      mockedImageIO
-          .when(() -> ImageIO.read(any(InputStream.class)))
-          .thenThrow(new IOException("disk error"));
-
-      assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
-          .isInstanceOf(ImageProcessingException.class)
-          .hasCauseInstanceOf(IOException.class);
-    }
+    assertThatThrownBy(
+            () -> imageVariantService.generateVariants(pngCutInItsPixelData, ImageType.POSTER))
+        .isInstanceOf(ImageProcessingException.class)
+        .hasCauseInstanceOf(IOException.class);
   }
 
   @SuppressWarnings("unchecked")
