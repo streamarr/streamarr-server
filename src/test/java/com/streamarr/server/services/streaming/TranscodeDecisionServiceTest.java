@@ -1032,6 +1032,52 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.softwareEncoder()).isFalse();
   }
 
+  // A codec family whose hardware encoder failed earlier in the playback session encodes on its
+  // software encoder, so it no longer comes first as a codec family encoded in hardware (ADR 0009).
+  @Test
+  @DisplayName(
+      "Should encode H.264 before a codec family whose hardware encoder failed earlier in the"
+          + " playback session")
+  void shouldEncodeH264BeforeACodecFamilyWhoseHardwareEncoderFailedEarlier() {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("hevc", "aac"))
+                    .capabilityDeclaration(declaring(AV1, H264))
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
+                    .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.softwareEncoder()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a codec family with the software encoder when its hardware encoder failed"
+          + " earlier in the playback session")
+  void shouldEncodeACodecFamilyWithTheSoftwareEncoderWhenItsHardwareEncoderFailedEarlier() {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("hevc", "aac"))
+                    .capabilityDeclaration(declaring(AV1))
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
+                    .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.softwareEncoder()).isTrue();
+  }
+
   // ADR 0013: a software continuation keeps the failed encode's range and bit depth, so the
   // decision plans that format alone and nothing when no software encoder writes it.
   @Test

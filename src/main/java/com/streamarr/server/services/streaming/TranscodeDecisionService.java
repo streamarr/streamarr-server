@@ -224,7 +224,10 @@ public class TranscodeDecisionService {
             .audioStreamIndex(audioStreamIndex(source, audioDecision))
             .dynamicRangeChoice(request.viewerLimits().dynamicRangeChoice())
             .softwareEncoder(
-                encodeCodecProfile.isPresent() && request.softwareContinuation().isPresent())
+                encodeCodecProfile
+                    .map(EncodeCodecProfile::codecFamilyName)
+                    .filter(request::encodesInSoftware)
+                    .isPresent())
             .videoEncodeFormat(encode.map(EncodeChoice::format).orElse(EncodeFormat.SDR_8_BIT))
             .build());
   }
@@ -1046,14 +1049,17 @@ public class TranscodeDecisionService {
         && source.videoPlaybackFacts().map(facts -> facts.bitDepth().orElse(8) >= 10).orElse(false);
   }
 
-  // The codec families that a worker encodes in hardware, then H.264, then the rest (ADR 0009).
+  // The codec families that a worker encodes in hardware, then H.264, then the rest (ADR 0009). A
+  // codec family that the request encodes in software is not encoded in hardware.
   private static List<EncodeCodecProfile> codecPreference(TranscodeDecisionRequest request) {
     var hardwareEncodable = request.hardwareEncodableVideoCodecFamilies();
     var encodedInHardware =
         COMPRESSING_BETTER_THAN_H264.stream()
             .collect(
                 Collectors.partitioningBy(
-                    profile -> hardwareEncodable.contains(profile.codecFamilyName())));
+                    profile ->
+                        hardwareEncodable.contains(profile.codecFamilyName())
+                            && !request.encodesInSoftware(profile.codecFamilyName())));
     return Stream.of(
             encodedInHardware.get(true),
             List.of(EncodeCodecProfile.H264_HIGH),
