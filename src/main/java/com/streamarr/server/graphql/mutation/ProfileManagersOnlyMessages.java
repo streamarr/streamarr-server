@@ -13,6 +13,9 @@ public final class ProfileManagersOnlyMessages {
       case NOT_MANAGER ->
           "Only the Profile's managers may do this; supervising it does not cover this.";
       case NOT_RESTRICTED -> "The Profile is not restricted, so only its managers may do this.";
+      case NOT_HOUSEHOLD_ADMIN ->
+          "You are no longer an admin of the Household, so only the Profile's managers may do"
+              + " this.";
     };
   }
 }

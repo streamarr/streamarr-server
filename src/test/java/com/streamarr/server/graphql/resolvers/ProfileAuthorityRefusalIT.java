@@ -62,6 +62,13 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
         "reason": "NOT_RESTRICTED"}]
       """;
 
+  private static final String NOT_HOUSEHOLD_ADMIN =
+      """
+      [{"__typename": "ProfileManagersOnlyError",
+        "message": "You are no longer an admin of the Household, so only the Profile's managers may do this.",
+        "reason": "NOT_HOUSEHOLD_ADMIN"}]
+      """;
+
   private static final String PROFILE_ADMINISTRATION =
       """
       query { profileAdministration(profileId: "%s") { id restricted readerAuthority } }
@@ -280,10 +287,7 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
       }
       case DEMOTED_FORMER_SUPERVISOR -> {
         var supervisor = cast.secondAdminOf(smith);
-        perform(
-            authTestSupport.accountBearer(track(authTestSupport.createAdminIdentity())),
-            "revokeHouseholdAdmin",
-            "{accountId: \"%s\"}".formatted(supervisor.account().getId()));
+        revokeHouseholdAdmin(supervisor);
         yield new Asking(authTestSupport.accountBearer(asItIsNow(supervisor)), kid.getId());
       }
       case FORMER_HOST_AFTER_ITS_SHARE_ENDED ->
@@ -328,6 +332,88 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
       }
     };
   }
+
+  /**
+   * A page that stays open while its Account stops being a HouseholdAdmin: its session keeps the
+   * token issued before, which still reads the Profile there until it is renewed (ADR 0024
+   * §Stateless JWT snapshots).
+   */
+  enum StaleAdminSession {
+    DEMOTED_SUPERVISOR_OF_A_RESTRICTED_PROFILE,
+    DEMOTED_HOST_OF_AN_UNRESTRICTED_VISITOR,
+    SUPERVISOR_MOVED_TO_ADMINISTER_ANOTHER_HOUSEHOLD
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(StaleAdminSession.class)
+  @DisplayName(
+      "Should say the caller is no longer an admin of the Household when a session issued before it"
+          + " stopped being one still reads the Profile")
+  void shouldSayCallerIsNoLongerAdminWhenSessionIssuedBeforeItStoppedBeingOneStillReadsProfile(
+      StaleAdminSession session) throws Exception {
+    var stale = staleReadingOf(session);
+    var before = storedStateOf(stale.profile());
+
+    assertThat(profileAdministration(stale.bearer(), stale.profile()).path("id").asString())
+        .isEqualTo(stale.profile().getId().toString());
+    for (var mutation : ProfileMutation.values()) {
+      var answer = answer(stale.bearer(), mutation, stale.profile().getId());
+
+      assertThat(answer.path("errors").isMissingNode())
+          .as("%s top-level errors", mutation)
+          .isTrue();
+      assertThat(answer.at("/data/%s/userErrors".formatted(mutation.field)))
+          .as("%s refusal", mutation)
+          .isEqualTo(objectMapper.readTree(NOT_HOUSEHOLD_ADMIN));
+    }
+
+    assertThat(storedStateOf(stale.profile())).isEqualTo(before);
+  }
+
+  private StaleReading staleReadingOf(StaleAdminSession session) throws Exception {
+    return switch (session) {
+      case DEMOTED_SUPERVISOR_OF_A_RESTRICTED_PROFILE -> {
+        var supervisor = cast.secondAdminOf(smith);
+        var bearer = authTestSupport.accountBearer(supervisor);
+        revokeHouseholdAdmin(supervisor);
+        yield new StaleReading(bearer, kid);
+      }
+      case DEMOTED_HOST_OF_AN_UNRESTRICTED_VISITOR -> {
+        var visitor =
+            cast.unavailableProfileManagedBy(smith, ProfileFixture.defaultProfileBuilder());
+        cast.makeAvailable(visitor, cabin);
+        var host = cast.secondAdminOf(cabin);
+        var bearer = authTestSupport.accountBearer(host);
+        revokeHouseholdAdmin(host);
+        yield new StaleReading(bearer, visitor);
+      }
+      case SUPERVISOR_MOVED_TO_ADMINISTER_ANOTHER_HOUSEHOLD -> {
+        var supervisor = cast.secondAdminOf(smith);
+        var bearer = authTestSupport.accountBearer(supervisor);
+        var serverAdmin =
+            authTestSupport.accountBearer(track(authTestSupport.createAdminIdentity()));
+        perform(
+            serverAdmin,
+            "transferAccount",
+            "{accountId: \"%s\", destinationHouseholdId: \"%s\"}"
+                .formatted(supervisor.account().getId(), cabin.household().getId()));
+        perform(
+            serverAdmin,
+            "grantHouseholdAdmin",
+            "{accountId: \"%s\"}".formatted(supervisor.account().getId()));
+        yield new StaleReading(bearer, kid);
+      }
+    };
+  }
+
+  private void revokeHouseholdAdmin(TestIdentity admin) throws Exception {
+    perform(
+        authTestSupport.accountBearer(track(authTestSupport.createAdminIdentity())),
+        "revokeHouseholdAdmin",
+        "{accountId: \"%s\"}".formatted(admin.account().getId()));
+  }
+
+  private record StaleReading(String bearer, Profile profile) {}
 
   /** An Adult of Smith's that only visited Cabin, whose admin then ended the share. */
   private Profile visitorWhoseShareEnded() throws Exception {
@@ -425,12 +511,13 @@ class ProfileAuthorityRefusalIT extends AbstractIntegrationTest {
   }
 
   private JsonNode profileAdministration(TestIdentity reader, Profile profile) throws Exception {
+    return profileAdministration(authTestSupport.accountBearer(reader), profile);
+  }
+
+  private JsonNode profileAdministration(String bearer, Profile profile) throws Exception {
     var body =
         mockMvc
-            .perform(
-                graphqlRequest(
-                    authTestSupport.accountBearer(reader),
-                    PROFILE_ADMINISTRATION.formatted(profile.getId())))
+            .perform(graphqlRequest(bearer, PROFILE_ADMINISTRATION.formatted(profile.getId())))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andReturn()
