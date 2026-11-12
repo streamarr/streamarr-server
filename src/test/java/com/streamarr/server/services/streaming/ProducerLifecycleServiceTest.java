@@ -28,6 +28,7 @@ import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.SourceEndedEarly;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -72,6 +73,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.LongStream;
+import java.util.stream.Stream;
 import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -80,6 +82,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Producer Lifecycle Service Tests")
@@ -1363,16 +1367,16 @@ class ProducerLifecycleServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).containsExactly(first);
   }
 
-  // Without the source's keyframes, the worker reads from one period before the attempt's first
-  // segment: from 36 s for segment 7, which lies past a video that ends earlier, so it would decode
-  // no picture to hold.
+  // Segment 7 starts at 42 s. The worker finds the last keyframe that presents at or before 41.5 s
+  // in the source, also when the video ends before that time, so the video's probed end changes
+  // nothing that the server sends.
   @ParameterizedTest(name = "video ends at {0} s")
-  @CsvSource({"12, PT6S", "3, PT0S", "36, PT30S", "37,"})
+  @ValueSource(ints = {3, 12, 36, 37, 48})
   @DisplayName(
-      "Should seek an encode that would read from after the video's probed end to one period before"
-          + " that end when the source's keyframes are not known")
-  void shouldSeekAnEncodeThatWouldReadFromAfterTheVideosProbedEndToOnePeriodBeforeIt(
-      int videoEndSeconds, String expectedSeek) {
+      "Should send the time 0.5 s before the first segment, and no seek position, when an encode"
+          + " reads a source whose keyframes are not known, wherever its video ends")
+  void shouldSendTheTimeHalfASecondBeforeTheFirstSegmentWhenAnEncodeReadsUnknownKeyframes(
+      int videoEndSeconds) {
     var probe =
         defaultProbeBuilder()
             .duration(Duration.ofSeconds(48))
@@ -1399,8 +1403,9 @@ class ProducerLifecycleServiceTest {
 
     var request = transcodeExecutor.getStartedRequests().getLast();
     assertThat(request.startSequenceNumber()).isEqualTo(7);
-    assertThat(request.keyframeSeekPosition())
-        .isEqualTo(Optional.ofNullable(expectedSeek).map(Duration::parse));
+    assertThat(request.keyframeSeekPosition()).isEmpty();
+    assertThat(request.readFromLastKeyframePresentingAtOrBefore())
+        .hasValue(Duration.ofMillis(41_500));
   }
 
   @Test
@@ -2551,22 +2556,62 @@ class ProducerLifecycleServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
   }
 
-  @Test
+  // Segment 100 starts at 600 s.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("keyframesThatAreNotKnown")
   @DisplayName(
-      "Should send no keyframe seek position when a relocated attempt encodes a source whose keyframes are not known")
-  void
-      shouldSendNoKeyframeSeekPositionWhenARelocatedAttemptEncodesASourceWhoseKeyframesAreNotKnown() {
+      "Should send the time that the worker's keyframe search reads before, and no keyframe seek"
+          + " position, when a relocated attempt encodes a source whose keyframes are not known")
+  void shouldSendTheKeyframeSearchTimeWhenARelocatedAttemptEncodesASourceWhoseKeyframesAreNotKnown(
+      KeyframeKnowledge keyframes) {
     var session =
         startedEncodedSession(
-            defaultProbeBuilder()
-                .containerFormat(Optional.of(MPEG_TS))
-                .keyframes(
-                    new KeyframeKnowledge.PacketScanRequired(
-                        KeyframePacketScanReason.NO_CONTAINER_INDEX)));
+            defaultProbeBuilder().containerFormat(Optional.of(MPEG_TS)).keyframes(keyframes));
 
     var request = relocatedRequest(session, 100);
 
     assertThat(request.keyframeSeekPosition()).isEmpty();
+    assertThat(request.readFromLastKeyframePresentingAtOrBefore())
+        .hasValue(Duration.ofMillis(599_500));
+  }
+
+  private static Stream<KeyframeKnowledge> keyframesThatAreNotKnown() {
+    return Stream.of(
+        new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX),
+        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED),
+        new KeyframeKnowledge.NotReported());
+  }
+
+  // The worker keeps the stored keyframe's seek position when the read from it shows a picture by
+  // 599.5 s, 0.5 s before segment 100's start.
+  @Test
+  @DisplayName(
+      "Should send the stored keyframe's seek position and the time that its read must show a"
+          + " picture by when a relocated attempt encodes a source whose keyframes are known")
+  void shouldSendTheStoredSeekPositionAndTheReadTimeWhenARelocatedAttemptEncodesKnownKeyframes() {
+    var session = startedEncodedSession(MATROSKA, keyframesDecoding84MillisBeforeTheyPresent());
+
+    var request = relocatedRequest(session, 100);
+
+    assertThat(request.keyframeSeekPosition()).isPresent();
+    assertThat(request.readFromLastKeyframePresentingAtOrBefore())
+        .hasValue(Duration.ofMillis(599_500));
+  }
+
+  @Test
+  @DisplayName(
+      "Should send no keyframe search time when an encoded attempt of a source whose keyframes are"
+          + " not known starts at segment 0")
+  void shouldSendNoKeyframeSearchTimeWhenAnEncodedAttemptOfUnknownKeyframesStartsAtSegment0() {
+    startedEncodedSession(
+        defaultProbeBuilder()
+            .containerFormat(Optional.of(MPEG_TS))
+            .keyframes(new KeyframeKnowledge.NotReported()));
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .extracting(TranscodeRequest::readFromLastKeyframePresentingAtOrBefore)
+        .isEqualTo(Optional.empty());
   }
 
   // Keyframes every 6 s present on the grid and decode 84 ms earlier, as B-frames make them do. The

@@ -103,6 +103,8 @@ final class LiveWorkerConnectionRegistry {
       "streamarr.streaming.unknown_job_attempt_reports";
   private static final String YIELD_COMMANDS_METRIC = "streamarr.streaming.seek_yield_commands";
   private static final String HOLD_BACK_COMMANDS_METRIC = "streamarr.streaming.hold_back_commands";
+  private static final String TERMINAL_JOB_ATTEMPT_FAILURES_METRIC =
+      "streamarr.streaming.terminal_job_attempt_failures";
   // A probe refused for one of these reasons runs again later, when a worker can take it.
   private static final Set<ProbeRefusal> WAITING_FOR_WORKER =
       EnumSet.of(
@@ -777,9 +779,22 @@ final class LiveWorkerConnectionRegistry {
       return;
     }
 
+    meterRegistry
+        .counter(
+            TERMINAL_JOB_ATTEMPT_FAILURES_METRIC,
+            "reason",
+            failure.get().name().toLowerCase(Locale.ROOT))
+        .increment();
     var streamSessionId = fromProto(job.getStreamSessionId());
     var jobAttemptId = fromProto(job.getJobAttemptId());
     var variantLabel = job.getVariant().getVariantLabel();
+    log.warn(
+        "Job attempt {} of variant {} of stream session {} failed with {}, which a replacement"
+            + " attempt would repeat",
+        jobAttemptId,
+        variantLabel,
+        streamSessionId,
+        failure.get());
     if (WorkerConnection.isCopyOutputMismatch(job, failed)) {
       eventPublisher.publishEvent(
           new VideoCopyOutputMismatchEvent(streamSessionId, jobAttemptId, variantLabel));
@@ -1651,9 +1666,10 @@ final class LiveWorkerConnectionRegistry {
     }
 
     // The worker contract says that a replacement attempt with the same decision repeats an output
-    // mismatch on the same encoder backend, an invalid specification on every worker, and a Dolby
-    // Vision conversion failure on the same picture. Every attempt of a copy cuts the same
-    // keyframe-merged segments, so it repeats a segment over the cap too (ADR 0037).
+    // mismatch on the same encoder backend, an invalid specification on every worker, a Dolby
+    // Vision conversion failure on the same picture, and a first segment that opened late on the
+    // same read of the source. Every attempt of a copy cuts the same keyframe-merged segments, so
+    // it repeats a segment over the cap too (ADR 0037).
     private static Optional<TranscodeFailure> terminalFailure(
         VariantJob job, JobAttemptFailed failed) {
       return switch (failed.getFailure()) {
@@ -1663,6 +1679,8 @@ final class LiveWorkerConnectionRegistry {
         case JOB_ATTEMPT_FAILURE_DOLBY_VISION_CONVERSION_FAILED ->
             Optional.of(TranscodeFailure.DOLBY_VISION_CONVERSION_FAILED);
         case JOB_ATTEMPT_FAILURE_SEGMENT_CAP_EXCEEDED -> segmentCapFailure(job);
+        case JOB_ATTEMPT_FAILURE_FIRST_SEGMENT_OPENED_LATE ->
+            Optional.of(TranscodeFailure.FIRST_SEGMENT_OPENED_LATE);
         case JOB_ATTEMPT_FAILURE_COPIED_AUDIO_RAN_SHORT,
             JOB_ATTEMPT_FAILURE_UNSPECIFIED,
             JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE,

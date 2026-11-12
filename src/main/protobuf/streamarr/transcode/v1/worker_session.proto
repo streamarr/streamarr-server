@@ -636,8 +636,10 @@ message TranscodeExecution {
   uint32 media_segment_count = 5;
   // This field holds where the attempt starts reading, on the zero-based
   // timeline of ProbeKeyframePositionsPart. When it is set, the worker uses it
-  // instead of seek_position_seconds. ADR 0037 (early ends) decides when the
-  // server sets it.
+  // instead of seek_position_seconds. The server sets it on every stream copy
+  // after segment 0, and on an encode from a later segment when the source's
+  // keyframe positions are stored; the worker then checks the read against
+  // read_from_last_keyframe_presenting_at_or_before (ADR 0037, seek).
   google.protobuf.Duration seek_position = 6;
   // This field holds the encode's exact output frame rate. Every encode sets
   // it. A copy leaves it out.
@@ -661,6 +663,13 @@ message TranscodeExecution {
   // variant copies, else 1/1 (whole seconds). The server sets it exactly when
   // segment_start_ticks is not empty.
   Fraction segment_start_time_base = 11;
+  // Every encode from a later segment sets this media time, on the segment
+  // starts' timeline. The worker keeps seek_position if its read shows a
+  // picture by then, else reads from the last keyframe that presents and shows
+  // a picture by then, or from the start. No oneof: the worker checks
+  // seek_position against it. Missing, or set on another attempt, it makes the
+  // job an invalid specification (ADR 0037, seek).
+  google.protobuf.Duration read_from_last_keyframe_presenting_at_or_before = 12;
 }
 
 message VariantJob {
@@ -734,6 +743,12 @@ enum JobAttemptFailure {
   // worker refuses the segment before upload. Playback needs a new stream
   // session that encodes audio, without excluding the valid video format.
   JOB_ATTEMPT_FAILURE_COPIED_AUDIO_RAN_SHORT = 11;
+  // An attempt that encodes video read the source from a seek, and its first
+  // media segment's opening keyframe presents after the first output frame at
+  // or after that segment's start. Pictures before that keyframe are missing.
+  // The worker uploads no media segment of the attempt. Another attempt that
+  // reads the source the same way misses the same pictures (ADR 0037, seek).
+  JOB_ATTEMPT_FAILURE_FIRST_SEGMENT_OPENED_LATE = 12;
 }
 
 message JobAttemptFailed {
@@ -803,9 +818,10 @@ message JobAttemptProgress {
   // growing while FFmpeg writes audio alone after the video's end. The worker
   // leaves it out until it reads the first sample.
   google.protobuf.Duration output_end = 2;
-  // When the job holds the last frame, the worker searches the source for the
-  // video's last keyframe. This field counts the source bytes that the search
-  // has read. It stays 0 when the attempt runs no search.
+  // When the job carries read_from_last_keyframe_presenting_at_or_before, the
+  // worker searches the source for that keyframe before FFmpeg starts. This
+  // field counts the source bytes that the search has read. It stays 0 when
+  // the attempt runs no search.
   uint64 keyframe_search_bytes_read = 3;
 }
 

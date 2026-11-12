@@ -30,6 +30,24 @@ public sealed interface MediaSegmentTimeline {
    */
   Optional<Duration> keyframeSeekPosition(int index);
 
+  /**
+   * The time, on the attempt's own timeline, at or before which the source keyframe presents that
+   * an encoded job attempt starting at this segment reads from, and by which its read must show a
+   * picture: the worker checks the read from a stored keyframe's seek position against it, or finds
+   * the keyframe in the source when its keyframes are not stored. Empty for an attempt that starts
+   * at segment 0 and for a stream copy (ADR 0037, seek).
+   */
+  Optional<Duration> lastKeyframeReadTime(int index);
+
+  /**
+   * The latest presentation time of the keyframe that an encoded attempt reads from when its first
+   * segment starts at this second: half a second before that start, so that the attempt decodes the
+   * pictures before it (streamarr/streamarr-server#502).
+   */
+  static Duration latestReadKeyframePresentation(int startSeconds) {
+    return Duration.ofSeconds(startSeconds).minusMillis(500);
+  }
+
   default int targetSegmentDurationSeconds() {
     return (int) targetSegmentDuration().toSeconds();
   }
@@ -161,6 +179,16 @@ public sealed interface MediaSegmentTimeline {
       return Optional.empty();
     }
 
+    @Override
+    public Optional<Duration> lastKeyframeReadTime(int index) {
+      if (index == 0) {
+        return Optional.empty();
+      }
+
+      return Optional.of(
+          MediaSegmentTimeline.latestReadKeyframePresentation(mediaSegmentStartSeconds(index)));
+    }
+
     /**
      * This grid's segments as a stream copy cuts them at the source keyframes that open each one. A
      * keyframe that presents at or after the media end opens no segment, and neither does a later
@@ -221,8 +249,6 @@ public sealed interface MediaSegmentTimeline {
       @NonNull DemuxerSeekTime seekTime)
       implements MediaSegmentTimeline {
 
-    private static final Duration SEEK_MARGIN = Duration.ofMillis(500);
-
     @Override
     public Duration targetSegmentDuration() {
       return grid.targetSegmentDuration();
@@ -249,7 +275,7 @@ public sealed interface MediaSegmentTimeline {
       }
 
       var latestPresentation =
-          Duration.ofSeconds(mediaSegmentStartSeconds(index)).minus(SEEK_MARGIN);
+          MediaSegmentTimeline.latestReadKeyframePresentation(mediaSegmentStartSeconds(index));
       // Rounding up keeps a seek from reaching back to the keyframe before.
       var position =
           positions.keyframes().stream()
@@ -259,6 +285,11 @@ public sealed interface MediaSegmentTimeline {
               .filter(time -> !time.isNegative())
               .orElse(Duration.ZERO);
       return Optional.of(position);
+    }
+
+    @Override
+    public Optional<Duration> lastKeyframeReadTime(int index) {
+      return grid.lastKeyframeReadTime(index);
     }
 
     // Rounding up keeps out a keyframe that presents a fraction of a nanosecond after the time.
@@ -400,6 +431,11 @@ public sealed interface MediaSegmentTimeline {
       }
 
       return Optional.of(decodeTime);
+    }
+
+    @Override
+    public Optional<Duration> lastKeyframeReadTime(int index) {
+      return Optional.empty();
     }
 
     private Duration openingTime(int index) {

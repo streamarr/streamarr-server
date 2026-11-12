@@ -647,6 +647,8 @@ public class PlaybackSessionService implements AutoCloseable {
               failedId, new PlaybackSessionFailure.DolbyVisionConversionFailed());
       case SEGMENT_CAP_EXCEEDED ->
           recoverFromFailedCopy(failedId, new PlaybackSessionFailure.OutputMismatch());
+      case FIRST_SEGMENT_OPENED_LATE ->
+          failWithoutFormatAttempt(failedId, new PlaybackSessionFailure.FirstSegmentOpenedLate());
     }
   }
 

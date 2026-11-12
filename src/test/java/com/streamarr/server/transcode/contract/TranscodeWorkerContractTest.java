@@ -976,6 +976,53 @@ class TranscodeWorkerContractTest {
     assertThat(declared.getReservedNameList()).contains("segment_start_slots");
   }
 
+  // An older worker reads only seek_position and ignores field 12, so it keeps reading from its own
+  // read-back until it builds against this contract.
+  @Test
+  @DisplayName(
+      "Should carry the time that the worker's keyframe search reads before, without a seek"
+          + " position, when an encode reads a source whose keyframes are not stored")
+  void shouldCarryTheKeyframeSearchTimeWithoutASeekPositionWhenKeyframesAreNotStored()
+      throws Exception {
+    var searchTime = Duration.newBuilder().setSeconds(17).setNanos(500_000_000).build();
+    var execution =
+        TranscodeExecution.newBuilder()
+            .setStartSequenceNumber(3)
+            .setReadFromLastKeyframePresentingAtOrBefore(searchTime)
+            .build();
+
+    var decoded = TranscodeExecution.parseFrom(execution.toByteArray());
+    var field =
+        TranscodeExecution.getDescriptor()
+            .findFieldByName("read_from_last_keyframe_presenting_at_or_before");
+
+    assertThat(decoded.hasSeekPosition()).isFalse();
+    assertThat(decoded.getReadFromLastKeyframePresentingAtOrBefore()).isEqualTo(searchTime);
+    assertThat(field.getNumber()).isEqualTo(12);
+    assertThat(field.getMessageType()).isEqualTo(Duration.getDescriptor());
+    assertThat(field.hasPresence()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a first segment that opened late apart from a generic transcode failure when an"
+          + " attempt fails")
+  void shouldTellAFirstSegmentThatOpenedLateApartFromAGenericTranscodeFailureWhenAttemptFails()
+      throws Exception {
+    var failure =
+        JobAttemptFailed.newBuilder()
+            .setJobAttemptId(uuid(UUID.randomUUID()))
+            .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_FIRST_SEGMENT_OPENED_LATE)
+            .build();
+
+    var parsed = JobAttemptFailed.parseFrom(failure.toByteArray());
+
+    assertThat(parsed.getFailure())
+        .isEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_FIRST_SEGMENT_OPENED_LATE)
+        .isNotEqualTo(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+    assertThat(parsed.getFailureValue()).isEqualTo(12);
+  }
+
   @Test
   @DisplayName("Should distinguish short copied audio from failed video when an attempt fails")
   void shouldDistinguishShortCopiedAudioFromFailedVideoWhenAnAttemptFails() throws Exception {
