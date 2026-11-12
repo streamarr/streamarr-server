@@ -418,7 +418,7 @@ public class ProfileAdministrationService {
               profileId, "Profile deleted", clock.instant());
           profileManagerInvitationRepository.invalidatePendingByProfileId(
               profileId, "Profile deleted", clock.instant());
-          shareLifecycle.announceDeletionWithProfile(profileId);
+          shareLifecycle.announceDeletionWithProfile(profileId, clock.instant());
           profileRepository.deleteById(profileId);
           profileRepository.flush();
           securityAuditEventRepository.append(

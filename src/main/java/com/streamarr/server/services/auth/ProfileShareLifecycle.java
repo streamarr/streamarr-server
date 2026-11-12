@@ -22,7 +22,8 @@ import org.springframework.stereotype.Service;
  *
  * <p>Every write changes a share that is pending or active, so each is announced as the change of a
  * live share, the change that ends it included. A share announced without being written, as it is
- * moved or deleted, is live when it is stored pending or active.
+ * moved or deleted, is live when it is stored pending or active; a deleted offer whose time ran out
+ * is announced as expired.
  */
 @Service
 @RequiredArgsConstructor
@@ -108,13 +109,13 @@ public class ProfileShareLifecycle {
   }
 
   /** Announces every share of the Profile, which the database deletes with the Profile. */
-  public void announceDeletionWithProfile(UUID profileId) {
-    shareRepository.findByProfileId(profileId).forEach(this::announceRemoval);
+  public void announceDeletionWithProfile(UUID profileId, Instant now) {
+    shareRepository.findByProfileId(profileId).forEach(share -> announceRemoval(share, now));
   }
 
   /** Announces every share into the Household, which the database deletes with the Household. */
-  public void announceDeletionWithHousehold(UUID householdId) {
-    shareRepository.findByHouseholdId(householdId).forEach(this::announceRemoval);
+  public void announceDeletionWithHousehold(UUID householdId, Instant now) {
+    shareRepository.findByHouseholdId(householdId).forEach(share -> announceRemoval(share, now));
   }
 
   /**
@@ -148,11 +149,13 @@ public class ProfileShareLifecycle {
         new ProfileShareChangedEvent(ChangedShare.of(share), share.getStatus().isLive()));
   }
 
-  // An offer past its expiry that the sweep has not reached is still stored pending, so it is
-  // announced as live and its Household hears its removal as the change that tells it the offer is
-  // over.
-  private void announceRemoval(ProfileHouseholdShare share) {
-    events.publishEvent(
-        new ProfileShareChangedEvent(ChangedShare.of(share), share.getStatus().isLive(), true));
+  // An offer past its expiry that the sweep has not reached is still stored pending. Its removal is
+  // announced as the expiry the sweep would have stored, the change that ends it, so its Household
+  // hears that the offer expired and not that its Profile or the Household was deleted.
+  private void announceRemoval(ProfileHouseholdShare share, Instant now) {
+    var removed =
+        new ChangedShare(
+            share.getId(), share.getProfileId(), share.getHouseholdId(), share.statusAt(now));
+    events.publishEvent(new ProfileShareChangedEvent(removed, share.getStatus().isLive(), true));
   }
 }
