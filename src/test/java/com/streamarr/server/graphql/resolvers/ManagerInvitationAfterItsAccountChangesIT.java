@@ -7,13 +7,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.ManagerInvitationSteps;
 import com.streamarr.server.support.ProfileCastSupport;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +51,7 @@ class ManagerInvitationAfterItsAccountChangesIT extends AbstractIntegrationTest 
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
   @Autowired private ProfileManagerAdministrationService managerService;
   @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private UserAccountRepository userAccountRepository;
 
   private final List<TestIdentity> identities = new ArrayList<>();
   private ManagerInvitationSteps steps;
@@ -243,6 +248,76 @@ class ManagerInvitationAfterItsAccountChangesIT extends AbstractIntegrationTest 
     assertThat(refusal.asString()).isEqualTo("ProfileNotDeletableError");
   }
 
+  @Test
+  @DisplayName(
+      "Should invalidate the other invitation for its Account when that Account accepts one sent"
+          + " to its new address")
+  void shouldInvalidateTheOtherInvitationForItsAccountWhenThatAccountAcceptsOneSentToItsNewAddress()
+      throws Exception {
+    var toOldAddress = invite(mara.account().getEmail());
+    var newAddress = "mara.%s@example.com".formatted(UUID.randomUUID());
+    changeEmail(mara, newAddress);
+    var toNewAddress = invite(newAddress);
+    assertThat(received(mara)).containsExactlyInAnyOrder(toOldAddress, toNewAddress);
+
+    act(
+        authTestSupport.accountBearer(mara),
+        """
+        mutation { acceptManagerInvitation(input: {invitationId: "%s"}) {
+          userErrors { __typename } } }
+        """
+            .formatted(toNewAddress));
+
+    assertThat(statusAs(mara, toOldAddress)).isEqualTo("INVALIDATED");
+    assertThat(statusAs(sam, toOldAddress)).isEqualTo("PENDING");
+  }
+
+  @Test
+  @DisplayName(
+      "Should invalidate an invitation for its Account when that Account gives up managing the"
+          + " Profile")
+  void shouldInvalidateAnInvitationForItsAccountWhenThatAccountGivesUpManagingTheProfile()
+      throws Exception {
+    cast.grant(mara, alex);
+    // No invite can name a manager; a write that raced in before the grant could.
+    var raced = savePending(alex, sam, mara);
+
+    act(
+        authTestSupport.accountBearer(mara),
+        """
+        mutation { relinquishProfileManagement(input: {profileId: "%s"}) {
+          userErrors { __typename } } }
+        """
+            .formatted(alex.getId()));
+
+    assertThat(invitationRepository.findById(raced).orElseThrow().getRecipientInvalidatedAt())
+        .isNotNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should invalidate an invitation for its Account when that Account becomes the replacement"
+          + " manager of a preserved Personal Profile")
+  void
+      shouldInvalidateAnInvitationForItsAccountWhenThatAccountBecomesTheReplacementManagerOfAPreservedPersonalProfile()
+          throws Exception {
+    var cam = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    cast.grant(sam, cam.profile());
+    var toMara = steps.invite(sam, cam.profile(), mara.account().getEmail()).invitation().getId();
+
+    act(
+        authTestSupport.freshAccountBearer(serverAdmin),
+        """
+        mutation { administrativelyDeleteAccount(input: {accountId: "%s",
+          profileCleanup: PRESERVE_PROFILE, replacementManagerAccountId: "%s",
+          reason: "moved away"}) { userErrors { __typename } } }
+        """
+            .formatted(cam.account().getId(), mara.account().getId()));
+
+    assertThat(statusAs(mara, toMara)).isEqualTo("INVALIDATED");
+    assertThat(statusAs(sam, toMara)).isEqualTo("PENDING");
+  }
+
   private void change(Change change) throws Exception {
     switch (change) {
       case DELETED ->
@@ -278,6 +353,44 @@ class ManagerInvitationAfterItsAccountChangesIT extends AbstractIntegrationTest 
   /** Runs the mutation, which must succeed. */
   private void act(String bearer, String mutation) throws Exception {
     assertThat(graphql(bearer, mutation).findValue("userErrors")).isEmpty();
+  }
+
+  private void changeEmail(TestIdentity identity, String email) {
+    transactionTemplate.executeWithoutResult(
+        _ -> {
+          var account = userAccountRepository.findById(identity.account().getId()).orElseThrow();
+          account.setEmail(email);
+          userAccountRepository.saveAndFlush(account);
+        });
+  }
+
+  private UUID savePending(Profile profile, TestIdentity inviter, TestIdentity invitee) {
+    return transactionTemplate.execute(
+        _ ->
+            invitationRepository
+                .saveAndFlush(
+                    ProfileManagerInvitation.builder()
+                        .profileId(profile.getId())
+                        .profileName(profile.getName())
+                        .inviterAccountId(inviter.account().getId())
+                        .inviterDisplayName("Sam")
+                        .recipientAccountId(invitee.account().getId())
+                        .recipientEmail(invitee.account().getEmail())
+                        .expiresAt(Instant.now().plusSeconds(3600))
+                        .publicId(UUID.randomUUID().toString())
+                        .secretDigest(new byte[] {1})
+                        .build())
+                .getId());
+  }
+
+  private List<UUID> received(TestIdentity identity) throws Exception {
+    return graphql(
+            authTestSupport.accountBearer(identity),
+            "query { pendingManagerInvitations { edges { node { id } } } }")
+        .at("/data/pendingManagerInvitations/edges")
+        .valueStream()
+        .map(edge -> UUID.fromString(edge.at("/node/id").asString()))
+        .toList();
   }
 
   private UUID invite(String address) {
