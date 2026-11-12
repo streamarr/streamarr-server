@@ -194,8 +194,9 @@ public class ProfileManagerAdministrationService {
    * The invitation a presented code belongs to, so that its named Account can decide it by id. Each
    * lookup is a credential attempt by the presenting Account, counted against the invitation, and
    * it leaves the invitation pending. A session that may not read the invitations it received is
-   * refused with FORBIDDEN before any attempt counts. A code that does not work, and one that names
-   * another Account, get ManagerInvitationNotFound.
+   * refused with FORBIDDEN before any attempt counts. A code that does not work, one whose
+   * invitation no longer waits for its Account, and one that names another Account, get
+   * ManagerInvitationNotFound; only a wrong secret counts as a failed attempt.
    */
   public Outcome<ProfileManagerInvitation, ManagerRejections.LookUp> lookUpManagerInvitationCode(
       AuthenticatedIdentity identity, ManagerInvitationCodeCommand command) {
@@ -205,6 +206,10 @@ public class ProfileManagerAdministrationService {
             invitation ->
                 authorizationService.isAllowed(
                     identity, new Intent.ViewReceivedManagerInvitation(invitation.getId())))
+        .filter(
+            invitation ->
+                invitation.statusToItsAccountAt(clock.instant())
+                    == ProfileManagerInvitationStatus.PENDING)
         .<Outcome<ProfileManagerInvitation, ManagerRejections.LookUp>>map(Outcome::accepted)
         .orElseGet(() -> Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound()));
   }
@@ -578,10 +583,10 @@ public class ProfileManagerAdministrationService {
           credentialAttempts.attempt(
               codeMetadata(invitation, command.ipAddress()),
               () -> {
+                // The secret alone: an attempt that counted what became of the invited Account
+                // would tell the inviter, who holds the code too (ADR 0024 §Invitations).
                 if (invitation == null
-                    || !opaqueCodes.matches(presented.get(), invitation.getSecretDigest())
-                    || invitation.statusToItsAccountAt(clock.instant())
-                        != ProfileManagerInvitationStatus.PENDING) {
+                    || !opaqueCodes.matches(presented.get(), invitation.getSecretDigest())) {
                   throw new InvalidOneTimeCodeException();
                 }
 
