@@ -3,6 +3,7 @@ package com.streamarr.server.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.properties.StreamingProperties;
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -29,12 +30,14 @@ class StreamingConfigSegmentFolderTest {
         StreamingProperties.builder().segmentBasePath(segmentFolder.toString()).build();
     var sessionId = UUID.randomUUID();
     var storeOfEarlierProcess = config.segmentStore(properties);
-    try (var stored = storeOfEarlierProcess.prepareSegment(sessionId, "720p/0.m4s", SEGMENT)) {
+    try (var stored = storeOfEarlierProcess.prepareSegment(sessionId, "720p/0.m4s")) {
+      stored.append(ByteBuffer.wrap(SEGMENT));
       stored.publish();
     }
 
     // Still open: the process ended before it published or discarded the upload.
-    try (var _ = storeOfEarlierProcess.prepareSegment(sessionId, "720p/1.m4s", SEGMENT)) {
+    try (var unpublished = storeOfEarlierProcess.prepareSegment(sessionId, "720p/1.m4s")) {
+      unpublished.append(ByteBuffer.wrap(SEGMENT));
       config.segmentStore(properties);
 
       assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();

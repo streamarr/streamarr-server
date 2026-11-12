@@ -33,7 +33,8 @@ class SegmentFolderLeftoversTest {
   void shouldDeleteAStreamSessionsDirectoryWhenAnEarlierStoreLeftIt() {
     new SegmentFolderLeftovers(segmentFolder).delete();
     var sessionId = UUID.randomUUID();
-    try (var stored = earlierStore().prepareSegment(sessionId, "720p/0.m4s", SEGMENT)) {
+    try (var stored = earlierStore().prepareSegment(sessionId, "720p/0.m4s")) {
+      stored.append(ByteBuffer.wrap(SEGMENT));
       stored.publish();
     }
 
@@ -47,7 +48,8 @@ class SegmentFolderLeftoversTest {
   void shouldDeleteAnUnpublishedUploadWhenAnEarlierStoreLeftIt() {
     new SegmentFolderLeftovers(segmentFolder).delete();
     // Still open: the store's process ended before it published or discarded the upload.
-    try (var _ = earlierStore().prepareSegment(UUID.randomUUID(), "720p/0.m4s", SEGMENT)) {
+    try (var unpublished = earlierStore().prepareSegment(UUID.randomUUID(), "720p/0.m4s")) {
+      unpublished.append(ByteBuffer.wrap(SEGMENT));
       assertThat(segmentFolder).isDirectoryContaining("glob:**/.upload-*");
 
       new SegmentFolderLeftovers(segmentFolder).delete();
