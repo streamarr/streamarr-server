@@ -14,6 +14,9 @@ import lombok.NonNull;
 
 final class PreparedSegmentFile implements AutoCloseable {
 
+  private static final String UPLOAD_PREFIX = ".upload-";
+  private static final String UPLOAD_SUFFIX = ".tmp";
+
   interface FileOperations {
     Path createTemporary(Path directory) throws IOException;
 
@@ -35,7 +38,7 @@ final class PreparedSegmentFile implements AutoCloseable {
 
     @Override
     public Path createTemporary(Path directory) throws IOException {
-      return Files.createTempFile(directory, ".upload-", ".tmp");
+      return Files.createTempFile(directory, UPLOAD_PREFIX, UPLOAD_SUFFIX);
     }
 
     @Override
@@ -79,6 +82,11 @@ final class PreparedSegmentFile implements AutoCloseable {
     this.files = files;
     this.temporary = temporary;
     this.content = content;
+  }
+
+  /** Whether {@code fileName} is the name that an upload carries until it is published. */
+  static boolean isUploadName(String fileName) {
+    return fileName.startsWith(UPLOAD_PREFIX) && fileName.endsWith(UPLOAD_SUFFIX);
   }
 
   static PreparedSegmentFile create(Path directory) throws IOException {
