@@ -108,6 +108,26 @@ class ManagerInvitationAfterItsAccountChangesIT extends AbstractIntegrationTest 
   @ParameterizedTest
   @EnumSource(Change.class)
   @DisplayName(
+      "Should answer its inviter's lookups of its code as for an invitation nobody can answer when"
+          + " its Account changes")
+  void shouldAnswerItsInvitersLookupsOfItsCodeAsForAnInvitationNobodyCanAnswerWhenItsAccountChanges(
+      Change change) throws Exception {
+    var toNobody = steps.invite(sam, alex, nobody()).code();
+    var toMara = steps.invite(sam, alex, mara.account().getEmail()).code();
+    change(change);
+
+    // One lookup more than the wrong codes that a code's budget allows.
+    for (var lookup = 0; lookup < 6; lookup++) {
+      var answer = lookUp(sam, toMara);
+      assertThat(answer).isEqualTo(lookUp(sam, toNobody));
+      assertThat(answer.at("/data/lookUpManagerInvitationCode/userErrors/0/__typename").asString())
+          .isEqualTo("ManagerInvitationNotFoundError");
+    }
+  }
+
+  @ParameterizedTest
+  @EnumSource(Change.class)
+  @DisplayName(
       "Should let its inviter cancel it as any waiting invitation when its Account changes")
   void shouldLetItsInviterCancelItAsAnyWaitingInvitationWhenItsAccountChanges(Change change)
       throws Exception {
@@ -424,6 +444,25 @@ class ManagerInvitationAfterItsAccountChangesIT extends AbstractIntegrationTest 
                 .formatted(invitationId))
         .at("/data/managerInvitation/status")
         .asString(null);
+  }
+
+  /** The whole answer to the lookup, a refusal of the attempt included. */
+  private JsonNode lookUp(TestIdentity reader, String code) throws Exception {
+    var response =
+        mockMvc
+            .perform(
+                graphqlRequest(
+                    authTestSupport.accountBearer(reader),
+                    """
+                    mutation { lookUpManagerInvitationCode(input: {code: "%s"}) {
+                      invitation { id } userErrors { __typename } } }
+                    """
+                        .formatted(code)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response);
   }
 
   private JsonNode graphql(String bearer, String query) throws Exception {
