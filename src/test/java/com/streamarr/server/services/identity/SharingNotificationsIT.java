@@ -183,9 +183,13 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
   void shouldGiveNoRequestToAHouseholdAdminWhenItWasPromotedAfterTheOffer() {
     var member = track(authTestSupport.createHouseholdMemberIdentity(riverside));
     var offer = steps.offer(sam, sam.profile(), riverside);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
 
-    steps.promoted(member);
+    var outcome =
+        accountAdministration.grantHouseholdAdmin(
+            authTestSupport.freshIdentityOf(serverAdmin), member.account().getId());
 
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(rows.of(account(member))).isEmpty();
     assertThat(requestsAbout(offer)).hasSize(2);
   }
