@@ -131,7 +131,8 @@ public final class ProfileErrors {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ProfileNotDeletable _ ->
           new ProfileNotDeletableError(
-              "Deletion needs an unlinked, unshared Profile with you as its only manager.");
+              "Deletion needs an unlinked, unshared Profile with you as its only manager and no"
+                  + " invitation to manage it waiting.");
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
     };
   }

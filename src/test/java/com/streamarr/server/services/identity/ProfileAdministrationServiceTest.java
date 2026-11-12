@@ -101,6 +101,7 @@ class ProfileAdministrationServiceTest {
           accounts,
           invitations,
           new ProfileManagerInvitationLifecycle(managerInvitations, new CapturingEventPublisher()),
+          managerInvitations,
           audit,
           new ProfilePinHasher(encoder),
           new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),
@@ -1031,8 +1032,8 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should invalidate pending manager invitations when the Profile is deleted")
-  void shouldInvalidatePendingManagerInvitationsWhenProfileIsDeleted() {
+  @DisplayName("Should refuse to delete the Profile when an invitation to manage it waits")
+  void shouldRefuseToDeleteTheProfileWhenAnInvitationToManageItWaits() {
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
@@ -1050,10 +1051,12 @@ class ProfileAdministrationServiceTest {
                 .secretDigest(new byte[] {1})
                 .build());
 
-    service.deleteProfile(identity(), orphan.getId());
+    var outcome = service.deleteProfile(identity(), orphan.getId());
 
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNotDeletable.class);
+    assertThat(profiles.findById(orphan.getId())).isPresent();
     assertThat(managerInvitations.findById(invitation.getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+        .isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 
   @Test
@@ -1190,6 +1193,7 @@ class ProfileAdministrationServiceTest {
         accounts,
         invitations,
         new ProfileManagerInvitationLifecycle(managerInvitations, new CapturingEventPublisher()),
+        managerInvitations,
         audit,
         new ProfilePinHasher(encoder),
         new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),

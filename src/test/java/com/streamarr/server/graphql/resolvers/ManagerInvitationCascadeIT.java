@@ -67,20 +67,20 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should withdraw and announce the invitation when its Profile is deleted")
-  void shouldWithdrawAndAnnounceTheInvitationWhenItsProfileIsDeleted() throws Exception {
+  @DisplayName("Should withdraw and announce the invitation when a ServerAdmin deletes its Profile")
+  void shouldWithdrawAndAnnounceTheInvitationWhenAServerAdminDeletesItsProfile() throws Exception {
     var alex =
         cast.unavailableProfileManagedBy(sam, ProfileFixture.defaultProfileBuilder().name("Alex"));
     var invitationId = invite(sam, alex.getId(), mara);
 
     graphql(
-        authTestSupport.freshAccountBearer(sam),
+        authTestSupport.freshAccountBearer(serverAdmin),
         """
-        mutation { deleteProfile(input: {profileId: "%s"}) {
-          deletedProfileId userErrors { __typename } } }
+        mutation { administrativelyDeleteProfile(input: {profileId: "%s", reason: "retired"}) {
+          userErrors { __typename } } }
         """
             .formatted(alex.getId()),
-        "/data/deleteProfile/userErrors");
+        "/data/administrativelyDeleteProfile/userErrors");
 
     assertWithdrawnAndAnnounced(invitationId);
   }

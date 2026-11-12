@@ -27,6 +27,12 @@ public interface ProfileManagerInvitationRepositoryCustom {
       UUID recipientAccountId, Instant now, Seek seek);
 
   /**
+   * Whether a live PENDING invitation waits for the Profile, as its ProfileManagers read it: one
+   * invalidated for its invited Account still waits to them.
+   */
+  boolean existsWaitingForProfile(UUID profileId, Instant now);
+
+  /**
    * How many live PENDING invitations wait for the Profile, leaving out the one to the address,
    * whatever its case, which a new invitation to that address would replace.
    */

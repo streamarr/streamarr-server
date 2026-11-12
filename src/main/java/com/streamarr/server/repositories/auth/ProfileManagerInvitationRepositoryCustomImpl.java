@@ -83,6 +83,17 @@ public class ProfileManagerInvitationRepositoryCustomImpl
   }
 
   @Override
+  public boolean existsWaitingForProfile(UUID profileId, Instant now) {
+    return dsl.fetchExists(
+        PROFILE_MANAGER_INVITATION,
+        PROFILE_MANAGER_INVITATION
+            .PROFILE_ID
+            .eq(profileId)
+            .and(pending())
+            .and(PROFILE_MANAGER_INVITATION.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC))));
+  }
+
+  @Override
   public int countLivePendingForProfileExceptTo(UUID profileId, String email, Instant now) {
     return dsl.fetchCount(
         PROFILE_MANAGER_INVITATION,

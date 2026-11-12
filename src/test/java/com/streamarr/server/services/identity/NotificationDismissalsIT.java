@@ -323,9 +323,13 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
 
   private Outcome<?, ?> delete(Profile profile, ProfileDeletion deletion) {
     return switch (deletion) {
-      case BY_ITS_SOLE_MANAGER ->
-          profileAdministration.deleteProfile(
-              authTestSupport.freshIdentityOf(sam), profile.getId());
+      case BY_ITS_SOLE_MANAGER -> {
+        // A waiting invitation blocks the deletion, so Sam cancels each first.
+        invitationIds.forEach(
+            id -> profileManagement.cancelManagerInvitation(authTestSupport.identityOf(sam), id));
+        yield profileAdministration.deleteProfile(
+            authTestSupport.freshIdentityOf(sam), profile.getId());
+      }
       case BY_A_SERVER_ADMIN ->
           profileLifecycle.administrativelyDeleteProfile(
               authTestSupport.freshIdentityOf(serverAdmin), profile.getId(), "a duplicate");

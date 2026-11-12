@@ -711,6 +711,58 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should refuse deletion until the invitation is canceled when an invitation to manage the"
+          + " Profile waits")
+  void shouldRefuseDeletionUntilTheInvitationIsCanceledWhenAnInvitationToManageTheProfileWaits()
+      throws Exception {
+    var orphan = unsharedManagedProfile();
+    var invitationId =
+        objectMapper
+            .readTree(
+                graphql(
+                        authTestSupport.accountBearer(admin),
+                        """
+                        mutation { inviteProfileManager(input: {profileId: "%s",
+                          email: "nobody.%s@example.com"}) { issued { invitation { id } } } }
+                        """
+                            .formatted(orphan.getId(), UUID.randomUUID()))
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString())
+            .at("/data/inviteProfileManager/issued/invitation/id")
+            .asString();
+    var delete =
+        """
+        mutation { deleteProfile(input: {profileId: "%s"}) {
+          deletedProfileId userErrors { __typename } } }
+        """
+            .formatted(orphan.getId());
+
+    graphql(authTestSupport.freshAccountBearer(admin), delete)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.deleteProfile.deletedProfileId").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.deleteProfile.userErrors[0].__typename")
+                .value("ProfileNotDeletableError"));
+    assertThat(profileRepository.findById(orphan.getId())).isPresent();
+
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { cancelManagerInvitation(input: {invitationId: "%s"}) {
+              userErrors { __typename } } }
+            """
+                .formatted(invitationId))
+        .andExpect(jsonPath("$.data.cancelManagerInvitation.userErrors").isEmpty());
+    graphql(authTestSupport.freshAccountBearer(admin), delete)
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.deleteProfile.deletedProfileId").value(orphan.getId().toString()));
+  }
+
+  @Test
   @DisplayName("Should reject deletion when a concurrent share commits first")
   void shouldRejectDeletionWhenConcurrentShareCommitsFirst() throws Exception {
     var orphan = unsharedManagedProfile();

@@ -63,6 +63,13 @@ public class FakeProfileManagerInvitationRepository
   }
 
   @Override
+  public boolean existsWaitingForProfile(UUID profileId, Instant now) {
+    return database.values().stream()
+        .filter(invitation -> profileId.equals(invitation.getProfileId()))
+        .anyMatch(invitation -> invitation.statusAt(now) == ProfileManagerInvitationStatus.PENDING);
+  }
+
+  @Override
   public int countLivePendingForProfileExceptTo(UUID profileId, String email, Instant now) {
     return (int)
         database.values().stream()
