@@ -141,9 +141,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
                 .value("ProfileShareOfferedNotification"))
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.message")
-                .value(
-                    "“%s” offered the Profile “Kai” to your Household."
-                        .formatted(sam.account().getDisplayName())))
+                .value("“Kai” was offered to your Household."))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(true))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").doesNotExist())
@@ -157,29 +155,15 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should give the Household's side the Profile's current name when the Profile is renamed"
-          + " while its offer waits")
-  void shouldGiveTheHouseholdsSideTheCurrentNameWhenTheProfileIsRenamedWhileItsOfferWaits()
-      throws Exception {
-    var kai = steps.profileManagedBy("Kai", sam, sam);
-    steps.offer(sam, kai, riverside);
-    rename(kai, "Kai Renamed");
-
-    assertRequestNamed("Kai Renamed");
-  }
-
-  @Test
-  @DisplayName(
-      "Should give the Household's side the Profile's current name when the Profile is renamed"
-          + " while it is shared")
-  void shouldGiveTheHouseholdsSideTheCurrentNameWhenTheProfileIsRenamedWhileItIsShared()
-      throws Exception {
-    var kai = steps.profileManagedBy("Kai", sam, sam);
+  @DisplayName("Should keep the name it was told when the Profile is renamed after the event")
+  void shouldKeepTheNameItWasToldWhenTheProfileIsRenamedAfterTheEvent() throws Exception {
+    var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var kai = steps.profileManagedBy("Kai", sam, sam, theo);
     steps.accept(riverside, steps.offer(sam, kai, riverside));
     rename(kai, "Kai Renamed");
 
-    assertRequestNamed("Kai Renamed");
+    assertToldOf(riversideAdmin, "Kai");
+    assertToldOf(theo, "Kai");
   }
 
   @Test
@@ -295,94 +279,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.message")
-                .value("The Profile “Kai” was offered to your Household."));
-  }
-
-  @Test
-  @DisplayName(
-      "Should give the kept name while the share hides its Profile when the reader may no longer"
-          + " see the Profile")
-  void shouldGiveTheKeptNameWhileTheShareHidesItsProfileWhenTheReaderMayNoLongerSeeTheProfile()
-      throws Exception {
-    var kai = steps.profileManagedBy("Kai", sam, sam);
-    var offer = steps.offer(sam, kai, riverside);
-    sharing.rejectProfileShare(authTestSupport.identityOf(riverside), offer.getId());
-    rename(kai, "Kai Renamed");
-
-    mockMvc
-        .perform(
-            graphqlRequest(
-                authTestSupport.accountBearer(riversideAdmin),
-                """
-                query { notifications { edges { node {
-                  ... on ProfileShareOfferedNotification { profileName share { id profile { id } } }
-                } } } }
-                """))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
-        .andExpect(
-            jsonPath("$.data.notifications.edges[0].node.share.id").value(offer.getId().toString()))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.share.profile").value(nullValue()));
-  }
-
-  @Test
-  @DisplayName(
-      "Should name the Household in quotation marks to the offering side when a ServerAdmin ends"
-          + " the share")
-  void shouldNameTheHouseholdInQuotationMarksToTheOfferingSideWhenAServerAdminEndsTheShare()
-      throws Exception {
-    var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
-    var share =
-        steps.accept(
-            riverside, steps.offer(sam, steps.profileManagedBy("Kai", sam, sam, theo), riverside));
-    var serverAdmin = track(authTestSupport.createAdminIdentity());
-    sharing.administrativelyEndProfileShare(
-        authTestSupport.freshIdentityOf(serverAdmin), share.getId(), "a mistaken share");
-
-    mockMvc
-        .perform(graphqlRequest(authTestSupport.accountBearer(theo), NOTIFICATIONS))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(
-            jsonPath("$.data.notifications.edges[0].node.__typename")
-                .value("ProfileShareEndedNotification"))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.endedBy").value("SERVER"))
-        .andExpect(
-            jsonPath("$.data.notifications.edges[0].node.message")
-                .value(
-                    "The Profile “Kai” is no longer shared with “%s”."
-                        .formatted(riverside.household().getName())));
-  }
-
-  @Test
-  @DisplayName(
-      "Should give the offering side its news under the Profile's current name when the offer is"
-          + " accepted")
-  void shouldGiveTheOfferingSideItsNewsUnderTheCurrentNameWhenTheOfferIsAccepted()
-      throws Exception {
-    var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
-    var kai = steps.profileManagedBy("Kai", sam, sam, theo);
-    var offer = steps.offer(sam, kai, riverside);
-    steps.accept(riverside, offer);
-    rename(kai, "Kai Renamed");
-
-    mockMvc
-        .perform(graphqlRequest(authTestSupport.accountBearer(theo), NOTIFICATIONS))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.unreadNotificationCount").value(1))
-        .andExpect(
-            jsonPath("$.data.notifications.edges[0].node.__typename")
-                .value("ProfileShareAnsweredNotification"))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.answer").value("ACCEPTED"))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(true))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai Renamed"))
-        .andExpect(
-            jsonPath("$.data.notifications.edges[0].node.message")
-                .value(
-                    "“%s” accepted the Profile “Kai Renamed”."
-                        .formatted(riverside.household().getName())));
+                .value("“Kai” was offered to your Household."));
   }
 
   @Test
@@ -705,10 +602,10 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.notifications.edges", hasSize(unread)));
   }
 
-  /** Riverside's HouseholdAdmin reads its request about the offer under the name. */
-  private void assertRequestNamed(String profileName) throws Exception {
+  /** The reader's one Notification names the Profile, in its line too, by the name. */
+  private void assertToldOf(TestIdentity reader, String profileName) throws Exception {
     mockMvc
-        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .perform(graphqlRequest(authTestSupport.accountBearer(reader), NOTIFICATIONS))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))

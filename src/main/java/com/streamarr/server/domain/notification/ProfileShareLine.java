@@ -1,40 +1,29 @@
 package com.streamarr.server.domain.notification;
 
-import java.util.Optional;
 import lombok.Builder;
 import lombok.NonNull;
 
 /**
  * A sharing Notification's line in English (ADR 0063 §What a Notification carries), for a client
- * that shows the type but handles it no further. Each name is one its reader may read when the
- * server reads it: a name left empty is one the reader may not read, and the line leaves it out.
+ * that shows the type but handles it no further. It names the Profile alone, by the name its
+ * recipient was told, and words the rest from the facts the Notification keeps, so it reads the
+ * same however the share, the Profile or the Households change afterwards.
  *
- * <p>The line is plain text. Each name is chosen by a person, so it stands in quotation marks
- * without its control and format characters, and cannot pass for the line's own words or reorder
- * them. A Household the line cannot name is "your Household" only when it is the reader's own.
+ * <p>The line is plain text. The Profile's name is chosen by a person, so it stands in quotation
+ * marks without its control and format characters, and cannot pass for the line's own words or
+ * reorder them.
  */
-@Builder(toBuilder = true)
+@Builder
 public record ProfileShareLine(
     @NonNull NotificationKind kind,
     @NonNull String profileName,
-    @NonNull Optional<String> offererName,
-    @NonNull Optional<String> householdName,
     ProfileShareAnswer answer,
-    ProfileShareEndedBy endedBy,
-    boolean toReadersHousehold) {
+    ProfileShareEndedBy endedBy) {
 
   public String text() {
-    var profile = "the Profile " + quoted(profileName);
+    var profile = quoted(profileName);
     return switch (kind) {
-      case PROFILE_SHARE_OFFERED ->
-          offererName
-              .map(
-                  offerer ->
-                      "%s offered %s to %s."
-                          .formatted(quoted(offerer), profile, unnamedHousehold()))
-              .orElseGet(
-                  () ->
-                      "%s was offered to %s.".formatted(capitalized(profile), unnamedHousehold()));
+      case PROFILE_SHARE_OFFERED -> "%s was offered to your Household.".formatted(profile);
       case PROFILE_SHARE_ANSWERED -> answered(profile);
       case PROFILE_SHARE_ENDED -> ended(profile);
     };
@@ -46,27 +35,15 @@ public record ProfileShareLine(
           case ACCEPTED -> "accepted";
           case REJECTED -> "declined";
         };
-    return householdName
-        .map(household -> "%s %s %s.".formatted(quoted(household), verb, profile))
-        .orElseGet(() -> "The offer of %s was %s.".formatted(profile, verb));
+    return "The offer of %s was %s.".formatted(profile, verb);
   }
 
   private String ended(String profile) {
     return switch (endedBy) {
-      case HOUSEHOLD_SIDE ->
-          "%s stopped sharing %s."
-              .formatted(
-                  householdName.map(ProfileShareLine::quoted).orElse("A Household"), profile);
-      case OFFERING_SIDE, SERVER ->
-          "%s is no longer shared with %s."
-              .formatted(
-                  capitalized(profile),
-                  householdName.map(ProfileShareLine::quoted).orElseGet(this::unnamedHousehold));
+      case HOUSEHOLD_SIDE -> "A Household stopped sharing %s.".formatted(profile);
+      case OFFERING_SIDE -> "%s is no longer shared with your Household.".formatted(profile);
+      case SERVER -> "The share of %s was ended.".formatted(profile);
     };
-  }
-
-  private String unnamedHousehold() {
-    return toReadersHousehold ? "your Household" : "a Household";
   }
 
   private static String quoted(String name) {
@@ -80,9 +57,5 @@ public record ProfileShareLine(
                 })
         .forEach(printable::appendCodePoint);
     return "“" + printable + "”";
-  }
-
-  private static String capitalized(String text) {
-    return Character.toUpperCase(text.charAt(0)) + text.substring(1);
   }
 }
