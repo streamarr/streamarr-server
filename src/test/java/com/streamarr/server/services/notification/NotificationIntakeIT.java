@@ -105,6 +105,7 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
 
     assertThat(rows.about(share)).extracting(Row::recipient).containsExactlyInAnyOrder(sam, kai);
     assertThat(rows.about(share))
+        .hasSize(2)
         .allSatisfy(
             row -> {
               assertThat(row.kind()).isEqualTo("PROFILE_SHARE_ANSWERED");
@@ -318,6 +319,7 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
 
     assertThat(rows.about(share)).extracting(Row::recipient).containsExactlyInAnyOrder(sam, kai);
     assertThat(rows.about(share))
+        .hasSize(2)
         .allSatisfy(
             row -> {
               assertThat(row.kind()).isEqualTo("PROFILE_SHARE_OFFERED");

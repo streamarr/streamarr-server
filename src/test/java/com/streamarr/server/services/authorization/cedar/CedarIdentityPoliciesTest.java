@@ -1648,6 +1648,7 @@ class CedarIdentityPoliciesTest {
           identityBuilder().scope(TokenScope.PROFILE).profileId(personal.getId()).build();
 
       assertThat(notificationIntents)
+          .hasSize(2)
           .allSatisfy(
               intent -> {
                 assertThat(decide(atHome(), intent)).isEqualTo(ALLOWED);
@@ -1666,6 +1667,7 @@ class CedarIdentityPoliciesTest {
       accounts.save(account);
 
       assertThat(notificationIntents)
+          .hasSize(2)
           .allSatisfy(intent -> assertThat(decide(onDevice(atHome()), intent)).isEqualTo(DENIED));
     }
 
@@ -1676,6 +1678,7 @@ class CedarIdentityPoliciesTest {
       accounts.save(account);
 
       assertThat(notificationIntents)
+          .hasSize(2)
           .allSatisfy(intent -> assertThat(decide(atHome(), intent)).isEqualTo(DENIED));
     }
   }

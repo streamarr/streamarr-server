@@ -782,6 +782,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     var onPhone = nextChange(phone);
     var onLaptop = nextChange(laptop);
     assertThat(List.of(onPhone, onLaptop))
+        .hasSize(2)
         .allSatisfy(
             marked -> {
               assertThat(onlyChange(marked).path("notificationId").asString())
