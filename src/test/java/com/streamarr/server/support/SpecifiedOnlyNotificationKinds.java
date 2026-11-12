@@ -11,7 +11,8 @@ import lombok.NonNull;
 
 /**
  * Kinds that ADR 0063 specifies for later builds, defined in test code alone to show that the
- * module's model fits them. No domain tells them yet, so the tests tell them as a domain would.
+ * module's model fits them, and a made-up kind of news about a Household, which no kind built or
+ * specified has yet. No domain tells them, so the tests tell them as a domain would.
  */
 public final class SpecifiedOnlyNotificationKinds {
 
@@ -31,6 +32,15 @@ public final class SpecifiedOnlyNotificationKinds {
           .form(NotificationForm.REQUEST)
           .subjectType(SubjectReference.PROFILE_MANAGER_INVITATION)
           .snapshotType(InvitationReceivedSnapshot.class)
+          .build();
+
+  /** Made-up news about a Household. */
+  public static final NotificationKind HOUSEHOLD_NEWS =
+      NotificationKind.builder()
+          .name("TEST_HOUSEHOLD_NEWS")
+          .form(NotificationForm.NEWS)
+          .subjectType(SubjectReference.HOUSEHOLD)
+          .snapshotType(HouseholdNewsSnapshot.class)
           .build();
 
   private SpecifiedOnlyNotificationKinds() {}
@@ -53,6 +63,16 @@ public final class SpecifiedOnlyNotificationKinds {
     @Override
     public String line(Optional<RequestResolution> resolution) {
       return "You were invited to manage %s.".formatted(profileName);
+    }
+  }
+
+  /** What a Household's Account was told. */
+  public record HouseholdNewsSnapshot(@NonNull String householdName)
+      implements NotificationSnapshot {
+
+    @Override
+    public String line(Optional<RequestResolution> resolution) {
+      return "Something happened in %s.".formatted(householdName);
     }
   }
 

@@ -64,6 +64,7 @@ public class HouseholdDeletionService {
   private final ProfileRepository profileRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileShareLifecycle shareLifecycle;
+  private final NotificationDismissals notificationDismissals;
   private final AuthSessionRepository authSessionRepository;
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final AccountInvitationRepository accountInvitationRepository;
@@ -197,6 +198,7 @@ public class HouseholdDeletionService {
     endHostedVisits(request.householdId(), now);
     deleteResidentProfiles(request.householdId(), now);
     shareLifecycle.announceDeletionWithHousehold(request.householdId(), now);
+    notificationDismissals.householdDeleted(request.householdId());
     householdRepository.deleteById(request.householdId());
     householdRepository.flush();
     securityAuditEventRepository.append(
