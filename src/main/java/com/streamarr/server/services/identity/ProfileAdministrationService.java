@@ -67,6 +67,7 @@ public class ProfileAdministrationService {
   private final AccountInvitationRepository accountInvitationRepository;
   private final ProfileManagerInvitationLifecycle managerInvitationLifecycle;
   private final ProfileManagerInvitationRepository managerInvitationRepository;
+  private final LeavingManagerProposals leavingManagerProposals;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final ProfilePinHasher profilePinHasher;
   private final MutationTransactions mutationTransactions;
@@ -481,8 +482,8 @@ public class ProfileAdministrationService {
   /**
    * Restricting a linked Personal Profile ends the person's eligibility (ADR 0024): a pending
    * manager invitation naming them must not outlive it and later restore authority forbidden to
-   * restricted Accounts. They no longer manage that Profile either, so an invitation they sent to
-   * manage it stands no longer.
+   * restricted Accounts. They no longer manage that Profile either, so the invitations they sent to
+   * manage it and the offers they made of it stand no longer.
    */
   private void invalidateProposalsWhenRestricted(
       UUID profileId, ProfilePolicyTransition transition) {
@@ -501,8 +502,7 @@ public class ProfileAdministrationService {
     var now = clock.instant();
     managerInvitationLifecycle.invalidatePendingByRecipientAccountId(
         restrictedAccountId, "recipient became ineligible", now);
-    managerInvitationLifecycle.invalidatePendingInvitationsByInviterAccountIdAndProfileId(
-        restrictedAccountId, personalProfileId, "inviting manager became ineligible", now);
+    leavingManagerProposals.withdraw(personalProfileId, restrictedAccountId, now);
   }
 
   private ProfilePolicyTransition decideTransition(

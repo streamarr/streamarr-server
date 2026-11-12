@@ -8,7 +8,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.ManagerInvitationAction;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.services.events.auth.ProfileManagerInvitationChangedEvent;
 import com.streamarr.server.support.AuthTestSupport;
@@ -44,6 +46,7 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private ProfileCastSupport cast;
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
+  @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private ApplicationEvents events;
 
   private final List<TestIdentity> identities = new ArrayList<>();
@@ -146,6 +149,37 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
         "/data/setProfileMaximumAllowedRatingAge/userErrors");
 
     assertWithdrawnAndAnnounced(invitationId);
+  }
+
+  @Test
+  @DisplayName("Should withdraw the offer when its offerer's own Personal Profile is restricted")
+  void shouldWithdrawTheOfferWhenItsOfferersOwnPersonalProfileIsRestricted() throws Exception {
+    // A restricted Profile needs an eligible manager besides its own Account.
+    cast.grant(sam, cam.profile());
+    var host = track(authTestSupport.createIdentity());
+    var offerId =
+        graphql(
+                authTestSupport.accountBearer(cam),
+                """
+                mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
+                  share { id } userErrors { __typename } } }
+                """
+                    .formatted(cam.profile().getId(), authTestSupport.shareCodeFor(host)),
+                "/data/offerProfileShare/userErrors")
+            .at("/data/offerProfileShare/share/id")
+            .asString();
+
+    graphql(
+        authTestSupport.freshAccountBearer(serverAdmin),
+        """
+        mutation { setProfileMaximumAllowedRatingAge(input: {profileId: "%s",
+          maximumAllowedRatingAge: 12}) { profile { id } userErrors { __typename } } }
+        """
+            .formatted(cam.profile().getId()),
+        "/data/setProfileMaximumAllowedRatingAge/userErrors");
+
+    assertThat(shareRepository.findById(UUID.fromString(offerId)).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.INVALIDATED);
   }
 
   @Test

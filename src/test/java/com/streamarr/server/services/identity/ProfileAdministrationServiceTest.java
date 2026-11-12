@@ -102,6 +102,10 @@ class ProfileAdministrationServiceTest {
           invitations,
           new ProfileManagerInvitationLifecycle(managerInvitations, new CapturingEventPublisher()),
           managerInvitations,
+          new LeavingManagerProposals(
+              new ProfileManagerInvitationLifecycle(
+                  managerInvitations, new CapturingEventPublisher()),
+              new ProfileShareLifecycle(shares, shareEvents)),
           audit,
           new ProfilePinHasher(encoder),
           new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),
@@ -1194,6 +1198,10 @@ class ProfileAdministrationServiceTest {
         invitations,
         new ProfileManagerInvitationLifecycle(managerInvitations, new CapturingEventPublisher()),
         managerInvitations,
+        new LeavingManagerProposals(
+            new ProfileManagerInvitationLifecycle(
+                managerInvitations, new CapturingEventPublisher()),
+            new ProfileShareLifecycle(shares, shareEvents)),
         audit,
         new ProfilePinHasher(encoder),
         new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),
