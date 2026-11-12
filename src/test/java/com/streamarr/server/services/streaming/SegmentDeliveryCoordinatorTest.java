@@ -412,6 +412,43 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName(
+      "Should answer a request held past the normal end as cancelled when the server shuts down")
+  void shouldAnswerARequestHeldPastTheNormalEndAsCancelledWhenTheServerShutsDown()
+      throws Exception {
+    var copy = startedSession();
+    var sessionId = copy.getSessionId();
+    upload(sessionId, "segment0.m4s", new byte[] {1});
+    upload(sessionId, "segment1.m4s", new byte[] {2});
+    completeShort(copy);
+
+    try (var pastTheEnd = deliveryHeldWithoutDeadline(sessionId, "segment2.m4s")) {
+      heldRequests().wakeEveryRequestForShutdown();
+
+      assertThat(pastTheEnd.await(Duration.ofSeconds(2)))
+          .isEqualTo(new SegmentDelivery.Cancelled());
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer a request for a missing segment as cancelled when the server already shuts down")
+  void shouldAnswerARequestForAMissingSegmentAsCancelledWhenTheServerAlreadyShutsDown()
+      throws Exception {
+    var sessionId = startedSession().getSessionId();
+    upload(sessionId, "segment0.m4s", new byte[] {1});
+    heldRequests().wakeEveryRequestForShutdown();
+
+    try (var missing =
+        BoundedTask.start(
+            () -> coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment1.m4s"))) {
+      assertThat(missing.await(Duration.ofSeconds(2))).isEqualTo(new SegmentDelivery.Cancelled());
+    }
+    assertThat(coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment0.m4s"))
+        .isEqualTo(new SegmentDelivery.Ready(new byte[] {1}));
+  }
+
+  @Test
+  @DisplayName(
       "Should keep holding a request that waited for the copy when the copy's completion shows the normal end")
   void shouldKeepHoldingARequestThatWaitedForTheCopyWhenTheCopysCompletionShowsTheNormalEnd()
       throws Exception {

@@ -138,4 +138,28 @@ class HeldSegmentRequestsTest {
     assertThat(high.await(BOUNDED_WAIT)).isTrue();
     assertThat(otherSession.await(NO_WAIT)).isFalse();
   }
+
+  @Test
+  @DisplayName("Should fire the wake of every session when the server shuts down")
+  void shouldFireWakeOfEverySessionWhenTheServerShutsDown() throws Exception {
+    var held = heldRequests.nextWake(sessionId, "720p");
+    var otherSession = heldRequests.nextWake(UUID.randomUUID(), "1080p");
+
+    heldRequests.wakeEveryRequestForShutdown();
+
+    assertThat(held.await(BOUNDED_WAIT)).isTrue();
+    assertThat(otherSession.await(BOUNDED_WAIT)).isTrue();
+    assertThat(heldRequests.isShuttingDown()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should hand out a fired wake when it is taken after the server began to shut down")
+  void shouldHandOutFiredWakeWhenItIsTakenAfterTheServerBeganToShutDown() throws Exception {
+    heldRequests.wakeEveryRequestForShutdown();
+
+    var wake = heldRequests.nextWake(sessionId, "720p");
+
+    assertThat(wake.await(NO_WAIT)).isTrue();
+    assertThat(heldRequestCount()).isZero();
+  }
 }

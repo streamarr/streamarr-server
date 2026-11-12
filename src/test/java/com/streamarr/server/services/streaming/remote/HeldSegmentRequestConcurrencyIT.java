@@ -80,6 +80,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.support.GenericApplicationContext;
 
 /**
  * Holds segment requests against a real worker session server while a loopback worker uploads
@@ -200,6 +202,32 @@ class HeldSegmentRequestConcurrencyIT {
     for (var delivery : deliveries) {
       assertThat(delivery.get(BOUND.toSeconds(), TimeUnit.SECONDS))
           .isEqualTo(new SegmentDelivery.SessionEnded());
+    }
+
+    assertThat(meterRegistry.get("streamarr.streaming.held_segment_requests").gauge().value())
+        .isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer every held request as cancelled at once when the server begins to shut down")
+  void shouldAnswerEveryHeldRequestAsCancelledAtOnceWhenTheServerBeginsToShutDown()
+      throws Exception {
+    var session = startedSession();
+    worker.nextJob();
+
+    var deliveries = new ArrayList<Future<SegmentDelivery>>();
+    for (var request = 0; request < HELD_REQUEST_COUNT; request++) {
+      deliveries.add(deliverAsync(session));
+    }
+
+    transcodeExecutor.awaitLooks(HELD_REQUEST_COUNT);
+
+    server.onApplicationEvent(new ContextClosedEvent(new GenericApplicationContext()));
+
+    for (var delivery : deliveries) {
+      assertThat(delivery.get(BOUND.toSeconds(), TimeUnit.SECONDS))
+          .isEqualTo(new SegmentDelivery.Cancelled());
     }
 
     assertThat(meterRegistry.get("streamarr.streaming.held_segment_requests").gauge().value())
