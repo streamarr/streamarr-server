@@ -831,6 +831,54 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should deliver the decision and the answer to the inviter when an invitation is declined")
+  void shouldDeliverTheDecisionAndTheAnswerToTheInviterWhenAnInvitationIsDeclined()
+      throws Exception {
+    var mara = track(authTestSupport.createIdentity());
+    var invitation = invitations.invite(sam, alex(), mara.account().getEmail()).invitation();
+    var invited = subscribedSocket(authTestSupport.accountBearer(mara));
+    var inviter = subscribedSocket(authTestSupport.accountBearer(sam));
+
+    var outcome =
+        profileManagement.declineManagerInvitation(
+            authTestSupport.identityOf(mara), invitation.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var decided = nextChange(invited);
+    assertThat(onlyChange(decided).path("notificationId").asString())
+        .isEqualTo(toldAbout(mara, invitation).id().toString());
+    assertThat(nodeOf(decided).path("resolution").asString()).isEqualTo("DECIDED");
+    assertThat(decided.path("unreadNotificationCount").asInt()).isZero();
+    assertMatchesAFreshQuery(decided, mara);
+    var answered = nextChange(inviter);
+    assertThat(onlyChange(answered).path("notificationId").asString())
+        .isEqualTo(toldAbout(sam, invitation).id().toString());
+    assertThat(nodeOf(answered).path("invitationAnswer").asString()).isEqualTo("DECLINED");
+    assertThat(answered.path("unreadNotificationCount").asInt()).isEqualTo(1);
+    assertMatchesAFreshQuery(answered, sam);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the request's withdrawal when the manager that sent the invitation"
+          + " relinquishes management")
+  void shouldDeliverTheRequestsWithdrawalWhenTheManagerThatSentTheInvitationRelinquishesManagement()
+      throws Exception {
+    var mara = track(authTestSupport.createIdentity());
+    var alex = steps.profileManagedBy("Alex", sam, sam, theo);
+    var invitation = invitations.invite(theo, alex, mara.account().getEmail()).invitation();
+    var socket = subscribedSocket(authTestSupport.accountBearer(mara));
+
+    var outcome =
+        profileManagement.relinquishProfileManagement(
+            authTestSupport.identityOf(theo), alex.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertInvitationWithdrawn(nextChange(socket), mara, invitation);
+  }
+
+  @Test
+  @DisplayName(
       "Should deliver the older request's withdrawal with the new request in one change when a new"
           + " invitation replaces it")
   void
