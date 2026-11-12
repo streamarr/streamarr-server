@@ -268,7 +268,7 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
                 .build());
 
     assertThat(published).isTrue();
-    assertThat(outcomes.owesKeyframePacketScan(mediaFileId)).isFalse();
+    assertThat(outcomes.findKeyframeKnowledge(mediaFileId)).contains(known(scannedPositions()));
     assertThat(outcomes.findStreamMeasurements(mediaFileId)).contains(measurement());
     assertThat(repository.findBitrateScanInputs(mediaFileId)).isEmpty();
   }
@@ -380,11 +380,10 @@ class JooqBitrateScanRepositoryIT extends AbstractIntegrationTest
                 publication(mediaFileId, ProbeVersion.CURRENT, packetScanRequiredOutcome())))
         .isTrue();
     assertThat(outcomes.findKeyframeKnowledge(mediaFileId))
-        .as("The new probe kept the scanned positions")
-        .contains(known(scannedPositions()));
-    assertThat(outcomes.owesKeyframePacketScan(mediaFileId))
-        .as("The new probe owes its own packet scan")
-        .isTrue();
+        .as("The new probe kept the scanned positions beside the packet scan that it owes")
+        .contains(
+            new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+                KeyframePacketScanReason.NO_CONTAINER_INDEX, scannedPositions()));
   }
 
   private static KeyframePacketScanPublication.KeyframePacketScanPublicationBuilder

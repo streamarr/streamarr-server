@@ -41,8 +41,6 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private final Map<UUID, ProbeInputs> desiredInputs = new ConcurrentHashMap<>();
   private final Map<UUID, ProbeAttemptFailure> failures = new ConcurrentHashMap<>();
   private final Map<UUID, KeyframeKnowledge> keyframes = new ConcurrentHashMap<>();
-  // The files whose outcome keeps the positions of an earlier probe version's packet scan.
-  private final Set<UUID> keepingScannedPositions = ConcurrentHashMap.newKeySet();
   private final Map<UUID, ChapterKnowledge> chapters = new ConcurrentHashMap<>();
   private final Map<UUID, StoredMeasurement> measurements = new ConcurrentHashMap<>();
   private final List<ProbePublication> publications = new ArrayList<>();
@@ -66,7 +64,6 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     desiredInputs.clear();
     failures.clear();
     keyframes.clear();
-    keepingScannedPositions.clear();
     chapters.clear();
     measurements.clear();
     chapterReads.clear();
@@ -116,13 +113,11 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     rows.put(publication.mediaFileId(), toRow(publication));
     failures.remove(publication.mediaFileId());
     keyframes.remove(publication.mediaFileId());
-    keepingScannedPositions.remove(publication.mediaFileId());
     chapters.remove(publication.mediaFileId());
     dropMeasurementUnlessSnapshotMatches(publication.mediaFileId(), publication.snapshot());
     if (publication.outcome() instanceof ProbeOutcome.Success success) {
       var stored = keptPositions.orElse(success.keyframes());
       keyframes.put(publication.mediaFileId(), stored);
-      keptPositions.ifPresent(_ -> keepingScannedPositions.add(publication.mediaFileId()));
       chapters.put(publication.mediaFileId(), success.container().chapters());
       success
           .streamMeasurements()
@@ -137,19 +132,21 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private Optional<KeyframeKnowledge> scannedPositionsToKeep(
       ProbePublication publication, MediaFileContainerInfo existing) {
     if (!(publication.outcome() instanceof ProbeOutcome.Success success)
-        || !(success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired)
+        || !(success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired(var reason))
         || success.chosenVideoStream().isEmpty()
         || !existing.getSnapshot().equals(publication.snapshot())
         || !ProbeVersion.isOnCurrentKeyframeTimeline(existing.getProbeVersion())) {
       return Optional.empty();
     }
 
+    var chosenStreamIndex = success.chosenVideoStream().get().streamIndex();
     return Optional.ofNullable(keyframes.get(publication.mediaFileId()))
-        .filter(
-            stored ->
-                stored instanceof KeyframeKnowledge.Known(var positions)
-                    && positions.source() == KeyframePositionSource.PACKET_SCAN
-                    && positions.streamIndex() == success.chosenVideoStream().get().streamIndex());
+        .flatMap(KeyframeKnowledge::usablePositions)
+        .filter(positions -> positions.source() == KeyframePositionSource.PACKET_SCAN)
+        .filter(positions -> positions.streamIndex() == chosenStreamIndex)
+        .map(
+            positions ->
+                new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(reason, positions));
   }
 
   @Override
@@ -161,7 +158,6 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     }
 
     keyframes.put(mediaFileId, publication.keyframes());
-    keepingScannedPositions.remove(mediaFileId);
     return true;
   }
 
@@ -172,14 +168,15 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
       return false;
     }
 
-    // PostgreSQL lets kept positions stand when every owed packet scan failed.
-    if (keepingScannedPositions.remove(mediaFileId)) {
-      return true;
-    }
-
-    keyframes.put(
-        mediaFileId,
-        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
+    // PostgreSQL stores kept positions as known keyframes when every owed packet scan failed.
+    var stored =
+        keyframes
+            .get(mediaFileId)
+            .usablePositions()
+            .<KeyframeKnowledge>map(KeyframeKnowledge.Known::new)
+            .orElse(
+                new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
+    keyframes.put(mediaFileId, stored);
     return true;
   }
 
@@ -189,7 +186,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
   @Override
   public synchronized Optional<ProbeInputs> lockPacketScanInputs(UUID mediaFileId) {
-    if (!owesStoredPacketScan(mediaFileId)) {
+    if (!requiresPacketScan(keyframes.get(mediaFileId))) {
       return Optional.empty();
     }
 
@@ -197,18 +194,9 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     return Optional.of(new ProbeInputs(row.getSnapshot(), row.getProbeVersion()));
   }
 
-  @Override
-  public synchronized boolean owesKeyframePacketScan(UUID mediaFileId) {
-    if (rows.containsKey(mediaFileId)) {
-      return owesStoredPacketScan(mediaFileId);
-    }
-
-    return defaultProbe.filter(ProbeOutcome::needsKeyframePacketScan).isPresent();
-  }
-
-  private boolean owesStoredPacketScan(UUID mediaFileId) {
-    return keyframes.get(mediaFileId) instanceof KeyframeKnowledge.PacketScanRequired
-        || keepingScannedPositions.contains(mediaFileId);
+  private static boolean requiresPacketScan(KeyframeKnowledge stored) {
+    return stored instanceof KeyframeKnowledge.PacketScanRequired
+        || stored instanceof KeyframeKnowledge.PacketScanRequiredWithKeptPositions;
   }
 
   @Override
@@ -231,17 +219,20 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
         .filter(stored -> stored.snapshot().equals(row.getSnapshot()))
         .filter(
             stored ->
-                keyframes.get(mediaFileId) instanceof KeyframeKnowledge.Known(var positions)
-                    && stored.positionsDigest().equals(positionsDigest(positions)))
+                Optional.ofNullable(keyframes.get(mediaFileId))
+                    .flatMap(KeyframeKnowledge::usablePositions)
+                    .map(FakeMediaFileContainerInfoRepository::positionsDigest)
+                    .equals(Optional.of(stored.positionsDigest())))
         .map(StoredMeasurement::measurements);
   }
 
-  // PostgreSQL stores a measurement only beside known keyframe positions, and lists its streams by
+  // PostgreSQL stores a measurement only beside stored keyframe positions, and lists its streams by
   // stream index.
   private void replaceMeasurement(
       ProbePublication publication, KeyframeKnowledge keyframes, StreamMeasurements measured) {
     measurements.remove(publication.mediaFileId());
-    if (!(keyframes instanceof KeyframeKnowledge.Known(var positions))) {
+    var positions = keyframes.usablePositions();
+    if (positions.isEmpty()) {
       return;
     }
 
@@ -253,7 +244,8 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
                 .toList());
     measurements.put(
         publication.mediaFileId(),
-        new StoredMeasurement(publication.snapshot(), positionsDigest(positions), byStreamIndex));
+        new StoredMeasurement(
+            publication.snapshot(), positionsDigest(positions.get()), byStreamIndex));
   }
 
   // PostgreSQL's digest covers the chosen stream, its time base and the times, not their source.
@@ -403,7 +395,6 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
             _ -> {
               rows.remove(mediaFileId);
               keyframes.remove(mediaFileId);
-              keepingScannedPositions.remove(mediaFileId);
               chapters.remove(mediaFileId);
             });
   }
@@ -436,7 +427,6 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     Optional<ProbeAttemptFailure> failure;
     Optional<MediaFileContainerInfo> row;
     Optional<KeyframeKnowledge> knowledge;
-    boolean keepingPositions;
     Optional<ChapterKnowledge> chapterKnowledge;
     Optional<StoredMeasurement> measurement;
     synchronized (this) {
@@ -444,7 +434,6 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
       failure = Optional.ofNullable(failures.get(mediaFileId));
       row = Optional.ofNullable(rows.get(mediaFileId));
       knowledge = Optional.ofNullable(keyframes.get(mediaFileId));
-      keepingPositions = keepingScannedPositions.contains(mediaFileId);
       chapterKnowledge = Optional.ofNullable(chapters.get(mediaFileId));
       measurement = Optional.ofNullable(measurements.get(mediaFileId));
     }
@@ -457,11 +446,6 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
         restore(failures, mediaFileId, failure);
         restore(rows, mediaFileId, row);
         restore(keyframes, mediaFileId, knowledge);
-        keepingScannedPositions.remove(mediaFileId);
-        if (keepingPositions) {
-          keepingScannedPositions.add(mediaFileId);
-        }
-
         restore(chapters, mediaFileId, chapterKnowledge);
         restore(measurements, mediaFileId, measurement);
       }
@@ -487,7 +471,6 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
             deletedMediaFiles.add(mediaFileId);
             rows.remove(mediaFileId);
             keyframes.remove(mediaFileId);
-            keepingScannedPositions.remove(mediaFileId);
             chapters.remove(mediaFileId);
             desiredInputs.remove(mediaFileId);
             failures.remove(mediaFileId);

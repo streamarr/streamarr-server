@@ -20,6 +20,7 @@ import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -29,6 +30,7 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
+import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -48,6 +50,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.LongStream;
@@ -298,6 +301,76 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
       "Should copy the video at its scanned keyframes when a new probe of the unchanged file still"
           + " owes its packet scan")
   void shouldCopyVideoAtScannedKeyframesWhenNewProbeOfUnchangedFileStillOwesItsPacketScan() {
+    var scanned = storeOutcomeKeepingScannedPositions();
+
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    requestSegmentFifteen(session);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getMediaProbe().keyframes())
+        .isEqualTo(
+            new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+                KeyframePacketScanReason.NO_CONTAINER_INDEX, scanned));
+    assertThat(
+            playlistService.generateMediaPlaylist(session, StreamSession.defaultVariant(), "token"))
+        .contains("#EXTINF:6.000000,", "segment19.m4s?t=token", "#EXT-X-ENDLIST")
+        .doesNotContain("segment20.m4s");
+    assertThat(startedRequests(session))
+        .extracting(TranscodeRequest::startSequenceNumber, TranscodeRequest::keyframeSeekPosition)
+        .containsExactly(
+            tuple(0, Optional.empty()), tuple(15, Optional.of(Duration.ofSeconds(90))));
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy the video at its scanned keyframes when every packet scan that the new probe"
+          + " owes failed")
+  void shouldCopyVideoAtScannedKeyframesWhenEveryPacketScanThatNewProbeOwesFailed() {
+    var scanned = storeOutcomeKeepingScannedPositions();
+    assertThat(
+            probeResults.publishKeyframePacketScanFailure(
+                savedMediaFile.getId(), new ProbeInputs(sourceSnapshot, ProbeVersion.CURRENT)))
+        .isTrue();
+
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    requestSegmentFifteen(session);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getMediaProbe().keyframes()).isEqualTo(new KeyframeKnowledge.Known(scanned));
+    assertThat(startedRequests(session))
+        .extracting(TranscodeRequest::startSequenceNumber, TranscodeRequest::keyframeSeekPosition)
+        .containsExactly(
+            tuple(0, Optional.empty()), tuple(15, Optional.of(Duration.ofSeconds(90))));
+  }
+
+  // A media error from bytes that an earlier scan read to the end shows that they changed, so the
+  // file plays as any file without keyframe positions does.
+  @Test
+  @DisplayName(
+      "Should encode the video when the packet scan that the new probe owes ends in a media error")
+  void shouldEncodeVideoWhenPacketScanThatNewProbeOwesEndsInMediaError() {
+    storeOutcomeKeepingScannedPositions();
+    var mediaError =
+        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR);
+    assertThat(
+            probeResults.publishKeyframePacketScan(
+                KeyframePacketScanPublication.builder()
+                    .mediaFileId(savedMediaFile.getId())
+                    .snapshot(sourceSnapshot)
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .keyframes(mediaError)
+                    .build()))
+        .isTrue();
+
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(session.getMediaProbe().keyframes()).isEqualTo(mediaError);
+  }
+
+  // An outcome of the current probe version that keeps the positions that the earlier version's
+  // packet scan read: a keyframe every 6 s of a 120 s file.
+  private KeyframePositions storeOutcomeKeepingScannedPositions() {
     var unscanned =
         ProbeFixture.completeProbeBuilder(
                 defaultProbeBuilder().duration(Duration.ofSeconds(120)).build())
@@ -327,24 +400,20 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
                     .build()))
         .isTrue();
     storeOutcome(unscanned, ProbeVersion.CURRENT);
+    return scanned;
+  }
 
-    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
-    // The two calls that segment delivery makes for a media segment that is not in the store yet.
+  // The two calls that segment delivery makes for a media segment that is not in the store yet.
+  private void requestSegmentFifteen(StreamSession session) {
     producerLifecycle.recover(
         producerLifecycle.prepareRequestedVariant(
             session.getSessionId(), StreamSession.defaultVariant(), "segment15.m4s"));
+  }
 
-    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
-    assertThat(session.getMediaProbe().keyframes()).isEqualTo(new KeyframeKnowledge.Known(scanned));
-    assertThat(
-            playlistService.generateMediaPlaylist(session, StreamSession.defaultVariant(), "token"))
-        .contains("#EXTINF:6.000000,", "segment19.m4s?t=token", "#EXT-X-ENDLIST")
-        .doesNotContain("segment20.m4s");
-    assertThat(FAKE_EXECUTOR.getStartedRequests())
-        .filteredOn(request -> request.sessionId().equals(session.getSessionId()))
-        .extracting(TranscodeRequest::startSequenceNumber, TranscodeRequest::keyframeSeekPosition)
-        .containsExactly(
-            tuple(0, Optional.empty()), tuple(15, Optional.of(Duration.ofSeconds(90))));
+  private static List<TranscodeRequest> startedRequests(StreamSession session) {
+    return FAKE_EXECUTOR.getStartedRequests().stream()
+        .filter(request -> request.sessionId().equals(session.getSessionId()))
+        .toList();
   }
 
   private void storeProbe(MediaProbe probe) {

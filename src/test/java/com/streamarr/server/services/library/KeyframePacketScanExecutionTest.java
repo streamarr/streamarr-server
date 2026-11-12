@@ -242,7 +242,6 @@ class KeyframePacketScanExecutionTest {
     assertThat(storedKeyframes())
         .isEqualTo(
             new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR));
-    assertThat(outcomes.owesKeyframePacketScan(mediaFile.getId())).isFalse();
   }
 
   // A scan requested under an earlier version is still queued when the server upgrades.
@@ -449,7 +448,9 @@ class KeyframePacketScanExecutionTest {
     var request = storeUnscannedNamingChosenStream(ProbeVersion.CURRENT);
     assertThat(storedKeyframes())
         .as("The new probe kept the earlier scan's positions")
-        .isEqualTo(known());
+        .isEqualTo(
+            new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+                KeyframePacketScanReason.NO_CONTAINER_INDEX, SCANNED_POSITIONS));
     return request;
   }
 

@@ -11,7 +11,6 @@ import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.config.ProbeSchedulingProperties;
-import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
@@ -21,6 +20,7 @@ import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeContainer;
+import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
@@ -90,15 +90,15 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   private static final ProbeOutcome.Success PACKET_SCAN_REQUIRED =
       success(
           new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX));
-  private static final KeyframeKnowledge SCANNED =
-      new KeyframeKnowledge.Known(
-          KeyframePositions.builder()
-              .streamIndex(0)
-              .timeBaseNumerator(1)
-              .timeBaseDenominator(90_000)
-              .source(KeyframePositionSource.PACKET_SCAN)
-              .keyframes(List.of(new KeyframePosition(0, 0)))
-              .build());
+  private static final KeyframePositions SCANNED_POSITIONS =
+      KeyframePositions.builder()
+          .streamIndex(0)
+          .timeBaseNumerator(1)
+          .timeBaseDenominator(90_000)
+          .source(KeyframePositionSource.PACKET_SCAN)
+          .keyframes(List.of(new KeyframePosition(0, 0)))
+          .build();
+  private static final KeyframeKnowledge SCANNED = new KeyframeKnowledge.Known(SCANNED_POSITIONS);
 
   // What a probe of the current version reports for a file without a container index: every
   // playback fact, and no keyframe positions.
@@ -106,6 +106,10 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
       ProbeFixture.completeProbeBuilder(defaultProbeBuilder().build())
           .keyframes(PACKET_SCAN_REQUIRED.keyframes())
           .build();
+  // A probe of the unchanged file that requires a packet scan again, beside the scanned positions.
+  private static final KeyframeKnowledge KEPT =
+      new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+          KeyframePacketScanReason.NO_CONTAINER_INDEX, SCANNED_POSITIONS);
   private static final KeyframeKnowledge SCANNED_AGAIN =
       new KeyframeKnowledge.Known(
           KeyframePositions.builder()
@@ -456,8 +460,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
               assertThat(stored.outcome())
                   .isInstanceOfSatisfying(
                       ProbeOutcome.Success.class,
-                      success -> assertThat(success.keyframes()).isEqualTo(SCANNED));
-              assertThat(stored.keyframePacketScanOwed()).isTrue();
+                      success -> assertThat(success.keyframes()).isEqualTo(KEPT));
             });
     assertThat(scheduledScans()).isOne();
   }
@@ -479,9 +482,6 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
     assertThat(scans).as("Kept positions do not stand in for the new scan").hasValue(1);
     assertThat(storedKeyframes(request)).isEqualTo(SCANNED_AGAIN);
-    assertThat(reader.find(request.mediaFileId()))
-        .map(PersistedProbeOutcome::keyframePacketScanOwed)
-        .contains(false);
     assertThat(scheduledScans()).isZero();
   }
 
@@ -513,16 +513,20 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
     assertThat(scheduledScans()).isOne();
   }
 
-  @Test
-  @DisplayName("Should let the kept positions stand and stop scanning when every new scan fails")
-  void shouldLetKeptPositionsStandAndStopScanningWhenEveryNewScanFails() throws Exception {
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("scanFailures")
+  @DisplayName(
+      "Should store the kept positions as known keyframes and stop scanning when every new scan"
+          + " fails")
+  void shouldStoreKeptPositionsAsKnownKeyframesAndStopScanningWhenEveryNewScanFails(
+      String reason, Supplier<RuntimeException> failure) throws Exception {
     var request = requestFileScannedAt(ProbeVersion.CURRENT - 1);
     unscannedProbe().execute(request, ProbePriority.BACKGROUND);
     var scans = new AtomicInteger();
     startScanScheduler(
         _ -> {
           scans.incrementAndGet();
-          throw new ProbeTimedOutException(new TimeoutException());
+          throw failure.get();
         },
         Clock.systemUTC());
 
@@ -533,9 +537,31 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
     assertThat(scans).hasValue(3);
     assertThat(storedKeyframes(request)).isEqualTo(SCANNED);
-    assertThat(reader.find(request.mediaFileId()))
-        .map(PersistedProbeOutcome::keyframePacketScanOwed)
-        .contains(false);
+    assertThat(scheduledScans()).isZero();
+    assertThat(meterRegistry.get(FAILED_SCANS_METRIC).tag("reason", reason).counter().count())
+        .isEqualTo(3);
+  }
+
+  // Bytes that an earlier scan read to the end and that no longer decode have changed under an
+  // unchanged size and modified time, so the kept positions go and playback encodes.
+  @Test
+  @DisplayName("Should drop the kept positions when the new scan ends in a media error")
+  void shouldDropKeptPositionsWhenNewScanEndsInMediaError() throws Exception {
+    var request = requestFileScannedAt(ProbeVersion.CURRENT - 1);
+    unscannedProbe().execute(request, ProbePriority.BACKGROUND);
+    var scans = new AtomicInteger();
+    startScanScheduler(
+        _ -> {
+          scans.incrementAndGet();
+          return new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA);
+        },
+        Clock.systemUTC());
+
+    assertThat(scanCompletions.poll(30, TimeUnit.SECONDS)).isNotNull();
+    assertThat(scans).hasValue(1);
+    assertThat(storedKeyframes(request))
+        .isEqualTo(
+            new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR));
     assertThat(scheduledScans()).isZero();
   }
 

@@ -1,9 +1,9 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
@@ -43,7 +43,7 @@ public class MediaFileProbeTaskScheduler {
 
   /**
    * Requests a probe of the media file unless its stored outcome already matches the source, and
-   * retries a failed attempt at once. A matching outcome that still owes a keyframe packet scan
+   * retries a failed attempt at once. A matching outcome that still needs a keyframe packet scan
    * gets one, so a scan that ended while the source was missing runs again. Returns the inputs
    * whose outcome the file needs, or nothing when its source no longer exists.
    */
@@ -69,7 +69,7 @@ public class MediaFileProbeTaskScheduler {
             .find(mediaFile.getId())
             .filter(outcome -> outcome.matches(inputs.snapshot(), inputs.probeVersion()));
     if (stored.isPresent()) {
-      requestPacketScanIfOwed(mediaFile, inputs, stored.get());
+      requestPacketScanIfNeeded(mediaFile, inputs, stored.get().outcome());
       return inputs;
     }
 
@@ -85,9 +85,9 @@ public class MediaFileProbeTaskScheduler {
   }
 
   // Scheduling is idempotent per media file, so a pending or running scan is left alone.
-  private void requestPacketScanIfOwed(
-      MediaFile mediaFile, ProbeInputs inputs, PersistedProbeOutcome stored) {
-    if (!stored.keyframePacketScanOwed()) {
+  private void requestPacketScanIfNeeded(
+      MediaFile mediaFile, ProbeInputs inputs, ProbeOutcome outcome) {
+    if (!outcome.needsKeyframePacketScan()) {
       return;
     }
 

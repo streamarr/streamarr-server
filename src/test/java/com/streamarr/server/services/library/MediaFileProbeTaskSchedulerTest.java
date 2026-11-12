@@ -205,27 +205,28 @@ class MediaFileProbeTaskSchedulerTest {
           + " probe version's scan read")
   void shouldRequestPacketScanWhenMatchingOutcomeKeepsPositionsThatEarlierVersionsScanRead() {
     var snapshot = new SourceFileSnapshot(5, MODIFIED_AT);
-    var scanned =
-        new KeyframeKnowledge.Known(
-            KeyframePositions.builder()
-                .streamIndex(0)
-                .timeBaseNumerator(1)
-                .timeBaseDenominator(90_000)
-                .source(KeyframePositionSource.PACKET_SCAN)
-                .keyframes(List.of(new KeyframePosition(0, 0)))
-                .build());
+    var scannedPositions =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(90_000)
+            .source(KeyframePositionSource.PACKET_SCAN)
+            .keyframes(List.of(new KeyframePosition(0, 0)))
+            .build();
     outcomes.publish(unscannedPublication(snapshot, ProbeVersion.CURRENT - 1));
     outcomes.publishKeyframePacketScan(
         KeyframePacketScanPublication.builder()
             .mediaFileId(mediaFile.getId())
             .snapshot(snapshot)
             .probeVersion(ProbeVersion.CURRENT - 1)
-            .keyframes(scanned)
+            .keyframes(new KeyframeKnowledge.Known(scannedPositions))
             .build());
     outcomes.publish(unscannedPublication(snapshot, ProbeVersion.CURRENT));
     assertThat(outcomes.findKeyframeKnowledge(mediaFile.getId()))
         .as("The new probe kept the earlier scan's positions")
-        .contains(scanned);
+        .contains(
+            new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+                KeyframePacketScanReason.NO_CONTAINER_INDEX, scannedPositions));
     var scheduler = schedulerBuilder().build();
 
     scheduler.schedule(mediaFile.getId());

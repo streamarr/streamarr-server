@@ -124,13 +124,18 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   }
 
   // Packet scans that all timed out or got no usable reply say nothing about the stream, and an
-  // earlier packet scan read the kept positions from the same bytes. They therefore stand, and only
-  // the owed scan ends. False when the outcome keeps no positions.
+  // earlier packet scan read the kept positions from the same bytes. They therefore stand as the
+  // outcome's known positions, and only the owed scan ends. False when the outcome keeps no
+  // positions.
   private boolean tryLetKeptPositionsStand(UUID mediaFileId) {
     return dsl.update(MEDIA_FILE_CONTAINER_INFO)
+            .set(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_STATUS, KeyframeStatus.KNOWN.name())
             .setNull(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_PACKET_SCAN_REASON)
             .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
-            .and(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_STATUS.eq(KeyframeStatus.KNOWN.name()))
+            .andExists(
+                dsl.selectOne()
+                    .from(MEDIA_FILE_KEYFRAME_POSITIONS)
+                    .where(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID.eq(mediaFileId)))
             .execute()
         > 0;
   }
@@ -143,7 +148,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   }
 
   // The caller holds the media file's row lock. Positions kept from an earlier probe version's
-  // scan go first, because a positions row admits only an outcome whose keyframes are known.
+  // scan go first, because a positions row never stands beside unavailable keyframes.
   private void replaceKeyframes(UUID mediaFileId, KeyframeKnowledge keyframes) {
     dsl.deleteFrom(MEDIA_FILE_KEYFRAME_POSITIONS)
         .where(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID.eq(mediaFileId))
@@ -180,27 +185,15 @@ public class MediaFileContainerInfoRepositoryCustomImpl
             MEDIA_FILE_CONTAINER_INFO.PROBE_VERSION)
         .from(MEDIA_FILE_CONTAINER_INFO)
         .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
-        .and(owesPacketScan())
+        .and(needsPacketScan())
         .fetchOptional(
             row ->
                 inputs(
                     row.value1(), Instant.ofEpochSecond(row.value2(), row.value3()), row.value4()));
   }
 
-  @Override
-  @Transactional(readOnly = true)
-  public boolean owesKeyframePacketScan(UUID mediaFileId) {
-    return dsl.fetchExists(
-        dsl.selectOne()
-            .from(MEDIA_FILE_CONTAINER_INFO)
-            .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
-            .and(owesPacketScan()));
-  }
-
-  // An outcome stores its packet scan reason exactly while a packet scan is owed for it: while its
-  // keyframes require one, and while it keeps the positions of an earlier probe version's scan.
-  private static Condition owesPacketScan() {
-    return MEDIA_FILE_CONTAINER_INFO.KEYFRAME_PACKET_SCAN_REASON.isNotNull();
+  private static Condition needsPacketScan() {
+    return MEDIA_FILE_CONTAINER_INFO.KEYFRAME_STATUS.eq(KeyframeStatus.PACKET_SCAN_REQUIRED.name());
   }
 
   @Override
@@ -322,15 +315,26 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
     return switch (KeyframeStatus.valueOf(status)) {
       case KNOWN -> new KeyframeKnowledge.Known(toKeyframePositions(row));
-      case PACKET_SCAN_REQUIRED ->
-          new KeyframeKnowledge.PacketScanRequired(
-              KeyframePacketScanReason.valueOf(
-                  row.get(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_PACKET_SCAN_REASON)));
+      case PACKET_SCAN_REQUIRED -> packetScanRequired(row);
       case UNAVAILABLE ->
           new KeyframeKnowledge.Unavailable(
               KeyframesUnavailableReason.valueOf(
                   row.get(MEDIA_FILE_CONTAINER_INFO.KEYFRAMES_UNAVAILABLE_REASON)));
     };
+  }
+
+  // A positions row beside an outcome that requires a packet scan holds the positions that it kept
+  // from an earlier scan.
+  private static KeyframeKnowledge packetScanRequired(Record row) {
+    var reason =
+        KeyframePacketScanReason.valueOf(
+            row.get(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_PACKET_SCAN_REASON));
+    if (row.get(MEDIA_FILE_KEYFRAME_POSITIONS.ENCODED_TIMES) == null) {
+      return new KeyframeKnowledge.PacketScanRequired(reason);
+    }
+
+    return new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+        reason, toKeyframePositions(row));
   }
 
   private static KeyframePositions toKeyframePositions(Record row) {
@@ -641,9 +645,6 @@ public class MediaFileContainerInfoRepositoryCustomImpl
               _) -> {
         row.setStreamTitlesOmitted(titlesOmitted.orElse(null));
         setKeyframeStatus(row, keyframes);
-        // The outcome keeps its packet scan reason beside the kept positions, so its own packet
-        // scan is still owed.
-        keptPositions.ifPresent(_ -> row.setKeyframeStatus(KeyframeStatus.KNOWN.name()));
         chosenVideoStream.ifPresent(stream -> ChosenVideoStreamRow.set(row, stream));
         setChapterStatus(row, container.chapters());
         row.setFormat(container.format().orElse(null));

@@ -47,9 +47,10 @@ public interface KeptKeyframePositionsRepositoryContract {
 
   @Test
   @DisplayName(
-      "Should keep the scanned positions and still owe a packet scan when a later probe version"
+      "Should require a packet scan with the scanned positions kept when a later probe version"
           + " publishes for the same snapshot")
-  default void shouldKeepScannedPositionsAndOwePacketScanWhenLaterVersionPublishesSameSnapshot() {
+  default void
+      shouldRequirePacketScanWithScannedPositionsKeptWhenLaterVersionPublishesSameSnapshot() {
     var mediaFileId = createMediaFile();
     storeScannedOutcome(mediaFileId, EARLIER_VERSION);
 
@@ -58,8 +59,7 @@ public interface KeptKeyframePositionsRepositoryContract {
             .publish(publicationBuilder(mediaFileId).probeVersion(ProbeVersion.CURRENT).build());
 
     assertThat(published).isTrue();
-    assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(scanned());
-    assertThat(repository().owesKeyframePacketScan(mediaFileId)).isTrue();
+    assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(keptScanned());
   }
 
   @Test
@@ -141,7 +141,6 @@ public interface KeptKeyframePositionsRepositoryContract {
                 .build());
 
     assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(unavailable);
-    assertThat(repository().owesKeyframePacketScan(mediaFileId)).isFalse();
   }
 
   @Test
@@ -188,7 +187,6 @@ public interface KeptKeyframePositionsRepositoryContract {
 
     assertThat(published).isTrue();
     assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(scannedAgain);
-    assertThat(repository().owesKeyframePacketScan(mediaFileId)).isFalse();
   }
 
   @Test
@@ -210,7 +208,6 @@ public interface KeptKeyframePositionsRepositoryContract {
 
     assertThat(published).isTrue();
     assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(unavailable);
-    assertThat(repository().owesKeyframePacketScan(mediaFileId)).isFalse();
   }
 
   @Test
@@ -233,12 +230,12 @@ public interface KeptKeyframePositionsRepositoryContract {
 
     assertThat(published).isTrue();
     assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(mediaError);
-    assertThat(repository().owesKeyframePacketScan(mediaFileId)).isFalse();
   }
 
   @Test
-  @DisplayName("Should let the kept positions stand when every owed packet scan failed")
-  default void shouldLetKeptPositionsStandWhenEveryOwedPacketScanFailed() {
+  @DisplayName(
+      "Should store the kept positions as known keyframes when every owed packet scan failed")
+  default void shouldStoreKeptPositionsAsKnownKeyframesWhenEveryOwedPacketScanFailed() {
     var mediaFileId = createMediaFile();
     storeOutcomeKeepingScannedPositions(mediaFileId);
 
@@ -249,7 +246,6 @@ public interface KeptKeyframePositionsRepositoryContract {
 
     assertThat(published).isTrue();
     assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(scanned());
-    assertThat(repository().owesKeyframePacketScan(mediaFileId)).isFalse();
   }
 
   @Test
@@ -268,7 +264,6 @@ public interface KeptKeyframePositionsRepositoryContract {
     assertThat(published).isTrue();
     assertThat(repository().findKeyframeKnowledge(mediaFileId))
         .contains(new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
-    assertThat(repository().owesKeyframePacketScan(mediaFileId)).isFalse();
   }
 
   @Test
@@ -290,28 +285,7 @@ public interface KeptKeyframePositionsRepositoryContract {
 
     assertThat(otherSnapshot).isFalse();
     assertThat(otherVersion).isFalse();
-    assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(scanned());
-    assertThat(repository().owesKeyframePacketScan(mediaFileId)).isTrue();
-  }
-
-  @Test
-  @DisplayName(
-      "Should owe a packet scan when the stored outcome requires one and keeps no positions")
-  default void shouldOwePacketScanWhenStoredOutcomeRequiresOneAndKeepsNoPositions() {
-    var mediaFileId = createMediaFile();
-
-    repository()
-        .publish(publicationBuilder(mediaFileId).probeVersion(ProbeVersion.CURRENT).build());
-
-    assertThat(repository().owesKeyframePacketScan(mediaFileId)).isTrue();
-  }
-
-  @Test
-  @DisplayName("Should owe no packet scan when the media file has no stored outcome")
-  default void shouldOweNoPacketScanWhenMediaFileHasNoStoredOutcome() {
-    var mediaFileId = createMediaFile();
-
-    assertThat(repository().owesKeyframePacketScan(mediaFileId)).isFalse();
+    assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(keptScanned());
   }
 
   // An outcome of the given probe version whose packet scan has stored its positions.
@@ -377,6 +351,12 @@ public interface KeptKeyframePositionsRepositoryContract {
 
   private static KeyframeKnowledge scanned() {
     return new KeyframeKnowledge.Known(positionsBuilder().build());
+  }
+
+  // The scanned positions, kept beside the packet scan that the later probe requires.
+  private static KeyframeKnowledge keptScanned() {
+    return new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+        KeyframePacketScanReason.NO_CONTAINER_INDEX, positionsBuilder().build());
   }
 
   // Positions of stream 0 that a packet scan read in a 90 kHz time base.

@@ -68,12 +68,6 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
 
     /**
      * The column
-     * <code>public.media_file_keyframe_positions.keyframe_status</code>.
-     */
-    public final TableField<MediaFileKeyframePositionsRecord, String> KEYFRAME_STATUS = createField(DSL.name("keyframe_status"), SQLDataType.CLOB, this, "");
-
-    /**
-     * The column
      * <code>public.media_file_keyframe_positions.stream_index</code>.
      */
     public final TableField<MediaFileKeyframePositionsRecord, Integer> STREAM_INDEX = createField(DSL.name("stream_index"), SQLDataType.INTEGER.nullable(false), this, "");
@@ -112,6 +106,12 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
      * <code>public.media_file_keyframe_positions.positions_digest</code>.
      */
     public final TableField<MediaFileKeyframePositionsRecord, byte[]> POSITIONS_DIGEST = createField(DSL.name("positions_digest"), SQLDataType.BLOB, this, "");
+
+    /**
+     * The column
+     * <code>public.media_file_keyframe_positions.keyframe_positions_admitted</code>.
+     */
+    public final TableField<MediaFileKeyframePositionsRecord, Boolean> KEYFRAME_POSITIONS_ADMITTED = createField(DSL.name("keyframe_positions_admitted"), SQLDataType.BOOLEAN, this, "");
 
     private MediaFileKeyframePositions(Name alias, Table<MediaFileKeyframePositionsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -190,7 +190,7 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
 
     @Override
     public List<ForeignKey<MediaFileKeyframePositionsRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.MEDIA_FILE_KEYFRAME_POSITIONS__KEYFRAME_POSITIONS_REQUIRE_KNOWN_STATUS);
+        return Arrays.asList(Keys.MEDIA_FILE_KEYFRAME_POSITIONS__KEYFRAME_POSITIONS_REQUIRE_ADMITTING_STATUS);
     }
 
     private transient MediaFileContainerInfoPath _mediaFileContainerInfo;
@@ -201,7 +201,7 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
      */
     public MediaFileContainerInfoPath mediaFileContainerInfo() {
         if (_mediaFileContainerInfo == null)
-            _mediaFileContainerInfo = new MediaFileContainerInfoPath(this, Keys.MEDIA_FILE_KEYFRAME_POSITIONS__KEYFRAME_POSITIONS_REQUIRE_KNOWN_STATUS, null);
+            _mediaFileContainerInfo = new MediaFileContainerInfoPath(this, Keys.MEDIA_FILE_KEYFRAME_POSITIONS__KEYFRAME_POSITIONS_REQUIRE_ADMITTING_STATUS, null);
 
         return _mediaFileContainerInfo;
     }
