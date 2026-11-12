@@ -81,7 +81,8 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should add the figures to the unread news, and take the later name and time, when a later"
           + " scan of the library finishes")
-  void shouldAddTheFiguresToTheUnreadNewsWhenALaterScanOfTheLibraryFinishes() {
+  void
+      shouldAddTheFiguresToTheUnreadNewsAndTakeTheLaterNameAndTimeWhenALaterScanOfTheLibraryFinishes() {
     tell(
         SCAN_OR_REFRESH_FINISHED,
         ScanOrRefreshFinishedSnapshot.builder()
@@ -212,7 +213,8 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should make new news with only the later figures when the ServerAdmin read the earlier news"
           + " about the library")
-  void shouldMakeNewNewsWhenTheServerAdminReadTheEarlierNewsAboutTheLibrary() {
+  void
+      shouldMakeNewNewsWithOnlyTheLaterFiguresWhenTheServerAdminReadTheEarlierNewsAboutTheLibrary() {
     var first =
         ScanOrRefreshFinishedSnapshot.builder()
             .libraryName("Movies")
@@ -258,7 +260,7 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
   @Test
   @DisplayName(
       "Should dismiss the library's news for every recipient when it is dismissed by subject")
-  void shouldDismissTheLibrarysNewsWhenItIsDismissedBySubject() {
+  void shouldDismissTheLibrarysNewsForEveryRecipientWhenItIsDismissedBySubject() {
     publish(
         TellNotificationEvent.builder()
             .kind(SCAN_OR_REFRESH_FINISHED)
@@ -281,9 +283,8 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should delete the library's read news when retention runs, and keep its unread news")
-  void shouldDeleteTheLibrarysReadNewsWhenRetentionRuns() {
+  @DisplayName("Should delete the library's read news and keep its unread news when retention runs")
+  void shouldDeleteTheLibrarysReadNewsAndKeepItsUnreadNewsWhenRetentionRuns() {
     var pastThePeriod = Instant.now().minus(Duration.ofDays(91));
     tell(
         SCAN_OR_REFRESH_FINISHED,

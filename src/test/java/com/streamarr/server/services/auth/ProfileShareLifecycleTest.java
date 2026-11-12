@@ -486,7 +486,8 @@ class ProfileShareLifecycleTest {
   @DisplayName(
       "Should announce that the lapsed offer stopped waiting and no action to tell for the"
           + " membership share when a Profile is linked home")
-  void shouldAnnounceThatTheLapsedOfferStoppedWaitingWhenAProfileIsLinkedHome() {
+  void
+      shouldAnnounceThatTheLapsedOfferStoppedWaitingAndNoActionToTellForTheMembershipShareWhenAProfileIsLinkedHome() {
     var lapsed = shares.save(pending(UUID.randomUUID()).expiresAt(NOW.minusSeconds(1)).build());
 
     lifecycle.ensureActiveMembershipShare(lapsed.getProfileId(), lapsed.getHouseholdId(), NOW);

@@ -123,7 +123,8 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should keep unread news and waiting requests, read or not, when their latest event is older"
           + " than the retention period")
-  void shouldKeepUnreadNewsAndWaitingRequestsWhenTheirLatestEventIsOlderThanTheRetentionPeriod() {
+  void
+      shouldKeepUnreadNewsAndWaitingRequestsReadOrNotWhenTheirLatestEventIsOlderThanTheRetentionPeriod() {
     var news = aShare();
     tell(answered(news, NOW.minus(Duration.ofDays(365))).build());
     var waiting = aShare();
@@ -222,8 +223,8 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should delete every aged history when there is more of it than one batch, and keep the rest")
-  void shouldDeleteEveryAgedHistoryWhenThereIsMoreOfItThanOneBatch() {
+      "Should delete every aged history and keep the rest when there is more of it than one batch")
+  void shouldDeleteEveryAgedHistoryAndKeepTheRestWhenThereIsMoreOfItThanOneBatch() {
     IntStream.range(0, 5).forEach(_ -> tell(answered(aShare(), PAST_THE_PERIOD).build()));
     markRead(sam);
     var unread = aShare();
