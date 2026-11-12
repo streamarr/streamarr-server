@@ -906,6 +906,35 @@ class TenBitAndHdrEncodeTest {
                     .map(hardware -> Arguments.of(source, hardware)));
   }
 
+  // ADR 0013's order holds whichever codec family writes the range: here hardware AV1 writes only
+  // 8-bit SDR, and libx265 writes the source's range. The client's AV1 entry declares SDR alone, so
+  // the AV1 source cannot be copied.
+  @ParameterizedTest(name = "a {0} source")
+  @EnumSource(
+      value = CompatibleBase.class,
+      names = {"PQ", "HLG"})
+  @DisplayName(
+      "Should encode an HDR source in its range in HEVC Main 10 on the software encoder when a"
+          + " hardware AV1 encoder writes only 8-bit SDR")
+  void
+      shouldEncodeAnHdrSourceInItsRangeInHevcMain10OnTheSoftwareEncoderWhenAHardwareAv1EncoderWritesOnly8BitSdr(
+          CompatibleBase sourceBase) {
+    connectAHardwareWorkerBesideASoftwareHdrWorker(
+        hardwareAv1WithoutFeatures(), encoder("hevc", "libx265", EVERY_ENCODE_FEATURE));
+    probes.setDefaultProbe(av1Source(rangeOf(sourceBase), Optional.empty(), Optional.empty()));
+    var hdrHevcClientWithSdrAv1 =
+        clientWith(hdrHevcEntry(), av1EntryBuilder().build(), h264EntryBuilder().build());
+
+    var encode =
+        accepted(playback.start(start(options(VideoQuality.AUTO, null), hdrHevcClientWithSdrAv1)));
+
+    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.HEVC_MAIN_10);
+    assertThat(plannedEncode().dynamicRange()).isEqualTo(rangeOf(sourceBase));
+    assertThat(plannedEncode().bitDepth()).isEqualTo(10);
+    assertThat(workerOfTheStartedEncode()).contains(SOFTWARE_HDR_WORKER);
+    assertThat(multivariantPlaylist(encode)).contains(",VIDEO-RANGE=" + sourceBase.name());
+  }
+
   // The SDR choice keeps no HDR range (ADR 0013), so the hardware codec family's SDR encode keeps
   // its place before every software encode (ADR 0009).
   @ParameterizedTest(name = "a hardware encoder {0}")
@@ -1379,10 +1408,17 @@ class TenBitAndHdrEncodeTest {
   }
 
   // One worker runs the hardware encoder, and another runs an SVT-AV1 that writes every 10-bit and
-  // HDR output. Both run libx264. The default worker is gone.
+  // HDR output.
   private void connectAHardwareWorkerBesideASoftwareHdrWorker(WorkerVerifiedEncoder hardware) {
+    connectAHardwareWorkerBesideASoftwareHdrWorker(hardware, svtAv1(EVERY_ENCODE_FEATURE));
+  }
+
+  // One worker runs the hardware encoder, and another runs the software encoder that writes HDR.
+  // Both run libx264. The default worker is gone.
+  private void connectAHardwareWorkerBesideASoftwareHdrWorker(
+      WorkerVerifiedEncoder hardware, WorkerVerifiedEncoder softwareHdr) {
     var hardwareEncoders = List.of(hardware, libx264(Set.of()));
-    var softwareEncoders = List.of(svtAv1(EVERY_ENCODE_FEATURE), libx264(Set.of()));
+    var softwareEncoders = List.of(softwareHdr, libx264(Set.of()));
     workers.setEncodableVideoCodecFamilies(
         Stream.of(hardwareEncoders, softwareEncoders)
             .flatMap(encoders -> codecFamiliesOf(encoders).stream())
