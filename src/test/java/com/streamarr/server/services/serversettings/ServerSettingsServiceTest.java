@@ -353,7 +353,9 @@ class ServerSettingsServiceTest {
   @DisplayName(
       "Should refuse a caller who is not a ServerAdmin and keep seven days when the caller changes"
           + " the share code lifetime")
-  void shouldRefuseACallerWhoIsNotAServerAdminWhenTheCallerChangesTheShareCodeLifetime(int hours) {
+  void
+      shouldRefuseACallerWhoIsNotAServerAdminAndKeepSevenDaysWhenTheCallerChangesTheShareCodeLifetime(
+          int hours) {
     authorizationService.denyAll();
 
     assertThatThrownBy(() -> serverSettingsService.changeShareCodeLifetime(identity, hours))
@@ -433,7 +435,9 @@ class ServerSettingsServiceTest {
   @DisplayName(
       "Should refuse a caller who is not a ServerAdmin and keep seven days when the caller changes"
           + " the invitation lifetime")
-  void shouldRefuseACallerWhoIsNotAServerAdminWhenTheCallerChangesTheInvitationLifetime(int hours) {
+  void
+      shouldRefuseACallerWhoIsNotAServerAdminAndKeepSevenDaysWhenTheCallerChangesTheInvitationLifetime(
+          int hours) {
     authorizationService.denyAll();
 
     assertThatThrownBy(() -> serverSettingsService.changeInvitationLifetime(identity, hours))
@@ -504,7 +508,8 @@ class ServerSettingsServiceTest {
   @DisplayName(
       "Should refuse a caller who is not a ServerAdmin and keep ten codes when the caller changes"
           + " the share code limit")
-  void shouldRefuseACallerWhoIsNotAServerAdminWhenTheCallerChangesTheShareCodeLimit(int codes) {
+  void shouldRefuseACallerWhoIsNotAServerAdminAndKeepTenCodesWhenTheCallerChangesTheShareCodeLimit(
+      int codes) {
     authorizationService.denyAll();
 
     assertThatThrownBy(() -> serverSettingsService.changeShareCodeLimit(identity, codes))
