@@ -6,10 +6,12 @@ import graphql.ErrorType;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.GraphQLError;
+import graphql.parser.ParserOptions;
 import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.SchemaParser;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -68,6 +70,51 @@ class RequestErrorRedactionInstrumentationTest {
         .doesNotContain(CODE);
   }
 
+  @ParameterizedTest
+  @MethodSource("unparsableDocuments")
+  @DisplayName("Should keep the line and column without the value when a document does not parse")
+  void shouldKeepLineAndColumnWithoutValueWhenDocumentDoesNotParse(String document) {
+    var error = singleError(ExecutionInput.newExecutionInput(document).build());
+
+    var location = error.getLocations().getFirst();
+    assertThat(error.getErrorType()).isEqualTo(ErrorType.InvalidSyntax);
+    assertThat(error.getMessage())
+        .contains("line %d column %d".formatted(location.getLine(), location.getColumn()));
+    assertThat(error.toSpecification().toString())
+        .doesNotContain(CODE)
+        .doesNotContain(CODE.replace("-", ""));
+  }
+
+  @Test
+  @DisplayName("Should keep the value out of a syntax error when the request asks for German")
+  void shouldKeepValueOutOfSyntaxErrorWhenRequestAsksForGerman() {
+    var error =
+        singleError(
+            ExecutionInput.newExecutionInput("{ lookUp(input: {code: \"%s}) }".formatted(CODE))
+                .locale(Locale.GERMAN)
+                .build());
+
+    var location = error.getLocations().getFirst();
+    assertThat(error.getMessage())
+        .contains("Zeile %d Spalte %d".formatted(location.getLine(), location.getColumn()))
+        .doesNotContain(CODE);
+  }
+
+  @Test
+  @DisplayName("Should keep the parser limits a request sets when a document is too long to parse")
+  void shouldKeepParserLimitsRequestSetsWhenDocumentIsTooLongToParse() {
+    var limits = ParserOptions.newParserOptions().maxTokens(4).build();
+
+    var error =
+        singleError(
+            ExecutionInput.newExecutionInput("{ lookUp(input: {code: \"%s\"}) }".formatted(CODE))
+                .graphQLContext(Map.of(ParserOptions.class, limits))
+                .build());
+
+    assertThat(error.getErrorType()).isEqualTo(ErrorType.InvalidSyntax);
+    assertThat(error.getMessage()).doesNotContain(CODE);
+  }
+
   @Test
   @DisplayName("Should answer as before when the document passes validation")
   void shouldAnswerAsBeforeWhenDocumentPassesValidation() {
@@ -98,6 +145,15 @@ class RequestErrorRedactionInstrumentationTest {
                 .formatted(CODE),
             CODE,
             "'LookUpInput'"));
+  }
+
+  static Stream<String> unparsableDocuments() {
+    return Stream.of(
+        "{ lookUp(input: {id: \"1\", code: \"%s}) }".formatted(CODE),
+        "{ lookUp(input: {id: \"1\", code: \"%s\\q\"}) }".formatted(CODE),
+        "{ lookUp(input: {id: \"1\", code \"%s\"}) }".formatted(CODE),
+        "{ lookUp(input: {id: \"1\", code: \"x\"}) } \"%s\"".formatted(CODE),
+        "{ lookUp(input: {id: \"1\", code: \"x\"}) } %s".formatted(CODE.replace("-", "")));
   }
 
   private GraphQLError singleError(ExecutionInput input) {

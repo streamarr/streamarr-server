@@ -500,6 +500,29 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
     assertThat(response.toString()).doesNotContain(code);
   }
 
+  @Test
+  @DisplayName("Should keep the code out of the answer when a lookup leaves the code unterminated")
+  void shouldKeepCodeOutOfAnswerWhenLookupLeavesCodeUnterminated() throws Exception {
+    var code = issuedCode(issue(authTestSupport.accountBearer(host), host.household().getId()));
+
+    var response =
+        executeAllowingErrors(
+            authTestSupport.accountBearer(identity()),
+            """
+            mutation { lookUpShareCode(input: { code: "%s }) { householdName } }
+            """
+                .formatted(code),
+            Map.of());
+
+    var error = errors(response);
+    var location = error.path("locations").path(0);
+    assertThat(error.path("message").asString())
+        .contains(
+            "line %d column %d"
+                .formatted(location.path("line").asInt(), location.path("column").asInt()));
+    assertThat(response.toString()).doesNotContain(code);
+  }
+
   private static String issuedCode(JsonNode payload) {
     return payload.path("issued").path("code").asString();
   }
