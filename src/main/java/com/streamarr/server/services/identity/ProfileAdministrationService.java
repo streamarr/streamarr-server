@@ -547,7 +547,7 @@ public class ProfileAdministrationService {
   }
 
   /** The shared error contract for ordinary edits: FORBIDDEN when visible, not-found when not. */
-  private Optional<ProfileRejections.ProfileNotFound> editRefusal(
+  private Optional<ProfileRejections.EditRefusal> editRefusal(
       AuthenticatedIdentity identity, Intent.UnitIntent intent, UUID profileId) {
     return refusalOf(
         identity,
