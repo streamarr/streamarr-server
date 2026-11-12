@@ -95,7 +95,21 @@ class ManagerInvitationPageIT extends AbstractIntegrationTest {
     var stranger = track(authTestSupport.createIdentity());
 
     assertThat(invitation(stranger, invitationId).isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should answer null when no invitation has the id")
+  void shouldAnswerNullWhenNoInvitationHasTheId() throws Exception {
+    invite(sam, alex, mara);
+
     assertThat(invitation(mara, UUID.randomUUID().toString()).isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should answer null when the named Account reads from a device-bound session")
+  void shouldAnswerNullWhenTheNamedAccountReadsFromADeviceBoundSession() throws Exception {
+    var invitationId = invite(sam, alex, mara).path("id").asString();
+
     assertThat(
             graphql(
                     authTestSupport.deviceBoundProfileBearer(mara),
