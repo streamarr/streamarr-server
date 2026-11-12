@@ -1007,7 +1007,9 @@ public class TranscodeDecisionService {
   }
 
   // Any format beyond 8-bit SDR needs one encoder of the codec family that lists every feature the
-  // format needs. A format that failed earlier in the playback session stays out. A software
+  // format needs. A codec family that encodes in software needs one of its encoders even for 8-bit
+  // SDR, because a worker runs a software encode only on a software encoder of the codec family
+  // (ADR 0044). A format that failed earlier in the playback session stays out. A software
   // continuation keeps the failed encode's range, so every format in another range stays out of it
   // (ADR 0013). A 10-bit SDR encode may also continue in 8-bit SDR, and its 10 bits come first as
   // in any encode.
@@ -1015,6 +1017,11 @@ public class TranscodeDecisionService {
       TranscodeDecisionRequest request,
       EncodeCodecProfile profile,
       List<WorkerVerifiedEncoder> encoders) {
+    if (request.encodesInSoftware(profile.codecFamilyName())
+        && !hasAnEncoderOf(profile, encoders)) {
+      return List.of();
+    }
+
     return permittedEncodeFormats(encodeFitting(request), profile).stream()
         .filter(request::mayEncode)
         .filter(
@@ -1022,6 +1029,12 @@ public class TranscodeDecisionService {
                 isWrittenByAnEncoder(
                     format.encodeFeaturesFrom(sourceBase(request.source())), profile, encoders))
         .toList();
+  }
+
+  private static boolean hasAnEncoderOf(
+      EncodeCodecProfile profile, List<WorkerVerifiedEncoder> encoders) {
+    return encoders.stream()
+        .anyMatch(encoder -> encoder.backend().codecFamily().equals(profile.codecFamilyName()));
   }
 
   // 8-bit SDR needs no feature, so the encodable codec families alone decide it.

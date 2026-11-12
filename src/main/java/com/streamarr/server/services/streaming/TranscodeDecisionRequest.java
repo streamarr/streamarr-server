@@ -25,7 +25,8 @@ import lombok.NonNull;
  * family alone (ADR 0044), in its range alone (ADR 0013). A codec family in {@code
  * excludedHardwareEncodeCodecFamilies} encodes with the software encoder, because its hardware
  * encoder failed earlier in the playback session, and the caller lists that family's software
- * encoders in place of its other encoders.
+ * encoders in place of its other encoders. A codec family that encodes with the software encoder is
+ * encoded only when one of its encoders is listed, even in 8-bit SDR.
  */
 @Builder(toBuilder = true)
 public record TranscodeDecisionRequest(
