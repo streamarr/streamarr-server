@@ -11,10 +11,13 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.domain.notification.ProfileShareEndedBy;
+import com.streamarr.server.domain.notification.RequestAnswer;
+import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareEndedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
+import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
@@ -34,6 +37,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
@@ -42,6 +46,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -357,8 +364,229 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
     assertThat(rows.of(sam)).extracting(Row::subject).containsExactly(share, newer);
   }
 
+  @Test
+  @DisplayName(
+      "Should resolve every waiting request about the subject as decided with the answer when it"
+          + " is decided")
+  void shouldResolveEveryWaitingRequestAboutTheSubjectAsDecidedWithTheAnswerWhenItIsDecided() {
+    tell(offeredTheo().recipients(Set.of(sam, kai)).build());
+
+    publish(decided(EVENT.plusSeconds(60)).build());
+
+    assertThat(rows.about(share))
+        .hasSize(2)
+        .allSatisfy(
+            row -> {
+              assertThat(row.resolution()).contains("DECIDED");
+              assertThat(row.resolvedAt()).contains(EVENT.plusSeconds(60));
+              assertThat(row.snapshot())
+                  .isEqualTo(
+                      document(
+                          new ProfileShareOfferedSnapshot(
+                              "Theo", Optional.of(ProfileShareAnswer.ACCEPTED))));
+            });
+  }
+
+  @Test
+  @DisplayName("Should resolve as withdrawn without an answer when the subject is withdrawn")
+  void shouldResolveAsWithdrawnWithoutAnAnswerWhenTheSubjectIsWithdrawn() {
+    tell(offeredTheo().build());
+
+    publish(withdrawn(EVENT.plusSeconds(60)).build());
+
+    assertThat(onlyRowOf(sam))
+        .satisfies(
+            row -> {
+              assertThat(row.resolution()).contains("WITHDRAWN");
+              assertThat(row.resolvedAt()).contains(EVENT.plusSeconds(60));
+              assertThat(row.snapshot())
+                  .isEqualTo(document(new ProfileShareOfferedSnapshot("Theo", Optional.empty())));
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should write the decision and its instant when its instant is before the expiry but it"
+          + " arrives after it")
+  void shouldWriteTheDecisionAndItsInstantWhenItsInstantIsBeforeTheExpiryButItArrivesAfterIt() {
+    var expiry = Instant.now().minusSeconds(60).truncatedTo(ChronoUnit.MICROS);
+    tell(
+        offeredTheo()
+            .at(expiry.minus(Duration.ofDays(7)))
+            .subjectExpiresAt(Optional.of(expiry))
+            .build());
+
+    publish(decided(expiry.minusSeconds(1)).build());
+
+    assertThat(onlyRowOf(sam))
+        .satisfies(
+            row -> {
+              assertThat(row.resolution()).contains("DECIDED");
+              assertThat(row.resolvedAt()).contains(expiry.minusSeconds(1));
+              assertThat(row.snapshot())
+                  .isEqualTo(
+                      document(
+                          new ProfileShareOfferedSnapshot(
+                              "Theo", Optional.of(ProfileShareAnswer.ACCEPTED))));
+            });
+  }
+
+  static Stream<Arguments> resolutionsAtOrAfterTheExpiry() {
+    return Stream.of(
+        Arguments.of(
+            RequestResolution.DECIDED, Optional.of(ProfileShareAnswer.ACCEPTED), Duration.ZERO),
+        Arguments.of(
+            RequestResolution.DECIDED,
+            Optional.of(ProfileShareAnswer.ACCEPTED),
+            Duration.ofSeconds(1)),
+        Arguments.of(RequestResolution.WITHDRAWN, Optional.empty(), Duration.ZERO),
+        Arguments.of(RequestResolution.WITHDRAWN, Optional.empty(), Duration.ofSeconds(1)));
+  }
+
+  @ParameterizedTest(name = "{0} {2} after the expiry")
+  @MethodSource("resolutionsAtOrAfterTheExpiry")
+  @DisplayName(
+      "Should write expired at the expiry when a resolution's instant is at or after the expiry")
+  void shouldWriteExpiredAtTheExpiryWhenAResolutionsInstantIsAtOrAfterTheExpiry(
+      RequestResolution resolution, Optional<ProfileShareAnswer> answer, Duration afterTheExpiry) {
+    tell(offeredTheo().build());
+
+    publish(
+        ResolveRequestsEvent.builder()
+            .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
+            .subject(share)
+            .resolution(resolution)
+            .answer(answer.map(RequestAnswer.class::cast))
+            .at(OFFER_EXPIRY.plus(afterTheExpiry))
+            .build());
+
+    assertThat(onlyRowOf(sam))
+        .satisfies(
+            row -> {
+              assertThat(row.resolution()).contains("EXPIRED");
+              assertThat(row.resolvedAt()).contains(OFFER_EXPIRY);
+              assertThat(row.snapshot())
+                  .isEqualTo(document(new ProfileShareOfferedSnapshot("Theo", Optional.empty())));
+            });
+  }
+
+  @Test
+  @DisplayName("Should write the decision when the request has no expiry")
+  void shouldWriteTheDecisionWhenTheRequestHasNoExpiry() {
+    tell(offeredTheo().subjectExpiresAt(Optional.empty()).build());
+
+    publish(decided(EVENT.plusSeconds(60)).build());
+
+    assertThat(onlyRowOf(sam))
+        .satisfies(
+            row -> {
+              assertThat(row.resolution()).contains("DECIDED");
+              assertThat(row.resolvedAt()).contains(EVENT.plusSeconds(60));
+            });
+  }
+
+  @Test
+  @DisplayName("Should leave a request as it resolved when a later resolution arrives")
+  void shouldLeaveARequestAsItResolvedWhenALaterResolutionArrives() {
+    tell(offeredTheo().build());
+    publish(withdrawn(EVENT.plusSeconds(60)).build());
+
+    publish(decided(EVENT.plusSeconds(120)).build());
+
+    assertThat(onlyRowOf(sam))
+        .satisfies(
+            row -> {
+              assertThat(row.resolution()).contains("WITHDRAWN");
+              assertThat(row.resolvedAt()).contains(EVENT.plusSeconds(60));
+              assertThat(row.snapshot())
+                  .isEqualTo(document(new ProfileShareOfferedSnapshot("Theo", Optional.empty())));
+            });
+    assertThat(announced()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should keep the request's time and read state when it resolves")
+  void shouldKeepTheRequestsTimeAndReadStateWhenItResolves() {
+    tell(offeredTheo().recipients(Set.of(sam, kai)).build());
+    markRead(onlyRowOf(sam).id());
+
+    publish(decided(EVENT.plusSeconds(60)).build());
+
+    assertThat(onlyRowOf(sam))
+        .satisfies(
+            row -> {
+              assertThat(row.latestEventAt()).isEqualTo(EVENT);
+              assertThat(row.readAt()).contains(EVENT);
+            });
+    assertThat(onlyRowOf(kai))
+        .satisfies(
+            row -> {
+              assertThat(row.latestEventAt()).isEqualTo(EVENT);
+              assertThat(row.readAt()).isEmpty();
+            });
+  }
+
+  @Test
+  @DisplayName("Should leave news and requests about other subjects alone when a request resolves")
+  void shouldLeaveNewsAndRequestsAboutOtherSubjectsAloneWhenARequestResolves() {
+    var other = SubjectReference.profileShare(UUID.randomUUID());
+    tell(offeredTheo().build());
+    tell(offered(new ProfileShareOfferedSnapshot("Theo", Optional.empty()), other).build());
+    tell(answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED)).build());
+
+    publish(decided(EVENT.plusSeconds(60)).build());
+
+    assertThat(rows.of(sam))
+        .satisfiesExactly(
+            resolved -> assertThat(resolved.resolution()).contains("DECIDED"),
+            otherRequest -> assertThat(otherRequest.resolution()).isEmpty(),
+            news ->
+                assertThat(news.snapshot())
+                    .isEqualTo(
+                        document(
+                            new ProfileShareAnsweredSnapshot(
+                                "Theo", ProfileShareAnswer.ACCEPTED))));
+  }
+
+  @Test
+  @DisplayName("Should announce the resolved requests to each recipient")
+  void shouldAnnounceTheResolvedRequestsToEachRecipient() {
+    tell(offeredTheo().recipients(Set.of(sam, kai)).build());
+
+    publish(withdrawn(EVENT.plusSeconds(60)).build());
+
+    assertThat(announced()).hasSize(2);
+    assertThat(announced().getLast().notifications())
+        .containsExactlyInAnyOrderElementsOf(changesOf(rows.about(share)));
+  }
+
   private void tell(TellNotificationEvent tell) {
-    transactionTemplate.executeWithoutResult(_ -> eventPublisher.publishEvent(tell));
+    publish(tell);
+  }
+
+  private void publish(Object event) {
+    transactionTemplate.executeWithoutResult(_ -> eventPublisher.publishEvent(event));
+  }
+
+  private TellNotificationEvent.TellNotificationEventBuilder offeredTheo() {
+    return offered(new ProfileShareOfferedSnapshot("Theo", Optional.empty()), share);
+  }
+
+  private ResolveRequestsEvent.ResolveRequestsEventBuilder decided(Instant at) {
+    return ResolveRequestsEvent.builder()
+        .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
+        .subject(share)
+        .resolution(RequestResolution.DECIDED)
+        .answer(Optional.of(ProfileShareAnswer.ACCEPTED))
+        .at(at);
+  }
+
+  private ResolveRequestsEvent.ResolveRequestsEventBuilder withdrawn(Instant at) {
+    return ResolveRequestsEvent.builder()
+        .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
+        .subject(share)
+        .resolution(RequestResolution.WITHDRAWN)
+        .at(at);
   }
 
   private TellNotificationEvent.TellNotificationEventBuilder answered(

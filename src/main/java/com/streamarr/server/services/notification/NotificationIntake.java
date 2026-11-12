@@ -1,6 +1,7 @@
 package com.streamarr.server.services.notification;
 
 import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.notification.events.ChangedNotification;
 import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
@@ -34,6 +35,12 @@ public class NotificationIntake {
           case NEWS -> notificationRepository.tellNews(tell);
           case REQUEST -> notificationRepository.tellRequests(tell);
         });
+  }
+
+  @EventListener
+  @Transactional(propagation = Propagation.MANDATORY)
+  public void onResolve(ResolveRequestsEvent resolution) {
+    announce(notificationRepository.resolve(resolution));
   }
 
   private void announce(List<ChangedNotification> changed) {

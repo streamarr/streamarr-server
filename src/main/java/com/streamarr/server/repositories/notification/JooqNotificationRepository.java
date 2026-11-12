@@ -1,14 +1,19 @@
 package com.streamarr.server.repositories.notification;
 
 import static com.streamarr.server.jooq.generated.tables.Notification.NOTIFICATION;
+import static org.jooq.impl.DSL.cast;
 import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.function;
 import static org.jooq.impl.DSL.greatest;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.jooq.generated.enums.NotificationForm;
+import com.streamarr.server.jooq.generated.enums.RequestResolution;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
 import com.streamarr.server.services.events.notification.RecipientReference;
+import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.notification.events.ChangedNotification;
 import java.time.OffsetDateTime;
@@ -16,11 +21,13 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.InsertValuesStep9;
 import org.jooq.JSONB;
 import org.jooq.Record3;
+import org.jooq.impl.SQLDataType;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -65,6 +72,47 @@ public class JooqNotificationRepository implements NotificationRepository {
         .doNothing()
         .returningResult(NOTIFICATION.ID, NOTIFICATION.RECIPIENT_TYPE, NOTIFICATION.RECIPIENT_ID)
         .fetch(JooqNotificationRepository::changed);
+  }
+
+  @Override
+  public List<ChangedNotification> resolve(ResolveRequestsEvent resolution) {
+    var at = val(resolution.at().atOffset(ZoneOffset.UTC));
+    var beforeTheExpiry = NOTIFICATION.EXPIRES_AT.isNull().or(at.lt(NOTIFICATION.EXPIRES_AT));
+    var resolved = RequestResolution.valueOf(resolution.resolution().name());
+    return dsl.update(NOTIFICATION)
+        .set(
+            NOTIFICATION.RESOLUTION,
+            when(beforeTheExpiry, inline(resolved)).otherwise(inline(RequestResolution.EXPIRED)))
+        .set(NOTIFICATION.RESOLVED_AT, when(beforeTheExpiry, at).otherwise(NOTIFICATION.EXPIRES_AT))
+        .set(NOTIFICATION.SNAPSHOT, snapshotAnswering(resolution, beforeTheExpiry))
+        .where(NOTIFICATION.KIND.eq(resolution.kind().name()))
+        .and(NOTIFICATION.SUBJECT_TYPE.eq(resolution.subject().type()))
+        .and(NOTIFICATION.SUBJECT_ID.eq(resolution.subject().id()))
+        .and(NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)))
+        .and(NOTIFICATION.RESOLUTION.isNull())
+        .returningResult(NOTIFICATION.ID, NOTIFICATION.RECIPIENT_TYPE, NOTIFICATION.RECIPIENT_ID)
+        .fetch(JooqNotificationRepository::changed);
+  }
+
+  // A decision made before the expiry joins its answer to the snapshot, under the name every
+  // request kind's snapshot gives it.
+  private static Field<JSONB> snapshotAnswering(
+      ResolveRequestsEvent resolution, Condition beforeTheExpiry) {
+    return resolution
+        .answer()
+        .map(
+            answer ->
+                when(beforeTheExpiry, withAnswer(answer.name())).otherwise(NOTIFICATION.SNAPSHOT))
+        .orElse(NOTIFICATION.SNAPSHOT);
+  }
+
+  private static Field<JSONB> withAnswer(String answer) {
+    return function(
+        "jsonb_set",
+        SQLDataType.JSONB,
+        NOTIFICATION.SNAPSHOT,
+        val(new String[] {SnapshotJson.ANSWER}, SQLDataType.CLOB.array()),
+        function("to_jsonb", SQLDataType.JSONB, cast(val(answer), SQLDataType.CLOB)));
   }
 
   private InsertValuesStep9<
