@@ -153,12 +153,13 @@ class ProfileManagerInvitationLifecycleTest {
   }
 
   @Test
-  @DisplayName("Should announce the expiry when a replacement stores an expired invitation")
-  void shouldAnnounceTheExpiryWhenAReplacementStoresAnExpiredInvitation() {
+  @DisplayName(
+      "Should announce the expiry when an invalidation for its Account finds the invitation lapsed")
+  void shouldAnnounceTheExpiryWhenAnInvalidationForItsAccountFindsTheInvitationLapsed() {
     var lapsed = invitations.save(pending().expiresAt(NOW.minusSeconds(1)).build());
 
     lifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
-        lapsed.getProfileId(), lapsed.getRecipientAccountId(), "replaced", NOW);
+        lapsed.getProfileId(), lapsed.getRecipientAccountId(), REASON, NOW);
 
     assertThat(announced())
         .singleElement()
