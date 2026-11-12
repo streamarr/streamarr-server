@@ -49,6 +49,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fakes.MutableNanoClock;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
@@ -165,7 +166,9 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
     var waiting =
         new ProbeSchedulingConfiguration()
             .bitrateScansWaiting(
-                dsl, new BitrateScansWaitingProperties(Duration.ofMillis(50)), System::nanoTime);
+                dsl,
+                new BitrateScansWaitingProperties(Duration.ofMillis(50)),
+                new MutableNanoClock());
     waiting.bindTo(registry);
     var files = requestUnchangedFiles(3);
 
