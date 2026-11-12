@@ -50,6 +50,7 @@ class HlsRecoveryContinuitySmokeTest {
       Path.of("src/test/resources/BigBuckBunny_320x180_10s.mp4").toAbsolutePath();
   private static final int SEGMENT_DURATION_SECONDS = 2;
 
+  private Path segmentFolder;
   private LocalSegmentStore segmentStore;
   private RemoteTranscodeExecutor transcodeExecutor;
   private WorkerStreamingSmokeFixture workerFixture;
@@ -67,7 +68,8 @@ class HlsRecoveryContinuitySmokeTest {
     var sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
     testVideo = Files.copy(TEST_VIDEO, sourceRoot.resolve(TEST_VIDEO.getFileName()));
     var segmentBaseDir = Files.createDirectory(temporaryDirectory.resolve("segments"));
-    segmentStore = new LocalSegmentStore(segmentBaseDir.resolve("server"));
+    segmentFolder = segmentBaseDir.resolve("server");
+    segmentStore = new LocalSegmentStore(segmentFolder);
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)
@@ -234,9 +236,9 @@ class HlsRecoveryContinuitySmokeTest {
                 !transcodeExecutor.isRunning(
                     session.getSessionId(), StreamSession.defaultVariant()));
 
-    var outputDir = segmentStore.getOutputDirectory(session.getSessionId());
+    var sessionFolder = segmentFolder.resolve(session.getSessionId().toString());
     for (var index = firstMissingIndex; index < 16; index++) {
-      Files.deleteIfExists(outputDir.resolve(SegmentNames.mediaSegmentName(index)));
+      Files.deleteIfExists(sessionFolder.resolve(SegmentNames.mediaSegmentName(index)));
     }
   }
 

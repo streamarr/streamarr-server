@@ -46,7 +46,8 @@ class LocalSegmentStoreSoftLinkTest {
       throws IOException {
     var store = new LocalSegmentStore(segmentFolder);
     var sessionId = UUID.randomUUID();
-    var sessionDirectory = store.getOutputDirectory(sessionId);
+    store.storeSegment(sessionId, "segment0.m4s", "segment".getBytes());
+    var sessionDirectory = segmentFolder.resolve(sessionId.toString());
     var outsideFile = Files.write(outside.resolve("movie.mkv"), "media".getBytes());
     Files.createSymbolicLink(sessionDirectory.resolve("link"), outside);
 

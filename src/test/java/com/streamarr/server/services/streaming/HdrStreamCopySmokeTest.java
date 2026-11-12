@@ -105,13 +105,14 @@ class HdrStreamCopySmokeTest {
   private RemoteTranscodeExecutor transcodeExecutor;
   private WorkerStreamingSmokeFixture workerFixture;
   private Path sourceRoot;
+  private Path segmentFolder;
   @TempDir private Path temporaryDirectory;
 
   @BeforeEach
   void setUp() throws Exception {
     sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
-    segmentStore =
-        new LocalSegmentStore(Files.createDirectory(temporaryDirectory.resolve("segments")));
+    segmentFolder = Files.createDirectory(temporaryDirectory.resolve("segments"));
+    segmentStore = new LocalSegmentStore(segmentFolder);
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)
@@ -576,9 +577,9 @@ class HdrStreamCopySmokeTest {
     await()
         .atMost(Duration.ofSeconds(10))
         .until(() -> !transcodeExecutor.isRunning(sessionId, StreamSession.defaultVariant()));
-    var outputDirectory = segmentStore.getOutputDirectory(sessionId);
-    Files.delete(outputDirectory.resolve(SegmentNames.INITIALIZATION_SEGMENT_NAME));
-    Files.delete(outputDirectory.resolve(SegmentNames.mediaSegmentName(REPLACED_SEGMENT)));
+    var sessionFolder = segmentFolder.resolve(sessionId.toString());
+    Files.delete(sessionFolder.resolve(SegmentNames.INITIALIZATION_SEGMENT_NAME));
+    Files.delete(sessionFolder.resolve(SegmentNames.mediaSegmentName(REPLACED_SEGMENT)));
 
     var delivery =
         coordinator.deliver(

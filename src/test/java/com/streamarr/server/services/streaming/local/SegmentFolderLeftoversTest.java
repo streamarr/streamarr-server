@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
+import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 class SegmentFolderLeftoversTest {
 
   private static final byte[] SEGMENT = "segment".getBytes();
+  private static final String VARIANT_MEDIA_SEGMENT = "720p/segment0.m4s";
   private static final String MARK_NAME = ".streamarr-segment-folder";
 
   @TempDir Path segmentFolder;
@@ -32,11 +34,7 @@ class SegmentFolderLeftoversTest {
   @DisplayName("Should delete a stream session's directory when an earlier store left it")
   void shouldDeleteAStreamSessionsDirectoryWhenAnEarlierStoreLeftIt() {
     new SegmentFolderLeftovers(segmentFolder).delete();
-    var sessionId = UUID.randomUUID();
-    try (var stored = earlierStore().prepareSegment(sessionId, "720p/0.m4s")) {
-      stored.append(ByteBuffer.wrap(SEGMENT));
-      stored.publish();
-    }
+    var sessionId = leftover(earlierStore());
 
     new SegmentFolderLeftovers(segmentFolder).delete();
 
@@ -48,7 +46,8 @@ class SegmentFolderLeftoversTest {
   void shouldDeleteAnUnpublishedUploadWhenAnEarlierStoreLeftIt() {
     new SegmentFolderLeftovers(segmentFolder).delete();
     // Still open: the store's process ended before it published or discarded the upload.
-    try (var unpublished = earlierStore().prepareSegment(UUID.randomUUID(), "720p/0.m4s")) {
+    try (var unpublished =
+        earlierStore().prepareSegment(UUID.randomUUID(), VARIANT_MEDIA_SEGMENT)) {
       unpublished.append(ByteBuffer.wrap(SEGMENT));
       assertThat(segmentFolder).isDirectoryContaining("glob:**/.upload-*");
 
@@ -63,8 +62,7 @@ class SegmentFolderLeftoversTest {
   void shouldDeleteLeftoversWhenItCreatedTheSegmentFolder() {
     var created = segmentFolder.resolve("server").resolve("segments");
     new SegmentFolderLeftovers(created).delete();
-    var sessionId = UUID.randomUUID();
-    new LocalSegmentStore(created).getOutputDirectory(sessionId);
+    var sessionId = leftover(new LocalSegmentStore(created));
 
     new SegmentFolderLeftovers(created).delete();
 
@@ -100,8 +98,7 @@ class SegmentFolderLeftoversTest {
       throws IOException {
     Files.createFile(segmentFolder.resolve(MARK_NAME));
     new SegmentFolderLeftovers(segmentFolder).delete();
-    var sessionId = UUID.randomUUID();
-    earlierStore().getOutputDirectory(sessionId);
+    var sessionId = leftover(earlierStore());
 
     new SegmentFolderLeftovers(segmentFolder).delete();
 
@@ -114,8 +111,7 @@ class SegmentFolderLeftoversTest {
   void shouldDeleteLeftoversWhenTheFolderHeldOnlyAMarkThatIsNotText() throws IOException {
     Files.write(segmentFolder.resolve(MARK_NAME), new byte[] {(byte) 0xC3, 0x28});
     new SegmentFolderLeftovers(segmentFolder).delete();
-    var sessionId = UUID.randomUUID();
-    earlierStore().getOutputDirectory(sessionId);
+    var sessionId = leftover(earlierStore());
 
     new SegmentFolderLeftovers(segmentFolder).delete();
 
@@ -137,8 +133,7 @@ class SegmentFolderLeftoversTest {
     }
 
     new SegmentFolderLeftovers(segmentFolder).delete();
-    var sessionId = UUID.randomUUID();
-    earlierStore().getOutputDirectory(sessionId);
+    var sessionId = leftover(earlierStore());
 
     new SegmentFolderLeftovers(segmentFolder).delete();
 
@@ -154,8 +149,7 @@ class SegmentFolderLeftoversTest {
     var outsideFile = Files.write(outside.resolve("movie.mkv"), "media".getBytes());
     Files.createSymbolicLink(segmentFolder.resolve(MARK_NAME), outsideFile);
     new SegmentFolderLeftovers(segmentFolder).delete();
-    var sessionId = UUID.randomUUID();
-    earlierStore().getOutputDirectory(sessionId);
+    var sessionId = leftover(earlierStore());
 
     new SegmentFolderLeftovers(segmentFolder).delete();
 
@@ -256,8 +250,7 @@ class SegmentFolderLeftoversTest {
   void shouldKeepAFolderOutsideTheSegmentFolderWhenALeftoverStreamSessionsDirectoryLinksToIt()
       throws IOException {
     new SegmentFolderLeftovers(segmentFolder).delete();
-    var sessionId = UUID.randomUUID();
-    var sessionDirectory = earlierStore().getOutputDirectory(sessionId);
+    var sessionDirectory = segmentFolder.resolve(leftover(earlierStore()).toString());
     var outsideFile = Files.write(outside.resolve("movie.mkv"), "media".getBytes());
     Files.createSymbolicLink(sessionDirectory.resolve("link"), outside);
 
@@ -285,7 +278,7 @@ class SegmentFolderLeftoversTest {
 
       assertThatNoException().isThrownBy(new SegmentFolderLeftovers(segmentFolder)::delete);
 
-      assertThat(lockedVariantDirectory.resolve("0.m4s")).exists();
+      assertThat(lockedVariantDirectory.resolve("segment0.m4s")).exists();
       assertThat(segmentFolder)
           .isDirectoryNotContaining(
               entry -> Files.isDirectory(entry) && !entry.equals(undeletable));
@@ -298,7 +291,7 @@ class SegmentFolderLeftoversTest {
   // meanwhile then skips some of a few hundred entries.
   @Test
   @DisplayName("Should delete every leftover when the segment folder holds hundreds of them")
-  void shouldDeleteEveryLeftoverWhenTheSegmentFolderHoldsHundredsOfThem() throws IOException {
+  void shouldDeleteEveryLeftoverWhenTheSegmentFolderHoldsHundredsOfThem() {
     new SegmentFolderLeftovers(segmentFolder).delete();
     var store = earlierStore();
     for (var i = 0; i < 300; i++) {
@@ -330,8 +323,10 @@ class SegmentFolderLeftoversTest {
     return new LocalSegmentStore(segmentFolder);
   }
 
-  private static void leftover(LocalSegmentStore store) throws IOException {
-    Files.write(store.getOutputDirectory(UUID.randomUUID(), "720p").resolve("0.m4s"), SEGMENT);
+  private static UUID leftover(SegmentStore store) {
+    var sessionId = UUID.randomUUID();
+    store.storeSegment(sessionId, VARIANT_MEDIA_SEGMENT, SEGMENT);
+    return sessionId;
   }
 
   private Path firstListedDirectory() throws IOException {

@@ -62,33 +62,41 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should create output directory when session is first accessed")
-  void shouldCreateOutputDirectoryWhenSessionIsFirstAccessed() {
+  @DisplayName(
+      "Should create the stream session's folder when the stream session publishes its first"
+          + " segment")
+  void shouldCreateStreamSessionsFolderWhenStreamSessionPublishesItsFirstSegment() {
     var sessionId = UUID.randomUUID();
 
-    var outputDir = store.getOutputDirectory(sessionId);
+    store.storeSegment(sessionId, "segment0.m4s", "segment data".getBytes());
 
-    assertThat(outputDir).exists().isDirectory().hasParentRaw(tempDir);
+    assertThat(sessionFolder(sessionId).resolve("segment0.m4s"))
+        .isRegularFile()
+        .hasBinaryContent("segment data".getBytes());
   }
 
   @Test
-  @DisplayName("Should return same output directory when called twice for same session")
-  void shouldReturnSameOutputDirectoryWhenCalledTwiceForSameSession() {
+  @DisplayName(
+      "Should keep one folder for a stream session when the stream session publishes several"
+          + " segments")
+  void shouldKeepOneFolderForStreamSessionWhenStreamSessionPublishesSeveralSegments()
+      throws IOException {
     var sessionId = UUID.randomUUID();
 
-    var first = store.getOutputDirectory(sessionId);
-    var second = store.getOutputDirectory(sessionId);
+    store.storeSegment(sessionId, "init.mp4", "ftyp moov".getBytes());
+    store.storeSegment(sessionId, "segment0.m4s", "moof mdat".getBytes());
 
-    assertThat(first).isEqualTo(second);
+    assertThat(entryNames(tempDir)).containsExactly(sessionId.toString());
+    assertThat(entryNames(sessionFolder(sessionId)))
+        .containsExactlyInAnyOrder("init.mp4", "segment0.m4s");
   }
 
   @Test
-  @DisplayName("Should read segment data when segment file exists")
-  void shouldReadSegmentDataWhenSegmentFileExists() throws IOException {
+  @DisplayName("Should read segment data when the segment was published")
+  void shouldReadSegmentDataWhenSegmentWasPublished() {
     var sessionId = UUID.randomUUID();
-    var outputDir = store.getOutputDirectory(sessionId);
     var expectedBytes = "segment data".getBytes();
-    Files.write(outputDir.resolve("segment0.m4s"), expectedBytes);
+    store.storeSegment(sessionId, "segment0.m4s", expectedBytes);
 
     var result = StoredSegments.bytes(store, sessionId, "segment0.m4s");
 
@@ -99,9 +107,9 @@ class LocalSegmentStoreTest {
   @DisplayName("Should find no segment when opening a name that was never published")
   void shouldFindNoSegmentWhenOpeningNameThatWasNeverPublished() {
     var sessionId = UUID.randomUUID();
-    store.getOutputDirectory(sessionId);
+    store.storeSegment(sessionId, "segment0.m4s", "segment data".getBytes());
 
-    assertThat(store.openSegment(sessionId, "missing.m4s")).isEmpty();
+    assertThat(store.openSegment(sessionId, "segment1.m4s")).isEmpty();
   }
 
   @Test
@@ -132,7 +140,7 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
     var name = "segment0.m4s";
     store.storeSegment(sessionId, name, new byte[] {-1, 2, 3, 4});
-    var path = store.getOutputDirectory(sessionId).resolve(name);
+    var path = sessionFolder(sessionId).resolve(name);
 
     try (var opened = store.openSegment(sessionId, name).orElseThrow();
         var stream = opened.newInputStream();
@@ -168,7 +176,7 @@ class LocalSegmentStoreTest {
         var stream = opened.newInputStream()) {
       // With the file emptied under the opened segment, a skip that read the bytes it passes
       // over would find none and skip nothing.
-      Files.write(store.getOutputDirectory(sessionId).resolve("segment0.m4s"), new byte[0]);
+      Files.write(sessionFolder(sessionId).resolve("segment0.m4s"), new byte[0]);
 
       assertThat(stream.skip(3)).isEqualTo(3);
     }
@@ -205,14 +213,14 @@ class LocalSegmentStoreTest {
 
   @Test
   @DisplayName("Should delete directory and contents when session is deleted")
-  void shouldDeleteDirectoryAndContentsWhenSessionIsDeleted() throws IOException {
+  void shouldDeleteDirectoryAndContentsWhenSessionIsDeleted() {
     var sessionId = UUID.randomUUID();
-    var outputDir = store.getOutputDirectory(sessionId);
-    Files.write(outputDir.resolve("segment0.m4s"), "data".getBytes());
+    store.storeSegment(sessionId, "segment0.m4s", "data".getBytes());
+    store.storeSegment(sessionId, VARIANT_MEDIA_SEGMENT, "data".getBytes());
 
     store.deleteSession(sessionId);
 
-    assertThat(outputDir).doesNotExist();
+    assertThat(sessionFolder(sessionId)).doesNotExist();
   }
 
   @Test
@@ -237,7 +245,7 @@ class LocalSegmentStoreTest {
   @DisplayName("Should reject segment name when path traversal is attempted")
   void shouldRejectSegmentNameWhenPathTraversalIsAttempted() {
     var sessionId = UUID.randomUUID();
-    store.getOutputDirectory(sessionId);
+    store.storeSegment(sessionId, "segment0.m4s", "data".getBytes());
 
     assertThatThrownBy(() -> store.openSegment(sessionId, "../../etc/passwd.m4s"))
         .isInstanceOf(InvalidSegmentPathException.class);
@@ -245,16 +253,14 @@ class LocalSegmentStoreTest {
 
   @Test
   @DisplayName("Should read segment when name includes valid subdirectory")
-  void shouldReadSegmentWhenNameIncludesValidSubdirectory() throws IOException {
+  void shouldReadSegmentWhenNameIncludesValidSubdirectory() {
     var sessionId = UUID.randomUUID();
-    var outputDir = store.getOutputDirectory(sessionId);
-    var variantDir = outputDir.resolve("720p");
-    Files.createDirectories(variantDir);
-    Files.write(variantDir.resolve("segment0.m4s"), "data".getBytes());
+    store.storeSegment(sessionId, "segment0.m4s", "default variant".getBytes());
+    store.storeSegment(sessionId, VARIANT_MEDIA_SEGMENT, "720p variant".getBytes());
 
-    var result = StoredSegments.bytes(store, sessionId, "720p/segment0.m4s");
+    var result = StoredSegments.bytes(store, sessionId, VARIANT_MEDIA_SEGMENT);
 
-    assertThat(result).isEqualTo("data".getBytes());
+    assertThat(result).isEqualTo("720p variant".getBytes());
   }
 
   @Test
@@ -508,7 +514,7 @@ class LocalSegmentStoreTest {
 
     try (var prepared =
         appended(store.prepareSegment(sessionId, "720p/segment0.m4s"), segmentData)) {
-      assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
+      assertThat(sessionFolder(sessionId)).doesNotExist();
       assertThat(store.segmentExists(sessionId, "720p/segment0.m4s")).isFalse();
 
       prepared.publish();
@@ -525,7 +531,7 @@ class LocalSegmentStoreTest {
     try (var _ =
         appended(
             store.prepareSegment(sessionId, "720p/segment0.m4s"), "remote segment".getBytes())) {
-      assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
+      assertThat(sessionFolder(sessionId)).doesNotExist();
     }
 
     assertThat(tempDir).isEmptyDirectory();
@@ -581,7 +587,7 @@ class LocalSegmentStoreTest {
   // A soft link that names itself: looking the name up fails, so the file system can say neither
   // that a segment is stored there nor that none is.
   private void plantUnresolvableLink(UUID sessionId, String segmentName) throws IOException {
-    var link = store.getOutputDirectory(sessionId).resolve(segmentName);
+    var link = Files.createDirectories(sessionFolder(sessionId)).resolve(segmentName);
     Files.createSymbolicLink(link, link.getFileName());
   }
 
@@ -591,7 +597,7 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
     // A plain file squatting on the session directory path makes every write fail as real IO.
     Files.createDirectories(tempDir);
-    Files.writeString(tempDir.resolve(sessionId.toString()), "not a directory");
+    Files.writeString(sessionFolder(sessionId), "not a directory");
 
     // Deliberately NOT TranscodeException: the delivery loop swallows that type as a destroy
     // race, so a genuine storage failure must surface as UncheckedIOException instead.
@@ -611,14 +617,30 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should create variant subdirectory when variant label is not default")
-  void shouldCreateVariantSubdirWhenVariantLabelIsNotDefault() {
+  @DisplayName(
+      "Should store a variant's segment in a folder named by the variant's label when the segment"
+          + " is published")
+  void shouldStoreVariantsSegmentInFolderNamedByVariantsLabelWhenSegmentIsPublished() {
     var sessionId = UUID.randomUUID();
+    var segmentData = "720p segment".getBytes();
 
-    var variantDir = store.getOutputDirectory(sessionId, "720p");
+    store.storeSegment(sessionId, VARIANT_MEDIA_SEGMENT, segmentData);
 
-    assertThat(variantDir).exists().isDirectory();
-    assertThat(variantDir.getFileName()).hasToString("720p");
-    assertThat(variantDir).hasParentRaw(store.getOutputDirectory(sessionId));
+    assertThat(sessionFolder(sessionId).resolve("720p").resolve("segment0.m4s"))
+        .isRegularFile()
+        .hasBinaryContent(segmentData);
+    assertThat(StoredSegments.bytes(store, sessionId, VARIANT_MEDIA_SEGMENT))
+        .isEqualTo(segmentData);
+  }
+
+  // The folder layout on disk is a fixed contract: the start's leftover cleanup reads it.
+  private Path sessionFolder(UUID sessionId) {
+    return tempDir.resolve(sessionId.toString());
+  }
+
+  private static List<String> entryNames(Path folder) throws IOException {
+    try (var entries = Files.list(folder)) {
+      return entries.map(entry -> entry.getFileName().toString()).toList();
+    }
   }
 }
