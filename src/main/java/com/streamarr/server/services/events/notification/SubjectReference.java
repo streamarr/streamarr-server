@@ -16,6 +16,9 @@ public record SubjectReference(@NonNull String type, @NonNull UUID id) {
   /** One Profile. */
   public static final String PROFILE = "PROFILE";
 
+  /** One Household. */
+  public static final String HOUSEHOLD = "HOUSEHOLD";
+
   /** One ProfileManager invitation. */
   public static final String PROFILE_MANAGER_INVITATION = "PROFILE_MANAGER_INVITATION";
 
@@ -25,6 +28,10 @@ public record SubjectReference(@NonNull String type, @NonNull UUID id) {
 
   public static SubjectReference profile(UUID profileId) {
     return new SubjectReference(PROFILE, profileId);
+  }
+
+  public static SubjectReference household(UUID householdId) {
+    return new SubjectReference(HOUSEHOLD, householdId);
   }
 
   public static SubjectReference profileManagerInvitation(UUID invitationId) {

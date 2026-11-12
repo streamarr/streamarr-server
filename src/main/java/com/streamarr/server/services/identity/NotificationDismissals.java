@@ -5,6 +5,7 @@ import com.streamarr.server.services.events.notification.DismissNotificationsEve
 import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -35,6 +36,14 @@ class NotificationDismissals {
         .map(SubjectReference::profileManagerInvitation)
         .forEach(subjects::add);
     dismiss(DismissalSelector.bySubject(subjects).build());
+  }
+
+  /**
+   * Everything said about a Household about to be deleted, for every recipient. The shares into it
+   * are dismissed as each is deleted with it.
+   */
+  void householdDeleted(UUID householdId) {
+    dismiss(DismissalSelector.bySubject(Set.of(SubjectReference.household(householdId))).build());
   }
 
   private void dismiss(DismissalSelector selector) {

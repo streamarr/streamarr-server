@@ -16,11 +16,14 @@ import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdCommand;
+import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand;
+import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.ShareSteps;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds;
+import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.HouseholdNewsSnapshot;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.InvitationReceivedSnapshot;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.ManagementRemovedSnapshot;
 import com.streamarr.server.support.StoredNotificationRows;
@@ -134,6 +137,64 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
     BY_ITS_SOLE_MANAGER,
     BY_A_SERVER_ADMIN,
     WITH_ITS_HOUSEHOLD
+  }
+
+  @ParameterizedTest
+  @EnumSource(HouseholdDeletion.class)
+  @DisplayName("Should dismiss the Notifications about a Household when it is deleted")
+  void shouldDismissTheNotificationsAboutAHouseholdWhenItIsDeleted(HouseholdDeletion deletion) {
+    var lakeside = track(authTestSupport.createIdentity());
+    var deleted = SubjectReference.household(lakeside.household().getId());
+    var kept = SubjectReference.household(sam.household().getId());
+    tell(
+        SpecifiedOnlyNotificationKinds.HOUSEHOLD_NEWS,
+        deleted,
+        new HouseholdNewsSnapshot("Lakeside"));
+    tell(SpecifiedOnlyNotificationKinds.HOUSEHOLD_NEWS, kept, new HouseholdNewsSnapshot("Sam's"));
+
+    var outcome = delete(lakeside.household().getId(), deletion);
+
+    assertThat(outcome).isEqualTo(Outcome.accepted(lakeside.household().getId()));
+    assertThat(rows.about(deleted)).isEmpty();
+    assertThat(rows.about(kept)).hasSize(1);
+  }
+
+  /** What becomes of the final Account of a Household being deleted. */
+  enum HouseholdDeletion {
+    TRANSFER_ITS_LAST_ACCOUNT,
+    DELETE_ITS_LAST_ACCOUNT,
+    DELETE_ITS_LAST_ACCOUNT_KEEPING_ITS_PROFILE
+  }
+
+  private Outcome<?, ?> delete(UUID householdId, HouseholdDeletion deletion) {
+    var identity = authTestSupport.freshIdentityOf(serverAdmin);
+    var destinationId = serverAdmin.household().getId();
+    return switch (deletion) {
+      case TRANSFER_ITS_LAST_ACCOUNT ->
+          householdDeletion.transferLastAccountAndDeleteHousehold(
+              identity,
+              TransferLastAccountAndDeleteHouseholdCommand.builder()
+                  .householdId(householdId)
+                  .destinationHouseholdId(destinationId)
+                  .reason("closing")
+                  .build());
+      case DELETE_ITS_LAST_ACCOUNT ->
+          householdDeletion.deleteLastAccountAndHousehold(
+              identity,
+              DeleteLastAccountAndHouseholdCommand.builder()
+                  .householdId(householdId)
+                  .reason("closing")
+                  .build());
+      case DELETE_ITS_LAST_ACCOUNT_KEEPING_ITS_PROFILE ->
+          householdDeletion.deleteLastAccountAndHouseholdPreservingPersonalProfile(
+              identity,
+              DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand.builder()
+                  .householdId(householdId)
+                  .destinationHouseholdId(destinationId)
+                  .replacementManagerAccountId(serverAdmin.account().getId())
+                  .reason("closing")
+                  .build());
+    };
   }
 
   private Outcome<?, ?> delete(Profile profile, ProfileDeletion deletion) {
