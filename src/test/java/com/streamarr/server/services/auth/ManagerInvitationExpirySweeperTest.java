@@ -59,7 +59,8 @@ class ManagerInvitationExpirySweeperTest {
         .containsExactly(
             new ProfileManagerInvitationChangedEvent(
                 ChangedManagerInvitation.of(lapsing),
-                new ManagerInvitationAction.StoppedWaiting()));
+                new ManagerInvitationAction.StoppedWaiting(),
+                currentTime.get()));
   }
 
   @Test

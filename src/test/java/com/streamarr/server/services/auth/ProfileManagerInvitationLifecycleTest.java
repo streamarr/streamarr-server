@@ -48,20 +48,70 @@ class ProfileManagerInvitationLifecycleTest {
     assertThat(announced())
         .containsExactlyInAnyOrder(
             new ProfileManagerInvitationChangedEvent(
-                ChangedManagerInvitation.of(first), new ManagerInvitationAction.StoppedWaiting()),
+                ChangedManagerInvitation.of(first),
+                new ManagerInvitationAction.StoppedWaiting(),
+                NOW),
             new ProfileManagerInvitationChangedEvent(
-                ChangedManagerInvitation.of(second), new ManagerInvitationAction.StoppedWaiting()));
+                ChangedManagerInvitation.of(second),
+                new ManagerInvitationAction.StoppedWaiting(),
+                NOW));
   }
 
   @Test
   @DisplayName("Should announce the new invitation when a manager issues one")
   void shouldAnnounceTheNewInvitationWhenAManagerIssuesOne() {
-    var issued = lifecycle.issue(pending().build());
+    var issued = lifecycle.issue(pending().build(), NOW);
 
     assertThat(announced())
         .containsExactly(
             new ProfileManagerInvitationChangedEvent(
-                ChangedManagerInvitation.of(issued), new ManagerInvitationAction.Issued()));
+                ChangedManagerInvitation.of(issued), new ManagerInvitationAction.Issued(), NOW));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("timedWrites")
+  @DisplayName(
+      "Should announce the instant its write took and the expiry when a write changes an"
+          + " invitation")
+  void shouldAnnounceTheInstantItsWriteTookAndTheExpiryWhenAWriteChangesAnInvitation(
+      String write,
+      Instant expiresAt,
+      BiConsumer<ProfileManagerInvitationLifecycle, ProfileManagerInvitation> change) {
+    var invitation = invitations.save(pending().expiresAt(expiresAt).build());
+
+    change.accept(lifecycle, invitation);
+
+    assertThat(announced())
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.changedAt()).isEqualTo(NOW);
+              assertThat(event.invitation().expiresAt()).isEqualTo(expiresAt);
+            });
+  }
+
+  // Every write at NOW: each that changes one invitation, a new invitation issued like the arranged
+  // one, a newer invitation to its address, and the sweep of one whose time ran out.
+  static Stream<Arguments> timedWrites() {
+    var live = NOW.plusSeconds(3600);
+    return Stream.concat(
+        singleInvitationWrites().map(write -> Arguments.of(write.get()[0], live, write.get()[3])),
+        Stream.of(
+            timedWrite(
+                "issue",
+                live,
+                (lifecycle, invitation) ->
+                    lifecycle.issue(pending().expiresAt(invitation.getExpiresAt()).build(), NOW)),
+            timedWrite(
+                "replace by a newer invitation to the address",
+                live,
+                (lifecycle, invitation) ->
+                    lifecycle.invalidatePendingByProfileIdAndRecipientEmail(
+                        invitation.getProfileId(), invitation.getRecipientEmail(), REASON, NOW)),
+            timedWrite(
+                "expire one whose time ran out",
+                NOW.minusSeconds(1),
+                (lifecycle, _) -> lifecycle.expireLapsed(NOW))));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -179,6 +229,13 @@ class ProfileManagerInvitationLifecycleTest {
             (lifecycle, invitation) ->
                 lifecycle.invalidatePendingByRecipientAccountId(
                     invitation.getRecipientAccountId(), REASON, NOW)));
+  }
+
+  private static Arguments timedWrite(
+      String name,
+      Instant expiresAt,
+      BiConsumer<ProfileManagerInvitationLifecycle, ProfileManagerInvitation> change) {
+    return Arguments.of(name, expiresAt, change);
   }
 
   private static Arguments write(

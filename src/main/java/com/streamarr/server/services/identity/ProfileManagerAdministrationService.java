@@ -148,7 +148,8 @@ public class ProfileManagerAdministrationService {
                       .expiresAt(now.plus(invitationLifetime.invitationLifetime()))
                       .publicId(issued.publicId())
                       .secretDigest(issued.digest())
-                      .build());
+                      .build(),
+                  now);
           return new IssuedManagerInvitation(invitation, issued.code());
         },
         _ -> Optional.empty());
