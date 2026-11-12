@@ -475,6 +475,99 @@ class SegmentFolderLeftoversTest {
     assertThat(movie).hasBinaryContent(MEDIA);
   }
 
+  // On a case-insensitive file system the table can spell the folder otherwise than the start's
+  // path does, with as many folders: /data/segments for /data/SEGMENTS. A soft link of the same
+  // depth gives the folder such a second path on any file system.
+  @Test
+  @DisplayName(
+      "Should refuse the folder and keep what is mounted there when the mount table names the folder"
+          + " by another path")
+  void shouldRefuseTheFolderAndKeepWhatIsMountedThereWhenTheMountTableNamesTheFolderByAnotherPath()
+      throws IOException {
+    var folder = Files.createDirectory(outside.resolve("segments"));
+    startOf(folder);
+    var session = leftSessionIn(folder);
+    var movie =
+        Files.write(Files.createDirectory(session.resolve("library")).resolve("movie.mkv"), MEDIA);
+    Files.createSymbolicLink(machine.resolve("segments"), folder);
+    var mountPointUnderTheOtherPath =
+        escapedRealPath(machine) + "/segments/" + session.getFileName() + "/library";
+
+    var outcome =
+        startOf(
+            leftoversOf(folder)
+                .mountTable(
+                    tableAt(
+                        machine.resolve("mountinfo"),
+                        """
+                        22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw
+                        41 22 8:1 /srv/media %s rw,relatime shared:1 - ext4 /dev/sda1 rw
+                        """
+                            .formatted(mountPointUnderTheOtherPath))));
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.MOUNT_POINT_INSIDE));
+    assertThat(movie).hasBinaryContent(MEDIA);
+  }
+
+  // A host that runs containers lists mounts below folders that only root can search, such as
+  // /var/lib/docker/overlay2/<id>/merged. The table's path to a mount in the segment folder leads
+  // through folders that the start searched to reach the folder.
+  @Test
+  @DisplayName(
+      "Should delete leftovers when the mount table lists a mount below a folder that the server"
+          + " cannot search")
+  void shouldDeleteLeftoversWhenTheMountTableListsAMountBelowAFolderThatTheServerCannotSearch()
+      throws IOException {
+    var folder = Files.createDirectories(outside.resolve("srv").resolve("segments"));
+    startOf(folder);
+    var session = leftSessionIn(folder);
+    var searchableOnlyByRoot = Files.createDirectory(machine.resolve("docker"));
+    Files.setPosixFilePermissions(
+        searchableOnlyByRoot, PosixFilePermissions.fromString("rw-------"));
+    assumeFalse(
+        Files.isExecutable(searchableOnlyByRoot), "folder permissions apply to the test user");
+
+    var outcome =
+        startOf(
+            leftoversOf(folder)
+                .mountTable(
+                    mountTableOf(
+                        """
+                        22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw
+                        41 22 0:52 / %s/overlay2/merged rw,relatime - overlay overlay rw,lowerdir=/l,upperdir=/u,workdir=/w
+                        """,
+                        searchableOnlyByRoot)));
+
+    assertThat(outcome).isEqualTo(new Deleted(1, 0));
+    assertThat(session).doesNotExist();
+  }
+
+  // A server's first start on a host that lists mounts in folders deeper than the new folder's.
+  @Test
+  @DisplayName(
+      "Should create and mark the folder when it does not exist yet and the mount table lists mounts"
+          + " deeper than its path")
+  void
+      shouldCreateAndMarkTheFolderWhenItDoesNotExistYetAndTheMountTableListsMountsDeeperThanItsPath()
+          throws IOException {
+    var folder = outside.resolve("segments");
+    var deeperMountsFolder = Files.createDirectory(machine.resolve("containers"));
+
+    var outcome =
+        startOf(
+            leftoversOf(folder)
+                .mountTable(
+                    mountTableOf(
+                        """
+                        22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw
+                        41 22 0:52 / %s/merged rw,relatime - overlay overlay rw,lowerdir=/l,upperdir=/u,workdir=/w
+                        """,
+                        deeperMountsFolder)));
+
+    assertThat(outcome).isEqualTo(new Deleted(0, 0));
+    assertThat(folder.resolve(MARK_NAME)).isRegularFile();
+  }
+
   @Test
   @DisplayName("Should refuse the folder when the mount table cannot be read")
   void shouldRefuseTheFolderWhenTheMountTableCannotBeRead() {

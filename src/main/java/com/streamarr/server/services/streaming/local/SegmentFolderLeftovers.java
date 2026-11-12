@@ -7,6 +7,7 @@ import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutco
 import java.io.IOException;
 import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
@@ -157,14 +158,32 @@ public class SegmentFolderLeftovers {
       return Optional.of(SegmentFolderRefusal.UNKNOWN_MOUNT_POINTS);
     }
 
-    var mountedInside =
-        mounts.mountPoints().stream()
-            .anyMatch(mountPoint -> mountPoint.startsWith(folder) && !mountPoint.equals(folder));
-    if (mountedInside) {
-      return Optional.of(SegmentFolderRefusal.MOUNT_POINT_INSIDE);
+    for (var mountPoint : mounts.mountPoints()) {
+      if (liesInside(mountPoint, folder)) {
+        return Optional.of(SegmentFolderRefusal.MOUNT_POINT_INSIDE);
+      }
     }
 
     return mediaFolderLocationRefusal(folder, mediaFolders, mounts);
+  }
+
+  // The table spells a path as the kernel does. A case-insensitive file system lets the kernel's
+  // spelling of the folder differ from its real path in its names but not in their number, so the
+  // mount point's folder at the folder's depth is compared with the folder as a file. That spelling
+  // leads through the folders that the start searched to reach the folder, so a path that the start
+  // cannot search, or that does not exist, is not the folder.
+  private static boolean liesInside(Path mountPoint, Path folder) throws IOException {
+    if (mountPoint.getNameCount() <= folder.getNameCount()) {
+      return false;
+    }
+
+    var atTheFoldersDepth =
+        mountPoint.getRoot().resolve(mountPoint.subpath(0, folder.getNameCount()));
+    try {
+      return Files.isSameFile(atTheFoldersDepth, folder);
+    } catch (AccessDeniedException | NoSuchFileException _) {
+      return false;
+    }
   }
 
   // A bind mount of a folder in a library, or a second mount of a library's file system, gives the
