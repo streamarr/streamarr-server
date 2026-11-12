@@ -39,6 +39,20 @@ class NotificationDismissals {
    * offer's time has run out, which reads as history.
    */
   void householdAdminRoleLost(UUID accountId, UUID householdId, Instant now) {
+    dismissWaitingRequestsAboutOffersInto(householdId, accountId, now);
+  }
+
+  /**
+   * The Account moved out of the Household. A HouseholdAdmin's waiting requests about the offers
+   * still pending into it go as on a demotion; a HouseholdMember was told none, so the role that it
+   * held there needs no reading.
+   */
+  void accountLeftHousehold(UUID accountId, UUID householdId, Instant now) {
+    dismissWaitingRequestsAboutOffersInto(householdId, accountId, now);
+  }
+
+  private void dismissWaitingRequestsAboutOffersInto(
+      UUID householdId, UUID accountId, Instant now) {
     var offers = shareRepository.findPendingOfferIdsInto(householdId, now);
     if (offers.isEmpty()) {
       return;

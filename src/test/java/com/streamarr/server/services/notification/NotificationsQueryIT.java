@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -26,6 +27,8 @@ import com.streamarr.server.services.events.notification.SharingNotificationKind
 import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.identity.AccountAdministrationService;
+import com.streamarr.server.services.identity.AccountLifecycleService;
+import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
@@ -87,6 +90,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ProfileSharingService sharing;
   @Autowired private AccountAdministrationService accountAdministration;
+  @Autowired private AccountLifecycleService accountLifecycle;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
@@ -572,6 +576,68 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
         .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("EXPIRED"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the waiting requests out when their recipient's Account moves to another"
+          + " Household, and keep the other HouseholdAdmins' requests")
+  void shouldLeaveTheWaitingRequestsOutWhenTheirRecipientsAccountMovesToAnotherHousehold()
+      throws Exception {
+    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+
+    moveToSamsHousehold(riversideAdmin);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(0)));
+    assertThat(rows.about(SubjectReference.profileShare(offer.getId())))
+        .extracting(StoredNotificationRows.Row::recipient)
+        .containsExactly(accountOf(riverside));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep its news and its resolved requests when a HouseholdAdmin's Account moves to"
+          + " another Household")
+  void shouldKeepItsNewsAndResolvedRequestsWhenAHouseholdAdminMoves() throws Exception {
+    var ended = steps.accept(riverside, steps.offer(sam, sam.profile(), riverside));
+    sharing.endProfileShare(authTestSupport.identityOf(sam), ended.getId());
+    steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+
+    moveToSamsHousehold(riversideAdmin);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(1))
+        .andExpect(
+            jsonPath(
+                "$.data.notifications.edges[*].node.__typename",
+                contains("ProfileShareEndedNotification", "ProfileShareOfferedNotification")))
+        .andExpect(
+            jsonPath(
+                "$.data.notifications.edges[*].node.shareId",
+                contains(ended.getId().toString(), ended.getId().toString())));
+  }
+
+  /** A ServerAdmin moves the Account into Sam's Household, where it keeps visiting its old one. */
+  private void moveToSamsHousehold(TestIdentity account) {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    assertThat(
+            accountLifecycle.transferAccount(
+                authTestSupport.freshIdentityOf(serverAdmin),
+                TransferAccountCommand.builder()
+                    .accountId(account.account().getId())
+                    .destinationHouseholdId(sam.household().getId())
+                    .sourceHouseholdAccess(SourceHouseholdAccess.KEEP_AS_VISITOR)
+                    .reason("moved in with Sam")
+                    .build()))
+        .isInstanceOf(Outcome.Accepted.class);
   }
 
   /** A ServerAdmin takes the Account's HouseholdAdmin role away. */

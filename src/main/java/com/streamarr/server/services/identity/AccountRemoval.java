@@ -66,6 +66,7 @@ class AccountRemoval {
       throw new AccountRemovalConflictException();
     }
 
+    notificationDismissals.accountLeftHousehold(transfer.accountId(), sourceHouseholdId, now);
     profileRepository.rehomePersonalProfile(profileId, sourceHouseholdId, destinationHouseholdId);
     shareLifecycle.announceMove(profileId, sourceHouseholdId, destinationHouseholdId);
 
