@@ -283,6 +283,43 @@ class AccountLifecycleServiceTest {
     assertThat(structuralShareIn(destination.getId())).isPresent();
   }
 
+  @ParameterizedTest
+  @EnumSource(SourceHouseholdAccess.class)
+  @DisplayName(
+      "Should invalidate the Personal Profile's waiting manager invitations and offers when its"
+          + " Account transfers")
+  void shouldInvalidatePersonalProfilesWaitingInvitationsAndOffersWhenItsAccountTransfers(
+      SourceHouseholdAccess access) {
+    var invitation =
+        managerInvitations.save(
+            managerInvitation().profileId(mover.getPersonalProfileId()).build());
+    var offer = shares.save(shareOffer().profileId(mover.getPersonalProfileId()).build());
+    var unrelatedInvitation = managerInvitations.save(managerInvitation().build());
+    var unrelatedOffer = shares.save(shareOffer().build());
+
+    assertThat(
+            service.transferAccount(
+                identity(), transferCommand().sourceHouseholdAccess(access).build()))
+        .isEqualTo(Outcome.accepted(mover));
+
+    assertThat(managerInvitations.findById(invitation.getId()))
+        .get()
+        .extracting(saved -> saved.statusAt(NOW))
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(shares.findById(offer.getId()))
+        .get()
+        .extracting(ProfileHouseholdShare::getStatus)
+        .isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertThat(managerInvitations.findById(unrelatedInvitation.getId()))
+        .get()
+        .extracting(saved -> saved.statusAt(NOW))
+        .isEqualTo(ProfileManagerInvitationStatus.PENDING);
+    assertThat(shares.findById(unrelatedOffer.getId()))
+        .get()
+        .extracting(ProfileHouseholdShare::getStatus)
+        .isEqualTo(ProfileShareStatus.PENDING);
+  }
+
   @Test
   @DisplayName("Should reject the transfer when the destination is the current Household")
   void shouldRejectTransferWhenDestinationIsCurrentHousehold() {

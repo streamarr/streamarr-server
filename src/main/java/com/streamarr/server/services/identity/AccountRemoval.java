@@ -36,6 +36,7 @@ import org.springframework.stereotype.Component;
 class AccountRemoval {
 
   private static final String PROFILE_DELETED = "Profile deleted";
+  private static final String PROFILE_TRANSFERRED = "Profile transferred";
 
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
@@ -72,7 +73,14 @@ class AccountRemoval {
 
     updateSourceHouseholdAccess(transfer);
     shareLifecycle.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
+    invalidateWaitingProposalsOfMovedProfile(profileId, now);
     shareCodeIssuers.afterIssuerChanged(transfer.accountId(), now);
+  }
+
+  // Runs after the destination share is in place: a waiting offer into the destination became it.
+  private void invalidateWaitingProposalsOfMovedProfile(UUID profileId, Instant now) {
+    managerInvitationLifecycle.invalidatePendingByProfileId(profileId, PROFILE_TRANSFERRED, now);
+    shareLifecycle.invalidatePendingByProfileId(profileId, PROFILE_TRANSFERRED, now);
   }
 
   private HouseholdRole destinationRole(UUID householdId) {
@@ -157,6 +165,7 @@ class AccountRemoval {
             share -> shareLifecycle.tryEndActive(share.getId(), deletion.sourceShareEnding(), now));
     shareLifecycle.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
     shareLifecycle.convertMembershipShareToVisitorShare(profileId, destinationHouseholdId);
+    invalidateWaitingProposalsOfMovedProfile(profileId, now);
   }
 
   /** Deletes an unlinked Profile with its selections and pending Profile-bound artifacts. */
