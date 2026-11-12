@@ -139,6 +139,21 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should answer the expiry to the microsecond, as PostgreSQL stores it, when the clock reads"
+          + " nanoseconds")
+  void shouldAnswerTheExpiryToTheMicrosecondAsPostgresStoresItWhenTheClockReadsNanoseconds() {
+    var fine = Clock.fixed(NOW.plusNanos(445_953_526), ZoneOffset.UTC);
+
+    var issued =
+        issued(
+            serviceAt(fine).inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
+
+    assertThat(issued.invitation().getExpiresAt())
+        .isEqualTo(NOW.plusNanos(445_953_000).plus(INVITATION_LIFETIME));
+  }
+
+  @Test
   @DisplayName("Should cancel a pending invitation when its inviter acts")
   void shouldCancelPendingInvitationWhenInviterActs() {
     var issued =

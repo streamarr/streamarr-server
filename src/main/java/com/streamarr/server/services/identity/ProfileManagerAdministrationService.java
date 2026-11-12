@@ -29,6 +29,7 @@ import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
 import java.time.Clock;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -111,7 +112,8 @@ public class ProfileManagerAdministrationService {
             .map(UserAccount::getDisplayName)
             .orElse("");
     var issued = opaqueCodes.issue();
-    var now = clock.instant();
+    // To the microsecond PostgreSQL keeps, so the answer's expiry is the one every read shows.
+    var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
     return mutationTransactions.write(
         () -> {
           // With the invitee's own Profile, in one global order: two Accounts may invite each
