@@ -87,7 +87,8 @@ import org.junit.jupiter.params.provider.ValueSource;
  * 10.0 encode to HDR10 for a client that declares PQ. A PQ encode carries the source's static HDR
  * metadata, or a P3 D65 display of 1000 and 0.0001 cd/m² and a content light level of 0, which
  * means unknown. H.264 output stays 8-bit SDR in every case. A PQ or HLG encode on a software
- * encoder comes before an SDR encode of a codec family that a worker encodes in hardware.
+ * encoder comes before an SDR encode of a codec family that a worker encodes in hardware, and a
+ * 10-bit SDR encode on a software encoder does not.
  */
 @Tag("UnitTest")
 @DisplayName("10-Bit And HDR Encode Tests")
@@ -1013,6 +1014,31 @@ class TenBitAndHdrEncodeTest {
     assertThat(plannedEncode().dynamicRange()).isEqualTo(rangeOf(CompatibleBase.PQ));
     assertThat(workerOfTheStartedEncode()).contains(HARDWARE_WORKER);
     assertThat(multivariantPlaylist(encode)).contains(",VIDEO-RANGE=PQ");
+  }
+
+  // A PQ or HLG encode moves ahead for its range, not for its 10 bits: a codec family that a worker
+  // encodes in hardware still comes before a 10-bit SDR encode of a software codec family (ADR 0009
+  // and decision 179). 720p forces an encode, because the client's HEVC entry plays the 1080p
+  // 10-bit SDR source as it is.
+  @Test
+  @DisplayName(
+      "Should encode a 10-bit SDR source to 8-bit SDR in the hardware encoder's codec family when"
+          + " only a software encoder of another codec family writes 10 bits")
+  void
+      shouldEncodeA10BitSdrSourceTo8BitSdrInTheHardwareCodecFamilyWhenOnlyASoftwareEncoderWrites10Bits() {
+    connectAHardwareWorkerBesideASoftwareHdrWorker(
+        HardwareSdrEncoder.OF_ANOTHER_CODEC_FAMILY.writing(Set.of()));
+    probes.setDefaultProbe(
+        hdrSource(rangeOf(CompatibleBase.SDR), Optional.empty(), Optional.empty()));
+
+    var encode =
+        accepted(
+            playback.start(
+                start(options(VideoQuality.HIGH_720P, null), hdrAv1ClientWithSdrHevc())));
+
+    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.HEVC_MAIN);
+    assertThatAn8BitSdrEncodePlays(encode);
+    assertThat(workerOfTheStartedEncode()).contains(HARDWARE_WORKER);
   }
 
   // The codec family of the hardware encoder beside the software AV1 encoder that writes HDR: HEVC,
