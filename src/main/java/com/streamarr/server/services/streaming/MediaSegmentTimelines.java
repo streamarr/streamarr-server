@@ -2,7 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.DemuxerSeekTime;
 import com.streamarr.server.domain.streaming.ExactSegmentStarts;
-import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
@@ -55,22 +55,19 @@ final class MediaSegmentTimelines {
 
   private static Optional<ExactSegmentStarts> copyStartsOf(
       StreamSession session, MediaSegmentTimeline.StreamCopy copy) {
-    if (!(session.getMediaProbe().keyframes() instanceof KeyframeKnowledge.Known(var positions))) {
-      return Optional.empty();
-    }
-
-    return Optional.of(copy.exactStartsIn(positions));
+    return session.getMediaProbe().keyframes().usablePositions().map(copy::exactStartsIn);
   }
 
   // Without the keyframes, the worker reads from one period before the attempt's first segment.
   private static MediaSegmentTimeline encodeOf(MediaProbe probe, StreamingProperties properties) {
     var grid = of(probe, properties);
-    if (!(probe.keyframes() instanceof KeyframeKnowledge.Known(var positions))) {
+    var positions = probe.keyframes().usablePositions();
+    if (positions.isEmpty()) {
       return grid;
     }
 
     return new MediaSegmentTimeline.KeyframeSeekingGrid(
-        grid, positions, DemuxerSeekTime.of(probe.containerFormat()));
+        grid, positions.get(), DemuxerSeekTime.of(probe.containerFormat()));
   }
 
   /**
@@ -79,11 +76,14 @@ final class MediaSegmentTimelines {
    */
   static Optional<MediaSegmentTimeline.StreamCopy> streamCopyOf(
       MediaProbe probe, StreamingProperties properties) {
-    if (!(probe.keyframes() instanceof KeyframeKnowledge.Known(var positions))) {
-      return Optional.empty();
-    }
+    return probe
+        .keyframes()
+        .usablePositions()
+        .flatMap(positions -> streamCopyOf(positions, of(probe, properties)));
+  }
 
-    var grid = of(probe, properties);
+  private static Optional<MediaSegmentTimeline.StreamCopy> streamCopyOf(
+      KeyframePositions positions, MediaSegmentTimeline.PlainGrid grid) {
     if (!(KeyframeSegmentBoundaries.forStreamCopy(positions, grid.targetSegmentDurationSeconds())
         instanceof StreamCopySegments.Starts starts)) {
       return Optional.empty();

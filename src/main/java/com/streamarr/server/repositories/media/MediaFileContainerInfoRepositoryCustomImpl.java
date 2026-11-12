@@ -11,6 +11,7 @@ import static com.streamarr.server.jooq.generated.tables.MediaFileStreamMeasurem
 import static com.streamarr.server.repositories.media.StoredOutcomeConditions.snapshotMatches;
 
 import com.streamarr.server.domain.media.ItemFailureReason;
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.Chapter;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
@@ -95,32 +96,84 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   @Override
   @Transactional
   public boolean publishKeyframePacketScan(KeyframePacketScanPublication publication) {
-    var changes = dsl.newRecord(MEDIA_FILE_CONTAINER_INFO);
-    setKeyframeStatus(changes, publication.keyframes());
-    changes.setKeyframePacketScanReason(null);
-    var updated =
-        dsl.update(MEDIA_FILE_CONTAINER_INFO)
-            .set(changes)
-            .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(publication.mediaFileId()))
-            .and(snapshotMatches(publication.snapshot()))
-            .and(MEDIA_FILE_CONTAINER_INFO.PROBE_VERSION.eq(publication.probeVersion()))
-            .and(needsPacketScan())
-            .execute();
-    if (updated == 0) {
+    var mediaFileId = publication.mediaFileId();
+    if (!lockOwedPacketScan(
+        mediaFileId, new ProbeInputs(publication.snapshot(), publication.probeVersion()))) {
       return false;
     }
 
-    if (publication.keyframes() instanceof KeyframeKnowledge.Known(var positions)) {
-      insertKeyframePositions(publication.mediaFileId(), positions);
+    replaceKeyframes(mediaFileId, publication.keyframes());
+    return true;
+  }
+
+  @Override
+  @Transactional
+  public boolean publishKeyframePacketScanFailure(UUID mediaFileId, ProbeInputs inputs) {
+    if (!lockOwedPacketScan(mediaFileId, inputs)) {
+      return false;
     }
 
-    measurementRows.deleteNotFollowingStoredOutcome(publication.mediaFileId());
+    if (tryLetKeptPositionsStand(mediaFileId)) {
+      return true;
+    }
+
+    replaceKeyframes(
+        mediaFileId,
+        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
     return true;
+  }
+
+  // Packet scans that all timed out or got no usable reply say nothing about the stream, and an
+  // earlier packet scan read the kept positions from the same bytes. They therefore stand as the
+  // outcome's known positions, and only the owed scan ends. False when the outcome keeps no
+  // positions.
+  private boolean tryLetKeptPositionsStand(UUID mediaFileId) {
+    return dsl.update(MEDIA_FILE_CONTAINER_INFO)
+            .set(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_STATUS, KeyframeStatus.KNOWN.name())
+            .setNull(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_PACKET_SCAN_REASON)
+            .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
+            .andExists(
+                dsl.selectOne()
+                    .from(MEDIA_FILE_KEYFRAME_POSITIONS)
+                    .where(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID.eq(mediaFileId)))
+            .execute()
+        > 0;
+  }
+
+  // Every writer of a file's stored outcome takes the media file's row lock first. A scan result
+  // and a new probe of the same file are therefore stored one after the other, and the later one
+  // reads what the earlier one committed.
+  private boolean lockOwedPacketScan(UUID mediaFileId, ProbeInputs inputs) {
+    return lockedPacketScanInputs(mediaFileId).filter(inputs::equals).isPresent();
+  }
+
+  // The caller holds the media file's row lock. Positions kept from an earlier probe version's
+  // scan go first, because a positions row never stands beside unavailable keyframes.
+  private void replaceKeyframes(UUID mediaFileId, KeyframeKnowledge keyframes) {
+    dsl.deleteFrom(MEDIA_FILE_KEYFRAME_POSITIONS)
+        .where(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID.eq(mediaFileId))
+        .execute();
+    var changes = dsl.newRecord(MEDIA_FILE_CONTAINER_INFO);
+    setKeyframeStatus(changes, keyframes);
+    changes.setKeyframePacketScanReason(null);
+    dsl.update(MEDIA_FILE_CONTAINER_INFO)
+        .set(changes)
+        .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
+        .execute();
+    if (keyframes instanceof KeyframeKnowledge.Known(var positions)) {
+      insertKeyframePositions(mediaFileId, positions);
+    }
+
+    measurementRows.deleteNotFollowingStoredOutcome(mediaFileId);
   }
 
   @Override
   @Transactional(propagation = Propagation.MANDATORY)
   public Optional<ProbeInputs> lockPacketScanInputs(UUID mediaFileId) {
+    return lockedPacketScanInputs(mediaFileId);
+  }
+
+  private Optional<ProbeInputs> lockedPacketScanInputs(UUID mediaFileId) {
     if (!lockMediaFile(mediaFileId)) {
       return Optional.empty();
     }
@@ -262,15 +315,26 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
     return switch (KeyframeStatus.valueOf(status)) {
       case KNOWN -> new KeyframeKnowledge.Known(toKeyframePositions(row));
-      case PACKET_SCAN_REQUIRED ->
-          new KeyframeKnowledge.PacketScanRequired(
-              KeyframePacketScanReason.valueOf(
-                  row.get(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_PACKET_SCAN_REASON)));
+      case PACKET_SCAN_REQUIRED -> packetScanRequired(row);
       case UNAVAILABLE ->
           new KeyframeKnowledge.Unavailable(
               KeyframesUnavailableReason.valueOf(
                   row.get(MEDIA_FILE_CONTAINER_INFO.KEYFRAMES_UNAVAILABLE_REASON)));
     };
+  }
+
+  // A positions row beside an outcome that requires a packet scan holds the positions that it kept
+  // from an earlier scan.
+  private static KeyframeKnowledge packetScanRequired(Record row) {
+    var reason =
+        KeyframePacketScanReason.valueOf(
+            row.get(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_PACKET_SCAN_REASON));
+    if (row.get(MEDIA_FILE_KEYFRAME_POSITIONS.ENCODED_TIMES) == null) {
+      return new KeyframeKnowledge.PacketScanRequired(reason);
+    }
+
+    return new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+        reason, toKeyframePositions(row));
   }
 
   private static KeyframePositions toKeyframePositions(Record row) {
@@ -559,6 +623,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   private void replaceOutcome(ProbePublication publication) {
     var mediaFileId = publication.mediaFileId();
     clearFailure(mediaFileId, DSL.noCondition());
+    var keptPositions = scannedPositionsToKeep(publication);
     dsl.deleteFrom(MEDIA_FILE_CONTAINER_INFO)
         .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(mediaFileId))
         .execute();
@@ -605,6 +670,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
       insertKeyframePositions(mediaFileId, positions);
     }
 
+    keptPositions.ifPresent(positions -> insertKeyframePositions(mediaFileId, positions));
     measurementRows.deleteNotFollowingStoredOutcome(mediaFileId);
 
     if (container.chapters() instanceof ChapterKnowledge.Known(var chapters)
@@ -616,6 +682,52 @@ public class MediaFileContainerInfoRepositoryCustomImpl
         measured ->
             measurementRows.replace(
                 mediaFileId, snapshotMatches(publication.snapshot()), measured));
+  }
+
+  // A packet scan read its positions from the source's bytes. They therefore outlive a new probe
+  // of the unchanged source that requires a packet scan again, until that scan stores its own. They
+  // are dropped when the new probe chooses another video stream, when the stored outcome's probe
+  // version lies off the current keyframe timeline, and when they cannot be decoded. The
+  // publication's probe version is never below the stored one, so it lies on that timeline too.
+  // The caller holds the media file's row lock and deletes the stored outcome next.
+  private Optional<KeyframePositions> scannedPositionsToKeep(ProbePublication publication) {
+    if (!(publication.outcome() instanceof ProbeOutcome.Success success)
+        || !(success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired)
+        || success.chosenVideoStream().isEmpty()) {
+      return Optional.empty();
+    }
+
+    return dsl.select(
+            MEDIA_FILE_CONTAINER_INFO.PROBE_VERSION,
+            MEDIA_FILE_KEYFRAME_POSITIONS.STREAM_INDEX,
+            MEDIA_FILE_KEYFRAME_POSITIONS.TIME_BASE_NUMERATOR,
+            MEDIA_FILE_KEYFRAME_POSITIONS.TIME_BASE_DENOMINATOR,
+            MEDIA_FILE_KEYFRAME_POSITIONS.KEYFRAME_COUNT,
+            MEDIA_FILE_KEYFRAME_POSITIONS.ENCODED_TIMES,
+            MEDIA_FILE_KEYFRAME_POSITIONS.SOURCE)
+        .from(MEDIA_FILE_KEYFRAME_POSITIONS)
+        .join(MEDIA_FILE_CONTAINER_INFO)
+        .on(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID))
+        .where(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID.eq(publication.mediaFileId()))
+        .and(snapshotMatches(publication.snapshot()))
+        .and(MEDIA_FILE_KEYFRAME_POSITIONS.SOURCE.eq(KeyframePositionSource.PACKET_SCAN.name()))
+        .and(
+            MEDIA_FILE_KEYFRAME_POSITIONS.STREAM_INDEX.eq(
+                success.chosenVideoStream().get().streamIndex()))
+        .fetchOptional()
+        .filter(
+            row ->
+                ProbeVersion.isOnCurrentKeyframeTimeline(
+                    row.get(MEDIA_FILE_CONTAINER_INFO.PROBE_VERSION)))
+        .flatMap(MediaFileContainerInfoRepositoryCustomImpl::decodablePositions);
+  }
+
+  private static Optional<KeyframePositions> decodablePositions(Record row) {
+    try {
+      return Optional.of(toKeyframePositions(row));
+    } catch (MalformedKeyframePositionsException _) {
+      return Optional.empty();
+    }
   }
 
   private static void setChapterStatus(
@@ -651,16 +763,23 @@ public class MediaFileContainerInfoRepositoryCustomImpl
       MediaFileContainerInfoRecord row, KeyframeKnowledge keyframes) {
     switch (keyframes) {
       case KeyframeKnowledge.Known _ -> row.setKeyframeStatus(KeyframeStatus.KNOWN.name());
-      case KeyframeKnowledge.PacketScanRequired(var reason) -> {
-        row.setKeyframeStatus(KeyframeStatus.PACKET_SCAN_REQUIRED.name());
-        row.setKeyframePacketScanReason(reason.name());
-      }
+      case KeyframeKnowledge.PacketScanRequired(var reason) -> setPacketScanRequired(row, reason);
+      // Which positions an outcome keeps is the repository's decision, so a publication that names
+      // kept positions stores only the packet scan that it requires.
+      case KeyframeKnowledge.PacketScanRequiredWithKeptPositions(var reason, _) ->
+          setPacketScanRequired(row, reason);
       case KeyframeKnowledge.Unavailable(var reason) -> {
         row.setKeyframeStatus(KeyframeStatus.UNAVAILABLE.name());
         row.setKeyframesUnavailableReason(reason.name());
       }
       case KeyframeKnowledge.NotReported _ -> row.setKeyframeStatus(null);
     }
+  }
+
+  private static void setPacketScanRequired(
+      MediaFileContainerInfoRecord row, KeyframePacketScanReason reason) {
+    row.setKeyframeStatus(KeyframeStatus.PACKET_SCAN_REQUIRED.name());
+    row.setKeyframePacketScanReason(reason.name());
   }
 
   private void insertKeyframePositions(UUID mediaFileId, KeyframePositions positions) {

@@ -2,7 +2,6 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -169,11 +168,7 @@ final class VideoCopyBandwidth {
   }
 
   private static Optional<KeyframePositions> keyframePositions(MediaProbe source) {
-    if (source.keyframes() instanceof KeyframeKnowledge.Known(var positions)) {
-      return Optional.of(positions);
-    }
-
-    return Optional.empty();
+    return source.keyframes().usablePositions();
   }
 
   private static boolean followsKeyframes(MeasuredStream stream, KeyframePositions positions) {

@@ -17,6 +17,14 @@ public final class ProbeVersion {
   // result.
   public static final int CURRENT = 8;
 
+  // The first probe version whose keyframe positions count from the current media time zero, the
+  // container start time that the probe reads (ADR 0032). Every version from this one through
+  // CURRENT places media time zero at the same instant, so the positions that a keyframe packet
+  // scan read under one of them stay valid under the others. A probe version that moves media time
+  // zero takes this constant, and the server then drops the positions that an earlier version's
+  // scan read. Version 3 is the first to report keyframe positions.
+  public static final int FIRST_ON_CURRENT_KEYFRAME_TIMELINE = 3;
+
   public static final int FIRST_TO_REPORT_CHAPTERS = 4;
 
   // The chosen video stream, its frame-rate rule, and each stream's dynamic range, bit depth,
@@ -46,4 +54,9 @@ public final class ProbeVersion {
   // job names. The server sends a job that names a layout of 3, 4, 7 or 8 channels only to such a
   // worker.
   public static final int FIRST_TO_ENCODE_NAMED_LAYOUTS = 7;
+
+  /** Whether the probe version places media time zero where the current probe version does. */
+  public static boolean isOnCurrentKeyframeTimeline(int probeVersion) {
+    return probeVersion >= FIRST_ON_CURRENT_KEYFRAME_TIMELINE;
+  }
 }

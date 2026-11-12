@@ -764,16 +764,19 @@ public class TranscodeDecisionService {
   }
 
   // A stream copy's segments can start only at source keyframes (ADR 0037), so the video is copied
-  // only when the known keyframes open its segment list. A slot without a keyframe merges into the
-  // segment before it. Each segment starts at its keyframe's stored tick, which a copy keeps only
-  // when FFmpeg makes no start time correction, as no stored probe outcome carries one yet.
+  // only when the known keyframes, or those kept from an earlier packet scan, open its segment
+  // list. A slot without a keyframe merges into the segment before it. Each segment starts at its
+  // keyframe's stored tick, which a copy keeps only when FFmpeg makes no start time correction, as
+  // no stored probe outcome carries one yet.
   private Optional<StreamCopyRefusal> streamCopyRefusal(MediaProbe source) {
     return switch (source.keyframes()) {
-      case KeyframeKnowledge.Known _
+      case KeyframeKnowledge.Known _, KeyframeKnowledge.PacketScanRequiredWithKeptPositions _
           when StartTimeCorrections.isCorrectedBy(source.containerFormat()) ->
           Optional.of(StreamCopyRefusal.NO_START_TIME_CORRECTION);
       case KeyframeKnowledge.Known(var positions) ->
           streamCopyRefusal(positions, MediaSegmentTimelines.of(source, properties));
+      case KeyframeKnowledge.PacketScanRequiredWithKeptPositions(_, var keptPositions) ->
+          streamCopyRefusal(keptPositions, MediaSegmentTimelines.of(source, properties));
       case KeyframeKnowledge.PacketScanRequired _ ->
           Optional.of(StreamCopyRefusal.PACKET_SCAN_REQUIRED);
       case KeyframeKnowledge.Unavailable _ -> Optional.of(StreamCopyRefusal.KEYFRAMES_UNAVAILABLE);

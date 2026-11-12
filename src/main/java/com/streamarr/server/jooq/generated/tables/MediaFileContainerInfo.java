@@ -255,6 +255,12 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
      */
     public final TableField<MediaFileContainerInfoRecord, String> MAJOR_BRAND = createField(DSL.name("major_brand"), SQLDataType.CLOB, this, "");
 
+    /**
+     * The column
+     * <code>public.media_file_container_info.keyframe_positions_admitted</code>.
+     */
+    public final TableField<MediaFileContainerInfoRecord, Boolean> KEYFRAME_POSITIONS_ADMITTED = createField(DSL.name("keyframe_positions_admitted"), SQLDataType.BOOLEAN, this, "");
+
     private MediaFileContainerInfo(Name alias, Table<MediaFileContainerInfoRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -331,7 +337,7 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
 
     @Override
     public List<UniqueKey<MediaFileContainerInfoRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.MEDIA_FILE_CONTAINER_INFO_CHAPTER_STATUS_KEY, Keys.MEDIA_FILE_CONTAINER_INFO_KEYFRAME_STATUS_KEY);
+        return Arrays.asList(Keys.MEDIA_FILE_CONTAINER_INFO_CHAPTER_STATUS_KEY, Keys.MEDIA_FILE_CONTAINER_INFO_KEYFRAME_POSITIONS_ADMITTED_KEY);
     }
 
     @Override
@@ -372,7 +378,7 @@ public class MediaFileContainerInfo extends TableImpl<MediaFileContainerInfoReco
      */
     public MediaFileKeyframePositionsPath mediaFileKeyframePositions() {
         if (_mediaFileKeyframePositions == null)
-            _mediaFileKeyframePositions = new MediaFileKeyframePositionsPath(this, null, Keys.MEDIA_FILE_KEYFRAME_POSITIONS__KEYFRAME_POSITIONS_REQUIRE_KNOWN_STATUS.getInverseKey());
+            _mediaFileKeyframePositions = new MediaFileKeyframePositionsPath(this, null, Keys.MEDIA_FILE_KEYFRAME_POSITIONS__KEYFRAME_POSITIONS_REQUIRE_ADMITTING_STATUS.getInverseKey());
 
         return _mediaFileKeyframePositions;
     }

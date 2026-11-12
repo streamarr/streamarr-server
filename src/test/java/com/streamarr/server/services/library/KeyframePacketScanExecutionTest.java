@@ -7,6 +7,8 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.ChosenVideoStream;
+import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
@@ -36,6 +38,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.BitrateScanRequesters;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;
@@ -200,6 +203,47 @@ class KeyframePacketScanExecutionTest {
     assertThat(scanRequests).isEmpty();
   }
 
+  @Test
+  @DisplayName(
+      "Should scan again when the stored outcome keeps the positions that an earlier probe"
+          + " version's scan read")
+  void shouldScanAgainWhenStoredOutcomeKeepsPositionsThatEarlierProbeVersionsScanRead() {
+    var request = storeOutcomeKeepingScannedPositions();
+    var scannedAgain =
+        new KeyframeKnowledge.Known(
+            KeyframePositions.builder()
+                .streamIndex(0)
+                .timeBaseNumerator(1)
+                .timeBaseDenominator(90_000)
+                .source(KeyframePositionSource.PACKET_SCAN)
+                .keyframes(
+                    List.of(new KeyframePosition(0, 0), new KeyframePosition(180_000, 180_000)))
+                .build());
+    scanner = scanAnswering(success(scannedAgain));
+
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new KeyframePacketScanResult.Completed());
+    assertThat(scanRequests).hasSize(1);
+    assertThat(storedKeyframes()).isEqualTo(scannedAgain);
+  }
+
+  @Test
+  @DisplayName(
+      "Should drop the kept positions when the scan of the new probe version ends in a media"
+          + " error")
+  void shouldDropKeptPositionsWhenScanOfNewProbeVersionEndsInMediaError() {
+    var request = storeOutcomeKeepingScannedPositions();
+    scanner = scanAnswering(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA));
+
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new KeyframePacketScanResult.Completed());
+    assertThat(storedKeyframes())
+        .isEqualTo(
+            new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR));
+  }
+
   // A scan requested under an earlier version is still queued when the server upgrades.
   @ParameterizedTest
   @ValueSource(ints = {ProbeVersion.CURRENT - 1, ProbeVersion.CURRENT + 1})
@@ -319,7 +363,11 @@ class KeyframePacketScanExecutionTest {
   }
 
   private static Stream<KeyframeKnowledge> keyframesThatNoPacketScanReports() {
-    return Stream.of(packetScanRequired(), new KeyframeKnowledge.NotReported());
+    return Stream.of(
+        packetScanRequired(),
+        new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+            KeyframePacketScanReason.NO_CONTAINER_INDEX, SCANNED_POSITIONS),
+        new KeyframeKnowledge.NotReported());
   }
 
   private KeyframePacketScanExecution execution() {
@@ -381,6 +429,54 @@ class KeyframePacketScanExecutionTest {
     return KeyframePacketScanTaskRequest.builder()
         .mediaFileId(file.getId())
         .filepathUri(file.getFilepathUri())
+        .snapshot(snapshot)
+        .probeVersion(probeVersion)
+        .build();
+  }
+
+  // An outcome of the current probe version that keeps the positions that the earlier version's
+  // packet scan read, with the request for its own packet scan.
+  private KeyframePacketScanTaskRequest storeOutcomeKeepingScannedPositions() {
+    var earlier = storeUnscannedNamingChosenStream(ProbeVersion.CURRENT - 1);
+    outcomes.publishKeyframePacketScan(
+        KeyframePacketScanPublication.builder()
+            .mediaFileId(mediaFile.getId())
+            .snapshot(earlier.snapshot())
+            .probeVersion(earlier.probeVersion())
+            .keyframes(known())
+            .build());
+    var request = storeUnscannedNamingChosenStream(ProbeVersion.CURRENT);
+    assertThat(storedKeyframes())
+        .as("The new probe kept the earlier scan's positions")
+        .isEqualTo(
+            new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+                KeyframePacketScanReason.NO_CONTAINER_INDEX, SCANNED_POSITIONS));
+    return request;
+  }
+
+  // An outcome that names its chosen video stream, as every outcome from probe version 4 does.
+  private KeyframePacketScanTaskRequest storeUnscannedNamingChosenStream(int probeVersion) {
+    var snapshot = snapshot(source);
+    outcomes.publish(
+        ProbePublication.builder()
+            .mediaFileId(mediaFile.getId())
+            .snapshot(snapshot)
+            .probeVersion(probeVersion)
+            .outcome(
+                ProbeOutcome.Success.builder()
+                    .container(ProbeContainer.builder().build())
+                    .streams(List.of(StreamInfo.builder().index(0).codecType("video").build()))
+                    .keyframes(packetScanRequired())
+                    .chosenVideoStream(
+                        Optional.of(
+                            new ChosenVideoStream(
+                                0,
+                                VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))))
+                    .build())
+            .build());
+    return KeyframePacketScanTaskRequest.builder()
+        .mediaFileId(mediaFile.getId())
+        .filepathUri(mediaFile.getFilepathUri())
         .snapshot(snapshot)
         .probeVersion(probeVersion)
         .build();

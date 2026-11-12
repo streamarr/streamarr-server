@@ -1,7 +1,9 @@
 package com.streamarr.server.repositories.media;
 
+import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
@@ -18,18 +20,35 @@ public interface MediaFileContainerInfoRepositoryCustom {
 
   /**
    * Replaces the stored outcome, its stream rows and its keyframe positions in one transaction, and
-   * clears the recorded failure of the requested inputs. Returns {@code false} without writing when
-   * the media file no longer exists or when a newer probe version already holds a result for the
-   * same source snapshot, or when the latest requested inputs differ.
+   * clears the recorded failure of the requested inputs. An outcome whose keyframes require a
+   * packet scan keeps the positions that an earlier packet scan read for the same source snapshot
+   * and the same chosen video stream, while both probe versions are on the current keyframe
+   * timeline ({@link ProbeVersion#isOnCurrentKeyframeTimeline}). Such an outcome still requires its
+   * own packet scan, and reads as {@link KeyframeKnowledge.PacketScanRequiredWithKeptPositions}.
+   * Returns {@code false} without writing when the media file no longer exists or when a newer
+   * probe version already holds a result for the same source snapshot, or when the latest requested
+   * inputs differ.
    */
   boolean publish(ProbePublication publication);
 
   /**
-   * Stores what a packet scan learned on the outcome that asked for the scan, in one guarded
-   * update. Returns {@code false} without writing unless the stored outcome still needs a packet
-   * scan for the publication's source snapshot and probe version.
+   * Stores what a packet scan learned on the outcome that requires the scan, under the media file
+   * lock, in place of any positions that the outcome kept from an earlier scan. A {@link
+   * KeyframesUnavailableReason#PACKET_SCAN_MEDIA_ERROR} replaces them too: bytes that an earlier
+   * scan read and that no longer decode have changed under an unchanged size and modified time.
+   * Returns {@code false} without writing unless the stored outcome still requires a packet scan
+   * for the publication's source snapshot and probe version.
    */
   boolean publishKeyframePacketScan(KeyframePacketScanPublication publication);
+
+  /**
+   * Stores that every packet scan of these inputs failed, so no further scan runs. Positions that
+   * the outcome kept from an earlier scan become its known positions, because failed scans say
+   * nothing about the bytes that the earlier scan read. An outcome without them stores unavailable
+   * keyframes. Returns {@code false} without writing unless the stored outcome still requires a
+   * packet scan for these inputs.
+   */
+  boolean publishKeyframePacketScanFailure(UUID mediaFileId, ProbeInputs inputs);
 
   /**
    * Reads the source snapshot and probe version of a stored outcome that needs a packet scan, under

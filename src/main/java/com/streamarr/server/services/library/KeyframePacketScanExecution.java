@@ -144,7 +144,9 @@ public class KeyframePacketScanExecution {
   private static Optional<KeyframeKnowledge> reportedKeyframes(KeyframeKnowledge keyframes) {
     return switch (keyframes) {
       case KeyframeKnowledge.Known _, KeyframeKnowledge.Unavailable _ -> Optional.of(keyframes);
-      case KeyframeKnowledge.PacketScanRequired _, KeyframeKnowledge.NotReported _ ->
+      case KeyframeKnowledge.PacketScanRequired _,
+          KeyframeKnowledge.PacketScanRequiredWithKeptPositions _,
+          KeyframeKnowledge.NotReported _ ->
           Optional.empty();
     };
   }
