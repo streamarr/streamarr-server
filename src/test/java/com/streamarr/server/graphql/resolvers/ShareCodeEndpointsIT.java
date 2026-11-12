@@ -543,6 +543,39 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
         Arguments.of("\\u{48261379}", "48261379"), Arguments.of("\\uD800\\u4826", "4826"));
   }
 
+  @ParameterizedTest
+  @MethodSource("literalsTheParserFailsOn")
+  @DisplayName("Should answer with a syntax error without the literal when the parser fails on it")
+  void shouldAnswerWithSyntaxErrorWithoutLiteralWhenParserFailsOnIt(String document, String literal)
+      throws Exception {
+    var response =
+        executeAllowingErrors(authTestSupport.accountBearer(identity()), document, Map.of());
+
+    assertThat(errors(response).path("extensions").path("classification").asString())
+        .isEqualTo("InvalidSyntax");
+    assertThat(response.toString()).doesNotContain(literal);
+  }
+
+  static Stream<Arguments> literalsTheParserFailsOn() {
+    return Stream.of(
+        Arguments.of(lookUpOf("\\uD800\\u{123456789}"), "123456789"),
+        Arguments.of(lookUpOf("\\u{BCDFDCBF}"), "BCDFDCBF"),
+        Arguments.of(
+            """
+            mutation ($limit: Float = 1e99999999999) {
+              lookUpShareCode(input: { code: "BCDF-GHJK" }) { householdName }
+            }
+            """,
+            "99999999999"));
+  }
+
+  private static String lookUpOf(String code) {
+    return """
+        mutation { lookUpShareCode(input: { code: "%s" }) { householdName } }
+        """
+        .formatted(code);
+  }
+
   private static void assertSyntaxErrorAtItsLineAndColumnWithout(JsonNode response, String value) {
     var error = errors(response);
     var location = error.path("locations").path(0);
