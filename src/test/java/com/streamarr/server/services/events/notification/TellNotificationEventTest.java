@@ -2,6 +2,7 @@ package com.streamarr.server.services.events.notification;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
@@ -42,6 +43,24 @@ class TellNotificationEventTest {
     var tell = answered().subjectExpiresAt(Optional.of(EVENT.plusSeconds(60)));
 
     assertThatThrownBy(tell::build).isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse a tell of a request when it carries no expiry")
+  void shouldRefuseATellOfARequestWhenItCarriesNoExpiry() {
+    var tell = offered().subjectExpiresAt(Optional.empty());
+
+    assertThatThrownBy(tell::build).isInstanceOf(IllegalArgumentException.class);
+  }
+
+  private TellNotificationEvent.TellNotificationEventBuilder offered() {
+    return TellNotificationEvent.builder()
+        .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
+        .subject(share)
+        .recipients(Set.of(RecipientReference.account(UUID.randomUUID())))
+        .snapshot(new ProfileShareOfferedSnapshot("Kai", Optional.empty()))
+        .at(EVENT)
+        .subjectExpiresAt(Optional.of(EVENT.plus(Duration.ofDays(7))));
   }
 
   private TellNotificationEvent.TellNotificationEventBuilder answered() {

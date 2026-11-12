@@ -11,7 +11,8 @@ import lombok.NonNull;
  * publishing domain decided the recipients from the relationships as they stood at the event, and
  * left out the Account that acted. It is heard inside the publisher's transaction, so its
  * Notifications commit or roll back with the change that made them. A request carries its subject's
- * expiry; news carries none.
+ * expiry, which every request kind built now gives, so a request whose resolution is missed still
+ * stops waiting at that expiry; news carries none.
  */
 @Builder
 public record TellNotificationEvent(
@@ -23,8 +24,8 @@ public record TellNotificationEvent(
     @NonNull Optional<Instant> subjectExpiresAt) {
 
   /**
-   * @throws IllegalArgumentException when the subject or the snapshot is not of the kind's type, or
-   *     when news carries an expiry
+   * @throws IllegalArgumentException when the subject or the snapshot is not of the kind's type,
+   *     when news carries an expiry, or when a request carries none
    */
   public TellNotificationEvent {
     kind.requireAbout(subject);
@@ -32,6 +33,12 @@ public record TellNotificationEvent(
     if (kind.form() == NotificationForm.NEWS && subjectExpiresAt.isPresent()) {
       throw new IllegalArgumentException(
           "A %s Notification is news, which has no expiry".formatted(kind.name()));
+    }
+
+    if (kind.form() == NotificationForm.REQUEST && subjectExpiresAt.isEmpty()) {
+      throw new IllegalArgumentException(
+          "A %s Notification is a request, which carries its subject's expiry"
+              .formatted(kind.name()));
     }
 
     recipients = Set.copyOf(recipients);
