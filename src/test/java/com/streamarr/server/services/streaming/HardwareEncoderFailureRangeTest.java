@@ -512,8 +512,14 @@ class HardwareEncoderFailureRangeTest {
   // The worker stops offering its hardware encoder and fails the job attempt. The player's segment
   // request then ends as unrecoverable, and the encode continues in software (ADR 0044).
   private PlaybackSessionSnapshot failTheHardwareEncoderOf(PlaybackSessionSnapshot playing) {
-    var job = workers.getStartedRequests().getLast();
     workers.setTargetEncoders(FAILING_WORKER, softwareEncodersOfTheFailingWorker);
+    return refuseTheHardwareEncoderOf(playing);
+  }
+
+  // The hardware encoder fails the job attempt and the worker keeps offering it, as after a refusal
+  // at the driver's session limit.
+  private PlaybackSessionSnapshot refuseTheHardwareEncoderOf(PlaybackSessionSnapshot playing) {
+    var job = workers.getStartedRequests().getLast();
     workers.failHardwareEncoder(job.sessionId(), job.variantLabel());
 
     var delivery =
@@ -583,6 +589,11 @@ class HardwareEncoderFailureRangeTest {
   // The client declares AV1 with SDR, PQ and HLG at 10 bits beside H.264 SDR and stereo AAC. It
   // declares no HEVC, so no HEVC source is copied.
   private StartPlaybackSessionCommand start(StreamingOptions options) {
+    return start(options, hdrAv1Client());
+  }
+
+  private StartPlaybackSessionCommand start(
+      StreamingOptions options, ClientCapabilityDeclaration client) {
     var file =
         mediaFiles.save(
             MediaFile.builder()
@@ -596,7 +607,7 @@ class HardwareEncoderFailureRangeTest {
             .mediaFileId(file.getId())
             .identity(identityFor(defaultPlaybackAuthorityBuilder().build()))
             .options(options)
-            .capabilityDeclaration(hdrAv1Client())
+            .capabilityDeclaration(client)
             .build();
     return command;
   }
