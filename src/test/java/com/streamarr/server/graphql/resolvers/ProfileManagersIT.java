@@ -94,7 +94,7 @@ class ProfileManagersIT extends AbstractIntegrationTest {
     assertThat(managers)
         .extracting(manager -> manager.path("accountId").asString())
         .containsExactly(idOf(alex), idOf(abe), idOf(zed));
-    assertThat(managers).noneMatch(manager -> manager.path("reader").asBoolean());
+    assertThat(managers).hasSize(3).noneMatch(manager -> manager.path("reader").asBoolean());
   }
 
   @Test
