@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.springframework.core.Ordered;
@@ -76,11 +77,17 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
       return CompletableFuture.completedFuture(executionResult);
     }
 
-    var quotedValues = quotedValuesAt(executionResult, parameters);
+    var descriptions = descriptionsWithoutValues(executionResult, parameters);
     var errors =
-        executionResult.getErrors().stream().map(error -> redacted(error, quotedValues)).toList();
+        executionResult.getErrors().stream().map(error -> redacted(error, descriptions)).toList();
     return CompletableFuture.completedFuture(
         executionResult.transform(builder -> builder.errors(errors)));
+  }
+
+  private static Function<ValidationError, String> descriptionsWithoutValues(
+      ExecutionResult executionResult, InstrumentationExecutionParameters parameters) {
+    var quotedValues = quotedValuesAt(executionResult, parameters);
+    return rejected -> withoutQuotedValues(rejected, quotedValues);
   }
 
   private static Map<SourceLocation, List<String>> quotedValuesAt(
@@ -100,9 +107,9 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
   }
 
   private static GraphQLError redacted(
-      GraphQLError error, Map<SourceLocation, List<String>> quotedValues) {
+      GraphQLError error, Function<ValidationError, String> descriptions) {
     return switch (error) {
-      case ValidationError rejected -> withoutQuotedValues(rejected, quotedValues);
+      case ValidationError rejected -> described(rejected, descriptions.apply(rejected));
       case InvalidSyntaxError unparsed -> withoutOffendingToken(unparsed);
       default -> error;
     };
@@ -123,7 +130,7 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
         .build();
   }
 
-  private static GraphQLError withoutQuotedValues(
+  private static String withoutQuotedValues(
       ValidationError rejected, Map<SourceLocation, List<String>> quotedValues) {
     // Longest first, so that a value is replaced whole before any value written inside it.
     var replaced =
@@ -137,12 +144,16 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
       message = message.replace(quotedValue, REDACTED);
     }
 
+    return message;
+  }
+
+  private static GraphQLError described(ValidationError rejected, String description) {
     return ValidationError.newValidationError()
         .validationErrorType(rejected.getValidationErrorType())
         .sourceLocations(rejected.getLocations())
         .queryPath(rejected.getQueryPath())
         .extensions(rejected.getExtensions())
-        .description(message)
+        .description(description)
         .build();
   }
 
