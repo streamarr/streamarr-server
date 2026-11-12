@@ -788,6 +788,13 @@ final class LiveWorkerConnectionRegistry {
     var streamSessionId = fromProto(job.getStreamSessionId());
     var jobAttemptId = fromProto(job.getJobAttemptId());
     var variantLabel = job.getVariant().getVariantLabel();
+    log.warn(
+        "Job attempt {} of variant {} of stream session {} failed with {}, which a replacement"
+            + " attempt would repeat",
+        jobAttemptId,
+        variantLabel,
+        streamSessionId,
+        failure.get());
     if (WorkerConnection.isCopyOutputMismatch(job, failed)) {
       eventPublisher.publishEvent(
           new VideoCopyOutputMismatchEvent(streamSessionId, jobAttemptId, variantLabel));
