@@ -17,6 +17,10 @@ import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.authorization.Decision;
+import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.authorization.ProfilePolicyTransition;
+import com.streamarr.server.services.authorization.ProfilePolicyTransition.Classification;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,7 +64,9 @@ class ProfileLockPreviewServiceTest {
             .householdId(smith.getId())
             .contextHouseholdId(smith.getId())
             .build();
-    authorization = new FakeAuthorizationService(reader);
+    authorization =
+        new FakeAuthorizationService(reader)
+            .decidePolicyWith(change -> new Decision.Allowed<>(transitionOf(change)));
     service = new ProfileLockPreviewService(authorization, profiles, shares, accounts, households);
   }
 
@@ -163,15 +169,50 @@ class ProfileLockPreviewServiceTest {
   }
 
   @Test
-  @DisplayName("Should answer nothing when the caller may not read the Profile's administration")
-  void shouldAnswerNothingWhenTheCallerMayNotReadTheProfilesAdministration() {
+  @DisplayName("Should answer nothing when the caller may not make the change")
+  void shouldAnswerNothingWhenTheCallerMayNotMakeTheChange() {
     var sam = available(ProfileFixture.defaultProfileBuilder().name("Sam"));
     available(ProfileFixture.defaultProfileBuilder().name("Mara"));
-    authorization.denyAll();
+    authorization.decidePolicyWith(_ -> new Decision.Denied<>(Decision.DenialReason.POLICY));
 
     assertThat(
             service.policyChangePreview(
                 reader, sam.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10)))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should preview the change when the caller may make it once it reauthenticates")
+  void shouldPreviewTheChangeWhenTheCallerMayMakeItOnceItReauthenticates() {
+    var sam = available(ProfileFixture.defaultProfileBuilder().name("Sam").pinHash(A_PIN));
+    var mara = available(ProfileFixture.defaultProfileBuilder().name("Mara"));
+    authorization.decidePolicyWith(
+        _ -> new Decision.Denied<>(Decision.DenialReason.REAUTHENTICATION_REQUIRED));
+
+    var preview =
+        service
+            .policyChangePreview(reader, sam.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10))
+            .orElseThrow();
+
+    assertThat(preview)
+        .singleElement()
+        .satisfies(
+            locks ->
+                assertThat(locks.profiles()).extracting(Profile::getId).contains(mara.getId()));
+  }
+
+  @Test
+  @DisplayName("Should answer nothing when the ceiling is negative")
+  void shouldAnswerNothingWhenTheCeilingIsNegative() {
+    var sam = available(ProfileFixture.kidProfileBuilder().name("Sam"));
+
+    assertThat(
+            service.policyChangePreview(
+                reader, sam.getId(), new ProfilePolicyTarget(ProfileKind.KID, -1)))
+        .isEmpty();
+    assertThat(
+            service.creationPreview(
+                reader, smith.getId(), new ProfilePolicyTarget(ProfileKind.KID, -1)))
         .isEmpty();
   }
 
@@ -259,6 +300,12 @@ class ProfileLockPreviewServiceTest {
             service.creationPreview(
                 reader, UUID.randomUUID(), new ProfilePolicyTarget(ProfileKind.KID, 10)))
         .isEmpty();
+  }
+
+  private static ProfilePolicyTransition transitionOf(Intent.ProfilePolicyChange change) {
+    var target = ((Intent.SetProfilePolicy) change).target();
+    return new ProfilePolicyTransition(
+        target.kind(), target.maximumAllowedRatingAge(), Classification.ORDINARY_EDIT);
   }
 
   private Profile available(Profile.ProfileBuilder<?, ?> profile) {

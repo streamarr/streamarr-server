@@ -9,7 +9,9 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.authorization.ProfilePolicyTransition;
 import com.streamarr.server.services.authorization.ProfileSafetyRule;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -20,7 +22,6 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Which Profiles a change of a Profile's kind or content limit would lock, asked before the change
@@ -43,18 +44,22 @@ public class ProfileLockPreviewService {
   private final HouseholdRepository householdRepository;
 
   /**
-   * What giving the Profile the target kind and content limit would lock, in each Household where
+   * What giving the Profile the target kind and Content Ceiling would lock, in each Household where
    * it is available and the caller may use, membership Household first. Empty for a caller who may
-   * not read the Profile's administration and for a Profile that does not exist.
+   * not make that change, for a negative ceiling, which the change refuses, and for a Profile that
+   * does not exist.
    */
-  @Transactional(readOnly = true)
+  // Not in a read-only transaction: the change's decision holds the Profile's policy with a row
+  // lock, as the change itself does.
   public Optional<List<HouseholdLocks>> policyChangePreview(
       AuthenticatedIdentity identity, UUID profileId, ProfilePolicyTarget target) {
+    if (isNegative(target.maximumAllowedRatingAge())) {
+      return Optional.empty();
+    }
+
     var profile = profileRepository.findById(profileId);
     // A decision about a Profile that does not exist fails rather than denies.
-    if (profile.isEmpty()
-        || !authorizationService.isAllowed(
-            identity, new Intent.ViewProfileAdministration(profileId))) {
+    if (profile.isEmpty() || !mayMake(identity, new Intent.SetProfilePolicy(profileId, target))) {
       return Optional.empty();
     }
 
@@ -81,15 +86,16 @@ public class ProfileLockPreviewService {
   /**
    * What creating a Profile of the target kind and content limit in the Household would lock there,
    * the new Profile itself included, before it is created. Lists no Household when the caller may
-   * not use it. Empty for a caller who may not create a Profile there and for a Household that does
-   * not exist.
+   * not use it. Empty for a caller who may not create a Profile there, for a negative ceiling,
+   * which creation refuses, and for a Household that does not exist.
    */
   // Not in a read-only transaction: creating a Profile is a write, and its decision holds its facts
   // with row locks, as sharePreflight's does.
   public Optional<List<HouseholdLocks>> creationPreview(
       AuthenticatedIdentity identity, UUID householdId, ProfilePolicyTarget target) {
     // A decision about a Household that does not exist fails rather than denies.
-    if (!householdRepository.existsById(householdId)
+    if (isNegative(target.maximumAllowedRatingAge())
+        || !householdRepository.existsById(householdId)
         || !authorizationService.isAllowed(identity, new Intent.CreateProfile(householdId))) {
       return Optional.empty();
     }
@@ -108,6 +114,20 @@ public class ProfileLockPreviewService {
             .maximumAllowedRatingAge(target.maximumAllowedRatingAge())
             .build();
     return Optional.of(locksIn(householdId, created).stream().toList());
+  }
+
+  // A change the caller may make once it reauthenticates afresh is one it may preview.
+  private boolean mayMake(AuthenticatedIdentity identity, Intent.SetProfilePolicy change) {
+    return switch (authorizationService.decide(identity, change)) {
+      case Decision.Allowed<ProfilePolicyTransition> _ -> true;
+      case Decision.Denied<ProfilePolicyTransition>(var reason) ->
+          reason == Decision.DenialReason.REAUTHENTICATION_REQUIRED;
+      case Decision.Failed<ProfilePolicyTransition> _ -> false;
+    };
+  }
+
+  private static boolean isNegative(Integer maximumAllowedRatingAge) {
+    return maximumAllowedRatingAge != null && maximumAllowedRatingAge < 0;
   }
 
   private Optional<HouseholdLocks> locksIn(UUID householdId, Profile subject) {
