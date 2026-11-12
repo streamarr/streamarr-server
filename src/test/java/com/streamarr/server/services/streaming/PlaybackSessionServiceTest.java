@@ -67,6 +67,7 @@ import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedE
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
+import com.streamarr.server.services.streaming.events.VariantRecoveryExhaustedEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Duration;
 import java.time.Instant;
@@ -623,6 +624,54 @@ class PlaybackSessionServiceTest {
     assertThat(streams.createdCommands).hasSize(1);
     assertThat(streams.withdrawals)
         .containsExactly(new Withdrawal(streamSessionId, LowerVariantFailure.JOB_FAILURE));
+  }
+
+  // A lower variant whose job attempts fail on every worker that can run them has failed for good
+  // too, so the copy plays on alone (ADR 0050).
+  @Test
+  @DisplayName(
+      "Should withdraw the lower variants and keep the copy's format attempt when a lower variant's"
+          + " recovery is exhausted beside a copy")
+  void shouldWithdrawTheLowerVariantsWhenALowerVariantsRecoveryIsExhaustedBesideACopy() {
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
+    var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
+    var initial = accepted(service.start(command));
+    var streamSessionId = initial.currentFormatAttempt().streamSessionId();
+
+    service.onVariantRecoveryExhausted(
+        VariantRecoveryExhaustedEvent.builder()
+            .streamSessionId(streamSessionId)
+            .variantLabel("720p")
+            .build());
+
+    var current = service.access(request(initial, command)).orElseThrow();
+    assertThat(current.currentFormatAttempt()).isEqualTo(initial.currentFormatAttempt());
+    assertThat(current.formatAttemptCount()).isEqualTo(1);
+    assertThat(streams.withdrawals)
+        .containsExactly(new Withdrawal(streamSessionId, LowerVariantFailure.JOB_FAILURE));
+  }
+
+  // The copy's exhausted recovery answers its segment request as unrecoverable, as on main, and
+  // withdraws nothing.
+  @Test
+  @DisplayName(
+      "Should withdraw nothing and keep the format attempt when the copy's own recovery is"
+          + " exhausted beside lower variants")
+  void shouldWithdrawNothingWhenTheCopysOwnRecoveryIsExhaustedBesideLowerVariants() {
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
+    var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
+    var initial = accepted(service.start(command));
+
+    service.onVariantRecoveryExhausted(
+        VariantRecoveryExhaustedEvent.builder()
+            .streamSessionId(initial.currentFormatAttempt().streamSessionId())
+            .variantLabel(StreamSession.defaultVariant())
+            .build());
+
+    var current = service.access(request(initial, command)).orElseThrow();
+    assertThat(current.currentFormatAttempt()).isEqualTo(initial.currentFormatAttempt());
+    assertThat(current.formatAttemptCount()).isEqualTo(1);
+    assertThat(streams.withdrawals).isEmpty();
   }
 
   @Test

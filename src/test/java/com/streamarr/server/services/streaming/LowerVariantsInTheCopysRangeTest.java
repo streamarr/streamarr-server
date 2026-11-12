@@ -66,6 +66,7 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
+import com.streamarr.server.services.streaming.events.VariantRecoveryExhaustedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.Arrays;
@@ -759,6 +760,49 @@ class LowerVariantsInTheCopysRangeTest {
     assertThat(withdrawalsAfter("hardware_encoder_failure")).isEqualTo(1);
   }
 
+  // The request that meets the failed hardware encoder withdraws the lower variants on its way out,
+  // so it ends as a request for a withdrawn variant does, with 404: the player moves to another
+  // variant at once instead of retrying the same one.
+  @Test
+  @DisplayName(
+      "Should end the request that meets a lower variant's failed hardware encoder as one for an"
+          + " ended stream session when the lower variants are withdrawn")
+  void shouldEndTheRequestThatMeetsALowerVariantsFailedHardwareEncoderAsOneForAnEndedSession() {
+    var command = startAuto(clientThatPlaysEveryRange());
+    var copy = startAnHdr10CopyBesideLowerVariants(command);
+    var sessionId = sessionOf(copy).getSessionId();
+    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
+    workers.failHardwareEncoder(sessionId, "720p");
+
+    var lowerVariantSegment = rig.coordinator().deliver(sessionId, "720p", "720p/segment0.m4s");
+
+    assertThat(lowerVariantSegment).isEqualTo(new SegmentDelivery.SessionEnded());
+    assertThatTheHdrCopyPlaysOnAlone(snapshotOf(copy, command), sessionId);
+    assertThat(withdrawalsAfter("hardware_encoder_failure")).isEqualTo(1);
+  }
+
+  // ADR 0050: a lower variant fails for good when its job attempts fail on every worker that can
+  // run it, as when a failure repeats. The request that finds its recovery exhausted withdraws the
+  // lower variants and ends with 404, and the copy plays on.
+  @Test
+  @DisplayName(
+      "Should withdraw the lower variants and end the request as one for an ended stream session"
+          + " when a lower variant's job attempt fails on every worker that can run it")
+  void shouldWithdrawTheLowerVariantsWhenALowerVariantsJobAttemptFailsOnEveryWorker() {
+    var command = startAuto(clientThatPlaysEveryRange());
+    var copy = startAnHdr10CopyBesideLowerVariants(command);
+    var sessionId = sessionOf(copy).getSessionId();
+    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
+    workers.markDead(sessionId, "720p");
+    workers.refuseTarget(ExecutionTargetId.LOCAL);
+
+    var lowerVariantSegment = rig.coordinator().deliver(sessionId, "720p", "720p/segment0.m4s");
+
+    assertThat(lowerVariantSegment).isEqualTo(new SegmentDelivery.SessionEnded());
+    assertThatTheHdrCopyPlaysOnAlone(snapshotOf(copy, command), sessionId);
+    assertThat(withdrawalsAfter("job_failure")).isEqualTo(1);
+  }
+
   // ADR 0052: the copy's own failure still moves Auto to an HDR encode in a new stream session, and
   // only that encode's failure gives HDR up. Nothing is withdrawn, because the copy is replaced.
   @Test
@@ -1295,7 +1339,22 @@ class LowerVariantsInTheCopysRangeTest {
         .properties(PROPERTIES)
         .runtimeRegistry(registry)
         .sessionMutex(sessionMutex)
-        .heldRequests(workers.heldSegmentRequests());
+        .heldRequests(workers.heldSegmentRequests())
+        .eventPublisher(this::dispatchToPlayback);
+  }
+
+  // Hands the delivery coordinator's failure events to the playback service on the publishing
+  // thread, as Spring does.
+  private void dispatchToPlayback(Object event) {
+    switch (event) {
+      case RequestedVariantHardwareEncoderFailedEvent failed ->
+          playback.onRequestedVariantHardwareEncoderFailed(failed);
+      case VariantRecoveryExhaustedEvent exhausted ->
+          playback.onVariantRecoveryExhausted(exhausted);
+      default -> {
+        // The playback service listens to no other event that the rig publishes.
+      }
+    }
   }
 
   private HlsStreamingService.HlsStreamingServiceBuilder streamingBuilder(

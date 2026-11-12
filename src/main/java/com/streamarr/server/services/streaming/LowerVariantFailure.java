@@ -7,7 +7,10 @@ package com.streamarr.server.services.streaming;
 public enum LowerVariantFailure {
   /** The player reported a format failure while it played a lower variant. */
   PLAYER_FORMAT_FAILURE,
-  /** A lower variant's job attempt failed in a way that every later attempt repeats. */
+  /**
+   * A lower variant's job attempts failed for good: in a way that every later attempt repeats, or
+   * on every worker that can run them.
+   */
   JOB_FAILURE,
   /** The hardware encoder of a lower variant's job attempt failed (ADR 0044). */
   HARDWARE_ENCODER_FAILURE

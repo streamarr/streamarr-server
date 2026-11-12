@@ -2227,6 +2227,17 @@ public class ProducerLifecycleService {
     return Optional.of(new MediaTimeRange(start, timeline.mediaSegmentEnd(last)));
   }
 
+  /**
+   * Whether the stream session offers the variant: false once the stream session is gone or has
+   * withdrawn the variant (ADR 0050).
+   */
+  public boolean offersVariant(UUID sessionId, String variantLabel) {
+    return runtimeRegistry
+        .findById(sessionId)
+        .map(session -> session.offersVariant(variantLabel))
+        .orElse(false);
+  }
+
   /** A session that no longer exists advertises nothing to refuse, so this answers false. */
   public boolean isUnadvertisedMediaSegment(UUID sessionId, String segmentName) {
     return runtimeRegistry

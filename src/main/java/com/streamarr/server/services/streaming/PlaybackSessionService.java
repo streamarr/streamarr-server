@@ -22,6 +22,7 @@ import com.streamarr.server.services.streaming.events.ProducedRangeMayHaveMovedE
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
+import com.streamarr.server.services.streaming.events.VariantRecoveryExhaustedEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import java.time.Clock;
 import java.time.Duration;
@@ -846,6 +847,17 @@ public class PlaybackSessionService implements AutoCloseable {
     }
 
     handleJobFailure(failedId, playback -> reserveSoftwareContinuation(playback, failedId));
+  }
+
+  /**
+   * A lower variant beside a copy whose recovery is exhausted has failed for good, so the stream
+   * session withdraws its lower variants and the copy plays on alone (ADR 0050). The exhausted
+   * recovery of any other variant changes nothing here.
+   */
+  @EventListener
+  public void onVariantRecoveryExhausted(@NonNull VariantRecoveryExhaustedEvent event) {
+    tryWithdrawLowerVariantsAfterJobFailure(
+        event.streamSessionId(), event.variantLabel(), LowerVariantFailure.JOB_FAILURE);
   }
 
   private Optional<FormatAttemptReservation> reserveSoftwareContinuation(
