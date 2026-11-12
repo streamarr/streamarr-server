@@ -269,17 +269,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
       UUID profileId, String reason, Instant now) {
     var expired = materializeExpiredPending(profileId, now);
     var pending =
-        database.values().stream()
-            .filter(share -> share.getProfileId().equals(profileId))
-            .filter(share -> share.statusAt(now) == ProfileShareStatus.PENDING)
-            .toList();
-    pending.forEach(
-        share -> {
-          share.setStatus(ProfileShareStatus.INVALIDATED);
-          share.setInvalidationReason(reason);
-          share.setDecidedAt(now);
-          AuditFieldSetter.setLastModifiedOn(share, now);
-        });
+        invalidateUnexpiredPending(share -> share.getProfileId().equals(profileId), reason, now);
     return changed(Stream.concat(expired.stream(), pending.stream()).toList());
   }
 
@@ -301,9 +291,20 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
       UUID profileId, UUID offererAccountId, String reason, Instant now) {
     var expired = materializeExpiredPending(profileId, now);
     var pending =
+        invalidateUnexpiredPending(
+            share ->
+                share.getProfileId().equals(profileId)
+                    && offererAccountId.equals(share.getOfferedByAccountId()),
+            reason,
+            now);
+    return changed(Stream.concat(expired.stream(), pending.stream()).toList());
+  }
+
+  private List<ProfileHouseholdShare> invalidateUnexpiredPending(
+      Predicate<ProfileHouseholdShare> scope, String reason, Instant now) {
+    var pending =
         database.values().stream()
-            .filter(share -> share.getProfileId().equals(profileId))
-            .filter(share -> offererAccountId.equals(share.getOfferedByAccountId()))
+            .filter(scope)
             .filter(share -> share.statusAt(now) == ProfileShareStatus.PENDING)
             .toList();
     pending.forEach(
@@ -313,7 +314,7 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
           share.setDecidedAt(now);
           AuditFieldSetter.setLastModifiedOn(share, now);
         });
-    return changed(Stream.concat(expired.stream(), pending.stream()).toList());
+    return pending;
   }
 
   @Override
