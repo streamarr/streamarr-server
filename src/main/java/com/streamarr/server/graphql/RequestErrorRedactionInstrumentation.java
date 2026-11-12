@@ -37,7 +37,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
-class ValidationErrorRedactionInstrumentation extends SimplePerformantInstrumentation {
+class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentation {
 
   private static final String REDACTED = "'REDACTED'";
 
@@ -99,14 +99,14 @@ class ValidationErrorRedactionInstrumentation extends SimplePerformantInstrument
             Collectors.groupingBy(
                 Node::getSourceLocation,
                 Collectors.flatMapping(
-                    node -> nodes(node).flatMap(ValidationErrorRedactionInstrumentation::quoted),
+                    node -> nodes(node).flatMap(RequestErrorRedactionInstrumentation::quoted),
                     Collectors.toList())));
   }
 
   private static Stream<Node<?>> nodes(Node<?> node) {
     return Stream.concat(
         Stream.of(node),
-        node.getChildren().stream().flatMap(ValidationErrorRedactionInstrumentation::nodes));
+        node.getChildren().stream().flatMap(RequestErrorRedactionInstrumentation::nodes));
   }
 
   // graphql-java quotes a rejected value as its syntax node, and a scalar's own message may quote
