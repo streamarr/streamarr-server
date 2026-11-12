@@ -929,35 +929,25 @@ class LowerVariantsInTheCopysRangeTest {
           + " budget leaves the copy out")
   void shouldEncodeTheReplacementThroughTheUploadBudgetWhenALowerVariantFailsWhileItLeavesItOut() {
     var settings = ServerSettingsFixture.defaultServerSettings();
-    var budgeted = budgetedPlayback(settings);
+    var budget = playThroughTheUploadBudgetOf(settings);
     workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(encoder("h264", "libx264")));
     probes.setDefaultProbe(defaultProbeBuilder().audioChannels(OptionalInt.of(2)).build());
-    accepted(budgeted.playback().start(startAuto(clientThatPlaysEveryRange())));
+    accepted(playback.start(startAuto(clientThatPlaysEveryRange())));
     accepted(
         settings.changeUploadBudget(
             AuthenticatedIdentityFixture.accountScopedBuilder().build(), Optional.of(11)));
     var command = startAuto(clientThatPlaysEveryRange());
-    var second = accepted(budgeted.playback().start(command));
+    var second = accepted(playback.start(command));
     var replacedId = sessionOf(second).getSessionId();
-    var playlists = new HlsPlaylistService(PROPERTIES, budgeted.budget());
+    var playlists = new HlsPlaylistService(PROPERTIES, budget);
     var servedFirst = listedUris(playlists.generateMultivariantPlaylist(sessionOf(second), "t"));
     rig.lifecycle().prepareRequestedVariant(replacedId, "720p", "720p/segment0.m4s");
 
     workers.failTerminally(replacedId, "720p", TranscodeFailure.SEGMENT_CAP_EXCEEDED);
-    budgeted
-        .playback()
-        .onTerminalTranscodeFailure(
-            terminalFailure(replacedId, "720p", TranscodeFailure.SEGMENT_CAP_EXCEEDED));
+    playback.onTerminalTranscodeFailure(
+        terminalFailure(replacedId, "720p", TranscodeFailure.SEGMENT_CAP_EXCEEDED));
 
-    var after =
-        budgeted
-            .playback()
-            .access(
-                PlaybackSessionRequest.builder()
-                    .playbackSessionId(second.playbackSessionId())
-                    .identity(command.identity())
-                    .build())
-            .orElseThrow();
+    var after = snapshotOf(second, command);
     var replacement = sessionOf(after);
     assertThat(servedFirst)
         .containsExactly("720p/stream.m3u8?t=t", "480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
@@ -1029,14 +1019,13 @@ class LowerVariantsInTheCopysRangeTest {
     }
   }
 
-  private record BudgetedPlayback(PlaybackSessionService playback, ServerUploadBudget budget) {}
-
-  // A playback service whose stream sessions the upload budget of these settings sizes (#796).
-  private BudgetedPlayback budgetedPlayback(ServerSettingsService settings) {
+  // Replaces the playback service with one whose stream sessions the upload budget of these
+  // settings sizes (#796), and to which the rig reports its failures.
+  private ServerUploadBudget playThroughTheUploadBudgetOf(ServerSettingsService settings) {
     var registry = new FakeRuntimeStreamSessionRegistry();
     rig = rigBuilder(registry).serverSettings(settings).build();
     var budget = new ServerUploadBudget(settings, registry, rig.lifecycle(), PROPERTIES, meters);
-    var budgeted =
+    playback =
         PlaybackSessionService.builder()
             .eventPublisher(_ -> {})
             .streamingService(streamingBuilder(registry).uploadBudget(budget).build())
@@ -1044,7 +1033,7 @@ class LowerVariantsInTheCopysRangeTest {
             .executor(Runnable::run)
             .maximumFormatAttempts(4)
             .build();
-    return new BudgetedPlayback(budgeted, budget);
+    return budget;
   }
 
   private static List<String> listedUris(String multivariantPlaylist) {
