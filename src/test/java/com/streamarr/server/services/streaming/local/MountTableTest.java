@@ -229,8 +229,10 @@ class MountTableTest {
                     41 22 0:41 / /segments rw,nosuid shared:2 - tmpfs tmpfs rw
                     42 22 8:1 /srv/media/cache /segments rw - ext4 /dev/sda1 rw
                     """));
+    var folder = Path.of("/segments");
+    var library = Path.of("/srv/media");
 
-    assertThatThrownBy(() -> mounts.liesInOrHolds(Path.of("/segments"), Path.of("/srv/media")))
+    assertThatThrownBy(() -> mounts.liesInOrHolds(folder, library))
         .isInstanceOf(UnknownFolderLocationException.class);
   }
 
@@ -257,8 +259,10 @@ class MountTableTest {
   void shouldNotPlaceAFolderWhenAMountOnTheLibrarysFileSystemShowsNoFoldersPathAsItsRoot(
       String mount) throws IOException {
     var mounts = MountTable.read(tableOf(ROOT_FILE_SYSTEM + mount + "\n"));
+    var folder = Path.of("/segments");
+    var library = Path.of("/srv/media");
 
-    assertThatThrownBy(() -> mounts.liesInOrHolds(Path.of("/segments"), Path.of("/srv/media")))
+    assertThatThrownBy(() -> mounts.liesInOrHolds(folder, library))
         .isInstanceOf(UnknownFolderLocationException.class);
   }
 
