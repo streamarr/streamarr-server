@@ -108,7 +108,7 @@ public class NotificationResolver {
       @InputArgument MarkNotificationsReadInput input) {
     var identity = authorizationService.currentIdentity();
     notificationService.requireMarkNotificationsRead(identity);
-    var ids = input.ids();
+    var ids = input.notificationIds();
     var malformed = firstMalformed(ids);
     if (malformed.isPresent()) {
       return MutationPayloads.inputError(

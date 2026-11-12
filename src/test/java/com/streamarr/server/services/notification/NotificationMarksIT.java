@@ -60,7 +60,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
 
   private static final String MARK =
       """
-      mutation { markNotificationsRead(input: {ids: [%s]}) {
+      mutation { markNotificationsRead(input: {notificationIds: [%s]}) {
         unreadNotificationCount
         userErrors { __typename ... on InputMutationError { message inputPath } } } }
       """;
@@ -158,7 +158,8 @@ class NotificationMarksIT extends AbstractIntegrationTest {
             jsonPath("$.data.markNotificationsRead.userErrors[0].__typename")
                 .value("NotificationIdCountOutOfRangeError"))
         .andExpect(
-            jsonPath("$.data.markNotificationsRead.userErrors[0].inputPath[0]").value("ids"));
+            jsonPath("$.data.markNotificationsRead.userErrors[0].inputPath[0]")
+                .value("notificationIds"));
 
     assertThat(stored(news).getReadAt()).isEmpty();
   }
@@ -246,7 +247,9 @@ class NotificationMarksIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.markNotificationsRead.userErrors[0].__typename")
                 .value("InvalidIdError"))
-        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors[0].inputPath[0]").value("ids"))
+        .andExpect(
+            jsonPath("$.data.markNotificationsRead.userErrors[0].inputPath[0]")
+                .value("notificationIds"))
         .andExpect(jsonPath("$.data.markNotificationsRead.userErrors[0].inputPath[1]").value("1"));
 
     assertThat(stored(news).getReadAt()).isEmpty();
