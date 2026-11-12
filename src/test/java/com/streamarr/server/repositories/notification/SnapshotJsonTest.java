@@ -10,6 +10,13 @@ import com.streamarr.server.services.events.notification.ProfileShareAnsweredSna
 import com.streamarr.server.services.events.notification.ProfileShareEndedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
+import com.streamarr.server.support.SpecifiedOnlyNotificationKinds;
+import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.HouseholdNewsSnapshot;
+import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.InvitationAnswer;
+import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.InvitationReceivedSnapshot;
+import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.ManagementRemovedSnapshot;
+import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.ScanOrRefreshFinishedSnapshot;
+import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.UnmatchedItemsSnapshot;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,10 +43,24 @@ class SnapshotJsonTest {
           SharingNotificationKinds.PROFILE_SHARE_ANSWERED,
           List.of(new ProfileShareAnsweredSnapshot(NAME, ProfileShareAnswer.REJECTED)),
           SharingNotificationKinds.PROFILE_SHARE_ENDED,
-          List.of(new ProfileShareEndedSnapshot(NAME, ProfileShareEndedBy.HOUSEHOLD_SIDE)));
+          List.of(new ProfileShareEndedSnapshot(NAME, ProfileShareEndedBy.HOUSEHOLD_SIDE)),
+          SpecifiedOnlyNotificationKinds.MANAGEMENT_REMOVED,
+          List.of(new ManagementRemovedSnapshot(NAME)),
+          SpecifiedOnlyNotificationKinds.INVITATION_RECEIVED,
+          List.of(
+              new InvitationReceivedSnapshot(NAME, Optional.empty()),
+              new InvitationReceivedSnapshot(NAME, Optional.of(InvitationAnswer.DECLINED))),
+          SpecifiedOnlyNotificationKinds.SCAN_OR_REFRESH_FINISHED,
+          List.of(new ScanOrRefreshFinishedSnapshot(NAME, 3, 0, 12)),
+          SpecifiedOnlyNotificationKinds.UNMATCHED_ITEMS,
+          List.of(new UnmatchedItemsSnapshot(NAME, 14)),
+          SpecifiedOnlyNotificationKinds.HOUSEHOLD_NEWS,
+          List.of(new HouseholdNewsSnapshot(NAME)));
 
+  // The sharing kinds, and the kinds that tests define to show the model fits them.
   static Stream<Arguments> everyKindsSnapshots() {
-    return SharingNotificationKinds.ALL.stream()
+    return Stream.concat(
+            SharingNotificationKinds.ALL.stream(), SpecifiedOnlyNotificationKinds.ALL.stream())
         .flatMap(
             kind ->
                 samplesOf(kind).stream()
