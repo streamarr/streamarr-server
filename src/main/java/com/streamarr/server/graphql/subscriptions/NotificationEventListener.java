@@ -25,7 +25,7 @@ public class NotificationEventListener {
   private final KeyedSubscriptionBroadcaster<UUID, NotificationsChange>
       notificationsChangeBroadcaster;
 
-  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
   public void onNotificationsChanged(NotificationsChangedEvent event) {
     event.notifications().stream()
         .filter(changed -> RecipientReference.ACCOUNT.equals(changed.recipient().type()))
