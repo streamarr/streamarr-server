@@ -11,6 +11,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
@@ -56,9 +57,13 @@ import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -70,12 +75,17 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.Singular;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -120,6 +130,9 @@ class LowerVariantsInTheCopysRangeTest {
   private final FakeMediaFileContainerInfoRepository probes =
       new FakeMediaFileContainerInfoRepository();
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+  private final FakeSegmentStore segments = new FakeSegmentStore();
+  private final MutexFactory<UUID> sessionMutex = new MutexFactory<>();
+  private final ExecutorService requests = Executors.newVirtualThreadPerTaskExecutor();
   private StreamingRigFixture.StreamingRig rig;
   private PlaybackSessionService playback;
 
@@ -147,6 +160,11 @@ class LowerVariantsInTheCopysRangeTest {
             .executor(Runnable::run)
             .maximumFormatAttempts(4)
             .build();
+  }
+
+  @AfterEach
+  void tearDown() {
+    requests.shutdownNow();
   }
 
   // Each copy lists 720p, 480p and 360p below its own 1080p picture. Every entry announces one
@@ -789,6 +807,229 @@ class LowerVariantsInTheCopysRangeTest {
     assertThat(withdrawalsAfter("player_format_failure")).isEqualTo(1);
   }
 
+  // The withdrawal itself stops the lower variants, before the player asks the copy for anything.
+  // The initialization request starts 480p beside the 720p that the player plays.
+  @Test
+  @DisplayName(
+      "Should stop every running lower variant when the player's format failure withdraws the"
+          + " lower variants")
+  void shouldStopEveryRunningLowerVariantWhenThePlayersFormatFailureWithdrawsThem() {
+    var command = startAuto(clientThatPlaysEveryRange());
+    var copy = startAnHdr10CopyBesideLowerVariants(command);
+    var sessionId = sessionOf(copy).getSessionId();
+    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
+    rig.lifecycle().prepareRequestedVariant(sessionId, "480p", "480p/init.mp4");
+    var runningBeforeTheFailure = runningVariants(sessionId);
+
+    rejectCurrentFormatAttempt(copy, command);
+
+    assertThat(runningBeforeTheFailure).containsExactly("720p", "480p");
+    assertThat(runningVariants(sessionId)).isEmpty();
+  }
+
+  // A stopped job attempt wakes the requests held on its variant. When the stop fails, the
+  // withdrawal still ends a held request at once instead of at its stall deadline, 16 s here.
+  @Test
+  @DisplayName(
+      "Should end a held request for a lower variant as one for an ended stream session at once"
+          + " when the withdrawal cannot stop that variant's job attempt")
+  void shouldEndAHeldLowerVariantRequestAtOnceWhenTheWithdrawalCannotStopItsJobAttempt()
+      throws Exception {
+    var command = startAuto(clientThatPlaysEveryRange());
+    var copy = startAnHdr10CopyBesideLowerVariants(command);
+    var sessionId = sessionOf(copy).getSessionId();
+    var held = heldRequestForTheFirstSegment(sessionId, "720p");
+    workers.failOnStopVariant(sessionId);
+
+    rejectCurrentFormatAttempt(copy, command);
+
+    assertThat(held.get(5, TimeUnit.SECONDS)).isEqualTo(new SegmentDelivery.SessionEnded());
+    assertThat(workers.isRunning(sessionId, "720p")).isTrue();
+  }
+
+  // Recovery reads the failure that each variant's own decision repeats, so a lower variant's
+  // failure ends only that variant's recovery, whether or not a withdrawal follows it.
+  @Test
+  @DisplayName(
+      "Should end recovery for a lower variant and keep recovering the copy when only the lower"
+          + " variant's job attempts fail for good")
+  void shouldEndRecoveryForALowerVariantAndKeepTheCopysWhenOnlyTheLowerVariantFailsForGood() {
+    var command = startAuto(clientThatPlaysEveryRange());
+    var copy = startAnHdr10CopyBesideLowerVariants(command);
+    var sessionId = sessionOf(copy).getSessionId();
+    var lowerVariantRequest =
+        rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
+    workers.failTerminally(sessionId, "720p", TranscodeFailure.OUTPUT_MISMATCH);
+
+    var lowerVariantRecovery = rig.lifecycle().recover(lowerVariantRequest);
+    var copyRequest = rig.lifecycle().prepareRequestedVariant(sessionId, "default", "segment0.m4s");
+
+    assertThat(lowerVariantRecovery).isEqualTo(ProducerLifecycleService.RecoveryResult.EXHAUSTED);
+    assertThat(rig.lifecycle().recover(copyRequest))
+        .isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
+  }
+
+  // The upload budget leaves the copy out of the playlist that the player read, so it plays the
+  // lower variants alone. Once they are withdrawn, the multivariant playlist lists the copy, and a
+  // request for the copy starts it.
+  @Test
+  @DisplayName(
+      "Should list the copy alone and start it on its first request when a lower variant fails"
+          + " while the upload budget leaves the copy out")
+  void shouldListTheCopyAndStartItOnRequestWhenALowerVariantFailsWhileTheBudgetLeavesItOut() {
+    var settings = ServerSettingsFixture.defaultServerSettings();
+    var budgeted = budgetedPlayback(settings);
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(encoder("h264", "libx264")));
+    probes.setDefaultProbe(defaultProbeBuilder().audioChannels(OptionalInt.of(2)).build());
+    accepted(budgeted.playback().start(startAuto(clientThatPlaysEveryRange())));
+    accepted(
+        settings.changeUploadBudget(
+            AuthenticatedIdentityFixture.accountScopedBuilder().build(), Optional.of(11)));
+    var command = startAuto(clientThatPlaysEveryRange());
+    var second = accepted(budgeted.playback().start(command));
+    var sessionId = sessionOf(second).getSessionId();
+    var playlists = new HlsPlaylistService(PROPERTIES, budgeted.budget());
+    var servedFirst = listedUris(playlists.generateMultivariantPlaylist(sessionOf(second), "t"));
+    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
+
+    workers.failTerminally(sessionId, "720p", TranscodeFailure.SEGMENT_CAP_EXCEEDED);
+    budgeted
+        .playback()
+        .onTerminalTranscodeFailure(
+            TerminalTranscodeFailureEvent.builder()
+                .streamSessionId(sessionId)
+                .jobAttemptId(UUID.randomUUID())
+                .variantLabel("720p")
+                .failure(TranscodeFailure.SEGMENT_CAP_EXCEEDED)
+                .build());
+    var copyRunningBeforeItsRequest = workers.isRunning(sessionId, "default");
+    rig.lifecycle().prepareRequestedVariant(sessionId, "default", "segment1.m4s");
+
+    var after =
+        budgeted
+            .playback()
+            .access(
+                PlaybackSessionRequest.builder()
+                    .playbackSessionId(second.playbackSessionId())
+                    .identity(command.identity())
+                    .build())
+            .orElseThrow();
+    assertThat(servedFirst)
+        .containsExactly("720p/stream.m3u8?t=t", "480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
+    assertThat(after.currentFormatAttempt().streamSessionId()).isEqualTo(sessionId);
+    assertThat(after.formatAttemptCount()).isEqualTo(1);
+    assertThat(listedUris(playlists.generateMultivariantPlaylist(sessionOf(after), "t")))
+        .containsExactly("stream.m3u8?t=t");
+    assertThat(copyRunningBeforeItsRequest).isFalse();
+    assertThat(workers.isRunning(sessionId, "default")).isTrue();
+  }
+
+  // ADR 0050 for an AV1 copy: a hardware AV1 encoder that writes every range runs beside H.265 and
+  // H.264 encoders, and the client plays AV1 in every range at 10 bits.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("av1Copies")
+  @DisplayName(
+      "Should encode every lower variant of an AV1 copy in AV1 in the copy's range and bit depth"
+          + " when a verified AV1 encoder writes them")
+  void shouldEncodeEveryLowerVariantOfAnAv1CopyInAv1WhenAVerifiedAv1EncoderWritesItsFormat(
+      Av1Copy av1Copy) {
+    workerVerifies(hardwareAv1(), x265(EVERY_ENCODE_FEATURE), encoder("h264", "libx264"));
+    probes.setDefaultProbe(av1Copy.source());
+
+    var copy = accepted(playback.start(startAuto(clientThatPlaysEveryRange())));
+
+    var session = sessionOf(copy);
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactly("720p", "480p", "360p");
+    assertThat(session.getVariants())
+        .allSatisfy(
+            variant -> {
+              var decision = session.decisionOf(variant.label());
+              assertThat(decision.encodeCodecProfile()).contains(EncodeCodecProfile.AV1_MAIN);
+              assertThat(decision.videoEncodeFormat()).isEqualTo(av1Copy.format());
+            });
+    assertThat(streamInfEntries(copy))
+        .hasSize(4)
+        .allSatisfy(
+            entry -> {
+              assertThat(videoCodecOf(entry)).startsWith("av01.");
+              assertThat(rangeOf(entry)).isEqualTo(av1Copy.format().range());
+            });
+  }
+
+  static Stream<Av1Copy> av1Copies() {
+    return Stream.of(
+        new Av1Copy(
+            "an 8-bit SDR AV1 copy", av1Source(CompatibleBase.SDR, 8), EncodeFormat.SDR_8_BIT),
+        new Av1Copy(
+            "a 10-bit SDR AV1 copy", av1Source(CompatibleBase.SDR, 10), EncodeFormat.SDR_10_BIT),
+        new Av1Copy(
+            "an HDR10 AV1 copy",
+            av1Source(CompatibleBase.PQ, 10),
+            EncodeFormat.hdr(VideoRange.PQ)));
+  }
+
+  /** An AV1 copy with the format that its lower variants keep. */
+  private record Av1Copy(
+      @NonNull String name, @NonNull MediaProbe source, @NonNull EncodeFormat format) {
+
+    @Override
+    public String toString() {
+      return name;
+    }
+  }
+
+  private record BudgetedPlayback(PlaybackSessionService playback, ServerUploadBudget budget) {}
+
+  // A playback service whose stream sessions the upload budget of these settings sizes (#796).
+  private BudgetedPlayback budgetedPlayback(ServerSettingsService settings) {
+    var registry = new FakeRuntimeStreamSessionRegistry();
+    rig = rigBuilder(registry).serverSettings(settings).build();
+    var budget = new ServerUploadBudget(settings, registry, rig.lifecycle(), PROPERTIES, meters);
+    var budgeted =
+        PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
+            .streamingService(streamingBuilder(registry).uploadBudget(budget).build())
+            .authorityGate(new FakePlaybackAuthorityGate())
+            .executor(Runnable::run)
+            .maximumFormatAttempts(4)
+            .build();
+    return new BudgetedPlayback(budgeted, budget);
+  }
+
+  private static List<String> listedUris(String multivariantPlaylist) {
+    return multivariantPlaylist.lines().filter(line -> !line.startsWith("#")).toList();
+  }
+
+  private List<String> runningVariants(UUID sessionId) {
+    return Stream.of(StreamSession.defaultVariant(), "720p", "480p", "360p")
+        .filter(label -> workers.isRunning(sessionId, label))
+        .toList();
+  }
+
+  // Requests the variant's first media segment on another thread and returns once the request has
+  // looked at its variant, found no segment and released the session mutex, so that only a wake or
+  // its stall deadline ends it.
+  private CompletableFuture<SegmentDelivery> heldRequestForTheFirstSegment(
+      UUID sessionId, String variantLabel) {
+    var looks = workers.livenessChecks(sessionId, variantLabel);
+    var delivery =
+        CompletableFuture.supplyAsync(
+            () ->
+                rig.coordinator().deliver(sessionId, variantLabel, variantLabel + "/segment0.m4s"),
+            requests);
+    workers.awaitLivenessCheckCount(sessionId, variantLabel, looks + 1);
+    var mutex = sessionMutex.getMutex(sessionId);
+    await()
+        .pollDelay(Duration.ZERO)
+        .pollInterval(Duration.ofMillis(1))
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> !mutex.isLocked());
+    return delivery;
+  }
+
   // A worker whose H.265 and H.264 encoders write every range, and an HDR10 source that Auto
   // copies above 720p, 480p and 360p in 10-bit PQ H.265.
   private PlaybackSessionSnapshot startAnHdr10CopyBesideLowerVariants(
@@ -1007,19 +1248,26 @@ class LowerVariantsInTheCopysRangeTest {
   }
 
   private HlsStreamingService streaming() {
-    var segments = new FakeSegmentStore();
     var registry = new FakeRuntimeStreamSessionRegistry();
-    rig =
-        StreamingRigFixture.streamingRigBuilder()
-            .transcodeExecutor(workers)
-            .segmentStore(segments)
-            .properties(PROPERTIES)
-            .runtimeRegistry(registry)
-            .heldRequests(workers.heldSegmentRequests())
-            .build();
+    rig = rigBuilder(registry).build();
+    return streamingBuilder(registry).uploadBudget(UploadBudgetFixture.OFF).build();
+  }
+
+  private StreamingRigFixture.StreamingRigBuilder rigBuilder(
+      FakeRuntimeStreamSessionRegistry registry) {
+    return StreamingRigFixture.streamingRigBuilder()
+        .transcodeExecutor(workers)
+        .segmentStore(segments)
+        .properties(PROPERTIES)
+        .runtimeRegistry(registry)
+        .sessionMutex(sessionMutex)
+        .heldRequests(workers.heldSegmentRequests());
+  }
+
+  private HlsStreamingService.HlsStreamingServiceBuilder streamingBuilder(
+      FakeRuntimeStreamSessionRegistry registry) {
     return HlsStreamingService.builder()
         .languagePreferences(noLanguagePreferences())
-        .uploadBudget(UploadBudgetFixture.OFF)
         .mediaFileRepository(mediaFiles)
         .transcodeExecutor(workers)
         .segmentStore(segments)
@@ -1031,8 +1279,7 @@ class LowerVariantsInTheCopysRangeTest {
         .runtimeRegistry(registry)
         .producerLifecycle(rig.lifecycle())
         .deliveryCoordinator(rig.coordinator())
-        .meterRegistry(meters)
-        .build();
+        .meterRegistry(meters);
   }
 
   // An HEVC entry that declares every range, HDR10+ and Dolby Vision profiles 5, 8.1 and 8.4, and
@@ -1212,6 +1459,33 @@ class LowerVariantsInTheCopysRangeTest {
                     .codecTier(Optional.of(VideoCodecTier.MAIN))
                     .firstFramesRead(true)
                     .build()));
+  }
+
+  // AV1 Main at 24 fps in the compatible base, with neither HDR10+ nor Dolby Vision.
+  private static MediaProbe av1Source(CompatibleBase base, int bitDepth) {
+    return defaultProbeBuilder()
+        .audioChannels(OptionalInt.of(2))
+        .containerFormat(Optional.of("matroska,webm"))
+        .videoCodec("av1")
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .frameRateRule(VideoPlaybackFactsFixture.declaredRateRule(new Fraction(24, 1)))
+                    .codecFamily(Optional.of(ProbedCodecFamily.AV1))
+                    .bitDepth(OptionalInt.of(bitDepth))
+                    .codecString(Optional.of("av01.0.08M.%02d".formatted(bitDepth)))
+                    .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(base))
+                    .videoProperties(
+                        Optional.of(
+                            VideoStreamProperties.builder()
+                                .codecProfile(Optional.of(VideoCodecProfile.AV1_MAIN))
+                                .codecLevel(OptionalInt.of(40))
+                                .codecTier(Optional.of(VideoCodecTier.MAIN))
+                                .firstFramesRead(true)
+                                .build()))
+                    .build()))
+        .build();
   }
 
   // The default 1080p source, whose keyframes open every 6 s interval, beside stereo AAC.
