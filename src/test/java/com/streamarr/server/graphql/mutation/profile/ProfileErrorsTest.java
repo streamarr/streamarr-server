@@ -275,6 +275,7 @@ class ProfileErrorsTest {
                 ProfileErrors.toSetProfilePinError(refusal),
                 ProfileErrors.toRemoveProfilePinError(refusal),
                 ProfileErrors.toDeleteProfileError(refusal)))
+        .hasSize(8)
         .allSatisfy(
             error ->
                 assertThat(error)
