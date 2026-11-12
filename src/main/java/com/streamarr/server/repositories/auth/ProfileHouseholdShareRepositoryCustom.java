@@ -43,7 +43,8 @@ public interface ProfileHouseholdShareRepositoryCustom {
   List<ChangedShare> invalidatePendingOfferedBy(UUID offererAccountId, String reason, Instant now);
 
   /**
-   * Re-reads the share past the first-level cache after jOOQ DML changed it in this transaction.
+   * Re-reads the share past the first-level cache after jOOQ DML in this transaction or another
+   * transaction's commit changed it; empty once another transaction deleted it.
    */
   Optional<ProfileHouseholdShare> findByIdAndReloadFromDatabase(UUID shareId);
 

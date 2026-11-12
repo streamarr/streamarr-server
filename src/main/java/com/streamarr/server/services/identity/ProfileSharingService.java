@@ -474,17 +474,19 @@ public class ProfileSharingService {
         Refusals.<ShareRejections.Accept>hiddenAs(ShareRejections.ShareNotFound::new));
   }
 
-  // A refusal names a share only to those who may read it, as the share queries decide: the
-  // Profile's offering side, and the HouseholdAdmins of the Household it is into. requireShare has
-  // already answered a share that is over as missing to those HouseholdAdmins. Hosting the Profile
-  // elsewhere is not enough.
+  // A refusal names a share only to those who may read it as it stands now, as the share queries
+  // decide: the Profile's offering side, readers of the Household's share history, and the
+  // HouseholdAdmins of the Household it is into while the offer is pending or the share is active.
+  // Hosting the Profile elsewhere is not enough. The share is read again, past the copy this
+  // request read first, since another request may have ended or deleted it since.
   private boolean mayViewShare(AuthenticatedIdentity identity, UUID shareId) {
     return shareRepository
-        .findById(shareId)
+        .findByIdAndReloadFromDatabase(shareId)
         .map(
             share ->
-                mayViewProfileShares(identity, share.getProfileId())
-                    || mayViewHousehold(identity, share.getHouseholdId()))
+                maySeeOver(identity, share)
+                    || (share.statusAt(clock.instant()).isLive()
+                        && mayViewHousehold(identity, share.getHouseholdId())))
         .orElse(false);
   }
 

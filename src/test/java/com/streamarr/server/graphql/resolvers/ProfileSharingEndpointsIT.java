@@ -700,13 +700,85 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         List.of(
             mutationResult(responses.getFirst(), "acceptProfileShare"),
             mutationResult(responses.getLast(), "rejectProfileShare"));
+    var decided = shareRepository.findById(shareId).orElseThrow().getStatus();
     assertThat(results).extracting(MutationResult::accepted).containsExactlyInAnyOrder(true, false);
+    assertThat(decided).isIn(ProfileShareStatus.ACTIVE, ProfileShareStatus.REJECTED);
+    // The loser answers as the share now reads to the Household: an active share that is no longer
+    // pending, or a rejected offer that it no longer sees at all.
     assertThat(results)
         .filteredOn(result -> !result.accepted())
         .extracting(MutationResult::errorType)
-        .containsExactly("ShareNotPendingError");
-    assertThat(shareRepository.findById(shareId).orElseThrow().getStatus())
-        .isIn(ProfileShareStatus.ACTIVE, ProfileShareStatus.REJECTED);
+        .containsExactly(
+            decided == ProfileShareStatus.ACTIVE ? "ShareNotPendingError" : "ShareNotFoundError");
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer share-not-found to the HouseholdAdmin whose end loses to another end of the"
+          + " share")
+  void shouldAnswerShareNotFoundToHouseholdAdminWhoseEndLosesToAnotherEndOfTheShare()
+      throws Exception {
+    var orphan = managedOrphan();
+    var shareId = UUID.fromString(offer(orphan, host.household().getId()));
+    accept(host, shareId);
+    var bearer = authTestSupport.accountBearer(host);
+    Callable<String> end =
+        () ->
+            graphql(
+                    bearer,
+                    """
+                    mutation { endProfileShare(input: {shareId: "%s"}) {
+                      share { status } userErrors { __typename } } }
+                    """
+                        .formatted(shareId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+    var results =
+        raceWhileShareLocked(shareId, end, end).stream()
+            .map(response -> mutationResult(response, "endProfileShare"))
+            .toList();
+
+    assertThat(results).extracting(MutationResult::accepted).containsExactlyInAnyOrder(true, false);
+    // The losing end finds the share over, and the Household no longer sees a share that is over.
+    assertThat(results)
+        .filteredOn(result -> !result.accepted())
+        .extracting(MutationResult::errorType)
+        .containsExactly("ShareNotFoundError");
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer share-not-found to the HouseholdAdmin whose rejection waits while the offer is"
+          + " deleted")
+  void shouldAnswerShareNotFoundToHouseholdAdminWhoseRejectionWaitsWhileTheOfferIsDeleted()
+      throws Exception {
+    var orphan = managedOrphan();
+    var shareId = UUID.fromString(offer(orphan, host.household().getId()));
+    var bearer = authTestSupport.accountBearer(host);
+
+    var response =
+        deleteWhileWaiting(
+            "profile_household_share",
+            shareId,
+            () ->
+                graphql(
+                        bearer,
+                        """
+                        mutation { rejectProfileShare(input: {shareId: "%s"}) {
+                          share { status } userErrors { __typename } } }
+                        """
+                            .formatted(shareId))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString());
+
+    assertThat(mutationResult(response, "rejectProfileShare").errorType())
+        .as("rejection in %s", response)
+        .isEqualTo("ShareNotFoundError");
   }
 
   @Test
