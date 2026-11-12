@@ -110,12 +110,16 @@ public class ProfileShareLifecycle {
 
   /** Announces every share of the Profile, which the database deletes with the Profile. */
   public void announceDeletionWithProfile(UUID profileId, Instant now) {
-    shareRepository.findByProfileId(profileId).forEach(share -> announceRemoval(share, now));
+    shareRepository
+        .findByProfileIdAndReloadFromDatabase(profileId)
+        .forEach(share -> announceRemoval(share, now));
   }
 
   /** Announces every share into the Household, which the database deletes with the Household. */
   public void announceDeletionWithHousehold(UUID householdId, Instant now) {
-    shareRepository.findByHouseholdId(householdId).forEach(share -> announceRemoval(share, now));
+    shareRepository
+        .findByHouseholdIdAndReloadFromDatabase(householdId)
+        .forEach(share -> announceRemoval(share, now));
   }
 
   /**

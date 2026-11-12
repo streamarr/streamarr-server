@@ -185,6 +185,16 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public List<ProfileHouseholdShare> findByProfileIdAndReloadFromDatabase(UUID profileId) {
+    return findByProfileId(profileId);
+  }
+
+  @Override
+  public List<ProfileHouseholdShare> findByHouseholdIdAndReloadFromDatabase(UUID householdId) {
+    return findByHouseholdId(householdId);
+  }
+
+  @Override
   public Optional<ChangedShare> tryDeclinePending(
       UUID shareId, ProfileShareStatus target, Instant now) throws IllegalArgumentException {
     ProfileHouseholdShareRepositoryCustom.requireDeclineTarget(target);

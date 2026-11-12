@@ -600,6 +600,50 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should tell a moved HouseholdAdmin only that each share ended when a ServerAdmin deletes"
+          + " their former Household")
+  void shouldTellMovedHouseholdAdminOnlyThatEachShareEndedWhenTheirFormerHouseholdIsDeleted() {
+    var departing = identity();
+    var refuge = identity();
+    var departingSocket = subscribedSocket(authTestSupport.accountBearer(departing));
+    var visitId = activeVisit(managedProfile(), departing.household().getId());
+    var residentId = createProfileAtHome(departing);
+    nextShare(departingSocket, residentId);
+    // A Profile they manage elsewhere; its later offer marks the end of what the deletion sent.
+    var managed = managedProfile();
+    grantManagement(departing, managed);
+    var serverAdmin = adminIdentity();
+
+    var deleted =
+        http.execute(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { transferLastAccountAndDeleteHousehold(input: {householdId: "%s",
+              destinationHouseholdId: "%s", reason: "closing"}) {
+              deletedHouseholdId userErrors { __typename } } }
+            """
+                .formatted(departing.household().getId(), refuge.household().getId()));
+    assertThat(
+            deleted.at("/data/transferLastAccountAndDeleteHousehold/deletedHouseholdId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(departing.household().getId().toString());
+    var laterId = offer(managed);
+
+    // Their open session still carries the claims of the deleted Household's HouseholdAdmin: it
+    // hears each share into that Household end, and not that the share was deleted afterwards.
+    var changes = changesUntil(departingSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .filteredOn(
+            change -> List.of(visitId, residentId).contains(change.path("shareId").asString()))
+        .extracting(
+            change -> change.path("shareId").asString(),
+            change -> change.path("share").path("status").asString())
+        .containsExactlyInAnyOrder(tuple(visitId, "ENDED"), tuple(residentId, "ENDED"));
+  }
+
+  @Test
   @DisplayName("Should not deliver a share when the subscriber may not read it")
   void shouldNotDeliverAShareWhenTheSubscriberMayNotReadIt() {
     var stranger = identity();
@@ -852,13 +896,18 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
   /** An active visit of the Profile to the host's Household, stored without announcing it. */
   private String activeVisit(Profile profile) {
+    return activeVisit(profile, host.household().getId());
+  }
+
+  /** An active visit of the Profile to the Household, stored without announcing it. */
+  private String activeVisit(Profile profile, UUID householdId) {
     return transactionTemplate
         .execute(
             _ ->
                 shareRepository.saveAndFlush(
                     ProfileHouseholdShare.builder()
                         .profileId(profile.getId())
-                        .householdId(host.household().getId())
+                        .householdId(householdId)
                         .status(ProfileShareStatus.ACTIVE)
                         .build()))
         .getId()

@@ -132,6 +132,25 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
+  public List<ProfileHouseholdShare> findByProfileIdAndReloadFromDatabase(UUID profileId) {
+    return reloadedFromDatabase(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId));
+  }
+
+  @Override
+  public List<ProfileHouseholdShare> findByHouseholdIdAndReloadFromDatabase(UUID householdId) {
+    return reloadedFromDatabase(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId));
+  }
+
+  // A query answers with the copy the transaction already holds, as it was first read. The copies
+  // are dropped, so the second read builds each share from its row as stored now.
+  private List<ProfileHouseholdShare> reloadedFromDatabase(Condition scope) {
+    var query = dsl.selectFrom(PROFILE_HOUSEHOLD_SHARE).where(scope);
+    JooqQueryHelper.nativeQuery(entityManager, query, ProfileHouseholdShare.class)
+        .forEach(entityManager::detach);
+    return JooqQueryHelper.nativeQuery(entityManager, query, ProfileHouseholdShare.class);
+  }
+
+  @Override
   public List<Row<ProfileHouseholdShare>> rowsIntoHousehold(
       HouseholdShareFilter filter, Seek seek) {
     return rowsBeyond(
