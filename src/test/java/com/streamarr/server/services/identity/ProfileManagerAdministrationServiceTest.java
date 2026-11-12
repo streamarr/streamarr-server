@@ -83,7 +83,9 @@ class ProfileManagerAdministrationServiceTest {
           managers,
           profiles,
           accounts,
-          new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
+          new LeavingManagerProposals(
+              new ProfileManagerInvitationLifecycle(invitations, new CapturingEventPublisher()),
+              new ProfileShareLifecycle(shares, new CapturingEventPublisher())),
           audit,
           new OpaqueOneTimeCodes(),
           credentialAttempts.gate(clock),
