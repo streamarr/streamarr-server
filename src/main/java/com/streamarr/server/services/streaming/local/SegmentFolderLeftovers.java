@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.local;
 
+import com.streamarr.server.exceptions.UnknownFolderLocationException;
 import com.streamarr.server.exceptions.UnsupportedSegmentFolderException;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Deleted;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Refused;
@@ -59,9 +60,9 @@ public class SegmentFolderLeftovers {
    * holds nothing of a running store.
    *
    * <p>It refuses a folder that is a root directory, that is the home folder or lies above it, that
-   * is a media folder or lies above or below one, or that a file system is mounted in, and it
-   * creates nothing there. It refuses every folder when the media folders or the mount table cannot
-   * be read.
+   * is a media folder or lies above or below one under any of their paths, or that a file system is
+   * mounted in, and it creates nothing there. It refuses every folder when the media folders or the
+   * mount table cannot be read, or the mount table does not show where the folders lie.
    *
    * <p>It deletes only in a folder that carries its mark, and it marks only a folder that holds no
    * other entry. There it deletes a stream session's directory only when a store marked the
@@ -124,7 +125,7 @@ public class SegmentFolderLeftovers {
       return mediaFolderRefusal;
     }
 
-    return mountPointRefusal(folder);
+    return mountRefusal(folder, folders.get());
   }
 
   // Read once per start, so that its checks compare the same folders.
@@ -151,20 +152,43 @@ public class SegmentFolderLeftovers {
   // A delete would empty a file system that is mounted in the folder. A second mount of the
   // folder's own file system crosses no device boundary, so only the mount table shows every
   // mount.
-  private Optional<SegmentFolderRefusal> mountPointRefusal(Path folder) {
-    List<Path> mountPoints;
+  private Optional<SegmentFolderRefusal> mountRefusal(Path folder, List<Path> mediaFolders)
+      throws IOException {
+    MountTable mounts;
     try {
-      mountPoints = MountTable.read(mountTable).mountPoints();
+      mounts = MountTable.read(mountTable);
     } catch (IOException | RuntimeException e) {
       log.warn("Failed to read the mount table {}", mountTable, e);
       return Optional.of(SegmentFolderRefusal.UNKNOWN_MOUNT_POINTS);
     }
 
     var mountedInside =
-        mountPoints.stream()
+        mounts.mountPoints().stream()
             .anyMatch(mountPoint -> mountPoint.startsWith(folder) && !mountPoint.equals(folder));
     if (mountedInside) {
       return Optional.of(SegmentFolderRefusal.MOUNT_POINT_INSIDE);
+    }
+
+    return mediaFolderLocationRefusal(folder, mediaFolders, mounts);
+  }
+
+  // A bind mount of a folder in a library, or a second mount of a library's file system, gives the
+  // folder a path below no library's path. The mount table shows where each path really leads.
+  private Optional<SegmentFolderRefusal> mediaFolderLocationRefusal(
+      Path folder, List<Path> mediaFolders, MountTable mounts) throws IOException {
+    var resolvedMediaFolders = new ArrayList<Path>();
+    for (var mediaFolder : mediaFolders) {
+      resolvedMediaFolders.add(resolved(mediaFolder));
+    }
+
+    try {
+      if (resolvedMediaFolders.stream()
+          .anyMatch(mediaFolder -> mounts.liesInOrHolds(folder, mediaFolder))) {
+        return Optional.of(SegmentFolderRefusal.MEDIA_FOLDER);
+      }
+    } catch (UnknownFolderLocationException e) {
+      log.warn("Failed to tell from the mount table {} where folders lie", mountTable, e);
+      return Optional.of(SegmentFolderRefusal.UNKNOWN_MOUNT_POINTS);
     }
 
     return Optional.empty();

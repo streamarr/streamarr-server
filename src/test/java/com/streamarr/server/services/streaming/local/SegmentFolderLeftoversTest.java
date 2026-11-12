@@ -816,6 +816,151 @@ class SegmentFolderLeftoversTest {
     assertThat(session).isDirectory();
   }
 
+  // No folder above the bind mount's path is the library's, so only the mount table shows where
+  // the folder lies.
+  @Test
+  @DisplayName(
+      "Should refuse the folder and create nothing when it is a bind mount of a folder in a library")
+  void shouldRefuseTheFolderAndCreateNothingWhenItIsABindMountOfAFolderInALibrary()
+      throws IOException {
+    var outcome =
+        startOf(
+            leftoversOf(segmentFolder)
+                .mediaFolders(() -> List.of(Path.of("/srv/media/movies")))
+                .mountTable(
+                    mountTableOf(
+                        """
+                        22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw
+                        41 22 8:1 /srv/media/movies/cache %s rw,relatime shared:1 - ext4 /dev/sda1 rw
+                        """,
+                        segmentFolder)));
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.MEDIA_FOLDER));
+    assertThat(entriesOf(segmentFolder)).isEmpty();
+  }
+
+  // In a container, the host's /data/media is the library at /media and the host's /data is the
+  // segment folder. The container has no path to the host's /data that holds the library.
+  @Test
+  @DisplayName(
+      "Should refuse the folder and keep its files when it is a bind mount of a folder that holds a"
+          + " library")
+  void shouldRefuseTheFolderAndKeepItsFilesWhenItIsABindMountOfAFolderThatHoldsALibrary() {
+    startOf(segmentFolder);
+    var file = deletableFileIn(segmentFolder);
+
+    var outcome =
+        startOf(
+            leftoversOf(segmentFolder)
+                .mediaFolders(() -> List.of(Path.of("/media")))
+                .mountTable(
+                    mountTableOf(
+                        """
+                        617 553 0:52 / / rw,relatime master:301 - overlay overlay rw,lowerdir=/l/A:/l/B,upperdir=/u,workdir=/w
+                        640 617 8:1 /data/media /media ro,relatime - ext4 /dev/sda1 rw
+                        641 617 8:1 /data %s rw,relatime - ext4 /dev/sda1 rw
+                        """,
+                        segmentFolder)));
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.MEDIA_FOLDER));
+    assertThat(file).hasBinaryContent(MEDIA);
+  }
+
+  // The library's disk is mounted twice: on /mnt/disk, and on the folder that holds the segment
+  // folder. The library /mnt/disk/<name> is the segment folder under its other path.
+  @Test
+  @DisplayName(
+      "Should refuse the folder and keep its files when a second mount of a library's file system"
+          + " leads to it")
+  void shouldRefuseTheFolderAndKeepItsFilesWhenASecondMountOfALibrarysFileSystemLeadsToIt() {
+    startOf(segmentFolder);
+    var file = deletableFileIn(segmentFolder);
+    var library = Path.of("/mnt/disk").resolve(segmentFolder.getFileName().toString());
+
+    var outcome =
+        startOf(
+            leftoversOf(segmentFolder)
+                .mediaFolders(() -> List.of(library))
+                .mountTable(
+                    mountTableOf(
+                        """
+                        22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw
+                        45 22 8:17 / /mnt/disk rw,relatime shared:5 - xfs /dev/sdb1 rw
+                        46 22 8:17 / %s rw,relatime shared:6 - xfs /dev/sdb1 rw
+                        """,
+                        segmentFolder.getParent())));
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.MEDIA_FOLDER));
+    assertThat(file).hasBinaryContent(MEDIA);
+  }
+
+  @Test
+  @DisplayName(
+      "Should delete leftovers when the folder and a library lie in different subvolumes of one"
+          + " file system")
+  void shouldDeleteLeftoversWhenTheFolderAndALibraryLieInDifferentSubvolumesOfOneFileSystem() {
+    startOf(segmentFolder);
+    var session = leftSessionIn(segmentFolder);
+
+    var outcome =
+        startOf(
+            leftoversOf(segmentFolder)
+                .mediaFolders(() -> List.of(Path.of("/srv/media/movies")))
+                .mountTable(
+                    mountTableOf(
+                        """
+                        22 1 0:31 /@ / rw,relatime shared:1 - btrfs /dev/nvme0n1p2 rw,ssd,subvolid=256,subvol=/@
+                        30 22 0:31 /@media /srv/media rw,relatime shared:2 - btrfs /dev/nvme0n1p2 rw,ssd,subvolid=257,subvol=/@media
+                        """)));
+
+    assertThat(outcome).isEqualTo(new Deleted(1, 0));
+    assertThat(session).doesNotExist();
+  }
+
+  @Test
+  @DisplayName(
+      "Should delete leftovers when the folder lies in a container's own file system and a library"
+          + " is a bind mount from the host")
+  void shouldDeleteLeftoversWhenTheFolderLiesInAContainersOwnFileSystemAndALibraryIsABindMount() {
+    startOf(segmentFolder);
+    var session = leftSessionIn(segmentFolder);
+
+    var outcome =
+        startOf(
+            leftoversOf(segmentFolder)
+                .mediaFolders(() -> List.of(Path.of("/media")))
+                .mountTable(
+                    mountTableOf(
+                        """
+                        617 553 0:52 / / rw,relatime master:301 - overlay overlay rw,lowerdir=/l/A:/l/B,upperdir=/u,workdir=/w
+                        640 617 8:1 /srv/media /media ro,relatime - ext4 /dev/sda1 rw
+                        """)));
+
+    assertThat(outcome).isEqualTo(new Deleted(1, 0));
+    assertThat(session).doesNotExist();
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse the folder and keep its files when the mount table does not show which mount"
+          + " holds it")
+  void shouldRefuseTheFolderAndKeepItsFilesWhenTheMountTableDoesNotShowWhichMountHoldsIt() {
+    startOf(segmentFolder);
+    var file = deletableFileIn(segmentFolder);
+
+    var outcome =
+        startOf(
+            leftoversOf(segmentFolder)
+                .mountTable(
+                    mountTableOf(
+                        """
+                        41 22 0:41 / /run rw,nosuid,nodev shared:2 - tmpfs tmpfs rw
+                        """)));
+
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.UNKNOWN_MOUNT_POINTS));
+    assertThat(file).hasBinaryContent(MEDIA);
+  }
+
   @Test
   @DisplayName("Should refuse the folder when it is the home folder")
   void shouldRefuseTheFolderWhenItIsTheHomeFolder() {
