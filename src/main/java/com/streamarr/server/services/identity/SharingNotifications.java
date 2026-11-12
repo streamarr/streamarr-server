@@ -12,6 +12,8 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
+import com.streamarr.server.services.events.notification.DismissNotificationsEvent;
+import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareEndedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
@@ -32,12 +34,13 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Tells the sides of a Profile share what happened to it, and settles the requests about an offer
- * when it stops waiting (ADR 0063 §The sharing kinds). It hears each share write inside the write's
- * transaction, so what it tells commits or rolls back with the write. It works out the recipients
- * from the relationship rows as they stand at the write and holds those rows until the write
- * commits, so a relationship that changes at the same moment either waits for the write or has
- * already changed when it is read. The Account that acted is never told.
+ * Tells the sides of a Profile share what happened to it, settles the requests about an offer when
+ * it stops waiting, and dismisses everything said about a share that is deleted (ADR 0063 §The
+ * sharing kinds, §Dismissal). It hears each share write inside the write's transaction, so what it
+ * tells commits or rolls back with the write. It works out the recipients from the relationship
+ * rows as they stand at the write and holds those rows until the write commits, so a relationship
+ * that changes at the same moment either waits for the write or has already changed when it is
+ * read. The Account that acted is never told.
  */
 @Component
 @RequiredArgsConstructor
@@ -50,6 +53,11 @@ class SharingNotifications {
 
   @EventListener
   public void onProfileShareChanged(ProfileShareChangedEvent change) {
+    if (change.removal()) {
+      dismissEverythingAbout(change.share());
+      return;
+    }
+
     switch (change.action()) {
       case ShareAction.Offered() -> tellOffer(change);
       case ShareAction.Answered(var answeredBy) -> answer(change, answeredBy);
@@ -60,6 +68,15 @@ class SharingNotifications {
           tellEnd(change, endedBy, ProfileShareEndedBy.SERVER);
       case ShareAction.EndedWithHousehold _, ShareAction.Other _ -> {}
     }
+  }
+
+  // A share deleted with its Profile or its Household leaves nothing to link to, so every
+  // recipient loses what it was told about it.
+  private void dismissEverythingAbout(ChangedShare share) {
+    events.publishEvent(
+        new DismissNotificationsEvent(
+            DismissalSelector.bySubject(Set.of(SubjectReference.profileShare(share.shareId())))
+                .build()));
   }
 
   // The share records the Account that made the offer; an automatic re-offer is made in the name
