@@ -8,6 +8,8 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.SourceHouseholdAccess;
+import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -15,10 +17,14 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SubjectReference;
+import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
+import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.ProfileConnections;
@@ -36,6 +42,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -53,6 +61,10 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
 
   @Autowired private ProfileSharingService sharing;
   @Autowired private ProfileShareLifecycle shareLifecycle;
+  @Autowired private ProfileShareExpirySweeper expirySweeper;
+  @Autowired private AccountAdministrationService accountAdministration;
+  @Autowired private AccountLifecycleService accountLifecycle;
+  @Autowired private ProfileManagerAdministrationService profileManagement;
   @Autowired private CredentialIssuanceService credentialIssuance;
   @Autowired private AccountInvitationService accountInvitations;
   @Autowired private AccountInvitationRepository invitationRepository;
@@ -238,6 +250,245 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
     assertThat(rows.about(SubjectReference.profileShare(offer.getId()))).isEmpty();
   }
 
+  @ParameterizedTest
+  @EnumSource(ProfileShareAnswer.class)
+  @DisplayName(
+      "Should resolve the requests as decided with the answer when the offer is accepted or"
+          + " rejected")
+  void shouldResolveTheRequestsAsDecidedWithTheAnswerWhenTheOfferIsAcceptedOrRejected(
+      ProfileShareAnswer answer) {
+    var offer = steps.offer(sam, sam.profile(), riverside);
+
+    Outcome<?, ?> outcome =
+        switch (answer) {
+          case ACCEPTED -> sharing.acceptProfileShare(identityOf(riverside), offer.getId());
+          case REJECTED -> sharing.rejectProfileShare(identityOf(riverside), offer.getId());
+        };
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var decidedAt = stored(offer).getDecidedAt();
+    assertThat(requestsAbout(offer))
+        .hasSize(2)
+        .allSatisfy(
+            request -> {
+              assertThat(request.resolution()).contains("DECIDED");
+              assertThat(request.resolvedAt()).contains(decidedAt);
+              assertThat(request.snapshot())
+                  .isEqualTo(
+                      document(
+                          new ProfileShareOfferedSnapshot(
+                              sam.profile().getName(), Optional.of(answer))));
+            });
+  }
+
+  @ParameterizedTest
+  @EnumSource(Withdrawal.class)
+  @DisplayName(
+      "Should resolve the requests as withdrawn when the offer is canceled, replaced or"
+          + " invalidated")
+  void shouldResolveTheRequestsAsWithdrawnWhenTheOfferIsCanceledReplacedOrInvalidated(
+      Withdrawal withdrawal) {
+    var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var kai = steps.profileManagedBy("Kai", sam, sam, theo);
+    var offer = steps.offer(theo, kai, riverside);
+
+    switch (withdrawal) {
+      case CANCELED -> sharing.cancelProfileShare(identityOf(theo), offer.getId());
+      case REPLACED -> steps.offer(theo, kai, riverside);
+      case OFFERER_NO_LONGER_AUTHORIZED -> {
+        // Disabled in the database alone, so the offer still waits when the Household accepts it.
+        var offerer = userAccountRepository.findById(theo.account().getId()).orElseThrow();
+        offerer.setEnabled(false);
+        userAccountRepository.saveAndFlush(offerer);
+        sharing.acceptProfileShare(identityOf(riverside), offer.getId());
+      }
+    }
+
+    assertThat(stored(offer).getStatus()).isEqualTo(withdrawal.status);
+    assertWithdrawn(offer);
+  }
+
+  /** How an offer stops waiting with nobody deciding it. */
+  enum Withdrawal {
+    CANCELED(ProfileShareStatus.CANCELED),
+    REPLACED(ProfileShareStatus.CANCELED),
+    OFFERER_NO_LONGER_AUTHORIZED(ProfileShareStatus.INVALIDATED);
+
+    private final ProfileShareStatus status;
+
+    Withdrawal(ProfileShareStatus status) {
+      this.status = status;
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should give new requests and withdraw the older ones when an offer replaces an older offer")
+  void shouldGiveNewRequestsAndWithdrawTheOlderOnesWhenAnOfferReplacesAnOlderOffer() {
+    var older = steps.offer(sam, sam.profile(), riverside);
+
+    var newer = steps.offer(sam, sam.profile(), riverside);
+
+    assertWithdrawn(older);
+    assertThat(requestsAbout(newer))
+        .allSatisfy(request -> assertThat(request.resolution()).isEmpty())
+        .extracting(Row::recipient)
+        .containsExactlyInAnyOrder(account(riverside), account(riversideAdmin));
+  }
+
+  @Test
+  @DisplayName(
+      "Should resolve the requests as expired when the expiry sweep stores the offer's expiry")
+  void shouldResolveTheRequestsAsExpiredWhenTheExpirySweepStoresTheOffersExpiry() {
+    var offer = steps.offer(sam, sam.profile(), riverside);
+    steps.lapse(offer);
+
+    expirySweeper.sweep();
+
+    assertThat(stored(offer).getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
+    assertExpired(offer);
+  }
+
+  @Test
+  @DisplayName(
+      "Should resolve the requests as expired when a rejection comes after the offer's time ran"
+          + " out")
+  void shouldResolveTheRequestsAsExpiredWhenARejectionComesAfterTheOffersTimeRanOut() {
+    var offer = steps.offer(sam, sam.profile(), riverside);
+    steps.lapse(offer);
+    // A ServerAdmin still reads an offer whose time ran out, so its rejection reaches the offer.
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+
+    var outcome = sharing.rejectProfileShare(identityOf(serverAdmin), offer.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(stored(offer).getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
+    assertExpired(offer);
+  }
+
+  @Test
+  @DisplayName(
+      "Should resolve the request as accepted when an Account transfer makes the offer its"
+          + " Profile's home share")
+  void shouldResolveTheRequestAsAcceptedWhenAnAccountTransferMakesTheOfferItsProfilesHomeShare() {
+    var ben = track(authTestSupport.createHouseholdMemberIdentity(riverside));
+    var offer = steps.offer(ben, ben.profile(), sam);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+
+    var outcome =
+        accountLifecycle.transferAccount(
+            authTestSupport.freshIdentityOf(serverAdmin),
+            TransferAccountCommand.builder()
+                .accountId(ben.account().getId())
+                .destinationHouseholdId(sam.household().getId())
+                .sourceHouseholdAccess(SourceHouseholdAccess.END)
+                .reason("moved in with Sam")
+                .build());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var home = stored(offer);
+    assertThat(home.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE);
+    assertThat(requestsAbout(offer))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.recipient()).isEqualTo(account(sam));
+              assertThat(request.resolution()).contains("DECIDED");
+              assertThat(request.resolvedAt()).contains(home.getDecidedAt());
+              assertThat(request.snapshot())
+                  .isEqualTo(
+                      document(
+                          new ProfileShareOfferedSnapshot(
+                              ben.profile().getName(), Optional.of(ProfileShareAnswer.ACCEPTED))));
+            });
+  }
+
+  @ParameterizedTest
+  @EnumSource(OffererChange.class)
+  @DisplayName(
+      "Should withdraw the requests when the Account that made the offer is disabled, deleted or"
+          + " loses ServerAdmin")
+  void shouldWithdrawTheRequestsWhenTheAccountThatMadeTheOfferIsDisabledDeletedOrLosesServerAdmin(
+      OffererChange change) {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var offerer =
+        switch (change) {
+          case DISABLED, DELETED -> track(authTestSupport.createHouseholdMemberIdentity(sam));
+          case SERVER_ADMIN_REVOKED -> track(authTestSupport.createAdminIdentity());
+        };
+    var kai =
+        switch (change) {
+          case DISABLED, DELETED -> steps.profileManagedBy("Kai", sam, sam, offerer);
+          case SERVER_ADMIN_REVOKED -> steps.profileManagedBy("Kai", sam, sam);
+        };
+    var offer = steps.offer(offerer, kai, riverside);
+
+    Outcome<?, ?> outcome =
+        switch (change) {
+          case DISABLED ->
+              accountAdministration.disableAccount(
+                  authTestSupport.freshIdentityOf(serverAdmin), offerer.account().getId());
+          case DELETED ->
+              accountLifecycle.deleteMyAccount(authTestSupport.freshIdentityOf(offerer), "DELETE");
+          case SERVER_ADMIN_REVOKED ->
+              accountAdministration.revokeServerAdmin(
+                  authTestSupport.freshIdentityOf(serverAdmin),
+                  offerer.account().getId(),
+                  "rotation");
+        };
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(stored(offer).getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertWithdrawn(offer);
+  }
+
+  /** What becomes of the Account that made an offer while the offer waits. */
+  enum OffererChange {
+    DISABLED,
+    DELETED,
+    SERVER_ADMIN_REVOKED
+  }
+
+  @Test
+  @DisplayName(
+      "Should withdraw the requests when the manager that made the offer stops managing the"
+          + " Profile")
+  void shouldWithdrawTheRequestsWhenTheManagerThatMadeTheOfferStopsManagingTheProfile() {
+    var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var kai = steps.profileManagedBy("Kai", sam, sam, theo);
+    var offer = steps.offer(theo, kai, riverside);
+
+    var outcome = profileManagement.relinquishProfileManagement(identityOf(theo), kai.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(stored(offer).getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertWithdrawn(offer);
+  }
+
+  private void assertWithdrawn(ProfileHouseholdShare offer) {
+    assertResolvedWithoutAnAnswer(offer, "WITHDRAWN");
+  }
+
+  private void assertExpired(ProfileHouseholdShare offer) {
+    assertResolvedWithoutAnAnswer(offer, "EXPIRED");
+  }
+
+  // Every recipient's request resolves at once, at the instant the share records.
+  private void assertResolvedWithoutAnAnswer(ProfileHouseholdShare offer, String resolution) {
+    var stored = stored(offer);
+    var profileName = profileRepository.findById(stored.getProfileId()).orElseThrow().getName();
+    assertThat(requestsAbout(offer))
+        .hasSize(2)
+        .allSatisfy(
+            request -> {
+              assertThat(request.resolution()).contains(resolution);
+              assertThat(request.resolvedAt()).contains(stored.getDecidedAt());
+              assertThat(request.snapshot())
+                  .isEqualTo(
+                      document(new ProfileShareOfferedSnapshot(profileName, Optional.empty())));
+            });
+  }
+
   private ProfileHouseholdShare stored(ProfileHouseholdShare share) {
     return shareRepository.findById(share.getId()).orElseThrow();
   }
@@ -253,6 +504,10 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
         connections.connect(profile, track(authTestSupport.createAdminIdentity()), reofferedTo);
     connectedAccountIds.add(connected);
     return connected;
+  }
+
+  private AuthenticatedIdentity identityOf(TestIdentity identity) {
+    return authTestSupport.identityOf(identity);
   }
 
   private static RecipientReference account(TestIdentity identity) {
