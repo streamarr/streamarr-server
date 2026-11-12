@@ -3,6 +3,7 @@ package com.streamarr.server.services.notification;
 import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -17,6 +18,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
+import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.RequestResolution;
@@ -52,6 +54,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -284,9 +287,9 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should deliver the older request's withdrawal and then the new request when a new offer"
-          + " replaces it")
-  void shouldDeliverTheOlderRequestsWithdrawalAndThenTheNewRequestWhenANewOfferReplacesIt()
+      "Should deliver the older request's withdrawal with the new request in one change when a new"
+          + " offer replaces it")
+  void shouldDeliverTheOlderRequestsWithdrawalWithTheNewRequestWhenANewOfferReplacesIt()
       throws Exception {
     var kai = kai();
     var older = steps.offer(sam, kai, riverside);
@@ -294,14 +297,20 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
     var newer = steps.offer(sam, kai, riverside);
 
-    var withdrawn = nextChange(socket);
-    assertThat(onlyChange(withdrawn).path("notificationId").asString())
-        .isEqualTo(requestFor(riversideAdmin, older).id().toString());
-    assertThat(nodeOf(withdrawn).path("resolution").asString()).isEqualTo("WITHDRAWN");
-    var made = nextChange(socket);
-    assertThat(onlyChange(made).path("notificationId").asString())
-        .isEqualTo(requestFor(riversideAdmin, newer).id().toString());
-    assertMatchesAFreshQuery(made, riversideAdmin);
+    var replaced = nextChange(socket);
+    assertThat(
+            replaced
+                .path("notifications")
+                .valueStream()
+                .map(
+                    change ->
+                        tuple(
+                            change.path("notificationId").asString(),
+                            textOrNull(change.path("edge").path("node").path("resolution")))))
+        .containsExactly(
+            tuple(requestFor(riversideAdmin, older).id().toString(), "WITHDRAWN"),
+            tuple(requestFor(riversideAdmin, newer).id().toString(), null));
+    assertMatchesAFreshQuery(replaced, riversideAdmin);
   }
 
   @Test
@@ -526,15 +535,18 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     assertThat(nodeOf(toldOffering).path("__typename").asString())
         .isEqualTo("ProfileShareEndedNotification");
     assertMatchesAFreshQuery(toldOffering, sam);
-    var ended = nextChange(householdSide);
-    assertThat(nodeOf(ended).path("__typename").asString())
-        .isEqualTo("ProfileShareEndedNotification");
-    assertMatchesAFreshQuery(ended, riversideAdmin);
-    var reoffered = nextChange(householdSide);
-    assertThat(nodeOf(reoffered).path("__typename").asString())
-        .isEqualTo("ProfileShareOfferedNotification");
-    assertThat(nodeOf(reoffered).path("unread").asBoolean()).isTrue();
-    assertMatchesAFreshQuery(reoffered, riversideAdmin);
+    var endedAndReoffered = nextChange(householdSide);
+    assertThat(
+            endedAndReoffered
+                .path("notifications")
+                .valueStream()
+                .map(change -> change.path("edge").path("node")))
+        .extracting(
+            node -> node.path("__typename").asString(), node -> node.path("unread").asBoolean())
+        .containsExactlyInAnyOrder(
+            tuple("ProfileShareEndedNotification", true),
+            tuple("ProfileShareOfferedNotification", true));
+    assertMatchesAFreshQuery(endedAndReoffered, riversideAdmin);
     assertWithdrawn(nextChange(waitedOn), brook, waiting);
   }
 
@@ -588,31 +600,33 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should deliver the dismissal with a null edge when a request's Profile is deleted")
-  void shouldDeliverTheDismissalWithANullEdgeWhenARequestsProfileIsDeleted() throws Exception {
-    var offer = steps.offer(sam, kai(), riverside);
-    var request = requestFor(riversideAdmin, offer);
+  @DisplayName(
+      "Should deliver one change to each recipient, with null edges for only its own Notifications,"
+          + " when deleting a Profile dismisses what was said about it and its shares")
+  void shouldDeliverOneChangeToEachRecipientWhenDeletingAProfileDismissesWhatWasSaidAboutIt()
+      throws Exception {
+    var kai = kai();
+    var ended = steps.accept(riverside, steps.offer(sam, kai, riverside));
+    sharing.endProfileShare(authTestSupport.identityOf(riversideAdmin), ended.getId());
+    steps.offer(sam, kai, riverside);
+    var samsLost = idsOf(sam);
+    var adminsLost = idsOf(riversideAdmin);
     var serverAdmin = track(authTestSupport.createAdminIdentity());
-    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+    var offeringSide = subscribedSocket(authTestSupport.accountBearer(sam));
+    var householdSide = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
 
     var outcome =
         profileLifecycle.administrativelyDeleteProfile(
-            authTestSupport.freshIdentityOf(serverAdmin), offer.getProfileId(), "a duplicate");
+            authTestSupport.freshIdentityOf(serverAdmin), kai.getId(), "a duplicate");
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
-    // The deletion withdraws the offer on its way, and that change is read once the request is
-    // gone.
-    var withdrawn = nextChange(socket);
-    var dismissed = nextChange(socket);
-    assertThat(List.of(withdrawn, dismissed))
-        .allSatisfy(
-            change -> {
-              assertThat(onlyChange(change).path("notificationId").asString())
-                  .isEqualTo(request.id().toString());
-              assertThat(onlyChange(change).path("edge").isNull()).isTrue();
-              assertThat(change.path("unreadNotificationCount").asInt()).isZero();
-            });
-    assertThat(rows.of(accountOf(riversideAdmin))).isEmpty();
+    assertDismissed(nextChange(offeringSide), samsLost);
+    assertDismissed(nextChange(householdSide), adminsLost);
+    var sentinel = tellSentinel(sam, riversideAdmin);
+    assertThat(onlyChange(nextChange(offeringSide)).path("notificationId").asString())
+        .isEqualTo(sentinel.get(accountOf(sam)).toString());
+    assertThat(onlyChange(nextChange(householdSide)).path("notificationId").asString())
+        .isEqualTo(sentinel.get(accountOf(riversideAdmin)).toString());
   }
 
   @Test
@@ -874,6 +888,36 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
         .orElseThrow();
   }
 
+  private List<String> idsOf(TestIdentity recipient) {
+    return rows.of(accountOf(recipient)).stream().map(row -> row.id().toString()).toList();
+  }
+
+  /** The change names exactly the Notifications, once each, each with a null edge. */
+  private static void assertDismissed(JsonNode change, List<String> notificationIds) {
+    assertThat(change.path("notifications").valueStream())
+        .allSatisfy(notification -> assertThat(notification.path("edge").isNull()).isTrue())
+        .extracting(notification -> notification.path("notificationId").asString())
+        .containsExactlyInAnyOrderElementsOf(notificationIds);
+    assertThat(change.path("unreadNotificationCount").asInt()).isZero();
+  }
+
+  /** Tells each recipient news about a new share, and answers each one's Notification. */
+  private Map<RecipientReference, UUID> tellSentinel(TestIdentity... recipients) {
+    var subject = SubjectReference.profileShare(UUID.randomUUID());
+    publish(
+        TellNotificationEvent.builder()
+            .kind(SharingNotificationKinds.PROFILE_SHARE_ANSWERED)
+            .subject(subject)
+            .recipients(
+                Stream.of(recipients)
+                    .map(NotificationsSubscriptionIT::accountOf)
+                    .collect(Collectors.toSet()))
+            .snapshot(new ProfileShareAnsweredSnapshot("Ash", ProfileShareAnswer.ACCEPTED))
+            .at(Instant.now())
+            .build());
+    return rows.about(subject).stream().collect(Collectors.toMap(Row::recipient, Row::id));
+  }
+
   private void publish(Object event) {
     transactionTemplate.executeWithoutResult(_ -> eventPublisher.publishEvent(event));
   }
@@ -917,6 +961,14 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
               .orElseThrow();
       assertThat(pushed.path("edge")).isEqualTo(freshEdge);
     }
+  }
+
+  private static String textOrNull(JsonNode value) {
+    if (value.isNull() || value.isMissingNode()) {
+      return null;
+    }
+
+    return value.asString();
   }
 
   private static JsonNode onlyChange(JsonNode change) {
