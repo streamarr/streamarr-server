@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.upToLevel;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -45,12 +46,7 @@ class VideoCapabilityEntryHlsCopyTest {
     return hevcEntryBuilder()
         .codecProfiles(
             MAX_LEVELS.entrySet().stream()
-                .map(
-                    maxLevel ->
-                        VideoCodecProfileCapability.builder()
-                            .profile(maxLevel.getKey())
-                            .maxLevel(maxLevel.getValue())
-                            .build())
+                .map(entry -> upToLevel(entry.getKey(), entry.getValue()))
                 .toList())
         .maxBitDepth(MAX_BIT_DEPTH)
         .maxWidth(MAX_SIZE.width())
