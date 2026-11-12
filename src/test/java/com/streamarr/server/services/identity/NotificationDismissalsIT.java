@@ -9,6 +9,8 @@ import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.NotificationSnapshot;
 import com.streamarr.server.domain.notification.RecipientReference;
 import com.streamarr.server.domain.notification.SubjectReference;
+import com.streamarr.server.graphql.dto.NotificationsChange;
+import com.streamarr.server.graphql.subscriptions.KeyedSubscriptionBroadcaster;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -42,6 +44,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.jooq.DSLContext;
@@ -75,6 +79,10 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
   @Autowired private HouseholdDeletionService householdDeletion;
   @Autowired private AccountLifecycleService accountLifecycle;
   @Autowired private ApplicationEvents applicationEvents;
+
+  @Autowired
+  private KeyedSubscriptionBroadcaster<UUID, NotificationsChange> notificationsChangeBroadcaster;
+
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
@@ -282,6 +290,37 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(rows.of(accountOf(brook))).isEmpty();
     assertThat(applicationEvents.stream(NotificationsChangedEvent.class)).isEmpty();
+  }
+
+  /**
+   * Deleting the invited Account first withdraws its request and then deletes it. Each operation
+   * receives its Account's changes in the order they are pushed, so a change pushed after the
+   * deletion arrives first only when the deletion pushed nothing.
+   */
+  @Test
+  @DisplayName("Should push nothing when an Account with a waiting invitation request is deleted")
+  void shouldPushNothingWhenAnAccountWithAWaitingInvitationRequestIsDeleted() throws Exception {
+    var brook = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    invite(brook, steps.unsharedProfileManagedBy("Ollie", sam, sam));
+    assertThat(rows.of(accountOf(brook)))
+        .singleElement()
+        .satisfies(request -> assertThat(request.resolution()).isEmpty());
+    var brookId = brook.account().getId();
+    var pushed = new LinkedBlockingQueue<NotificationsChange>();
+    var operation = notificationsChangeBroadcaster.register(brookId).subscribe(pushed::add);
+
+    try {
+      var outcome =
+          accountLifecycle.deleteMyAccount(authTestSupport.freshIdentityOf(brook), "DELETE");
+      var afterTheDeletion = new NotificationsChange(List.of(UUID.randomUUID()));
+      notificationsChangeBroadcaster.broadcast(brookId, afterTheDeletion);
+
+      assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+      assertThat(rows.of(accountOf(brook))).isEmpty();
+      assertThat(pushed.poll(10, TimeUnit.SECONDS)).isEqualTo(afterTheDeletion);
+    } finally {
+      operation.dispose();
+    }
   }
 
   /** What becomes of the final Account of a Household being deleted. */
