@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.notification.NotificationForm;
+import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -12,13 +13,18 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.events.notification.NotificationKind;
 import com.streamarr.server.services.events.notification.NotificationSnapshot;
+import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
+import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
+import com.streamarr.server.services.identity.AccountLifecycleService.AdministrativelyDeleteAccountCommand;
+import com.streamarr.server.services.identity.AccountLifecycleService.ProfileCleanup;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.ShareSteps;
@@ -27,6 +33,7 @@ import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.HouseholdNews
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.InvitationReceivedSnapshot;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.ManagementRemovedSnapshot;
 import com.streamarr.server.support.StoredNotificationRows;
+import com.streamarr.server.support.StoredNotificationRows.Row;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -34,15 +41,20 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -52,6 +64,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Tag("IntegrationTest")
 @DisplayName("Notification Dismissals Integration Tests")
+@RecordApplicationEvents
 class NotificationDismissalsIT extends AbstractIntegrationTest {
 
   @Autowired private ProfileSharingService sharing;
@@ -59,6 +72,8 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
   @Autowired private ProfileLifecycleService profileLifecycle;
   @Autowired private ProfileManagerAdministrationService profileManagement;
   @Autowired private HouseholdDeletionService householdDeletion;
+  @Autowired private AccountLifecycleService accountLifecycle;
+  @Autowired private ApplicationEvents applicationEvents;
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
@@ -159,6 +174,92 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
     assertThat(rows.about(kept)).hasSize(1);
   }
 
+  @ParameterizedTest
+  @EnumSource(AccountDeletion.class)
+  @DisplayName(
+      "Should delete the Account's Notifications and no other Account's when the Account is"
+          + " deleted")
+  void shouldDeleteTheAccountsNotificationsAndNoOtherAccountsWhenTheAccountIsDeleted(
+      AccountDeletion deletion) {
+    var brook = track(deletion.departing(authTestSupport, sam));
+    var share = SubjectReference.profileShare(UUID.randomUUID());
+    tellAnswer(share, brook, theo);
+
+    var outcome = delete(brook, deletion);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.of(accountOf(brook))).isEmpty();
+    assertThat(rows.of(accountOf(theo))).extracting(Row::subject).containsExactly(share);
+  }
+
+  /** How an Account is deleted. */
+  enum AccountDeletion {
+    BY_ITSELF,
+    BY_A_SERVER_ADMIN,
+    WITH_ITS_HOUSEHOLD;
+
+    // Only the deletion of its Household deletes a Household's final Account.
+    TestIdentity departing(AuthTestSupport auth, TestIdentity householdOf) {
+      return switch (this) {
+        case BY_ITSELF, BY_A_SERVER_ADMIN -> auth.createHouseholdMemberIdentity(householdOf);
+        case WITH_ITS_HOUSEHOLD -> auth.createIdentity();
+      };
+    }
+  }
+
+  private Outcome<?, ?> delete(TestIdentity account, AccountDeletion deletion) {
+    return switch (deletion) {
+      case BY_ITSELF ->
+          accountLifecycle.deleteMyAccount(authTestSupport.freshIdentityOf(account), "DELETE");
+      case BY_A_SERVER_ADMIN ->
+          accountLifecycle.administrativelyDeleteAccount(
+              authTestSupport.freshIdentityOf(serverAdmin),
+              AdministrativelyDeleteAccountCommand.builder()
+                  .accountId(account.account().getId())
+                  .profileCleanup(ProfileCleanup.ERASE_PROFILE)
+                  .reason("left")
+                  .build());
+      case WITH_ITS_HOUSEHOLD ->
+          delete(account.household().getId(), HouseholdDeletion.DELETE_ITS_LAST_ACCOUNT);
+    };
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the Notifications about a share when the Account that made the offer is"
+          + " deleted")
+  void shouldKeepTheNotificationsAboutAShareWhenTheAccountThatMadeTheOfferIsDeleted() {
+    var brook = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var offer = steps.offer(brook, steps.profileManagedBy("Kai", sam, sam, brook), theo);
+
+    var outcome =
+        accountLifecycle.deleteMyAccount(authTestSupport.freshIdentityOf(brook), "DELETE");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.about(SubjectReference.profileShare(offer.getId())))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.recipient()).isEqualTo(accountOf(theo));
+              assertThat(request.resolution()).contains("WITHDRAWN");
+            });
+  }
+
+  @Test
+  @DisplayName("Should push nothing when a recipient Account is deleted")
+  void shouldPushNothingWhenARecipientAccountIsDeleted() {
+    var brook = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    tellAnswer(SubjectReference.profileShare(UUID.randomUUID()), brook, theo);
+    applicationEvents.clear();
+
+    var outcome =
+        accountLifecycle.deleteMyAccount(authTestSupport.freshIdentityOf(brook), "DELETE");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.of(accountOf(brook))).isEmpty();
+    assertThat(applicationEvents.stream(NotificationsChangedEvent.class)).isEmpty();
+  }
+
   /** What becomes of the final Account of a Household being deleted. */
   enum HouseholdDeletion {
     TRANSFER_ITS_LAST_ACCOUNT,
@@ -227,6 +328,25 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
             });
   }
 
+  /** Tells the recipients that an offer of Kai, the share, was accepted. */
+  private void tellAnswer(SubjectReference share, TestIdentity... recipients) {
+    publish(
+        TellNotificationEvent.builder()
+            .kind(SharingNotificationKinds.PROFILE_SHARE_ANSWERED)
+            .subject(share)
+            .recipients(
+                Stream.of(recipients)
+                    .map(NotificationDismissalsIT::accountOf)
+                    .collect(Collectors.toSet()))
+            .snapshot(new ProfileShareAnsweredSnapshot("Kai", ProfileShareAnswer.ACCEPTED))
+            .at(Instant.now())
+            .build());
+  }
+
+  private void publish(Object event) {
+    transactionTemplate.executeWithoutResult(_ -> eventPublisher.publishEvent(event));
+  }
+
   /** Tells Theo of the subject, as the kind's domain will. */
   private void tell(
       NotificationKind kind, SubjectReference subject, NotificationSnapshot snapshot) {
@@ -242,7 +362,7 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
       tell.subjectExpiresAt(Optional.of(at.plus(Duration.ofDays(7))));
     }
 
-    transactionTemplate.executeWithoutResult(_ -> eventPublisher.publishEvent(tell.build()));
+    publish(tell.build());
   }
 
   private static RecipientReference accountOf(TestIdentity identity) {
