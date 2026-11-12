@@ -1474,23 +1474,17 @@ message ProbeKeyframes {
   }
 }
 
-// This value names the step that measured a file's streams (ADR 0054). The
-// server fails a probe attempt whose StreamMeasurements names a step that the
-// source of its KeyframePositions does not allow.
+// This value names the step that measured a file's streams (ADR 0054). A probe
+// result names the step that also read its KeyframePositions.
 enum StreamMeasurementSource {
   STREAM_MEASUREMENT_SOURCE_UNSPECIFIED = 0;
   // The probe read the sample tables of an MP4 or MOV file that is not
-  // fragmented. Only KeyframePositions of a CONTAINER_INDEX allow this value.
+  // fragmented, beside KeyframePositions of a CONTAINER_INDEX.
   STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE = 1;
   // A keyframe packet scan listed every packet, on the keyframes of its own
-  // result. Only KeyframePositions of a PACKET_SCAN allow this value. A packet
-  // without a presentation time counts at its decode time. The scan reports no
-  // measurement when a measured packet has neither time, or when a stream copy
-  // would change a measured stream's packets (ADR 0054).
+  // KeyframePositions of a PACKET_SCAN.
   STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN = 2;
-  // A bitrate scan listed every packet. The worker never reports this value: a
-  // bitrate scan answers with BitrateScanChunkResult, and the server names the
-  // step when every chunk has a result.
+  // A bitrate scan listed every packet. No probe result names this step.
   STREAM_MEASUREMENT_SOURCE_BITRATE_SCAN = 3;
 }
 
@@ -1543,10 +1537,6 @@ message ProbeMediaInfo {
   // later set it.
   bool stream_titles_omitted = 6;
   // The worker leaves this field out when it measured no stream (ADR 0054).
-  // The server stores the measurement of a keyframe packet scan with the
-  // scan's keyframe positions, and the file then gets no bitrate scan. A
-  // keyframe packet scan that leaves the field out is followed by a bitrate
-  // scan when the server could copy the file's chosen video stream.
   StreamMeasurements stream_measurements = 7;
   // This field lists, at most once each, where the chosen video stream and each
   // audio stream ends, as a keyframe packet scan read their packets. Probe
