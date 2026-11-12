@@ -231,7 +231,7 @@ class DolbyVisionWithoutACompatibleBaseTest {
   // play, so with the default budget of four an encode replaces a rejected Dolby Vision copy as the
   // second format attempt. Original's encode plays in Auto, and a fixed quality keeps its choice.
   // That encode names COPY_FAILED, not DOLBY_VISION_COPY_FAILED, because no stripped copy was
-  // possible.
+  // possible. Auto names the PQ range that its SDR encode gave up.
   @ParameterizedTest(name = "{0} in {1}")
   @MethodSource("rejectedDolbyVisionCopies")
   @DisplayName(
@@ -261,7 +261,10 @@ class DolbyVisionWithoutACompatibleBaseTest {
     var copyFailed = Optional.of(PlaybackFormatChange.COPY_FAILED);
     return Stream.of(
         Arguments.of(
-            DolbyVisionProfile.PROFILE_5, VideoQuality.AUTO, VideoQuality.AUTO, Optional.empty()),
+            DolbyVisionProfile.PROFILE_5,
+            VideoQuality.AUTO,
+            VideoQuality.AUTO,
+            Optional.of(PlaybackFormatChange.HDR_NOT_KEPT)),
         Arguments.of(
             DolbyVisionProfile.PROFILE_5, VideoQuality.ORIGINAL, VideoQuality.AUTO, copyFailed),
         Arguments.of(

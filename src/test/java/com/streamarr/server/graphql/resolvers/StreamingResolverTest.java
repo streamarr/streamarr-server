@@ -863,6 +863,58 @@ class StreamingResolverTest {
     assertThat(STUB_SERVICE.getLastReceivedOptions().dynamicRange()).isNull();
   }
 
+  // ADR 0013: the viewer chose HDR, so SDR of an HDR source is a change that the answer names.
+  @Test
+  @DisplayName(
+      "Should name HDR_NOT_KEPT when a fixed quality with the HDR choice starts an HDR source in"
+          + " SDR")
+  void shouldNameHdrNotKeptWhenAFixedQualityWithTheHdrChoiceStartsAnHdrSourceInSdr() {
+    var session = buildSessionDeciding(UUID.randomUUID(), fullTranscodeDecision("h264"));
+    var pqFacts =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+            .build();
+    STUB_SERVICE.setNextResult(
+        sessionBuilderLike(session)
+            .mediaProbe(
+                session.getMediaProbe().toBuilder()
+                    .videoPlaybackFacts(Optional.of(pqFacts))
+                    .build())
+            .build());
+
+    var created =
+        dgsQueryExecutor.executeAndGetDocumentContext(
+            """
+            mutation {
+              createPlaybackSession(
+                input: {
+                  mediaFileId: "%s", options: {quality: HIGH_720P, dynamicRange: HDR}, capabilities: %s
+                }
+              ) {
+                playbackSession {
+                  playbackChoice formatChange
+                  currentFormatAttempt {
+                    ... on ReadyPlaybackFormatAttempt {
+                      streamSession { ... on HlsStreamSession { videoRange } }
+                    }
+                  }
+                }
+                userErrors { __typename }
+              }
+            }
+            """
+                .formatted(UUID.randomUUID(), CAPABILITIES));
+
+    assertThat(created.read(CREATED_PLAYBACK + ".playbackChoice", String.class))
+        .isEqualTo("HIGH_720P");
+    assertThat(
+            created.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.videoRange", String.class))
+        .isEqualTo("SDR");
+    assertThat(created.read(CREATED_PLAYBACK + ".formatChange", String.class))
+        .isEqualTo("HDR_NOT_KEPT");
+  }
+
   private DocumentContext startPlaybackReadingChoices(VideoQuality quality) {
     return dgsQueryExecutor.executeAndGetDocumentContext(
         """

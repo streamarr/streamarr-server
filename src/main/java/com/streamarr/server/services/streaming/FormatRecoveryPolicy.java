@@ -10,10 +10,13 @@ import lombok.NonNull;
  * at original quality, which copies when it can (ADR 0045). Otherwise Original's failure is a
  * failed copy, because an encode that Original reaches plays in Auto, so it falls back to an encode
  * in Auto. A fixed quality's failed copy falls back to an encode at the same fixed quality, and the
- * failure of the fixed quality's own encode ends playback. In every playback choice, a Dolby Vision
- * copy on a PQ or HLG base that the client rejects, or whose Dolby Vision conversion the worker
- * fails, first falls back to the copy with Dolby Vision stripped, which keeps the playback choice;
- * a worker's mismatch or a short copy would repeat in that copy, so it goes straight to the encode.
+ * failure of the fixed quality's own encode ends playback. The one exception is a PQ, HLG or 10-bit
+ * SDR encode whose hardware encoder failed and whose software continuation could not start: SDR is
+ * better than no video, so the fixed quality encodes again, and the failed format stays out of that
+ * encode (ADR 0013). In every playback choice, a Dolby Vision copy on a PQ or HLG base that the
+ * client rejects, or whose Dolby Vision conversion the worker fails, first falls back to the copy
+ * with Dolby Vision stripped, which keeps the playback choice; a worker's mismatch or a short copy
+ * would repeat in that copy, so it goes straight to the encode.
  */
 record FormatRecoveryPolicy(int maximumFormatAttempts) {
   private static final PlayingChoice AUTO_AFTER_A_FAILED_COPY =
@@ -72,6 +75,10 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
 
   private NextFormatAttempt afterAFixedQualitysFailure(
       PlayingChoice choice, FailedFormatAttempt failed, int formatAttemptCount) {
+    if (failed.output() instanceof FailedFormatAttempt.EncodeWithoutSoftwareContinuation) {
+      return encodeWithinBudget(choice, formatAttemptCount);
+    }
+
     if (failed.output() instanceof FailedFormatAttempt.Encode) {
       return new NextFormatAttempt.Fail(failed.reason());
     }
@@ -79,7 +86,8 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
     return encodeWithinBudget(choiceWhenEncodingAfterACopy(choice), formatAttemptCount);
   }
 
-  // Auto's recoveries are not announced. Original and a fixed quality stay selected.
+  // The stripped copy keeps the source's PQ or HLG base, so Auto announces nothing. Original and a
+  // fixed quality stay selected.
   private static PlayingChoice choiceWhenStrippingDolbyVision(PlayingChoice choice) {
     if (choice.playbackChoice() == VideoQuality.AUTO) {
       return choice;

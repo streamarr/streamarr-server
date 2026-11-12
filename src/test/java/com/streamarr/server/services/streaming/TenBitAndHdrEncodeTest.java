@@ -422,6 +422,69 @@ class TenBitAndHdrEncodeTest {
             List.of(svtAv1(Set.of(VideoEncodeFeature.TEN_BIT)), libx264(Set.of()))));
   }
 
+  // ADR 0013: the server never replaces a manual choice silently, so the HDR choice that plays SDR
+  // is a change that the answer names. Auto and a fixed quality without a choice asked for no
+  // range, and Original's change to Auto keeps its own name.
+  @ParameterizedTest(name = "{0} of {1}")
+  @MethodSource("choicesThatStartInSdr")
+  @DisplayName(
+      "Should name HDR_NOT_KEPT only when a fixed quality with the HDR choice starts an HDR source"
+          + " in SDR")
+  void shouldNameHdrNotKeptOnlyWhenAFixedQualityWithTheHdrChoiceStartsAnHdrSourceInSdr(
+      StreamingOptions options, MediaProbe source, Optional<PlaybackFormatChange> expectedChange) {
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL, List.of(svtAv1(Set.of()), libx264(Set.of())));
+    probes.setDefaultProbe(source);
+
+    var encode = accepted(playback.start(start(options, hdrAv1Client())));
+
+    assertThatAn8BitSdrEncodePlays(encode);
+    assertThat(encode.formatChange()).isEqualTo(expectedChange);
+  }
+
+  static Stream<Arguments> choicesThatStartInSdr() {
+    var hdrChoice =
+        Named.of(
+            "a fixed quality with the HDR choice",
+            options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.HDR));
+    var hdr10 = Named.of("an HDR10 source", hdr10Source(Optional.empty(), Optional.empty()));
+    return Stream.of(
+        Arguments.of(hdrChoice, hdr10, Optional.of(PlaybackFormatChange.HDR_NOT_KEPT)),
+        Arguments.of(
+            hdrChoice,
+            Named.of(
+                "an HLG source",
+                hdrSource(rangeOf(CompatibleBase.HLG), Optional.empty(), Optional.empty())),
+            Optional.of(PlaybackFormatChange.HDR_NOT_KEPT)),
+        Arguments.of(
+            hdrChoice,
+            Named.of(
+                "a 10-bit SDR source",
+                hdrSource(rangeOf(CompatibleBase.SDR), Optional.empty(), Optional.empty())),
+            Optional.empty()),
+        Arguments.of(
+            Named.of(
+                "a fixed quality with the SDR choice",
+                options(VideoQuality.FULL_HD_1080P, DynamicRangeChoice.SDR)),
+            hdr10,
+            Optional.empty()),
+        Arguments.of(
+            Named.of("a fixed quality without a choice", options(VideoQuality.FULL_HD_1080P, null)),
+            hdr10,
+            Optional.empty()),
+        Arguments.of(Named.of("Auto", options(VideoQuality.AUTO, null)), hdr10, Optional.empty()),
+        Arguments.of(
+            Named.of(
+                "Auto with an HDR choice, which Auto ignores",
+                options(VideoQuality.AUTO, DynamicRangeChoice.HDR)),
+            hdr10,
+            Optional.empty()),
+        Arguments.of(
+            Named.of("Original", options(VideoQuality.ORIGINAL, null)),
+            hdr10,
+            Optional.of(PlaybackFormatChange.STARTED_WITH_ENCODE)));
+  }
+
   // ADR 0050 lets a copy above the viewer's limits play only when no encode plays, and offers a
   // fixed quality whose box an encode reaches. An entry that accepts only PQ takes an HDR10 encode,
   // so the smaller fixed qualities are offered and that encode plays within the limits.

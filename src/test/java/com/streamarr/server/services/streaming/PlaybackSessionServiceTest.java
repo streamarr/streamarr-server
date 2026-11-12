@@ -24,6 +24,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
@@ -1147,28 +1148,36 @@ class PlaybackSessionServiceTest {
     assertThat(streams.getAllSessions()).isEmpty();
   }
 
-  // A fixed quality never gives its range up, so the rejected continuation ends playback, and the
-  // playback session's listeners hear of that end.
+  // A fixed quality whose PQ encode cannot continue in software plays SDR in a new format attempt,
+  // and the playback session's listeners hear of that change before the SDR encode starts.
   @Test
   @DisplayName(
-      "Should announce the end of playback when no stream session can continue a fixed quality's"
-          + " PQ encode in software")
-  void shouldAnnounceTheEndOfPlaybackWhenNoStreamSessionCanContinueAFixedQualitysPqEncode() {
+      "Should announce the SDR encode before it starts when no stream session can continue a fixed"
+          + " quality's PQ encode in software")
+  void shouldAnnounceTheSdrEncodeBeforeItStartsWhenNoStreamSessionCanContinueAPqEncode() {
     streams.copiesTheSource = false;
     streams.encodeFormat = EncodeFormat.hdr(VideoRange.PQ);
+    streams.sourceProbe = pqSource();
     var command = startCommand().options(qualityOptions(VideoQuality.HIGH_720P)).build();
     var initial = accepted(service.start(command));
-    streams.rejection = new CreateStreamSessionRejection.NoEligibleVideoFormat();
+    streams.rejectionOfTheNextCreation = new CreateStreamSessionRejection.NoEligibleVideoFormat();
+    streams.encodeFormat = EncodeFormat.SDR_8_BIT;
     var changesWhenTheContinuationStarted = new AtomicLong();
+    var changesWhenTheSdrEncodeStarted = new AtomicLong();
     streams.beforeNextCreation = _ -> changesWhenTheContinuationStarted.set(changesOf(initial));
+    streams.duringNextCreation = _ -> changesWhenTheSdrEncodeStarted.set(changesOf(initial));
 
     service.onRequestedVariantHardwareEncoderFailed(
         hardwareEncoderFailure(initial.currentFormatAttempt().streamSessionId()));
 
-    var changesAfterTheRejection = changesOf(initial);
-    var failed = service.access(request(initial, command)).orElseThrow();
-    assertThat(failed.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Failed.class);
-    assertThat(changesAfterTheRejection).isEqualTo(changesWhenTheContinuationStarted.get() + 1);
+    var sdr = service.access(request(initial, command)).orElseThrow();
+    assertThat(sdr.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(sdr.decisions().getLast().video().output().videoRange()).isEqualTo(VideoRange.SDR);
+    assertThat(sdr.formatAttemptCount()).isEqualTo(2);
+    assertThat(sdr.playbackChoice()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(sdr.formatChange()).contains(PlaybackFormatChange.HDR_NOT_KEPT);
+    assertThat(changesWhenTheSdrEncodeStarted.get())
+        .isEqualTo(changesWhenTheContinuationStarted.get() + 1);
   }
 
   // A playback session that closed while its software continuation started reserves nothing more.
@@ -1193,6 +1202,52 @@ class PlaybackSessionServiceTest {
 
     assertThat(events.getEventsOfType(PlaybackSessionChangedEvent.class)).isEmpty();
     assertThat(streams.createdCommands).hasSize(2);
+  }
+
+  // Auto announces only the recovery that the viewer sees: SDR after a format attempt that played
+  // PQ. A recovery that keeps PQ, or that follows an SDR encode of the PQ source, stays unannounced
+  // (ADR 0013).
+  @ParameterizedTest(name = "{1} after {0}")
+  @MethodSource("autoRecoveriesOfAPqSource")
+  @DisplayName(
+      "Should name HDR_NOT_KEPT in Auto only when the format attempt after a PQ encode plays SDR")
+  void shouldNameHdrNotKeptInAutoOnlyWhenTheFormatAttemptAfterAPqEncodePlaysSdr(
+      EncodeFormat first, EncodeFormat recovery, Optional<PlaybackFormatChange> expectedChange) {
+    streams.copiesTheSource = false;
+    streams.encodeFormat = first;
+    streams.sourceProbe = pqSource();
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(2).build();
+    var command = startCommand().build();
+    var initial = accepted(playback.start(command));
+    streams.encodeFormat = recovery;
+
+    var recovered = playback.reportFormatFailure(report(initial, command).build()).orElseThrow();
+
+    assertThat(initial.formatChange()).isEmpty();
+    assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(recovered.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(recovered.formatChange()).isEqualTo(expectedChange);
+  }
+
+  static Stream<Arguments> autoRecoveriesOfAPqSource() {
+    var pq = Named.of("PQ", EncodeFormat.hdr(VideoRange.PQ));
+    var sdr = Named.of("8-bit SDR", EncodeFormat.SDR_8_BIT);
+    return Stream.of(
+        Arguments.of(pq, sdr, Optional.of(PlaybackFormatChange.HDR_NOT_KEPT)),
+        Arguments.of(pq, pq, Optional.empty()),
+        Arguments.of(sdr, sdr, Optional.empty()));
+  }
+
+  // An HDR10 source without Dolby Vision.
+  private static MediaProbe pqSource() {
+    return defaultProbeBuilder()
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .dynamicRange(
+                        VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+                    .build()))
+        .build();
   }
 
   @Test
@@ -3566,6 +3621,8 @@ class PlaybackSessionServiceTest {
     private Consumer<CreateStreamSessionCommand> duringNextCreation;
     private Consumer<CreateStreamSessionCommand> beforeNextCreation;
     private CreateStreamSessionRejection rejection;
+    // Refuses only the next creation, so the creation after it can start.
+    private CreateStreamSessionRejection rejectionOfTheNextCreation;
     private boolean failDestroy;
     private Runnable afterNextDestroy;
     private RuntimeException destroyFailure;
@@ -3590,6 +3647,12 @@ class PlaybackSessionServiceTest {
         var callback = beforeNextCreation;
         beforeNextCreation = null;
         callback.accept(command);
+      }
+
+      if (rejectionOfTheNextCreation != null) {
+        var nextRejection = rejectionOfTheNextCreation;
+        rejectionOfTheNextCreation = null;
+        return Outcome.rejected(nextRejection);
       }
 
       if (rejection != null) {

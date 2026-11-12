@@ -2,12 +2,14 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
+import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.PlaybackSessionClosedException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -773,11 +775,11 @@ public class PlaybackSessionService implements AutoCloseable {
    * new format attempt, which the client reopens at the same position (ADR 0044). The encode keeps
    * its range and bit depth, and a continuation that starts spends no format attempt. A 10-bit SDR
    * encode continues in 8-bit SDR when no software encoder on a worker with room writes 10 bits.
-   * When none writes a PQ or HLG encode's range, or a 10-bit SDR encode finds no worker with room,
-   * the encode has failed as after a format error: Auto gives the range or the 10 bits up within
-   * its budget, and a fixed quality ends playback (ADR 0013). An 8-bit SDR encode with no worker
-   * with room for it ends the playback session. Every later format attempt of the playback session
-   * encodes the codec family with the software encoder.
+   * When none writes a PQ or HLG encode's range, or a 10-bit SDR encode finds no software encoder
+   * of its codec family on a worker with room, the encode has failed: Auto and a fixed quality give
+   * the range or the 10 bits up within the budget, because SDR is better than no video (ADR 0013).
+   * An 8-bit SDR encode with no worker with room for it ends the playback session. Every later
+   * format attempt of the playback session encodes the codec family with the software encoder.
    */
   @EventListener
   public void onRequestedVariantHardwareEncoderFailed(
@@ -827,7 +829,8 @@ public class PlaybackSessionService implements AutoCloseable {
       case FailedFormatAttempt.DirectPlay _ -> DecisionReason.DIRECT_PLAY_FAILED;
       case FailedFormatAttempt.Copy _, FailedFormatAttempt.DolbyVisionCopyOnAnHdrBase _ ->
           DecisionReason.COPY_FAILED;
-      case FailedFormatAttempt.Encode _ -> DecisionReason.ENCODE_FAILED;
+      case FailedFormatAttempt.Encode _, FailedFormatAttempt.EncodeWithoutSoftwareContinuation _ ->
+          DecisionReason.ENCODE_FAILED;
     };
   }
 
@@ -1003,10 +1006,10 @@ public class PlaybackSessionService implements AutoCloseable {
   }
 
   // A software continuation of a PQ, HLG or 10-bit SDR encode that could not start in that range
-  // means that its encode has failed, so what follows is what follows a format error during that
-  // encode. The continuation made no decision, so a format attempt that follows takes its number.
-  // An 8-bit SDR encode has no range to give up, so its rejected continuation ends playback (ADR
-  // 0044).
+  // means that its encode has failed, so the recovery policy decides what follows, as after a
+  // format error. The continuation made no decision, so a format attempt that follows takes its
+  // number. An 8-bit SDR encode has no range to give up, so its rejected continuation ends playback
+  // (ADR 0044).
   private Optional<FormatAttemptReservation> reserveAfterContinuationRejected(
       PlaybackSession playback,
       ReservedFormatAttempt attempt,
@@ -1019,10 +1022,12 @@ public class PlaybackSessionService implements AutoCloseable {
       return Optional.empty();
     }
 
-    var failedEncode =
-        new FailedFormatAttempt.Encode(
-            continuation.get().codecFamily(), continuation.get().format());
+    var refused = continuation.get();
+    excludeFailedEncode(playback, refused.codecFamily(), refused.format());
     playback.startedFormatAttempts--;
+    var failedEncode =
+        new FailedFormatAttempt.EncodeWithoutSoftwareContinuation(
+            refused.codecFamily(), refused.format());
     return Optional.of(
         reserveAfterFailedAttempt(
             playback, attempt.streamId(), new FailedFormatAttempt(rejection, failedEncode)));
@@ -1295,6 +1300,36 @@ public class PlaybackSessionService implements AutoCloseable {
         && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
       playback.choice = choiceWhenEncoding;
     }
+
+    if (playback.choice.formatChange().isEmpty() && playsSdrWhereHdrWasKept(playback)) {
+      playback.choice =
+          new PlayingChoice(
+              playback.choice.playbackChoice(), Optional.of(PlaybackFormatChange.HDR_NOT_KEPT));
+    }
+  }
+
+  // The latest format attempt plays SDR of a PQ or HLG source, although the viewer chose HDR in a
+  // fixed quality or an earlier format attempt played PQ or HLG (ADR 0013).
+  private static boolean playsSdrWhereHdrWasKept(PlaybackSession playback) {
+    var video = playback.decisions.getLast().video();
+    if (video.output().videoRange() != VideoRange.SDR
+        || video.source().videoRange() == VideoRange.SDR) {
+      return false;
+    }
+
+    return viewerChoseHdr(playback) || earlierFormatAttemptPlayedHdr(playback);
+  }
+
+  private static boolean viewerChoseHdr(PlaybackSession playback) {
+    return ViewerLimits.of(playback.command.options())
+        .dynamicRangeChoice()
+        .filter(DynamicRangeChoice.HDR::equals)
+        .isPresent();
+  }
+
+  private static boolean earlierFormatAttemptPlayedHdr(PlaybackSession playback) {
+    return playback.decisions.subList(0, playback.decisions.size() - 1).stream()
+        .anyMatch(decision -> decision.video().output().videoRange() != VideoRange.SDR);
   }
 
   // Original that reaches an encode plays it in Auto (ADR 0052).

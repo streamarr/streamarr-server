@@ -2,7 +2,7 @@ package com.streamarr.server.services.streaming;
 
 /**
  * Why a playback session plays another output than its requested playback choice asked for (ADR
- * 0052). Auto's recoveries never set one.
+ * 0052). Of Auto's recoveries, only one that gives an HDR range up for SDR sets one.
  */
 public enum PlaybackFormatChange {
   /** An HLS copy failed, so an encode plays. */
@@ -20,5 +20,11 @@ public enum PlaybackFormatChange {
    * The viewer switched audio tracks during direct play, and the server rules out the HLS copy, so
    * an encode plays.
    */
-  AUDIO_TRACK_SWITCHED
+  AUDIO_TRACK_SWITCHED,
+  /**
+   * A format attempt plays SDR of a PQ or HLG source after the viewer chose HDR in a fixed quality,
+   * or after an earlier format attempt of the playback session played PQ or HLG (ADR 0013). It is
+   * set only while no other change is set.
+   */
+  HDR_NOT_KEPT
 }
