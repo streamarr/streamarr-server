@@ -13,7 +13,9 @@ import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.domain.pagination.SortValueKind;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.security.WithAccountContext;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import org.jooq.DSLContext;
@@ -105,6 +107,37 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
               });
     } finally {
       invitationRepository.deleteById(expiredInvitation.getId());
+      authTestSupport.deleteIdentity(recipient);
+      authTestSupport.deleteIdentity(inviter);
+    }
+  }
+
+  @Test
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  @DisplayName("Should return the stored expiry when a write changes an invitation")
+  void shouldReturnTheStoredExpiryWhenAWriteChangesAnInvitation() {
+    var inviter = authTestSupport.createAdminIdentity();
+    var recipient = authTestSupport.createIdentity();
+    var expiresAt = Instant.now().plus(Duration.ofDays(7)).truncatedTo(ChronoUnit.MICROS);
+    var invitation = saveInvitation(inviter, recipient, expiresAt);
+
+    try {
+      var canceled =
+          transactionTemplate.execute(
+              _ -> invitationRepository.tryCancelPending(invitation.getId(), Instant.now()));
+
+      assertThat(canceled)
+          .hasValueSatisfying(
+              changed ->
+                  assertThat(changed.expiresAt())
+                      .isEqualTo(expiresAt)
+                      .isEqualTo(
+                          invitationRepository
+                              .findById(invitation.getId())
+                              .orElseThrow()
+                              .getExpiresAt()));
+    } finally {
+      invitationRepository.deleteById(invitation.getId());
       authTestSupport.deleteIdentity(recipient);
       authTestSupport.deleteIdentity(inviter);
     }

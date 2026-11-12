@@ -36,14 +36,16 @@ import org.jooq.UpdateResultStep;
 public class ProfileManagerInvitationRepositoryCustomImpl
     implements ProfileManagerInvitationRepositoryCustom {
 
-  // The columns a write returns to name each invitation it changed.
+  // The columns a write returns to name each invitation it changed, the status it left it in and
+  // when the invitation expires.
   private static final List<Field<?>> CHANGED_INVITATION =
       List.of(
           PROFILE_MANAGER_INVITATION.ID,
           PROFILE_MANAGER_INVITATION.PROFILE_ID,
           PROFILE_MANAGER_INVITATION.INVITER_ACCOUNT_ID,
           PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID,
-          PROFILE_MANAGER_INVITATION.STATUS);
+          PROFILE_MANAGER_INVITATION.STATUS,
+          PROFILE_MANAGER_INVITATION.EXPIRES_AT);
 
   private final DSLContext dsl;
   private final EntityManager entityManager;
@@ -272,12 +274,14 @@ public class ProfileManagerInvitationRepositoryCustomImpl
 
   private static ChangedManagerInvitation changedInvitation(
       ProfileManagerInvitationRecord invitationRecord) {
-    return new ChangedManagerInvitation(
-        invitationRecord.getId(),
-        invitationRecord.getProfileId(),
-        invitationRecord.getInviterAccountId(),
-        Optional.ofNullable(invitationRecord.getRecipientAccountId()),
-        ProfileManagerInvitationStatus.valueOf(invitationRecord.getStatus().name()));
+    return ChangedManagerInvitation.builder()
+        .invitationId(invitationRecord.getId())
+        .profileId(invitationRecord.getProfileId())
+        .inviterAccountId(invitationRecord.getInviterAccountId())
+        .recipientAccountId(Optional.ofNullable(invitationRecord.getRecipientAccountId()))
+        .status(ProfileManagerInvitationStatus.valueOf(invitationRecord.getStatus().name()))
+        .expiresAt(invitationRecord.getExpiresAt().toInstant())
+        .build();
   }
 
   // Each single-invitation write names its invitation by id, so it changes at most one row.
