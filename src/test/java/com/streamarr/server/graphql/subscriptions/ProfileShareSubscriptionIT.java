@@ -636,6 +636,65 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should tell a moved HouseholdAdmin only that a visit ended when a ServerAdmin deletes the"
+          + " visiting Profile while their former Household is deleted")
+  void shouldTellMovedHouseholdAdminOnlyThatVisitEndedWhenVisitorIsDeletedWithTheirHousehold()
+      throws Exception {
+    var departing = identity();
+    var refuge = identity();
+    var departingSocket = subscribedSocket(authTestSupport.accountBearer(departing));
+    var visiting = managedProfile();
+    var visitId = activeVisit(visiting, departing.household().getId());
+    // The Household deletion deletes its own Profiles after it has ended the visits into it.
+    var residentId =
+        shareRepository
+            .findById(UUID.fromString(createProfileAtHome(departing)))
+            .orElseThrow()
+            .getProfileId();
+    var managed = managedProfile();
+    grantManagement(departing, managed);
+    var serverAdmin = adminIdentity();
+
+    JsonNode householdDeleted;
+    JsonNode profileDeleted;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var held = lockRow(row("profile", residentId))) {
+      var deletingHousehold =
+          executor.submit(
+              () -> transferLastAccountAndDeleteHousehold(serverAdmin, departing, refuge));
+      awaitWaitersBehind(jdbcTemplate, held.backendPid(), 1);
+      // The Profile deletion reads the visit as still active, then waits for the Household
+      // deletion, which has ended it and goes on to commit first.
+      var deletingProfile =
+          executor.submit(() -> administrativelyDeleteProfile(serverAdmin, visiting));
+      awaitWaitersBehind(jdbcTemplate, held.backendPid(), 2);
+
+      held.release();
+      householdDeleted = deletingHousehold.get(10, TimeUnit.SECONDS);
+      profileDeleted = deletingProfile.get(10, TimeUnit.SECONDS);
+    }
+
+    var laterId = offer(managed);
+
+    assertThat(
+            householdDeleted
+                .at("/data/transferLastAccountAndDeleteHousehold/deletedHouseholdId")
+                .asString())
+        .as("deletion in %s", householdDeleted)
+        .isEqualTo(departing.household().getId().toString());
+    assertThat(profileDeleted.at("/data/administrativelyDeleteProfile/profileId").asString())
+        .as("deletion in %s", profileDeleted)
+        .isEqualTo(visiting.getId().toString());
+    var changes = changesUntil(departingSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .filteredOn(change -> visitId.equals(change.path("shareId").asString()))
+        .extracting(change -> change.path("share").path("status").asString())
+        .containsExactly("ENDED");
+  }
+
+  @Test
   @DisplayName("Should not deliver a share when the subscriber may not read it")
   void shouldNotDeliverAShareWhenTheSubscriberMayNotReadIt() {
     var stranger = identity();

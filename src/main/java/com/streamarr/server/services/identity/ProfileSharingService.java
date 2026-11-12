@@ -591,8 +591,9 @@ public class ProfileSharingService {
    * made, with nothing read later, unless they also read the share from the Profile's side or the
    * Household's share history, as a ServerAdmin does, and get every change as it stands. An earlier
    * change delivered once the share is over or deleted does not reach them; the deletion of a live
-   * share does, as the share's removal. A share deleted with its Profile is decided by its
-   * Household alone. Refuses a reader who may no longer follow share changes at all.
+   * share does, as the share's removal, while its Household still exists. A share deleted with its
+   * Profile is decided by its Household alone. Refuses a reader who may no longer follow share
+   * changes at all.
    */
   public Optional<ShareChange> shareChange(
       AuthenticatedIdentity identity, ProfileShareChangedEvent change) {
@@ -615,10 +616,14 @@ public class ProfileSharingService {
 
   // A change that waited while its share ended or was deleted would show the Household's
   // HouseholdAdmins what came after; then only the change that ended or removed the share does.
+  // A deleted Household has no HouseholdAdmins left to tell of a removal. Household deletion ends
+  // the visits into it without the visiting Profiles' locks, so a Profile deletion beside it can
+  // commit the removal of a visit after the Household deletion committed its end, and only a
+  // session still carrying that Household's admin claims would hear it.
   private boolean stillShown(
       AuthenticatedIdentity identity, ProfileShareChangedEvent change, ShareChange shown) {
     return change.ended()
-        || change.removal()
+        || (change.removal() && householdRepository.existsById(change.share().householdId()))
         || shown.share().filter(share -> share.statusAt(clock.instant()).isLive()).isPresent()
         || followsEveryChange(identity, change.share());
   }
