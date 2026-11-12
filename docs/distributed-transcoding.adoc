@@ -140,6 +140,15 @@ Mount media read-only.
 Workers on different nodes need storage that supports those simultaneous mounts.
 Workers need no writable output directory: FFmpeg writes fragmented MP4 to the worker over standard output (https://github.com/streamarr/streamarr-adr/blob/main/adr/0037-worker-delivers-fmp4-segments-from-ffmpeg-stdout.adoc[ADR 0037]).
 
+The server keeps each stream session's media segments in its segment folder and deletes a stream session's directory when the session ends.
+A server process that ends without stopping leaves its stream sessions' directories and its unfinished uploads there.
+Set `STREAMING_SEGMENT_BASE_PATH` to a folder that only this server uses, and the server deletes those leftovers at its next start.
+A second server process that starts with the same folder deletes the stream sessions' directories of the first.
+Name a folder that is empty or does not exist yet. The server marks it with a `.streamarr-segment-folder` file and deletes leftovers only beside that mark, so it deletes nothing from a folder that held something else first.
+Without the setting, the server uses `streamarr-segments` in the system's temporary folder. Every server process on the machine that names no folder shares it, so the server deletes no leftovers there.
+Compose sets the folder to `/tmp/streamarr-server/segments` inside the server's container, which keeps its files when the server restarts.
+The example Kubernetes manifest sets none: it mounts no volume for segments, and Kubernetes restarts a container with a new file system.
+
 Each segment is capped at 128 MiB. The server reserves at most 512 MiB of declared payload across active uploads.
 The server writes each upload to a temporary file in the segment folder as its data arrives, so that payload takes disk space in the segment folder, not heap.
 The server accepts at most 32 uploads at once across all workers, and at most 8 from one worker.
