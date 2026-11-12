@@ -17,14 +17,17 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.exceptions.ImageProcessingException;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Optional;
 import javax.imageio.ImageIO;
+import javax.imageio.stream.ImageInputStream;
 import lombok.Builder;
 import net.coobird.thumbnailator.Thumbnails;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -329,6 +332,30 @@ class ImageVariantServiceTest {
         .isInstanceOf(ImageProcessingException.class);
   }
 
+  // The JDK closes the streams of ImageIO's disk cache when the JVM begins to shut down, which
+  // would fail an artwork step that decodes or encodes at that moment as invalid media.
+  @Test
+  @DisplayName(
+      "Should generate the variants without ImageIO's disk cache when its cache directory is gone")
+  void shouldGenerateTheVariantsWithoutImageIosDiskCacheWhenItsCacheDirectoryIsGone(
+      @TempDir Path cacheParent) throws IOException {
+    var imageData = createTestImage(600, 900);
+    var usedCache = ImageIO.getUseCache();
+    var cacheDirectory = ImageIO.getCacheDirectory();
+    var gone = Files.createDirectory(cacheParent.resolve("cache"));
+    ImageIO.setUseCache(true);
+    ImageIO.setCacheDirectory(gone.toFile());
+    Files.delete(gone);
+    try {
+      var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
+
+      assertThat(variants).hasSize(4);
+    } finally {
+      ImageIO.setCacheDirectory(cacheDirectory);
+      ImageIO.setUseCache(usedCache);
+    }
+  }
+
   @Test
   @DisplayName("Should throw when image data is corrupt")
   void shouldThrowWhenImageDataIsCorrupt() {
@@ -344,7 +371,7 @@ class ImageVariantServiceTest {
 
     try (var mockedImageIO = mockStatic(ImageIO.class)) {
       mockedImageIO
-          .when(() -> ImageIO.read(any(InputStream.class)))
+          .when(() -> ImageIO.read(any(ImageInputStream.class)))
           .thenThrow(new IOException("disk error"));
 
       assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))

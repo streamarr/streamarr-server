@@ -17,6 +17,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import javax.imageio.ImageIO;
+import javax.imageio.stream.MemoryCacheImageInputStream;
+import javax.imageio.stream.MemoryCacheImageOutputStream;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.stereotype.Service;
 
@@ -137,10 +139,13 @@ public class ImageVariantService {
     return variants;
   }
 
+  // The images are in memory, so ImageIO's disk cache only adds files, and the JDK closes that
+  // cache's streams when the JVM begins to shut down, which would fail an image in flight as
+  // invalid media. ImageIO.read closes the stream unless it returns null.
   private BufferedImage decodeImage(byte[] imageData) {
     BufferedImage image;
     try {
-      image = ImageIO.read(new ByteArrayInputStream(imageData));
+      image = ImageIO.read(new MemoryCacheImageInputStream(new ByteArrayInputStream(imageData)));
     } catch (IOException e) {
       throw new ImageProcessingException(e);
     }
@@ -164,11 +169,13 @@ public class ImageVariantService {
   }
 
   private byte[] toJpegBytes(BufferedImage image) {
-    try (var outputStream = new ByteArrayOutputStream()) {
+    var bytes = new ByteArrayOutputStream();
+    try (var outputStream = new MemoryCacheImageOutputStream(bytes)) {
       ImageIO.write(image, "jpg", outputStream);
-      return outputStream.toByteArray();
     } catch (IOException e) {
       throw new ImageProcessingException(e);
     }
+
+    return bytes.toByteArray();
   }
 }
