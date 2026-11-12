@@ -75,9 +75,11 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
 
   @Override
   public Set<UUID> lockHouseholdAdminIds(UUID householdId) {
-    throw new UnsupportedOperationException(
-        "No unit test locks a Household's HouseholdAdmins yet: give the fake a contract test against the real repository"
-            + " before using it");
+    return database.values().stream()
+        .filter(account -> householdId.equals(account.getHouseholdId()))
+        .filter(account -> account.getHouseholdRole() == HouseholdRole.ADMIN)
+        .map(UserAccount::getId)
+        .collect(Collectors.toSet());
   }
 
   @Override
