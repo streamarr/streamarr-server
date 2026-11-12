@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.LibraryOperationRejection;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Episode;
@@ -44,7 +45,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
-import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.artwork.ImageService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.mutation.Outcome;

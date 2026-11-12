@@ -1,9 +1,9 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.properties.RemoteTranscodeProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.filepath.FilepathNameNormalizer;
 import java.io.IOException;

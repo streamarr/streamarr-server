@@ -1,7 +1,7 @@
 package com.streamarr.server.graphql.inputs;
 
+import com.streamarr.server.domain.pagination.MediaFilter;
 import com.streamarr.server.exceptions.InvalidIdException;
-import com.streamarr.server.services.pagination.MediaFilter;
 import java.util.List;
 import java.util.UUID;
 

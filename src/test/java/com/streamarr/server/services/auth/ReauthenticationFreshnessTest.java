@@ -2,8 +2,8 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.properties.AuthTokenProperties;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;

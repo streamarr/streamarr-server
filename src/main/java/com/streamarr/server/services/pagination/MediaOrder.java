@@ -1,5 +1,9 @@
 package com.streamarr.server.services.pagination;
 
+import com.streamarr.server.domain.pagination.OrderMediaBy;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.SortDirection;
+import com.streamarr.server.domain.pagination.SortValue;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;

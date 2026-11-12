@@ -3,11 +3,11 @@ package com.streamarr.server.services.identity;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 
 import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.SortDirection;
+import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.SortDirection;
-import com.streamarr.server.services.pagination.SortValue;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PagedListContract;
 import java.time.Instant;

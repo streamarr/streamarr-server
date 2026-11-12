@@ -1,9 +1,9 @@
 package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
+import com.streamarr.server.domain.pagination.MediaFilter;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;

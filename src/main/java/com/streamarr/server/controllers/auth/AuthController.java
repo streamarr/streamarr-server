@@ -2,7 +2,6 @@ package com.streamarr.server.controllers.auth;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
 
-import com.streamarr.server.config.security.StreamarrBearerTokenResolver;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.ChangePasswordCommand;
@@ -24,6 +23,7 @@ import com.streamarr.server.services.identity.SelectProfileCommand;
 import com.streamarr.server.services.identity.SessionContextService;
 import com.streamarr.server.services.identity.TokenRefreshService;
 import com.streamarr.server.web.ClientIpAddressResolver;
+import com.streamarr.server.web.StreamarrBearerTokenResolver;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;

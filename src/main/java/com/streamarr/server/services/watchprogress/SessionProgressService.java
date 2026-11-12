@@ -1,8 +1,8 @@
 package com.streamarr.server.services.watchprogress;
 
-import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.exceptions.SessionNotFoundException;
+import com.streamarr.server.properties.WatchProgressProperties;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;

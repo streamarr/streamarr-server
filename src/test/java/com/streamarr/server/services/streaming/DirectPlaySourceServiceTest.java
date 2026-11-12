@@ -6,10 +6,10 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fakes.FakeStreamingService;
+import com.streamarr.server.properties.RemoteTranscodeProperties;
 import com.sun.management.UnixOperatingSystemMXBean;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.EOFException;

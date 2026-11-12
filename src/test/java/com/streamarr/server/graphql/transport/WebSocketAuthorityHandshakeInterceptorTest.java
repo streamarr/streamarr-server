@@ -2,8 +2,8 @@ package com.streamarr.server.graphql.transport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.services.auth.StreamarrAuthenticationToken;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;

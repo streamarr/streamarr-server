@@ -9,7 +9,7 @@ import com.github.kagkarlsson.scheduler.event.SchedulerListener;
 import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.streamarr.server.config.ProbeCapacityJdbcCustomization;
 import com.streamarr.server.config.ProbeSchedulingConfiguration;
-import com.streamarr.server.config.ProbeSchedulingProperties;
+import com.streamarr.server.properties.ProbeSchedulingProperties;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.ProbeCapacity;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;

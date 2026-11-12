@@ -1,6 +1,6 @@
 package com.streamarr.server.controllers;
 
-import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.artwork.ImageService;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;

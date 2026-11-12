@@ -2,8 +2,8 @@ package com.streamarr.server.controllers.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.security.AuthCookiePolicy;
-import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.properties.AuthTokenProperties;
+import com.streamarr.server.web.AuthCookiePolicy;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;

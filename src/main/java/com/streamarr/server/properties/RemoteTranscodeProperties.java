@@ -1,0 +1,25 @@
+package com.streamarr.server.properties;
+
+import java.util.UUID;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+@ConfigurationProperties(prefix = "streaming.remote")
+public record RemoteTranscodeProperties(UUID sourceNamespaceId, String sourceRoot) {
+
+  public RemoteTranscodeProperties {
+    require(sourceNamespaceId, "Remote source namespace ID is required");
+    requireText(sourceRoot, "Remote source root is required");
+  }
+
+  private static void require(Object value, String message) {
+    if (value == null) {
+      throw new IllegalArgumentException(message);
+    }
+  }
+
+  private static void requireText(String value, String message) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalArgumentException(message);
+    }
+  }
+}

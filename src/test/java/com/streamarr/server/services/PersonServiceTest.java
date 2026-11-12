@@ -6,14 +6,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageRefreshMode;
+import com.streamarr.server.domain.media.ImageSource;
+import com.streamarr.server.domain.media.ImageSource.TmdbImageSource;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.StoredArtworkRequest;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.repositories.PersonRepository;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
-import com.streamarr.server.services.metadata.events.ImageSource;
-import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

@@ -1,11 +1,11 @@
 package com.streamarr.server.services.metadata;
 
+import com.streamarr.server.domain.media.ImageSource;
+import com.streamarr.server.domain.media.ImageSource.TmdbImageSource;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.services.metadata.events.ImageSource;
-import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredit;
 import com.streamarr.server.services.metadata.tmdb.TmdbGenre;

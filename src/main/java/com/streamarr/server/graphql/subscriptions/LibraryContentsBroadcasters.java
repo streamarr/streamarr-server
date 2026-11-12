@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.subscriptions;
 
+import com.streamarr.server.properties.SubscriptionProperties;
 import com.streamarr.server.services.events.library.LibraryItemAddedEvent;
 import com.streamarr.server.services.events.library.LibraryItemRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryItemUpdatedEvent;

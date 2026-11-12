@@ -2,6 +2,8 @@ package com.streamarr.server.services.pagination;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.pagination.OrderMediaBy;
+import com.streamarr.server.domain.pagination.SortDirection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;

@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryOperationKind;
 import com.streamarr.server.services.concurrency.AdaptiveAdmission;
 import com.streamarr.server.services.concurrency.AdaptiveAdmissions;
 import com.streamarr.server.services.concurrency.AdmissionListener;

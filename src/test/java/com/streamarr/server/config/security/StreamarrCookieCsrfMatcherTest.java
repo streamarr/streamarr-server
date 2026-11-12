@@ -2,6 +2,8 @@ package com.streamarr.server.config.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.web.AuthCookiePolicy;
+import com.streamarr.server.web.AuthCookies;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;

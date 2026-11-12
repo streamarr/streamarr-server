@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
-import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryFolderProblem;
 import com.streamarr.server.domain.media.MediaFile;
@@ -17,6 +16,7 @@ import com.streamarr.server.exceptions.LibraryFolderCheckFailedException;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.properties.RemoteTranscodeProperties;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;

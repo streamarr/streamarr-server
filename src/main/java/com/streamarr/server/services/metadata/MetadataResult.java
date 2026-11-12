@@ -1,6 +1,6 @@
 package com.streamarr.server.services.metadata;
 
-import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.domain.media.ImageSource;
 import java.util.List;
 import java.util.Map;
 

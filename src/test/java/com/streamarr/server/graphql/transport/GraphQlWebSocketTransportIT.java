@@ -3,10 +3,10 @@ package com.streamarr.server.graphql.transport;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.config.security.AuthCookies;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import com.streamarr.server.support.GraphQlTransportWsTestClient.Handshake;
+import com.streamarr.server.web.AuthCookies;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
