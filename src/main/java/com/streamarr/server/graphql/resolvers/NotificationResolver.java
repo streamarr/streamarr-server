@@ -15,11 +15,6 @@ import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
-import com.streamarr.server.graphql.dataloaders.ReaderLoaderKey;
-import com.streamarr.server.graphql.dataloaders.ShareHouseholdDataLoader;
-import com.streamarr.server.graphql.dataloaders.ShareOffererNameDataLoader;
-import com.streamarr.server.graphql.dataloaders.ShareProfileDataLoader;
-import com.streamarr.server.graphql.dto.HouseholdSummary;
 import com.streamarr.server.graphql.dto.NotificationDetails;
 import com.streamarr.server.graphql.dto.NotificationsChangeDetails;
 import com.streamarr.server.graphql.inputs.MarkNotificationsReadInput;
@@ -27,8 +22,6 @@ import com.streamarr.server.graphql.mutation.MutationPayloads;
 import com.streamarr.server.graphql.mutation.notification.MarkNotificationsReadPayload;
 import com.streamarr.server.graphql.mutation.notification.NotificationErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.identity.ShareReference;
-import com.streamarr.server.services.identity.SharedProfile;
 import com.streamarr.server.services.notification.NotificationService;
 import com.streamarr.server.services.notification.NotificationsList;
 import com.streamarr.server.services.notification.NotificationsShown;
@@ -39,18 +32,15 @@ import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
-import org.dataloader.DataLoader;
 
 /**
- * The signed-in Account's Notifications (ADR 0063). Every name a Notification shows loads through
- * the share's own DataLoaders, for the reader who asks and under the share's read rules.
+ * The signed-in Account's Notifications (ADR 0063). A Notification shows the Profile's name its
+ * recipient was told and a line worded from it and the facts it keeps; nothing reads the share for
+ * either.
  */
 @DgsComponent
 @RequiredArgsConstructor
@@ -142,67 +132,23 @@ public class NotificationResolver {
   @DgsData(parentType = "ProfileShareOfferedNotification", field = "profileName")
   @DgsData(parentType = "ProfileShareAnsweredNotification", field = "profileName")
   @DgsData(parentType = "ProfileShareEndedNotification", field = "profileName")
-  public CompletableFuture<String> profileName(DataFetchingEnvironment dfe) {
+  public String profileName(DataFetchingEnvironment dfe) {
     NotificationDetails notification = dfe.getSource();
-    return profileNameOf(dfe, notification, keyOf(dfe));
+    return notification.keptProfileName();
   }
 
   @DgsData(parentType = "ProfileShareOfferedNotification", field = "message")
   @DgsData(parentType = "ProfileShareAnsweredNotification", field = "message")
   @DgsData(parentType = "ProfileShareEndedNotification", field = "message")
-  public CompletableFuture<String> message(DataFetchingEnvironment dfe) {
+  public String message(DataFetchingEnvironment dfe) {
     NotificationDetails notification = dfe.getSource();
-    var key = keyOf(dfe);
-    DataLoader<ReaderLoaderKey<ShareReference>, String> offerers =
-        dfe.getDataLoader(ShareOffererNameDataLoader.NAME);
-    DataLoader<ReaderLoaderKey<ShareReference>, HouseholdSummary> households =
-        dfe.getDataLoader(ShareHouseholdDataLoader.NAME);
-    var profileName = profileNameOf(dfe, notification, key);
-    var toReadersHousehold =
-        Objects.equals(key.reader().householdId(), notification.share().householdId());
-    // Each kind's line names one other party, so only that party's loader is asked.
-    var offererName =
-        notification.kind() == NotificationKind.PROFILE_SHARE_OFFERED
-            ? offerers.load(key)
-            : CompletableFuture.<String>completedFuture(null);
-    var household =
-        notification.kind() == NotificationKind.PROFILE_SHARE_OFFERED
-            ? CompletableFuture.<HouseholdSummary>completedFuture(null)
-            : households.load(key);
-    return CompletableFuture.allOf(profileName, offererName, household)
-        .thenApply(
-            _ ->
-                ProfileShareLine.builder()
-                    .kind(notification.kind())
-                    .profileName(profileName.join())
-                    .offererName(Optional.ofNullable(offererName.join()))
-                    .householdName(
-                        Optional.ofNullable(household.join()).map(HouseholdSummary::name))
-                    .answer(notification.answer())
-                    .endedBy(notification.endedBy())
-                    .toReadersHousehold(toReadersHousehold)
-                    .build()
-                    .text());
-  }
-
-  // A reader who may see the share's Profile reads its current name, and any other reader the name
-  // that the Notification kept from its latest event.
-  private static CompletableFuture<String> profileNameOf(
-      DataFetchingEnvironment dfe,
-      NotificationDetails notification,
-      ReaderLoaderKey<ShareReference> key) {
-    DataLoader<ReaderLoaderKey<ShareReference>, SharedProfile> profiles =
-        dfe.getDataLoader(ShareProfileDataLoader.NAME);
-    return profiles
-        .load(key)
-        .thenApply(
-            shared -> shared == null ? notification.keptProfileName() : shared.profile().getName());
-  }
-
-  private ReaderLoaderKey<ShareReference> keyOf(DataFetchingEnvironment dfe) {
-    NotificationDetails notification = dfe.getSource();
-    return new ReaderLoaderKey<>(
-        authorizationService.currentIdentity(), notification.share().parties());
+    return ProfileShareLine.builder()
+        .kind(notification.kind())
+        .profileName(notification.keptProfileName())
+        .answer(notification.answer())
+        .endedBy(notification.endedBy())
+        .build()
+        .text();
   }
 
   private static ListIdentity listOf(UUID accountId) {

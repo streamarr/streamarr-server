@@ -12,8 +12,8 @@ import lombok.Builder;
 
 /**
  * A Notification as the schema shows it, read at one instant. {@code kind} picks the concrete type
- * and {@code keptProfileName} is not a schema field: a reader who may no longer see the share's
- * Profile reads it as the Profile's name.
+ * and {@code keptProfileName}, the Profile's name its recipient was told, is the schema's {@code
+ * profileName}.
  */
 @Builder
 public record NotificationDetails(
