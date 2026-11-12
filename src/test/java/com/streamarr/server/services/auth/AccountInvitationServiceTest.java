@@ -441,6 +441,7 @@ class AccountInvitationServiceTest {
         .extracting(ProfileHouseholdShare::getHouseholdId)
         .containsExactlyInAnyOrderElementsOf(fixture.reofferHouseholdIds());
     assertThat(reoffered)
+        .hasSize(2)
         .allSatisfy(
             share -> {
               assertThat(share.getOfferedByAccountId()).isEqualTo(accepted.account().getId());

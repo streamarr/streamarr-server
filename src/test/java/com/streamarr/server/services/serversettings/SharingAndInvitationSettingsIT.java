@@ -170,7 +170,9 @@ class SharingAndInvitationSettingsIT extends AbstractIntegrationTest {
           + " service")
   void shouldRefuseValueOutsideTheRangeAndKeepTheDefaultWhenItIsStoredPastTheService(
       Setting setting, int value) {
-    assertThatThrownBy(() -> storeSetting(dsl, setting.column(), value))
+    var column = setting.column();
+
+    assertThatThrownBy(() -> storeSetting(dsl, column, value))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining(setting.constraint());
 
