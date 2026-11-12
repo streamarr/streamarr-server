@@ -105,6 +105,14 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
   }
 
   @Override
+  public Optional<String> findNameById(UUID profileId) {
+    return dsl.select(PROFILE.NAME)
+        .from(PROFILE)
+        .where(PROFILE.ID.eq(profileId))
+        .fetchOptional(PROFILE.NAME);
+  }
+
+  @Override
   public void lockProfileAvailabilityAcrossHouseholds(UUID profileId) {
     var householdIds =
         profileHouseholdIds(
