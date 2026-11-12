@@ -637,6 +637,49 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should tell a moved HouseholdAdmin only that each offer into their former Household ended"
+          + " when a ServerAdmin deletes it")
+  void shouldTellMovedHouseholdAdminOnlyThatEachOfferEndedWhenTheirFormerHouseholdIsDeleted() {
+    var departing = identity();
+    var refuge = identity();
+    var departingSocket = subscribedSocket(authTestSupport.accountBearer(departing));
+    var offerId = offer(managedProfile(), departing);
+    nextShare(departingSocket, offerId);
+    // An offer whose time ran out, still stored pending because the sweep has not reached it.
+    var lapsedId = offer(managedProfile(), departing);
+    nextShare(departingSocket, lapsedId);
+    var lapsed = shareRepository.findById(UUID.fromString(lapsedId)).orElseThrow();
+    lapsed.setExpiresAt(Instant.now().minusSeconds(1));
+    shareRepository.saveAndFlush(lapsed);
+    var managed = managedProfile();
+    grantManagement(departing, managed);
+    var serverAdmin = adminIdentity();
+
+    var deleted = transferLastAccountAndDeleteHousehold(serverAdmin, departing, refuge);
+    assertThat(
+            deleted.at("/data/transferLastAccountAndDeleteHousehold/deletedHouseholdId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(departing.household().getId().toString());
+    var laterId = offer(managed);
+
+    // The deletion withdraws the waiting offer and stores the lapsed one as expired before it
+    // deletes both with the Household: they hear each end without who was asking, and no removal.
+    var offerChanges =
+        changesUntil(departingSocket, laterId).stream()
+            .filter(
+                change -> List.of(offerId, lapsedId).contains(change.path("shareId").asString()))
+            .toList();
+    assertThat(offerChanges)
+        .as("changes in %s", offerChanges)
+        .extracting(
+            change -> change.path("shareId").asString(),
+            change -> change.path("share").path("status").asString())
+        .containsExactlyInAnyOrder(tuple(offerId, "INVALIDATED"), tuple(lapsedId, "EXPIRED"));
+    offerChanges.forEach(change -> assertPartiesHidden(change.path("share")));
+  }
+
+  @Test
+  @DisplayName(
       "Should tell a moved HouseholdAdmin only that a visit ended when a ServerAdmin deletes the"
           + " visiting Profile while their former Household is deleted")
   void shouldTellMovedHouseholdAdminOnlyThatVisitEndedWhenVisitorIsDeletedWithTheirHousehold()

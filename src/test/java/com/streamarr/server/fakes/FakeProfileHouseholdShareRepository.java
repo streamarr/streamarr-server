@@ -274,6 +274,16 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   }
 
   @Override
+  public List<ChangedShare> invalidatePendingByHouseholdId(
+      UUID householdId, String reason, Instant now) {
+    Predicate<ProfileHouseholdShare> intoHousehold =
+        share -> share.getHouseholdId().equals(householdId);
+    var expired = materializeExpiredPending(intoHousehold, now);
+    var pending = invalidateUnexpiredPending(intoHousehold, reason, now);
+    return changed(Stream.concat(expired.stream(), pending.stream()).toList());
+  }
+
+  @Override
   public List<ChangedShare> convertMembershipShareToVisitorShare(UUID profileId, UUID householdId) {
     var membership =
         database.values().stream()

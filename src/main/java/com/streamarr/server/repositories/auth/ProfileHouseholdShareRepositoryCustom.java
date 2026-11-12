@@ -90,6 +90,12 @@ public interface ProfileHouseholdShareRepositoryCustom {
   List<ChangedShare> invalidatePendingByProfileId(UUID profileId, String reason, Instant now);
 
   /**
+   * Every PENDING share into the Household becomes INVALIDATED (the Household is deleted), or
+   * EXPIRED when its offer time has already run out.
+   */
+  List<ChangedShare> invalidatePendingByHouseholdId(UUID householdId, String reason, Instant now);
+
+  /**
    * KEEP_AS_VISITOR and PRESERVE_PROFILE cleanup turn the old structural availability into an
    * ordinary visitor share instead of ending it.
    */

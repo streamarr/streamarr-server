@@ -301,6 +301,32 @@ class HouseholdDeletionServiceTest {
   }
 
   @Test
+  @DisplayName("Should announce each offer into the Household as withdrawn when deleting it")
+  void shouldAnnounceEachOfferIntoTheHouseholdAsWithdrawnWhenDeletingIt() {
+    var offer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(UUID.randomUUID())
+                .householdId(doomed.getId())
+                .status(ProfileShareStatus.PENDING)
+                .expiresAt(NOW.plusSeconds(3600))
+                .build());
+
+    deleteEmptyHousehold("closing shop");
+
+    // The offer is withdrawn before it is deleted with the Household, so that is how it ends.
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .filteredOn(ProfileShareChangedEvent::ended)
+        .extracting(ProfileShareChangedEvent::share)
+        .containsExactly(
+            new ChangedShare(
+                offer.getId(),
+                offer.getProfileId(),
+                doomed.getId(),
+                ProfileShareStatus.INVALIDATED));
+  }
+
+  @Test
   @DisplayName(
       "Should transfer the final Account with its Personal Profile when transfer-and-delete is requested")
   void shouldTransferFinalAccountWithPersonalProfileWhenTransferAndDeleteIsRequested() {

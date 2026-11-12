@@ -194,6 +194,11 @@ class ProfileShareLifecycleTest {
             (lifecycle, share) ->
                 lifecycle.invalidatePendingByProfileId(share.getProfileId(), REASON, NOW)),
         write(
+            "invalidate the offers into the Household",
+            ProfileShareStatus.PENDING,
+            (lifecycle, share) ->
+                lifecycle.invalidatePendingByHouseholdId(share.getHouseholdId(), REASON, NOW)),
+        write(
             "invalidate the leaving manager's offers",
             ProfileShareStatus.PENDING,
             (lifecycle, share) ->

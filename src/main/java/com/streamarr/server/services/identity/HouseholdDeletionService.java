@@ -190,6 +190,8 @@ public class HouseholdDeletionService {
         request.householdId(), HOUSEHOLD_DELETED_REASON, now);
     accountInvitationRepository.invalidatePendingByHouseholdId(
         request.householdId(), HOUSEHOLD_DELETED_REASON, now);
+    shareLifecycle.invalidatePendingByHouseholdId(
+        request.householdId(), HOUSEHOLD_DELETED_REASON, now);
     endHostedVisits(request.householdId(), now);
     deleteResidentProfiles(request.householdId(), now);
     shareLifecycle.announceDeletionWithHousehold(request.householdId(), now);

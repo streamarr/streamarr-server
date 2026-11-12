@@ -95,6 +95,11 @@ public class ProfileShareLifecycle {
     announce(shareRepository.invalidatePendingByProfileId(profileId, reason, now));
   }
 
+  /** Withdraws every pending offer into the Household with the reason. */
+  public void invalidatePendingByHouseholdId(UUID householdId, String reason, Instant now) {
+    announce(shareRepository.invalidatePendingByHouseholdId(householdId, reason, now));
+  }
+
   /** Turns the Profile's structural share into the Household into an ordinary visitor share. */
   public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId) {
     announce(shareRepository.convertMembershipShareToVisitorShare(profileId, householdId));
