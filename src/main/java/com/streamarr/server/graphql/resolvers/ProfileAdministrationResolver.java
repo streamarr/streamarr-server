@@ -5,6 +5,7 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.language.ProfileLanguagePreferences;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.dto.ProfileAdministration;
 import com.streamarr.server.graphql.inputs.AdministrativelyResetProfilePinInput;
@@ -18,6 +19,9 @@ import com.streamarr.server.graphql.inputs.SetProfileMaximumAllowedRatingAgeInpu
 import com.streamarr.server.graphql.inputs.SetProfilePictureInput;
 import com.streamarr.server.graphql.inputs.SetProfilePinInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
+import com.streamarr.server.graphql.mutation.language.LanguagePreferenceErrors;
+import com.streamarr.server.graphql.mutation.language.SetProfileLanguagePreferencesInput;
+import com.streamarr.server.graphql.mutation.language.SetProfileLanguagePreferencesPayload;
 import com.streamarr.server.graphql.mutation.profile.AdministrativelyResetProfilePinPayload;
 import com.streamarr.server.graphql.mutation.profile.ChangeProfileKindPayload;
 import com.streamarr.server.graphql.mutation.profile.CreateProfilePayload;
@@ -33,6 +37,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.ProfileAdministrationService;
 import com.streamarr.server.services.identity.ProfileAdministrationService.CreateProfileCommand;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 
 @DgsComponent
@@ -174,6 +179,22 @@ public class ProfileAdministrationResolver {
             .map(this::toDto),
         ProfileErrors::toAdministrativelyResetProfilePinError,
         AdministrativelyResetProfilePinPayload::new);
+  }
+
+  @DgsMutation
+  public SetProfileLanguagePreferencesPayload setProfileLanguagePreferences(
+      @InputArgument SetProfileLanguagePreferencesInput input) {
+    var preferences =
+        ProfileLanguagePreferences.builder()
+            .audioLanguages(input.audioLanguages())
+            .subtitleLanguage(Optional.ofNullable(input.subtitleLanguage()))
+            .subtitleMode(input.subtitleMode())
+            .build();
+    return MutationPayloads.payload(
+        profileAdministrationService.setProfileLanguagePreferences(
+            authorizationService.currentIdentity(), Ids.parseUuid(input.profileId()), preferences),
+        LanguagePreferenceErrors::toSetProfileLanguagePreferencesError,
+        SetProfileLanguagePreferencesPayload::new);
   }
 
   @DgsMutation

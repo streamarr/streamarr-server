@@ -19,6 +19,7 @@ import com.streamarr.server.support.StatementCount;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,9 +34,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * A Profile's own language preferences on the Profile's page, which its managers read without
- * selecting the Profile (ADR 0024 §Read authorization: the legitimately selected Account,
- * ProfileManagers and ServerAdmin).
+ * A Profile's own language preferences on the Profile's page, which its managers read and change
+ * without selecting the Profile (ADR 0024 §Read authorization: the legitimately selected Account,
+ * ProfileManagers and ServerAdmin read them; §ProfileManager: a manager edits the Profile).
  */
 @Tag("IntegrationTest")
 @DisplayName("Profile Language Preferences Integration Tests")
@@ -57,6 +58,28 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
       """
       query { me { managedProfiles { edges { node {
         profile { id languagePreferences { audioLanguages subtitleLanguage subtitleMode } } } } } } }
+      """;
+
+  private static final String SET_PROFILE_LANGUAGE_PREFERENCES =
+      """
+      mutation { setProfileLanguagePreferences(input: {profileId: "%s", audioLanguages: [%s],
+          subtitleMode: OFF}) {
+        languagePreferences { audioLanguages subtitleLanguage subtitleMode }
+        userErrors { __typename ... on MutationError { message }
+          ... on InputMutationError { inputPath }
+          ... on TooManyAudioLanguagesError { maximum }
+          ... on RepeatedAudioLanguageError { language } } } }
+      """;
+
+  private static final String ME_LANGUAGE_PREFERENCES =
+      """
+      query { me { languagePreferences { audioLanguages subtitleLanguage subtitleMode } } }
+      """;
+
+  private static final String PROFILE_NOT_FOUND =
+      """
+      [{"__typename": "ProfileNotFoundError", "message": "No such Profile.",
+        "inputPath": ["profileId"]}]
       """;
 
   private static final String INVITED_EMAIL = "ana@example.test";
@@ -248,6 +271,153 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
     assertThat(rows).allSatisfy(row -> assertStored(row.path("languagePreferences")));
     assertThat(statementCount.statementsWhile(() -> managedProfiles(smith)))
         .isEqualTo(forThreeProfiles);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = Reader.class,
+      names = {
+        "DIRECT_MANAGER_THAT_HAS_NOT_SELECTED_IT",
+        "SELF_MANAGED_ACCOUNT_READING_ITS_OWN_PROFILE"
+      })
+  @DisplayName("Should store the preferences when a manager changes a Profile it has not selected")
+  void shouldStorePreferencesWhenManagerChangesProfileItHasNotSelected(Reader manager)
+      throws Exception {
+    var reading = readingOf(manager);
+
+    var answer = changePreferences(reading.bearer(), idOf(reading.profile()), "DE, EN");
+
+    assertThat(answer.path("userErrors").values()).isEmpty();
+    assertChanged(answer.path("languagePreferences"));
+    assertChanged(
+        profileAdministration(reading.bearer(), reading.profile()).path("languagePreferences"));
+    assertChanged(
+        data(authTestSupport.profileBearer(smith, reading.profile()), ME_LANGUAGE_PREFERENCES)
+            .path("me")
+            .path("languagePreferences"));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = Reader.class,
+      names = {"SERVER_ADMIN_THAT_DOES_NOT_MANAGE_IT", "HOUSEHOLD_ADMIN_THAT_HAS_IT_SELECTED"})
+  @DisplayName(
+      "Should forbid the change when a reader of the preferences does not manage the Profile")
+  void shouldForbidChangeWhenReaderOfPreferencesDoesNotManageProfile(Reader reader)
+      throws Exception {
+    assertForbidden(readingOf(reader));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = Outsider.class,
+      names = {
+        "HOUSEHOLD_ADMIN_THAT_ONLY_HOSTS_AN_UNRESTRICTED_VISITOR",
+        "HOUSEHOLD_ADMIN_THAT_ONLY_SUPERVISES_A_RESTRICTED_PROFILE"
+      })
+  @DisplayName(
+      "Should forbid the change when a HouseholdAdmin only hosts or supervises the Profile")
+  void shouldForbidChangeWhenHouseholdAdminOnlyHostsOrSupervisesProfile(Outsider admin)
+      throws Exception {
+    assertForbidden(readingOf(admin));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(
+      value = Outsider.class,
+      mode = EnumSource.Mode.EXCLUDE,
+      names = {
+        "HOUSEHOLD_ADMIN_THAT_ONLY_HOSTS_AN_UNRESTRICTED_VISITOR",
+        "HOUSEHOLD_ADMIN_THAT_ONLY_SUPERVISES_A_RESTRICTED_PROFILE"
+      })
+  @DisplayName("Should answer that no such Profile exists when the caller may not read it")
+  void shouldAnswerProfileNotFoundWhenCallerMayNotReadProfile(Outsider outsider) throws Exception {
+    var reading = readingOf(outsider);
+
+    var answer = changePreferences(reading.bearer(), idOf(reading.profile()), "DE, EN");
+
+    assertThat(answer.path("languagePreferences").isNull()).isTrue();
+    assertThat(answer.path("userErrors")).isEqualTo(objectMapper.readTree(PROFILE_NOT_FOUND));
+    assertThat(storedPreferencesOf(reading.profile())).isEqualTo(STORED);
+  }
+
+  @Test
+  @DisplayName("Should answer that no such Profile exists when no Profile has the id")
+  void shouldAnswerProfileNotFoundWhenNoProfileHasTheId() throws Exception {
+    var answer =
+        changePreferences(
+            authTestSupport.accountBearer(smith), UUID.randomUUID().toString(), "DE, EN");
+
+    assertThat(answer.path("languagePreferences").isNull()).isTrue();
+    assertThat(answer.path("userErrors")).isEqualTo(objectMapper.readTree(PROFILE_NOT_FOUND));
+  }
+
+  @Test
+  @DisplayName("Should refuse the audio languages at their input path when a manager names six")
+  void shouldRefuseAudioLanguagesAtTheirInputPathWhenManagerNamesSix() throws Exception {
+    var answer =
+        changePreferences(
+            authTestSupport.accountBearer(smith), idOf(kid), "EN, FR, DE, ES, IT, JA");
+
+    assertThat(answer.path("languagePreferences").isNull()).isTrue();
+    assertThat(answer.path("userErrors"))
+        .isEqualTo(
+            objectMapper.readTree(
+                """
+                [{"__typename": "TooManyAudioLanguagesError",
+                  "message": "Choose at most 5 audio languages.",
+                  "inputPath": ["audioLanguages"], "maximum": 5}]
+                """));
+    assertThat(storedPreferencesOf(kid)).isEqualTo(STORED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse the repeated audio language at its input path when a manager names one twice")
+  void shouldRefuseRepeatedAudioLanguageAtItsInputPathWhenManagerNamesOneTwice() throws Exception {
+    var answer = changePreferences(authTestSupport.accountBearer(smith), idOf(kid), "EN, FR, EN");
+
+    assertThat(answer.path("languagePreferences").isNull()).isTrue();
+    assertThat(answer.path("userErrors"))
+        .isEqualTo(
+            objectMapper.readTree(
+                """
+                [{"__typename": "RepeatedAudioLanguageError",
+                  "message": "Choose each audio language once.",
+                  "inputPath": ["audioLanguages", "2"], "language": "EN"}]
+                """));
+    assertThat(storedPreferencesOf(kid)).isEqualTo(STORED);
+  }
+
+  private void assertForbidden(Reading reading) throws Exception {
+    mockMvc
+        .perform(
+            graphqlRequest(
+                reading.bearer(),
+                SET_PROFILE_LANGUAGE_PREFERENCES.formatted(idOf(reading.profile()), "DE, EN")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"))
+        .andExpect(jsonPath("$.data.setProfileLanguagePreferences").doesNotExist());
+
+    assertThat(storedPreferencesOf(reading.profile())).isEqualTo(STORED);
+  }
+
+  private JsonNode changePreferences(String bearer, String profileId, String audioLanguages)
+      throws Exception {
+    return data(bearer, SET_PROFILE_LANGUAGE_PREFERENCES.formatted(profileId, audioLanguages))
+        .path("setProfileLanguagePreferences");
+  }
+
+  private static void assertChanged(JsonNode preferences) {
+    assertThat(preferences.path("audioLanguages").values())
+        .extracting(JsonNode::asString)
+        .containsExactly("DE", "EN");
+    assertThat(preferences.path("subtitleLanguage").isNull()).isTrue();
+    assertThat(preferences.path("subtitleMode").asString()).isEqualTo("OFF");
+  }
+
+  private ProfileLanguagePreferences storedPreferencesOf(Profile profile) {
+    return languagePreferenceRepository.findProfilePreferences(profile.getId()).orElseThrow();
   }
 
   private record Reading(String bearer, Profile profile) {}

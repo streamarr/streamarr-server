@@ -1,6 +1,7 @@
 package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.Household;
+import com.streamarr.server.services.language.SetLanguagePreferencesRejection;
 import java.util.Optional;
 import lombok.NonNull;
 
@@ -45,6 +46,9 @@ public final class ProfileRejections {
   public sealed interface DeleteProfile
       permits ProfileNotFound, ProfileNotDeletable, ReauthenticationRequired {}
 
+  public sealed interface SetProfileLanguagePreferences
+      permits ProfileNotFound, PreferredAudioLanguagesRefused {}
+
   public record ProfileNotFound()
       implements RenameProfile,
           SetProfilePicture,
@@ -52,7 +56,12 @@ public final class ProfileRejections {
           SetProfilePin,
           RemoveProfilePin,
           AdministrativelyResetProfilePin,
-          DeleteProfile {}
+          DeleteProfile,
+          SetProfileLanguagePreferences {}
+
+  /** The Profile may not keep the audio languages, for the reason the language rule gives. */
+  public record PreferredAudioLanguagesRefused(@NonNull SetLanguagePreferencesRejection reason)
+      implements SetProfileLanguagePreferences {}
 
   public record HouseholdNotFound() implements CreateProfile {}
 

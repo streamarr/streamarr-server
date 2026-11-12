@@ -391,6 +391,32 @@ union AdministrativelyResetProfilePinError =
   | ReasonRequiredError
   | ReauthenticationRequiredError
 
+"What setProfileLanguagePreferences takes: the Profile's own language preferences, all of them."
+input SetProfileLanguagePreferencesInput {
+    "The Profile whose language preferences change."
+    profileId: ID!
+    "At most five languages, none twice, in the order the Profile prefers them."
+    audioLanguages: [Language!]!
+    "The language of the subtitles the Profile prefers; null for none."
+    subtitleLanguage: Language
+    "When a subtitle track starts on."
+    subtitleMode: SubtitleMode!
+}
+
+"What setProfileLanguagePreferences answers: the change when it is made, and why when it is refused."
+type SetProfileLanguagePreferencesPayload {
+    "The Profile's language preferences as they are after the change; null when it was refused."
+    languagePreferences: ProfileLanguagePreferences
+    "Why the change was refused; empty when it was made."
+    userErrors: [SetProfileLanguagePreferencesError!]!
+}
+
+"The refusals setProfileLanguagePreferences may answer with, in userErrors."
+union SetProfileLanguagePreferencesError =
+    ProfileNotFoundError
+  | TooManyAudioLanguagesError
+  | RepeatedAudioLanguageError
+
 "What deleteProfile takes."
 input DeleteProfileInput {
     "The Profile to delete."

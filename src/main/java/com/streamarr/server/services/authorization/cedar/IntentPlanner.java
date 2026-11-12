@@ -113,6 +113,9 @@ final class IntentPlanner {
       case Intent.AdministrativelyResetProfilePin(var profileId) ->
           unitPlan(
               AuthorizationCheck.onProfile(Action.ADMINISTRATIVELY_RESET_PROFILE_PIN, profileId));
+      case Intent.SetProfileLanguagePreferences(var profileId) ->
+          unitPlan(
+              AuthorizationCheck.onProfile(Action.SET_PROFILE_LANGUAGE_PREFERENCES, profileId));
       case Intent.DeleteProfile(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.DELETE_PROFILE, profileId));
       case Intent.IssueAccountInvitation _ ->

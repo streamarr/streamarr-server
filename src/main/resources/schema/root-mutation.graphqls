@@ -122,6 +122,14 @@ type Mutation {
     """
     administrativelyResetProfilePin(input: AdministrativelyResetProfilePinInput!): AdministrativelyResetProfilePinPayload
     """
+    Replaces a Profile's own language preferences, the ones its sessions start from. Its managers,
+    whether or not they have the Profile selected. A session that only has the Profile selected
+    uses setLanguagePreferences. A caller who may read profileAdministration of the Profile but does
+    not manage it, a HouseholdAdmin who supervises or hosts it and a ServerAdmin included, gets
+    FORBIDDEN; everyone else, a device-bound session included, gets ProfileNotFoundError.
+    """
+    setProfileLanguagePreferences(input: SetProfileLanguagePreferencesInput!): SetProfileLanguagePreferencesPayload
+    """
     Deletes a Profile with its watch history, progress and preferences, for good. Only its last
     direct manager may, with a recent password (ReauthenticationRequiredError), and only while it is
     nobody's Personal Profile (ProfileAdministration.linked), has no active or pending share in any
