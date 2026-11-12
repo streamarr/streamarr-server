@@ -200,7 +200,8 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should withdraw and announce the invitation when the inviter's own Personal Profile is"
           + " restricted")
-  void shouldWithdrawTheInvitationWhenTheInvitersOwnPersonalProfileIsRestricted() throws Exception {
+  void shouldWithdrawAndAnnounceTheInvitationWhenTheInvitersOwnPersonalProfileIsRestricted()
+      throws Exception {
     // A restricted Profile needs an eligible manager besides its own Account.
     cast.grant(sam, cam.profile());
     var invitationId = invite(cam, cam.profile().getId(), mara);

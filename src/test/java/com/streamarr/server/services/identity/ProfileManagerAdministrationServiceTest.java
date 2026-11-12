@@ -205,8 +205,8 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should count an invitation that nobody can answer toward the limit")
-  void shouldCountAnInvitationThatNobodyCanAnswerTowardTheLimit() {
+  @DisplayName("Should count it toward the limit when nobody can answer the invitation")
+  void shouldCountItTowardTheLimitWhenNobodyCanAnswerTheInvitation() {
     inviteTenAddresses();
 
     assertThat(waitingFor(orphan))

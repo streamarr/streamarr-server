@@ -170,9 +170,9 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should list a Profile the caller manages where the caller cannot use the Household, and"
-          + " only say the others there would lock")
-  void shouldListAProfileTheCallerManagesWhenTheCallerCannotUseTheHousehold() throws Exception {
+      "Should list only the Profile the caller manages when the caller cannot use the Household")
+  void shouldListOnlyTheProfileTheCallerManagesWhenTheCallerCannotUseTheHousehold()
+      throws Exception {
     var sam = availableInBothHouseholds("Sam");
     var theo = availableInBothHouseholds("Theo");
 

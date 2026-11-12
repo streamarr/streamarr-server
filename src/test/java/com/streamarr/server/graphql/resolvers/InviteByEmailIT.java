@@ -289,8 +289,8 @@ class InviteByEmailIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should let the inviter cancel an invitation that nobody can answer")
-  void shouldLetTheInviterCancelAnInvitationThatNobodyCanAnswer() throws Exception {
+  @DisplayName("Should let the inviter cancel it when nobody can answer the invitation")
+  void shouldLetTheInviterCancelItWhenNobodyCanAnswerTheInvitation() throws Exception {
     var invitationId = invite(addressOf(Invitee.NO_ACCOUNT)).at(invitationPath("id")).asString();
 
     var answer =
