@@ -1,14 +1,17 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.domain.notification.RequestAnswer;
 import com.streamarr.server.domain.notification.RequestResolution;
+import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
+import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
@@ -39,6 +42,7 @@ import org.springframework.stereotype.Component;
 class SharingNotifications {
 
   private final UserAccountRepository userAccountRepository;
+  private final ProfileManagerRepository profileManagerRepository;
   private final ProfileRepository profileRepository;
   private final ApplicationEventPublisher events;
 
@@ -46,7 +50,8 @@ class SharingNotifications {
   public void onProfileShareChanged(ProfileShareChangedEvent change) {
     switch (change.action()) {
       case ShareAction.Offered() -> tellOffer(change);
-      case ShareAction.Answered _, ShareAction.OfferStoppedWaiting _ -> resolveRequests(change);
+      case ShareAction.Answered(var answeredBy) -> answer(change, answeredBy);
+      case ShareAction.OfferStoppedWaiting _ -> resolveRequests(change);
       case ShareAction.Ending _, ShareAction.Other _ -> {}
     }
   }
@@ -79,15 +84,62 @@ class SharingNotifications {
                     .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
                     .subject(SubjectReference.profileShare(share.shareId()))
                     .resolution(settled.resolution())
-                    .answer(settled.answer())
+                    .answer(settled.answer().<RequestAnswer>map(answer -> answer))
                     .at(instantOf(change))
                     .build())
         .ifPresent(events::publishEvent);
   }
 
+  // An answer that finds the offer's time run out, or its offerer no longer allowed to offer,
+  // stores no answer, so nobody is told.
+  private void answer(ProfileShareChangedEvent change, UUID answeredBy) {
+    resolveRequests(change);
+    Settlement.of(change.share().status())
+        .flatMap(Settlement::answer)
+        .ifPresent(answer -> tellAnswer(change, answer, answeredBy));
+  }
+
+  private void tellAnswer(
+      ProfileShareChangedEvent change, ProfileShareAnswer answer, UUID answeredBy) {
+    var told = offeringSide(change.share());
+    told.remove(answeredBy);
+    events.publishEvent(
+        tellAbout(change, told)
+            .kind(SharingNotificationKinds.PROFILE_SHARE_ANSWERED)
+            .snapshot(new ProfileShareAnsweredSnapshot(profileNameOf(change.share()), answer))
+            .build());
+  }
+
+  private TellNotificationEvent.TellNotificationEventBuilder tellAbout(
+      ProfileShareChangedEvent change, Set<UUID> told) {
+    return TellNotificationEvent.builder()
+        .subject(SubjectReference.profileShare(change.share().shareId()))
+        .recipients(accounts(told))
+        .at(instantOf(change));
+  }
+
   /** The target Household's HouseholdAdmins, held until the write commits. */
   private Set<UUID> householdSide(ChangedShare share) {
     return new HashSet<>(userAccountRepository.lockHouseholdAdminIds(share.householdId()));
+  }
+
+  /**
+   * The Profile's ProfileManagers, direct and self-managing, and the Account that made the offer
+   * while it may still read the share, which a ServerAdmin may, all held until the write commits.
+   * An offerer that has stopped managing the Profile and is not a ServerAdmin is no longer on it.
+   */
+  private Set<UUID> offeringSide(ChangedShare share) {
+    var side = new HashSet<>(profileManagerRepository.lockManagerIds(share.profileId()));
+    userAccountRepository.lockSelfManagerId(share.profileId()).ifPresent(side::add);
+    share.offeredByAccountId().filter(this::isServerAdmin).ifPresent(side::add);
+    return side;
+  }
+
+  private boolean isServerAdmin(UUID accountId) {
+    return userAccountRepository
+        .lockAuthorityFacts(accountId)
+        .map(AccountAuthorityFacts::serverAdmin)
+        .orElse(false);
   }
 
   private String profileNameOf(ChangedShare share) {
@@ -118,7 +170,7 @@ class SharingNotifications {
    * made its Profile's home share is accepted: the share is active, so a withdrawn request beside
    * it would contradict the share queries.
    */
-  private record Settlement(RequestResolution resolution, Optional<RequestAnswer> answer) {
+  private record Settlement(RequestResolution resolution, Optional<ProfileShareAnswer> answer) {
 
     static Optional<Settlement> of(ProfileShareStatus status) {
       return switch (status) {

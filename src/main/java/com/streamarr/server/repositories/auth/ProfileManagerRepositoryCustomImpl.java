@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.tables.ProfileManager.PROFILE_MANAGER;
 
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
@@ -20,6 +21,16 @@ public class ProfileManagerRepositoryCustomImpl implements ProfileManagerReposit
         .forShare()
         .fetchOptional()
         .isPresent();
+  }
+
+  @Override
+  public Set<UUID> lockManagerIds(UUID profileId) {
+    return dsl.select(PROFILE_MANAGER.ACCOUNT_ID)
+        .from(PROFILE_MANAGER)
+        .where(PROFILE_MANAGER.PROFILE_ID.eq(profileId))
+        .orderBy(PROFILE_MANAGER.ACCOUNT_ID)
+        .forShare()
+        .fetchSet(PROFILE_MANAGER.ACCOUNT_ID);
   }
 
   @Override

@@ -4,7 +4,9 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManager>
     implements ProfileManagerRepository {
@@ -30,6 +32,13 @@ public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManag
   @Override
   public boolean lockDirectManagement(UUID accountId, UUID profileId) {
     return existsByAccountIdAndProfileId(accountId, profileId);
+  }
+
+  @Override
+  public Set<UUID> lockManagerIds(UUID profileId) {
+    return findByProfileId(profileId).stream()
+        .map(ProfileManager::getAccountId)
+        .collect(Collectors.toSet());
   }
 
   @Override

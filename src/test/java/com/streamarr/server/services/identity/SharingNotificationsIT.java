@@ -20,6 +20,7 @@ import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SubjectReference;
@@ -58,6 +59,7 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
 
   private static final String CONNECTED_EMAIL = "ollie@example.com";
   private static final String OFFERED = "PROFILE_SHARE_OFFERED";
+  private static final String ANSWERED = "PROFILE_SHARE_ANSWERED";
 
   @Autowired private ProfileSharingService sharing;
   @Autowired private ProfileShareLifecycle shareLifecycle;
@@ -401,6 +403,7 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
                           new ProfileShareOfferedSnapshot(
                               ben.profile().getName(), Optional.of(ProfileShareAnswer.ACCEPTED))));
             });
+    assertThat(answersAbout(offer)).isEmpty();
   }
 
   @ParameterizedTest
@@ -465,6 +468,118 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
     assertWithdrawn(offer);
   }
 
+  @Test
+  @DisplayName(
+      "Should tell the offering side, except the Account that answered, when an offer is accepted")
+  void shouldTellTheOfferingSideExceptTheAccountThatAnsweredWhenAnOfferIsAccepted() {
+    var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, theo, riversideAdmin);
+    var offer = steps.offer(sam, ollie, riverside);
+
+    var outcome = sharing.acceptProfileShare(identityOf(riversideAdmin), offer.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var answeredAt = stored(offer).getDecidedAt();
+    assertThat(answersAbout(offer))
+        .allSatisfy(
+            news -> {
+              assertThat(news.form()).isEqualTo("NEWS");
+              assertThat(news.snapshot())
+                  .isEqualTo(
+                      document(
+                          new ProfileShareAnsweredSnapshot("Ollie", ProfileShareAnswer.ACCEPTED)));
+              assertThat(news.latestEventAt()).isEqualTo(answeredAt);
+              assertThat(news.readAt()).isEmpty();
+            })
+        .extracting(Row::recipient)
+        .containsExactlyInAnyOrder(account(sam), account(theo));
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Account that made the offer when a ServerAdmin offered for a Profile")
+  void shouldTellTheAccountThatMadeTheOfferWhenAServerAdminOfferedForAProfile() {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var ollie = steps.profileManagedBy("Ollie", sam, sam);
+    var offer = steps.offer(serverAdmin, ollie, riverside);
+
+    var outcome = sharing.rejectProfileShare(identityOf(riverside), offer.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(answersAbout(offer))
+        .allSatisfy(
+            news ->
+                assertThat(news.snapshot())
+                    .isEqualTo(
+                        document(
+                            new ProfileShareAnsweredSnapshot(
+                                "Ollie", ProfileShareAnswer.REJECTED))))
+        .extracting(Row::recipient)
+        .containsExactlyInAnyOrder(account(sam), account(serverAdmin));
+  }
+
+  @ParameterizedTest
+  @EnumSource(Unanswered.class)
+  @DisplayName("Should tell nobody anything new when the offer is canceled or expires")
+  void shouldTellNobodyAnythingNewWhenTheOfferIsCanceledOrExpires(Unanswered how) {
+    var offer = steps.offer(sam, sam.profile(), riverside);
+
+    switch (how) {
+      case CANCELED -> sharing.cancelProfileShare(identityOf(sam), offer.getId());
+      case EXPIRED -> {
+        steps.lapse(offer);
+        expirySweeper.sweep();
+      }
+    }
+
+    assertThat(stored(offer).getStatus()).isEqualTo(how.status);
+    assertThat(rows.about(SubjectReference.profileShare(offer.getId())))
+        .extracting(Row::kind)
+        .containsOnly(OFFERED);
+  }
+
+  /** How an offer stops waiting with nobody answering it. */
+  enum Unanswered {
+    CANCELED(ProfileShareStatus.CANCELED),
+    EXPIRED(ProfileShareStatus.EXPIRED);
+
+    private final ProfileShareStatus status;
+
+    Unanswered(ProfileShareStatus status) {
+      this.status = status;
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell nobody anything new when a rejection comes after the offer's time ran out")
+  void shouldTellNobodyAnythingNewWhenARejectionComesAfterTheOffersTimeRanOut() {
+    var offer = steps.offer(sam, sam.profile(), riverside);
+    steps.lapse(offer);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+
+    sharing.rejectProfileShare(identityOf(serverAdmin), offer.getId());
+
+    assertThat(stored(offer).getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
+    assertThat(answersAbout(offer)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should make no Notification when the acceptance that would make it rolls back")
+  void shouldMakeNoNotificationWhenTheAcceptanceThatWouldMakeItRollsBack() {
+    var ollie = steps.profileManagedBy("Ollie", sam, sam);
+    steps.profileManagedBy("Ollie", riverside, riverside);
+    var offer = steps.offer(sam, ollie, riverside);
+
+    var outcome = sharing.acceptProfileShare(identityOf(riverside), offer.getId());
+
+    assertThat(outcome).isEqualTo(Outcome.rejected(new ShareRejections.NameConflict()));
+    assertThat(answersAbout(offer)).isEmpty();
+    assertThat(requestsAbout(offer))
+        .hasSize(2)
+        .allSatisfy(request -> assertThat(request.resolution()).isEmpty());
+  }
+
   private void assertWithdrawn(ProfileHouseholdShare offer) {
     assertResolvedWithoutAnAnswer(offer, "WITHDRAWN");
   }
@@ -496,6 +611,12 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
   private List<Row> requestsAbout(ProfileHouseholdShare share) {
     return rows.about(SubjectReference.profileShare(share.getId())).stream()
         .filter(row -> row.kind().equals(OFFERED))
+        .toList();
+  }
+
+  private List<Row> answersAbout(ProfileHouseholdShare share) {
+    return rows.about(SubjectReference.profileShare(share.getId())).stream()
+        .filter(row -> row.kind().equals(ANSWERED))
         .toList();
   }
 
