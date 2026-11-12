@@ -78,6 +78,7 @@ class ManagedProfilesIT extends AbstractIntegrationTest {
             sam.profile().getId().toString(), alex.getId().toString(), mara.getId().toString());
     assertThat(nodes).extracting(node -> node.path("name").asString().toLowerCase()).isSorted();
     assertThat(nodes)
+        .hasSize(3)
         .allSatisfy(
             node -> assertThat(node.path("readerAuthority").asString()).isEqualTo("MANAGES"));
     assertThat(nodeFor(nodes, mara.getId().toString()).path("household").path("name").asString())

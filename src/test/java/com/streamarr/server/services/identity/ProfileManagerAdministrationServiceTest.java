@@ -228,6 +228,7 @@ class ProfileManagerAdministrationServiceTest {
     inviteTenAddresses();
 
     assertThat(waitingFor(orphan))
+        .hasSize(10)
         .allSatisfy(invitation -> assertThat(invitation.getRecipientAccountId()).isNull());
     assertThat(
             rejectionOf(
