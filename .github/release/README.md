@@ -2,7 +2,7 @@
 
 Release Please owns the Maven version, generated changelog, release tag, and draft GitHub release.
 The pinned reusable workflows in [`streamarr/streamarr-workflows`](https://github.com/streamarr/streamarr-workflows) own release automation, release validation, and final image publication. Server image builds and native checks stay in this repository.
-The release automation is recorded in [ADR 0034](https://github.com/streamarr/streamarr-adr/blob/main/adr/0034-release-please-owns-maven-release-versions.adoc); [ADR 0058](https://github.com/streamarr/streamarr-adr/blob/main/adr/0058-releases-stay-draft-until-their-notes-are-curated.adoc) adds the draft-publication gate for Streamarr repositories using Release Please.
+The release automation is recorded in [ADR 0034](https://github.com/streamarr/streamarr-adr/blob/main/adr/0034-release-please-owns-maven-release-versions.adoc); [ADR 0059](https://github.com/streamarr/streamarr-adr/blob/main/adr/0059-releases-stay-draft-until-their-notes-are-curated.adoc) adds the draft-publication gate for Streamarr repositories using Release Please.
 The serialized workflow runs after pushes to `main`; `always-update` refreshes the open release PR against the current base.
 Release PRs stay open until a maintainer chooses to merge them. The repository ruleset requires an up-to-date branch and successful build, Sonar, and Snyk checks.
 Merging a release PR fixes its version and revision and creates a draft GitHub release. A maintainer curates that draft's notes and publishes it separately.
