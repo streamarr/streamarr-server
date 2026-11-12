@@ -1001,7 +1001,8 @@ class StreamingResolverTest {
             + " can't be converted for this device. Set Quality to Auto and try again. If Quality"
             + " is already Auto, ask your server admin to check the file.",
         "FIRST_SEGMENT_OPENED_LATE|PlaybackInvalidSpecificationError|This video can't be played"
-            + " from this point. Ask your server admin to check the server logs."
+            + " from this point. Try another point, or ask your server admin to check the server"
+            + " logs."
       })
   @DisplayName("Should expose the typed worker failure when a job attempt fails finally")
   void shouldExposeTheTypedWorkerFailureWhenAJobAttemptFailsFinally(
