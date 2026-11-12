@@ -3,6 +3,8 @@ package com.streamarr.server.graphql.resolvers;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.streamarr.server.domain.auth.ProfileAuthority;
+import com.streamarr.server.domain.language.ProfileLanguagePreferences;
+import com.streamarr.server.graphql.dataloaders.ProfileLanguagePreferencesDataLoader;
 import com.streamarr.server.graphql.dataloaders.ProfileReaderDetailsDataLoader;
 import com.streamarr.server.graphql.dataloaders.ReaderLoaderKey;
 import com.streamarr.server.graphql.dto.HouseholdSummary;
@@ -41,6 +43,15 @@ public class ProfileAdministrationFieldResolver {
                             household ->
                                 new HouseholdSummary(household.getId(), household.getName()))
                         .orElse(null));
+  }
+
+  @DgsData(parentType = "ProfileAdministration", field = "languagePreferences")
+  public CompletableFuture<ProfileLanguagePreferences> languagePreferences(
+      DataFetchingEnvironment dfe) {
+    ProfileAdministration profile = dfe.getSource();
+    DataLoader<ReaderLoaderKey<UUID>, ProfileLanguagePreferences> loader =
+        dfe.getDataLoader(ProfileLanguagePreferencesDataLoader.NAME);
+    return loader.load(new ReaderLoaderKey<>(authorizationService.currentIdentity(), profile.id()));
   }
 
   private CompletableFuture<ProfileReaderDetails> readerDetails(DataFetchingEnvironment dfe) {

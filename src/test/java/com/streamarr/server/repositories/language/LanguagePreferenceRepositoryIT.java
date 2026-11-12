@@ -128,6 +128,27 @@ class LanguagePreferenceRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should read each existing Profile's own preferences when many are asked for at once")
+  void shouldReadEachExistingProfilesOwnPreferencesWhenManyAreAskedForAtOnce() {
+    var wanted =
+        ProfileLanguagePreferences.builder()
+            .audioLanguages(List.of(Language.DE, Language.EN))
+            .subtitleMode(SubtitlePreferenceMode.OFF)
+            .build();
+    transactions.execute(_ -> repository.trySetProfilePreferences(viewer.getId(), wanted));
+
+    var found =
+        repository.findProfilePreferences(
+            List.of(viewer.getId(), housemate.getId(), UUID.randomUUID()));
+
+    assertThat(found)
+        .isEqualTo(
+            Map.of(
+                viewer.getId(), wanted, housemate.getId(), ProfileLanguagePreferences.defaults()));
+  }
+
+  @Test
   @DisplayName("Should store nothing when no Profile has the id")
   void shouldStoreNothingWhenNoProfileHasTheId() {
     var missing = UUID.randomUUID();
