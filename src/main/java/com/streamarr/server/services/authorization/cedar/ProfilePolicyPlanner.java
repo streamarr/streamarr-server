@@ -3,6 +3,7 @@ package com.streamarr.server.services.authorization.cedar;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
+import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfilePolicyTransition;
@@ -39,28 +40,23 @@ class ProfilePolicyPlanner {
 
   private static ProfilePolicyTransition classify(
       ProfilePolicySnapshot current, Intent.ProfilePolicyChange intent) {
-    var targetKind = current.kind();
-    if (intent instanceof Intent.ChangeProfileKind change) {
-      targetKind = change.kind();
-    }
-
-    var targetCeiling = targetCeilingOf(current, intent);
-    var restrictedAfter = Profile.isRestricted(targetKind, targetCeiling);
+    var target = targetOf(current, intent);
+    var restrictedAfter = Profile.isRestricted(target.kind(), target.maximumAllowedRatingAge());
     return new ProfilePolicyTransition(
-        targetKind, targetCeiling, classification(current, targetKind, restrictedAfter));
+        target.kind(),
+        target.maximumAllowedRatingAge(),
+        classification(current, target.kind(), restrictedAfter));
   }
 
-  private static Integer targetCeilingOf(
+  private static ProfilePolicyTarget targetOf(
       ProfilePolicySnapshot current, Intent.ProfilePolicyChange intent) {
-    if (intent instanceof Intent.SetProfileContentCeiling set) {
-      return set.maximumAllowedRatingAge();
-    }
-
-    if (intent instanceof Intent.ClearProfileContentCeiling) {
-      return null;
-    }
-
-    return current.maximumAllowedRatingAge();
+    return switch (intent) {
+      case Intent.ChangeProfileKind change ->
+          new ProfilePolicyTarget(change.kind(), current.maximumAllowedRatingAge());
+      case Intent.SetProfileContentCeiling set ->
+          new ProfilePolicyTarget(current.kind(), set.maximumAllowedRatingAge());
+      case Intent.ClearProfileContentCeiling _ -> new ProfilePolicyTarget(current.kind(), null);
+    };
   }
 
   private static Classification classification(
