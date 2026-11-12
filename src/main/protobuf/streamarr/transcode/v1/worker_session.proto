@@ -808,14 +808,11 @@ message JobAttemptProgress {
   // video's last keyframe. This field counts the source bytes that the search
   // has read. It stays 0 when the attempt runs no search.
   uint64 keyframe_search_bytes_read = 3;
-  // A job that copies its video and encodes its audio reads the audio from an
-  // input of its own. FFmpeg writes no output while that input reads from the
-  // audio stream's last packet to its next one or to the source's end. This
-  // field counts the bytes that the attempt's FFmpeg process has read, so it
-  // keeps growing meanwhile and stops growing when FFmpeg stops reading. The
-  // worker counts them only while it reads FFmpeg's output. The field stays 0
-  // for every other job, and on a worker host that counts no bytes read for a
-  // process.
+  // The bytes that the attempt's FFmpeg process has read. An attempt that reads
+  // its encoded audio from an input of its own writes nothing while that input
+  // reads on past the audio's last packet; this count grows while it reads. It
+  // stays 0 for every other attempt and on a worker host that counts no bytes
+  // read for a process (ADR 0037, segment list).
   uint64 ffmpeg_bytes_read = 4;
 }
 

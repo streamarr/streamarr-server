@@ -1922,8 +1922,8 @@ class WorkerSessionGrpcServiceTest {
   }
 
   // A report need not carry an output end: a held encode's keyframe search runs before FFmpeg
-  // writes, and FFmpeg writes nothing while a copy's audio input reads on after the audio's last
-  // packet. Each such report counts the bytes read instead.
+  // writes, and FFmpeg writes nothing while an attempt's audio input reads on after the audio's
+  // last packet. Each such report counts the bytes read instead.
   @ParameterizedTest(name = "running: {0}, the report carries {1}")
   @CsvSource({
     "true, KEYFRAME_SEARCH_BYTES_READ",

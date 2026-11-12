@@ -1132,10 +1132,9 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
-      "Should carry the bytes that FFmpeg has read and no output time when a copy that encodes its audio reports its reading as progress")
-  void
-      shouldCarryTheBytesThatFfmpegHasReadAndNoOutputTimeWhenCopyThatEncodesItsAudioReportsItsReadingAsProgress()
-          throws Exception {
+      "Should carry the bytes that FFmpeg has read and no output time when an attempt reports its reading as progress")
+  void shouldCarryTheBytesThatFfmpegHasReadAndNoOutputTimeWhenAnAttemptReportsItsReadingAsProgress()
+      throws Exception {
     var reading =
         JobAttemptProgress.newBuilder()
             .setJobAttemptId(uuid(UUID.randomUUID()))
