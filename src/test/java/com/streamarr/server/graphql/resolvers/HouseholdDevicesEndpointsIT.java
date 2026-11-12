@@ -13,13 +13,12 @@ import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
-import jakarta.persistence.EntityManagerFactory;
+import com.streamarr.server.support.StatementCount;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,8 +37,6 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("Household Devices Endpoints Integration Tests")
 class HouseholdDevicesEndpointsIT extends AbstractIntegrationTest {
 
-  private static final int COUNTED_RUNS = 3;
-
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
@@ -47,7 +44,7 @@ class HouseholdDevicesEndpointsIT extends AbstractIntegrationTest {
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private UserAccountRepository accountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
-  @Autowired private EntityManagerFactory entityManagerFactory;
+  @Autowired private StatementCount statementCount;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private AuthTestSupport.TestIdentity host;
@@ -127,13 +124,14 @@ class HouseholdDevicesEndpointsIT extends AbstractIntegrationTest {
     register(visitor());
     // The first request fills caches that later requests skip.
     householdDevices(host, "");
-    var forTwoDevices = statementsWhileListing(host);
+    var forTwoDevices = statementCount.statementsWhile(() -> householdDevices(host, ""));
 
     register(visitor());
     register(authTestSupport.createHouseholdMemberIdentity(host));
 
     assertThat(displayNamesByRegistration(host)).hasSize(4);
-    assertThat(statementsWhileListing(host)).isEqualTo(forTwoDevices);
+    assertThat(statementCount.statementsWhile(() -> householdDevices(host, "")))
+        .isEqualTo(forTwoDevices);
   }
 
   private Map<String, String> displayNamesByRegistration(AuthTestSupport.TestIdentity reader)
@@ -217,32 +215,5 @@ class HouseholdDevicesEndpointsIT extends AbstractIntegrationTest {
     var identity = authTestSupport.createIdentity();
     identities.add(identity);
     return identity;
-  }
-
-  // Hibernate statistics are global, so the count holds only while no other test uses the context.
-  // The session reaper also reads the server settings every few seconds on its own thread, so a
-  // run can count one statement that is not the request's; the fewest over a few runs is its own.
-  private long statementsWhileListing(AuthTestSupport.TestIdentity reader) throws Exception {
-    var fewest = Long.MAX_VALUE;
-    for (var run = 0; run < COUNTED_RUNS; run++) {
-      fewest = Math.min(fewest, statementsOfOneListing(reader));
-    }
-
-    return fewest;
-  }
-
-  private long statementsOfOneListing(AuthTestSupport.TestIdentity reader) throws Exception {
-    var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
-    var previouslyEnabled = statistics.isStatisticsEnabled();
-    statistics.setStatisticsEnabled(true);
-    statistics.clear();
-
-    try {
-      householdDevices(reader, "");
-      return statistics.getPrepareStatementCount();
-    } finally {
-      statistics.clear();
-      statistics.setStatisticsEnabled(previouslyEnabled);
-    }
   }
 }
