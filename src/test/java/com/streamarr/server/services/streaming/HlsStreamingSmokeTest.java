@@ -27,6 +27,7 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -304,8 +305,8 @@ class HlsStreamingSmokeTest {
         .atMost(Duration.ofSeconds(30))
         .until(() -> segmentStore.segmentExists(session.getSessionId(), "segment0.m4s"));
 
-    var initialization = segmentStore.readSegment(session.getSessionId(), "init.mp4");
-    var segmentData = segmentStore.readSegment(session.getSessionId(), "segment0.m4s");
+    var initialization = StoredSegments.bytes(segmentStore, session.getSessionId(), "init.mp4");
+    var segmentData = StoredSegments.bytes(segmentStore, session.getSessionId(), "segment0.m4s");
     assertThat(Fmp4Fixture.firstBoxType(initialization)).isEqualTo("ftyp");
     assertThat(Fmp4Fixture.firstBoxType(segmentData)).isEqualTo("moof");
   }
@@ -377,7 +378,7 @@ class HlsStreamingSmokeTest {
 
     long highestDeliveredBitrate = 0;
     for (var index = 0; index < segments.size(); index++) {
-      var bytes = segmentStore.readSegment(session.getSessionId(), segments.get(index));
+      var bytes = StoredSegments.bytes(segmentStore, session.getSessionId(), segments.get(index));
       var bitrate = (long) Math.ceil(bytes.length * 8.0 / durations.get(index));
       assertThat(bitrate).as(segments.get(index)).isLessThanOrEqualTo(bandwidth);
       highestDeliveredBitrate = Math.max(highestDeliveredBitrate, bitrate);

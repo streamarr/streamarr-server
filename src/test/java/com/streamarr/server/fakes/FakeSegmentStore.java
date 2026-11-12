@@ -1,29 +1,96 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.StoredSegment;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FakeSegmentStore implements SegmentStore {
 
   private final Map<UUID, Map<String, byte[]>> sessions = new ConcurrentHashMap<>();
+  private final Set<StoredSegment> openSegments = ConcurrentHashMap.newKeySet();
 
   @Override
-  public byte[] readSegment(UUID sessionId, String segmentName) {
-    var segments = sessions.get(sessionId);
-    if (segments == null) {
-      throw new TranscodeException("No output directory for session: " + sessionId);
+  public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
+    return Optional.ofNullable(sessions.getOrDefault(sessionId, Map.of()).get(segmentName))
+        .map(this::opened);
+  }
+
+  /** The segments that were opened and not yet closed. */
+  public int openSegmentCount() {
+    return openSegments.size();
+  }
+
+  // Like a file opened for one request, the segment reads nothing once it is closed.
+  private StoredSegment opened(byte[] data) {
+    var closed = new AtomicBoolean();
+    var opened =
+        new StoredSegment() {
+          @Override
+          public long length() {
+            return data.length;
+          }
+
+          @Override
+          public InputStream newInputStream() {
+            return new OpenedSegmentStream(new ByteArrayInputStream(data), closed);
+          }
+
+          @Override
+          public void close() {
+            closed.set(true);
+            openSegments.remove(this);
+          }
+        };
+    openSegments.add(opened);
+    return opened;
+  }
+
+  private static final class OpenedSegmentStream extends FilterInputStream {
+
+    private final AtomicBoolean segmentClosed;
+
+    private OpenedSegmentStream(InputStream bytes, AtomicBoolean segmentClosed) {
+      super(bytes);
+      this.segmentClosed = segmentClosed;
     }
-    var data = segments.get(segmentName);
-    if (data == null) {
-      throw new TranscodeException("Segment not found: " + segmentName);
+
+    @Override
+    public int read() throws IOException {
+      requireOpenSegment();
+      return super.read();
     }
-    return data;
+
+    @Override
+    public int read(byte[] buffer, int offset, int length) throws IOException {
+      requireOpenSegment();
+      return super.read(buffer, offset, length);
+    }
+
+    @Override
+    public long skip(long count) throws IOException {
+      requireOpenSegment();
+      return super.skip(count);
+    }
+
+    private void requireOpenSegment() throws IOException {
+      if (segmentClosed.get()) {
+        throw new IOException("The segment was closed before its stream was read");
+      }
+    }
   }
 
   @Override
@@ -32,10 +99,19 @@ public class FakeSegmentStore implements SegmentStore {
   }
 
   @Override
-  public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
+  public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+    var appended = new ByteArrayOutputStream();
     return new PreparedSegment() {
       @Override
+      public void append(ByteBuffer bytes) {
+        var chunk = new byte[bytes.remaining()];
+        bytes.get(chunk);
+        appended.writeBytes(chunk);
+      }
+
+      @Override
       public SegmentPublication publish() {
+        var data = appended.toByteArray();
         if (SegmentNames.isInitSegment(segmentName)) {
           return publishInitialization(sessionId, segmentName, data);
         }
@@ -46,8 +122,7 @@ public class FakeSegmentStore implements SegmentStore {
 
       @Override
       public void close() {
-        // Data remains owned by this object until publish(), so there is no staged resource to
-        // release.
+        // The appended bytes stay on the heap until publish(), so there is nothing to release.
       }
     };
   }

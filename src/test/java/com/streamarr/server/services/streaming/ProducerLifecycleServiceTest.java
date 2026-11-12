@@ -48,6 +48,7 @@ import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.properties.StreamingProperties;
@@ -264,7 +265,8 @@ class ProducerLifecycleServiceTest {
 
     // Segments are addressed on the absolute timeline, so earlier segments stay valid.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore + 1);
-    assertThat(segmentStore.readSegment(session.getSessionId(), "segment0.m4s")).containsExactly(1);
+    assertThat(StoredSegments.bytes(segmentStore, session.getSessionId(), "segment0.m4s"))
+        .containsExactly(1);
   }
 
   @Test

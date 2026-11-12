@@ -2,10 +2,13 @@ package com.streamarr.server.services.streaming.local;
 
 import com.streamarr.server.services.streaming.SegmentPublication;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.WritableByteChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import lombok.NonNull;
 
 final class PreparedSegmentFile implements AutoCloseable {
@@ -13,7 +16,7 @@ final class PreparedSegmentFile implements AutoCloseable {
   interface FileOperations {
     Path createTemporary(Path directory) throws IOException;
 
-    void write(Path path, byte[] data) throws IOException;
+    WritableByteChannel openForWriting(Path path) throws IOException;
 
     void moveAtomically(Path source, Path target) throws IOException;
 
@@ -35,8 +38,8 @@ final class PreparedSegmentFile implements AutoCloseable {
     }
 
     @Override
-    public void write(Path path, byte[] data) throws IOException {
-      Files.write(path, data);
+    public WritableByteChannel openForWriting(Path path) throws IOException {
+      return Files.newByteChannel(path, StandardOpenOption.WRITE);
     }
 
     @Override
@@ -68,22 +71,23 @@ final class PreparedSegmentFile implements AutoCloseable {
 
   private final FileOperations files;
   private final Path temporary;
+  private final WritableByteChannel content;
 
-  private PreparedSegmentFile(FileOperations files, Path temporary) {
+  private PreparedSegmentFile(FileOperations files, Path temporary, WritableByteChannel content) {
     this.files = files;
     this.temporary = temporary;
+    this.content = content;
   }
 
-  static PreparedSegmentFile create(Path directory, byte[] data) throws IOException {
-    return create(NioFileOperations.INSTANCE, directory, data);
+  static PreparedSegmentFile create(Path directory) throws IOException {
+    return create(NioFileOperations.INSTANCE, directory);
   }
 
-  static PreparedSegmentFile create(@NonNull FileOperations files, Path directory, byte[] data)
+  static PreparedSegmentFile create(@NonNull FileOperations files, Path directory)
       throws IOException {
     var temporary = files.createTemporary(directory);
     try {
-      files.write(temporary, data);
-      return new PreparedSegmentFile(files, temporary);
+      return new PreparedSegmentFile(files, temporary, files.openForWriting(temporary));
     } catch (IOException | RuntimeException preparationFailure) {
       try {
         files.delete(temporary);
@@ -94,7 +98,15 @@ final class PreparedSegmentFile implements AutoCloseable {
     }
   }
 
+  /** Writes the bytes after those already appended. */
+  void append(ByteBuffer bytes) throws IOException {
+    while (bytes.hasRemaining()) {
+      content.write(bytes);
+    }
+  }
+
   void publishTo(Path target) throws IOException {
+    content.close();
     try {
       files.moveAtomically(temporary, target);
     } catch (AtomicMoveNotSupportedException _) {
@@ -108,6 +120,7 @@ final class PreparedSegmentFile implements AutoCloseable {
    * target.
    */
   SegmentPublication publishUnlessStored(Path target) throws IOException {
+    content.close();
     if (files.notExists(target)) {
       publishTo(target);
       return SegmentPublication.PUBLISHED;
@@ -122,6 +135,8 @@ final class PreparedSegmentFile implements AutoCloseable {
 
   @Override
   public void close() throws IOException {
-    files.delete(temporary);
+    try (content) {
+      files.delete(temporary);
+    }
   }
 }

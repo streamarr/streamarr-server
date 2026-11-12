@@ -22,15 +22,18 @@ import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.ForwardingPreparedSegment;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentNames;
-import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
+import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
@@ -71,6 +74,8 @@ import io.grpc.Context;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.nio.ByteBuffer;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -92,6 +97,7 @@ import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -119,6 +125,8 @@ class WorkerSessionGrpcServiceTest {
   private static final String MISSING_ENCODER_METRIC = "streamarr.streaming.missing_encoder";
   private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
       "streamarr.streaming.unknown_job_attempt_reports";
+  private static final String UPLOAD_DISCARD_FAILURES_METRIC =
+      "streamarr.streaming.segment_upload_discard_failures";
   private static final WorkerVerifiedVideoEncoder LIBX264 =
       softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264");
 
@@ -1678,15 +1686,178 @@ class WorkerSessionGrpcServiceTest {
     assertThat(response.completed()).isTrue();
     assertThat(response.response().getAcceptedLengthBytes()).isEqualTo(segmentData.length);
     assertThat(
-            segmentStore.readSegment(
+            StoredSegments.bytes(
+                segmentStore,
                 fromProto(job.getStreamSessionId()),
                 job.getVariant().getVariantLabel() + "/segment0.m4s"))
         .isEqualTo(segmentData);
   }
 
   @Test
-  @DisplayName("Should reject an upload when ownership is lost during publication")
-  void shouldRejectUploadWhenOwnershipIsLostDuringPublication() throws Exception {
+  @DisplayName("Should leave no file behind when the worker abandons an upload part-way")
+  void shouldLeaveNoFileBehindWhenWorkerAbandonsUploadPartWay(@TempDir Path segmentFolder)
+      throws Exception {
+    var segmentStore = new LocalSegmentStore(segmentFolder);
+    var started = startedUpload(segmentStore, new RecordingUploadResponseObserver(), 8);
+    started.upload().onNext(dataFrame(new byte[] {1, 2, 3, 4}));
+
+    started.upload().onError(Status.CANCELLED.asRuntimeException());
+
+    assertThat(segmentFolder).isEmptyDirectory();
+    assertThat(segmentStore.segmentExists(started.streamSessionId(), started.segmentName()))
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName("Should leave no file behind when an upload sends more bytes than it declared")
+  void shouldLeaveNoFileBehindWhenUploadSendsMoreBytesThanItDeclared(@TempDir Path segmentFolder)
+      throws Exception {
+    var response = new RecordingUploadResponseObserver();
+    var started = startedUpload(new LocalSegmentStore(segmentFolder), response, 4);
+    started.upload().onNext(dataFrame(new byte[] {1, 2, 3}));
+
+    started.upload().onNext(dataFrame(new byte[] {4, 5}));
+
+    assertThat(Status.fromThrowable(response.error()).getCode())
+        .isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThat(segmentFolder).isEmptyDirectory();
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject an upload once when it sends more bytes than it declared and its temporary"
+          + " file cannot be discarded")
+  void
+      shouldRejectUploadOnceWhenItSendsMoreBytesThanItDeclaredAndItsTemporaryFileCannotBeDiscarded()
+          throws Exception {
+    var response = new RecordingUploadResponseObserver();
+    var started = startedUpload(new CloseFailingSegmentStore(), response, 4);
+    started.upload().onNext(dataFrame(new byte[] {1, 2, 3}));
+
+    started.upload().onNext(dataFrame(new byte[] {4, 5}));
+
+    assertThat(response.errorCount()).isEqualTo(1);
+    assertThat(Status.fromThrowable(response.error()).getCode())
+        .isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThat(started.meterRegistry().get(UPLOAD_DISCARD_FAILURES_METRIC).counter().count())
+        .isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report one storage failure as the first data message arrives when an upload's bytes"
+          + " cannot be written")
+  void shouldReportOneStorageFailureAsTheFirstDataMessageArrivesWhenUploadsBytesCannotBeWritten()
+      throws Exception {
+    var response = new RecordingUploadResponseObserver();
+    var started = startedUpload(new WriteFailingSegmentStore(), response, 4);
+
+    started.upload().onNext(dataFrame(new byte[] {1, 2}));
+
+    assertThat(response.errorCount()).isEqualTo(1);
+    assertThat(Status.fromThrowable(response.error()).getCode()).isEqualTo(Status.Code.INTERNAL);
+    started.upload().onNext(dataFrame(new byte[] {3, 4}));
+    started.upload().onCompleted();
+    assertThat(response.errorCount()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should report one storage failure when an upload's storage cannot be prepared")
+  void shouldReportOneStorageFailureWhenUploadsStorageCannotBePrepared() throws Exception {
+    var response = new RecordingUploadResponseObserver();
+    var unpreparable =
+        new FakeSegmentStore() {
+          @Override
+          public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+            throw new IllegalStateException("Simulated storage outage");
+          }
+        };
+
+    var started = startedUpload(unpreparable, response, 4);
+    started.upload().onNext(dataFrame(new byte[] {1, 2, 3, 4}));
+    started.upload().onCompleted();
+
+    assertThat(response.errorCount()).isEqualTo(1);
+    assertThat(Status.fromThrowable(response.error()).getCode()).isEqualTo(Status.Code.INTERNAL);
+  }
+
+  // An upload whose metadata, declaring the content length, has reached the server.
+  private static StartedUpload startedUpload(
+      SegmentStore segmentStore,
+      StreamObserver<UploadSegmentResponse> response,
+      int contentLengthBytes)
+      throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var worker = worker(workerId);
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.registryMeteredBy(meterRegistry);
+    var workerSessionId =
+        registry.register(
+            workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isPresent();
+    var upload = upload(new WorkerSessionGrpcService(registry, segmentStore), workerId, response);
+    upload.onNext(
+        UploadSegmentRequest.newBuilder()
+            .setMetadata(
+                metadataBuilder(workerSessionId, worker, job)
+                    .setContentLengthBytes(contentLengthBytes))
+            .build());
+    return StartedUpload.builder()
+        .upload(upload)
+        .streamSessionId(fromProto(job.getStreamSessionId()))
+        .segmentName(job.getVariant().getVariantLabel() + "/segment0.m4s")
+        .meterRegistry(meterRegistry)
+        .build();
+  }
+
+  private static UploadSegmentRequest dataFrame(byte[] data) {
+    return UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(data)).build();
+  }
+
+  @Builder
+  private record StartedUpload(
+      StreamObserver<UploadSegmentRequest> upload,
+      UUID streamSessionId,
+      String segmentName,
+      SimpleMeterRegistry meterRegistry) {}
+
+  private static final class WriteFailingSegmentStore extends FakeSegmentStore {
+
+    @Override
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+      return new ForwardingPreparedSegment(super.prepareSegment(sessionId, segmentName)) {
+        @Override
+        public void append(ByteBuffer bytes) {
+          throw new IllegalStateException("Simulated segment write failure");
+        }
+      };
+    }
+  }
+
+  private static final class CloseFailingSegmentStore extends FakeSegmentStore {
+
+    @Override
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+      return failingOnClose(super.prepareSegment(sessionId, segmentName));
+    }
+  }
+
+  private static SegmentStore.PreparedSegment failingOnClose(
+      SegmentStore.PreparedSegment prepared) {
+    return new ForwardingPreparedSegment(prepared) {
+      @Override
+      public void close() {
+        prepared.close();
+        throw new IllegalStateException("Simulated prepared segment cleanup failure");
+      }
+    };
+  }
+
+  @Test
+  @DisplayName("Should reject an upload when ownership is lost before its data arrives")
+  void shouldRejectUploadWhenOwnershipIsLostBeforeItsDataArrives() throws Exception {
     var segmentStore = new BlockingSegmentStore();
 
     var result = uploadThatLosesOwnership(segmentStore);
@@ -1708,6 +1879,8 @@ class WorkerSessionGrpcServiceTest {
     assertThat(result.response().errorCount()).isEqualTo(1);
     assertThat(Status.fromThrowable(result.response().error()).getCode())
         .isEqualTo(Status.Code.INTERNAL);
+    assertThat(result.meterRegistry().get(UPLOAD_DISCARD_FAILURES_METRIC).counter().count())
+        .isEqualTo(1);
   }
 
   private static OwnershipLossResult uploadThatLosesOwnership(BlockingSegmentStore segmentStore)
@@ -1715,7 +1888,8 @@ class WorkerSessionGrpcServiceTest {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var worker = worker(workerId);
-    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.registryMeteredBy(meterRegistry);
     var workerSessionId =
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
@@ -1725,16 +1899,21 @@ class WorkerSessionGrpcServiceTest {
     var response = new RecordingUploadResponseObserver();
     var segmentData = ByteString.copyFromUtf8("segment");
     var upload = upload(service, workerId, response);
-    upload.onNext(
+    var metadata =
         UploadSegmentRequest.newBuilder()
             .setMetadata(
                 metadataBuilder(workerSessionId, worker, job)
                     .setContentLengthBytes(segmentData.size()))
-            .build());
-    upload.onNext(UploadSegmentRequest.newBuilder().setData(segmentData).build());
+            .build();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var publication = executor.submit(upload::onCompleted);
+      var publication =
+          executor.submit(
+              () -> {
+                upload.onNext(metadata);
+                upload.onNext(UploadSegmentRequest.newBuilder().setData(segmentData).build());
+                upload.onCompleted();
+              });
       try {
         assertThat(segmentStore.awaitPreparation(Duration.ofSeconds(5))).isTrue();
         registry.disconnect(workerId, workerSessionId);
@@ -1745,14 +1924,20 @@ class WorkerSessionGrpcServiceTest {
       }
     }
 
-    return new OwnershipLossResult(
-        response,
-        fromProto(job.getStreamSessionId()),
-        job.getVariant().getVariantLabel() + "/segment0.m4s");
+    return OwnershipLossResult.builder()
+        .response(response)
+        .streamSessionId(fromProto(job.getStreamSessionId()))
+        .segmentName(job.getVariant().getVariantLabel() + "/segment0.m4s")
+        .meterRegistry(meterRegistry)
+        .build();
   }
 
+  @Builder
   private record OwnershipLossResult(
-      RecordingUploadResponseObserver response, UUID streamSessionId, String segmentName) {}
+      RecordingUploadResponseObserver response,
+      UUID streamSessionId,
+      String segmentName,
+      SimpleMeterRegistry meterRegistry) {}
 
   private enum ReportedEncoderBackend {
     DIFFERENT(
@@ -2184,20 +2369,8 @@ class WorkerSessionGrpcServiceTest {
   private static final class CloseFailingBlockingSegmentStore extends BlockingSegmentStore {
 
     @Override
-    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
-      var prepared = super.prepareSegment(sessionId, segmentName, data);
-      return new PreparedSegment() {
-        @Override
-        public SegmentPublication publish() {
-          return prepared.publish();
-        }
-
-        @Override
-        public void close() {
-          prepared.close();
-          throw new IllegalStateException("Simulated prepared segment cleanup failure");
-        }
-      };
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+      return failingOnClose(super.prepareSegment(sessionId, segmentName));
     }
   }
 

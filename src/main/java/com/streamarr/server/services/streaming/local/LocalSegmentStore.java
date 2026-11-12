@@ -6,8 +6,10 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.StoredSegment;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -29,15 +31,18 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   @Override
-  public byte[] readSegment(UUID sessionId, String segmentName) {
-    var segmentPath = resolveSegmentPath(sessionId, segmentName);
+  public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
+    var segmentPath = findSegmentPath(sessionId, segmentName);
+    if (segmentPath.isEmpty()) {
+      return Optional.empty();
+    }
 
     try {
-      return Files.readAllBytes(segmentPath);
-    } catch (NoSuchFileException e) {
-      throw new TranscodeException("Segment not found: " + segmentName, e);
+      return Optional.of(OpenedSegmentFile.open(segmentPath.get()));
+    } catch (NoSuchFileException _) {
+      return Optional.empty();
     } catch (IOException e) {
-      throw new UncheckedIOException("Failed to read segment: " + segmentName, e);
+      throw new UncheckedIOException("Failed to open segment: " + segmentName, e);
     }
   }
 
@@ -47,10 +52,10 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   @Override
-  public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
+  public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
     try {
       Files.createDirectories(baseDir);
-      var temporary = PreparedSegmentFile.create(baseDir, data);
+      var temporary = PreparedSegmentFile.create(baseDir);
       return new LocalPreparedSegment(sessionId, segmentName, temporary);
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to prepare segment: " + segmentName, e);
@@ -71,9 +76,18 @@ public class LocalSegmentStore implements SegmentStore {
     }
 
     @Override
+    public void append(ByteBuffer bytes) {
+      try {
+        temporary.append(bytes);
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to write segment upload: " + segmentName, e);
+      }
+    }
+
+    @Override
     public SegmentPublication publish() {
       getOutputDirectory(sessionId);
-      var segmentPath = resolveSegmentPath(sessionId, segmentName);
+      var segmentPath = resolveSegmentPath();
       try {
         Files.createDirectories(segmentPath.getParent());
         if (SegmentNames.isInitSegment(segmentName)) {
@@ -85,6 +99,12 @@ public class LocalSegmentStore implements SegmentStore {
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
       }
+    }
+
+    private Path resolveSegmentPath() {
+      return findSegmentPath(sessionId, segmentName)
+          .orElseThrow(
+              () -> new TranscodeException("No output directory for session: " + sessionId));
     }
 
     private SegmentPublication publishInitialization(Path segmentPath) throws IOException {
@@ -141,11 +161,6 @@ public class LocalSegmentStore implements SegmentStore {
           }
         });
     sessionDirs.clear();
-  }
-
-  private Path resolveSegmentPath(UUID sessionId, String segmentName) {
-    return findSegmentPath(sessionId, segmentName)
-        .orElseThrow(() -> new TranscodeException("No output directory for session: " + sessionId));
   }
 
   /**

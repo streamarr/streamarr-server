@@ -19,6 +19,7 @@ import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
@@ -219,7 +220,7 @@ class EncoderPresetSmokeTest {
     await()
         .atMost(60, TimeUnit.SECONDS)
         .until(() -> segmentStore.segmentExists(sessionId, FIRST_MEDIA_SEGMENT));
-    return segmentStore.readSegment(sessionId, FIRST_MEDIA_SEGMENT);
+    return StoredSegments.bytes(segmentStore, sessionId, FIRST_MEDIA_SEGMENT);
   }
 
   private List<String> workerCommand(StreamSession session) throws Exception {

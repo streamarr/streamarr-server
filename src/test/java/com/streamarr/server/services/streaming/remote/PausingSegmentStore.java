@@ -2,9 +2,12 @@ package com.streamarr.server.services.streaming.remote;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.fakes.ForwardingPreparedSegment;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.StoredSegment;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -44,8 +47,8 @@ final class PausingSegmentStore implements SegmentStore {
   }
 
   @Override
-  public byte[] readSegment(UUID sessionId, String segmentName) {
-    return delegate.readSegment(sessionId, segmentName);
+  public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
+    return delegate.openSegment(sessionId, segmentName);
   }
 
   @Override
@@ -54,21 +57,16 @@ final class PausingSegmentStore implements SegmentStore {
   }
 
   @Override
-  public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
-    var prepared = delegate.prepareSegment(sessionId, segmentName, data);
+  public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+    var prepared = delegate.prepareSegment(sessionId, segmentName);
     var pause = nextPause.getAndSet(null);
-    return new PreparedSegment() {
+    return new ForwardingPreparedSegment(prepared) {
       @Override
       public SegmentPublication publish() {
         holdAt(pause, PublicationPause.BEFORE_THE_SEGMENT_IS_READABLE);
         var publication = prepared.publish();
         holdAt(pause, PublicationPause.AFTER_THE_SEGMENT_IS_READABLE);
         return publication;
-      }
-
-      @Override
-      public void close() {
-        prepared.close();
       }
     };
   }

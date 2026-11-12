@@ -7,15 +7,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Feature;
 import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.exceptions.FileShrankException;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
-import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -81,19 +85,117 @@ class LocalSegmentStoreTest {
     var expectedBytes = "segment data".getBytes();
     Files.write(outputDir.resolve("segment0.m4s"), expectedBytes);
 
-    var result = store.readSegment(sessionId, "segment0.m4s");
+    var result = StoredSegments.bytes(store, sessionId, "segment0.m4s");
 
     assertThat(result).isEqualTo(expectedBytes);
   }
 
   @Test
-  @DisplayName("Should throw when reading nonexistent segment")
-  void shouldThrowWhenReadingNonexistentSegment() {
+  @DisplayName("Should find no segment when opening a name that was never published")
+  void shouldFindNoSegmentWhenOpeningNameThatWasNeverPublished() {
     var sessionId = UUID.randomUUID();
     store.getOutputDirectory(sessionId);
 
-    assertThatThrownBy(() -> store.readSegment(sessionId, "missing.m4s"))
-        .isInstanceOf(TranscodeException.class);
+    assertThat(store.openSegment(sessionId, "missing.m4s")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should find no segment when opening one for a session without an output directory")
+  void shouldFindNoSegmentWhenOpeningOneForSessionWithoutOutputDirectory() {
+    assertThat(store.openSegment(UUID.randomUUID(), "segment0.m4s")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should read each stream of an opened segment from its first byte")
+  void shouldReadEachStreamOfOpenedSegmentFromItsFirstByte() throws IOException {
+    var sessionId = UUID.randomUUID();
+    store.storeSegment(sessionId, "segment0.m4s", new byte[] {7, 8, 9});
+
+    try (var opened = store.openSegment(sessionId, "segment0.m4s").orElseThrow();
+        var first = opened.newInputStream();
+        var second = opened.newInputStream()) {
+      assertThat(first.read()).isEqualTo(7);
+      assertThat(second).hasBinaryContent(new byte[] {7, 8, 9});
+      assertThat(first.readAllBytes()).containsExactly(8, 9);
+      assertThat(first.read()).isEqualTo(-1);
+    }
+  }
+
+  @Test
+  @DisplayName("Should fail the read past the remaining byte when an opened segment shrinks")
+  void shouldFailTheReadPastTheRemainingByteWhenAnOpenedSegmentShrinks() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var name = "segment0.m4s";
+    store.storeSegment(sessionId, name, new byte[] {-1, 2, 3, 4});
+    var path = store.getOutputDirectory(sessionId).resolve(name);
+
+    try (var opened = store.openSegment(sessionId, name).orElseThrow();
+        var stream = opened.newInputStream();
+        var writer = FileChannel.open(path, StandardOpenOption.WRITE)) {
+      writer.truncate(1);
+
+      assertThat(stream.read()).isEqualTo(255);
+      assertThatThrownBy(stream::read).isInstanceOf(FileShrankException.class);
+    }
+  }
+
+  @Test
+  @DisplayName("Should read from the byte after the skipped ones when a stream skips ahead")
+  void shouldReadFromByteAfterSkippedOnesWhenStreamSkipsAhead() throws IOException {
+    var sessionId = UUID.randomUUID();
+    store.storeSegment(sessionId, "segment0.m4s", new byte[] {7, 8, 9, 10});
+
+    try (var opened = store.openSegment(sessionId, "segment0.m4s").orElseThrow();
+        var stream = opened.newInputStream()) {
+      assertThat(stream.skip(-1)).isZero();
+      assertThat(stream.skip(2)).isEqualTo(2);
+      assertThat(stream.read()).isEqualTo(9);
+    }
+  }
+
+  @Test
+  @DisplayName("Should skip ahead without reading the stored bytes when a stream skips")
+  void shouldSkipAheadWithoutReadingStoredBytesWhenStreamSkips() throws IOException {
+    var sessionId = UUID.randomUUID();
+    store.storeSegment(sessionId, "segment0.m4s", new byte[] {7, 8, 9, 10});
+
+    try (var opened = store.openSegment(sessionId, "segment0.m4s").orElseThrow();
+        var stream = opened.newInputStream()) {
+      // With the file emptied under the opened segment, a skip that read the bytes it passes
+      // over would find none and skip nothing.
+      Files.write(store.getOutputDirectory(sessionId).resolve("segment0.m4s"), new byte[0]);
+
+      assertThat(stream.skip(3)).isEqualTo(3);
+    }
+  }
+
+  @Test
+  @DisplayName("Should skip only the remaining bytes when a stream skips past the segment's end")
+  void shouldSkipOnlyRemainingBytesWhenStreamSkipsPastSegmentEnd() throws IOException {
+    var sessionId = UUID.randomUUID();
+    store.storeSegment(sessionId, "segment0.m4s", new byte[] {7, 8, 9, 10});
+
+    try (var opened = store.openSegment(sessionId, "segment0.m4s").orElseThrow();
+        var stream = opened.newInputStream()) {
+      assertThat(stream.skip(1)).isEqualTo(1);
+      assertThat(stream.skip(Long.MAX_VALUE)).isEqualTo(3);
+      assertThat(stream.read()).isEqualTo(-1);
+    }
+  }
+
+  @Test
+  @DisplayName("Should keep an opened segment readable when its session is deleted")
+  void shouldKeepOpenedSegmentReadableWhenItsSessionIsDeleted() {
+    var sessionId = UUID.randomUUID();
+    var segmentData = "remote segment".getBytes();
+    store.storeSegment(sessionId, "segment0.m4s", segmentData);
+
+    try (var opened = store.openSegment(sessionId, "segment0.m4s").orElseThrow()) {
+      store.deleteSession(sessionId);
+
+      assertThat(opened.length()).isEqualTo(segmentData.length);
+      assertThat(opened.newInputStream()).hasBinaryContent(segmentData);
+    }
   }
 
   @Test
@@ -132,7 +234,7 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
     store.getOutputDirectory(sessionId);
 
-    assertThatThrownBy(() -> store.readSegment(sessionId, "../../etc/passwd.m4s"))
+    assertThatThrownBy(() -> store.openSegment(sessionId, "../../etc/passwd.m4s"))
         .isInstanceOf(InvalidSegmentPathException.class);
   }
 
@@ -145,7 +247,7 @@ class LocalSegmentStoreTest {
     Files.createDirectories(variantDir);
     Files.write(variantDir.resolve("segment0.m4s"), "data".getBytes());
 
-    var result = store.readSegment(sessionId, "720p/segment0.m4s");
+    var result = StoredSegments.bytes(store, sessionId, "720p/segment0.m4s");
 
     assertThat(result).isEqualTo("data".getBytes());
   }
@@ -162,7 +264,7 @@ class LocalSegmentStoreTest {
     store.storeSegment(sessionId, segmentName, segmentData);
 
     assertThat(store.segmentExists(sessionId, segmentName)).isTrue();
-    assertThat(store.readSegment(sessionId, segmentName)).isEqualTo(segmentData);
+    assertThat(StoredSegments.bytes(store, sessionId, segmentName)).isEqualTo(segmentData);
   }
 
   @Test
@@ -177,7 +279,7 @@ class LocalSegmentStoreTest {
         store.storeSegment(sessionId, "720p/init.mp4", "ftyp moov from encoder B".getBytes());
 
     assertThat(publication).isEqualTo(SegmentPublication.INITIALIZATION_SEGMENT_DIFFERS);
-    assertThat(store.readSegment(sessionId, "720p/init.mp4")).isEqualTo(stored);
+    assertThat(StoredSegments.bytes(store, sessionId, "720p/init.mp4")).isEqualTo(stored);
   }
 
   @Test
@@ -191,7 +293,7 @@ class LocalSegmentStoreTest {
     var publication = store.storeSegment(sessionId, "init.mp4", stored.clone());
 
     assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
-    assertThat(store.readSegment(sessionId, "init.mp4")).isEqualTo(stored);
+    assertThat(StoredSegments.bytes(store, sessionId, "init.mp4")).isEqualTo(stored);
   }
 
   @Test
@@ -215,7 +317,7 @@ class LocalSegmentStoreTest {
           linklessStore.storeSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT, initialization);
 
       assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
-      assertThat(linklessStore.readSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT))
+      assertThat(StoredSegments.bytes(linklessStore, sessionId, VARIANT_INITIALIZATION_SEGMENT))
           .isEqualTo(initialization);
     }
   }
@@ -246,7 +348,7 @@ class LocalSegmentStoreTest {
       var stored = contendersStoredByConcurrentPublication(store, sessionId);
 
       assertThat(stored).as("contenders stored in round %s", round).hasSize(1);
-      assertThat(store.readSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT))
+      assertThat(StoredSegments.bytes(store, sessionId, VARIANT_INITIALIZATION_SEGMENT))
           .isEqualTo(contenderInitialization(stored.getFirst()));
     }
   }
@@ -258,9 +360,8 @@ class LocalSegmentStoreTest {
         IntStream.range(0, CONTENDERS)
             .mapToObj(
                 contender ->
-                    store.prepareSegment(
-                        sessionId,
-                        VARIANT_INITIALIZATION_SEGMENT,
+                    appended(
+                        store.prepareSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT),
                         contenderInitialization(contender)))
             .toList();
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -279,6 +380,12 @@ class LocalSegmentStoreTest {
           .boxed()
           .toList();
     }
+  }
+
+  private static SegmentStore.PreparedSegment appended(
+      SegmentStore.PreparedSegment prepared, byte[] data) {
+    prepared.append(ByteBuffer.wrap(data));
+    return prepared;
   }
 
   private static byte[] contenderInitialization(int contender) {
@@ -300,19 +407,40 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should store the appended chunks in order when a prepared segment is published")
+  void shouldStoreAppendedChunksInOrderWhenPreparedSegmentIsPublished() {
+    var sessionId = UUID.randomUUID();
+
+    try (var prepared = store.prepareSegment(sessionId, "720p/segment0.m4s")) {
+      prepared.append(ByteBuffer.wrap("remote ".getBytes()));
+      prepared.append(ByteBuffer.wrap("segment".getBytes()));
+      assertThat(store.segmentExists(sessionId, "720p/segment0.m4s")).isFalse();
+
+      prepared.publish();
+    }
+
+    assertThat(StoredSegments.bytes(store, sessionId, "720p/segment0.m4s"))
+        .isEqualTo("remote segment".getBytes());
+    assertThat(tempDir)
+        .as("no temporary upload file remains beside the session's folder")
+        .isDirectoryNotContaining("glob:**.tmp");
+  }
+
+  @Test
   @DisplayName("Should not expose a prepared segment when publication has not occurred")
   void shouldNotExposePreparedSegmentWhenPublicationHasNotOccurred() {
     var sessionId = UUID.randomUUID();
     var segmentData = "remote segment".getBytes();
 
-    try (var prepared = store.prepareSegment(sessionId, "720p/segment0.m4s", segmentData)) {
+    try (var prepared =
+        appended(store.prepareSegment(sessionId, "720p/segment0.m4s"), segmentData)) {
       assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
       assertThat(store.segmentExists(sessionId, "720p/segment0.m4s")).isFalse();
 
       prepared.publish();
     }
 
-    assertThat(store.readSegment(sessionId, "720p/segment0.m4s")).isEqualTo(segmentData);
+    assertThat(StoredSegments.bytes(store, sessionId, "720p/segment0.m4s")).isEqualTo(segmentData);
   }
 
   @Test
@@ -321,7 +449,8 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
 
     try (var _ =
-        store.prepareSegment(sessionId, "720p/segment0.m4s", "remote segment".getBytes())) {
+        appended(
+            store.prepareSegment(sessionId, "720p/segment0.m4s"), "remote segment".getBytes())) {
       assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
     }
 
@@ -332,7 +461,9 @@ class LocalSegmentStoreTest {
   @DisplayName("Should translate cleanup I/O failure when a prepared segment is closed")
   void shouldTranslateCleanupIoFailureWhenPreparedSegmentIsClosed() throws Exception {
     var prepared =
-        store.prepareSegment(UUID.randomUUID(), "720p/segment0.m4s", "remote segment".getBytes());
+        appended(
+            store.prepareSegment(UUID.randomUUID(), "720p/segment0.m4s"),
+            "remote segment".getBytes());
     Path temporary;
     try (var files = Files.list(tempDir)) {
       temporary = files.findFirst().orElseThrow();
@@ -346,16 +477,6 @@ class LocalSegmentStoreTest {
         .hasMessage("Failed to clean up segment upload: 720p/segment0.m4s")
         .cause()
         .isInstanceOf(IOException.class);
-  }
-
-  @Test
-  @DisplayName("Should clean the temporary file when segment preparation fails")
-  void shouldCleanTemporaryFileWhenSegmentPreparationFails() {
-    var sessionId = UUID.randomUUID();
-
-    assertThatThrownBy(() -> store.prepareSegment(sessionId, "segment0.m4s", null))
-        .isInstanceOf(NullPointerException.class);
-    assertThat(tempDir).isEmptyDirectory();
   }
 
   @Test

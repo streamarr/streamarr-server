@@ -12,6 +12,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
@@ -123,7 +124,7 @@ class ProducerLifecyclePositioningRaceTest {
     }
 
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
-    assertThat(segmentStore.readSegment(session.getSessionId(), "segment100.m4s"))
+    assertThat(StoredSegments.bytes(segmentStore, session.getSessionId(), "segment100.m4s"))
         .containsExactly(0x47);
   }
 

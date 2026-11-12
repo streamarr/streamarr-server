@@ -18,7 +18,6 @@ import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -42,6 +41,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
+import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -49,7 +50,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -65,6 +68,8 @@ class StreamControllerTest {
   private static final UUID SESSION_ID = UUID.randomUUID();
   private static final String VALIDATED_TOKEN = "validated-context-token";
   private static final String SPOOFED_PARAM = "spoofed<script>-param";
+  // Bytes outside ASCII cannot match a multipart answer's part headers.
+  private static final byte[] SEGMENT_BYTES = {(byte) 0xA1, (byte) 0xB2, (byte) 0xC3, (byte) 0xD4};
 
   private MockMvc mockMvc;
   private final AtomicReference<UUID> boundStreamSession = new AtomicReference<>(SESSION_ID);
@@ -276,6 +281,51 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(segmentData);
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("segmentAnswers")
+  @DisplayName("Should close the opened segment when its answer ends")
+  void shouldCloseOpenedSegmentWhenItsAnswerEnds(SegmentAnswer expected) throws Exception {
+    streamingService.setSession(buildSession());
+    segmentStore.addSegment(SESSION_ID, "segment0.m4s", SEGMENT_BYTES);
+    var request = get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID);
+    if (expected.range() != null) {
+      request.header(HttpHeaders.RANGE, expected.range());
+    }
+
+    var answer = mockMvc.perform(request).andReturn().getResponse();
+
+    assertThat(answer.getStatus()).isEqualTo(expected.status());
+    assertThat(expected.servedRanges())
+        .allSatisfy(served -> assertThat(answer.getContentAsByteArray()).containsSequence(served));
+    assertThat(segmentStore.openSegmentCount()).isZero();
+  }
+
+  private static Stream<SegmentAnswer> segmentAnswers() {
+    return Stream.of(
+        SegmentAnswer.builder().status(200).servedRanges(List.of(SEGMENT_BYTES)).build(),
+        SegmentAnswer.builder()
+            .range("bytes=1-2")
+            .status(206)
+            .servedRanges(List.of(new byte[] {(byte) 0xB2, (byte) 0xC3}))
+            .build(),
+        SegmentAnswer.builder()
+            .range("bytes=0-0,2-3")
+            .status(206)
+            .servedRanges(List.of(new byte[] {(byte) 0xA1}, new byte[] {(byte) 0xC3, (byte) 0xD4}))
+            .build(),
+        SegmentAnswer.builder().range("bytes=9-").status(416).servedRanges(List.of()).build());
+  }
+
+  // The bytes of each range that the answer's body must hold.
+  @Builder
+  private record SegmentAnswer(String range, int status, List<byte[]> servedRanges) {
+
+    @Override
+    public String toString() {
+      return "Range " + range + " answers " + status;
+    }
+  }
+
   @Test
   @DisplayName("Should return 404 when the runtime session has ended and the segment is missing")
   void shouldReturn404WhenTheRuntimeSessionHasEndedAndTheSegmentIsMissing() throws Exception {
@@ -321,7 +371,7 @@ class StreamControllerTest {
     session.setHandle(mintHandle(1L, TranscodeStatus.ACTIVE));
     runtimeRegistry.save(session);
 
-    var response = new AtomicReference<ResponseEntity<byte[]>>();
+    var response = new AtomicReference<ResponseEntity<Resource>>();
     var worker =
         new Thread(
             () -> {
@@ -346,33 +396,6 @@ class StreamControllerTest {
 
     mockMvc
         .perform(get("/api/stream/{sessionId}/segment99999999999999999999.m4s", SESSION_ID))
-        .andExpect(status().isNotFound());
-  }
-
-  @Test
-  @DisplayName("Should return 404 when segment vanishes between the existence check and the read")
-  void shouldReturn404WhenSegmentVanishesBetweenTheExistenceCheckAndTheRead() throws Exception {
-    streamingService.setSession(buildSession());
-    var throwingStore =
-        new FakeSegmentStore() {
-          @Override
-          public byte[] readSegment(UUID sessionId, String segmentName) {
-            throw new TranscodeException("Segment not found: " + segmentName);
-          }
-        };
-    throwingStore.addSegment(SESSION_ID, "segment0.m4s", new byte[] {0x47});
-    var raceController =
-        new StreamController(
-            streamingService,
-            playlistService,
-            coordinatorOver(throwingStore),
-            new FakeAuthorizationService(this::boundIdentity, VALIDATED_TOKEN),
-            directPlaySources(),
-            directPlayMetrics);
-    var raceMockMvc = MockMvcBuilders.standaloneSetup(raceController).build();
-
-    raceMockMvc
-        .perform(get("/api/stream/{sessionId}/segment0.m4s", SESSION_ID))
         .andExpect(status().isNotFound());
   }
 

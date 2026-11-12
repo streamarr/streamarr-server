@@ -1,12 +1,10 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.SourceContainer;
-import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.NonNull;
 
@@ -50,7 +48,7 @@ public final class DirectPlaySource implements AutoCloseable {
    * own position, and closing one leaves the file open for the next.
    */
   public InputStream newInputStream() {
-    return new SourceInputStream();
+    return new BoundedFileInputStream(length, this::readAt);
   }
 
   /** Closes the file. Closing it again does nothing. */
@@ -68,62 +66,15 @@ public final class DirectPlaySource implements AutoCloseable {
     }
   }
 
-  private final class SourceInputStream extends InputStream {
-
-    private long position;
-
-    @Override
-    public int read() throws IOException {
-      var single = new byte[1];
-      if (read(single, 0, 1) <= 0) {
-        return -1;
+  private int readAt(ByteBuffer target, long position) throws IOException {
+    synchronized (fileLock) {
+      file.position(position);
+      var read = file.read(target);
+      if (read > 0) {
+        metrics.countBytesServed(read);
       }
 
-      return single[0] & 0xFF;
-    }
-
-    @Override
-    public int read(byte[] target, int offset, int count) throws IOException {
-      Objects.checkFromIndexSize(offset, count, target.length);
-      if (count == 0) {
-        return 0;
-      }
-
-      // An answer's length is the file's length at open, so bytes appended later stay unread.
-      var remaining = length - position;
-      if (remaining <= 0) {
-        return -1;
-      }
-
-      var wanted = (int) Math.min(count, remaining);
-      var read = readAt(ByteBuffer.wrap(target, offset, wanted));
-      // A file that shrank cannot fill the length its answer already named.
-      if (read < 0) {
-        throw new EOFException("The source file ended before its length at open");
-      }
-
-      position += read;
       return read;
-    }
-
-    // The streams of one source share its file and the file's position.
-    private int readAt(ByteBuffer target) throws IOException {
-      synchronized (fileLock) {
-        file.position(position);
-        var read = file.read(target);
-        if (read > 0) {
-          metrics.countBytesServed(read);
-        }
-
-        return read;
-      }
-    }
-
-    @Override
-    public long skip(long count) {
-      var skipped = Math.clamp(count, 0, Math.max(0, length - position));
-      position += skipped;
-      return skipped;
     }
   }
 }
