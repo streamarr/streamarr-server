@@ -160,6 +160,26 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep a disabled Account's waiting request when its latest event is older than the"
+          + " retention period")
+  void shouldKeepADisabledAccountsWaitingRequestWhenItsLatestEventIsOlderThanTheRetentionPeriod() {
+    var theo = track(authTestSupport.createIdentity());
+    var offer = aShare();
+    tell(
+        offered(offer, PAST_THE_PERIOD)
+            .recipients(Set.of(accountOf(theo)))
+            .subjectExpiresAt(Optional.of(NOW.plus(OFFER_TIME)))
+            .build());
+    transactionTemplate.executeWithoutResult(
+        _ -> assertThat(userAccountRepository.tryDisable(theo.account().getId())).isTrue());
+
+    sweeper.sweep();
+
+    assertThat(rows.of(accountOf(theo))).extracting(Row::subject).containsExactly(offer);
+  }
+
+  @Test
   @DisplayName("Should keep history when its latest event is within the retention period")
   void shouldKeepHistoryWithinTheRetentionPeriod() {
     var news = aShare();
