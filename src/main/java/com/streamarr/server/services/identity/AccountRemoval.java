@@ -139,6 +139,9 @@ class AccountRemoval {
     var now = deletion.now();
     // The preserved Profile needs its replacement anchor before the person leaves it behind.
     profileManagerRepository.tryGrantDirectManagement(replacementManagerAccountId, profileId);
+    // An invitation to the new manager must not outlive the grant (ADR 0024 §Invitations).
+    managerInvitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
+        profileId, replacementManagerAccountId, "named Account became a manager", now);
     shareLifecycle.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId);
     deleteAccountRow(account);
     if (sourceHouseholdId.equals(destinationHouseholdId)) {

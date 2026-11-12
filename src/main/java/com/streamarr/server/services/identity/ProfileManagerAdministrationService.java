@@ -54,6 +54,7 @@ public class ProfileManagerAdministrationService {
       "chk_restricted_account_holds_no_authority";
   private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
   private static final String REPLACED_REASON = "replaced by a newer invitation";
+  private static final String BECAME_MANAGER_REASON = "named Account became a manager";
   // ADR 0024: so that a manager cannot fill other people's Notifications with Requests.
   private static final int PENDING_INVITATIONS_PER_PROFILE = 10;
   private static final String INVITER_LEFT_REASON = "inviting manager lost management";
@@ -245,6 +246,11 @@ public class ProfileManagerAdministrationService {
                 throw new MutationRejection(new ManagerRejections.AlreadyManager());
               }
 
+              // Another invitation to this Account, sent to an address it had before, must not
+              // outlive its becoming a manager (ADR 0024 §Invitations).
+              invitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
+                  invitation.getProfileId(), identity.accountId(), BECAME_MANAGER_REASON, now);
+
               audit(
                   identity,
                   SecurityAuditEntry.builder()
@@ -335,6 +341,9 @@ public class ProfileManagerAdministrationService {
             throw new MutationRejection(new ManagerRejections.ManagementAlreadyRemoved());
           }
 
+          // An old invitation must not bring back the authority the Account gave up.
+          invitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
+              profileId, identity.accountId(), "named Account stopped managing", clock.instant());
           invalidateLeaversProposals(profileId, identity.accountId());
           return profileId;
         },
