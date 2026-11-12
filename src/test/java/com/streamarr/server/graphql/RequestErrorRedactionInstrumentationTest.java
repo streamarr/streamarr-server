@@ -19,8 +19,8 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
-@DisplayName("Validation Error Redaction Instrumentation Tests")
-class ValidationErrorRedactionInstrumentationTest {
+@DisplayName("Request Error Redaction Instrumentation Tests")
+class RequestErrorRedactionInstrumentationTest {
 
   private static final String SCHEMA =
       """
@@ -38,7 +38,7 @@ class ValidationErrorRedactionInstrumentationTest {
               new SchemaGenerator()
                   .makeExecutableSchema(
                       new SchemaParser().parse(SCHEMA), RuntimeWiring.newRuntimeWiring().build()))
-          .instrumentation(new ValidationErrorRedactionInstrumentation())
+          .instrumentation(new RequestErrorRedactionInstrumentation())
           .build();
 
   @ParameterizedTest
