@@ -615,6 +615,51 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should name the Household when a HouseholdAdmin who only supervises the visiting Kid"
+          + " removes the PIN its own Household requires")
+  void shouldNameTheHouseholdWhenAHouseholdAdminWhoOnlySupervisesTheVisitingKidRemovesThePin()
+      throws Exception {
+    var cabin = authTestSupport.createIdentity();
+    try {
+      var sam =
+          cast.profileManagedBy(
+              admin,
+              ProfileFixture.kidProfileBuilder()
+                  .name("Sam")
+                  .maximumAllowedRatingAge(13)
+                  .pinHash("{noop}a-pin-hash"));
+      cast.makeAvailable(sam, cabin);
+      cast.profileManagedBy(
+          cabin, ProfileFixture.kidProfileBuilder().name("Theo").maximumAllowedRatingAge(10));
+
+      graphql(
+              authTestSupport.accountBearer(cabin),
+              """
+              mutation { removeProfilePin(input: {profileId: "%s"}) {
+                profile { id } userErrors { __typename
+                  ... on ProfilePinRequiredError { householdId message } } } }
+              """
+                  .formatted(sam.getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.removeProfilePin.userErrors[0].__typename")
+                  .value("ProfilePinRequiredError"))
+          .andExpect(
+              jsonPath("$.data.removeProfilePin.userErrors[0].householdId")
+                  .value(cabin.household().getId().toString()))
+          .andExpect(
+              jsonPath("$.data.removeProfilePin.userErrors[0].message")
+                  .value(
+                      "Removing this PIN would lock the Profile in \"%s\"."
+                          .formatted(cabin.household().getName())));
+    } finally {
+      authTestSupport.deleteIdentity(cabin);
+    }
+  }
+
+  @Test
   @DisplayName("Should return the removed PIN state when removal succeeds")
   void shouldReturnRemovedPinStateWhenRemovalSucceeds() throws Exception {
     graphql(
