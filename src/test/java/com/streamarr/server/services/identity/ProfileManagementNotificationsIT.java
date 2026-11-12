@@ -428,6 +428,38 @@ class ProfileManagementNotificationsIT extends AbstractIntegrationTest {
     assertThat(rows.of(accountOf(cam))).isEmpty();
   }
 
+  @ParameterizedTest
+  @EnumSource(ProfileManagerInvitationAnswer.class)
+  @DisplayName(
+      "Should tell the inviter the Profile's name at the answer when the Profile is renamed after"
+          + " the invitation")
+  void shouldTellTheInviterTheProfilesNameAtTheAnswerWhenTheProfileIsRenamedAfterTheInvitation(
+      ProfileManagerInvitationAnswer answer) {
+    var issued = steps.invite(sam, alex, mara.account().getEmail());
+    cast.rename(alex, "Alexandra");
+
+    var outcome = answer(mara, issued, answer);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(answersAbout(issued))
+        .singleElement()
+        .satisfies(
+            told ->
+                assertThat(told.snapshot())
+                    .isEqualTo(
+                        document(
+                            new ProfileManagerInvitationAnsweredSnapshot("Alexandra", answer))));
+    assertThat(requestsAbout(issued))
+        .singleElement()
+        .satisfies(
+            request ->
+                assertThat(request.snapshot())
+                    .isEqualTo(
+                        document(
+                            new ProfileManagerInvitationReceivedSnapshot(
+                                "Alex", Optional.of(answer)))));
+  }
+
   @Test
   @DisplayName("Should tell nobody when the acceptance finds the inviter no longer managing")
   void shouldTellNobodyWhenTheAcceptanceFindsTheInviterNoLongerManaging() {
