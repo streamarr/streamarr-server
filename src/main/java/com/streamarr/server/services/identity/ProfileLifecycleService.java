@@ -62,10 +62,9 @@ public class ProfileLifecycleService {
     Optional<TransferRejections.TransferProfile> refusal =
         AuthorizationRefusal.from(
             authorizationService.decide(identity, new Intent.TransferProfile(command.profileId())),
-            new AuthorizationRefusal.Response<>(
+            AuthorizationRefusal.Response.hiddenUnless(
                 () -> mayViewProfile(identity, command.profileId()),
-                TransferRejections.ProfileNotFound::new,
-                Optional.empty()));
+                TransferRejections.ProfileNotFound::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -151,10 +150,11 @@ public class ProfileLifecycleService {
         AuthorizationRefusal.from(
             authorizationService.decide(
                 identity, new Intent.AdministrativelyDeleteProfile(profileId)),
-            new AuthorizationRefusal.Response<>(
-                () -> mayViewProfile(identity, profileId),
-                TransferRejections.ProfileNotFound::new,
-                Optional.of(TransferRejections.ReauthenticationRequired::new)));
+            AuthorizationRefusal.Response
+                .<TransferRejections.AdministrativelyDeleteProfile>hiddenUnless(
+                    () -> mayViewProfile(identity, profileId),
+                    TransferRejections.ProfileNotFound::new)
+                .reauthenticatedAs(TransferRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }

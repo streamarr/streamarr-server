@@ -56,10 +56,9 @@ public class AccountLifecycleService {
     Optional<TransferRejections.TransferAccount> refusal =
         AuthorizationRefusal.from(
             authorizationService.decide(identity, new Intent.TransferAccount(command.accountId())),
-            new AuthorizationRefusal.Response<>(
+            AuthorizationRefusal.Response.hiddenUnless(
                 () -> mayViewAccount(identity, command.accountId()),
-                TransferRejections.AccountNotFound::new,
-                Optional.empty()));
+                TransferRejections.AccountNotFound::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -121,10 +120,11 @@ public class AccountLifecycleService {
         AuthorizationRefusal.from(
             authorizationService.decide(
                 identity, new Intent.AdministrativelyDeleteAccount(command.accountId())),
-            new AuthorizationRefusal.Response<>(
-                () -> mayViewAccount(identity, command.accountId()),
-                TransferRejections.AccountNotFound::new,
-                Optional.of(TransferRejections.ReauthenticationRequired::new)));
+            AuthorizationRefusal.Response
+                .<TransferRejections.AdministrativelyDeleteAccount>hiddenUnless(
+                    () -> mayViewAccount(identity, command.accountId()),
+                    TransferRejections.AccountNotFound::new)
+                .reauthenticatedAs(TransferRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -166,13 +166,14 @@ public class AccountLifecycleService {
     Optional<TransferRejections.DeleteMyAccount> refusal =
         AuthorizationRefusal.from(
             authorizationService.decide(identity, new Intent.DeleteMyAccount()),
-            new AuthorizationRefusal.Response<>(
-                // The caller always sees their own Account: an authority denial stays FORBIDDEN.
-                () -> true,
-                () -> {
-                  throw new AccessDeniedException("Not allowed.");
-                },
-                Optional.of(TransferRejections.ReauthenticationRequired::new)));
+            AuthorizationRefusal.Response.<TransferRejections.DeleteMyAccount>hiddenUnless(
+                    // The caller always sees their own Account: an authority denial stays
+                    // FORBIDDEN.
+                    () -> true,
+                    () -> {
+                      throw new AccessDeniedException("Not allowed.");
+                    })
+                .reauthenticatedAs(TransferRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }

@@ -37,11 +37,8 @@ import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.BooleanSupplier;
-import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -128,9 +125,9 @@ public class ProfileAdministrationService {
         refusalOf(
             identity,
             intent,
-            () -> mayViewHousehold(identity, command.householdId()),
-            ProfileRejections.HouseholdNotFound::new,
-            Optional.empty());
+            AuthorizationRefusal.Response.hiddenUnless(
+                () -> mayViewHousehold(identity, command.householdId()),
+                ProfileRejections.HouseholdNotFound::new));
     if (refusal.isPresent()) {
       throw new MutationRejection(refusal.get());
     }
@@ -353,14 +350,7 @@ public class ProfileAdministrationService {
       return Outcome.rejected(new ProfileRejections.ProfileNotFound());
     }
 
-    var intent = new Intent.AdministrativelyResetProfilePin(profileId);
-    Optional<ProfileRejections.AdministrativelyResetProfilePin> refusal =
-        refusalOf(
-            identity,
-            intent,
-            () -> mayViewProfile(identity, profileId),
-            ProfileRejections.ProfileNotFound::new,
-            Optional.of(ProfileRejections.ReauthenticationRequired::new));
+    var refusal = resetRefusal(identity, profileId);
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -376,13 +366,7 @@ public class ProfileAdministrationService {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
-          Optional<ProfileRejections.AdministrativelyResetProfilePin> authoritativeRefusal =
-              refusalOf(
-                  identity,
-                  intent,
-                  () -> mayViewProfile(identity, profileId),
-                  ProfileRejections.ProfileNotFound::new,
-                  Optional.of(ProfileRejections.ReauthenticationRequired::new));
+          var authoritativeRefusal = resetRefusal(identity, profileId);
           if (authoritativeRefusal.isPresent()) {
             throw new MutationRejection(authoritativeRefusal.get());
           }
@@ -449,10 +433,11 @@ public class ProfileAdministrationService {
               refusalOf(
                   identity,
                   new Intent.DeleteProfile(profileId),
-                  // Deletion denial uses the visibility-dependent typed rejection below.
-                  () -> false,
-                  () -> deletionRejection(identity, profileId),
-                  Optional.of(ProfileRejections.ReauthenticationRequired::new));
+                  AuthorizationRefusal.Response.<ProfileRejections.DeleteProfile>hiddenUnless(
+                          () -> mayViewProfile(identity, profileId),
+                          ProfileRejections.ProfileNotFound::new)
+                      .visibleAs(() -> Optional.of(new ProfileRejections.ProfileNotDeletable()))
+                      .reauthenticatedAs(ProfileRejections.ReauthenticationRequired::new));
           if (refusal.isPresent()) {
             throw new MutationRejection(refusal.get());
           }
@@ -551,17 +536,13 @@ public class ProfileAdministrationService {
       case Decision.Failed<ProfilePolicyTransition> _ ->
           throw new AuthorizationUnavailableException();
       case Decision.Denied<ProfilePolicyTransition>(var reason) ->
-          throw switch (reason) {
-            case REAUTHENTICATION_REQUIRED ->
-                new MutationRejection(new ProfileRejections.ReauthenticationRequired());
-            case POLICY -> {
-              if (mayViewProfile(identity, profileId)) {
-                yield new AccessDeniedException("Not allowed.");
-              }
-
-              yield new MutationRejection(new ProfileRejections.ProfileNotFound());
-            }
-          };
+          throw new MutationRejection(
+              AuthorizationRefusal.of(
+                  reason,
+                  AuthorizationRefusal.Response.<ProfileRejections.ChangeProfilePolicy>hiddenUnless(
+                          () -> mayViewProfile(identity, profileId),
+                          ProfileRejections.ProfileNotFound::new)
+                      .reauthenticatedAs(ProfileRejections.ReauthenticationRequired::new)));
     };
   }
 
@@ -571,20 +552,26 @@ public class ProfileAdministrationService {
     return refusalOf(
         identity,
         intent,
-        () -> mayViewProfile(identity, profileId),
-        ProfileRejections.ProfileNotFound::new,
-        Optional.empty());
+        AuthorizationRefusal.Response.hiddenUnless(
+            () -> mayViewProfile(identity, profileId), ProfileRejections.ProfileNotFound::new));
+  }
+
+  private Optional<ProfileRejections.AdministrativelyResetProfilePin> resetRefusal(
+      AuthenticatedIdentity identity, UUID profileId) {
+    return refusalOf(
+        identity,
+        new Intent.AdministrativelyResetProfilePin(profileId),
+        AuthorizationRefusal.Response
+            .<ProfileRejections.AdministrativelyResetProfilePin>hiddenUnless(
+                () -> mayViewProfile(identity, profileId), ProfileRejections.ProfileNotFound::new)
+            .reauthenticatedAs(ProfileRejections.ReauthenticationRequired::new));
   }
 
   private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity,
       Intent.UnitIntent intent,
-      BooleanSupplier mayView,
-      Supplier<? extends R> denied,
-      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
-    return AuthorizationRefusal.from(
-        authorizationService.decide(identity, intent),
-        new AuthorizationRefusal.Response<>(mayView, denied, reauthenticationRequired));
+      AuthorizationRefusal.Response<R> response) {
+    return AuthorizationRefusal.from(authorizationService.decide(identity, intent), response);
   }
 
   /**
@@ -609,15 +596,6 @@ public class ProfileAdministrationService {
     }
 
     return Optional.empty();
-  }
-
-  private ProfileRejections.DeleteProfile deletionRejection(
-      AuthenticatedIdentity identity, UUID profileId) {
-    // A caller who may see the Profile's administration learns why deletion is
-    // refused; anyone else learns nothing beyond not-found.
-    return mayViewProfile(identity, profileId)
-        ? new ProfileRejections.ProfileNotDeletable()
-        : new ProfileRejections.ProfileNotFound();
   }
 
   private boolean mayViewProfile(AuthenticatedIdentity identity, UUID profileId) {
