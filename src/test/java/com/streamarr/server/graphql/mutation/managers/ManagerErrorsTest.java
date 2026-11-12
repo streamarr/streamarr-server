@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.mutation.managers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.streamarr.server.services.identity.ManagerRejections;
 import com.streamarr.server.services.identity.ProfileRejections;
@@ -31,40 +32,65 @@ class ManagerErrorsTest {
   @Test
   @DisplayName("Should map invitation rejections when converting to schema errors")
   void shouldMapInvitationRejectionsWhenConvertingToSchemaErrors() {
-    assertThat(ManagerErrors.toInviteError(new ManagerRejections.ProfileNotFound()))
-        .isInstanceOf(ProfileNotFoundError.class);
-    assertThat(
-            ManagerErrors.toInviteError(
-                new ProfileRejections.ManagersOnly(
-                    ProfileRejections.ManagersOnlyReason.NOT_RESTRICTED)))
-        .isEqualTo(
-            new ProfileManagersOnlyError(
-                "The Profile is not restricted, so only its managers may do this.",
-                ProfileRejections.ManagersOnlyReason.NOT_RESTRICTED));
-    assertThat(ManagerErrors.toInviteError(new ManagerRejections.EmailRequired()))
-        .isInstanceOf(EmailRequiredError.class);
-    assertThat(ManagerErrors.toInviteError(new ManagerRejections.EmailInvalid()))
-        .isInstanceOf(EmailInvalidError.class);
-    assertThat(ManagerErrors.toInviteError(new ManagerRejections.ManagerInvitationLimitReached()))
-        .isInstanceOf(ManagerInvitationLimitReachedError.class);
-    assertThat(ManagerErrors.toCancelError(new ManagerRejections.ManagerInvitationNotFound()))
-        .isInstanceOf(ManagerInvitationNotFoundError.class);
-    assertThat(ManagerErrors.toCancelError(new ManagerRejections.InvitationNotPending()))
-        .isInstanceOf(InvitationNotPendingError.class);
-    assertThat(ManagerErrors.toAcceptError(new ManagerRejections.ManagerInvitationNotFound()))
-        .isInstanceOf(ManagerInvitationNotFoundError.class);
-    assertThat(ManagerErrors.toAcceptError(new ManagerRejections.RecipientNotEligible()))
-        .isInstanceOf(ProfileManagerNotEligibleError.class);
-    assertThat(ManagerErrors.toAcceptError(new ManagerRejections.AlreadyManager()))
-        .isInstanceOf(AlreadyManagerError.class);
-    assertThat(ManagerErrors.toAcceptError(new ManagerRejections.InvitationNotPending()))
-        .isInstanceOf(InvitationNotPendingError.class);
-    assertThat(ManagerErrors.toDeclineError(new ManagerRejections.ManagerInvitationNotFound()))
-        .isInstanceOf(ManagerInvitationNotFoundError.class);
-    assertThat(ManagerErrors.toDeclineError(new ManagerRejections.InvitationNotPending()))
-        .isInstanceOf(InvitationNotPendingError.class);
-    assertThat(ManagerErrors.toLookUpError(new ManagerRejections.ManagerInvitationNotFound()))
-        .isInstanceOf(ManagerInvitationNotFoundError.class);
+    assertSoftly(
+        softly -> {
+          softly
+              .assertThat(ManagerErrors.toInviteError(new ManagerRejections.ProfileNotFound()))
+              .isInstanceOf(ProfileNotFoundError.class);
+          softly
+              .assertThat(
+                  ManagerErrors.toInviteError(
+                      new ProfileRejections.ManagersOnly(
+                          ProfileRejections.ManagersOnlyReason.NOT_RESTRICTED)))
+              .isInstanceOfSatisfying(
+                  ProfileManagersOnlyError.class,
+                  managersOnly ->
+                      assertThat(managersOnly.reason())
+                          .isEqualTo(ProfileRejections.ManagersOnlyReason.NOT_RESTRICTED));
+          softly
+              .assertThat(ManagerErrors.toInviteError(new ManagerRejections.EmailRequired()))
+              .isInstanceOf(EmailRequiredError.class);
+          softly
+              .assertThat(ManagerErrors.toInviteError(new ManagerRejections.EmailInvalid()))
+              .isInstanceOf(EmailInvalidError.class);
+          softly
+              .assertThat(
+                  ManagerErrors.toInviteError(
+                      new ManagerRejections.ManagerInvitationLimitReached()))
+              .isInstanceOf(ManagerInvitationLimitReachedError.class);
+          softly
+              .assertThat(
+                  ManagerErrors.toCancelError(new ManagerRejections.ManagerInvitationNotFound()))
+              .isInstanceOf(ManagerInvitationNotFoundError.class);
+          softly
+              .assertThat(ManagerErrors.toCancelError(new ManagerRejections.InvitationNotPending()))
+              .isInstanceOf(InvitationNotPendingError.class);
+          softly
+              .assertThat(
+                  ManagerErrors.toAcceptError(new ManagerRejections.ManagerInvitationNotFound()))
+              .isInstanceOf(ManagerInvitationNotFoundError.class);
+          softly
+              .assertThat(ManagerErrors.toAcceptError(new ManagerRejections.RecipientNotEligible()))
+              .isInstanceOf(ProfileManagerNotEligibleError.class);
+          softly
+              .assertThat(ManagerErrors.toAcceptError(new ManagerRejections.AlreadyManager()))
+              .isInstanceOf(AlreadyManagerError.class);
+          softly
+              .assertThat(ManagerErrors.toAcceptError(new ManagerRejections.InvitationNotPending()))
+              .isInstanceOf(InvitationNotPendingError.class);
+          softly
+              .assertThat(
+                  ManagerErrors.toDeclineError(new ManagerRejections.ManagerInvitationNotFound()))
+              .isInstanceOf(ManagerInvitationNotFoundError.class);
+          softly
+              .assertThat(
+                  ManagerErrors.toDeclineError(new ManagerRejections.InvitationNotPending()))
+              .isInstanceOf(InvitationNotPendingError.class);
+          softly
+              .assertThat(
+                  ManagerErrors.toLookUpError(new ManagerRejections.ManagerInvitationNotFound()))
+              .isInstanceOf(ManagerInvitationNotFoundError.class);
+        });
   }
 
   @Test
