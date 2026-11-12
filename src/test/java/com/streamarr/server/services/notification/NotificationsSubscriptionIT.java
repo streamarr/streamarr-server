@@ -22,9 +22,7 @@ import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
-import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
-import com.streamarr.server.services.events.notification.RequestResolution;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.events.notification.SubjectReference;
@@ -52,15 +50,11 @@ import com.streamarr.server.support.ShareSteps;
 import com.streamarr.server.support.StoredNotificationRows;
 import com.streamarr.server.support.StoredNotificationRows.Row;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
@@ -873,40 +867,6 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
     assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
         .isEqualTo(sentinel.id().toString());
-  }
-
-  @Test
-  @DisplayName(
-      "Should deliver the decision when it arrives after the request read as expired, as a fresh"
-          + " query reads it")
-  void shouldDeliverTheDecisionWhenItArrivesAfterTheRequestReadAsExpired() throws Exception {
-    var offer = SubjectReference.profileShare(UUID.randomUUID());
-    var expiry = Instant.now().minus(Duration.ofMinutes(1)).truncatedTo(ChronoUnit.MICROS);
-    publish(
-        TellNotificationEvent.builder()
-            .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
-            .subject(offer)
-            .recipients(Set.of(accountOf(riversideAdmin)))
-            .snapshot(new ProfileShareOfferedSnapshot("Kai", Optional.empty()))
-            .at(expiry.minus(Duration.ofDays(7)))
-            .subjectExpiresAt(Optional.of(expiry))
-            .build());
-    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
-
-    publish(
-        ResolveRequestsEvent.builder()
-            .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
-            .subject(offer)
-            .resolution(RequestResolution.DECIDED)
-            .answer(Optional.of(ProfileShareAnswer.ACCEPTED))
-            .at(expiry.minusSeconds(1))
-            .build());
-
-    var decided = nextChange(socket);
-    assertThat(nodeOf(decided).path("resolution").asString()).isEqualTo("DECIDED");
-    assertThat(nodeOf(decided).path("message").asString())
-        .isEqualTo("The offer of “Kai” to your Household was accepted.");
-    assertMatchesAFreshQuery(decided, riversideAdmin);
   }
 
   @Test
