@@ -187,7 +187,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 
 ## Architecture Rules
 - Resolvers depend on Services; Services depend on Repositories; Domain depends on nothing
-- Domain entities must NEVER import from services, repositories, or graphql packages
+- Domain entities must NEVER import from services, repositories, graphql, or exceptions packages; an exception that a domain type throws lives in that type's domain package
 - Services must NEVER import from the graphql package
 - Nothing in the `graphql` package, including data loaders and subscription listeners, may import from the repositories package; like controllers, GraphQL classes read and write through services
 - Repositories must NEVER import from the services package; a type that services and repositories both use, such as `Seek`, `LibraryOperation` or `StoredArtworkRequest`, lives in `domain`
