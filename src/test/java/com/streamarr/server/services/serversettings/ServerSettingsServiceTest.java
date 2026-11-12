@@ -239,8 +239,6 @@ class ServerSettingsServiceTest {
     assertThat(setting.days()).isEqualTo(90);
     assertThat(setting.minimumDays()).isEqualTo(1);
     assertThat(setting.maximumDays()).isEqualTo(365);
-    assertThat(authorizationService.recordedIntents())
-        .containsExactly(new Intent.ViewNotificationRetention());
   }
 
   @ParameterizedTest

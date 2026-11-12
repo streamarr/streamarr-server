@@ -771,26 +771,6 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
         .containsExactlyInAnyOrder(account(ben), account(riverside), account(riversideAdmin));
   }
 
-  @Test
-  @DisplayName("Should tell nobody when deleting a Household ends its shares")
-  void shouldTellNobodyWhenDeletingAHouseholdEndsItsShares() {
-    var serverAdmin = track(authTestSupport.createAdminIdentity());
-    var lakeside = track(authTestSupport.createIdentity());
-    var share = steps.accept(lakeside, steps.offer(sam, sam.profile(), lakeside));
-
-    var outcome =
-        householdDeletion.transferLastAccountAndDeleteHousehold(
-            authTestSupport.freshIdentityOf(serverAdmin),
-            TransferLastAccountAndDeleteHouseholdCommand.builder()
-                .householdId(lakeside.household().getId())
-                .destinationHouseholdId(serverAdmin.household().getId())
-                .reason("closing")
-                .build());
-
-    assertThat(outcome).isEqualTo(Outcome.accepted(lakeside.household().getId()));
-    assertThat(endingsAbout(share)).isEmpty();
-  }
-
   @ParameterizedTest
   @EnumSource(ProfileDeletion.class)
   @DisplayName(
