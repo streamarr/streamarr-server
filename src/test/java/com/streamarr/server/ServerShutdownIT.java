@@ -182,6 +182,37 @@ class ServerShutdownIT extends AbstractIntegrationTest {
         .isEqualTo(new ScheduledRow(false, 0, atStart.executionTime()));
   }
 
+  // The worker reports a failure that the probe retries, so the probe's failure handler locks the
+  // media file's row to store the failure. The shutdown's interrupt ends that wait, and the server
+  // leaves the probe for db-scheduler to find dead.
+  @Test
+  @DisplayName(
+      "Should leave a probe marked as running, and run it again with one failure once db-scheduler"
+          + " finds it dead, when the shutdown's interrupt cuts off its failure handler")
+  void shouldLeaveAProbeRunningUntilFoundDeadWhenTheShutdownsInterruptCutsOffItsFailureHandler()
+      throws Exception {
+    var probed = createMediaFile("probed.mkv");
+
+    var atStart =
+        stopTheServerWhileTheProbeWaitsForItsFileRow(
+            probed, ProbeFailure.PROBE_FAILURE_EXECUTION_FAILED);
+
+    assertThat(scheduledRow(PROBE_TABLE, probed))
+        .as("The probe stays marked as running, at its due time, and counts no failure")
+        .isEqualTo(new ScheduledRow(true, 0, atStart.executionTime()));
+
+    ageTheLastHeartbeat(probed);
+    var restarted = startServer();
+    try (var worker = connectedWorker(restarted)) {
+      var again = worker.nextResponse(CLAIM_BOUND);
+      assertThat(again).as("The restarted server runs the probe again").isNotNull();
+      assertThat(again.hasStartProbe()).as("The server starts a probe: %s", again).isTrue();
+      assertThat(scheduledRow(PROBE_TABLE, probed).consecutiveFailures())
+          .as("db-scheduler counts one failure when it finds the probe dead")
+          .isOne();
+    }
+  }
+
   // Spring stops the lifecycles of one phase together and waits for them all for at most the
   // phase's timeout. A lifecycle in another phase stops only after that wait.
   @Test
@@ -384,6 +415,17 @@ class ServerShutdownIT extends AbstractIntegrationTest {
                 row.getInt("consecutive_failures"),
                 row.getTimestamp("execution_time").toInstant()),
         file.getId().toString());
+  }
+
+  // Stands in for the minute without a heartbeat after which db-scheduler finds an execution dead.
+  private void ageTheLastHeartbeat(MediaFile file) {
+    var aged =
+        jdbc.update(
+            "UPDATE "
+                + PROBE_TABLE
+                + " SET last_heartbeat = now() - interval '1 hour' WHERE task_instance = ?",
+            file.getId().toString());
+    assertThat(aged).isOne();
   }
 
   private void deleteScheduledWork() {
