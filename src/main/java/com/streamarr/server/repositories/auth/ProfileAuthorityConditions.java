@@ -31,7 +31,7 @@ public final class ProfileAuthorityConditions {
    * Profile while it is an unrestricted Adult.
    */
   public static Condition managedBy(Field<UUID> accountId) {
-    var owner = USER_ACCOUNT.as("managing_owner");
+    var ownAccount = USER_ACCOUNT.as("own_account");
     return DSL.exists(
             DSL.selectOne()
                 .from(PROFILE_MANAGER)
@@ -41,9 +41,9 @@ public final class ProfileAuthorityConditions {
             unrestrictedAdult(PROFILE)
                 .andExists(
                     DSL.selectOne()
-                        .from(owner)
-                        .where(owner.ID.eq(accountId))
-                        .and(owner.PERSONAL_PROFILE_ID.eq(PROFILE.ID))));
+                        .from(ownAccount)
+                        .where(ownAccount.ID.eq(accountId))
+                        .and(ownAccount.PERSONAL_PROFILE_ID.eq(PROFILE.ID))));
   }
 
   /**

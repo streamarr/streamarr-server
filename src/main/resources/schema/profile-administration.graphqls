@@ -104,8 +104,8 @@ enum ProfileAuthority {
     "A ProfileManager: edits the Profile and its policy, manages its PIN, invites managers and offers it to Households."
     MANAGES
     """
-    A HouseholdAdmin where the restricted Profile is available: edits its name, picture, content
-    limit and PIN, never its kind, and never leaves it unrestricted.
+    A HouseholdAdmin where the restricted Profile is available: edits its name, picture, Content
+    Ceiling and PIN, never its kind, and never leaves it unrestricted.
     """
     SUPERVISES
 }

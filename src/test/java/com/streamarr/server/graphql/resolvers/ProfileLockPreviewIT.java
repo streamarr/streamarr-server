@@ -26,7 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/** The lock warning a Profile's page shows before its kind or content limit changes. */
+/** The lock warning a Profile's page shows before its kind or Content Ceiling changes. */
 @Tag("IntegrationTest")
 @DisplayName("Profile Lock Preview Integration Tests")
 class ProfileLockPreviewIT extends AbstractIntegrationTest {

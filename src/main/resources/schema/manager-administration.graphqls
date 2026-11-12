@@ -24,7 +24,7 @@ enum ProfileManagerInvitationStatus {
 
 "Where a manager's authority over a Profile comes from."
 enum ProfileManagerSource {
-    "The Profile is the Account's own Personal Profile, an Adult with no content limit."
+    "The Profile is the Account's own Personal Profile, an Adult with no Content Ceiling."
     DERIVED
     "The Account was granted management, by an accepted invitation or by a ServerAdmin."
     DIRECT
