@@ -11,8 +11,9 @@ import org.springframework.beans.factory.config.DestructionAwareBeanPostProcesso
  * The pool's own close waits for the database: up to its login timeout for a connection it is
  * opening, then up to 10 s each for the connections in use and for their close. A database that
  * stopped or does not answer would hold the shutdown that long. Past the bound the close is
- * interrupted, which the pool takes as the end of its close, and the process ending closes the
- * sockets that remain. Spring's own call to close then finds the pool closed.
+ * interrupted, which the pool takes as the end of its close. The pool then skips the rest of its
+ * close: its idle housekeeping thread, a connection it is still opening and the connections in use
+ * end with the process at the latest. Spring's own call to close then finds the pool closed.
  */
 @Slf4j
 public final class BoundedConnectionPoolClose implements DestructionAwareBeanPostProcessor {
