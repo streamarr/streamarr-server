@@ -1,8 +1,8 @@
 package com.streamarr.server.controllers.auth;
 
-import com.streamarr.server.config.security.AuthCookiePolicy;
-import com.streamarr.server.config.security.AuthCookies;
-import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.properties.AuthTokenProperties;
+import com.streamarr.server.web.AuthCookiePolicy;
+import com.streamarr.server.web.AuthCookies;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseCookie;

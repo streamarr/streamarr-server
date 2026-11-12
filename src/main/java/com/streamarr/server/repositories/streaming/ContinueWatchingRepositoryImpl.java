@@ -4,12 +4,12 @@ import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
 import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 import static org.jooq.impl.DSL.noCondition;
 
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.repositories.LastWatchedExpression;
 import com.streamarr.server.repositories.WatchStateConditions;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;

@@ -4,13 +4,13 @@ import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.HouseholdAccountsList;
 import com.streamarr.server.services.pagination.ListPage;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

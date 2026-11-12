@@ -2,6 +2,7 @@ package com.streamarr.server.config;
 
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
+import com.streamarr.server.properties.LibraryOperationSchedulingProperties;
 import com.streamarr.server.services.library.LibraryOperationExecution;
 import java.time.Clock;
 import javax.sql.DataSource;

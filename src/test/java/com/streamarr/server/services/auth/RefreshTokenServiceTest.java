@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mockStatic;
 
-import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
@@ -13,6 +12,7 @@ import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.properties.AuthTokenProperties;
 import com.streamarr.server.support.LogCapture;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

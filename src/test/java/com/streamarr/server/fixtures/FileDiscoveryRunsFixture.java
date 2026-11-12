@@ -1,9 +1,9 @@
 package com.streamarr.server.fixtures;
 
-import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeProbeTaskRequests;
+import com.streamarr.server.properties.ProbeSchedulingProperties;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.library.FileDiscoveryRuns;

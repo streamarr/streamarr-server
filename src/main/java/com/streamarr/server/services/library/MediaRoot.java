@@ -1,6 +1,6 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.config.RemoteTranscodeProperties;
+import com.streamarr.server.properties.RemoteTranscodeProperties;
 import com.streamarr.server.services.filepath.FilepathNameNormalizer;
 import com.streamarr.server.services.filepath.FilepathSoftLinks;
 import java.io.IOException;

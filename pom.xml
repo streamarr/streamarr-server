@@ -40,7 +40,7 @@
         <sonar.issue.ignore.multicriteria.e3.resourceKey>src/main/java/com/streamarr/server/domain/**</sonar.issue.ignore.multicriteria.e3.resourceKey>
         <!-- The refresh cookie path must match its endpoint route, so it is a fixed security constant. -->
         <sonar.issue.ignore.multicriteria.e4.ruleKey>java:S1075</sonar.issue.ignore.multicriteria.e4.ruleKey>
-        <sonar.issue.ignore.multicriteria.e4.resourceKey>**/config/security/AuthCookies.java</sonar.issue.ignore.multicriteria.e4.resourceKey>
+        <sonar.issue.ignore.multicriteria.e4.resourceKey>**/web/AuthCookies.java</sonar.issue.ignore.multicriteria.e4.resourceKey>
 
         <apache-commons-lang.version>3.21.0</apache-commons-lang.version>
         <apache-commons-text.version>1.15.0</apache-commons-text.version>

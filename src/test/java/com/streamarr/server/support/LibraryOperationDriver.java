@@ -2,10 +2,10 @@ package com.streamarr.server.support;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.services.events.library.RefreshEndedEvent;
 import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.library.LibraryOperationService;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Duration;
 import java.util.Map;

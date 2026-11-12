@@ -3,10 +3,10 @@ package com.streamarr.server.repositories.auth;
 import static com.streamarr.server.jooq.generated.tables.EsnBlock.ESN_BLOCK;
 
 import com.streamarr.server.domain.auth.EsnBlock;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
 import java.util.List;

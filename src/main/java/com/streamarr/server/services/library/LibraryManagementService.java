@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryMetadata;
+import com.streamarr.server.domain.LibraryOperationRejection;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.exceptions.LibraryNotFoundException;

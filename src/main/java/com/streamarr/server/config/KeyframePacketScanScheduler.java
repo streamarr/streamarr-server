@@ -15,6 +15,7 @@ import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.task.BitrateScanTaskRequest;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
+import com.streamarr.server.properties.ProbeSchedulingProperties;
 import com.streamarr.server.repositories.media.BitrateScanRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.library.BitrateScanCompletion;

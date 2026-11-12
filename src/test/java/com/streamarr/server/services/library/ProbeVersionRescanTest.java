@@ -3,6 +3,9 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.streamarr.server.domain.LibraryOperation;
+import com.streamarr.server.domain.LibraryOperationKind;
+import com.streamarr.server.domain.LibraryOperationRejection.LibraryBusy;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.exceptions.LibraryOperationNotScheduledException;
@@ -13,7 +16,6 @@ import com.streamarr.server.fakes.FakeLibraryOperationScheduling;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.services.library.LibraryOperationRejection.LibraryBusy;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;

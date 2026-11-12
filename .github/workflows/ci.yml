@@ -314,19 +314,12 @@ jobs:
   build:
     name: build
     needs: [ changes, contracts, application, analysis, package_image ]
-    if: ${{ !cancelled() }}
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
       - name: Verify required checks
-        run: >-
-          .github/actions/verify-required-checks.sh
-          '${{ needs.changes.result }}'
-          '${{ needs.changes.outputs.packaging }}'
-          '${{ needs.application.result }}'
-          '${{ needs.package_image.result }}'
-          '${{ needs.analysis.result }}'
-          '${{ needs.contracts.result }}'
+        uses: streamarr/streamarr-workflows/.github/actions/require-jobs@76cd4dd76bce93283d0ccb7ba08429248b6f18f1
+        with:
+          jobs: ${{ toJSON(needs) }}
+          allowed-skips: ${{ needs.changes.outputs.packaging == 'false' && 'package_image' || '' }}

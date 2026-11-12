@@ -4,11 +4,11 @@ import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitatio
 
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.SortDirection;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PagedListContract;

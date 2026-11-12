@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.task.RequestedProbeResult;
-import com.streamarr.server.services.ArtworkRunSummary;
-import com.streamarr.server.services.FinishedImageCounts;
+import com.streamarr.server.services.artwork.ArtworkRunSummary;
+import com.streamarr.server.services.artwork.FinishedImageCounts;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;

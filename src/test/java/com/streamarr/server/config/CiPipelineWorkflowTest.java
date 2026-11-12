@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -30,32 +29,19 @@ class CiPipelineWorkflowTest {
   @TempDir private Path temporaryDirectory;
 
   @ParameterizedTest
-  @ValueSource(strings = {"failure", "cancelled", "skipped"})
-  @DisplayName("Should fail the required build when analysis did not succeed")
-  void shouldFailTheRequiredBuildWhenAnalysisDidNotSucceed(String analysis) throws Exception {
-    var context = successfulChecks();
-    context.put("needs.analysis.result", analysis);
+  @CsvSource({"false, true", "true, false", "'', false"})
+  @DisplayName("Should allow a skipped package image only when changed paths need no packaging")
+  void shouldAllowSkippedPackageImageOnlyWhenChangedPathsNeedNoPackaging(
+      String packaging, boolean allowed) throws Exception {
+    var allowedSkips = map(requiredJobs().get("with")).get("allowed-skips").toString();
+    var expression =
+        Pattern.compile("^\\$\\{\\{ (.+) && 'package_image' \\|\\| '' }}$").matcher(allowedSkips);
+    assertThat(expression.matches()).as(allowedSkips).isTrue();
+    var context = Map.of("needs.changes.outputs.packaging", packaging);
 
-    var result =
-        runBash(render(step("build", "Verify required checks").get("run").toString(), context));
+    var result = runBash("[[ " + substituteContext(expression.group(1), context) + " ]]");
 
-    assertThat(result.exitCode()).as(result.output()).isEqualTo(1);
-    assertThat(result.output()).contains("Coverage and analysis verification failed: " + analysis);
-  }
-
-  @ParameterizedTest
-  @CsvSource({"false, skipped, 0", "true, skipped, 1", "true, success, 0"})
-  @DisplayName("Should gate packaging according to changed paths when analysis succeeds")
-  void shouldGatePackagingAccordingToChangedPathsWhenAnalysisSucceeds(
-      String required, String packaging, int exitCode) throws Exception {
-    var context = successfulChecks();
-    context.put("needs.changes.outputs.packaging", required);
-    context.put("needs.package_image.result", packaging);
-
-    var result =
-        runBash(render(step("build", "Verify required checks").get("run").toString(), context));
-
-    assertThat(result.exitCode()).as(result.output()).isEqualTo(exitCode);
+    assertThat(result.exitCode()).as(result.output()).isEqualTo(allowed ? 0 : 1);
   }
 
   @ParameterizedTest
@@ -102,31 +88,6 @@ class CiPipelineWorkflowTest {
             xpath.evaluate(
                 plugins + "[artifactId='maven-failsafe-plugin']/configuration/skipTests", pom))
         .isEmpty();
-  }
-
-  @ParameterizedTest
-  @CsvSource({
-    "needs.changes.result, failure, Change detection failed",
-    "needs.changes.outputs.packaging, missing, Invalid packaging change result",
-    "needs.contracts.result, failure, Contract and deployment verification failed",
-    "needs.contracts.result, skipped, Contract and deployment verification failed",
-    "needs.contracts.result, cancelled, Contract and deployment verification failed",
-    "needs.application.result, failure, Application verification failed",
-    "needs.application.result, skipped, Application verification failed",
-    "needs.application.result, cancelled, Application verification failed",
-    "needs.package_image.result, failure, Unexpected package image result"
-  })
-  @DisplayName("Should fail the required build when an applicable prerequisite is unsuccessful")
-  void shouldFailRequiredBuildWhenApplicablePrerequisiteIsUnsuccessful(
-      String key, String value, String message) throws Exception {
-    var context = successfulChecks();
-    context.put(key, value);
-
-    var result =
-        runBash(render(step("build", "Verify required checks").get("run").toString(), context));
-
-    assertThat(result.exitCode()).as(result.output()).isEqualTo(1);
-    assertThat(result.output()).contains(message);
   }
 
   @Test
@@ -271,7 +232,11 @@ class CiPipelineWorkflowTest {
     assertThat(job("build"))
         .containsEntry(
             "needs", List.of("changes", "contracts", "application", "analysis", "package_image"))
-        .containsEntry("if", "${{ !cancelled() }}");
+        .containsEntry("if", "${{ always() }}")
+        .containsEntry("timeout-minutes", 5);
+    assertThat(requiredJobs().get("uses").toString())
+        .matches("streamarr/streamarr-workflows/.github/actions/require-jobs@[a-f0-9]{40}");
+    assertThat(map(requiredJobs().get("with"))).containsEntry("jobs", "${{ toJSON(needs) }}");
   }
 
   @Test
@@ -289,15 +254,12 @@ class CiPipelineWorkflowTest {
     assertThat(stepNames("application")).doesNotContainAnyElementsOf(contractChecks);
   }
 
-  private static Map<String, String> successfulChecks() {
-    return new HashMap<>(
-        Map.of(
-            "needs.changes.result", "success",
-            "needs.changes.outputs.packaging", "false",
-            "needs.contracts.result", "success",
-            "needs.application.result", "success",
-            "needs.package_image.result", "success",
-            "needs.analysis.result", "success"));
+  // A checkout in an always() job can hang, so the shared action is the build job's only step.
+  private Map<String, Object> requiredJobs() throws Exception {
+    var buildSteps = steps(job("build").get("steps"));
+    assertThat(buildSteps).hasSize(1);
+
+    return buildSteps.getFirst();
   }
 
   @ParameterizedTest

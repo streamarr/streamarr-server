@@ -5,7 +5,6 @@ import static org.mockito.Mockito.mock;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
-import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
@@ -23,6 +22,7 @@ import com.streamarr.server.fakes.FakeSkippedFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.FileDiscoveryRunsFixture;
+import com.streamarr.server.properties.LibraryScanProperties;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;

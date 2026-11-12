@@ -8,7 +8,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -25,6 +24,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.PlaybackSessionFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;

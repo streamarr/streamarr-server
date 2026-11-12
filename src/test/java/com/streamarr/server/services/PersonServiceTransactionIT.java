@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.PersonRepository;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;

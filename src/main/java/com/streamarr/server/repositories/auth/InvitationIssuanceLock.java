@@ -1,6 +1,6 @@
 package com.streamarr.server.repositories.auth;
 
-import com.streamarr.server.config.security.CredentialCodeProperties;
+import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
