@@ -55,6 +55,19 @@ public final class CancellableDatabaseWork {
   /**
    * Cancels every call that runs and every later one. Returns how many running calls it cancelled,
    * without waiting for PostgreSQL to receive the request that cancels a running statement.
+   *
+   * <p>Two rare cases escape the cancel. In both, the caller's wait for the work keeps its own
+   * bound, and a write that commits is the one the work was asked for. A caller that cancels only
+   * at shutdown meets them only during its shutdown.
+   *
+   * <ul>
+   *   <li>A cancel that lands after jOOQ reports a statement and before the driver sends it is
+   *       lost, in a window of microseconds at the statement's start. The statement runs on until
+   *       its lock timeout, or until the pool closes its connection.
+   *   <li>The driver stops waiting for a cancel request after its {@code cancelSignalTimeout}, 10 s
+   *       by default. A request that reaches PostgreSQL later ends whatever statement then runs on
+   *       that connection, which fails with SQLSTATE 57014 as a cancelled statement does.
+   * </ul>
    */
   public int cancel() {
     cancelled = true;
@@ -104,8 +117,7 @@ public final class CancellableDatabaseWork {
       }
 
       // The driver sends the cancel request over a connection of its own and waits for PostgreSQL
-      // to close it, for up to its cancelSignalTimeout of 10 s. The statement does not return
-      // before its request is sent, so the request cannot reach later work on its connection.
+      // to close it, for up to its cancelSignalTimeout of 10 s, so the canceller does not send it.
       var running = statement;
       Thread.ofVirtual().name("database-work-cancel").start(() -> requestCancel(running));
     }
