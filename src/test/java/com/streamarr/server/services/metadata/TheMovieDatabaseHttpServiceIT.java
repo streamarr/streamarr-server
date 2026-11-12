@@ -34,6 +34,8 @@ import org.springframework.test.context.DynamicPropertySource;
 @DisplayName("TMDB HTTP Service Integration Tests")
 class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
 
+  private static final int DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
+
   @DynamicPropertySource
   static void configureRateLimitAndTimeout(DynamicPropertyRegistry registry) {
     registry.add("tmdb.api.requests-per-second", () -> "1000");
@@ -720,6 +722,53 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
               assertThat(failure.getStatusCode()).isEqualTo(429);
               assertThat(failure.getRetryAfter()).contains(Duration.ZERO);
             });
+  }
+
+  @Test
+  @DisplayName("Should return the image when its body is exactly the download limit")
+  void shouldReturnImageWhenItsBodyIsExactlyTheDownloadLimit() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/at-limit.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Length", String.valueOf(DOWNLOAD_LIMIT_BYTES))
+                    .withBody(new byte[DOWNLOAD_LIMIT_BYTES])));
+
+    var result = service.downloadImage("/at-limit.jpg");
+
+    assertThat(result).hasSize(DOWNLOAD_LIMIT_BYTES);
+  }
+
+  @Test
+  @DisplayName("Should fail the download when the image body exceeds the download limit")
+  void shouldFailDownloadWhenImageBodyExceedsTheDownloadLimit() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/over-limit.jpg"))
+            .willReturn(aResponse().withStatus(200).withBody(new byte[DOWNLOAD_LIMIT_BYTES + 1])));
+
+    assertThatThrownBy(() -> service.downloadImage("/over-limit.jpg"))
+        .isInstanceOfSatisfying(
+            ImageDownloadException.class,
+            failure -> assertThat(failure.getStatusCode()).isEqualTo(200));
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail the download before reading the body when the host declares more than the download limit")
+  void shouldFailDownloadBeforeReadingBodyWhenHostDeclaresMoreThanTheDownloadLimit() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/declared-over-limit.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Length", String.valueOf(DOWNLOAD_LIMIT_BYTES + 1))
+                    .withBody(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0})));
+
+    assertThatThrownBy(() -> service.downloadImage("/declared-over-limit.jpg"))
+        .isInstanceOfSatisfying(
+            ImageDownloadException.class,
+            failure -> assertThat(failure.getStatusCode()).isEqualTo(200));
   }
 
   @Test

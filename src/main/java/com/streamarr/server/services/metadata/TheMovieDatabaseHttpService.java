@@ -15,8 +15,10 @@ import com.streamarr.server.services.metadata.tmdb.TmdbTvSeason;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Clock;
@@ -39,6 +41,8 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
 
   private static final CacheControl NO_STORE = CacheControl.newBuilder().noStore().build();
   private static final int ERROR_BODY_SNIPPET_LENGTH = 200;
+  // Original artwork is a few megabytes; the limit bounds what one download holds in memory.
+  private static final int MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 
   public static final Map<ExternalSourceType, String> EXTERNAL_SOURCES =
       Map.of(ExternalSourceType.IMDB, "imdb_id", ExternalSourceType.TVDB, "tvdb_id");
@@ -148,16 +152,34 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
   public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
     var uri = URI.create(tmdbImageBaseUrl + pathFragment);
     var request = MutableRequest.GET(uri).cacheControl(NO_STORE);
-    var response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+    // BodyHandlers.limiting fails with a plain IOException, which reads as a retryable network
+    // error. Reading the stream lets a body over the limit fail as a terminal download failure.
+    var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
 
-    if (response.statusCode() != 200) {
-      throw new ImageDownloadException(
-          response.statusCode(),
-          pathFragment,
-          RetryAfter.parse(response.headers().firstValue("Retry-After"), clock.instant()));
+    try (var body = response.body()) {
+      if (response.statusCode() != 200) {
+        throw new ImageDownloadException(
+            response.statusCode(),
+            pathFragment,
+            RetryAfter.parse(response.headers().firstValue("Retry-After"), clock.instant()));
+      }
+
+      return readImageBody(body, response.headers(), pathFragment);
+    }
+  }
+
+  private static byte[] readImageBody(InputStream body, HttpHeaders headers, String pathFragment)
+      throws IOException {
+    if (headers.firstValueAsLong("Content-Length").orElse(0) > MAX_IMAGE_BYTES) {
+      throw ImageDownloadException.bodyOverLimit(pathFragment, MAX_IMAGE_BYTES);
     }
 
-    return response.body();
+    var image = body.readNBytes(MAX_IMAGE_BYTES + 1);
+    if (image.length > MAX_IMAGE_BYTES) {
+      throw ImageDownloadException.bodyOverLimit(pathFragment, MAX_IMAGE_BYTES);
+    }
+
+    return image;
   }
 
   public TmdbTvSeason getTvSeasonDetails(String seriesId, int seasonNumber)

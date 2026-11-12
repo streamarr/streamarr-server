@@ -61,6 +61,16 @@ class ArtworkFailureTest {
   }
 
   @Test
+  @DisplayName(
+      "Should classify the failure as a terminal download failure when the image body exceeds the download limit")
+  void shouldClassifyTheFailureAsATerminalDownloadFailureWhenTheImageBodyExceedsTheDownloadLimit() {
+    var failure =
+        ArtworkFailure.classify(ImageDownloadException.bodyOverLimit("/poster.jpg", 52_428_800));
+
+    assertThat(failure).isEqualTo(new Terminal(ItemFailureReason.DOWNLOAD_FAILED));
+  }
+
+  @Test
   @DisplayName("Should classify a network error as retryable when the download cannot connect")
   void shouldClassifyANetworkErrorAsRetryableWhenTheDownloadCannotConnect() {
     var failure = ArtworkFailure.classify(new HttpConnectTimeoutException("timed out"));
