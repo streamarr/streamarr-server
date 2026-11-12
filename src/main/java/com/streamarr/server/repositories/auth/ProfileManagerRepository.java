@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.ProfileManager;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,6 +12,8 @@ public interface ProfileManagerRepository
     extends JpaRepository<ProfileManager, UUID>, ProfileManagerRepositoryCustom {
 
   boolean existsByAccountIdAndProfileId(UUID accountId, UUID profileId);
+
+  List<ProfileManager> findByAccountIdAndProfileIdIn(UUID accountId, Collection<UUID> profileIds);
 
   List<ProfileManager> findByProfileId(UUID profileId);
 }

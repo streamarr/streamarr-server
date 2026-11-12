@@ -34,6 +34,7 @@ import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -135,6 +136,46 @@ class CedarAuthorizationDeciderTest {
 
     assertThat(decider.decide(identity, intent))
         .isEqualTo(new Decision.Denied<>(Decision.DenialReason.POLICY));
+  }
+
+  @Test
+  @DisplayName("Should decide each read of a batch on the live row as it would alone")
+  void shouldDecideEachReadOfBatchOnLiveRowAsItWouldAlone() {
+    var serverAdmin = identityFor(liveAccount(true, true));
+    var disabled = identityFor(liveAccount(true, false));
+    var unknown = identityFor(UUID.randomUUID());
+    var reads =
+        Set.<Intent.UnitIntent>of(
+            new Intent.ViewLibraryAdministration(), new Intent.ViewHouseholds());
+
+    assertThat(decider.decideEach(serverAdmin, reads))
+        .containsOnlyKeys(reads)
+        .allSatisfy(
+            (_, decision) ->
+                assertThat(decision).isEqualTo(new Decision.Allowed<>(AuthorizationUnit.INSTANCE)));
+    assertThat(List.of(decider.decideEach(disabled, reads), decider.decideEach(unknown, reads)))
+        .allSatisfy(
+            decisions ->
+                assertThat(decisions.values())
+                    .hasSize(2)
+                    .containsOnly(new Decision.Denied<>(Decision.DenialReason.POLICY)));
+    assertThat(failClosedCount()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should fail every intent of a batch closed once when a write is among them")
+  void shouldFailEveryIntentOfBatchClosedOnceWhenWriteIsAmongThem() {
+    var identity = identityFor(liveAccount(true, true));
+    var batch =
+        Set.<Intent.UnitIntent>of(new Intent.ViewLibraryAdministration(), new Intent.AddLibrary());
+
+    assertThat(decider.decideEach(identity, batch))
+        .containsOnlyKeys(batch)
+        .allSatisfy(
+            (_, decision) ->
+                assertThat(decision)
+                    .isEqualTo(new Decision.Failed<>(Decision.FailureCause.ENGINE_FAILURE)));
+    assertThat(failClosedCount(Decision.FailureCause.ENGINE_FAILURE)).isEqualTo(1.0);
   }
 
   @Test

@@ -21,8 +21,10 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
@@ -385,6 +387,16 @@ public class ProfileHouseholdShareRepositoryCustomImpl
             .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId))
             .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
             .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE)));
+  }
+
+  @Override
+  public Set<UUID> findProfileIdsActivelySharedInto(UUID householdId, Collection<UUID> profileIds) {
+    return dsl.select(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID)
+        .from(PROFILE_HOUSEHOLD_SHARE)
+        .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.in(profileIds))
+        .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId))
+        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(ProfileShareStatus.ACTIVE))
+        .fetchSet(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID);
   }
 
   @Override

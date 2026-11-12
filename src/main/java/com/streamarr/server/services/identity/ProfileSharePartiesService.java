@@ -11,13 +11,12 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.BooleanSupplier;
 import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,14 +30,12 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>The target Household's HouseholdAdmins see the Profile and the offerer only while the offer is
  * pending or the share is active. Once it is over they see neither; only ServerAdmins, who may read
  * the Household's share history, still do. The offering side sees its own shares at every status.
+ * The Household's name is for the Profile's side and ServerAdmins.
  *
- * <p>Each authority is decided once per batch. When a share can be shown from either side, the side
- * with fewer distinct values in the batch is asked first, so a page of the shares into one
- * Household, or of one Profile, needs only a fixed number of decisions for its Profiles when its
- * reader may list that page. The offerer's name is decided on the target side alone, for each
- * Household in the batch: once for its live shares and once for those that are over. The
- * Household's name is for the Profile's side and ServerAdmins, so a HouseholdAdmin who asks for it
- * on their own Household's page is decided once for each Profile.
+ * <p>Each side is decided for the whole batch at once, so a page needs the same number of reads
+ * whatever it holds. When a share can be shown from either side, the side with fewer distinct
+ * values in the batch is asked first, and the other side only about the shares the first did not
+ * show.
  */
 @Service
 @RequiredArgsConstructor
@@ -60,13 +57,9 @@ public class ProfileSharePartiesService {
     var existing = profilesById(shares);
     var authority = new BatchAuthority(reader, shares, existing.keySet());
     var shown =
-        shares.stream()
-            .filter(share -> existing.containsKey(share.profileId()))
-            .filter(
-                share ->
-                    authority.eitherSide(
-                        share, authority::targetSees, Intent.ViewProfileShareHouseholds::new))
-            .toList();
+        authority.shownByEitherSide(
+            shares.stream().filter(share -> existing.containsKey(share.profileId())).toList(),
+            authority::targetSide);
     var personal = personalProfileIds(shown);
 
     var profiles = new HashMap<ShareReference, SharedProfile>();
@@ -95,10 +88,9 @@ public class ProfileSharePartiesService {
     // The offerer's name is decided on the target side alone, so no Profile is consulted.
     var authority = new BatchAuthority(reader, shares, Set.of());
     var shown =
-        shares.stream()
-            .filter(share -> share.offeredBy().isPresent())
-            .filter(authority::targetSees)
-            .toList();
+        authority.shownBy(
+            shares.stream().filter(share -> share.offeredBy().isPresent()).toList(),
+            authority::targetSide);
     var offererIds =
         shown.stream().flatMap(share -> share.offeredBy().stream()).collect(Collectors.toSet());
     var names =
@@ -120,15 +112,7 @@ public class ProfileSharePartiesService {
   public Map<ShareReference, Household> households(
       AuthenticatedIdentity reader, Set<ShareReference> shares) {
     var authority = new BatchAuthority(reader, shares, profilesById(shares).keySet());
-    var shown =
-        shares.stream()
-            .filter(
-                share ->
-                    authority.eitherSide(
-                        share,
-                        authority::viewsTargetShareHistory,
-                        Intent.ViewProfileShareHouseholds::new))
-            .toList();
+    var shown = authority.shownByEitherSide(shares, authority::historySide);
     var loaded =
         householdRepository.findAllById(distinct(shown, ShareReference::householdId)).stream()
             .collect(Collectors.toMap(Household::getId, Function.identity()));
@@ -145,7 +129,7 @@ public class ProfileSharePartiesService {
         .collect(Collectors.toMap(Profile::getId, Function.identity()));
   }
 
-  private Set<UUID> personalProfileIds(List<ShareReference> shares) {
+  private Set<UUID> personalProfileIds(Collection<ShareReference> shares) {
     var profileIds = distinct(shares, ShareReference::profileId);
     if (profileIds.isEmpty()) {
       return Set.of();
@@ -162,15 +146,15 @@ public class ProfileSharePartiesService {
   }
 
   /**
-   * One reader's answers over one batch of shares, each question asked once. The Profile side is
-   * asked only about Profiles that exist, since no decision can be made about a missing one.
+   * One reader's answers over one batch of shares, each side asked about the whole batch at once.
+   * The Profile side is asked only about Profiles that exist, since no decision can be made about a
+   * missing one.
    */
   private final class BatchAuthority {
 
     private final AuthenticatedIdentity reader;
     private final Set<UUID> existingProfiles;
     private final boolean householdSideFirst;
-    private final Map<Intent.UnitIntent, Boolean> answers = new HashMap<>();
 
     private BatchAuthority(
         AuthenticatedIdentity reader, Set<ShareReference> shares, Set<UUID> existingProfiles) {
@@ -182,37 +166,49 @@ public class ProfileSharePartiesService {
     }
 
     /**
-     * Whether the target Household's side may see the share's Profile and offerer: its
+     * What the target Household's side asks to see the share's Profile and offerer: its
      * HouseholdAdmins while the share is live, and afterwards only a reader of its share history.
      */
-    boolean targetSees(ShareReference share) {
+    Optional<Intent.UnitIntent> targetSide(ShareReference share) {
       return share.live()
-          ? allows(new Intent.ViewHouseholdAdministration(share.householdId()))
-          : viewsTargetShareHistory(share);
+          ? Optional.of(new Intent.ViewHouseholdAdministration(share.householdId()))
+          : historySide(share);
     }
 
-    boolean viewsTargetShareHistory(ShareReference share) {
-      return allows(new Intent.ViewHouseholdShareHistory(share.householdId()));
+    Optional<Intent.UnitIntent> historySide(ShareReference share) {
+      return Optional.of(new Intent.ViewHouseholdShareHistory(share.householdId()));
     }
 
-    /** Whether the target Household's side allows it, or the Profile's side does. */
-    boolean eitherSide(
-        ShareReference share,
-        Predicate<ShareReference> householdSide,
-        Function<UUID, Intent.UnitIntent> profileSide) {
-      BooleanSupplier target = () -> householdSide.test(share);
-      BooleanSupplier profile =
-          () ->
-              existingProfiles.contains(share.profileId())
-                  && allows(profileSide.apply(share.profileId()));
-      return householdSideFirst
-          ? target.getAsBoolean() || profile.getAsBoolean()
-          : profile.getAsBoolean() || target.getAsBoolean();
+    /** The shares the given side of the target Household shows, or the Profile's side does. */
+    Set<ShareReference> shownByEitherSide(
+        Collection<ShareReference> shares,
+        Function<ShareReference, Optional<Intent.UnitIntent>> householdSide) {
+      Function<ShareReference, Optional<Intent.UnitIntent>> first =
+          householdSideFirst ? householdSide : this::profileSide;
+      Function<ShareReference, Optional<Intent.UnitIntent>> second =
+          householdSideFirst ? this::profileSide : householdSide;
+      var shown = new HashSet<>(shownBy(shares, first));
+      var rest = shares.stream().filter(share -> !shown.contains(share)).toList();
+      shown.addAll(shownBy(rest, second));
+      return shown;
     }
 
-    private boolean allows(Intent.UnitIntent intent) {
-      return answers.computeIfAbsent(
-          intent, asked -> authorizationService.isAllowed(reader, asked));
+    /** The shares the side allows, decided for all of them at once. */
+    Set<ShareReference> shownBy(
+        Collection<ShareReference> shares,
+        Function<ShareReference, Optional<Intent.UnitIntent>> side) {
+      var asked =
+          shares.stream().flatMap(share -> side.apply(share).stream()).collect(Collectors.toSet());
+      var allowed = authorizationService.allowedAmong(reader, asked);
+      return shares.stream()
+          .filter(share -> side.apply(share).filter(allowed::contains).isPresent())
+          .collect(Collectors.toSet());
+    }
+
+    private Optional<Intent.UnitIntent> profileSide(ShareReference share) {
+      return Optional.of(share.profileId())
+          .filter(existingProfiles::contains)
+          .map(Intent.ViewProfileShareHouseholds::new);
     }
   }
 }

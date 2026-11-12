@@ -407,33 +407,6 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
                 .value(owner.household().getName()));
   }
 
-  // The Household's name is left out: for a reader who is not a ServerAdmin it is decided once for
-  // each Profile on the page, since only the Profile's managers see it.
-  @Test
-  @DisplayName(
-      "Should read a Household's offers in the same number of statements when it holds more")
-  void shouldReadHouseholdsOffersInTheSameNumberOfStatementsWhenItHoldsMore() throws Exception {
-    var query =
-        """
-        query { householdShares(householdId: "%s", statuses: [PENDING]) {
-          edges { node { id profile { name personalProfile } visitor offeredByDisplayName } } } }
-        """
-            .formatted(host.household().getId());
-    offer(owner, managedProfile(ProfileFixture.defaultProfileBuilder()), host);
-    offer(owner, owner.profile(), host);
-    // The first request fills caches that later requests skip.
-    query(host, query, "householdShares");
-    var forTwoOffers = statementsWhile(() -> query(host, query, "householdShares"));
-
-    var other = identity();
-    offer(other, other.profile(), host);
-    offer(owner, managedProfile(ProfileFixture.kidProfileBuilder()), host);
-
-    assertThat(edges(query(host, query, "householdShares"))).hasSize(4);
-    assertThat(statementsWhile(() -> query(host, query, "householdShares")))
-        .isEqualTo(forTwoOffers);
-  }
-
   @Test
   @DisplayName(
       "Should read every party of a Household's shares for a ServerAdmin in the same number of"
@@ -457,7 +430,29 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
         .isEqualTo(forTwoOffers);
   }
 
-  // The offerer's name is left out: it is decided once for each Household on the page.
+  @Test
+  @DisplayName(
+      "Should read every party of a Household's offers for its HouseholdAdmin in the same number"
+          + " of statements when it holds more")
+  void shouldReadEveryPartyOfHouseholdsOffersForItsAdminInSameNumberOfStatementsWhenItHoldsMore()
+      throws Exception {
+    offer(owner, managedProfile(ProfileFixture.defaultProfileBuilder()), host);
+    offer(owner, owner.profile(), host);
+    // The first request fills caches that later requests skip.
+    householdShares(host, host, "[PENDING]");
+    var forTwoOffers = statementsWhile(() -> householdShares(host, host, "[PENDING]"));
+
+    var other = identity();
+    offer(other, other.profile(), host);
+    offer(owner, managedProfile(ProfileFixture.defaultProfileBuilder()), host);
+
+    assertThat(edges(householdShares(host, host, "[PENDING]")))
+        .hasSize(4)
+        .allSatisfy(share -> assertThat(share.path("household").isNull()).isTrue());
+    assertThat(statementsWhile(() -> householdShares(host, host, "[PENDING]")))
+        .isEqualTo(forTwoOffers);
+  }
+
   @Test
   @DisplayName(
       "Should read a Profile's shares in the same number of statements when it visits more")
@@ -468,7 +463,8 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     var query =
         """
         query { profileShares(profileId: "%s", statuses: [PENDING]) {
-          edges { node { id profile { name personalProfile } household { name } } } } }
+          edges { node { id profile { name personalProfile } offeredByDisplayName
+            household { name } } } } }
         """
             .formatted(orphan.getId());
     query(owner, query, "profileShares");
