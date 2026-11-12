@@ -133,6 +133,15 @@ class ProbeReportCallLimitsTest {
                     .setStreamIndex(1)
                     .addKeyframeIntervalPacketCounts(1));
       }
+    },
+    MEASURED_STREAMS {
+      @Override
+      ProbeAttemptReport.Builder beyondTheLimit() {
+        return ProbeAttemptReport.newBuilder()
+            .addAllStreamMeasurementIntervals(
+                Collections.nCopies(
+                    RESULT_LENGTH_LIMIT / 2 + 1, StreamMeasurementIntervals.getDefaultInstance()));
+      }
     };
 
     /** Probe report fields that hold one entry of the list beyond its limit. */
@@ -161,28 +170,48 @@ class ProbeReportCallLimitsTest {
         .hasCauseExactlyInstanceOf(ProbeContractViolationException.class);
   }
 
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(BrokenEncoding.class)
   @DisplayName(
       "Should end the report call at the message whose bytes break the wire format, before its"
           + " last message")
-  void shouldEndReportCallAtMessageWhoseBytesBreakWireFormatBeforeItsLastMessage()
-      throws Exception {
+  void shouldEndReportCallAtMessageWhoseBytesBreakWireFormatBeforeItsLastMessage(
+      BrokenEncoding encoding) throws Exception {
     var worker = ReportingWorker.connectedTo(LIMITS);
     var probe = worker.dispatch();
     var call = worker.openReportCall();
     call.sendMetadata(worker.metadata(probe.request()).setReportLengthBytes(64));
-    // A keyframe whose varint goes on past ten bytes.
-    var overlongVarint = new byte[11];
-    Arrays.fill(overlongVarint, (byte) 0xff);
-    overlongVarint[0] = 0x10;
 
-    call.sendData(ByteString.copyFrom(overlongVarint));
+    call.sendData(encoding.bytes());
 
     assertThat(call.refusal()).isEqualTo(Status.Code.INVALID_ARGUMENT);
     assertThat(call.unreadDemand()).isZero();
     assertThatThrownBy(() -> probe.outcome().get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasCauseExactlyInstanceOf(ProbeContractViolationException.class);
+  }
+
+  private enum BrokenEncoding {
+    KEYFRAME_IN_A_VARINT_OF_ELEVEN_BYTES {
+      @Override
+      ByteString bytes() {
+        var overlongVarint = new byte[11];
+        Arrays.fill(overlongVarint, (byte) 0xff);
+        overlongVarint[0] = 0x10;
+        return ByteString.copyFrom(overlongVarint);
+      }
+    },
+    KEYFRAME_AS_A_FIXED64_VALUE {
+      @Override
+      ByteString bytes() {
+        var fixed64 = new byte[9];
+        fixed64[0] = 0x11;
+        return ByteString.copyFrom(fixed64);
+      }
+    };
+
+    /** The first bytes of a probe report, which break the wire format. */
+    abstract ByteString bytes();
   }
 
   @Test

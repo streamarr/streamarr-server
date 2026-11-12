@@ -5,6 +5,7 @@ import com.google.protobuf.WireFormat;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.IntFunction;
 
 /**
@@ -22,6 +23,10 @@ final class ProbeReportFieldCounter {
     KEYFRAMES("Worker probe report holds more keyframes than the keyframe limit"),
     MEASURED_KEYFRAME_INTERVALS(
         "Worker probe report holds more measured keyframe intervals than the limit"),
+    MEASURED_STREAMS(
+        "Worker probe report measures more streams than a result within the result length limit"
+            + " can hold"),
+    WRONG_WIRE_TYPE("Worker probe report holds a field in a wire type that the field cannot have"),
     OVERLONG_VARINT("Worker probe report holds a varint longer than ten bytes"),
     INVALID_TAG("Worker probe report holds a tag of field number zero or of no wire type"),
     GROUP("Worker probe report holds a group"),
@@ -41,12 +46,25 @@ final class ProbeReportFieldCounter {
 
   // The decoder reads at most ten bytes of a varint: the 64 bits of its value.
   private static final int LONGEST_VARINT_BYTES = 10;
+  // Every measured stream must also appear in the result, and a stream of the result takes at
+  // least its tag and its length.
+  private static final int FEWEST_BYTES_OF_A_STREAM_IN_THE_RESULT = 2;
+  private static final Field STREAM_INDEX = new Skipped(Set.of(WireFormat.WIRETYPE_VARINT));
+  // A field that the contract does not declare may arrive in any wire type but a group's.
+  private static final Field UNDECLARED =
+      new Skipped(
+          Set.of(
+              WireFormat.WIRETYPE_VARINT,
+              WireFormat.WIRETYPE_FIXED64,
+              WireFormat.WIRETYPE_LENGTH_DELIMITED,
+              WireFormat.WIRETYPE_FIXED32));
 
   private final long resultLengthLimitBytes;
-  private final Count presentationTimeDeltas;
-  private final Count decodeTimeDeltas;
-  private final Count intervalBytes;
-  private final Count intervalPacketCounts;
+  private final CountedList presentationTimeDeltas;
+  private final CountedList decodeTimeDeltas;
+  private final MeasuredStream measuredStreams;
+  private final CountedList intervalBytes;
+  private final CountedList intervalPacketCounts;
   private final Message report;
   private long resultBytes;
   // Unset while the bytes keep every rule.
@@ -54,12 +72,17 @@ final class ProbeReportFieldCounter {
 
   ProbeReportFieldCounter(ProbeReportLimits limits, long reportLengthBytes) {
     resultLengthLimitBytes = limits.resultLengthLimitBytes();
-    presentationTimeDeltas = new Count(limits.keyframeLimit(), BrokenRule.KEYFRAMES);
-    decodeTimeDeltas = new Count(limits.keyframeLimit(), BrokenRule.KEYFRAMES);
+    presentationTimeDeltas = countedList(limits.keyframeLimit(), BrokenRule.KEYFRAMES);
+    decodeTimeDeltas = countedList(limits.keyframeLimit(), BrokenRule.KEYFRAMES);
+    measuredStreams =
+        new MeasuredStream(
+            new Count(
+                resultLengthLimitBytes / FEWEST_BYTES_OF_A_STREAM_IN_THE_RESULT,
+                BrokenRule.MEASURED_STREAMS));
     intervalBytes =
-        new Count(limits.measuredKeyframeIntervalLimit(), BrokenRule.MEASURED_KEYFRAME_INTERVALS);
+        countedList(limits.measuredKeyframeIntervalLimit(), BrokenRule.MEASURED_KEYFRAME_INTERVALS);
     intervalPacketCounts =
-        new Count(limits.measuredKeyframeIntervalLimit(), BrokenRule.MEASURED_KEYFRAME_INTERVALS);
+        countedList(limits.measuredKeyframeIntervalLimit(), BrokenRule.MEASURED_KEYFRAME_INTERVALS);
     report = new Message(reportLengthBytes, this::reportField);
   }
 
@@ -82,23 +105,28 @@ final class ProbeReportFieldCounter {
     return Optional.ofNullable(broken);
   }
 
+  private CountedList countedList(long limit, BrokenRule rule) {
+    return new CountedList(new Count(limit, rule));
+  }
+
   private Field reportField(int number) {
     return switch (number) {
       case ProbeAttemptReport.RESULT_FIELD_NUMBER -> new Result();
       case ProbeAttemptReport.KEYFRAME_PRESENTATION_TIME_DELTAS_FIELD_NUMBER ->
           presentationTimeDeltas;
       case ProbeAttemptReport.KEYFRAME_DECODE_TIME_DELTAS_FIELD_NUMBER -> decodeTimeDeltas;
-      case ProbeAttemptReport.STREAM_MEASUREMENT_INTERVALS_FIELD_NUMBER -> new MeasuredStream();
-      default -> new Skipped();
+      case ProbeAttemptReport.STREAM_MEASUREMENT_INTERVALS_FIELD_NUMBER -> measuredStreams;
+      default -> UNDECLARED;
     };
   }
 
   private Field measuredStreamField(int number) {
     return switch (number) {
+      case StreamMeasurementIntervals.STREAM_INDEX_FIELD_NUMBER -> STREAM_INDEX;
       case StreamMeasurementIntervals.KEYFRAME_INTERVAL_BYTES_FIELD_NUMBER -> intervalBytes;
       case StreamMeasurementIntervals.KEYFRAME_INTERVAL_PACKET_COUNTS_FIELD_NUMBER ->
           intervalPacketCounts;
-      default -> new Skipped();
+      default -> UNDECLARED;
     };
   }
 
@@ -116,19 +144,54 @@ final class ProbeReportFieldCounter {
   }
 
   /** What a field number names in the message that holds the field. */
-  private sealed interface Field {}
+  private sealed interface Field {
+
+    /** Whether the field can arrive in the wire type. */
+    boolean takes(int wireType);
+  }
 
   /** The probe report's result, whose length counts and whose bytes the counter skips. */
-  private record Result() implements Field {}
+  private record Result() implements Field {
 
-  /** One measured stream of the probe report, whose fields the counter reads. */
-  private record MeasuredStream() implements Field {}
+    @Override
+    public boolean takes(int wireType) {
+      return wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED;
+    }
+  }
 
-  /** A field whose bytes the counter skips. */
-  private record Skipped() implements Field {}
+  /**
+   * The probe report's measured streams, which count against a limit, and whose fields the counter
+   * reads.
+   */
+  private record MeasuredStream(Count entries) implements Field {
+
+    @Override
+    public boolean takes(int wireType) {
+      return wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED;
+    }
+  }
 
   /** A repeated scalar field whose entries count against a limit, packed or not. */
-  private final class Count implements Field {
+  private record CountedList(Count entries) implements Field {
+
+    @Override
+    public boolean takes(int wireType) {
+      return wireType == WireFormat.WIRETYPE_VARINT
+          || wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED;
+    }
+  }
+
+  /** A field whose bytes the counter skips, in the wire types that the field can have. */
+  private record Skipped(Set<Integer> wireTypes) implements Field {
+
+    @Override
+    public boolean takes(int wireType) {
+      return wireTypes.contains(wireType);
+    }
+  }
+
+  /** Entries that count against a limit. */
+  private final class Count {
     private final long limit;
     private final BrokenRule rule;
     private long entries;
@@ -205,14 +268,30 @@ final class ProbeReportFieldCounter {
       }
 
       field = fields.apply(number);
-      switch (WireFormat.getTagWireType(tag)) {
-        case WireFormat.WIRETYPE_VARINT -> step = Step.VARINT;
-        case WireFormat.WIRETYPE_FIXED64 -> skip(Long.BYTES);
-        case WireFormat.WIRETYPE_LENGTH_DELIMITED -> step = Step.LENGTH;
-        case WireFormat.WIRETYPE_FIXED32 -> skip(Integer.BYTES);
+      var wireType = WireFormat.getTagWireType(tag);
+      switch (wireType) {
+        case WireFormat.WIRETYPE_VARINT,
+            WireFormat.WIRETYPE_FIXED64,
+            WireFormat.WIRETYPE_LENGTH_DELIMITED,
+            WireFormat.WIRETYPE_FIXED32 ->
+            startField(wireType);
         case WireFormat.WIRETYPE_START_GROUP, WireFormat.WIRETYPE_END_GROUP ->
             breakRule(BrokenRule.GROUP);
         default -> breakRule(BrokenRule.INVALID_TAG);
+      }
+    }
+
+    private void startField(int wireType) {
+      if (!field.takes(wireType)) {
+        breakRule(BrokenRule.WRONG_WIRE_TYPE);
+        return;
+      }
+
+      switch (wireType) {
+        case WireFormat.WIRETYPE_VARINT -> step = Step.VARINT;
+        case WireFormat.WIRETYPE_FIXED64 -> skip(Long.BYTES);
+        case WireFormat.WIRETYPE_FIXED32 -> skip(Integer.BYTES);
+        default -> step = Step.LENGTH;
       }
     }
 
@@ -223,8 +302,8 @@ final class ProbeReportFieldCounter {
 
       takeVarint();
       step = Step.TAG;
-      if (field instanceof Count count) {
-        count.add();
+      if (field instanceof CountedList(var entries)) {
+        entries.add();
       }
     }
 
@@ -246,11 +325,12 @@ final class ProbeReportFieldCounter {
               addToResult(length);
               yield Step.SKIP;
             }
-            case Count count -> {
-              packed = count;
+            case CountedList(var entries) -> {
+              packed = entries;
               yield Step.PACKED;
             }
-            case MeasuredStream _ -> {
+            case MeasuredStream(var entries) -> {
+              entries.add();
               measuredStream =
                   new Message(length, ProbeReportFieldCounter.this::measuredStreamField);
               yield Step.MEASURED_STREAM;

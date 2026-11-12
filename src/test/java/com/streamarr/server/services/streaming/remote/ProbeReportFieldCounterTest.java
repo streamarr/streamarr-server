@@ -183,7 +183,36 @@ class ProbeReportFieldCounterTest {
             "a field of a measured stream that is longer than the measured stream",
             bytes(0x22, 2, 0x12, 1),
             BrokenRule.FIELD_PAST_ITS_END),
-        arguments("a group inside a measured stream", bytes(0x22, 1, 0x0b), BrokenRule.GROUP));
+        arguments("a group inside a measured stream", bytes(0x22, 1, 0x0b), BrokenRule.GROUP),
+        arguments("the result as a varint", bytes(0x08), BrokenRule.WRONG_WIRE_TYPE),
+        arguments("the result as a fixed64 value", bytes(0x09), BrokenRule.WRONG_WIRE_TYPE),
+        arguments("the result as a fixed32 value", bytes(0x0d), BrokenRule.WRONG_WIRE_TYPE),
+        arguments(
+            "a keyframe presentation time delta as a fixed64 value",
+            bytes(0x11),
+            BrokenRule.WRONG_WIRE_TYPE),
+        arguments(
+            "a keyframe decode time delta as a fixed32 value",
+            bytes(0x1d),
+            BrokenRule.WRONG_WIRE_TYPE),
+        arguments("a measured stream as a varint", bytes(0x20), BrokenRule.WRONG_WIRE_TYPE),
+        arguments("a measured stream as a fixed64 value", bytes(0x21), BrokenRule.WRONG_WIRE_TYPE),
+        arguments(
+            "a measured stream's index with a length",
+            bytes(0x22, 2, 0x0a),
+            BrokenRule.WRONG_WIRE_TYPE),
+        arguments(
+            "a measured stream's index as a fixed32 value",
+            bytes(0x22, 5, 0x0d),
+            BrokenRule.WRONG_WIRE_TYPE),
+        arguments(
+            "a measured keyframe interval's bytes as a fixed64 value",
+            bytes(0x22, 9, 0x11),
+            BrokenRule.WRONG_WIRE_TYPE),
+        arguments(
+            "a measured keyframe interval's packet count as a fixed32 value",
+            bytes(0x22, 5, 0x1d),
+            BrokenRule.WRONG_WIRE_TYPE));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -203,8 +232,8 @@ class ProbeReportFieldCounterTest {
         arguments("a tag", bytes(0x80)),
         arguments("a varint", bytes(0x10, 0x80)),
         arguments("a length", bytes(0x0a, 0x80)),
-        arguments("a fixed64 value", bytes(0x11, 0, 0, 0)),
-        arguments("a fixed32 value", bytes(0x15, 0)));
+        arguments("a fixed64 value", bytes(0x49, 0, 0, 0)),
+        arguments("a fixed32 value", bytes(0x4d, 0)));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -356,6 +385,25 @@ class ProbeReportFieldCounterTest {
 
   @Test
   @DisplayName(
+      "Should break the measured stream limit at the measured stream beyond half the result"
+          + " length limit, and keep a probe report at it")
+  void
+      shouldBreakMeasuredStreamLimitAtMeasuredStreamBeyondHalfResultLengthLimitAndKeepReportAtIt() {
+    var atTheLimit = repeated(emptyMeasuredStream(), RESULT_LENGTH_LIMIT / 2);
+    var kept = counterOf(atTheLimit);
+    var broken = counter(atTheLimit.size() + emptyMeasuredStream().size());
+
+    var readAtTheLimit = broken.read(atTheLimit);
+    var beyondTheLimit = broken.read(emptyMeasuredStream());
+
+    assertThat(kept.read(atTheLimit)).isEmpty();
+    assertThat(kept.end()).isEmpty();
+    assertThat(readAtTheLimit).isEmpty();
+    assertThat(beyondTheLimit).contains(BrokenRule.MEASURED_STREAMS);
+  }
+
+  @Test
+  @DisplayName(
       "Should read a length from the low 32 bits of its varint when the varint is longer, as the"
           + " decoder does")
   void shouldReadLengthFromLow32BitsOfItsVarintWhenVarintIsLongerAsDecoderDoes() throws Exception {
@@ -460,5 +508,17 @@ class ProbeReportFieldCounterTest {
     var bytes = new byte[times];
     Arrays.fill(bytes, (byte) value);
     return ByteString.copyFrom(bytes);
+  }
+
+  private static ByteString repeated(ByteString bytes, int times) {
+    return ByteString.copyFrom(Collections.nCopies(times, bytes));
+  }
+
+  /** A measured stream that holds no field: its tag and a length of zero. */
+  private static ByteString emptyMeasuredStream() {
+    return ProbeAttemptReport.newBuilder()
+        .addStreamMeasurementIntervals(StreamMeasurementIntervals.getDefaultInstance())
+        .build()
+        .toByteString();
   }
 }
