@@ -13,7 +13,8 @@ import reactor.core.scheduler.Schedulers;
  */
 final class SubscriptionDeliveryThreads implements AutoCloseable {
 
-  private static final Duration CLOSE_BOUND = Duration.ofSeconds(10);
+  // The deliveries close with the server, after its shutdown phase, within its stop deadline.
+  private static final Duration CLOSE_BOUND = Duration.ofSeconds(1);
 
   private final ExecutorService threads =
       Executors.newThreadPerTaskExecutor(

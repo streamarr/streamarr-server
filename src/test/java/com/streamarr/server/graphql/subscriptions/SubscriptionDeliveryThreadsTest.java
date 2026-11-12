@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.subscriptions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.Queue;
@@ -127,6 +128,19 @@ class SubscriptionDeliveryThreadsTest {
 
     assertThat(delivery.outcome()).isEqualTo(DeliveryOutcome.INTERRUPTED);
     assertThat(closedWithInterruptKept).succeedsWithin(BOUND).isEqualTo(true);
+  }
+
+  @Test
+  @DisplayName(
+      "Should interrupt a running delivery and return when the delivery outlasts the close's"
+          + " one-second wait")
+  void shouldInterruptRunningDeliveryAndReturnWhenTheDeliveryOutlastsTheClosesWait()
+      throws Exception {
+    var delivery = ParkedDelivery.start(broadcaster(1), events);
+
+    BoundedTask.runWithin(Duration.ofSeconds(3), deliveryThreads::close);
+
+    assertThat(delivery.outcome()).isEqualTo(DeliveryOutcome.INTERRUPTED);
   }
 
   private SubscriptionBroadcaster<Integer> broadcaster(int operationBuffer) {
