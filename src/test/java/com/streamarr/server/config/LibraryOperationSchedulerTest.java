@@ -8,9 +8,8 @@ import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.streamarr.server.fakes.FakeLibraryOperationRepository;
 import com.streamarr.server.fakes.FakeLibraryRepository;
+import com.streamarr.server.fakes.UnreachableDataSource;
 import com.streamarr.server.services.library.LibraryOperationExecution;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.time.Clock;
 import java.util.Map;
 import java.util.Optional;
@@ -20,7 +19,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.jdbc.datasource.AbstractDataSource;
 
 @Tag("UnitTest")
 @DisplayName("Library Operation Scheduler Tests")
@@ -83,21 +81,6 @@ class LibraryOperationSchedulerTest {
     @Override
     public Optional<Serializer> serializer() {
       return Optional.of(Serializer.DEFAULT_JAVA_SERIALIZER);
-    }
-  }
-
-  // Building the scheduler's client asks the database for its product name. A unit test has no
-  // database, so the client falls back to its default SQL dialect.
-  private static final class UnreachableDataSource extends AbstractDataSource {
-
-    @Override
-    public Connection getConnection() throws SQLException {
-      throw new SQLException("A unit test has no database");
-    }
-
-    @Override
-    public Connection getConnection(String username, String password) throws SQLException {
-      return getConnection();
     }
   }
 }
