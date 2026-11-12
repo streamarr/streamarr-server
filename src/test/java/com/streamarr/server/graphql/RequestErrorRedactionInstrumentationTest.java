@@ -2,14 +2,17 @@ package com.streamarr.server.graphql;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.sun.management.ThreadMXBean;
 import graphql.ErrorType;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.GraphQLError;
 import graphql.parser.ParserOptions;
+import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.SchemaParser;
+import java.lang.management.ManagementFactory;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -35,11 +38,12 @@ class RequestErrorRedactionInstrumentationTest {
       """;
   private static final String CODE = "BCDF-GHJK";
 
+  private final GraphQLSchema schema =
+      new SchemaGenerator()
+          .makeExecutableSchema(
+              new SchemaParser().parse(SCHEMA), RuntimeWiring.newRuntimeWiring().build());
   private final GraphQL graphQL =
-      GraphQL.newGraphQL(
-              new SchemaGenerator()
-                  .makeExecutableSchema(
-                      new SchemaParser().parse(SCHEMA), RuntimeWiring.newRuntimeWiring().build()))
+      GraphQL.newGraphQL(schema)
           .instrumentation(new RequestErrorRedactionInstrumentation())
           .build();
 
@@ -139,6 +143,23 @@ class RequestErrorRedactionInstrumentationTest {
     assertThat(error.getMessage()).doesNotContain(CODE);
   }
 
+  @ParameterizedTest
+  @MethodSource("deeplyNestedValues")
+  @DisplayName("Should redact at a cost in line with the request's size when a value nests deeply")
+  void shouldRedactAtCostInLineWithRequestSizeWhenValueNestsDeeply(String document, String named) {
+    var unredacted = GraphQL.newGraphQL(schema).build();
+
+    var redactionCost =
+        allocatedAnswering(graphQL, document) - allocatedAnswering(unredacted, document);
+
+    var error = singleError(ExecutionInput.newExecutionInput(document).build());
+    assertThat(error.getErrorType()).isEqualTo(ErrorType.ValidationError);
+    assertThat(error.getMessage()).contains(named);
+    assertThat(error.toSpecification().toString()).doesNotContain(CODE);
+    // Reading the request again, and a few megabytes at most for quoting its values.
+    assertThat(redactionCost).isLessThan(64L * document.length() + (8L << 20));
+  }
+
   @Test
   @DisplayName("Should answer as before when the document passes validation")
   void shouldAnswerAsBeforeWhenDocumentPassesValidation() {
@@ -156,6 +177,10 @@ class RequestErrorRedactionInstrumentationTest {
             "'household'"),
         Arguments.of("{ lookUp(input: {code: \"%s\"}) }".formatted(CODE), CODE, "'[id]'"),
         Arguments.of("{ lookUp(input: {id: \"1\", code: 4826}) }", "4826", "'input.code'"),
+        Arguments.of(
+            "{ lookUp(input: {id: \"1\", code: %s}) }".formatted(nested(CODE, 3)),
+            CODE,
+            "'input.code'"),
         Arguments.of("{ page(first: 99999999999) }", "99999999999", "'first'"),
         Arguments.of("{ page(ratio: true) }", "true", "'ratio'"),
         Arguments.of("{ page(exact: 0.75) }", "0.75", "'exact'"),
@@ -169,6 +194,28 @@ class RequestErrorRedactionInstrumentationTest {
                 .formatted(CODE),
             CODE,
             "'LookUpInput'"));
+  }
+
+  static Stream<Arguments> deeplyNestedValues() {
+    var longCode = nested(CODE.repeat(11_000), 150);
+    return Stream.of(
+        Arguments.of("{ lookUp(input: {id: \"1\", code: %s}) }".formatted(longCode), "WrongType"),
+        Arguments.of(
+            """
+            query ($input: LookUpInput = {id: "1", code: %s}) {
+              lookUp(input: $input)
+            }
+            """
+                .formatted(longCode),
+            "BadValueForDefaultArg"),
+        Arguments.of("{ page(first: 1, size: %s) }".formatted(longCode), "UnknownArgument"),
+        Arguments.of(
+            "{ lookUp(input: {id: \"1\", code: %s}) }".formatted(nested(CODE, 200)), "WrongType"));
+  }
+
+  // Each list holds the next, down to the code.
+  private static String nested(String code, int depth) {
+    return "[".repeat(depth) + "\"" + code + "\"" + "]".repeat(depth);
   }
 
   static Stream<String> unparsableDocuments() {
@@ -192,6 +239,15 @@ class RequestErrorRedactionInstrumentationTest {
     var errors = graphQL.execute(input).getErrors();
     assertThat(errors).hasSize(1);
     return errors.getFirst();
+  }
+
+  // The memory one answer takes, once a first answer has loaded what answering needs.
+  private static long allocatedAnswering(GraphQL engine, String document) {
+    var threads = (ThreadMXBean) ManagementFactory.getThreadMXBean();
+    engine.execute(document);
+    var before = threads.getCurrentThreadAllocatedBytes();
+    engine.execute(document);
+    return threads.getCurrentThreadAllocatedBytes() - before;
   }
 
   // As the answer carries the error, and as a log line or a later instrumentation prints it.
