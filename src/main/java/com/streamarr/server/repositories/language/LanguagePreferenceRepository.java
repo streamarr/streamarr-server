@@ -16,6 +16,12 @@ public interface LanguagePreferenceRepository {
   /** The Profile's own preferences; empty when no Profile has the id. */
   Optional<ProfileLanguagePreferences> findProfilePreferences(UUID profileId);
 
+  /**
+   * The own preferences of each of the Profiles that exist, keyed by its id, in one statement. An
+   * id that names no Profile is left out.
+   */
+  Map<UUID, ProfileLanguagePreferences> findProfilePreferences(Collection<UUID> profileIds);
+
   /** Replaces the Profile's own preferences; false when no Profile has the id. */
   boolean trySetProfilePreferences(UUID profileId, ProfileLanguagePreferences preferences);
 

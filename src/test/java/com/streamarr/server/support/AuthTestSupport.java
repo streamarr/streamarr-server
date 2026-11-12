@@ -278,6 +278,18 @@ public class AuthTestSupport {
     return accessTokenIssuer.issue(contextBuilder(identity).build()).value();
   }
 
+  /** A Profile token whose session has the given Profile selected in the identity's Household. */
+  public String profileBearer(TestIdentity identity, Profile selected) {
+    return accessTokenIssuer
+        .issue(contextBuilder(identity).profileId(Optional.of(selected.getId())).build())
+        .value();
+  }
+
+  /** The identity a request bearing that Profile token resolves to at the service boundary. */
+  public AuthenticatedIdentity profileIdentityOf(TestIdentity identity, Profile selected) {
+    return AuthenticatedIdentity.fromJwt(jwtDecoder.decode(profileBearer(identity, selected)));
+  }
+
   /** A Profile token from a session born of a Device registration (ADR 0024 §Devices). */
   public String deviceBoundProfileBearer(TestIdentity identity) {
     var deviceSession = identity.session().toBuilder().registrationId(UUID.randomUUID()).build();

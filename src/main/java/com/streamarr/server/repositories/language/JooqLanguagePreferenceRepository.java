@@ -48,6 +48,22 @@ public class JooqLanguagePreferenceRepository implements LanguagePreferenceRepos
         .fetchOptional(JooqLanguagePreferenceRepository::toPreferences);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public Map<UUID, ProfileLanguagePreferences> findProfilePreferences(Collection<UUID> profileIds) {
+    var preferences = new HashMap<UUID, ProfileLanguagePreferences>();
+    if (profileIds.isEmpty()) {
+      return preferences;
+    }
+
+    dsl.select(
+            PROFILE.ID, PROFILE.AUDIO_LANGUAGES, PROFILE.SUBTITLE_LANGUAGE, PROFILE.SUBTITLE_MODE)
+        .from(PROFILE)
+        .where(PROFILE.ID.in(profileIds))
+        .forEach(row -> preferences.put(row.value1(), toPreferences(row)));
+    return preferences;
+  }
+
   private static ProfileLanguagePreferences toPreferences(Record row) {
     return ProfileLanguagePreferences.builder()
         .audioLanguages(
