@@ -113,6 +113,9 @@ class AccountRemoval {
         account.getId(), "recipient deleted", now);
     managerInvitationRepository.invalidatePendingInvitedBy(
         account.getId(), "inviting manager deleted", now);
+    // A share write holds its Profile and then the Accounts it tells, so the removal holds the
+    // Personal Profile before it holds the Account, in the same order.
+    profileRepository.lockById(account.getPersonalProfileId());
     // Read after any wait above, so an offer whose time ran out meanwhile is stored as expired.
     shareLifecycle.invalidatePendingOfferedBy(
         account.getId(), "offering manager deleted", clock.instant());
