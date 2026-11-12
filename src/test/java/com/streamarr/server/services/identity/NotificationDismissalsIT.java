@@ -228,6 +228,27 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should dismiss the Notifications about the erased Personal Profile and its share when its"
+          + " Account is deleted")
+  void shouldDismissTheNotificationsAboutTheErasedPersonalProfileWhenItsAccountIsDeleted() {
+    var brook = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var personal = SubjectReference.profile(brook.profile().getId());
+    var offer = steps.offer(brook, brook.profile(), theo);
+    tell(
+        SpecifiedOnlyNotificationKinds.MANAGEMENT_REMOVED,
+        personal,
+        new ManagementRemovedSnapshot(brook.profile().getName()));
+
+    var outcome = delete(brook, AccountDeletion.BY_A_SERVER_ADMIN);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.about(personal)).isEmpty();
+    assertThat(rows.about(SubjectReference.profileShare(offer.getId()))).isEmpty();
+    assertThat(rows.of(accountOf(theo))).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the Notifications about a share when the Account that made the offer is"
           + " deleted")
   void shouldKeepTheNotificationsAboutAShareWhenTheAccountThatMadeTheOfferIsDeleted() {
