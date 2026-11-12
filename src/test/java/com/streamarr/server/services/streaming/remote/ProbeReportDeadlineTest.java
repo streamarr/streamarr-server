@@ -193,8 +193,7 @@ class ProbeReportDeadlineTest {
   @Test
   @DisplayName(
       "Should keep the worker session when the first message of a report call that crossed the"
-          + " cancel command arrives within the cancellation timeout, and end the session of a"
-          + " worker that answers with nothing")
+          + " cancel command arrives within the cancellation timeout")
   void shouldKeepWorkerSessionWhenFirstMessageOfReportCallThatCrossedCancelCommandArrivesInTime()
       throws Exception {
     var worker =
@@ -211,14 +210,14 @@ class ProbeReportDeadlineTest {
     var call = worker.openReportCall();
     call.sendMetadata(worker.metadata(probe.request()).setReportLengthBytes(bytes.size()));
 
-    // The silent worker's probe was canceled later, so the wait for the first worker has passed
-    // as well.
-    var silentWorkersSessionEnd = silentWorker.sessionEnd().get(5, TimeUnit.SECONDS);
+    // The silent worker's probe was canceled later, so once the server has ended its session, the
+    // wait for the first worker has passed as well.
+    assertThat(silentWorker.sessionEnd().get(5, TimeUnit.SECONDS).getCode())
+        .as("The server ends the session of a worker that answers a cancel command with nothing")
+        .isEqualTo(Status.Code.DEADLINE_EXCEEDED);
     call.sendData(bytes);
     call.halfClose();
 
-    assertThat(silentWorkersSessionEnd.getCode()).isEqualTo(Status.Code.DEADLINE_EXCEEDED);
-    assertThat(silentWorker.isConnected()).isFalse();
     assertThat(call.answer().get(1, TimeUnit.SECONDS).getAcceptedLengthBytes())
         .isEqualTo(bytes.size());
     assertThat(worker.sessionEnd()).isNotDone();

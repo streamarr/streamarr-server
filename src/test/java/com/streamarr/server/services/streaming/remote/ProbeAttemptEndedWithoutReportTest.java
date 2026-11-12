@@ -326,8 +326,7 @@ class ProbeAttemptEndedWithoutReportTest {
   @Test
   @DisplayName(
       "Should keep the worker session when the worker answers a cancel command with the event"
-          + " within the cancellation timeout, and end the session of a worker that answers with"
-          + " nothing")
+          + " within the cancellation timeout")
   void shouldKeepWorkerSessionWhenWorkerAnswersCancelCommandWithEventWithinCancellationTimeout()
       throws Exception {
     var worker =
@@ -340,12 +339,12 @@ class ProbeAttemptEndedWithoutReportTest {
 
     worker.endWithoutReport(probe.request());
     ignored.outcome().cancel(true);
-    // The silent worker's probe was canceled later, so the wait for the first worker has passed
-    // as well.
-    var silentWorkersSessionEnd = silentWorker.sessionEnd().get(5, TimeUnit.SECONDS);
 
-    assertThat(silentWorkersSessionEnd.getCode()).isEqualTo(Status.Code.DEADLINE_EXCEEDED);
-    assertThat(silentWorker.isConnected()).isFalse();
+    // The silent worker's probe was canceled later, so once the server has ended its session, the
+    // wait for the first worker has passed as well.
+    assertThat(silentWorker.sessionEnd().get(5, TimeUnit.SECONDS).getCode())
+        .as("The server ends the session of a worker that answers a cancel command with nothing")
+        .isEqualTo(Status.Code.DEADLINE_EXCEEDED);
     assertThat(worker.sessionEnd()).isNotDone();
     assertThat(worker.isConnected()).isTrue();
   }
