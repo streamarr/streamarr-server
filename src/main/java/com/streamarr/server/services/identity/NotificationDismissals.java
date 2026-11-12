@@ -1,13 +1,13 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.notification.DismissalSelector;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.services.events.notification.DismissNotificationsEvent;
-import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.NotificationRecipientDeletedEvent;
-import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
-import com.streamarr.server.services.events.notification.SubjectReference;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Optional;

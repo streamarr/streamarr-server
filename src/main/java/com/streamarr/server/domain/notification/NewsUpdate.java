@@ -1,4 +1,4 @@
-package com.streamarr.server.services.events.notification;
+package com.streamarr.server.domain.notification;
 
 import java.util.Set;
 import lombok.NonNull;

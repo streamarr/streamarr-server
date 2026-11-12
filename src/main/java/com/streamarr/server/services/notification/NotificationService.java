@@ -1,11 +1,12 @@
 package com.streamarr.server.services.notification;
 
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.StoredNotification;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
-import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
 import com.streamarr.server.services.pagination.ListPage;

@@ -1,5 +1,6 @@
 package com.streamarr.server.services.events.notification;
 
+import com.streamarr.server.domain.notification.DismissalSelector;
 import lombok.NonNull;
 
 /**

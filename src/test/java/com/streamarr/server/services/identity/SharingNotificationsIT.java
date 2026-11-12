@@ -13,6 +13,8 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -27,8 +29,6 @@ import com.streamarr.server.services.events.notification.ProfileShareAnsweredSna
 import com.streamarr.server.services.events.notification.ProfileShareEndedBy;
 import com.streamarr.server.services.events.notification.ProfileShareEndedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
-import com.streamarr.server.services.events.notification.RecipientReference;
-import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;

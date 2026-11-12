@@ -1,4 +1,4 @@
-package com.streamarr.server.services.events.notification;
+package com.streamarr.server.domain.notification;
 
 /**
  * How someone decided a request's subject, as its kind words it: an offer is accepted or rejected,

@@ -1,14 +1,15 @@
 package com.streamarr.server.services.notification;
 
+import com.streamarr.server.domain.notification.DismissalSelector;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.StoredNotification;
+import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.services.events.notification.DismissNotificationsEvent;
-import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
-import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
-import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
