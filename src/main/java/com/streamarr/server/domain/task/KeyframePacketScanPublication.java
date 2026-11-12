@@ -22,7 +22,9 @@ public record KeyframePacketScanPublication(
       case KeyframeKnowledge.Known _, KeyframeKnowledge.Unavailable _ -> {
         // A packet scan reports one of these.
       }
-      case KeyframeKnowledge.PacketScanRequired _, KeyframeKnowledge.NotReported _ ->
+      case KeyframeKnowledge.PacketScanRequired _,
+          KeyframeKnowledge.PacketScanRequiredWithKeptPositions _,
+          KeyframeKnowledge.NotReported _ ->
           throw new IllegalArgumentException("A packet scan stores known or unavailable keyframes");
     }
   }

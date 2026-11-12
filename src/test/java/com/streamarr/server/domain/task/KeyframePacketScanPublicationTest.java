@@ -78,22 +78,25 @@ class KeyframePacketScanPublicationTest {
   }
 
   private static Stream<KeyframeKnowledge> keyframesThatAPacketScanReports() {
-    return Stream.of(
-        new KeyframeKnowledge.Known(
-            KeyframePositions.builder()
-                .streamIndex(0)
-                .timeBaseNumerator(1)
-                .timeBaseDenominator(90_000)
-                .source(KeyframePositionSource.PACKET_SCAN)
-                .keyframes(List.of(new KeyframePosition(0, 0)))
-                .build()),
-        UNAVAILABLE);
+    return Stream.of(new KeyframeKnowledge.Known(scannedPositions()), UNAVAILABLE);
   }
 
   private static Stream<KeyframeKnowledge> keyframesThatNoPacketScanReports() {
     return Stream.of(
         new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX),
+        new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+            KeyframePacketScanReason.NO_CONTAINER_INDEX, scannedPositions()),
         new KeyframeKnowledge.NotReported());
+  }
+
+  private static KeyframePositions scannedPositions() {
+    return KeyframePositions.builder()
+        .streamIndex(0)
+        .timeBaseNumerator(1)
+        .timeBaseDenominator(90_000)
+        .source(KeyframePositionSource.PACKET_SCAN)
+        .keyframes(List.of(new KeyframePosition(0, 0)))
+        .build();
   }
 
   private static KeyframePacketScanPublication.KeyframePacketScanPublicationBuilder builder() {

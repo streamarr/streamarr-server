@@ -762,16 +762,23 @@ public class MediaFileContainerInfoRepositoryCustomImpl
       MediaFileContainerInfoRecord row, KeyframeKnowledge keyframes) {
     switch (keyframes) {
       case KeyframeKnowledge.Known _ -> row.setKeyframeStatus(KeyframeStatus.KNOWN.name());
-      case KeyframeKnowledge.PacketScanRequired(var reason) -> {
-        row.setKeyframeStatus(KeyframeStatus.PACKET_SCAN_REQUIRED.name());
-        row.setKeyframePacketScanReason(reason.name());
-      }
+      case KeyframeKnowledge.PacketScanRequired(var reason) -> setPacketScanRequired(row, reason);
+      // Which positions an outcome keeps is the repository's decision, so a publication that names
+      // kept positions stores only the packet scan that it requires.
+      case KeyframeKnowledge.PacketScanRequiredWithKeptPositions(var reason, _) ->
+          setPacketScanRequired(row, reason);
       case KeyframeKnowledge.Unavailable(var reason) -> {
         row.setKeyframeStatus(KeyframeStatus.UNAVAILABLE.name());
         row.setKeyframesUnavailableReason(reason.name());
       }
       case KeyframeKnowledge.NotReported _ -> row.setKeyframeStatus(null);
     }
+  }
+
+  private static void setPacketScanRequired(
+      MediaFileContainerInfoRecord row, KeyframePacketScanReason reason) {
+    row.setKeyframeStatus(KeyframeStatus.PACKET_SCAN_REQUIRED.name());
+    row.setKeyframePacketScanReason(reason.name());
   }
 
   private void insertKeyframePositions(UUID mediaFileId, KeyframePositions positions) {
