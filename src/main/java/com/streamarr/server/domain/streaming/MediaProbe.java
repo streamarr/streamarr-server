@@ -355,8 +355,15 @@ public record MediaProbe(
    * the segment list, so the list never ends before the last sample does.
    */
   public Duration mediaEnd() {
+    var sessionAudio = audioStreams().stream().limit(1).toList();
+    return mediaEndWith(sessionAudio);
+  }
+
+  private Duration mediaEndWith(List<StreamInfo> deliveredAudio) {
     var end =
-        scannedMediaEnd().filter(scannedEnd -> !headerAgreesWith(scannedEnd)).orElse(duration);
+        scannedEndOf(deliveredAudio)
+            .filter(scannedEnd -> !headerAgreesWith(scannedEnd))
+            .orElse(duration);
     return countedUpToAWholeMillisecond(end);
   }
 
@@ -375,14 +382,16 @@ public record MediaProbe(
     return !overstatement.isNegative() && overstatement.compareTo(LEAST_HEADER_OVERSTATEMENT) < 0;
   }
 
-  private Optional<Duration> scannedMediaEnd() {
-    var videoEnd = chosenVideoStream().flatMap(this::scannedEndTimeOf);
-    var sessionAudio = audioStreams().stream().findFirst();
-    if (videoEnd.isEmpty() || sessionAudio.isEmpty()) {
-      return videoEnd;
+  // The latest scanned end of the chosen video stream and of each delivered audio stream, or empty
+  // while no scan has read one of them.
+  private Optional<Duration> scannedEndOf(List<StreamInfo> deliveredAudio) {
+    var latest = chosenVideoStream().flatMap(this::scannedEndTimeOf);
+    for (var audio : deliveredAudio) {
+      latest =
+          latest.flatMap(end -> scannedEndTimeOf(audio).map(audioEnd -> laterOf(audioEnd, end)));
     }
 
-    return scannedEndTimeOf(sessionAudio.get()).map(audioEnd -> laterOf(audioEnd, videoEnd.get()));
+    return latest;
   }
 
   private static Duration laterOf(Duration first, Duration second) {
