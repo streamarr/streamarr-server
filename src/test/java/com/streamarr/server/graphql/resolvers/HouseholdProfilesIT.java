@@ -101,6 +101,25 @@ class HouseholdProfilesIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should keep where a visitor belongs from a HouseholdAdmin who only hosts it when that admin"
+          + " manages another visitor from the same Household")
+  void shouldKeepWhereAVisitorBelongsWhenItsHostManagesAnotherVisitorFromTheSameHousehold()
+      throws Exception {
+    var mara = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Mara"));
+    cast.grant(smith, mara);
+    cast.makeAvailable(mara, smith);
+    var nora = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Nora"));
+    cast.makeAvailable(nora, smith);
+
+    var rows = householdProfiles(smith, smith);
+
+    assertThat(rowOf(rows, mara).path("profile").path("household").path("id").asString())
+        .isEqualTo(cabin.household().getId().toString());
+    assertThat(rowOf(rows, nora).path("profile").path("household").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
       "Should list only the Profiles the member manages that belong there when a member who is no"
           + " admin reads the Household")
   void shouldListOnlyTheProfilesTheMemberManagesThatBelongThereWhenAMemberWhoIsNoAdminReadsIt()
