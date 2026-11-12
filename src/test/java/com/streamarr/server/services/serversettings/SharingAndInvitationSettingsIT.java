@@ -121,8 +121,8 @@ class SharingAndInvitationSettingsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should save the setting, read it back under the same id, and record the ServerAdmin when a"
           + " ServerAdmin changes it")
-  void shouldSaveTheSettingAndRecordTheServerAdminWhenAServerAdminChangesIt(Setting setting)
-      throws Exception {
+  void shouldSaveTheSettingReadItBackUnderTheSameIdAndRecordTheServerAdminWhenAServerAdminChangesIt(
+      Setting setting) throws Exception {
     var bearer = authTestSupport.accountBearer(serverAdmin);
     var settingId = dsl.selectFrom(SERVER_SETTINGS).fetchSingle().getId().toString();
 
@@ -168,7 +168,8 @@ class SharingAndInvitationSettingsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should refuse a value outside the range and keep the default when it is stored past the"
           + " service")
-  void shouldRefuseValueOutsideTheRangeWhenItIsStoredPastTheService(Setting setting, int value) {
+  void shouldRefuseValueOutsideTheRangeAndKeepTheDefaultWhenItIsStoredPastTheService(
+      Setting setting, int value) {
     assertThatThrownBy(() -> storeSetting(dsl, setting.column(), value))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining(setting.constraint());
@@ -202,8 +203,8 @@ class SharingAndInvitationSettingsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should refuse the read and the change and keep the default when the caller is not a"
           + " ServerAdmin")
-  void shouldRefuseTheReadAndTheChangeWhenTheCallerIsNotAServerAdmin(Setting setting)
-      throws Exception {
+  void shouldRefuseTheReadAndTheChangeAndKeepTheDefaultWhenTheCallerIsNotAServerAdmin(
+      Setting setting) throws Exception {
     var bearer = authTestSupport.accountBearer(resident);
 
     mockMvc
