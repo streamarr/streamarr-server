@@ -40,13 +40,16 @@ import org.jooq.impl.DSL;
 public class ProfileHouseholdShareRepositoryCustomImpl
     implements ProfileHouseholdShareRepositoryCustom {
 
-  // The columns a write returns to name each share it changed and the status it left it in.
+  // The columns a write returns to name each share it changed, the status it left it in, who
+  // offered it and when the offer expires.
   private static final List<Field<?>> CHANGED_SHARE =
       List.of(
           PROFILE_HOUSEHOLD_SHARE.ID,
           PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
           PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID,
-          PROFILE_HOUSEHOLD_SHARE.STATUS);
+          PROFILE_HOUSEHOLD_SHARE.STATUS,
+          PROFILE_HOUSEHOLD_SHARE.OFFERED_BY_ACCOUNT_ID,
+          PROFILE_HOUSEHOLD_SHARE.EXPIRES_AT);
 
   private static final Keyset<OffsetDateTime> BY_CREATION =
       Keyset.<OffsetDateTime>builder()
@@ -115,11 +118,14 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   private static ChangedShare changedShare(ProfileHouseholdShareRecord shareRecord) {
-    return new ChangedShare(
-        shareRecord.getId(),
-        shareRecord.getProfileId(),
-        shareRecord.getHouseholdId(),
-        domainStatusOf(shareRecord.getStatus()));
+    return ChangedShare.builder()
+        .shareId(shareRecord.getId())
+        .profileId(shareRecord.getProfileId())
+        .householdId(shareRecord.getHouseholdId())
+        .status(domainStatusOf(shareRecord.getStatus()))
+        .offeredByAccountId(Optional.ofNullable(shareRecord.getOfferedByAccountId()))
+        .expiresAt(Optional.ofNullable(shareRecord.getExpiresAt()).map(OffsetDateTime::toInstant))
+        .build();
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

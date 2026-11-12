@@ -135,7 +135,8 @@ public class ProfileSharingService {
             .status(ProfileShareStatus.PENDING)
             .offeredByAccountId(identity.accountId())
             .expiresAt(now.plus(credentialCodeProperties.invitationTtl()))
-            .build());
+            .build(),
+        now);
   }
 
   public Outcome<ProfileHouseholdShare, ShareRejections.Accept> acceptProfileShare(

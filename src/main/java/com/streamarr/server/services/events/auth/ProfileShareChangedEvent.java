@@ -2,6 +2,9 @@ package com.streamarr.server.services.events.auth;
 
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ShareAction;
+import java.time.Instant;
+import java.util.Optional;
+import lombok.Builder;
 import lombok.NonNull;
 
 /**
@@ -12,28 +15,39 @@ import lombok.NonNull;
  * until this change. The target Household's HouseholdAdmins follow a share only while it is live,
  * so they hear the change that ends it and none after. {@code removal} says the change is the
  * share's deletion, so a share deleted while live reaches them as removed. {@code action} says what
- * the write did that the share's sides may be told about, and which Account did it.
+ * the write did that the share's sides may be told about, and which Account did it. {@code
+ * changedAt} is the one instant the write took for the change: the instant it records on the share
+ * and checks the offer's expiry against. A share announced without a write that took one, as it is
+ * moved or deleted, has none.
  */
+@Builder
 public record ProfileShareChangedEvent(
-    @NonNull ChangedShare share, boolean live, boolean removal, @NonNull ShareAction action) {
+    @NonNull ChangedShare share,
+    boolean live,
+    boolean removal,
+    @NonNull ShareAction action,
+    @NonNull Optional<Instant> changedAt) {
 
   /** A change after which the share is still stored, and that tells neither side anything. */
   public ProfileShareChangedEvent(ChangedShare share, boolean live) {
-    this(share, live, false, new ShareAction.Other());
-  }
-
-  /** A change after which the share is still stored. */
-  public ProfileShareChangedEvent(ChangedShare share, boolean live, ShareAction action) {
-    this(share, live, false, action);
+    this(share, live, false, new ShareAction.Other(), Optional.empty());
   }
 
   /** A change that tells neither side of the share anything: its deletion when {@code removal}. */
   public ProfileShareChangedEvent(ChangedShare share, boolean live, boolean removal) {
-    this(share, live, removal, new ShareAction.Other());
+    this(share, live, removal, new ShareAction.Other(), Optional.empty());
   }
 
   /** Whether this change ended the share: it was pending or active until this change. */
   public boolean ended() {
     return live && !share.status().isLive();
+  }
+
+  /**
+   * A change that tells neither side anything and took no instant, unless the builder names them.
+   */
+  public static class ProfileShareChangedEventBuilder {
+    private ShareAction action = new ShareAction.Other();
+    private Optional<Instant> changedAt = Optional.empty();
   }
 }

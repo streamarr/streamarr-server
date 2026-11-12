@@ -296,7 +296,8 @@ public class AccountInvitationService {
             .householdId(householdId)
             .status(ProfileShareStatus.ACTIVE)
             .structural(true)
-            .build());
+            .build(),
+        clock.instant());
     return account;
   }
 
@@ -400,7 +401,8 @@ public class AccountInvitationService {
               .status(ProfileShareStatus.PENDING)
               .offeredByAccountId(plan.offererAccountId())
               .expiresAt(plan.now().plus(properties.invitationTtl()))
-              .build());
+              .build(),
+          plan.now());
     }
   }
 

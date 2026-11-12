@@ -20,6 +20,7 @@ import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.SessionProgressFixture;
 import com.streamarr.server.properties.Argon2Properties;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -67,7 +68,8 @@ class SetupServiceTest {
           bootstrapRepository,
           sessionProgressRepository,
           watchHistoryRepository,
-          passwordEncoder);
+          passwordEncoder,
+          Clock.systemUTC());
 
   @Test
   @DisplayName("Should create admin household and profile when bootstrap unclaimed")
@@ -201,7 +203,8 @@ class SetupServiceTest {
             bootstrapRepository,
             sessionProgressRepository,
             watchHistoryRepository,
-            passwordEncoder);
+            passwordEncoder,
+            Clock.systemUTC());
 
     var command = defaultCommandBuilder().build();
 

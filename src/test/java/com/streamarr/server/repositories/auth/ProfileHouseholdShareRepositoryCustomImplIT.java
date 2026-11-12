@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
@@ -151,8 +152,13 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
 
     assertThat(expired)
         .contains(
-            new ChangedShare(
-                lapsed.getId(), profile.getId(), home.getId(), ProfileShareStatus.EXPIRED))
+            ChangedShare.builder()
+                .shareId(lapsed.getId())
+                .profileId(profile.getId())
+                .householdId(home.getId())
+                .status(ProfileShareStatus.EXPIRED)
+                .expiresAt(Optional.of(now.minusSeconds(1)))
+                .build())
         .extracting(ChangedShare::shareId)
         .doesNotContain(live.getId(), accepted.getId());
     assertSoftly(
