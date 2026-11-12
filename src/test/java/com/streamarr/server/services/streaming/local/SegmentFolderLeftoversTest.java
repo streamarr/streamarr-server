@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Deleted;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Refused;
 import java.io.IOException;
@@ -543,8 +544,42 @@ class SegmentFolderLeftoversTest {
     }
   }
 
-  // Each delete of a directory opens the segment folder again. On macOS a listing that is open
-  // meanwhile then skips some of a few hundred entries.
+  // A folder elsewhere that holds a directory with a leftover's name was never the server's.
+  @Test
+  @DisplayName(
+      "Should keep another folder's files when the segment folder's soft link is pointed there"
+          + " while the start deletes")
+  void
+      shouldKeepAnotherFoldersFilesWhenTheSegmentFoldersSoftLinkIsPointedThereWhileTheStartDeletes()
+          throws IOException {
+    try (var fileSystem = Jimfs.newFileSystem(Configuration.unix())) {
+      mountTableAt(
+          Files.createDirectories(fileSystem.getPath("/proc/self")).resolve("mountinfo"),
+          fileSystem.getPath("/"));
+      var markedFolder = Files.createDirectories(fileSystem.getPath("/var/lib/streamarr/segments"));
+      var link =
+          Files.createSymbolicLink(
+              Files.createDirectories(fileSystem.getPath("/srv")).resolve("segments"),
+              markedFolder);
+      startOf(leftoversInMemory(link));
+      var sessionName = leftSessionIn(link).getFileName().toString();
+      var otherFolder = Files.createDirectories(fileSystem.getPath("/backup"));
+      var movie =
+          Files.write(
+              Files.createDirectory(otherFolder.resolve(sessionName)).resolve("movie.mkv"), MEDIA);
+      var pointedElsewhereOnceItReadsASessionsMark =
+          ThrowingFileSystemWrapper.runningAfterEachAttributeReadOf(
+              fileSystem, SESSION_MARK_NAME, () -> pointAt(link, otherFolder));
+
+      startOf(leftoversInMemory(pointedElsewhereOnceItReadsASessionsMark.getPath(link.toString())));
+
+      assertThat(movie).hasBinaryContent(MEDIA);
+      assertThat(markedFolder.resolve(sessionName)).doesNotExist();
+    }
+  }
+
+  // On macOS a listing that is open while entries of its folder are deleted skips some of a few
+  // hundred entries.
   @Test
   @DisplayName("Should delete every leftover when the segment folder holds hundreds of them")
   void shouldDeleteEveryLeftoverWhenTheSegmentFolderHoldsHundredsOfThem() throws IOException {
@@ -738,8 +773,24 @@ class SegmentFolderLeftoversTest {
         .lock(new SegmentFolderLock());
   }
 
+  // The start of a server process on a file system in memory, which holds the process's mount
+  // table. Its home folder and media folders lie elsewhere.
+  private static SegmentFolderLeftovers.SegmentFolderLeftoversBuilder leftoversInMemory(
+      Path folder) {
+    var fileSystem = folder.getFileSystem();
+    return SegmentFolderLeftovers.builder()
+        .segmentFolder(folder)
+        .homeFolder(fileSystem.getPath("/home/streamarr"))
+        .mediaFolders(() -> List.of(fileSystem.getPath("/media")))
+        .mountTable(fileSystem.getPath("/proc/self/mountinfo"));
+  }
+
   // A mount table in the format of /proc/self/mountinfo that lists these mount points.
   private Path mountTableListing(Path... mountPoints) {
+    return mountTableAt(machine.resolve("mountinfo-" + UUID.randomUUID()), mountPoints);
+  }
+
+  private static Path mountTableAt(Path table, Path... mountPoints) {
     var lines =
         Arrays.stream(mountPoints)
             .map(
@@ -747,7 +798,7 @@ class SegmentFolderLeftoversTest {
                     "36 25 8:1 / " + mountPoint + " rw,relatime shared:1 - ext4 /dev/sda1 rw")
             .toList();
     try {
-      return Files.write(machine.resolve("mountinfo-" + UUID.randomUUID()), lines);
+      return Files.write(table, lines);
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -834,5 +885,14 @@ class SegmentFolderLeftoversTest {
 
   private static void unlock(Path variantDirectory) throws IOException {
     Files.setPosixFilePermissions(variantDirectory, PosixFilePermissions.fromString("rwx------"));
+  }
+
+  private static void pointAt(Path link, Path folder) {
+    try {
+      Files.delete(link);
+      Files.createSymbolicLink(link, folder);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 }

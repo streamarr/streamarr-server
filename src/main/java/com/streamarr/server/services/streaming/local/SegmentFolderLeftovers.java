@@ -1,20 +1,25 @@
 package com.streamarr.server.services.streaming.local;
 
-import com.google.common.io.MoreFiles;
+import com.streamarr.server.exceptions.UnsupportedSegmentFolderException;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Deleted;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Refused;
 import java.io.IOException;
+import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributeView;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import lombok.Builder;
@@ -199,8 +204,10 @@ public class SegmentFolderLeftovers {
 
   // Only one start at a time holds the lock alone, so two starts never write the mark at once.
   private SegmentFolderLeftoversOutcome markAndDeleteEachLeftover() throws IOException {
-    if (isMarked()) {
-      return deleteEachLeftover();
+    try (var folder = openedFolder()) {
+      if (isMarked(folder)) {
+        return deleteEachLeftover(folder);
+      }
     }
 
     if (!holdsNoOtherEntry()) {
@@ -208,24 +215,45 @@ public class SegmentFolderLeftovers {
     }
 
     writeMark();
-    return deleteEachLeftover();
+    // The folder held no other entry, so it holds no leftover.
+    return new Deleted(0, 0);
   }
 
   // Whether the folder carries its mark, or holds no other entry, so that a start may mark it.
   private boolean isMarkable() throws IOException {
-    return isMarked() || holdsNoOtherEntry();
+    try (var folder = openedFolder()) {
+      return isMarked(folder) || holdsNoOtherEntry();
+    }
   }
 
-  // Compared as bytes, so that a mark which is not text reads as the mark of another folder. A
-  // mark of another size is not read, so that no mark is too large to read.
-  private boolean isMarked() throws IOException {
-    if (!Files.isRegularFile(mark(), LinkOption.NOFOLLOW_LINKS)) {
+  // The delete checks each mark and deletes each leftover through this one handle of the folder,
+  // never through the folder's path again: a soft link or folder on that path that changes
+  // meanwhile cannot lead it into another folder.
+  private SecureDirectoryStream<Path> openedFolder() throws IOException {
+    var folder = Files.newDirectoryStream(segmentFolder);
+    if (!(folder instanceof SecureDirectoryStream<Path> secureFolder)) {
+      folder.close();
+      throw new UnsupportedSegmentFolderException(segmentFolder);
+    }
+
+    return secureFolder;
+  }
+
+  // Compared as bytes, so that a mark which is not text reads as the mark of another folder. At
+  // most one byte more than the folder's path is read, so that no mark is too large to read.
+  private boolean isMarked(SecureDirectoryStream<Path> folder) throws IOException {
+    var mark = segmentFolder.getFileSystem().getPath(MARK_NAME);
+    if (!isRegularFile(folder, mark)) {
       return false;
     }
 
     var markedFolder = markedFolder();
-    return Files.size(mark()) == markedFolder.length
-        && Arrays.equals(Files.readAllBytes(mark()), markedFolder);
+    try (var markBytes =
+        Channels.newInputStream(
+            folder.newByteChannel(
+                mark, Set.of(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)))) {
+      return Arrays.equals(markBytes.readNBytes(markedFolder.length + 1), markedFolder);
+    }
   }
 
   private byte[] markedFolder() throws IOException {
@@ -254,10 +282,10 @@ public class SegmentFolderLeftovers {
     Files.write(mark(), markedFolder(), StandardOpenOption.CREATE_NEW);
   }
 
-  private Deleted deleteEachLeftover() throws IOException {
+  private Deleted deleteEachLeftover(SecureDirectoryStream<Path> folder) {
     var leftovers = new ArrayList<Leftover>();
-    for (var entry : listedEntries()) {
-      leftovers.add(deleteIfLeftover(entry));
+    for (var name : namesIn(folder)) {
+      leftovers.add(deleteIfLeftover(folder, name));
     }
 
     return new Deleted(
@@ -265,42 +293,98 @@ public class SegmentFolderLeftovers {
         Collections.frequency(leftovers, Leftover.REMAINING));
   }
 
-  // Read to its end before the first delete. MoreFiles.deleteRecursively opens the folder again
-  // for each entry, and on macOS a listing that is open meanwhile then skips entries.
-  private List<Path> listedEntries() throws IOException {
-    var listed = new ArrayList<Path>();
-    try (var entries = Files.newDirectoryStream(segmentFolder)) {
-      entries.forEach(listed::add);
-    }
-
-    return listed;
-  }
-
-  private Leftover deleteIfLeftover(Path entry) {
+  private Leftover deleteIfLeftover(SecureDirectoryStream<Path> folder, Path name) {
     try {
-      var name = entry.getFileName().toString();
       // A soft link is neither a directory nor a regular file here, so it stays.
-      var attributes =
-          Files.readAttributes(entry, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-      if (attributes.isDirectory()
-          && SESSION_DIRECTORY_NAME.matcher(name).matches()
-          && Files.isRegularFile(
-              entry.resolve(LocalSegmentStore.SESSION_MARK_NAME), LinkOption.NOFOLLOW_LINKS)) {
-        // Deletes a soft link itself, never what it points to.
-        MoreFiles.deleteRecursively(entry);
-        return Leftover.DELETED;
+      var attributes = attributesOf(folder, name);
+      if (attributes.isDirectory() && SESSION_DIRECTORY_NAME.matcher(name.toString()).matches()) {
+        return deleteIfMarkedSession(folder, name);
       }
 
-      if (attributes.isRegularFile() && PreparedSegmentFile.isUploadName(name)) {
-        Files.delete(entry);
+      if (attributes.isRegularFile() && PreparedSegmentFile.isUploadName(name.toString())) {
+        folder.deleteFile(name);
         return Leftover.DELETED;
       }
 
       return Leftover.NOT_A_LEFTOVER;
     } catch (IOException e) {
-      log.warn("Failed to delete a leftover of the segment folder: {}", entry, e);
+      log.warn(
+          "Failed to delete a leftover of the segment folder: {}", segmentFolder.resolve(name), e);
       return Leftover.REMAINING;
     }
+  }
+
+  // The directory opens without following a soft link, and its mark is checked through the handle
+  // that deletes it.
+  private static Leftover deleteIfMarkedSession(SecureDirectoryStream<Path> folder, Path name)
+      throws IOException {
+    try (var session = folder.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS)) {
+      var sessionMark = name.getFileSystem().getPath(LocalSegmentStore.SESSION_MARK_NAME);
+      if (!isRegularFile(session, sessionMark)) {
+        return Leftover.NOT_A_LEFTOVER;
+      }
+
+      deleteEachEntry(session);
+    }
+
+    folder.deleteDirectory(name);
+    return Leftover.DELETED;
+  }
+
+  // Goes on past an entry that it cannot delete, so that it frees what it can, then throws.
+  private static void deleteEachEntry(SecureDirectoryStream<Path> directory) throws IOException {
+    var failures = new ArrayList<IOException>();
+    for (var name : namesIn(directory)) {
+      try {
+        delete(directory, name);
+      } catch (IOException e) {
+        failures.add(e);
+      }
+    }
+
+    if (!failures.isEmpty()) {
+      var failure = failures.getFirst();
+      failures.stream().skip(1).forEach(failure::addSuppressed);
+      throw failure;
+    }
+  }
+
+  // Deletes a soft link itself, never what it points to.
+  private static void delete(SecureDirectoryStream<Path> directory, Path name) throws IOException {
+    if (!attributesOf(directory, name).isDirectory()) {
+      directory.deleteFile(name);
+      return;
+    }
+
+    try (var subdirectory = directory.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS)) {
+      deleteEachEntry(subdirectory);
+    }
+
+    directory.deleteDirectory(name);
+  }
+
+  // Read to its end before the first delete: on macOS a listing that is open while entries of its
+  // directory are deleted skips some of them.
+  private static List<Path> namesIn(SecureDirectoryStream<Path> directory) {
+    var names = new ArrayList<Path>();
+    directory.forEach(entry -> names.add(entry.getFileName()));
+    return names;
+  }
+
+  private static boolean isRegularFile(SecureDirectoryStream<Path> directory, Path name)
+      throws IOException {
+    try {
+      return attributesOf(directory, name).isRegularFile();
+    } catch (NoSuchFileException _) {
+      return false;
+    }
+  }
+
+  private static BasicFileAttributes attributesOf(SecureDirectoryStream<Path> directory, Path name)
+      throws IOException {
+    return directory
+        .getFileAttributeView(name, BasicFileAttributeView.class, LinkOption.NOFOLLOW_LINKS)
+        .readAttributes();
   }
 
   private enum Leftover {
