@@ -48,6 +48,12 @@ public interface ProfileHouseholdShareRepositoryCustom {
    */
   Optional<ProfileHouseholdShare> findByIdAndReloadFromDatabase(UUID shareId);
 
+  /** The Profile's shares as stored now, past the copies the first-level cache holds. */
+  List<ProfileHouseholdShare> findByProfileIdAndReloadFromDatabase(UUID profileId);
+
+  /** The shares into the Household as stored now, past the copies the first-level cache holds. */
+  List<ProfileHouseholdShare> findByHouseholdIdAndReloadFromDatabase(UUID householdId);
+
   /** PENDING and unexpired becomes ACTIVE; a raced decision has exactly one winner. */
   Optional<ChangedShare> tryActivatePending(UUID shareId, Instant now);
 
