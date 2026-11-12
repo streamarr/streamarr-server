@@ -789,13 +789,15 @@ class SegmentFolderLeftoversTest {
         .isThrownBy(() -> leftoversOf(segmentFolder).mountTable(null).build());
   }
 
-  // The start of a server process whose home folder and media folders lie elsewhere.
+  // The start of a server process whose home folder and media folders lie elsewhere. It reads them
+  // and its mount table through the segment folder's file system, which a test may wrap.
   private SegmentFolderLeftovers.SegmentFolderLeftoversBuilder leftoversOf(Path folder) {
+    var fileSystem = folder.getFileSystem();
     return SegmentFolderLeftovers.builder()
         .segmentFolder(folder)
-        .homeFolder(outside.resolve("home"))
-        .mediaFolders(() -> List.of(outside.resolve("media")))
-        .mountTable(mountTableListing(Path.of("/")))
+        .homeFolder(fileSystem.getPath(outside.resolve("home").toString()))
+        .mediaFolders(() -> List.of(fileSystem.getPath(outside.resolve("media").toString())))
+        .mountTable(fileSystem.getPath(mountTableListing(Path.of("/")).toString()))
         .lock(new SegmentFolderLock());
   }
 
