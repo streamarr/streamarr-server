@@ -252,9 +252,10 @@ public class JooqNotificationRepository implements NotificationRepository {
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static com.streamarr.server.domain.notification.RequestResolution domainResolutionOf(
-      RequestResolution stored) {
-    return com.streamarr.server.domain.notification.RequestResolution.valueOf(stored.name());
+  private static com.streamarr.server.services.events.notification.RequestResolution
+      domainResolutionOf(RequestResolution stored) {
+    return com.streamarr.server.services.events.notification.RequestResolution.valueOf(
+        stored.name());
   }
 
   private static Optional<Instant> instantOf(OffsetDateTime stored) {

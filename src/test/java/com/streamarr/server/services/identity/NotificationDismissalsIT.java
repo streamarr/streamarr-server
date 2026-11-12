@@ -4,15 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
-import com.streamarr.server.domain.notification.NotificationForm;
-import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.events.notification.NotificationForm;
 import com.streamarr.server.services.events.notification.NotificationKind;
 import com.streamarr.server.services.events.notification.NotificationSnapshot;
+import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;

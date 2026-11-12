@@ -1,11 +1,11 @@
 package com.streamarr.server.support;
 
-import com.streamarr.server.domain.notification.NotificationForm;
-import com.streamarr.server.domain.notification.RequestAnswer;
-import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.services.events.notification.NewsUpdate;
+import com.streamarr.server.services.events.notification.NotificationForm;
 import com.streamarr.server.services.events.notification.NotificationKind;
 import com.streamarr.server.services.events.notification.NotificationSnapshot;
+import com.streamarr.server.services.events.notification.RequestAnswer;
+import com.streamarr.server.services.events.notification.RequestResolution;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import java.util.List;
 import java.util.Optional;

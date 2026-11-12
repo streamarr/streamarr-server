@@ -1,7 +1,5 @@
 package com.streamarr.server.services.events.notification;
 
-import com.streamarr.server.domain.notification.ProfileShareAnswer;
-
 /** The words the Notifications' lines share. */
 final class NotificationLines {
 

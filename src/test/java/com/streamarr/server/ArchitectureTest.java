@@ -77,6 +77,7 @@ import com.streamarr.server.services.authorization.AuthorizationDecider;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.DirectAuthorizationDeciderFixture;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.services.events.notification.architecturefixture.ModuleBoundSnapshotFixture;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.CommonForkJoinPool;
@@ -150,6 +151,10 @@ import reactor.core.publisher.Flux;
 class ArchitectureTest {
 
   private static final String SERVICES_PACKAGE = "com.streamarr.server.services";
+  private static final String[] NOTIFICATIONS_MODULE = {
+    "com.streamarr.server.services.notification..",
+    "com.streamarr.server.repositories.notification.."
+  };
 
   @Test
   @DisplayName("Should exclude worker implementations when importing production code")
@@ -477,6 +482,13 @@ class ArchitectureTest {
   static final ArchRule notificationsMustKeepToTheirOwnPackagesAndTable =
       notificationsMustKeepToTheirOwnPackagesAndTable();
 
+  // The events that tell the Notifications module what happened, and their snapshots, sit below
+  // every domain that publishes them (ADR 0063 §How the server builds it). They depend on nothing
+  // of the module they feed.
+  @ArchTest
+  static final ArchRule notificationEventsMustNotDependOnTheNotificationsModule =
+      notificationEventsMustNotDependOnTheNotificationsModule();
+
   // Authenticated Account-password checks share one throttle and timing contract. Login is exempt
   // because no authenticated Account exists yet.
   @ArchTest
@@ -746,6 +758,18 @@ class ArchitectureTest {
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("ProfileHouseholdShareRepository")
         .hasMessageContaining("PROFILE_HOUSEHOLD_SHARE");
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a notification event type when it depends on the Notifications module")
+  void shouldRejectANotificationEventTypeWhenItDependsOnTheNotificationsModule() {
+    var moduleBound = new ClassFileImporter().importClasses(ModuleBoundSnapshotFixture.class);
+    var rule = notificationEventsMustNotDependOnTheNotificationsModule();
+
+    assertThatThrownBy(() -> rule.check(moduleBound))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("StoredNotification");
   }
 
   @ParameterizedTest
@@ -1070,11 +1094,18 @@ class ArchitectureTest {
         .as("Only ProfileShareLifecycle may write Profile shares");
   }
 
+  private static ArchRule notificationEventsMustNotDependOnTheNotificationsModule() {
+    return noClasses()
+        .that()
+        .resideInAPackage("com.streamarr.server.services.events.notification..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage(NOTIFICATIONS_MODULE)
+        .as("The notification events depend on nothing of the Notifications module");
+  }
+
   private static ArchRule notificationsMustKeepToTheirOwnPackagesAndTable() {
-    var module =
-        new String[] {
-          "..services.notification..", "..repositories.notification..", "..domain.notification.."
-        };
+    var module = NOTIFICATIONS_MODULE;
     return classes()
         .that()
         .resideInAnyPackage(module)

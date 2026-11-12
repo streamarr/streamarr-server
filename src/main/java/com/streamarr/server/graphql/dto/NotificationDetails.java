@@ -1,12 +1,12 @@
 package com.streamarr.server.graphql.dto;
 
-import com.streamarr.server.domain.notification.ProfileShareAnswer;
-import com.streamarr.server.domain.notification.ProfileShareEndedBy;
-import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.services.events.notification.NotificationKind;
+import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
+import com.streamarr.server.services.events.notification.ProfileShareEndedBy;
 import com.streamarr.server.services.events.notification.ProfileShareEndedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
+import com.streamarr.server.services.events.notification.RequestResolution;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.notification.StoredNotification;
 import java.time.Instant;
