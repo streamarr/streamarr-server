@@ -18,7 +18,9 @@ import lombok.NonNull;
  * {@code audioTrackPosition} names the audio track that the viewer chose, by its position, counting
  * from 0, among the file's audio tracks in stream order. When it is empty, the stream session plays
  * its own choice of track. {@code softwareContinuation} names the encode that the stream session
- * continues with the software encoder after a hardware encoder failure (ADR 0044).
+ * continues with the software encoder after a hardware encoder failure (ADR 0044). A codec family
+ * in {@code excludedHardwareEncodeCodecFamilies} encodes with the software encoder, because its
+ * hardware encoder failed earlier in the playback session.
  */
 @Builder
 public record CreateStreamSessionCommand(
@@ -30,12 +32,14 @@ public record CreateStreamSessionCommand(
     @NonNull VideoFormatConstraint videoFormatConstraint,
     @NonNull Set<String> excludedEncodeCodecFamilies,
     @NonNull Set<EncodeFormat> excludedEncodeFormats,
+    @NonNull Set<String> excludedHardwareEncodeCodecFamilies,
     @NonNull Optional<Duration> startPosition,
     @NonNull OptionalInt audioTrackPosition,
     @NonNull Optional<SoftwareContinuation> softwareContinuation) {
   public CreateStreamSessionCommand {
     excludedEncodeCodecFamilies = Set.copyOf(excludedEncodeCodecFamilies);
     excludedEncodeFormats = Set.copyOf(excludedEncodeFormats);
+    excludedHardwareEncodeCodecFamilies = Set.copyOf(excludedHardwareEncodeCodecFamilies);
   }
 
   // Lombok builder defaults — its generated setters assign them
@@ -44,6 +48,7 @@ public record CreateStreamSessionCommand(
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();
     private Set<EncodeFormat> excludedEncodeFormats = Set.of();
+    private Set<String> excludedHardwareEncodeCodecFamilies = Set.of();
     private Optional<Duration> startPosition = Optional.empty();
     private OptionalInt audioTrackPosition = OptionalInt.empty();
     private Optional<SoftwareContinuation> softwareContinuation = Optional.empty();
@@ -58,6 +63,7 @@ public record CreateStreamSessionCommand(
           videoFormatConstraint,
           excludedEncodeCodecFamilies,
           excludedEncodeFormats,
+          excludedHardwareEncodeCodecFamilies,
           startPosition,
           audioTrackPosition,
           softwareContinuation);

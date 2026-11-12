@@ -22,7 +22,10 @@ import lombok.NonNull;
  * names why the format attempt does not direct-play the source file, and the decision names them
  * before its own reasons. {@code softwareContinuation} names the encode that the decision continues
  * with the software encoder after a hardware encoder failed. The decision may encode its codec
- * family alone (ADR 0044), in its range alone (ADR 0013).
+ * family alone (ADR 0044), in its range alone (ADR 0013). A codec family in {@code
+ * excludedHardwareEncodeCodecFamilies} encodes with the software encoder, because its hardware
+ * encoder failed earlier in the playback session, and the caller lists that family's software
+ * encoders in place of its other encoders.
  */
 @Builder(toBuilder = true)
 public record TranscodeDecisionRequest(
@@ -34,6 +37,7 @@ public record TranscodeDecisionRequest(
     @NonNull VideoFormatConstraint videoFormatConstraint,
     @NonNull Set<String> excludedEncodeCodecFamilies,
     @NonNull Set<EncodeFormat> excludedEncodeFormats,
+    @NonNull Set<String> excludedHardwareEncodeCodecFamilies,
     @NonNull ViewerLimits viewerLimits,
     @NonNull List<WorkerVideoCopySupport> videoCopySupport,
     @NonNull List<WorkerVerifiedEncoder> videoEncoders,
@@ -49,12 +53,23 @@ public record TranscodeDecisionRequest(
     hardwareEncodableVideoCodecFamilies = Set.copyOf(hardwareEncodableVideoCodecFamilies);
     excludedEncodeCodecFamilies = Set.copyOf(excludedEncodeCodecFamilies);
     excludedEncodeFormats = Set.copyOf(excludedEncodeFormats);
+    excludedHardwareEncodeCodecFamilies = Set.copyOf(excludedHardwareEncodeCodecFamilies);
     videoCopySupport = List.copyOf(videoCopySupport);
     videoEncoders = List.copyOf(videoEncoders);
     // An encoder of a worker with a free slot is a verified encoder.
     verifiedVideoEncoders =
         Stream.concat(verifiedVideoEncoders.stream(), videoEncoders.stream()).distinct().toList();
     directPlayRefusals = List.copyOf(directPlayRefusals);
+  }
+
+  /**
+   * Whether an encode of this codec family runs on a software encoder: every encode of a software
+   * continuation, and an encode of a codec family whose hardware encoder failed earlier in the
+   * playback session (ADR 0044).
+   */
+  public boolean encodesInSoftware(String codecFamily) {
+    return softwareContinuation.isPresent()
+        || excludedHardwareEncodeCodecFamilies.contains(codecFamily);
   }
 
   /**
@@ -74,6 +89,7 @@ public record TranscodeDecisionRequest(
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();
     private Set<EncodeFormat> excludedEncodeFormats = Set.of();
+    private Set<String> excludedHardwareEncodeCodecFamilies = Set.of();
     private ViewerLimits viewerLimits = ViewerLimits.none();
     private List<WorkerVideoCopySupport> videoCopySupport = List.of();
     private List<WorkerVerifiedEncoder> videoEncoders = List.of();
@@ -91,6 +107,7 @@ public record TranscodeDecisionRequest(
           videoFormatConstraint,
           excludedEncodeCodecFamilies,
           excludedEncodeFormats,
+          excludedHardwareEncodeCodecFamilies,
           viewerLimits,
           videoCopySupport,
           videoEncoders,

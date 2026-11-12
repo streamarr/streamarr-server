@@ -7976,6 +7976,40 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.isRunning(switchingId, "480p")).isFalse();
   }
 
+  // A codec family whose hardware encoder failed earlier in the playback session encodes on its
+  // software encoder, so the encode plans only what that encoder writes (ADR 0044).
+  @Test
+  @DisplayName(
+      "Should encode 8-bit SDR on the software encoder when the codec family's hardware encoder"
+          + " failed earlier in the playback session and only that hardware encoder writes 10 bits")
+  void shouldEncode8BitSdrOnTheSoftwareEncoderWhenOnlyTheFailedHardwareEncoderWrites10Bits() {
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("av1"));
+    transcodeExecutor.setExecutionTargets(List.of(AV1_WORKER));
+    transcodeExecutor.setTargetEncoders(
+        AV1_WORKER,
+        List.of(
+            WorkerVerifiedEncoder.builder()
+                .backend(av1Nvenc().backend())
+                .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT))
+                .build()));
+    transcodeExecutor.setTargetSoftwareEncoders(AV1_WORKER, List.of(libsvtav1()));
+    probeResults.setDefaultProbe(
+        hevcMain10Probe(
+            new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent())));
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .capabilityDeclaration(av1Declaration(List.of(CompatibleBase.SDR)))
+                    .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().videoEncodeFormat())
+        .isEqualTo(EncodeFormat.SDR_8_BIT);
+    assertThat(session.getTranscodeDecision().softwareEncoder()).isTrue();
+  }
+
   // An SDR AV1 session keeps 480p as its left variant on the AV1 worker without PQ while it
   // switches to 1080p there, and another session fills the only worker whose AV1 encoder writes PQ.
   private LeftVariantOnAWorker keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy() {

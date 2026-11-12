@@ -320,25 +320,71 @@ class HardwareEncoderFailureRangeTest {
   }
 
   // The range that Auto gave up stays out of every later format attempt of the playback session,
-  // as after a format error (ADR 0013), also once the worker offers its hardware encoder again.
+  // as after a format error (ADR 0013), also once the worker's encoders write it again. The
+  // hardware
+  // encoder that failed stays out of them too.
   @Test
   @DisplayName(
-      "Should keep 8-bit SDR in a later format attempt when the hardware encoder that writes PQ is"
-          + " offered again after Auto gave HDR up")
-  void shouldKeep8BitSdrInALaterFormatAttemptWhenTheHardwareEncoderIsOfferedAgain() {
+      "Should keep 8-bit SDR on the software encoder in a later format attempt when the worker"
+          + " offers its hardware encoder again and both of its AV1 encoders write PQ after Auto"
+          + " gave HDR up")
+  void shouldKeep8BitSdrOnTheSoftwareEncoderInALaterFormatAttemptWhenTheWorkerWritesPqAgain() {
     connectTheFailingWorker(NO_ENCODE_FEATURE);
     probes.setDefaultProbe(sourceOf(CompatibleBase.PQ));
     var hardware = accepted(playback.start(start(options(VideoQuality.AUTO, null))));
     var h264 = failTheHardwareEncoderOf(hardware);
     assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.H264_HIGH);
     workers.setTargetEncoders(FAILING_WORKER, List.of(av1Nvenc(EVERY_ENCODE_FEATURE), libx264()));
+    workers.setTargetSoftwareEncoders(
+        FAILING_WORKER, List.of(svtAv1(EVERY_ENCODE_FEATURE), libx264()));
 
     var av1 = rejectCurrentFormatAttempt(h264);
 
     assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.AV1_MAIN);
     assertThat(plannedEncode().bitDepth()).isEqualTo(8);
     assertThat(plannedEncode().dynamicRange()).isEqualTo(VideoDynamicRange.SDR);
+    assertThat(lastStartedDecision().softwareEncoder()).isTrue();
     assertThat(av1.formatAttemptCount()).isEqualTo(3);
+  }
+
+  // A worker keeps offering a hardware encoder that refused an encode at its driver's session
+  // limit.
+  // Auto's next format attempt leaves that encoder out, so the driver cannot refuse it again, and
+  // keeps the codec family on its software encoder.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("clientsAndTheEncoderOfAutosNextFormatAttempt")
+  @DisplayName(
+      "Should plan Auto's next format attempt off the hardware encoder that refused the encode when"
+          + " no software encoder continues it in PQ")
+  void shouldPlanAutosNextFormatAttemptOffTheHardwareEncoderThatRefusedTheEncode(
+      ClientCapabilityDeclaration client, WorkerVerifiedEncoder expectedEncoder) {
+    connectTheFailingWorker(NO_ENCODE_FEATURE);
+    probes.setDefaultProbe(sourceOf(CompatibleBase.PQ));
+    var hardware = accepted(playback.start(start(options(VideoQuality.AUTO, null), client)));
+
+    var sdr = refuseTheHardwareEncoderOf(hardware);
+
+    assertThat(encoderOfTheStartedEncode(sdr)).contains(expectedEncoder);
+    assertThat(plannedEncode().bitDepth()).isEqualTo(8);
+    assertThat(plannedEncode().dynamicRange()).isEqualTo(VideoDynamicRange.SDR);
+    assertThat(sdr.formatAttemptCount()).isEqualTo(2);
+    assertThat(workers.getStartedRequests()).hasSize(2);
+  }
+
+  static Stream<Arguments> clientsAndTheEncoderOfAutosNextFormatAttempt() {
+    var av1Only =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    av1EntryBuilder()
+                        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                        .build()))
+            .build();
+    return Stream.of(
+        Arguments.of(
+            Named.of("a client that declares H.264 beside AV1", hdrAv1Client()), libx264()),
+        Arguments.of(
+            Named.of("a client that declares AV1 alone", av1Only), svtAv1(NO_ENCODE_FEATURE)));
   }
 
   @Test
@@ -562,6 +608,12 @@ class HardwareEncoderFailureRangeTest {
     var planned = lastStartedDecision().plannedVideoOutput();
     assertThat(planned).isInstanceOf(PlannedVideoOutput.Encode.class);
     return (PlannedVideoOutput.Encode) planned;
+  }
+
+  private Optional<WorkerVerifiedEncoder> encoderOfTheStartedEncode(
+      PlaybackSessionSnapshot snapshot) {
+    var started = workers.getStartedRequests().getLast();
+    return sessionOf(snapshot).getPinnedEncoder(started.variantLabel());
   }
 
   private Optional<ExecutionTargetId> workerOfTheStartedEncode() {

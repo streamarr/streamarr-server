@@ -113,6 +113,10 @@ public class PlaybackSessionService implements AutoCloseable {
     @Builder.Default private int startedFormatAttempts = 1;
     private final Set<String> excludedEncodeCodecFamilies = new HashSet<>();
     private final Set<EncodeFormat> excludedEncodeFormats = new HashSet<>();
+    // A driver that refused an encode at its session limit can refuse the next one, and the worker
+    // keeps offering that hardware encoder, so a codec family whose hardware encoder failed encodes
+    // with the software encoder in every later format attempt.
+    private final Set<String> excludedHardwareEncodeCodecFamilies = new HashSet<>();
     private final Set<UUID> streamIds = new HashSet<>();
     // A retired format attempt can still take a timeline report until its stream session ends.
     private final List<StreamSession> readyAttempts = new ArrayList<>();
@@ -772,7 +776,8 @@ public class PlaybackSessionService implements AutoCloseable {
    * When none writes a PQ or HLG encode's range, or a 10-bit SDR encode finds no worker with room,
    * the encode has failed as after a format error: Auto gives the range or the 10 bits up within
    * its budget, and a fixed quality ends playback (ADR 0013). An 8-bit SDR encode with no worker
-   * with room for it ends the playback session.
+   * with room for it ends the playback session. Every later format attempt of the playback session
+   * encodes the codec family with the software encoder.
    */
   @EventListener
   public void onRequestedVariantHardwareEncoderFailed(
@@ -791,6 +796,7 @@ public class PlaybackSessionService implements AutoCloseable {
       return Optional.empty();
     }
 
+    playback.excludedHardwareEncodeCodecFamilies.add(codecFamily);
     playback.pendingAttemptCause = Optional.of(DecisionReason.HARDWARE_ENCODER_FAILED);
     return Optional.of(
         reserveNextFormatAttempt(
@@ -1078,6 +1084,8 @@ public class PlaybackSessionService implements AutoCloseable {
               .capabilityDeclaration(playback.command.capabilityDeclaration())
               .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
               .excludedEncodeFormats(Set.copyOf(playback.excludedEncodeFormats))
+              .excludedHardwareEncodeCodecFamilies(
+                  Set.copyOf(playback.excludedHardwareEncodeCodecFamilies))
               .startPosition(playback.startPosition)
               .audioTrackPosition(playback.audioTrackPosition);
         });
