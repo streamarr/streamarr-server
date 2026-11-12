@@ -2,7 +2,6 @@ package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.domain.auth.ChangedShare;
-import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -97,7 +96,7 @@ class SharingNotifications {
   // write left it in says, at the instant the write recorded.
   private void resolveRequests(ProfileShareChangedEvent change) {
     var share = change.share();
-    Settlement.of(share.status())
+    Settlement.of(change)
         .map(
             settled ->
                 ResolveRequestsEvent.builder()
@@ -114,7 +113,7 @@ class SharingNotifications {
   // stores no answer, so nobody is told.
   private void answer(ProfileShareChangedEvent change, UUID answeredBy) {
     resolveRequests(change);
-    Settlement.of(change.share().status())
+    Settlement.of(change)
         .flatMap(Settlement::answer)
         .ifPresent(answer -> tellAnswer(change, answer, answeredBy));
   }
@@ -222,20 +221,30 @@ class SharingNotifications {
   }
 
   /**
-   * How an offer's requests resolve from the status that stopped it waiting. An offer that linking
-   * made its Profile's home share is accepted: the share is active, so a withdrawn request beside
-   * it would contradict the share queries.
+   * How an offer's requests resolve from the write that stopped it waiting and the status the write
+   * left it in.
    */
   private record Settlement(RequestResolution resolution, Optional<ProfileShareAnswer> answer) {
 
-    static Optional<Settlement> of(ProfileShareStatus status) {
-      return switch (status) {
-        case ACTIVE -> decided(ProfileShareAnswer.ACCEPTED);
+    static Optional<Settlement> of(ProfileShareChangedEvent change) {
+      return switch (change.share().status()) {
+        case ACTIVE -> activated(change.action());
         case REJECTED -> decided(ProfileShareAnswer.REJECTED);
         case CANCELED, INVALIDATED -> unanswered(RequestResolution.WITHDRAWN);
         case EXPIRED -> unanswered(RequestResolution.EXPIRED);
         case PENDING, ENDED -> Optional.empty();
       };
+    }
+
+    // Only an answer accepts an offer. An offer that a link or a move made its Profile's home share
+    // became active with nobody deciding it: the server invalidated it as an offer (ADR 0024), so
+    // its requests are withdrawn.
+    private static Optional<Settlement> activated(ShareAction action) {
+      if (action instanceof ShareAction.Answered) {
+        return decided(ProfileShareAnswer.ACCEPTED);
+      }
+
+      return unanswered(RequestResolution.WITHDRAWN);
     }
 
     private static Optional<Settlement> decided(ProfileShareAnswer answer) {

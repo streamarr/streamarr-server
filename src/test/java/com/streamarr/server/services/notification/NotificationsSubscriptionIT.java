@@ -538,9 +538,9 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should deliver the request's resolution when an Account transfer takes the offer into the"
+      "Should deliver the request's withdrawal when an Account transfer takes the offer into the"
           + " Profile's new home")
-  void shouldDeliverTheRequestsResolutionWhenAnAccountTransferTakesTheOfferIntoItsNewHome()
+  void shouldDeliverTheRequestsWithdrawalWhenAnAccountTransferTakesTheOfferIntoItsNewHome()
       throws Exception {
     var ben = track(authTestSupport.createHouseholdMemberIdentity(riverside));
     var offer = steps.offer(ben, ben.profile(), sam);
@@ -558,18 +558,14 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
                 .build());
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
-    var resolved = nextChange(socket);
-    assertThat(onlyChange(resolved).path("notificationId").asString())
-        .isEqualTo(requestFor(sam, offer).id().toString());
-    assertThat(nodeOf(resolved).path("resolution").asString()).isEqualTo("DECIDED");
-    assertMatchesAFreshQuery(resolved, sam);
+    assertWithdrawn(nextChange(socket), sam, offer);
   }
 
   @Test
   @DisplayName(
-      "Should deliver the request's resolution when deleting a Household moves its final Account"
+      "Should deliver the request's withdrawal when deleting a Household moves its final Account"
           + " into the Household its Profile was offered to")
-  void shouldDeliverTheRequestsResolutionWhenDeletingAHouseholdMovesItsFinalAccountIntoTheOffer()
+  void shouldDeliverTheRequestsWithdrawalWhenDeletingAHouseholdMovesItsFinalAccountIntoTheOffer()
       throws Exception {
     var brook = track(authTestSupport.createIdentity());
     var offer = steps.offer(brook, brook.profile(), sam);
@@ -586,11 +582,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
                 .build());
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
-    var resolved = nextChange(socket);
-    assertThat(onlyChange(resolved).path("notificationId").asString())
-        .isEqualTo(requestFor(sam, offer).id().toString());
-    assertThat(nodeOf(resolved).path("resolution").asString()).isEqualTo("DECIDED");
-    assertMatchesAFreshQuery(resolved, sam);
+    assertWithdrawn(nextChange(socket), sam, offer);
   }
 
   @Test
