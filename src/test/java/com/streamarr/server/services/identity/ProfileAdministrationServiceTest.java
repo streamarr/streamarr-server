@@ -103,6 +103,7 @@ class ProfileAdministrationServiceTest {
   private final ProfileAdministrationService service =
       new ProfileAdministrationService(
           authorization,
+          new ProfileAuthorityExplanation(authorization, profiles),
           profiles,
           managers,
           shares,
@@ -1207,6 +1208,7 @@ class ProfileAdministrationServiceTest {
   private ProfileAdministrationService serviceWith(ProfileRepository profileRepository) {
     return new ProfileAdministrationService(
         authorization,
+        new ProfileAuthorityExplanation(authorization, profileRepository),
         profileRepository,
         managers,
         shares,

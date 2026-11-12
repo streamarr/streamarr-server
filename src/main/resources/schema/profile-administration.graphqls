@@ -226,6 +226,7 @@ type RenameProfilePayload {
 "The refusals renameProfile may answer with, in userErrors."
 union RenameProfileError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ProfileNameRequiredError
   | ProfileNameTakenError
 
@@ -246,7 +247,7 @@ type SetProfilePicturePayload {
 }
 
 "The refusals setProfilePicture may answer with, in userErrors."
-union SetProfilePictureError = ProfileNotFoundError
+union SetProfilePictureError = ProfileNotFoundError | ProfileManagersOnlyError
 
 "What changeProfileKind takes."
 input ChangeProfileKindInput {
@@ -267,6 +268,7 @@ type ChangeProfileKindPayload {
 "The refusals changeProfileKind may answer with, in userErrors."
 union ChangeProfileKindError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ReauthenticationRequiredError
   | ProfileRequiresEligibleManagerError
   | RestrictedAccountCannotAdministerError
@@ -295,6 +297,7 @@ type SetProfileMaximumAllowedRatingAgePayload {
 "The refusals setProfileMaximumAllowedRatingAge may answer with, in userErrors."
 union SetProfileMaximumAllowedRatingAgeError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ReauthenticationRequiredError
   | ProfileRequiresEligibleManagerError
   | RestrictedAccountCannotAdministerError
@@ -321,6 +324,7 @@ type RemoveProfileMaximumAllowedRatingAgePayload {
 "The refusals removeProfileMaximumAllowedRatingAge may answer with, in userErrors."
 union RemoveProfileMaximumAllowedRatingAgeError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ReauthenticationRequiredError
   | ProfileRequiresEligibleManagerError
   | RestrictedAccountCannotAdministerError
@@ -344,7 +348,10 @@ type SetProfilePinPayload {
 }
 
 "The refusals setProfilePin may answer with, in userErrors."
-union SetProfilePinError = ProfileNotFoundError | InvalidProfilePinError
+union SetProfilePinError =
+    ProfileNotFoundError
+  | ProfileManagersOnlyError
+  | InvalidProfilePinError
 
 "What removeProfilePin takes."
 input RemoveProfilePinInput {
@@ -361,7 +368,10 @@ type RemoveProfilePinPayload {
 }
 
 "The refusals removeProfilePin may answer with, in userErrors."
-union RemoveProfilePinError = ProfileNotFoundError | ProfilePinRequiredError
+union RemoveProfilePinError =
+    ProfileNotFoundError
+  | ProfileManagersOnlyError
+  | ProfilePinRequiredError
 
 "What administrativelyResetProfilePin takes."
 input AdministrativelyResetProfilePinInput {
@@ -414,6 +424,7 @@ type SetProfileLanguagePreferencesPayload {
 "The refusals setProfileLanguagePreferences may answer with, in userErrors."
 union SetProfileLanguagePreferencesError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | TooManyAudioLanguagesError
   | RepeatedAudioLanguageError
 
@@ -434,5 +445,6 @@ type DeleteProfilePayload {
 "The refusals deleteProfile may answer with, in userErrors."
 union DeleteProfileError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ProfileNotDeletableError
   | ReauthenticationRequiredError

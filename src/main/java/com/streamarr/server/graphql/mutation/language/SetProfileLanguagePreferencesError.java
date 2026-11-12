@@ -7,4 +7,4 @@ import com.streamarr.server.graphql.mutation.MutationError;
  * refusal of the preferred audio languages.
  */
 public sealed interface SetProfileLanguagePreferencesError extends MutationError
-    permits ProfileNotFoundError, PreferredAudioLanguagesError {}
+    permits ProfileNotFoundError, ProfileManagersOnlyError, PreferredAudioLanguagesError {}

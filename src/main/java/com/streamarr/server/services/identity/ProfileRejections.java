@@ -30,7 +30,7 @@ public final class ProfileRejections {
           SetProfilePin,
           RemoveProfilePin,
           SetProfileLanguagePreferences
-      permits ProfileNotFound {}
+      permits ProfileNotFound, ManagersOnly {}
 
   public sealed interface RenameProfile
       permits EditRefusal, ProfileNameRequired, ProfileNameTaken {}
@@ -39,6 +39,7 @@ public final class ProfileRejections {
 
   public sealed interface ChangeProfilePolicy
       permits ProfileNotFound,
+          ManagersOnly,
           ReauthenticationRequired,
           EligibleManagerRequired,
           RestrictedAccountAuthority,
@@ -53,13 +54,30 @@ public final class ProfileRejections {
       permits ProfileNotFound, PinMalformed, ReasonRequired, ReauthenticationRequired {}
 
   public sealed interface DeleteProfile
-      permits ProfileNotFound, ProfileNotDeletable, ReauthenticationRequired {}
+      permits ProfileNotFound, ManagersOnly, ProfileNotDeletable, ReauthenticationRequired {}
 
   public sealed interface SetProfileLanguagePreferences
       permits EditRefusal, PreferredAudioLanguagesRefused {}
 
   public record ProfileNotFound()
       implements EditRefusal, ChangeProfilePolicy, AdministrativelyResetProfilePin, DeleteProfile {}
+
+  /**
+   * Only the Profile's managers may do this, and the caller, who still reads the Profile as a
+   * HouseholdAdmin where it is available, does not manage it; the reason says what it is to the
+   * Profile now (ADR 0024 §HouseholdAdmin). It goes only to a caller that may read the Profile, so
+   * it tells nothing that caller could not read.
+   */
+  public record ManagersOnly(@NonNull ManagersOnlyReason reason)
+      implements EditRefusal, ChangeProfilePolicy, DeleteProfile {}
+
+  /** What a caller refused with {@link ManagersOnly} is to the Profile now. */
+  public enum ManagersOnlyReason {
+    /** It supervises the restricted Profile there, and supervision does not cover this. */
+    NOT_MANAGER,
+    /** The Profile is unrestricted, so it administers the Profile there without supervising it. */
+    NOT_RESTRICTED
+  }
 
   /** The Profile may not keep the audio languages, for the reason the language rule gives. */
   public record PreferredAudioLanguagesRefused(@NonNull SetLanguagePreferencesRejection reason)
