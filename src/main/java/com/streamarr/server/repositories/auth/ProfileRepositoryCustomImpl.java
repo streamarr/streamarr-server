@@ -323,6 +323,11 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
         profileId, lower(USER_ACCOUNT.EMAIL).eq(lower(DSL.val(email))));
   }
 
+  @Override
+  public boolean lockWithPersonalProfileOf(UUID profileId, UUID accountId) {
+    return lockWithPersonalProfileOfAccount(profileId, USER_ACCOUNT.ID.eq(accountId));
+  }
+
   // Whether the Profile exists, having locked it and the Personal Profile of the Account that
   // matches, if any.
   private boolean lockWithPersonalProfileOfAccount(UUID profileId, Condition account) {

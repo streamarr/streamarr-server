@@ -30,7 +30,6 @@ import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
 import java.time.Clock;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
@@ -282,21 +281,16 @@ public class ProfileManagerAdministrationService {
   }
 
   private void lockAcceptanceProfiles(ProfileManagerInvitation invitation) {
-    // Lock both Profiles in UUID order to avoid deadlocks while rechecking the inviter's
-    // eligibility.
-    var invitationProfileId = invitation.getProfileId();
-    var inviterProfileId =
+    // With the inviter's own Profile, to recheck its eligibility, in the order an invite takes the
+    // same two: an invite to the inviter's address may run at once.
+    var profileId = invitation.getProfileId();
+    var locked =
         Optional.ofNullable(invitation.getInviterAccountId())
-            .flatMap(userAccountRepository::findById)
-            .map(UserAccount::getPersonalProfileId);
-    var profileIds =
-        inviterProfileId
-            .map(profileId -> List.of(invitationProfileId, profileId))
-            .orElseGet(() -> List.of(invitationProfileId));
-    profileIds.stream()
-        .distinct()
-        .sorted()
-        .forEach(profileId -> lockProfile(profileId, ManagerRejections.InvitationNotPending::new));
+            .map(inviterId -> profileRepository.lockWithPersonalProfileOf(profileId, inviterId))
+            .orElseGet(() -> profileRepository.lockById(profileId));
+    if (!locked) {
+      throw new MutationRejection(new ManagerRejections.InvitationNotPending());
+    }
   }
 
   /** The named Account declines by the invitation's id. */

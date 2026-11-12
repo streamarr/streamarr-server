@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.PENDING;
 import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
+import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
@@ -49,6 +50,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 import javax.sql.DataSource;
 import lombok.Builder;
 import org.awaitility.Awaitility;
@@ -1091,6 +1093,75 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should accept an invitation and issue another when a manager invites its inviter to the same"
+          + " Profile at once")
+  void shouldAcceptAnInvitationAndIssueAnotherWhenAManagerInvitesItsInviterToTheSameProfileAtOnce()
+      throws Exception {
+    var invitersProfileId = owner.profile().getId();
+    // Java compares a UUID's top bit as a sign and PostgreSQL does not, so they order these two
+    // ids oppositely.
+    var alex =
+        managedOrphanWithId(
+            new UUID(
+                invitersProfileId.getMostSignificantBits() ^ Long.MIN_VALUE,
+                invitersProfileId.getLeastSignificantBits()));
+    var coManager = authTestSupport.createHouseholdMemberIdentity(owner);
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            profileManagerRepository.saveAndFlush(
+                ProfileManager.builder()
+                    .accountId(coManager.account().getId())
+                    .profileId(alex.getId())
+                    .build()));
+    var issued = issueManagerInvitation(alex);
+    var lockedLastByPostgres =
+        invitersProfileId.getMostSignificantBits() < 0 ? invitersProfileId : alex.getId();
+
+    try (var held = lockProfileRow(lockedLastByPostgres);
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var acceptance =
+          executor.submit(
+              () ->
+                  answer(
+                      authTestSupport.accountBearer(recipient),
+                      acceptManagerInvitation(issued.invitationId())));
+      awaitWaiters(() -> waitersBehind(held), 1);
+      var invitation =
+          executor.submit(
+              () ->
+                  answer(
+                      authTestSupport.accountBearer(coManager),
+                      """
+                      mutation { inviteProfileManager(input: {profileId: "%s", email: "%s"}) {
+                        issued { invitation { status } } userErrors { __typename } } }
+                      """
+                          .formatted(alex.getId(), owner.account().getEmail())));
+      awaitWaiters(() -> waitersBehind(held), 2);
+      held.release();
+
+      var accepted = acceptance.get(30, TimeUnit.SECONDS);
+      assertThat(accepted.at("/errors").isMissingNode()).as(accepted.toString()).isTrue();
+      assertThat(accepted.at("/data/acceptManagerInvitation/invitation/status").asString())
+          .isEqualTo("ACCEPTED");
+      var invited = invitation.get(30, TimeUnit.SECONDS);
+      assertThat(invited.at("/errors").isMissingNode()).as(invited.toString()).isTrue();
+      assertThat(invited.at("/data/inviteProfileManager/issued/invitation/status").asString())
+          .isEqualTo("PENDING");
+    }
+  }
+
+  private JsonNode answer(String bearer, String query) throws Exception {
+    var response =
+        graphql(bearer, query)
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response);
+  }
+
   private HeldRowLock lockProfileRow(UUID profileId) throws SQLException {
     return PostgresLockTestSupport.lockRow(
         RowLockTarget.builder().dataSource(dataSource).table("profile").rowId(profileId).build());
@@ -1243,25 +1314,45 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
 
   /** An unlinked Profile the owner manages, available at home. */
   private Profile managedOrphan() {
+    return managedOrphan(
+        () ->
+            profileRepository
+                .saveAndFlush(
+                    ProfileFixture.defaultProfileBuilder()
+                        .householdId(owner.household().getId())
+                        .build())
+                .getId());
+  }
+
+  /** {@link #managedOrphan()} with the id given. */
+  private Profile managedOrphanWithId(UUID id) {
+    return managedOrphan(
+        () -> {
+          dsl.insertInto(PROFILE)
+              .set(PROFILE.ID, id)
+              .set(PROFILE.HOUSEHOLD_ID, owner.household().getId())
+              .set(PROFILE.NAME, "Alex")
+              .execute();
+          return id;
+        });
+  }
+
+  private Profile managedOrphan(Supplier<UUID> saved) {
     return transactionTemplate.execute(
         _ -> {
-          var profile =
-              profileRepository.saveAndFlush(
-                  ProfileFixture.defaultProfileBuilder()
-                      .householdId(owner.household().getId())
-                      .build());
+          var profileId = saved.get();
           profileManagerRepository.saveAndFlush(
               ProfileManager.builder()
                   .accountId(owner.account().getId())
-                  .profileId(profile.getId())
+                  .profileId(profileId)
                   .build());
           shareRepository.saveAndFlush(
               ProfileHouseholdShare.builder()
-                  .profileId(profile.getId())
+                  .profileId(profileId)
                   .householdId(owner.household().getId())
                   .status(ProfileShareStatus.ACTIVE)
                   .build());
-          return profile;
+          return profileRepository.findById(profileId).orElseThrow();
         });
   }
 
