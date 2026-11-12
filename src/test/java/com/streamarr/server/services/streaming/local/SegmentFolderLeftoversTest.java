@@ -242,6 +242,21 @@ class SegmentFolderLeftoversTest {
     }
   }
 
+  // A listing that stays open while its entries are deleted skips some of a few hundred on macOS.
+  @Test
+  @DisplayName("Should delete every leftover when the segment folder holds hundreds of them")
+  void shouldDeleteEveryLeftoverWhenTheSegmentFolderHoldsHundredsOfThem() throws IOException {
+    new SegmentFolderLeftovers(segmentFolder).delete();
+    var store = earlierStore();
+    for (var i = 0; i < 300; i++) {
+      leftover(store);
+    }
+
+    new SegmentFolderLeftovers(segmentFolder).delete();
+
+    assertThat(segmentFolder).isDirectoryNotContaining(Files::isDirectory);
+  }
+
   @Test
   @DisplayName("Should not throw when the segment folder cannot be created")
   void shouldNotThrowWhenTheSegmentFolderCannotBeCreated() throws IOException {

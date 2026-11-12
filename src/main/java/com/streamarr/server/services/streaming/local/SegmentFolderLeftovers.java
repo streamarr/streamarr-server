@@ -9,7 +9,9 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.regex.Pattern;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -93,11 +95,20 @@ public class SegmentFolderLeftovers {
   }
 
   private void deleteEachLeftover() throws IOException {
-    try (var entries = Files.newDirectoryStream(segmentFolder)) {
-      for (var entry : entries) {
-        deleteIfLeftover(entry);
-      }
+    for (var entry : listedEntries()) {
+      deleteIfLeftover(entry);
     }
+  }
+
+  // Read to its end before the first delete: a listing that stays open while its entries are
+  // deleted can skip some of them.
+  private List<Path> listedEntries() throws IOException {
+    var listed = new ArrayList<Path>();
+    try (var entries = Files.newDirectoryStream(segmentFolder)) {
+      entries.forEach(listed::add);
+    }
+
+    return listed;
   }
 
   private void deleteIfLeftover(Path entry) {
