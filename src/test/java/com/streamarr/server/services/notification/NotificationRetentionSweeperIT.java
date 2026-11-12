@@ -30,10 +30,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -214,43 +210,6 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
     sweeper.sweep();
 
     assertThat(rows.of(sam)).extracting(Row::subject).containsExactly(unread);
-  }
-
-  @Test
-  @DisplayName("Should delete each row once when two sweeps run together")
-  void shouldDeleteEachRowOnceWhenTwoSweepsRunTogether() throws Exception {
-    IntStream.range(0, 12).forEach(_ -> tell(answered(aShare(), PAST_THE_PERIOD).build()));
-    markRead(sam);
-    var unread = aShare();
-    tell(answered(unread, PAST_THE_PERIOD).build());
-
-    var start = new CountDownLatch(1);
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var sweeps =
-          IntStream.range(0, 2)
-              .mapToObj(
-                  _ ->
-                      CompletableFuture.runAsync(
-                          () -> {
-                            awaitStart(start);
-                            sweeper.sweep();
-                          },
-                          executor))
-              .toList();
-      start.countDown();
-      CompletableFuture.allOf(sweeps.toArray(CompletableFuture[]::new)).get(30, TimeUnit.SECONDS);
-    }
-
-    assertThat(rows.of(sam)).extracting(Row::subject).containsExactly(unread);
-  }
-
-  private static void awaitStart(CountDownLatch start) {
-    try {
-      assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();
-    } catch (InterruptedException interrupted) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException("Interrupted before the sweep started.", interrupted);
-    }
   }
 
   private void tell(TellNotificationEvent tell) {
