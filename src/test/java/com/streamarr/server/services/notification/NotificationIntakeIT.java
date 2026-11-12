@@ -256,8 +256,8 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a tell published outside a transaction")
-  void shouldRefuseATellPublishedOutsideATransaction() {
+  @DisplayName("Should refuse a tell when it is published outside a transaction")
+  void shouldRefuseATellWhenItIsPublishedOutsideATransaction() {
     var tell =
         answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED)).build();
 
@@ -544,8 +544,8 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should announce the resolved requests to each recipient")
-  void shouldAnnounceTheResolvedRequestsToEachRecipient() {
+  @DisplayName("Should announce the resolved requests to each recipient when requests resolve")
+  void shouldAnnounceTheResolvedRequestsToEachRecipientWhenRequestsResolve() {
     tell(offeredTheo().recipients(Set.of(sam, kai)).build());
 
     publish(withdrawn(EVENT.plusSeconds(60)).build());
@@ -700,8 +700,10 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should announce each dismissed Notification to the recipient that lost it")
-  void shouldAnnounceEachDismissedNotificationToTheRecipientThatLostIt() {
+  @DisplayName(
+      "Should announce each dismissed Notification to the recipient that lost it when Notifications"
+          + " are dismissed")
+  void shouldAnnounceEachDismissedNotificationToItsRecipientWhenNotificationsAreDismissed() {
     tell(offeredTheo().recipients(Set.of(sam, kai)).build());
     tell(answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED)).build());
     var lost = changesOf(rows.about(share));

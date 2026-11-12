@@ -120,8 +120,10 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep unread news and waiting requests, read or not, whatever their age")
-  void shouldKeepUnreadNewsAndWaitingRequestsWhateverTheirAge() {
+  @DisplayName(
+      "Should keep unread news and waiting requests, read or not, when their latest event is older"
+          + " than the retention period")
+  void shouldKeepUnreadNewsAndWaitingRequestsWhenTheirLatestEventIsOlderThanTheRetentionPeriod() {
     var news = aShare();
     tell(answered(news, NOW.minus(Duration.ofDays(365))).build());
     var waiting = aShare();
@@ -181,7 +183,7 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should keep history when its latest event is within the retention period")
-  void shouldKeepHistoryWithinTheRetentionPeriod() {
+  void shouldKeepHistoryWhenItsLatestEventIsWithinTheRetentionPeriod() {
     var news = aShare();
     tell(answered(news, WITHIN_THE_PERIOD).build());
     markRead(sam);

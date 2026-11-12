@@ -173,8 +173,8 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should read the request's resolution, its time and the answer once the offer is decided")
-  void shouldReadTheRequestsResolutionTimeAndAnswerOnceItIsDecided() throws Exception {
+      "Should read the request's resolution, its time and the answer when the offer is decided")
+  void shouldReadTheRequestsResolutionTimeAndAnswerWhenTheOfferIsDecided() throws Exception {
     var kai = steps.profileManagedBy("Kai", sam, sam);
     var offer = steps.accept(riverside, steps.offer(sam, kai, riverside));
     var decidedAt = shareRepository.findById(offer.getId()).orElseThrow().getDecidedAt();
