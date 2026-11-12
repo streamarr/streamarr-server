@@ -15,11 +15,19 @@ import com.streamarr.server.exceptions.ImageDownloadException;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.support.BoundedTask;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.net.http.HttpTimeoutException;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,8 +35,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
 @DisplayName("TMDB HTTP Service Integration Tests")
@@ -45,6 +55,14 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
   @Autowired private TheMovieDatabaseHttpService service;
 
   @Autowired private HttpCache tmdbHttpCache;
+
+  @Autowired
+  @Qualifier("tmdb")
+  private HttpClient tmdbClient;
+
+  @Autowired private ObjectMapper objectMapper;
+
+  @Autowired private Clock clock;
 
   @BeforeEach
   void resetStubs() throws IOException {
@@ -741,16 +759,51 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should fail the download when the image body exceeds the download limit")
-  void shouldFailDownloadWhenImageBodyExceedsTheDownloadLimit() {
-    wireMock.stubFor(
-        get(urlPathEqualTo("/over-limit.jpg"))
-            .willReturn(aResponse().withStatus(200).withBody(new byte[DOWNLOAD_LIMIT_BYTES + 1])));
+  @DisplayName(
+      "Should fail the download without waiting for the body to end when it passes the download limit")
+  void shouldFailDownloadWithoutWaitingForBodyToEndWhenItPassesTheDownloadLimit() throws Exception {
+    var bodyEnd = new CountDownLatch(1);
+    var host = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    host.createContext("/endless.jpg", sendBytesThenHold(DOWNLOAD_LIMIT_BYTES + 1, bodyEnd));
+    host.start();
+    try {
+      var hostImageService =
+          new TheMovieDatabaseHttpService(
+              "",
+              wireMock.baseUrl(),
+              "http://127.0.0.1:" + host.getAddress().getPort(),
+              tmdbClient,
+              objectMapper,
+              clock);
 
-    assertThatThrownBy(() -> service.downloadImage("/over-limit.jpg"))
-        .isInstanceOfSatisfying(
-            ImageDownloadException.class,
-            failure -> assertThat(failure.getStatusCode()).isEqualTo(200));
+      assertThatThrownBy(
+              () ->
+                  BoundedTask.runWithin(
+                      Duration.ofSeconds(30), () -> hostImageService.downloadImage("/endless.jpg")))
+          .isInstanceOfSatisfying(
+              ImageDownloadException.class,
+              failure -> assertThat(failure.getStatusCode()).isEqualTo(200));
+    } finally {
+      bodyEnd.countDown();
+      host.stop(0);
+    }
+  }
+
+  // Sends a chunked body of the given length and keeps it open until the latch opens, so a reader
+  // that waits for the end of the body waits until then.
+  private static HttpHandler sendBytesThenHold(int length, CountDownLatch bodyEnd) {
+    return exchange -> {
+      exchange.sendResponseHeaders(200, 0);
+      exchange.getResponseBody().write(new byte[length]);
+      exchange.getResponseBody().flush();
+      try {
+        bodyEnd.await();
+      } catch (InterruptedException _) {
+        Thread.currentThread().interrupt();
+      } finally {
+        exchange.close();
+      }
+    };
   }
 
   @Test

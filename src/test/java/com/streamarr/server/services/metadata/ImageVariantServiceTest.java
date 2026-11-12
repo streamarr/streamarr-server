@@ -452,11 +452,14 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject the image when it has one row more than 8K's pixel count")
-  void shouldRejectImageWhenItHasOneRowMoreThan8KsPixelCount() {
-    var imageData = createBlackGrayscalePngImage(7680, 4321);
+  @DisplayName(
+      "Should reject the image from its header when it declares one row more than 8K's pixel count")
+  void shouldRejectImageFromItsHeaderWhenItDeclaresOneRowMoreThan8KsPixelCount() {
+    // The 8-byte signature and the 25-byte IHDR chunk, with no pixel data to decode after them.
+    var pngCutAfterItsHeader = Arrays.copyOf(createBlackGrayscalePngImage(7680, 4321), 33);
 
-    assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.BACKDROP))
+    assertThatThrownBy(
+            () -> imageVariantService.generateVariants(pngCutAfterItsHeader, ImageType.BACKDROP))
         .isInstanceOf(ImageProcessingException.class)
         .hasMessageContaining("7680x4321");
   }
