@@ -16,6 +16,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
@@ -64,11 +65,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The early-end rule (ADR 0037) through playback with the real transcode decision. A stream session
- * delivers the chosen video stream and its own audio track, so only that track can make the video
- * end early and refuse a video copy; another audio track of the file never does. The files are
- * synthetic: 10 s of video and audio tracks of 10 s or 15 s, whose ends a keyframe packet scan
- * read, in 4 s segments, so a track that runs 5 s past the video runs past it by more than one
- * segment.
+ * delivers the chosen video stream and its own audio track, so only those two streams can make each
+ * other end early; another audio track of the file never does. The files are synthetic: video and
+ * audio tracks that end at 10 s or 17 s, whose ends a keyframe packet scan read, in the default 6 s
+ * segments, so a stream that ends 7 s before another ends more than one segment before it.
  */
 @Tag("UnitTest")
 @DisplayName("Early End Beside Other Audio Tracks Tests")
@@ -77,15 +77,15 @@ class EarlyEndBesideOtherAudioTracksTest {
   private static final StreamingProperties PROPERTIES =
       StreamingProperties.builder()
           .maxConcurrentTranscodes(3)
-          .targetSegmentDuration(Duration.ofSeconds(4))
+          .targetSegmentDuration(Duration.ofSeconds(6))
           .sessionTimeout(Duration.ofSeconds(60))
           .build();
-  private static final Duration VIDEO_END = Duration.ofSeconds(10);
-  private static final Duration LATER_END = Duration.ofSeconds(15);
-  private static final AudioTrack ENGLISH_TO_THE_VIDEOS_END =
-      AudioTrack.builder().language("eng").end(Optional.of(VIDEO_END)).build();
-  private static final AudioTrack FRENCH_PAST_THE_VIDEOS_END =
-      AudioTrack.builder().language("fra").end(Optional.of(LATER_END)).build();
+  private static final Duration EARLY_END = Duration.ofSeconds(10);
+  private static final Duration LATE_END = Duration.ofSeconds(17);
+  private static final AudioTrack ENGLISH_TO_THE_EARLY_END =
+      AudioTrack.builder().language("eng").end(Optional.of(EARLY_END)).build();
+  private static final AudioTrack FRENCH_TO_THE_LATE_END =
+      AudioTrack.builder().language("fra").end(Optional.of(LATE_END)).build();
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeTranscodeExecutor workers = new FakeTranscodeExecutor();
@@ -108,85 +108,111 @@ class EarlyEndBesideOtherAudioTracksTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("sessionsBesideOtherAudioTracks")
   @DisplayName(
-      "Should copy the video unless the session's own audio track ends at least one segment after"
-          + " it")
-  void shouldCopyTheVideoUnlessTheSessionsOwnAudioTrackEndsAtLeastOneSegmentAfterIt(
-      SourceFile file, Language sessionLanguage, List<DecisionReason> videoReasons) {
+      "Should encode a delivered stream only when the other delivered stream ends at least one"
+          + " segment after it")
+  void shouldEncodeADeliveredStreamOnlyWhenTheOtherDeliveredStreamEndsAtLeastOneSegmentAfterIt(
+      Session session) {
     var start =
-        start(file)
+        start(session.file())
             .options(
                 StreamingOptions.builder()
                     .quality(VideoQuality.AUTO)
-                    .audioLanguage(sessionLanguage)
+                    .audioLanguage(session.language())
                     .build())
             .build();
 
     accepted(playback.start(start));
 
     var decision = workers.getStartedRequests().getLast().transcodeDecision();
-    assertThat(decision.transcodeMode().copiesVideo()).isEqualTo(videoReasons.isEmpty());
-    assertThat(decision.reasons()).containsExactlyElementsOf(videoReasons);
+    assertThat(decision.transcodeMode().copiesVideo()).isEqualTo(session.copiesVideo());
+    assertThat(decision.audioDecision().mode()).isEqualTo(session.audio());
+    assertThat(decision.reasons()).containsExactlyElementsOf(session.reasons());
   }
 
   // The language picks the session's track; without one, the session plays the file's first track.
-  // The video is copied with no reason, or encoded because it ends early.
   static Stream<Arguments> sessionsBesideOtherAudioTracks() {
-    var copied = List.<DecisionReason>of();
-    var endsEarly = List.of(DecisionReason.VIDEO_ENDS_EARLY);
     var englishWithoutAKnownEnd =
         AudioTrack.builder().language("eng").end(Optional.empty()).build();
     return Stream.of(
-        Arguments.of(
-            Named.of(
-                "a session on a track that ends with the video, listed before a track that runs on",
-                fileWith(ENGLISH_TO_THE_VIDEOS_END, FRENCH_PAST_THE_VIDEOS_END)),
-            Language.EN,
-            copied),
-        Arguments.of(
-            Named.of(
-                "a session on a track that ends with the video, listed after a track that runs on",
-                fileWith(FRENCH_PAST_THE_VIDEOS_END, ENGLISH_TO_THE_VIDEOS_END)),
-            Language.EN,
-            copied),
-        Arguments.of(
-            Named.of(
-                "a session on the track that runs on, listed after the other",
-                fileWith(ENGLISH_TO_THE_VIDEOS_END, FRENCH_PAST_THE_VIDEOS_END)),
-            Language.FR,
-            endsEarly),
-        Arguments.of(
-            Named.of(
-                "a session on the track that runs on, listed before the other",
-                fileWith(FRENCH_PAST_THE_VIDEOS_END, ENGLISH_TO_THE_VIDEOS_END)),
-            Language.FR,
-            endsEarly),
-        Arguments.of(Named.of("a file without audio", fileWith()), null, copied),
-        Arguments.of(
-            Named.of(
-                "a file whose one track ends with the video", fileWith(ENGLISH_TO_THE_VIDEOS_END)),
-            null,
-            copied),
-        Arguments.of(
-            Named.of("a file whose one track runs on", fileWith(FRENCH_PAST_THE_VIDEOS_END)),
-            null,
-            endsEarly),
-        Arguments.of(
-            Named.of(
-                "a session on a track without a known end, beside a track that runs on",
-                fileWith(englishWithoutAKnownEnd, FRENCH_PAST_THE_VIDEOS_END)),
-            Language.EN,
-            copied));
+        session(
+            "a session on a track that ends with the video, listed before a track that runs on",
+            copied()
+                .file(videoToTheEarlyEnd(ENGLISH_TO_THE_EARLY_END, FRENCH_TO_THE_LATE_END))
+                .language(Language.EN)),
+        session(
+            "a session on a track that ends with the video, listed after a track that runs on",
+            copied()
+                .file(videoToTheEarlyEnd(FRENCH_TO_THE_LATE_END, ENGLISH_TO_THE_EARLY_END))
+                .language(Language.EN)),
+        session(
+            "a session on the track that runs on, listed after the other",
+            videoEncodedForItsEarlyEnd()
+                .file(videoToTheEarlyEnd(ENGLISH_TO_THE_EARLY_END, FRENCH_TO_THE_LATE_END))
+                .language(Language.FR)),
+        session(
+            "a session on the track that runs on, listed before the other",
+            videoEncodedForItsEarlyEnd()
+                .file(videoToTheEarlyEnd(FRENCH_TO_THE_LATE_END, ENGLISH_TO_THE_EARLY_END))
+                .language(Language.FR)),
+        session(
+            "a session on the second track, which ends more than a segment before the video",
+            audioEncodedForItsEarlyEnd()
+                .file(videoToTheLateEnd(FRENCH_TO_THE_LATE_END, ENGLISH_TO_THE_EARLY_END))
+                .language(Language.EN)),
+        session(
+            "a session on the second track, which ends with the video, after one that ends more"
+                + " than a segment before it",
+            copied()
+                .file(videoToTheLateEnd(ENGLISH_TO_THE_EARLY_END, FRENCH_TO_THE_LATE_END))
+                .language(Language.FR)),
+        session("a file without audio", copied().file(videoToTheEarlyEnd()).audio(AudioMode.NONE)),
+        session(
+            "a file whose one track ends with the video",
+            copied().file(videoToTheEarlyEnd(ENGLISH_TO_THE_EARLY_END))),
+        session(
+            "a file whose one track runs on",
+            videoEncodedForItsEarlyEnd().file(videoToTheEarlyEnd(FRENCH_TO_THE_LATE_END))),
+        session(
+            "a session on a track without a known end, beside a track that runs on",
+            copied()
+                .file(videoToTheEarlyEnd(englishWithoutAKnownEnd, FRENCH_TO_THE_LATE_END))
+                .language(Language.EN)));
+  }
+
+  private static Arguments session(String name, Session.SessionBuilder session) {
+    return Arguments.of(Named.of(name, session.build()));
+  }
+
+  private static Session.SessionBuilder copied() {
+    return Session.builder().copiesVideo(true).audio(AudioMode.COPY).reasons(List.of());
+  }
+
+  // The encode holds the video's last picture up to the session audio's end.
+  private static Session.SessionBuilder videoEncodedForItsEarlyEnd() {
+    return Session.builder()
+        .copiesVideo(false)
+        .audio(AudioMode.COPY)
+        .reasons(List.of(DecisionReason.VIDEO_ENDS_EARLY));
+  }
+
+  // The encode pads the session's audio with silence up to the video's end.
+  private static Session.SessionBuilder audioEncodedForItsEarlyEnd() {
+    return Session.builder()
+        .copiesVideo(true)
+        .audio(AudioMode.TRANSCODE)
+        .reasons(List.of(DecisionReason.AUDIO_ENDS_EARLY));
   }
 
   // ADR 0045: a switch moves direct play to an HLS stream session for the chosen track, which
-  // decides again. The new track runs 5 s past the video, so the encode holds the last picture up
+  // decides again. The new track runs 7 s past the video, so the encode holds the last picture up
   // to that track's end, and Original plays the encode in Auto (ADR 0052).
   @Test
   @DisplayName(
       "Should encode the video up to the new track's end when the viewer switches from direct play"
           + " to a track that runs past the video")
   void shouldEncodeTheVideoUpToTheNewTracksEndWhenTheViewerSwitchesToATrackThatRunsPastTheVideo() {
-    var start = directPlayStart(fileWith(ENGLISH_TO_THE_VIDEOS_END, FRENCH_PAST_THE_VIDEOS_END));
+    var start =
+        directPlayStart(videoToTheEarlyEnd(ENGLISH_TO_THE_EARLY_END, FRENCH_TO_THE_LATE_END));
     var directPlay = accepted(playback.start(start));
     assertThat(sessionOf(directPlay).getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
 
@@ -198,10 +224,10 @@ class EarlyEndBesideOtherAudioTracksTest {
     var request = workers.getStartedRequests().getLast();
     assertThat(request.transcodeDecision().transcodeMode().copiesVideo()).isFalse();
     assertThat(request.transcodeDecision().reasons()).contains(DecisionReason.VIDEO_ENDS_EARLY);
-    assertThat(request.advertisedEnd()).contains(LATER_END);
+    assertThat(request.advertisedEnd()).contains(LATE_END);
   }
 
-  // The file's first track runs 5 s past the video, so direct play starts on it. The track that
+  // The file's first track runs 7 s past the video, so direct play starts on it. The track that
   // the viewer switches to ends with the video, so the copy is no longer refused, and Original
   // keeps playing the copy (ADR 0052).
   @Test
@@ -209,7 +235,8 @@ class EarlyEndBesideOtherAudioTracksTest {
       "Should copy the video up to its end when the viewer switches from direct play on a track"
           + " that runs past the video to one that ends with it")
   void shouldCopyTheVideoUpToItsEndWhenTheViewerSwitchesToATrackThatEndsWithTheVideo() {
-    var start = directPlayStart(fileWith(FRENCH_PAST_THE_VIDEOS_END, ENGLISH_TO_THE_VIDEOS_END));
+    var start =
+        directPlayStart(videoToTheEarlyEnd(FRENCH_TO_THE_LATE_END, ENGLISH_TO_THE_EARLY_END));
     var directPlay = accepted(playback.start(start));
     assertThat(sessionOf(directPlay).getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
 
@@ -220,19 +247,19 @@ class EarlyEndBesideOtherAudioTracksTest {
     assertThat(switched.formatChange()).isEmpty();
     var request = workers.getStartedRequests().getLast();
     assertThat(request.transcodeDecision().transcodeMode().copiesVideo()).isTrue();
-    assertThat(request.advertisedEnd()).contains(VIDEO_END);
+    assertThat(request.advertisedEnd()).contains(EARLY_END);
   }
 
   // A switch moves only a direct-play stream session to a new stream session; an HLS stream session
   // keeps the one audio track that it started with (switchPlaybackAudioTrack). So a running copy
-  // keeps its track and its end, and its player receives nothing of the other track's last 5 s.
+  // keeps its track and its end, and its player receives nothing of the other track's last 7 s.
   @Test
   @DisplayName(
       "Should keep a running HLS copy and its end when the viewer asks to switch to a track that"
           + " runs past the video")
   void shouldKeepARunningHlsCopyAndItsEndWhenTheViewerAsksToSwitchToATrackThatRunsPastTheVideo() {
     var start =
-        start(fileWith(ENGLISH_TO_THE_VIDEOS_END, FRENCH_PAST_THE_VIDEOS_END))
+        start(videoToTheEarlyEnd(ENGLISH_TO_THE_EARLY_END, FRENCH_TO_THE_LATE_END))
             .options(StreamingOptions.builder().quality(VideoQuality.AUTO).build())
             .build();
     var copy = accepted(playback.start(start));
@@ -246,7 +273,7 @@ class EarlyEndBesideOtherAudioTracksTest {
         .satisfies(
             request -> {
               assertThat(request.transcodeDecision().transcodeMode().copiesVideo()).isTrue();
-              assertThat(request.advertisedEnd()).contains(VIDEO_END);
+              assertThat(request.advertisedEnd()).contains(EARLY_END);
             });
   }
 
@@ -357,21 +384,37 @@ class EarlyEndBesideOtherAudioTracksTest {
         .build();
   }
 
-  private static SourceFile fileWith(AudioTrack... audioTracks) {
-    return SourceFile.builder().audioTracks(List.of(audioTracks)).build();
+  private static SourceFile videoToTheEarlyEnd(AudioTrack... audioTracks) {
+    return SourceFile.builder().videoEnd(EARLY_END).audioTracks(List.of(audioTracks)).build();
   }
+
+  private static SourceFile videoToTheLateEnd(AudioTrack... audioTracks) {
+    return SourceFile.builder().videoEnd(LATE_END).audioTracks(List.of(audioTracks)).build();
+  }
+
+  /**
+   * A stream session on {@code file}, which plays the track in {@code language}, and the decision
+   * that the early-end rule leads to.
+   */
+  @Builder
+  private record Session(
+      SourceFile file,
+      Language language,
+      boolean copiesVideo,
+      AudioMode audio,
+      List<DecisionReason> reasons) {}
 
   /** One stereo AAC track of a source file, and the end that a keyframe packet scan read for it. */
   @Builder
   private record AudioTrack(String language, Optional<Duration> end) {}
 
   /**
-   * A 10 s Matroska file: H.264 High video at stream 0 whose keyframes open every 2 s, then the
-   * audio tracks in the listed order. The container's duration is the latest end that the scan
-   * read.
+   * A Matroska file: H.264 High video at stream 0 that ends at {@code videoEnd}, whose keyframes
+   * open every 2 s, then the audio tracks in the listed order. The container's duration is the
+   * latest end that the scan read.
    */
   @Builder
-  private record SourceFile(List<AudioTrack> audioTracks) {
+  private record SourceFile(Duration videoEnd, List<AudioTrack> audioTracks) {
 
     MediaProbe probe() {
       var streams = new ArrayList<StreamInfo>();
@@ -402,7 +445,7 @@ class EarlyEndBesideOtherAudioTracksTest {
 
     KeyframeKnowledge keyframes() {
       var positions =
-          LongStream.iterate(0, time -> time < VIDEO_END.toMillis(), time -> time + 2_000)
+          LongStream.iterate(0, time -> time < videoEnd.toMillis(), time -> time + 2_000)
               .mapToObj(time -> new KeyframePosition(time, time))
               .toList();
       return new KeyframeKnowledge.Known(
@@ -417,7 +460,7 @@ class EarlyEndBesideOtherAudioTracksTest {
 
     List<SourceStreamEnd> scannedEnds() {
       var ends = new ArrayList<SourceStreamEnd>();
-      ends.add(new SourceStreamEnd(0, VIDEO_END));
+      ends.add(new SourceStreamEnd(0, videoEnd));
       for (var position = 0; position < audioTracks.size(); position++) {
         var streamIndex = position + 1;
         audioTracks
