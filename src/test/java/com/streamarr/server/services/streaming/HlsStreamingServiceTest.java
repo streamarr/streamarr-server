@@ -6833,6 +6833,79 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
+  // A player that can select an audio track inside a directly played file switches tracks in place
+  // (ADR 0045), so direct play can store a position past the end of the session's own track.
+  @Test
+  @DisplayName(
+      "Should direct-play from a start position past the session's audio track when another audio"
+          + " track of the file ends later")
+  void shouldDirectPlayFromAStartPositionPastTheSessionsAudioTrackWhenAnotherTrackEndsLater() {
+    var command =
+        directPlayCommandSelectingAudioTracks(seedMediaFileWhoseSecondAudioTrackEndsLater())
+            .startPosition(Optional.of(Duration.ofSeconds(90)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getStartPosition()).contains(Duration.ofSeconds(90));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a direct-play start position at the end of the file's longest audio track")
+  void shouldRefuseADirectPlayStartPositionAtTheEndOfTheFilesLongestAudioTrack() {
+    var command =
+        directPlayCommandSelectingAudioTracks(seedMediaFileWhoseSecondAudioTrackEndsLater())
+            .startPosition(Optional.of(Duration.ofSeconds(120)))
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    assertThat(runtimeRegistry.findById(command.streamSessionId())).isEmpty();
+  }
+
+  // An HLS stream session delivers its own audio track only, so its playlists end with that track.
+  @Test
+  @DisplayName(
+      "Should refuse an HLS start position past the session's audio track when another audio track"
+          + " of the file ends later")
+  void shouldRefuseAnHlsStartPositionPastTheSessionsAudioTrackWhenAnotherTrackEndsLater() {
+    var command =
+        createStreamSessionCommandBuilder(
+                seedMediaFileWhoseSecondAudioTrackEndsLater().getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofSeconds(90)))
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // The header states 120 s. A keyframe packet scan read the video and the first audio track to
+  // 60 s, and the second audio track to 120 s.
+  private MediaFile seedMediaFileWhoseSecondAudioTrackEndsLater() {
+    return seedMediaFileScanned(
+        directPlayableProbeWithAudioIn("eng", "fra").toBuilder()
+            .duration(Duration.ofSeconds(120))
+            .build(),
+        List.of(
+            new SourceStreamEnd(0, Duration.ofSeconds(60)),
+            new SourceStreamEnd(1, Duration.ofSeconds(60)),
+            new SourceStreamEnd(2, Duration.ofSeconds(120))));
+  }
+
+  private CreateStreamSessionCommand.CreateStreamSessionCommandBuilder
+      directPlayCommandSelectingAudioTracks(MediaFile file) {
+    return directPlayCommand(file.getId())
+        .capabilityDeclaration(
+            directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(true).build());
+  }
+
   @Test
   @DisplayName("Should not resurrect a session when destroyed during a segment request")
   void shouldNotResurrectSessionWhenDestroyedDuringSegmentRequest() {
