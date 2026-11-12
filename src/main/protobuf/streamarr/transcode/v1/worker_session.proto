@@ -890,7 +890,8 @@ message WorkerSessionAccepted {
   // ProbeAttemptResult that the server accepts in a probe report. When a
   // result is longer, the worker fails the probe with
   // PROBE_FAILURE_RESULT_TOO_LARGE. A value of 0 states no limit, and the
-  // worker then applies no limit of its own (ADR 0062).
+  // worker then applies no limit of its own. A worker that predates this field
+  // ignores it, and the server still refuses a longer result (ADR 0062).
   uint64 probe_result_length_limit_bytes = 7;
 }
 
