@@ -158,7 +158,8 @@ public class ProfileLifecycleService {
 
     return mutationTransactions.write(
         () -> {
-          if (profileRepository.findById(profileId).isEmpty()) {
+          // Locked before its shares are read, so none ends unseen before they are announced.
+          if (!profileRepository.lockById(profileId)) {
             throw new MutationRejection(new TransferRejections.ProfileNotFound());
           }
 

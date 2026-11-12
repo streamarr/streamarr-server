@@ -1,33 +1,47 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.auth.CreateAuthSessionCommand;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
+import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlHttpTestClient;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -36,6 +50,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 
@@ -74,6 +89,10 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private ProfileShareExpirySweeper expirySweeper;
   @Autowired private HouseholdRepository householdRepository;
+  @Autowired private ProfileManagerInvitationRepository managerInvitationRepository;
+  @Autowired private RefreshTokenService refreshTokenService;
+  @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
@@ -483,6 +502,67 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should tell the Household once that a share is over when the Household ends it while a"
+          + " ServerAdmin deletes its Profile")
+  void shouldTellHouseholdOnceThatShareIsOverWhenHouseholdEndsItWhileItsProfileIsDeleted()
+      throws Exception {
+    var orphan = managedProfile();
+    var shareId = offer(orphan);
+    decide("acceptProfileShare", shareId);
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var serverAdmin = adminIdentity();
+    // The deletion withdraws the Profile's manager invitations after it has read its shares.
+    var invitationId = pendingManagerInvitation(orphan);
+
+    var deleted =
+        endWhileDeletionWaits(
+            row("profile_manager_invitation", invitationId),
+            () -> administrativelyDeleteProfile(serverAdmin, orphan),
+            shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/administrativelyDeleteProfile/profileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    // The Household hears the share end or hears it removed, and nothing after either.
+    var changes = changesUntil(hostSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .extracting(change -> change.path("shareId").asString())
+        .containsOnlyOnce(shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household once that a visit is over when the Household ends it while the"
+          + " visitor deletes their Account")
+  void shouldTellHouseholdOnceThatVisitIsOverWhenHouseholdEndsItWhileVisitorDeletesAccount()
+      throws Exception {
+    var visitor = authTestSupport.createHouseholdMemberIdentity(owner);
+    identities.add(visitor);
+    var shareId = activeVisit(visitor.profile());
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    // The deletion returns sessions that select the Profile at home to the Profile picker after
+    // it has read the Profile's shares.
+    var sessionId = sessionSelecting(owner, visitor.profile());
+
+    var deleted =
+        endWhileDeletionWaits(
+            row("auth_session", sessionId), () -> deleteMyAccount(visitor), shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/deleteMyAccount/accountId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(visitor.account().getId().toString());
+    var changes = changesUntil(hostSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .extracting(change -> change.path("shareId").asString())
+        .containsOnlyOnce(shareId);
+  }
+
+  @Test
+  @DisplayName(
       "Should deliver the share's removal to the Profile's managers when its Household is deleted")
   void shouldDeliverTheSharesRemovalToTheProfilesManagersWhenItsHouseholdIsDeleted() {
     var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
@@ -696,6 +776,111 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     assertThat(response.at("/data/cancelProfileShare/userErrors").isEmpty())
         .as("cancel in %s", response)
         .isTrue();
+  }
+
+  /**
+   * Holds a row the deletion writes once it has read the Profile's shares, has the host end the
+   * share while the deletion waits for that row, then lets the deletion finish; answers the
+   * deletion's response. The end either completes at once or waits for the deletion.
+   */
+  private JsonNode endWhileDeletionWaits(
+      RowLockTarget heldRow, Callable<JsonNode> deletion, String shareId) throws Exception {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var held = lockRow(heldRow)) {
+      var deleting = executor.submit(deletion);
+      awaitWaitersBehind(jdbcTemplate, held.backendPid(), 1);
+      var ending = executor.submit(() -> endAsHost(shareId));
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .until(() -> ending.isDone() || waitersBehind(jdbcTemplate, held.backendPid(), "%") == 2);
+
+      held.release();
+      ending.get(10, TimeUnit.SECONDS);
+      return deleting.get(10, TimeUnit.SECONDS);
+    }
+  }
+
+  // The host ends a share into its own Household, whatever the answer.
+  private JsonNode endAsHost(String shareId) {
+    return http.execute(
+        authTestSupport.accountBearer(host),
+        """
+        mutation { endProfileShare(input: {shareId: "%s"}) { userErrors { __typename } } }
+        """
+            .formatted(shareId));
+  }
+
+  private JsonNode administrativelyDeleteProfile(
+      AuthTestSupport.TestIdentity serverAdmin, Profile profile) {
+    return http.execute(
+        authTestSupport.freshAccountBearer(serverAdmin),
+        """
+        mutation { administrativelyDeleteProfile(input: {profileId: "%s", reason: "closing"}) {
+          profileId userErrors { __typename } } }
+        """
+            .formatted(profile.getId()));
+  }
+
+  private JsonNode deleteMyAccount(AuthTestSupport.TestIdentity identity) {
+    return http.execute(
+        authTestSupport.freshAccountBearer(identity),
+        """
+        mutation { deleteMyAccount(input: {confirmation: "DELETE"}) {
+          accountId userErrors { __typename } } }
+        """);
+  }
+
+  /** The owner's pending invitation for the host to manage the Profile too. */
+  private UUID pendingManagerInvitation(Profile profile) {
+    return transactionTemplate
+        .execute(
+            _ ->
+                managerInvitationRepository.saveAndFlush(
+                    ProfileManagerInvitation.builder()
+                        .profileId(profile.getId())
+                        .profileName(profile.getName())
+                        .inviterAccountId(owner.account().getId())
+                        .inviterDisplayName(owner.account().getDisplayName())
+                        .recipientAccountId(host.account().getId())
+                        .recipientEmail(host.account().getEmail())
+                        .expiresAt(Instant.now().plusSeconds(3600))
+                        .publicId(UUID.randomUUID().toString())
+                        .secretDigest(new byte[] {1})
+                        .build()))
+        .getId();
+  }
+
+  /** An active visit of the Profile to the host's Household, stored without announcing it. */
+  private String activeVisit(Profile profile) {
+    return transactionTemplate
+        .execute(
+            _ ->
+                shareRepository.saveAndFlush(
+                    ProfileHouseholdShare.builder()
+                        .profileId(profile.getId())
+                        .householdId(host.household().getId())
+                        .status(ProfileShareStatus.ACTIVE)
+                        .build()))
+        .getId()
+        .toString();
+  }
+
+  /** A live session of the identity's Account, in its own Household, that selects the Profile. */
+  private UUID sessionSelecting(AuthTestSupport.TestIdentity identity, Profile profile) {
+    return refreshTokenService
+        .createSession(
+            CreateAuthSessionCommand.builder()
+                .accountId(identity.account().getId())
+                .deviceName("living room")
+                .contextHouseholdId(identity.household().getId())
+                .selectedProfileId(profile.getId())
+                .build())
+        .session()
+        .getId();
+  }
+
+  private RowLockTarget row(String table, UUID rowId) {
+    return RowLockTarget.builder().dataSource(dataSource).table(table).rowId(rowId).build();
   }
 
   /** A Profile the HouseholdAdmin creates in their Household; answers its share there. */
