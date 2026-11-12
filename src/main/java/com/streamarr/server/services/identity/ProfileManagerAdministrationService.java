@@ -20,7 +20,6 @@ import com.streamarr.server.services.auth.EmailAddressValidator;
 import com.streamarr.server.services.auth.InvitationLifetime;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
-import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
@@ -57,7 +56,6 @@ public class ProfileManagerAdministrationService {
   private static final String BECAME_MANAGER_REASON = "named Account became a manager";
   // ADR 0024: so that a manager cannot fill other people's Notifications with Requests.
   private static final int PENDING_INVITATIONS_PER_PROFILE = 10;
-  private static final String INVITER_LEFT_REASON = "inviting manager lost management";
   private static final String RESOURCE_PROFILE_ID = "profileId";
   private static final String RESOURCE_ACCOUNT_ID = "accountId";
 
@@ -67,7 +65,7 @@ public class ProfileManagerAdministrationService {
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileRepository profileRepository;
   private final UserAccountRepository userAccountRepository;
-  private final ProfileShareLifecycle shareLifecycle;
+  private final LeavingManagerProposals leavingManagerProposals;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final OpaqueOneTimeCodes opaqueCodes;
   private final CredentialAttemptGate credentialAttempts;
@@ -232,7 +230,7 @@ public class ProfileManagerAdministrationService {
               lockAcceptanceProfiles(invitation);
               if (!stillProposable(invitation)) {
                 invitationLifecycle.tryInvalidatePending(
-                    invitation.getId(), INVITER_LEFT_REASON, now);
+                    invitation.getId(), LeavingManagerProposals.INVITER_LEFT_REASON, now);
                 return Optional.empty();
               }
 
@@ -344,7 +342,7 @@ public class ProfileManagerAdministrationService {
           // An old invitation must not bring back the authority the Account gave up.
           invitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
               profileId, identity.accountId(), "named Account stopped managing", clock.instant());
-          invalidateLeaversProposals(profileId, identity.accountId());
+          leavingManagerProposals.withdraw(profileId, identity.accountId(), clock.instant());
           return profileId;
         },
         constraint ->
@@ -544,7 +542,7 @@ public class ProfileManagerAdministrationService {
     // An older invitation naming the removed Account could silently restore what was disputed.
     invitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
         profileId, managerAccountId, "removal disputes the authority", now);
-    invalidateLeaversProposals(profileId, managerAccountId);
+    leavingManagerProposals.withdraw(profileId, managerAccountId, clock.instant());
     audit(
         identity,
         SecurityAuditEntry.builder()
@@ -552,14 +550,6 @@ public class ProfileManagerAdministrationService {
             .reason(reason)
             .resource(RESOURCE_PROFILE_ID, profileId)
             .resource(RESOURCE_ACCOUNT_ID, managerAccountId));
-  }
-
-  private void invalidateLeaversProposals(UUID profileId, UUID leaverAccountId) {
-    var now = clock.instant();
-    invitationLifecycle.invalidatePendingInvitationsByInviterAccountIdAndProfileId(
-        leaverAccountId, profileId, INVITER_LEFT_REASON, now);
-    shareLifecycle.invalidatePendingOffersByProfileIdAndOffererAccountId(
-        profileId, leaverAccountId, "offering manager lost management", now);
   }
 
   private <R> void lockProfile(UUID profileId, Supplier<? extends R> vanished) {
