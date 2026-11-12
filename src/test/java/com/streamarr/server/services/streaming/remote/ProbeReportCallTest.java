@@ -17,6 +17,7 @@ import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ReportProbeAttemptRequest;
 import com.streamarr.transcode.v1.ReportProbeAttemptResponse;
 import com.streamarr.transcode.v1.StreamMeasurementIntervals;
+import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.Status;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -496,6 +497,87 @@ class ProbeReportCallTest {
     worker.report(probe.request(), report);
 
     assertThat(probe.outcome().get(1, TimeUnit.SECONDS)).isEqualTo(report);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(StatedLimit.class)
+  @DisplayName(
+      "Should keep a probe report at a probe report limit that it states and break the contract one"
+          + " above it when a ServerAdmin configures the limits")
+  void shouldKeepReportAtStatedLimitAndBreakContractOneAboveItWhenServerAdminConfiguresLimits(
+      StatedLimit limit) throws Exception {
+    var worker =
+        ReportingWorker.connectedTo(
+            ProbeReportLimits.builder()
+                .keyframeLimit(5)
+                .measuredKeyframeIntervalLimit(7)
+                .lengthLimitBytes(200_000)
+                .build());
+    var stated = worker.commands().getFirst().getSessionAccepted();
+    var atTheLimit = worker.dispatch();
+    var aboveTheLimit = worker.dispatch();
+
+    var kept = limit.report(worker, atTheLimit.request(), limit.statedIn(stated));
+    var broken = limit.report(worker, aboveTheLimit.request(), limit.statedIn(stated) + 1);
+
+    assertThat(kept.answer()).isNotCompletedExceptionally();
+    assertThat(broken.refusal()).isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThatThrownBy(() -> aboveTheLimit.outcome().get(1, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasCauseExactlyInstanceOf(ProbeContractViolationException.class);
+  }
+
+  private enum StatedLimit {
+    LENGTH {
+      @Override
+      long statedIn(WorkerSessionAccepted accepted) {
+        return accepted.getProbeReportLengthLimitBytes();
+      }
+
+      @Override
+      ReportCall report(ReportingWorker worker, ProbeRequest request, long amount)
+          throws Exception {
+        var call = worker.openReportCall();
+        call.sendMetadata(worker.metadata(request).setReportLengthBytes(amount));
+        return call;
+      }
+    },
+    KEYFRAMES {
+      @Override
+      long statedIn(WorkerSessionAccepted accepted) {
+        return accepted.getKeyframeLimit();
+      }
+
+      @Override
+      ReportCall report(ReportingWorker worker, ProbeRequest request, long amount)
+          throws Exception {
+        return worker.report(
+            request, withKeyframes(invalidMedia(request), Math.toIntExact(amount)).build());
+      }
+    },
+    MEASURED_KEYFRAME_INTERVALS {
+      @Override
+      long statedIn(WorkerSessionAccepted accepted) {
+        return accepted.getMeasuredKeyframeIntervalLimit();
+      }
+
+      @Override
+      ReportCall report(ReportingWorker worker, ProbeRequest request, long amount)
+          throws Exception {
+        // Two measured streams share the intervals.
+        var report =
+            invalidMedia(request)
+                .addStreamMeasurementIntervals(intervals(0, Math.toIntExact(amount) - 1))
+                .addStreamMeasurementIntervals(intervals(1, 1));
+        return worker.report(request, report.build());
+      }
+    };
+
+    abstract long statedIn(WorkerSessionAccepted accepted);
+
+    /** Reports a probe report that reaches this amount of the limit. */
+    abstract ReportCall report(ReportingWorker worker, ProbeRequest request, long amount)
+        throws Exception;
   }
 
   @Test
