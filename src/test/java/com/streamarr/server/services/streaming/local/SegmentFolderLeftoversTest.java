@@ -242,7 +242,8 @@ class SegmentFolderLeftoversTest {
     }
   }
 
-  // A listing that stays open while its entries are deleted skips some of a few hundred on macOS.
+  // Each delete of a directory opens the segment folder again. On macOS a listing that is open
+  // meanwhile then skips some of a few hundred entries.
   @Test
   @DisplayName("Should delete every leftover when the segment folder holds hundreds of them")
   void shouldDeleteEveryLeftoverWhenTheSegmentFolderHoldsHundredsOfThem() throws IOException {
