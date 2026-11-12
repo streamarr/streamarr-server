@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.AuthenticatedIdentityFixture.default
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.notification.GuardedNotification;
+import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -35,7 +36,7 @@ class ProfileShareGuardTest {
   @MethodSource("decisions")
   @DisplayName(
       "Should show the Notification when the recipient may view either the Profile's shares or the"
-          + " Household's administration")
+          + " Notification as the Household's side")
   void shouldShowTheNotificationWhenTheRecipientMayViewEitherTheProfilesSharesOrTheHouseholds(
       Answer profile, Answer household, NotificationVisibility expected) {
     authorization.decideUnitWith(
@@ -44,7 +45,7 @@ class ProfileShareGuardTest {
               case Intent.ViewProfileShareHouseholds(var profileId)
                   when profileId.equals(PROFILE) ->
                   profile.decision();
-              case Intent.ViewHouseholdAdministration(var householdId)
+              case Intent.ViewProfileShareNotification(var householdId, var _, var _)
                   when householdId.equals(HOUSEHOLD) ->
                   household.decision();
               default -> Answer.DENIED.decision();
@@ -55,10 +56,36 @@ class ProfileShareGuardTest {
         .containsExactly(Map.entry(notification.notificationId(), expected));
   }
 
+  @ParameterizedTest(name = "share live {0}, addressed to {1}")
+  @MethodSource("sharesAndSides")
+  @DisplayName(
+      "Should ask the Household's side with whether the share is live and the side the"
+          + " Notification was addressed to when it decides the Notification")
+  void shouldAskTheHouseholdsSideWithTheSharesLivenessAndTheSideTheNotificationWasAddressedTo(
+      boolean shareLive, ProfileShareSide addressedTo) {
+    var asked =
+        new Intent.ViewProfileShareNotification(
+            HOUSEHOLD, shareLive, addressedTo == ProfileShareSide.HOUSEHOLD_SIDE);
+    authorization.decideUnitWith(
+        intent -> intent.equals(asked) ? Answer.ALLOWED.decision() : Answer.DENIED.decision());
+    var notification =
+        GuardedNotification.builder()
+            .notificationId(UUID.randomUUID())
+            .recipientAccountId(RECIPIENT)
+            .profileId(PROFILE)
+            .householdId(HOUSEHOLD)
+            .shareLive(shareLive)
+            .addressedTo(addressedTo)
+            .build();
+
+    assertThat(guard.visibilities(List.of(notification)))
+        .containsExactly(Map.entry(notification.notificationId(), NotificationVisibility.SHOWN));
+  }
+
   @Test
   @DisplayName(
       "Should hide the Notification when the recipient may view the Profile's administration but"
-          + " neither its shares nor the Household's administration")
+          + " neither its shares nor the Notification as the Household's side")
   void shouldHideTheNotificationWhenTheRecipientMayViewOnlyTheProfilesAdministration() {
     authorization.decideUnitWith(
         intent ->
@@ -93,7 +120,7 @@ class ProfileShareGuardTest {
             accountId -> accountId.equals(otherRecipient) ? Answer.DENIED.decision() : null)
         .decideUnitWith(
             intent ->
-                intent.equals(new Intent.ViewHouseholdAdministration(HOUSEHOLD))
+                intent.equals(new Intent.ViewProfileShareNotification(HOUSEHOLD, true, false))
                     ? Answer.ALLOWED.decision()
                     : Answer.DENIED.decision());
     var shown = guarded(RECIPIENT, PROFILE, HOUSEHOLD);
@@ -117,8 +144,24 @@ class ProfileShareGuardTest {
     assertThat(guard.visibilities(List.of())).isEmpty();
   }
 
+  /** A Notification addressed to the offering side about a live share. */
   private static GuardedNotification guarded(UUID recipient, UUID profileId, UUID householdId) {
-    return new GuardedNotification(UUID.randomUUID(), recipient, profileId, householdId);
+    return GuardedNotification.builder()
+        .notificationId(UUID.randomUUID())
+        .recipientAccountId(recipient)
+        .profileId(profileId)
+        .householdId(householdId)
+        .shareLive(true)
+        .addressedTo(ProfileShareSide.OFFERING_SIDE)
+        .build();
+  }
+
+  private static Stream<Arguments> sharesAndSides() {
+    return Stream.of(
+        Arguments.of(true, ProfileShareSide.OFFERING_SIDE),
+        Arguments.of(true, ProfileShareSide.HOUSEHOLD_SIDE),
+        Arguments.of(false, ProfileShareSide.OFFERING_SIDE),
+        Arguments.of(false, ProfileShareSide.HOUSEHOLD_SIDE));
   }
 
   private static Stream<Arguments> decisions() {

@@ -1,6 +1,5 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.notification.GuardedNotification;
 import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationForm;
@@ -115,7 +114,7 @@ public class FakeNotificationRepository extends FakeJpaRepository<Notification>
   }
 
   @Override
-  public List<GuardedNotification> findRequestsAbout(UUID shareId) {
+  public List<Notification> findRequestsAbout(UUID shareId) {
     throw new NotImplementedException();
   }
 

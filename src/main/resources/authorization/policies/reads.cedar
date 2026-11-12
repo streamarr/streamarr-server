@@ -16,12 +16,15 @@ when {
 };
 
 // HouseholdAdmins read their own Household's administration; ServerAdmin reads every Household.
-// With view-profile-share-households (sharing.cedar), this is a share's read rule for its
-// Notifications, which ProfileShareReaders mirrors in SQL: widen it with either permit.
+// They are also the Household's side of a sharing Notification's guard, which notifications.cedar
+// narrows once the offer or the share is over. With view-profile-share-households (sharing.cedar),
+// this is that guard, which ProfileShareReaders mirrors in SQL: widen it with either permit.
 @id("view-household-administration-as-household-admin-or-server-admin")
 permit (
   principal,
-  action == Streamarr::Action::"viewHouseholdAdministration",
+  action in
+    [Streamarr::Action::"viewHouseholdAdministration",
+     Streamarr::Action::"viewProfileShareNotification"],
   resource
 )
 when {

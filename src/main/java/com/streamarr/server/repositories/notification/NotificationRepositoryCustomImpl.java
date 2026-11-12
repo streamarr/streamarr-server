@@ -11,7 +11,6 @@ import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 import com.streamarr.server.domain.auth.ProfileShareStatus;
-import com.streamarr.server.domain.notification.GuardedNotification;
 import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
@@ -47,7 +46,6 @@ import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.InsertSetMoreStep;
 import org.jooq.Record1;
-import org.jooq.Records;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 
@@ -95,18 +93,12 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   }
 
   @Override
-  public List<GuardedNotification> findRequestsAbout(UUID shareId) {
-    return dsl.select(
-            NOTIFICATION.ID,
-            NOTIFICATION.RECIPIENT_ACCOUNT_ID,
-            PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
-            PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
-        .from(NOTIFICATION)
-        .join(PROFILE_HOUSEHOLD_SHARE)
-        .on(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
-        .where(NOTIFICATION.SHARE_ID.eq(shareId))
-        .and(NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)))
-        .fetch(Records.mapping(GuardedNotification::new));
+  public List<Notification> findRequestsAbout(UUID shareId) {
+    var query =
+        dsl.selectFrom(NOTIFICATION)
+            .where(NOTIFICATION.SHARE_ID.eq(shareId))
+            .and(NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)));
+    return JooqQueryHelper.nativeQuery(entityManager, query, Notification.class);
   }
 
   @Override
@@ -299,8 +291,21 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
                       ProfileShareReaders.couldRead(
                           NOTIFICATION.RECIPIENT_ACCOUNT_ID,
                           PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
-                          PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)));
+                          PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID,
+                          householdSideReads())));
     };
+  }
+
+  // The stored status, which reads a pending offer as live until the expiry sweep stores its
+  // expiry: wider than the guard, which reads the offer as expired from its expiry time on.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static Condition householdSideReads() {
+    return PROFILE_HOUSEHOLD_SHARE
+        .STATUS
+        .in(
+            inline(com.streamarr.server.jooq.generated.enums.ProfileShareStatus.PENDING),
+            inline(com.streamarr.server.jooq.generated.enums.ProfileShareStatus.ACTIVE))
+        .or(NOTIFICATION.ADDRESSED_TO.eq(inline(ProfileShareSide.HOUSEHOLD_SIDE)));
   }
 
   private static Condition kindAbout(NotificationSubject subject) {

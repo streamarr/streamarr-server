@@ -62,7 +62,7 @@ public class Notification extends BaseAuditableEntity<Notification> {
   @Getter(AccessLevel.NONE)
   private Instant readAt;
 
-  @Getter(AccessLevel.NONE)
+  /** The side of the share it was addressed to, which its guard reads; written once. */
   @Enumerated(EnumType.STRING)
   @JdbcTypeCode(SqlTypes.NAMED_ENUM)
   private ProfileShareSide addressedTo;

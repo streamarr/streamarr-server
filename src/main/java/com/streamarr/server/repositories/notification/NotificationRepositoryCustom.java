@@ -1,6 +1,5 @@
 package com.streamarr.server.repositories.notification;
 
-import com.streamarr.server.domain.notification.GuardedNotification;
 import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
@@ -32,8 +31,8 @@ public interface NotificationRepositoryCustom {
   List<Row<Notification>> rowsOfRecipientWithIds(
       UUID recipientAccountId, Collection<UUID> notificationIds);
 
-  /** The requests about the share, each with its recipient. */
-  List<GuardedNotification> findRequestsAbout(UUID shareId);
+  /** The requests about the share. */
+  List<Notification> findRequestsAbout(UUID shareId);
 
   /**
    * The recipient's unread Notifications at the instant, before the guard decides them: news its

@@ -47,7 +47,8 @@ class NotificationRetentionSweeperTest {
       new NotificationRetentionSweeper(
           notifications,
           new NotificationReads(
-              new ShareNotifications(shares, new ProfileShareGuard(authorization))),
+              new ShareNotifications(
+                  shares, new ProfileShareGuard(authorization), Clock.fixed(NOW, ZoneOffset.UTC))),
           new ServerSettingsService(authorization, new FakeServerSettingsRepository()),
           new TransactionTemplate(new FakeTransactionManager()),
           Clock.fixed(NOW, ZoneOffset.UTC),

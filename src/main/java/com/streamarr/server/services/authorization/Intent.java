@@ -287,4 +287,16 @@ public sealed interface Intent {
 
   /** Mark the signed-in Account's own Notifications read: the same seats as viewing them. */
   record MarkNotificationsRead() implements UnitIntent {}
+
+  /**
+   * The Household's side of a sharing Notification's guard (ADR 0063 §The sharing kinds), asked of
+   * the share's target Household; the offering side passes as {@link ViewProfileShareHouseholds}
+   * does. {@code shareLive} says whether the offer is pending and not expired or the share is
+   * active, and {@code addressedToHouseholdSide} whether the Notification was addressed to the
+   * Household's side; both are read by the notification service from the share and the stored
+   * Notification, never from a client.
+   */
+  record ViewProfileShareNotification(
+      UUID householdId, boolean shareLive, boolean addressedToHouseholdSide)
+      implements UnitIntent {}
 }

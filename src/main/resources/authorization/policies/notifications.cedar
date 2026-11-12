@@ -12,3 +12,17 @@ when {
   principal has enabled && principal.enabled &&
   principal == resource
 };
+
+// A sharing Notification shows to the Household's side as the share does, while the offer is
+// pending and not expired or the share is active (ADR 0024). Once it is over, that side keeps only
+// the Notifications addressed to it, which the changes it received made; the stored side decides,
+// never the kind, so news told to the offering side stays hidden from an Account that later comes
+// to administer the Household (ADR 0063 §The sharing kinds). The offering side passes through
+// viewProfileShareHouseholds at every status.
+@id("household-side-keeps-only-share-notifications-addressed-to-it-once-the-share-is-over")
+forbid (
+  principal,
+  action == Streamarr::Action::"viewProfileShareNotification",
+  resource
+)
+unless { context.shareLive || context.addressedToHouseholdSide };

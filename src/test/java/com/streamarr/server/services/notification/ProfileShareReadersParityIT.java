@@ -10,7 +10,9 @@ import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
+import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
+import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -46,7 +48,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * shows that the permits refuse them, so a permit that comes to allow one moves it to the readers
  * the filter must keep. A reader whose only tie is administering another Household that hosts the
  * Profile is left out by both, so neither can come to show such a reader a share into a Household
- * it does not administer.
+ * it does not administer. Once the offer or the share is over, both leave out a HouseholdAdmin of
+ * the target Household from a Notification addressed to the offering side.
  */
 @Tag("IntegrationTest")
 @DisplayName("Profile Share Readers Parity Integration Tests")
@@ -135,13 +138,22 @@ class ProfileShareReadersParityIT extends AbstractIntegrationTest {
     var notification = newsAbout(reading);
 
     assertThat(guardOf(notification)).isEqualTo(NotificationVisibility.HIDDEN);
-    assertThat(
-            notificationRepository.rowsOfRecipientWithIds(
-                reading.readerId(), List.of(notification.getId())))
-        .isEmpty();
-    assertThat(notificationRepository.findUnreadOfRecipient(reading.readerId(), Instant.now()))
-        .extracting(Notification::getId)
-        .doesNotContain(notification.getId());
+    assertLeftOutOfTheListAndTheCount(reading, notification);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("readersTheHouseholdsSideNoLongerReads")
+  @DisplayName(
+      "Should leave the reader's Notification out of the list and the count when the reader"
+          + " administers the target Household only and the Notification was addressed to the"
+          + " offering side of a share that is over")
+  void shouldLeaveTheReadersNotificationOutWhenItWasAddressedToTheOfferingSideOfAShareThatIsOver(
+      String reader, Arrangement arrangement) {
+    var reading = arrangement.arrange(this);
+    var notification = newsAbout(reading);
+
+    assertThat(guardOf(notification)).isEqualTo(NotificationVisibility.HIDDEN);
+    assertLeftOutOfTheListAndTheCount(reading, notification);
   }
 
   static Stream<Arguments> readersThePermitsAllow() {
@@ -150,8 +162,9 @@ class ProfileShareReadersParityIT extends AbstractIntegrationTest {
             "a HouseholdAdmin of the target Household",
             ProfileShareReadersParityIT::targetHouseholdAdmin),
         reader(
-            "a HouseholdAdmin of the target Household once the share has ended",
-            ProfileShareReadersParityIT::targetHouseholdAdminOnceTheShareEnded),
+            "a HouseholdAdmin of the target Household once the share has ended, for a Notification"
+                + " addressed to the Household's side",
+            ProfileShareReadersParityIT::targetHouseholdAdminToldOnceTheShareEnded),
         reader("a direct ProfileManager", ProfileShareReadersParityIT::directManager),
         reader(
             "the Account of a self-managed Personal Profile",
@@ -194,7 +207,22 @@ class ProfileShareReadersParityIT extends AbstractIntegrationTest {
         reader("an unrelated Account", ProfileShareReadersParityIT::unrelatedAccount),
         reader(
             "a disabled HouseholdAdmin of the target Household",
-            ProfileShareReadersParityIT::disabledTargetHouseholdAdmin));
+            ProfileShareReadersParityIT::disabledTargetHouseholdAdmin),
+        reader(
+            "a HouseholdAdmin of the target Household once the offer's time ran out, for a"
+                + " Notification addressed to the offering side",
+            ProfileShareReadersParityIT::targetHouseholdAdminOnceTheOfferLapsed));
+  }
+
+  static Stream<Arguments> readersTheHouseholdsSideNoLongerReads() {
+    return Stream.of(
+        reader(
+            "a HouseholdAdmin of the target Household once the share has ended",
+            ProfileShareReadersParityIT::targetHouseholdAdminOnceTheShareEnded),
+        reader(
+            "an Account told as the offering side that stopped managing the Profile before the"
+                + " share ended, then became a HouseholdAdmin of the target Household",
+            ProfileShareReadersParityIT::formerManagerPromotedOnceTheShareEnded));
   }
 
   static Stream<Arguments> readersWhoOnlyHostTheProfile() {
@@ -221,17 +249,46 @@ class ProfileShareReadersParityIT extends AbstractIntegrationTest {
     Reading arrange(ProfileShareReadersParityIT test);
   }
 
-  /** A reader, and the share that its Notification is about. */
-  private record Reading(UUID readerId, ProfileHouseholdShare share) {}
+  /** A reader, the share that its Notification is about, and the side it was addressed to. */
+  private record Reading(UUID readerId, ProfileHouseholdShare share, ProfileShareSide addressedTo) {
+
+    /** A reader of a Notification addressed to the offering side. */
+    Reading(UUID readerId, ProfileHouseholdShare share) {
+      this(readerId, share, ProfileShareSide.OFFERING_SIDE);
+    }
+  }
 
   private Reading targetHouseholdAdmin() {
     return new Reading(riverside.account().getId(), share);
   }
 
   private Reading targetHouseholdAdminOnceTheShareEnded() {
-    assertThat(sharing.endProfileShare(authTestSupport.identityOf(riverside), share.getId()))
-        .isInstanceOf(Outcome.Accepted.class);
+    end(riverside);
     return new Reading(riverside.account().getId(), share);
+  }
+
+  private Reading targetHouseholdAdminToldOnceTheShareEnded() {
+    var rowan = track(authTestSupport.createHouseholdMemberIdentity(riverside));
+    grantManagementOfKai(rowan);
+    end(rowan);
+    return new Reading(riverside.account().getId(), share, ProfileShareSide.HOUSEHOLD_SIDE);
+  }
+
+  private Reading targetHouseholdAdminOnceTheOfferLapsed() {
+    var offer = steps.offer(sam, steps.profileManagedBy("Ash", sam, sam), riverside);
+    steps.lapse(offer);
+    return new Reading(riverside.account().getId(), offer);
+  }
+
+  private Reading formerManagerPromotedOnceTheShareEnded() {
+    var brook = track(authTestSupport.createHouseholdMemberIdentity(riverside));
+    grantManagementOfKai(brook);
+    assertThat(
+            profileManagement.relinquishProfileManagement(
+                authTestSupport.identityOf(brook), kai.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    end(riverside);
+    return new Reading(steps.promoted(brook).account().getId(), share);
   }
 
   private Reading targetHouseholdAdminOnceDemoted() {
@@ -360,6 +417,11 @@ class ProfileShareReadersParityIT extends AbstractIntegrationTest {
     return new Reading(uma.account().getId(), share);
   }
 
+  private void end(TestIdentity ender) {
+    assertThat(sharing.endProfileShare(authTestSupport.identityOf(ender), share.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+  }
+
   private void grantManagementOfKai(TestIdentity manager) {
     transactionTemplate.executeWithoutResult(
         _ ->
@@ -394,22 +456,48 @@ class ProfileShareReadersParityIT extends AbstractIntegrationTest {
         });
   }
 
-  /** Unread news about the share for the reader, stored as the writer stores news. */
+  /**
+   * Unread news about the share for the reader, stored as the writer stores news: that the offer
+   * was accepted, to the offering side, or that the offering side ended the share, to the
+   * Household's side.
+   */
   private Notification newsAbout(Reading reading) {
+    var news =
+        switch (reading.addressedTo()) {
+          case OFFERING_SIDE ->
+              NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
+                  .kind(NotificationKind.PROFILE_SHARE_ANSWERED)
+                  .facts(ProfileShareFacts.answered("Kai", ProfileShareAnswer.ACCEPTED));
+          case HOUSEHOLD_SIDE ->
+              NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
+                  .kind(NotificationKind.PROFILE_SHARE_ENDED)
+                  .facts(
+                      ProfileShareFacts.ended(
+                          "Kai",
+                          ProfileShareEndedBy.OFFERING_SIDE,
+                          ProfileShareSide.HOUSEHOLD_SIDE));
+        };
     var notificationId =
         transactionTemplate.execute(
             _ ->
                 notificationRepository
                     .upsertUnreadNews(
-                        NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
-                            .recipientAccountId(reading.readerId())
-                            .kind(NotificationKind.PROFILE_SHARE_ANSWERED)
+                        news.recipientAccountId(reading.readerId())
                             .subjectId(reading.share().getId())
-                            .facts(ProfileShareFacts.answered("Kai", ProfileShareAnswer.ACCEPTED))
                             .at(Instant.now())
                             .build())
                     .notificationId());
     return notificationRepository.findById(notificationId).orElseThrow();
+  }
+
+  private void assertLeftOutOfTheListAndTheCount(Reading reading, Notification notification) {
+    assertThat(
+            notificationRepository.rowsOfRecipientWithIds(
+                reading.readerId(), List.of(notification.getId())))
+        .isEmpty();
+    assertThat(notificationRepository.findUnreadOfRecipient(reading.readerId(), Instant.now()))
+        .extracting(Notification::getId)
+        .doesNotContain(notification.getId());
   }
 
   private NotificationVisibility guardOf(Notification notification) {

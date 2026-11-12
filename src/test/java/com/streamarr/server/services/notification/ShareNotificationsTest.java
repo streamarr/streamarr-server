@@ -12,6 +12,7 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.services.authorization.Decision;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -31,7 +32,7 @@ class ShareNotificationsTest {
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(defaultIdentityBuilder().build());
   private final ShareNotifications notifications =
-      new ShareNotifications(shares, new ProfileShareGuard(authorization));
+      new ShareNotifications(shares, new ProfileShareGuard(authorization), Clock.systemUTC());
 
   @Test
   @DisplayName(

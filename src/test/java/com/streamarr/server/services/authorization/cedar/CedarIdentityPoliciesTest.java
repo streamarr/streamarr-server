@@ -1677,6 +1677,73 @@ class CedarIdentityPoliciesTest {
 
       assertThat(notificationIntents)
           .allSatisfy(intent -> assertThat(decide(atHome(), intent)).isEqualTo(DENIED));
+      assertThat(decide(atHome(), sharingNotification(account.getHouseholdId(), true, true)))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should show a sharing Notification to the target Household's HouseholdAdmin while the"
+            + " share is live, whichever side it was addressed to")
+    void shouldShowASharingNotificationToTheTargetHouseholdAdminWhileTheShareIsLive() {
+      var target = account.getHouseholdId();
+
+      assertThat(decide(atHome(), sharingNotification(target, true, true))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), sharingNotification(target, true, false))).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should keep showing a sharing Notification to the target Household's HouseholdAdmin once"
+            + " the share is over only when it was addressed to the Household's side")
+    void shouldKeepShowingASharingNotificationOnceTheShareIsOverOnlyWhenAddressedToTheHousehold() {
+      var target = account.getHouseholdId();
+
+      assertThat(decide(atHome(), sharingNotification(target, false, true))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), sharingNotification(target, false, false))).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should refuse a sharing Notification on the Household's side to a HouseholdAdmin of"
+            + " another Household and to a plain member")
+    void shouldRefuseASharingNotificationToAnotherHouseholdsAdminAndToAPlainMember() {
+      assertThat(decide(atHome(), sharingNotification(visitedHouseholdId, true, true)))
+          .isEqualTo(DENIED);
+      assertThat(decide(member(), sharingNotification(account.getHouseholdId(), true, true)))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should let a ServerAdmin pass the Household's side only as that side does, once the share"
+            + " is over")
+    void shouldLetAServerAdminPassTheHouseholdsSideOnlyAsThatSideDoesOnceTheShareIsOver() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(decide(member(), sharingNotification(visitedHouseholdId, true, false)))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(member(), sharingNotification(visitedHouseholdId, false, true)))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(member(), sharingNotification(visitedHouseholdId, false, false)))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should refuse a sharing Notification on the Household's side when the session is"
+            + " device-bound")
+    void shouldRefuseASharingNotificationOnTheHouseholdsSideWhenTheSessionIsDeviceBound() {
+      assertThat(
+              decide(onDevice(atHome()), sharingNotification(account.getHouseholdId(), true, true)))
+          .isEqualTo(DENIED);
+    }
+
+    private Intent.UnitIntent sharingNotification(
+        UUID householdId, boolean shareLive, boolean addressedToHouseholdSide) {
+      return new Intent.ViewProfileShareNotification(
+          householdId, shareLive, addressedToHouseholdSide);
     }
   }
 
