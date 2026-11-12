@@ -9,7 +9,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.AudioCodec;
@@ -36,6 +35,7 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
