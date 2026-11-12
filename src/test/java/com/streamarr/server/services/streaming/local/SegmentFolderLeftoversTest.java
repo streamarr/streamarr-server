@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -601,6 +602,40 @@ class SegmentFolderLeftoversTest {
           .isEqualTo(otherFolder);
       assertThat(movie).hasBinaryContent(MEDIA);
       assertThat(markedFolder.resolve(sessionName)).doesNotExist();
+    }
+  }
+
+  // The folder that the link is pointed at belongs to another running server process, which holds
+  // its own lock. The start holds the lock of the folder that the link named first.
+  @Test
+  @DisplayName(
+      "Should keep another server process's stream sessions when the segment folder's soft link is"
+          + " pointed at its folder while the start takes the lock")
+  void
+      shouldKeepAnotherServerProcesssStreamSessionsWhenTheSegmentFoldersSoftLinkIsPointedAtItsFolderWhileTheStartTakesTheLock()
+          throws IOException {
+    startOf(segmentFolder);
+    var leftover = leftSessionIn(segmentFolder);
+    var otherFolder = Files.createDirectory(outside.resolve("segments"));
+    startOf(otherFolder);
+    var link = Files.createSymbolicLink(machine.resolve("segments"), segmentFolder);
+    var pointedAtTheOtherFolderOnceItOpensTheLock =
+        ThrowingFileSystemWrapper.runningAfterEachChannelOpenOf(
+            FileSystems.getDefault(), LOCK_NAME, () -> pointAt(link, otherFolder));
+    try (var otherProcessLock = new SegmentFolderLock()) {
+      var otherProcessSession =
+          new LocalSegmentStore(otherFolder, otherProcessLock)
+              .getOutputDirectory(UUID.randomUUID());
+
+      var outcome =
+          startOf(leftoversOf(pointedAtTheOtherFolderOnceItOpensTheLock.getPath(link.toString())));
+
+      assertThat(Files.readSymbolicLink(link))
+          .as("the link was pointed at the other folder while the start took the lock")
+          .isEqualTo(otherFolder);
+      assertThat(otherProcessSession).isDirectory();
+      assertThat(leftover).doesNotExist();
+      assertThat(outcome).isEqualTo(new Deleted(1, 0));
     }
   }
 

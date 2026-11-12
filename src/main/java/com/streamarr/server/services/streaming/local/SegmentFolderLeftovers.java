@@ -74,18 +74,21 @@ public class SegmentFolderLeftovers {
    */
   public SegmentFolderLeftoversOutcome delete() {
     try {
-      var refusal = refusal(resolved(segmentFolder));
+      // Resolved once: a soft link on the configured path that is pointed elsewhere meanwhile leads
+      // no later step out of the folder that the refusals checked and the lock guards.
+      var folder = resolved(segmentFolder);
+      var refusal = refusal(folder);
       if (refusal.isPresent()) {
         return refused(refusal.get());
       }
 
-      Files.createDirectories(segmentFolder);
+      Files.createDirectories(folder);
       // Before the lock's file, so that a folder that holds something else gets nothing.
-      if (!isMarkable(segmentFolder)) {
+      if (!isMarkable(folder)) {
         return refused(SegmentFolderRefusal.UNMARKED_FOLDER);
       }
 
-      return lock.whileAlone(segmentFolder, () -> markAndDeleteEachLeftover(segmentFolder))
+      return lock.whileAlone(folder, () -> markAndDeleteEachLeftover(folder))
           .orElseGet(() -> refused(SegmentFolderRefusal.IN_USE));
     } catch (IOException | RuntimeException e) {
       log.warn("Failed to delete the leftovers in the segment folder {}", segmentFolder, e);
