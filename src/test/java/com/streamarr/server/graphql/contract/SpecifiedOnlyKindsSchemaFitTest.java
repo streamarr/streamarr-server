@@ -34,7 +34,8 @@ class SpecifiedOnlyKindsSchemaFitTest {
           createdAt: String!
           latestEventAt: String!
           unread: Boolean!
-          library: Library!
+          libraryId: ID!
+          libraryName: String!
           added: Int!
           removed: Int!
           failed: Int!
@@ -49,7 +50,16 @@ class SpecifiedOnlyKindsSchemaFitTest {
           unread: Boolean!
           expiresAt: String
           resolution: RequestResolution
+          resolvedAt: String
+          invitationId: ID!
           profileName: String!
+          answer: ProfileManagerInvitationAnswer
+      }
+
+      "Test SDL only: how an invited Account answered."
+      enum ProfileManagerInvitationAnswer {
+          ACCEPTED
+          DECLINED
       }
       """;
 

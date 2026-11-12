@@ -1,13 +1,12 @@
 package com.streamarr.server.services.notification;
 
-import com.streamarr.server.domain.notification.SubjectNotification;
-import com.streamarr.server.repositories.notification.ShareNotificationRepository;
+import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.mutation.Outcome;
-import com.streamarr.server.services.notification.events.NotificationsReadEvent;
-import com.streamarr.server.services.notification.events.ReadNotification;
+import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
@@ -16,6 +15,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -24,8 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * What the signed-in Account reads and marks of its own Notifications (ADR 0063). Every read and
- * mark is refused to a device-bound session, and shows only the Notifications that the guard shows
- * the Account, decided from its stored relationships.
+ * mark is refused to a device-bound session, and looks at the Account's own Notifications alone:
+ * nothing decides again what the Account was told.
  */
 @Service
 @RequiredArgsConstructor
@@ -36,8 +37,7 @@ public class NotificationService {
 
   private final AuthorizationService authorizationService;
   private final NotificationsList notificationsList;
-  private final NotificationReads notificationReads;
-  private final ShareNotificationRepository notificationRepository;
+  private final NotificationRepository notificationRepository;
   private final Clock clock;
   private final ApplicationEventPublisher events;
 
@@ -56,7 +56,7 @@ public class NotificationService {
 
   /** The Account's Notifications, newest latest event first. */
   @Transactional(readOnly = true)
-  public ListPage<SubjectNotification> notifications(
+  public ListPage<StoredNotification> notifications(
       @NonNull AuthenticatedIdentity identity, @NonNull PageRequest request) {
     authorizationService.requireAllowed(identity, new Intent.ViewNotifications());
     return Pager.page(notificationsList, identity.accountId(), request);
@@ -70,9 +70,9 @@ public class NotificationService {
   }
 
   /**
-   * Marks read those of the given Notifications that are the Account's, that the guard shows it and
-   * that are unread, and answers the Account's unread count after it. Every other id is skipped
-   * alike, so the answer never tells which Notifications exist.
+   * Marks read those of the given Notifications that are the Account's and unread, and answers the
+   * Account's unread count after it. Every other id is skipped alike, so the answer never tells
+   * which Notifications exist.
    */
   @Transactional
   public Outcome<Integer, MarkNotificationsReadRejection> markNotificationsRead(
@@ -83,53 +83,38 @@ public class NotificationService {
           new MarkNotificationsReadRejection.IdCountOutOfRange(FEWEST_MARKED, MOST_MARKED));
     }
 
-    var now = clock.instant();
-    var accountId = identity.accountId();
-    var shown =
-        notificationReads.shown(
-            notificationRepository.findUnreadOfRecipientWithIds(accountId, notificationIds, now));
-    publishMarked(
-        accountId,
+    var marked =
         notificationRepository.markRead(
-            shown.stream().map(notification -> notification.notification().getId()).toList(),
-            accountId,
-            now));
-    return Outcome.accepted(unreadCountOf(accountId));
+            RecipientReference.account(identity.accountId()), notificationIds, clock.instant());
+    if (!marked.isEmpty()) {
+      events.publishEvent(new NotificationsChangedEvent(marked));
+    }
+
+    return Outcome.accepted(unreadCountOf(identity.accountId()));
   }
 
   /**
-   * Those of a change's Notifications that the guard shows the Account now, and its unread count
-   * after the change. Empty when the guard shows it none of them, or none is still kept.
+   * A committed change to the Account's Notifications as the Account reads it now: each of the
+   * change's Notifications at its place in the list, or gone, and the unread count. It decides
+   * nothing: the Account's access to its Notifications was decided when it began to follow them.
    */
   @Transactional(readOnly = true)
-  public Optional<NotificationsShown> shownChange(
+  public NotificationsChangeRead changeOf(
       @NonNull AuthenticatedIdentity identity, @NonNull Collection<UUID> notificationIds) {
-    authorizationService.requireAllowed(identity, new Intent.ViewNotifications());
-    var shown =
-        notificationsList.shownOf(
-            notificationRepository.rowsOfRecipientWithIds(identity.accountId(), notificationIds));
-    if (shown.isEmpty()) {
-      return Optional.empty();
-    }
-
-    return Optional.of(new NotificationsShown(shown, unreadCountOf(identity.accountId())));
-  }
-
-  private void publishMarked(UUID accountId, List<UUID> notificationIds) {
-    if (notificationIds.isEmpty()) {
-      return;
-    }
-
-    events.publishEvent(
-        new NotificationsReadEvent(
-            notificationIds.stream()
-                .map(id -> new ReadNotification(id, accountId, ReadNotification.Read.MARKED))
-                .toList()));
+    var recipient = RecipientReference.account(identity.accountId());
+    var kept =
+        notificationRepository.rowsOfRecipientWithIds(recipient, notificationIds).stream()
+            .collect(Collectors.toMap(row -> row.item().id(), Function.identity()));
+    return new NotificationsChangeRead(
+        notificationIds.stream()
+            .distinct()
+            .map(id -> new NotificationsChangeRead.Changed(id, Optional.ofNullable(kept.get(id))))
+            .toList(),
+        unreadCountOf(identity.accountId()));
   }
 
   private int unreadCountOf(UUID accountId) {
-    return notificationReads
-        .shown(notificationRepository.findUnreadOfRecipient(accountId, clock.instant()))
-        .size();
+    return notificationRepository.countUnread(
+        RecipientReference.account(accountId), clock.instant());
   }
 }

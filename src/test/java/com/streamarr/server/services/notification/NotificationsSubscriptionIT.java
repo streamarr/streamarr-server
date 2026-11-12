@@ -9,15 +9,21 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
-import com.streamarr.server.domain.notification.Notification;
+import com.streamarr.server.domain.notification.ProfileShareAnswer;
+import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
+import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
+import com.streamarr.server.services.events.notification.RecipientReference;
+import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
+import com.streamarr.server.services.events.notification.SharingNotificationKinds;
+import com.streamarr.server.services.events.notification.SubjectReference;
+import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.identity.AccountAdministrationService;
 import com.streamarr.server.services.identity.AccountLifecycleService;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
@@ -36,11 +42,20 @@ import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import com.streamarr.server.support.ProfileConnections;
 import com.streamarr.server.support.ShareSteps;
+import com.streamarr.server.support.StoredNotificationRows;
+import com.streamarr.server.support.StoredNotificationRows.Row;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,6 +64,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
@@ -56,7 +72,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Each committed change to an Account's Notifications reaches every open socket of that Account,
- * with the edge the notifications query shows it, and never a Notification the guard hides.
+ * with the edge the notifications query shows it, read from the Account's own Notifications.
  */
 @Tag("IntegrationTest")
 @DisplayName("Notifications Subscription Integration Tests")
@@ -130,7 +146,8 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private UserAccountRepository userAccountRepository;
-  @Autowired private ShareNotificationRepository notificationRepository;
+  @Autowired private ApplicationEventPublisher eventPublisher;
+  @Autowired private DSLContext dsl;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private MeterRegistry meterRegistry;
@@ -144,9 +161,11 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   private TestIdentity riversideAdmin;
   private ShareSteps steps;
   private ProfileConnections connections;
+  private StoredNotificationRows rows;
 
   @BeforeEach
   void setUp() {
+    rows = new StoredNotificationRows(dsl);
     activeSubscriptions = new ActiveSubscriptions(meterRegistry);
     steps =
         ShareSteps.builder()
@@ -179,6 +198,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     sockets.forEach(GraphQlTransportWsTestClient::close);
     activeSubscriptions.awaitNoneActive();
     connections.deleteConnected();
+    rows.deleteOf(identities.stream().map(NotificationsSubscriptionIT::accountOf).toList());
     identities.reversed().forEach(authTestSupport::deleteIdentity);
   }
 
@@ -198,7 +218,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     var request = requestFor(riversideAdmin, offer);
     assertThat(made.path("unreadNotificationCount").asInt()).isEqualTo(1);
     assertThat(onlyChange(made).path("notificationId").asString())
-        .isEqualTo(request.getId().toString());
+        .isEqualTo(request.id().toString());
     assertThat(nodeOf(made).path("__typename").asString())
         .isEqualTo("ProfileShareOfferedNotification");
     assertThat(nodeOf(made).path("unread").asBoolean()).isTrue();
@@ -274,11 +294,11 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
     var withdrawn = nextChange(socket);
     assertThat(onlyChange(withdrawn).path("notificationId").asString())
-        .isEqualTo(requestFor(riversideAdmin, older).getId().toString());
+        .isEqualTo(requestFor(riversideAdmin, older).id().toString());
     assertThat(nodeOf(withdrawn).path("resolution").asString()).isEqualTo("WITHDRAWN");
     var made = nextChange(socket);
     assertThat(onlyChange(made).path("notificationId").asString())
-        .isEqualTo(requestFor(riversideAdmin, newer).getId().toString());
+        .isEqualTo(requestFor(riversideAdmin, newer).id().toString());
     assertMatchesAFreshQuery(made, riversideAdmin);
   }
 
@@ -540,7 +560,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     var resolved = nextChange(socket);
     assertThat(onlyChange(resolved).path("notificationId").asString())
-        .isEqualTo(requestFor(sam, offer).getId().toString());
+        .isEqualTo(requestFor(sam, offer).id().toString());
     assertThat(nodeOf(resolved).path("resolution").asString()).isEqualTo("DECIDED");
     assertMatchesAFreshQuery(resolved, sam);
   }
@@ -568,33 +588,9 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     var resolved = nextChange(socket);
     assertThat(onlyChange(resolved).path("notificationId").asString())
-        .isEqualTo(requestFor(sam, offer).getId().toString());
+        .isEqualTo(requestFor(sam, offer).id().toString());
     assertThat(nodeOf(resolved).path("resolution").asString()).isEqualTo("DECIDED");
     assertMatchesAFreshQuery(resolved, sam);
-  }
-
-  @Test
-  @DisplayName(
-      "Should deliver nothing about a request when its Profile is deleted, and leave it out of a"
-          + " fresh query")
-  void shouldDeliverNothingAboutARequestWhenItsProfileIsDeleted() throws Exception {
-    var deleted = steps.offer(sam, kai(), riverside);
-    var serverAdmin = track(authTestSupport.createAdminIdentity());
-    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
-
-    var outcome =
-        profileLifecycle.administrativelyDeleteProfile(
-            authTestSupport.freshIdentityOf(serverAdmin),
-            deleted.getProfileId(),
-            "a duplicate Profile");
-    var later = steps.offer(sam, steps.profileManagedBy("Ash", sam, sam), riverside);
-
-    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
-    var first = nextChange(socket);
-    assertThat(onlyChange(first).path("notificationId").asString())
-        .isEqualTo(requestFor(riversideAdmin, later).getId().toString());
-    assertThat(first.path("unreadNotificationCount").asInt()).isEqualTo(1);
-    assertMatchesAFreshQuery(first, riversideAdmin);
   }
 
   @Test
@@ -608,7 +604,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
     var expired = nextChange(socket);
     assertThat(onlyChange(expired).path("notificationId").asString())
-        .isEqualTo(requestFor(riversideAdmin, offer).getId().toString());
+        .isEqualTo(requestFor(riversideAdmin, offer).id().toString());
     assertThat(nodeOf(expired).path("resolution").asString()).isEqualTo("EXPIRED");
     assertThat(expired.path("unreadNotificationCount").asInt()).isZero();
     assertMatchesAFreshQuery(expired, riversideAdmin);
@@ -626,8 +622,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     var phone = subscribedSocket(authTestSupport.accountBearer(theo));
     var laptop = subscribedSocket(authTestSupport.accountBearer(theo));
 
-    notificationService.markNotificationsRead(
-        authTestSupport.identityOf(theo), List.of(news.getId()));
+    notificationService.markNotificationsRead(authTestSupport.identityOf(theo), List.of(news.id()));
 
     var onPhone = nextChange(phone);
     var onLaptop = nextChange(laptop);
@@ -635,7 +630,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
         .allSatisfy(
             marked -> {
               assertThat(onlyChange(marked).path("notificationId").asString())
-                  .isEqualTo(news.getId().toString());
+                  .isEqualTo(news.id().toString());
               assertThat(nodeOf(marked).path("__typename").asString())
                   .isEqualTo("ProfileShareAnsweredNotification");
               assertThat(nodeOf(marked).path("unread").asBoolean()).isFalse();
@@ -663,12 +658,12 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
                 .path("notifications")
                 .valueStream()
                 .map(change -> change.path("notificationId").asString()))
-        .containsExactlyInAnyOrder(kai.getId().toString(), ollie.getId().toString());
+        .containsExactlyInAnyOrder(kai.id().toString(), ollie.id().toString());
     assertThat(marked.path("unreadNotificationCount").asInt()).isZero();
     assertMatchesAFreshQuery(marked, theo);
     var sentinel = newsFor(theo, "Ash");
     assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
-        .isEqualTo(sentinel.getId().toString());
+        .isEqualTo(sentinel.id().toString());
   }
 
   @Test
@@ -678,13 +673,14 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     var socket = subscribedSocket(authTestSupport.accountBearer(theo));
     markRead(theo, kai);
     assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
-        .isEqualTo(kai.getId().toString());
+        .isEqualTo(kai.id().toString());
 
-    markRead(theo, kai, requestFor(sam, shareRepository.findById(kai.getShareId()).orElseThrow()));
+    markRead(
+        theo, kai, requestFor(sam, shareRepository.findById(kai.subject().id()).orElseThrow()));
     var sentinel = newsFor(theo, "Ash");
 
     assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
-        .isEqualTo(sentinel.getId().toString());
+        .isEqualTo(sentinel.id().toString());
   }
 
   @Test
@@ -696,101 +692,48 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     transactionTemplate.executeWithoutResult(
         status -> {
           notificationService.markNotificationsRead(
-              authTestSupport.identityOf(theo), List.of(kai.getId()));
+              authTestSupport.identityOf(theo), List.of(kai.id()));
           status.setRollbackOnly();
         });
     var sentinel = newsFor(theo, "Ash");
 
     assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
-        .isEqualTo(sentinel.getId().toString());
-    assertThat(notificationRepository.findById(kai.getId()).orElseThrow().getReadAt()).isEmpty();
+        .isEqualTo(sentinel.id().toString());
+    assertThat(stored(kai).readAt()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should deliver nothing about a request when the guard hides it from its recipient")
-  void shouldDeliverNothingAboutARequestWhenTheGuardHidesItFromItsRecipient() {
-    var hidden = steps.offer(sam, kai(), riverside);
+  @DisplayName(
+      "Should deliver the decision when it arrives after the request read as expired, as a fresh"
+          + " query reads it")
+  void shouldDeliverTheDecisionWhenItArrivesAfterTheRequestReadAsExpired() throws Exception {
+    var offer = SubjectReference.profileShare(UUID.randomUUID());
+    var expiry = Instant.now().minus(Duration.ofMinutes(1)).truncatedTo(ChronoUnit.MICROS);
+    publish(
+        TellNotificationEvent.builder()
+            .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
+            .subject(offer)
+            .recipients(Set.of(accountOf(riversideAdmin)))
+            .snapshot(new ProfileShareOfferedSnapshot("Kai", Optional.empty()))
+            .at(expiry.minus(Duration.ofDays(7)))
+            .subjectExpiresAt(Optional.of(expiry))
+            .build());
     var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
-    transactionTemplate.executeWithoutResult(
-        _ -> userAccountRepository.tryDemoteToHouseholdMember(riversideAdmin.account().getId()));
 
-    sharing.rejectProfileShare(authTestSupport.identityOf(riverside), hidden.getId());
-    var ash = steps.profileManagedBy("Ash", riverside, riversideAdmin);
-    var shown = steps.offer(riversideAdmin, ash, sam);
-    steps.accept(sam, shown);
+    publish(
+        ResolveRequestsEvent.builder()
+            .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
+            .subject(offer)
+            .resolution(RequestResolution.DECIDED)
+            .answer(Optional.of(ProfileShareAnswer.ACCEPTED))
+            .at(expiry.minusSeconds(1))
+            .build());
 
-    var first = nextChange(socket);
-    assertThat(nodeOf(first).path("__typename").asString())
-        .isEqualTo("ProfileShareAnsweredNotification");
-    assertThat(onlyChange(first).path("notificationId").asString())
-        .isEqualTo(requestFor(riversideAdmin, shown).getId().toString());
-  }
-
-  @Test
-  @DisplayName(
-      "Should deliver nothing about a share when its offerer stopped managing the Profile and only"
-          + " administers another Household that hosts it")
-  void shouldDeliverNothingAboutAShareWhenItsOffererStoppedManagingTheProfile() {
-    var brook = track(authTestSupport.createIdentity());
-    var kai = steps.profileManagedBy("Kai", sam, sam, brook);
-    steps.accept(brook, steps.offer(sam, kai, brook));
-    var intoRiverside = steps.accept(riverside, steps.offer(brook, kai, riverside));
-    assertThat(
-            profileManagement.relinquishProfileManagement(
-                authTestSupport.identityOf(brook), kai.getId()))
-        .isInstanceOf(Outcome.Accepted.class);
-    var socket = subscribedSocket(authTestSupport.accountBearer(brook));
-
-    assertThat(
-            sharing.endProfileShare(
-                authTestSupport.identityOf(riversideAdmin), intoRiverside.getId()))
-        .isInstanceOf(Outcome.Accepted.class);
-    var shown = steps.offer(sam, steps.profileManagedBy("Ash", sam, sam), brook);
-
-    assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
-        .isEqualTo(requestFor(brook, shown).getId().toString());
-  }
-
-  @Test
-  @DisplayName(
-      "Should deliver nothing about the end of a share to its offerer when it stopped managing the"
-          + " Profile and has become a HouseholdAdmin of the Household the share is into")
-  void shouldDeliverNothingAboutTheEndToItsOffererWhenItNowAdministersTheTargetHousehold() {
-    var brook = track(authTestSupport.createHouseholdMemberIdentity(riverside));
-    var kai = steps.profileManagedBy("Kai", sam, sam, brook);
-    var share = steps.accept(riverside, steps.offer(brook, kai, riverside));
-    assertThat(
-            profileManagement.relinquishProfileManagement(
-                authTestSupport.identityOf(brook), kai.getId()))
-        .isInstanceOf(Outcome.Accepted.class);
-    var promoted = steps.promoted(brook);
-    var socket = subscribedSocket(authTestSupport.accountBearer(promoted));
-
-    assertThat(sharing.endProfileShare(authTestSupport.identityOf(riversideAdmin), share.getId()))
-        .isInstanceOf(Outcome.Accepted.class);
-    var shown = steps.offer(sam, steps.profileManagedBy("Ash", sam, sam), riverside);
-
-    assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
-        .isEqualTo(requestFor(promoted, shown).getId().toString());
-  }
-
-  @Test
-  @DisplayName(
-      "Should end notificationsChanged with FORBIDDEN at the next change when the Account is"
-          + " disabled after subscribing")
-  void shouldEndNotificationsChangedWithForbiddenWhenTheAccountIsDisabledAfterSubscribing() {
-    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
-    var account = userAccountRepository.findById(riversideAdmin.account().getId()).orElseThrow();
-    account.setEnabled(false);
-    userAccountRepository.saveAndFlush(account);
-
-    steps.offer(sam, kai(), riverside);
-
-    var ending = socket.nextMessageFor(OPERATION);
-    assertThat(ending.path("type").asString()).isEqualTo("error");
-    assertThat(ending.path("payload").path(0).path("extensions").path("code").asString())
-        .isEqualTo("FORBIDDEN");
-    activeSubscriptions.awaitCount(FIELD, 0);
+    var decided = nextChange(socket);
+    assertThat(nodeOf(decided).path("resolution").asString()).isEqualTo("DECIDED");
+    assertThat(nodeOf(decided).path("message").asString())
+        .isEqualTo("The offer of “Kai” to your Household was accepted.");
+    assertMatchesAFreshQuery(decided, riversideAdmin);
   }
 
   @Test
@@ -812,15 +755,15 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   }
 
   /** The recipient's news that Riverside accepted an offer of a new Profile that Theo manages. */
-  private Notification newsFor(TestIdentity recipient, String profileName) {
+  private Row newsFor(TestIdentity recipient, String profileName) {
     var offer = steps.offer(sam, steps.profileManagedBy(profileName, sam, sam, theo), riverside);
     return requestFor(recipient, steps.accept(riverside, offer));
   }
 
-  private void markRead(TestIdentity reader, Notification... notifications) throws Exception {
+  private void markRead(TestIdentity reader, Row... notifications) throws Exception {
     var ids =
         Stream.of(notifications)
-            .map(notification -> "\"%s\"".formatted(notification.getId()))
+            .map(notification -> "\"%s\"".formatted(notification.id()))
             .collect(Collectors.joining(", "));
     mockMvc
         .perform(graphqlRequest(authTestSupport.accountBearer(reader), MARK.formatted(ids)))
@@ -828,14 +771,27 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
   }
 
-  private Notification requestFor(TestIdentity recipient, ProfileHouseholdShare share) {
-    return notificationRepository.findAll().stream()
-        .filter(notification -> notification.getShareId().equals(share.getId()))
-        .filter(
-            notification ->
-                notification.getRecipientAccountId().equals(recipient.account().getId()))
+  /** The recipient's Notification about the share. */
+  private Row requestFor(TestIdentity recipient, ProfileHouseholdShare share) {
+    return rows.about(SubjectReference.profileShare(share.getId())).stream()
+        .filter(notification -> notification.recipient().equals(accountOf(recipient)))
         .findFirst()
         .orElseThrow();
+  }
+
+  private Row stored(Row notification) {
+    return rows.of(notification.recipient()).stream()
+        .filter(row -> row.id().equals(notification.id()))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private void publish(Object event) {
+    transactionTemplate.executeWithoutResult(_ -> eventPublisher.publishEvent(event));
+  }
+
+  private static RecipientReference accountOf(TestIdentity identity) {
+    return RecipientReference.account(identity.account().getId());
   }
 
   /**
@@ -845,7 +801,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   private void assertWithdrawn(JsonNode change, TestIdentity recipient, ProfileHouseholdShare offer)
       throws Exception {
     assertThat(onlyChange(change).path("notificationId").asString())
-        .isEqualTo(requestFor(recipient, offer).getId().toString());
+        .isEqualTo(requestFor(recipient, offer).id().toString());
     assertThat(nodeOf(change).path("resolution").asString()).isEqualTo("WITHDRAWN");
     assertMatchesAFreshQuery(change, recipient);
   }

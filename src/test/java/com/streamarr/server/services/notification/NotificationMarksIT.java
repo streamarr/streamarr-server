@@ -1,9 +1,10 @@
 package com.streamarr.server.services.notification;
 
-import static com.streamarr.server.jooq.generated.tables.ShareNotification.SHARE_NOTIFICATION;
+import static com.streamarr.server.jooq.generated.tables.Notification.NOTIFICATION;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
+import static com.streamarr.server.support.StoredNotificationRows.document;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -13,28 +14,29 @@ import com.jayway.jsonpath.JsonPath;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
-import com.streamarr.server.domain.notification.Notification;
-import com.streamarr.server.domain.notification.NotificationDraft;
-import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
-import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.repositories.notification.ShareNotificationRepository;
-import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
+import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
+import com.streamarr.server.services.events.notification.RecipientReference;
+import com.streamarr.server.services.events.notification.SharingNotificationKinds;
+import com.streamarr.server.services.events.notification.SubjectReference;
+import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.identity.ProfileSharingService;
-import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.ShareSteps;
+import com.streamarr.server.support.StoredNotificationRows;
+import com.streamarr.server.support.StoredNotificationRows.Row;
 import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -52,6 +54,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -70,12 +73,11 @@ class NotificationMarksIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private ProfileSharingService sharing;
-  @Autowired private ProfileManagerAdministrationService profileManagement;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private UserAccountRepository userAccountRepository;
-  @Autowired private ShareNotificationRepository notificationRepository;
+  @Autowired private ApplicationEventPublisher eventPublisher;
   @Autowired private NotificationService notificationService;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
@@ -88,9 +90,11 @@ class NotificationMarksIT extends AbstractIntegrationTest {
   private TestIdentity riverside;
   private TestIdentity riversideAdmin;
   private ShareSteps steps;
+  private StoredNotificationRows rows;
 
   @BeforeEach
   void setUp() {
+    rows = new StoredNotificationRows(dsl);
     steps =
         ShareSteps.builder()
             .sharing(sharing)
@@ -110,6 +114,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
 
   @AfterEach
   void tearDown() {
+    rows.deleteOf(identities.stream().map(NotificationMarksIT::accountOf).toList());
     identities.reversed().forEach(authTestSupport::deleteIdentity);
   }
 
@@ -124,14 +129,14 @@ class NotificationMarksIT extends AbstractIntegrationTest {
     var notShown = acceptedNewsFor(theo, "Ash");
     happenedBefore(notShown, shown);
 
-    mark(theo, shown.getId(), alsoShown.getId())
+    mark(theo, shown.id(), alsoShown.id())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(1))
         .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
 
-    assertThat(stored(shown).getReadAt()).isPresent();
-    assertThat(stored(alsoShown).getReadAt()).isPresent();
-    assertThat(stored(notShown).getReadAt()).isEmpty();
+    assertThat(stored(shown).readAt()).isPresent();
+    assertThat(stored(alsoShown).readAt()).isPresent();
+    assertThat(stored(notShown).readAt()).isEmpty();
   }
 
   @ParameterizedTest(name = "{0} ids")
@@ -145,7 +150,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(0))
         .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
 
-    assertThat(stored(news).getReadAt()).isPresent();
+    assertThat(stored(news).readAt()).isPresent();
   }
 
   @ParameterizedTest(name = "{0} ids")
@@ -165,7 +170,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
             jsonPath("$.data.markNotificationsRead.userErrors[0].inputPath[0]")
                 .value("notificationIds"));
 
-    assertThat(stored(news).getReadAt()).isEmpty();
+    assertThat(stored(news).readAt()).isEmpty();
   }
 
   @Test
@@ -176,7 +181,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
     var theos = acceptedNewsFor(theo, "Kai");
     var sams = newsAboutTheSameShare(sam, theos);
 
-    var forAnotherAccounts = bodyOf(mark(theo, sams.getId()));
+    var forAnotherAccounts = bodyOf(mark(theo, sams.id()));
     var forAnUnknownId = bodyOf(mark(theo, UUID.randomUUID()));
 
     assertThat(forAnotherAccounts).isEqualTo(forAnUnknownId);
@@ -186,23 +191,23 @@ class NotificationMarksIT extends AbstractIntegrationTest {
         .isOne();
     assertThat(JsonPath.<List<?>>read(forAnUnknownId, "$.data.markNotificationsRead.userErrors"))
         .isEmpty();
-    assertThat(stored(sams).getReadAt()).isEmpty();
-    assertThat(stored(theos).getReadAt()).isEmpty();
+    assertThat(stored(sams).readAt()).isEmpty();
+    assertThat(stored(theos).readAt()).isEmpty();
   }
 
   @Test
   @DisplayName("Should keep when it was read when an id given is already read")
   void shouldKeepWhenItWasReadWhenAnIdGivenIsAlreadyRead() throws Exception {
     var news = acceptedNewsFor(theo, "Kai");
-    mark(theo, news.getId());
-    var firstRead = stored(news).getReadAt();
+    mark(theo, news.id());
+    var firstRead = stored(news).readAt();
 
-    mark(theo, news.getId())
+    mark(theo, news.id())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(0))
         .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
 
-    assertThat(stored(news).getReadAt()).isEqualTo(firstRead);
+    assertThat(stored(news).readAt()).isEqualTo(firstRead);
   }
 
   @Test
@@ -212,58 +217,14 @@ class NotificationMarksIT extends AbstractIntegrationTest {
     var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
     var request = notificationFor(riversideAdmin, offer);
 
-    mark(riversideAdmin, request.getId())
+    mark(riversideAdmin, request.id())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(0))
         .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
 
-    assertThat(stored(request).getReadAt()).isPresent();
+    assertThat(stored(request).readAt()).isPresent();
     assertThat(shareRepository.findById(offer.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileShareStatus.PENDING);
-  }
-
-  @Test
-  @DisplayName(
-      "Should leave unread the Notification that the guard hides from its recipient when its id"
-          + " is given")
-  void shouldLeaveUnreadTheNotificationThatTheGuardHidesWhenItsIdIsGiven() throws Exception {
-    var request =
-        notificationFor(
-            riversideAdmin, steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside));
-    demote(riversideAdmin);
-
-    mark(riversideAdmin, request.getId())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(0))
-        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
-
-    assertThat(stored(request).getReadAt()).isEmpty();
-  }
-
-  @Test
-  @DisplayName(
-      "Should leave unread news told to the offering side when its recipient stopped managing the"
-          + " Profile before the share ended and has since become a HouseholdAdmin of the Household"
-          + " the share was into")
-  void shouldLeaveUnreadOfferingSideNewsWhenItsRecipientNowAdministersTheTargetHousehold()
-      throws Exception {
-    var brook = track(authTestSupport.createHouseholdMemberIdentity(riverside));
-    var kai = steps.profileManagedBy("Kai", sam, sam, brook);
-    var share = steps.accept(riverside, steps.offer(brook, kai, riverside));
-    assertThat(
-            profileManagement.relinquishProfileManagement(
-                authTestSupport.identityOf(brook), kai.getId()))
-        .isInstanceOf(Outcome.Accepted.class);
-    assertThat(sharing.endProfileShare(authTestSupport.identityOf(riverside), share.getId()))
-        .isInstanceOf(Outcome.Accepted.class);
-    var news = notificationFor(brook, share);
-
-    mark(steps.promoted(brook), news.getId())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(0))
-        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
-
-    assertThat(stored(news).getReadAt()).isEmpty();
   }
 
   @Test
@@ -271,7 +232,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
   void shouldAnswerThatTheIdIsInvalidAndMarkNothingWhenOneGivenIsNotAnId() throws Exception {
     var news = acceptedNewsFor(theo, "Kai");
 
-    mark(theo, news.getId(), "Kai")
+    mark(theo, news.id(), "Kai")
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").doesNotExist())
         .andExpect(
@@ -282,7 +243,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
                 .value("notificationIds"))
         .andExpect(jsonPath("$.data.markNotificationsRead.userErrors[0].inputPath[1]").value("1"));
 
-    assertThat(stored(news).getReadAt()).isEmpty();
+    assertThat(stored(news).readAt()).isEmpty();
   }
 
   @Test
@@ -292,7 +253,8 @@ class NotificationMarksIT extends AbstractIntegrationTest {
   void shouldKeepWhatAnUpdateInPlaceStoredWhenTheMarkOfTheNotificationWaitedBehindIt()
       throws Exception {
     var news = acceptedNewsFor(theo, "Kai");
-    var later = news.getLatestEventAt().plusSeconds(60);
+    var later = news.latestEventAt().plusSeconds(60);
+    var told = new ProfileShareAnsweredSnapshot("Kai Rose", ProfileShareAnswer.ACCEPTED);
     var updateHolds = new CountDownLatch(1);
     var releaseUpdate = new CountDownLatch(1);
     var updatePid = new AtomicInteger();
@@ -303,11 +265,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
               () ->
                   transactionTemplate.executeWithoutResult(
                       _ -> {
-                        var held =
-                            notificationRepository.upsertUnreadNews(answeredAgain(news, later));
-                        notificationRepository.replaceFacts(
-                            held.notificationId(),
-                            ProfileShareFacts.answered("Kai Rose", ProfileShareAnswer.ACCEPTED));
+                        eventPublisher.publishEvent(answeredAgain(news, told, later));
                         updatePid.set(
                             dsl.select(DSL.field("pg_backend_pid()", SQLDataType.INTEGER))
                                 .fetchSingle()
@@ -320,7 +278,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
           executor.submit(
               () ->
                   notificationService.markNotificationsRead(
-                      authTestSupport.identityOf(theo), List.of(news.getId())));
+                      authTestSupport.identityOf(theo), List.of(news.id())));
       await()
           .atMost(Duration.ofSeconds(10))
           .until(() -> waitersBehind(jdbcTemplate, updatePid.get(), "update%notification%") == 1);
@@ -331,9 +289,9 @@ class NotificationMarksIT extends AbstractIntegrationTest {
     }
 
     var stored = stored(news);
-    assertThat(stored.getReadAt()).isPresent();
-    assertThat(stored.getLatestEventAt()).isEqualTo(later);
-    assertThat(stored.getProfileName()).isEqualTo("Kai Rose");
+    assertThat(stored.readAt()).isPresent();
+    assertThat(stored.latestEventAt()).isEqualTo(later);
+    assertThat(stored.snapshot()).isEqualTo(document(told));
   }
 
   @Test
@@ -342,14 +300,14 @@ class NotificationMarksIT extends AbstractIntegrationTest {
     var news = acceptedNewsFor(theo, "Kai");
     var bearer = authTestSupport.deviceBoundProfileBearer(theo);
 
-    for (var ids : List.of(quoted(news.getId()), quoted("not-an-id"), "")) {
+    for (var ids : List.of(quoted(news.id()), quoted("not-an-id"), "")) {
       mockMvc
           .perform(graphqlRequest(bearer, MARK.formatted(ids)))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"));
     }
 
-    assertThat(stored(news).getReadAt()).isEmpty();
+    assertThat(stored(news).readAt()).isEmpty();
   }
 
   private ResultActions mark(TestIdentity reader, Object... ids) throws Exception {
@@ -364,8 +322,8 @@ class NotificationMarksIT extends AbstractIntegrationTest {
   }
 
   // The news's id, and unknown ids after it until there are as many ids as the count.
-  private static Object[] idsWith(Notification news, int count) {
-    return Stream.concat(Stream.of(news.getId()), Stream.generate(UUID::randomUUID))
+  private static Object[] idsWith(Row news, int count) {
+    return Stream.concat(Stream.of(news.id()), Stream.generate(UUID::randomUUID))
         .limit(count)
         .toArray();
   }
@@ -374,55 +332,55 @@ class NotificationMarksIT extends AbstractIntegrationTest {
     return "\"%s\"".formatted(id);
   }
 
-  private void happenedBefore(Notification earlier, Notification later) {
-    var before = stored(later).getLatestEventAt().minusSeconds(60).atOffset(ZoneOffset.UTC);
+  private void happenedBefore(Row earlier, Row later) {
+    var before = stored(later).latestEventAt().minusSeconds(60).atOffset(ZoneOffset.UTC);
     transactionTemplate.executeWithoutResult(
         _ ->
-            dsl.update(SHARE_NOTIFICATION)
-                .set(SHARE_NOTIFICATION.LATEST_EVENT_AT, before)
-                .where(SHARE_NOTIFICATION.ID.eq(earlier.getId()))
+            dsl.update(NOTIFICATION)
+                .set(NOTIFICATION.LATEST_EVENT_AT, before)
+                .where(NOTIFICATION.ID.eq(earlier.id()))
                 .execute());
   }
 
   /** A later answer of the news's kind about its share, which updates the unread news in place. */
-  private static NotificationDraft<NotificationKind, ProfileShareFacts> answeredAgain(
-      Notification news, Instant at) {
-    return NotificationDraft.<NotificationKind, ProfileShareFacts>builder()
-        .recipientAccountId(news.getRecipientAccountId())
-        .kind(NotificationKind.PROFILE_SHARE_ANSWERED)
-        .subjectId(news.getShareId())
-        .facts(ProfileShareFacts.answered(news.getProfileName(), ProfileShareAnswer.ACCEPTED))
+  private static TellNotificationEvent answeredAgain(
+      Row news, ProfileShareAnsweredSnapshot told, Instant at) {
+    return TellNotificationEvent.builder()
+        .kind(SharingNotificationKinds.PROFILE_SHARE_ANSWERED)
+        .subject(news.subject())
+        .recipients(Set.of(news.recipient()))
+        .snapshot(told)
         .at(at)
         .build();
   }
 
-  private Notification acceptedNewsFor(TestIdentity recipient, String profileName) {
+  /** The recipient's news that Riverside accepted an offer of a new Profile that Theo manages. */
+  private Row acceptedNewsFor(TestIdentity recipient, String profileName) {
     var offer = steps.offer(sam, steps.profileManagedBy(profileName, sam, sam, theo), riverside);
     steps.accept(riverside, offer);
     return notificationFor(recipient, offer);
   }
 
-  private Notification newsAboutTheSameShare(TestIdentity recipient, Notification news) {
-    return notificationFor(recipient, shareRepository.findById(news.getShareId()).orElseThrow());
+  private Row newsAboutTheSameShare(TestIdentity recipient, Row news) {
+    return notificationFor(recipient, shareRepository.findById(news.subject().id()).orElseThrow());
   }
 
-  private Notification notificationFor(TestIdentity recipient, ProfileHouseholdShare share) {
-    return notificationRepository.findAll().stream()
-        .filter(notification -> notification.getShareId().equals(share.getId()))
-        .filter(
-            notification ->
-                notification.getRecipientAccountId().equals(recipient.account().getId()))
+  private Row notificationFor(TestIdentity recipient, ProfileHouseholdShare share) {
+    return rows.about(SubjectReference.profileShare(share.getId())).stream()
+        .filter(row -> row.recipient().equals(accountOf(recipient)))
         .findFirst()
         .orElseThrow();
   }
 
-  private Notification stored(Notification notification) {
-    return notificationRepository.findById(notification.getId()).orElseThrow();
+  private Row stored(Row notification) {
+    return rows.of(notification.recipient()).stream()
+        .filter(row -> row.id().equals(notification.id()))
+        .findFirst()
+        .orElseThrow();
   }
 
-  private void demote(TestIdentity householdAdmin) {
-    transactionTemplate.executeWithoutResult(
-        _ -> userAccountRepository.tryDemoteToHouseholdMember(householdAdmin.account().getId()));
+  private static RecipientReference accountOf(TestIdentity identity) {
+    return RecipientReference.account(identity.account().getId());
   }
 
   private TestIdentity track(TestIdentity identity) {

@@ -11,18 +11,27 @@ import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.enums.NotificationForm;
 import com.streamarr.server.jooq.generated.enums.RequestResolution;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
+import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.NotificationKind;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
+import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
+import com.streamarr.server.services.notification.NotificationKindCatalog;
+import com.streamarr.server.services.notification.StoredNotification;
 import com.streamarr.server.services.notification.events.ChangedNotification;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -49,7 +58,14 @@ public class JooqNotificationRepository implements NotificationRepository {
           NOTIFICATION.SUBJECT_TYPE,
           NOTIFICATION.SUBJECT_ID);
 
+  private static final Keyset<OffsetDateTime> NEWEST_FIRST =
+      Keyset.<OffsetDateTime>builder()
+          .sortValue(NOTIFICATION.LATEST_EVENT_AT)
+          .itemId(NOTIFICATION.ID)
+          .build();
+
   private final DSLContext dsl;
+  private final NotificationKindCatalog catalog;
 
   @Override
   public List<ChangedNotification> tellNews(TellNotificationEvent tell) {
@@ -114,6 +130,100 @@ public class JooqNotificationRepository implements NotificationRepository {
   @Override
   public void deleteOfRecipient(RecipientReference recipient) {
     dsl.deleteFrom(NOTIFICATION).where(ofRecipient(recipient)).execute();
+  }
+
+  @Override
+  public List<Row<StoredNotification>> rowsOfRecipient(RecipientReference recipient, Seek seek) {
+    return NEWEST_FIRST
+        .rowsBeyond(dsl.selectFrom(NOTIFICATION), ofRecipient(recipient), seek)
+        .fetch(this::rowOf);
+  }
+
+  @Override
+  public List<Row<StoredNotification>> rowsOfRecipientWithIds(
+      RecipientReference recipient, Collection<UUID> notificationIds) {
+    if (notificationIds.isEmpty()) {
+      return List.of();
+    }
+
+    return dsl.selectFrom(NOTIFICATION)
+        .where(ofRecipient(recipient))
+        .and(NOTIFICATION.ID.in(notificationIds))
+        .fetch(this::rowOf);
+  }
+
+  @Override
+  public int countUnread(RecipientReference recipient, Instant now) {
+    return dsl.fetchCount(NOTIFICATION, ofRecipient(recipient).and(unreadAt(now)));
+  }
+
+  @Override
+  public List<ChangedNotification> markRead(
+      RecipientReference recipient, Collection<UUID> notificationIds, Instant now) {
+    if (notificationIds.isEmpty()) {
+      return List.of();
+    }
+
+    return dsl.update(NOTIFICATION)
+        .set(NOTIFICATION.READ_AT, now.atOffset(ZoneOffset.UTC))
+        .where(ofRecipient(recipient))
+        .and(NOTIFICATION.ID.in(notificationIds))
+        .and(unreadAt(now))
+        .returningResult(NOTIFICATION.ID, NOTIFICATION.RECIPIENT_TYPE, NOTIFICATION.RECIPIENT_ID)
+        .fetch(JooqNotificationRepository::changed);
+  }
+
+  // Unread at the instant: not marked read, not resolved by an event, and, for a request, before
+  // its expiry. News has no expiry.
+  private static Condition unreadAt(Instant now) {
+    return NOTIFICATION
+        .READ_AT
+        .isNull()
+        .and(NOTIFICATION.RESOLUTION.isNull())
+        .and(
+            NOTIFICATION
+                .EXPIRES_AT
+                .isNull()
+                .or(NOTIFICATION.EXPIRES_AT.gt(now.atOffset(ZoneOffset.UTC))));
+  }
+
+  private Row<StoredNotification> rowOf(NotificationRecord stored) {
+    return new Row<>(storedOf(stored), NEWEST_FIRST.rowOf(stored).position());
+  }
+
+  private StoredNotification storedOf(NotificationRecord stored) {
+    var kind =
+        catalog
+            .kindNamed(stored.getKind())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "No Notification kind is named %s".formatted(stored.getKind())));
+    return StoredNotification.builder()
+        .id(stored.getId())
+        .recipient(new RecipientReference(stored.getRecipientType(), stored.getRecipientId()))
+        .kind(kind)
+        .subject(new SubjectReference(stored.getSubjectType(), stored.getSubjectId()))
+        .snapshot(SnapshotJson.read(kind, stored.getSnapshot()))
+        .createdAt(stored.getCreatedOn().toInstant())
+        .latestEventAt(stored.getLatestEventAt().toInstant())
+        .readAt(instantOf(stored.getReadAt()))
+        .resolution(
+            Optional.ofNullable(stored.getResolution())
+                .map(JooqNotificationRepository::domainResolutionOf))
+        .resolvedAt(instantOf(stored.getResolvedAt()))
+        .expiresAt(instantOf(stored.getExpiresAt()))
+        .build();
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.server.domain.notification.RequestResolution domainResolutionOf(
+      RequestResolution stored) {
+    return com.streamarr.server.domain.notification.RequestResolution.valueOf(stored.name());
+  }
+
+  private static Optional<Instant> instantOf(OffsetDateTime stored) {
+    return Optional.ofNullable(stored).map(OffsetDateTime::toInstant);
   }
 
   private static Condition selected(DismissalSelector.Targets targets) {
