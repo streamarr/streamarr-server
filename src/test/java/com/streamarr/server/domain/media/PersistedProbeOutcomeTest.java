@@ -28,11 +28,10 @@ class PersistedProbeOutcomeTest {
   void shouldSkipProbingOnlyWhenSourceSnapshotAndRequestedVersionMatch(
       SourceFileSnapshot requestedSnapshot, int requestedVersion, boolean matches) {
     var outcome =
-        PersistedProbeOutcome.builder()
-            .snapshot(new SourceFileSnapshot(1234, Instant.EPOCH))
-            .probeVersion(2)
-            .outcome(new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM))
-            .build();
+        new PersistedProbeOutcome(
+            new SourceFileSnapshot(1234, Instant.EPOCH),
+            2,
+            new ProbeOutcome.Failure(ProbeError.NO_VIDEO_STREAM));
 
     assertThat(outcome.matches(requestedSnapshot, requestedVersion)).isEqualTo(matches);
   }
@@ -53,20 +52,18 @@ class PersistedProbeOutcomeTest {
   void shouldRetainCompatibleOlderSuccessesWhileRequiringRefreshToCurrentVersion(
       int storedVersion, boolean compatible) {
     var outcome =
-        PersistedProbeOutcome.builder()
-            .snapshot(new SourceFileSnapshot(1234, Instant.EPOCH))
-            .probeVersion(storedVersion)
-            .outcome(
-                new ProbeOutcome.Success(
-                    ProbeContainer.builder().build(),
-                    List.of(
-                        StreamInfo.builder()
-                            .index(0)
-                            .codecType("video")
-                            .codec(Optional.of("h264"))
-                            .build()),
-                    new KeyframeKnowledge.NotReported()))
-            .build();
+        new PersistedProbeOutcome(
+            new SourceFileSnapshot(1234, Instant.EPOCH),
+            storedVersion,
+            new ProbeOutcome.Success(
+                ProbeContainer.builder().build(),
+                List.of(
+                    StreamInfo.builder()
+                        .index(0)
+                        .codecType("video")
+                        .codec(Optional.of("h264"))
+                        .build()),
+                new KeyframeKnowledge.NotReported()));
 
     assertThat(outcome.isCompatibleWith(2)).isEqualTo(compatible);
     assertThat(outcome.matches(outcome.snapshot(), 2)).isEqualTo(storedVersion == 2);

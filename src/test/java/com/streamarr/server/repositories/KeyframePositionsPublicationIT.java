@@ -314,16 +314,14 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should refuse a positions row when the outcome's keyframes are not known")
-  void shouldRefusePositionsRowWhenOutcomesKeyframesAreNotKnown() {
+  @DisplayName("Should refuse a positions row when the outcome's keyframes are unavailable")
+  void shouldRefusePositionsRowWhenOutcomesKeyframesAreUnavailable() {
     var file = createMediaFile();
     repository.publish(
         publication(
             file.getId(),
             SNAPSHOT_A,
-            success(
-                new KeyframeKnowledge.PacketScanRequired(
-                    KeyframePacketScanReason.NO_CONTAINER_INDEX))));
+            success(new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES))));
     var insert =
         dsl.insertInto(MEDIA_FILE_KEYFRAME_POSITIONS)
             .set(MEDIA_FILE_KEYFRAME_POSITIONS.MEDIA_FILE_ID, file.getId())
@@ -335,6 +333,22 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
             .set(MEDIA_FILE_KEYFRAME_POSITIONS.SOURCE, KeyframePositionSource.PACKET_SCAN.name());
 
     assertThatThrownBy(insert::execute).isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse a packet scan reason when the outcome's keyframes are known")
+  void shouldRefusePacketScanReasonWhenOutcomesKeyframesAreKnown() {
+    var file = createMediaFile();
+    storeScannedOutcome(file.getId(), ProbeVersion.CURRENT);
+    var reasonBesideKnown =
+        dsl.update(MEDIA_FILE_CONTAINER_INFO)
+            .set(
+                MEDIA_FILE_CONTAINER_INFO.KEYFRAME_PACKET_SCAN_REASON,
+                KeyframePacketScanReason.NO_CONTAINER_INDEX.name())
+            .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(file.getId()));
+
+    assertThatThrownBy(reasonBesideKnown::execute)
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
@@ -474,7 +488,9 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
     // refused scan comes after the new probe.
     var serialKeyframes = unscanned().keyframes();
     if (scanPublished) {
-      serialKeyframes = scanned;
+      serialKeyframes =
+          new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+              KeyframePacketScanReason.NO_CONTAINER_INDEX, scannedPositions());
     }
 
     assertThat(repository.findKeyframeKnowledge(file.getId())).contains(serialKeyframes);
@@ -545,7 +561,10 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
       assertThat(probe.get(10, TimeUnit.SECONDS)).isTrue();
     }
 
-    assertThat(repository.findKeyframeKnowledge(file.getId())).contains(rescanned);
+    assertThat(repository.findKeyframeKnowledge(file.getId()))
+        .contains(
+            new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+                KeyframePacketScanReason.NO_CONTAINER_INDEX, rescannedPositions()));
     assertThat(owedPacketScanInputs(file.getId()))
         .as("The new probe still owes its own packet scan")
         .contains(new ProbeInputs(SNAPSHOT_A, ProbeVersion.CURRENT));
