@@ -154,7 +154,7 @@ Item failures never change the library's status.
 |db-scheduler, with backoff capped at five minutes, for failed attempts
 
 |Keyframe packet scan
-|`media_file_container_info.keyframe_status` and `media_file_keyframe_positions` on the outcome that asked for the scan; `PACKET_SCAN_FAILED` after three scans that timed out or reported no keyframes, unless the outcome keeps the positions of an earlier probe version's scan, which a failed scan leaves in place; other failures in the `media-file-keyframe-scan` task in `keyframe_scan_scheduled_tasks`
+|`media_file_container_info.keyframe_status` and `media_file_keyframe_positions` on the outcome that asked for the scan; `PACKET_SCAN_FAILED` after three scans that timed out or reported no keyframes, unless the outcome keeps the positions of an earlier probe version's scan, which those failed scans leave in place; other failures in the `media-file-keyframe-scan` task in `keyframe_scan_scheduled_tasks`
 |A db-scheduler of its own, with backoff capped at five minutes; the next library scan requests a scan that the outcome still owes
 |===
 

@@ -230,16 +230,18 @@ class KeyframePacketScanExecutionTest {
 
   @Test
   @DisplayName(
-      "Should let the kept positions stand when the scan of the new probe version ends in a media"
+      "Should drop the kept positions when the scan of the new probe version ends in a media"
           + " error")
-  void shouldLetKeptPositionsStandWhenScanOfNewProbeVersionEndsInMediaError() {
+  void shouldDropKeptPositionsWhenScanOfNewProbeVersionEndsInMediaError() {
     var request = storeOutcomeKeepingScannedPositions();
     scanner = scanAnswering(new ProbeOutcome.Failure(ProbeError.INVALID_MEDIA));
 
     var result = execution().execute(request);
 
     assertThat(result).isEqualTo(new KeyframePacketScanResult.Completed());
-    assertThat(storedKeyframes()).isEqualTo(known());
+    assertThat(storedKeyframes())
+        .isEqualTo(
+            new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR));
     assertThat(outcomes.owesKeyframePacketScan(mediaFile.getId())).isFalse();
   }
 

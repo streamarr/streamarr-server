@@ -160,13 +160,6 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
       return false;
     }
 
-    // PostgreSQL lets kept positions stand when the owed packet scan failed.
-    if (publication.keyframes() instanceof KeyframeKnowledge.Unavailable(var reason)
-        && reason.isFailedPacketScan()
-        && keepingScannedPositions.remove(mediaFileId)) {
-      return true;
-    }
-
     keyframes.put(mediaFileId, publication.keyframes());
     keepingScannedPositions.remove(mediaFileId);
     return true;
@@ -175,14 +168,19 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   @Override
   public synchronized boolean publishKeyframePacketScanFailure(
       UUID mediaFileId, ProbeInputs inputs) {
-    return publishKeyframePacketScan(
-        KeyframePacketScanPublication.builder()
-            .mediaFileId(mediaFileId)
-            .snapshot(inputs.snapshot())
-            .probeVersion(inputs.probeVersion())
-            .keyframes(
-                new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED))
-            .build());
+    if (!owesPacketScanFor(mediaFileId, inputs)) {
+      return false;
+    }
+
+    // PostgreSQL lets kept positions stand when every owed packet scan failed.
+    if (keepingScannedPositions.remove(mediaFileId)) {
+      return true;
+    }
+
+    keyframes.put(
+        mediaFileId,
+        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
+    return true;
   }
 
   private boolean owesPacketScanFor(UUID mediaFileId, ProbeInputs inputs) {

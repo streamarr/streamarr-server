@@ -96,45 +96,36 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   @Override
   @Transactional
   public boolean publishKeyframePacketScan(KeyframePacketScanPublication publication) {
-    return storeKeyframePacketScan(publication);
-  }
-
-  @Override
-  @Transactional
-  public boolean publishKeyframePacketScanFailure(UUID mediaFileId, ProbeInputs inputs) {
-    return storeKeyframePacketScan(
-        KeyframePacketScanPublication.builder()
-            .mediaFileId(mediaFileId)
-            .snapshot(inputs.snapshot())
-            .probeVersion(inputs.probeVersion())
-            .keyframes(
-                new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED))
-            .build());
-  }
-
-  private boolean storeKeyframePacketScan(KeyframePacketScanPublication publication) {
     var mediaFileId = publication.mediaFileId();
     if (!lockOwedPacketScan(
         mediaFileId, new ProbeInputs(publication.snapshot(), publication.probeVersion()))) {
       return false;
     }
 
-    if (isFailedPacketScan(publication.keyframes()) && tryLetKeptPositionsStand(mediaFileId)) {
-      return true;
-    }
-
     replaceKeyframes(mediaFileId, publication.keyframes());
     return true;
   }
 
-  private static boolean isFailedPacketScan(KeyframeKnowledge keyframes) {
-    return keyframes instanceof KeyframeKnowledge.Unavailable(var reason)
-        && reason.isFailedPacketScan();
+  @Override
+  @Transactional
+  public boolean publishKeyframePacketScanFailure(UUID mediaFileId, ProbeInputs inputs) {
+    if (!lockOwedPacketScan(mediaFileId, inputs)) {
+      return false;
+    }
+
+    if (tryLetKeptPositionsStand(mediaFileId)) {
+      return true;
+    }
+
+    replaceKeyframes(
+        mediaFileId,
+        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_FAILED));
+    return true;
   }
 
-  // A failed packet scan says nothing about the stream's keyframes, and an earlier packet scan
-  // read the kept positions from the same bytes. They therefore stand, and only the owed scan
-  // ends. False when the outcome keeps no positions.
+  // Packet scans that all timed out or got no usable reply say nothing about the stream, and an
+  // earlier packet scan read the kept positions from the same bytes. They therefore stand, and only
+  // the owed scan ends. False when the outcome keeps no positions.
   private boolean tryLetKeptPositionsStand(UUID mediaFileId) {
     return dsl.update(MEDIA_FILE_CONTAINER_INFO)
             .setNull(MEDIA_FILE_CONTAINER_INFO.KEYFRAME_PACKET_SCAN_REASON)
