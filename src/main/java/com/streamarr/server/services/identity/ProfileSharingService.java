@@ -276,8 +276,10 @@ public class ProfileSharingService {
 
   private ProfileHouseholdShare acceptInTransaction(AuthenticatedIdentity identity, UUID shareId) {
     var offer = requireShare(identity, shareId);
+    // A share whose Profile was deleted while this waited is gone, for every caller alike; nobody
+    // has been authorized yet.
     if (!profileRepository.lockByShareId(shareId)) {
-      throw new MutationRejection(new ShareRejections.ShareNotPending());
+      throw new MutationRejection(new ShareRejections.ShareNotFound());
     }
 
     decideRefusal(identity, new Intent.AcceptProfileShare(shareId), shareId)
