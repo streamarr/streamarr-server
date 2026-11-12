@@ -144,6 +144,8 @@ class AccountRemoval {
 
   /** Deletes an unlinked Profile with its selections and pending Profile-bound artifacts. */
   void deleteProfile(UUID profileId, Instant now) {
+    // Locked before its shares are read, so none ends unseen before they are announced.
+    profileRepository.lockById(profileId);
     accountInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
     managerInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
     shareLifecycle.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
