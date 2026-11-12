@@ -21,7 +21,6 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.PlaybackLanguagePreferences;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -66,7 +65,7 @@ public class LanguagePreferenceService implements PlaybackLanguagePreferences {
   public Outcome<ProfileLanguagePreferences, SetLanguagePreferencesRejection> setProfilePreferences(
       @NonNull AuthenticatedIdentity identity, @NonNull ProfileLanguagePreferences preferences) {
     var profileId = requireMayChangeLanguages(identity);
-    var rejection = invalidAudioLanguages(preferences.audioLanguages());
+    var rejection = PreferredAudioLanguagesRule.rejectionOf(preferences.audioLanguages());
     if (rejection.isPresent()) {
       return Outcome.rejected(rejection.get());
     }
@@ -76,26 +75,6 @@ public class LanguagePreferenceService implements PlaybackLanguagePreferences {
     }
 
     return Outcome.accepted(preferences);
-  }
-
-  private static Optional<SetLanguagePreferencesRejection> invalidAudioLanguages(
-      List<Language> audioLanguages) {
-    if (audioLanguages.size() > ProfileLanguagePreferences.MAXIMUM_AUDIO_LANGUAGES) {
-      return Optional.of(
-          new SetLanguagePreferencesRejection.TooManyAudioLanguages(
-              ProfileLanguagePreferences.MAXIMUM_AUDIO_LANGUAGES));
-    }
-
-    var seen = new HashSet<Language>();
-    for (var position = 0; position < audioLanguages.size(); position++) {
-      if (!seen.add(audioLanguages.get(position))) {
-        return Optional.of(
-            new SetLanguagePreferencesRejection.RepeatedAudioLanguage(
-                audioLanguages.get(position), position));
-      }
-    }
-
-    return Optional.empty();
   }
 
   /** Changes the selected Profile's override of one series, season, episode or movie. */
