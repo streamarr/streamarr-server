@@ -10,6 +10,7 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
+import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -21,10 +22,12 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
+import com.streamarr.server.services.events.notification.ProfileShareEndedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
+import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
@@ -47,6 +50,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Who the identity domain tells about a Profile share, and what (ADR 0063 §The sharing kinds). Each
@@ -60,12 +64,14 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
   private static final String CONNECTED_EMAIL = "ollie@example.com";
   private static final String OFFERED = "PROFILE_SHARE_OFFERED";
   private static final String ANSWERED = "PROFILE_SHARE_ANSWERED";
+  private static final String ENDED = "PROFILE_SHARE_ENDED";
 
   @Autowired private ProfileSharingService sharing;
   @Autowired private ProfileShareLifecycle shareLifecycle;
   @Autowired private ProfileShareExpirySweeper expirySweeper;
   @Autowired private AccountAdministrationService accountAdministration;
   @Autowired private AccountLifecycleService accountLifecycle;
+  @Autowired private HouseholdDeletionService householdDeletion;
   @Autowired private ProfileManagerAdministrationService profileManagement;
   @Autowired private CredentialIssuanceService credentialIssuance;
   @Autowired private AccountInvitationService accountInvitations;
@@ -580,6 +586,228 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
         .allSatisfy(request -> assertThat(request.resolution()).isEmpty());
   }
 
+  @Test
+  @DisplayName(
+      "Should tell the offering side when a HouseholdAdmin of the Household ends the share")
+  void shouldTellTheOfferingSideWhenAHouseholdAdminOfTheHouseholdEndsTheShare() {
+    var share = steps.accept(riverside, steps.offer(sam, sam.profile(), riverside));
+
+    var outcome = sharing.endProfileShare(identityOf(riversideAdmin), share.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var endedAt = stored(share).getEndedAt();
+    assertThat(endingsAbout(share))
+        .singleElement()
+        .satisfies(
+            news -> {
+              assertThat(news.recipient()).isEqualTo(account(sam));
+              assertThat(news.form()).isEqualTo("NEWS");
+              assertThat(news.snapshot())
+                  .isEqualTo(ended(sam.profile(), ProfileShareEndedBy.HOUSEHOLD_SIDE));
+              assertThat(news.latestEventAt()).isEqualTo(endedAt);
+              assertThat(news.readAt()).isEmpty();
+            });
+  }
+
+  @Test
+  @DisplayName("Should tell the Household's side when the Profile's own Account ends the share")
+  void shouldTellTheHouseholdsSideWhenTheProfilesOwnAccountEndsTheShare() {
+    var share = steps.accept(riverside, steps.offer(sam, sam.profile(), riverside));
+
+    sharing.endProfileShare(identityOf(sam), share.getId());
+
+    assertThat(endingsAbout(share))
+        .allSatisfy(
+            news ->
+                assertThat(news.snapshot())
+                    .isEqualTo(ended(sam.profile(), ProfileShareEndedBy.OFFERING_SIDE)))
+        .extracting(Row::recipient)
+        .containsExactlyInAnyOrder(account(riverside), account(riversideAdmin));
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household's side and no other ProfileManager when a ProfileManager ends the"
+          + " share")
+  void shouldTellTheHouseholdsSideAndNoOtherProfileManagerWhenAProfileManagerEndsTheShare() {
+    var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var rowan = track(authTestSupport.createHouseholdMemberIdentity(riverside));
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, theo, rowan);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+
+    var outcome = sharing.endProfileShare(identityOf(rowan), share.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(endingsAbout(share))
+        .allSatisfy(
+            news ->
+                assertThat(news.snapshot())
+                    .isEqualTo(ended(ollie, ProfileShareEndedBy.OFFERING_SIDE)))
+        .extracting(Row::recipient)
+        .containsExactlyInAnyOrder(account(riverside), account(riversideAdmin));
+  }
+
+  @Test
+  @DisplayName(
+      "Should end the share for the Household's side when its ender also manages the Profile")
+  void shouldEndTheShareForTheHouseholdsSideWhenItsEnderAlsoManagesTheProfile() {
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, riversideAdmin);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+
+    sharing.endProfileShare(identityOf(riversideAdmin), share.getId());
+
+    assertThat(endingsAbout(share))
+        .allSatisfy(
+            news ->
+                assertThat(news.snapshot())
+                    .isEqualTo(ended(ollie, ProfileShareEndedBy.HOUSEHOLD_SIDE)))
+        .extracting(Row::recipient)
+        .containsExactly(account(sam));
+  }
+
+  @Test
+  @DisplayName("Should tell both sides, except the ServerAdmin, when a ServerAdmin ends the share")
+  void shouldTellBothSidesExceptTheServerAdminWhenAServerAdminEndsTheShare() {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, serverAdmin);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+
+    var outcome =
+        sharing.administrativelyEndProfileShare(
+            authTestSupport.freshIdentityOf(serverAdmin), share.getId(), "requested by Sam");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(endingsAbout(share))
+        .allSatisfy(
+            news -> assertThat(news.snapshot()).isEqualTo(ended(ollie, ProfileShareEndedBy.SERVER)))
+        .extracting(Row::recipient)
+        .containsExactlyInAnyOrder(account(sam), account(riverside), account(riversideAdmin));
+  }
+
+  @Test
+  @DisplayName(
+      "Should give an Account on both sides one Share ended news when a ServerAdmin ends the share")
+  void shouldGiveAnAccountOnBothSidesOneShareEndedNewsWhenAServerAdminEndsTheShare() {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, riversideAdmin);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+
+    sharing.administrativelyEndProfileShare(
+        authTestSupport.freshIdentityOf(serverAdmin), share.getId(), "requested by Sam");
+
+    assertThat(endingsAbout(share))
+        .extracting(Row::recipient)
+        .containsExactlyInAnyOrder(account(sam), account(riverside), account(riversideAdmin));
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the former offerer nothing when it stopped managing the Profile before the share"
+          + " ended")
+  void shouldTellTheFormerOffererNothingWhenItStoppedManagingTheProfileBeforeTheShareEnded() {
+    var theo = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var kai = steps.profileManagedBy("Kai", sam, sam, theo);
+    var share = steps.accept(riverside, steps.offer(theo, kai, riverside));
+    var relinquished = profileManagement.relinquishProfileManagement(identityOf(theo), kai.getId());
+
+    sharing.endProfileShare(identityOf(riverside), share.getId());
+
+    assertThat(relinquished).isInstanceOf(Outcome.Accepted.class);
+    assertThat(endingsAbout(share)).extracting(Row::recipient).containsExactly(account(sam));
+  }
+
+  @Test
+  @DisplayName("Should keep the answer and the end side by side when an accepted share later ends")
+  void shouldKeepTheAnswerAndTheEndSideBySideWhenAnAcceptedShareLaterEnds() {
+    var ollie = steps.profileManagedBy("Ollie", sam, sam);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+
+    sharing.endProfileShare(identityOf(riverside), share.getId());
+
+    assertThat(rows.of(account(sam)))
+        .extracting(Row::kind)
+        .containsExactlyInAnyOrder(ANSWERED, ENDED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell both sides of each visit, except the new Account, when a Profile is connected to"
+          + " an Account")
+  void shouldTellBothSidesOfEachVisitExceptTheNewAccountWhenAProfileIsConnectedToAnAccount() {
+    var kai = track(authTestSupport.createIdentity());
+    var ollie = steps.profileManagedBy("Ollie", sam, sam);
+    var visit = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+    var waiting = steps.offer(sam, ollie, kai);
+
+    var connected = connect(ollie, riverside);
+
+    assertThat(endingsAbout(visit))
+        .allSatisfy(
+            news -> assertThat(news.snapshot()).isEqualTo(ended(ollie, ProfileShareEndedBy.SERVER)))
+        .extracting(Row::recipient)
+        .containsExactlyInAnyOrder(account(sam), account(riverside), account(riversideAdmin));
+    assertThat(rows.of(RecipientReference.account(connected))).isEmpty();
+    assertThat(rows.about(SubjectReference.profileShare(waiting.getId())))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.kind()).isEqualTo(OFFERED);
+              assertThat(request.resolution()).contains("WITHDRAWN");
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell both sides when an Account transfer ends the share into the Household it leaves")
+  void shouldTellBothSidesWhenAnAccountTransferEndsTheShareIntoTheHouseholdItLeaves() {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var ben = track(authTestSupport.createHouseholdMemberIdentity(riverside));
+    var home =
+        shareRepository
+            .findByProfileIdAndHouseholdIdAndStatus(
+                ben.profile().getId(), riverside.household().getId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow();
+
+    var outcome =
+        accountLifecycle.transferAccount(
+            authTestSupport.freshIdentityOf(serverAdmin),
+            TransferAccountCommand.builder()
+                .accountId(ben.account().getId())
+                .destinationHouseholdId(sam.household().getId())
+                .sourceHouseholdAccess(SourceHouseholdAccess.END)
+                .reason("moved in with Sam")
+                .build());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(endingsAbout(home))
+        .allSatisfy(
+            news ->
+                assertThat(news.snapshot())
+                    .isEqualTo(ended(ben.profile(), ProfileShareEndedBy.SERVER)))
+        .extracting(Row::recipient)
+        .containsExactlyInAnyOrder(account(ben), account(riverside), account(riversideAdmin));
+  }
+
+  @Test
+  @DisplayName("Should tell nobody when deleting a Household ends its shares")
+  void shouldTellNobodyWhenDeletingAHouseholdEndsItsShares() {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var lakeside = track(authTestSupport.createIdentity());
+    var share = steps.accept(lakeside, steps.offer(sam, sam.profile(), lakeside));
+
+    var outcome =
+        householdDeletion.transferLastAccountAndDeleteHousehold(
+            authTestSupport.freshIdentityOf(serverAdmin),
+            TransferLastAccountAndDeleteHouseholdCommand.builder()
+                .householdId(lakeside.household().getId())
+                .destinationHouseholdId(serverAdmin.household().getId())
+                .reason("closing")
+                .build());
+
+    assertThat(outcome).isEqualTo(Outcome.accepted(lakeside.household().getId()));
+    assertThat(endingsAbout(share)).isEmpty();
+  }
+
   private void assertWithdrawn(ProfileHouseholdShare offer) {
     assertResolvedWithoutAnAnswer(offer, "WITHDRAWN");
   }
@@ -618,6 +846,16 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
     return rows.about(SubjectReference.profileShare(share.getId())).stream()
         .filter(row -> row.kind().equals(ANSWERED))
         .toList();
+  }
+
+  private List<Row> endingsAbout(ProfileHouseholdShare share) {
+    return rows.about(SubjectReference.profileShare(share.getId())).stream()
+        .filter(row -> row.kind().equals(ENDED))
+        .toList();
+  }
+
+  private static JsonNode ended(Profile profile, ProfileShareEndedBy endedBy) {
+    return document(new ProfileShareEndedSnapshot(profile.getName(), endedBy));
   }
 
   private UUID connect(Profile profile, TestIdentity reofferedTo) {
