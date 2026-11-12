@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import lombok.Builder;
 import lombok.NonNull;
 
 /**
@@ -113,6 +114,7 @@ public final class SpecifiedOnlyNotificationKinds {
    * What each ServerAdmin was told: the library's name at the latest scan or refresh, and the
    * figures of every scan and refresh since it last read the news.
    */
+  @Builder
   public record ScanOrRefreshFinishedSnapshot(
       @NonNull String libraryName, int titlesAdded, int titlesRemoved, int filesSkipped)
       implements NotificationSnapshot {

@@ -51,7 +51,13 @@ class SnapshotJsonTest {
               new InvitationReceivedSnapshot(NAME, Optional.empty()),
               new InvitationReceivedSnapshot(NAME, Optional.of(InvitationAnswer.DECLINED))),
           SpecifiedOnlyNotificationKinds.SCAN_OR_REFRESH_FINISHED,
-          List.of(new ScanOrRefreshFinishedSnapshot(NAME, 3, 0, 12)),
+          List.of(
+              ScanOrRefreshFinishedSnapshot.builder()
+                  .libraryName(NAME)
+                  .titlesAdded(3)
+                  .titlesRemoved(0)
+                  .filesSkipped(12)
+                  .build()),
           SpecifiedOnlyNotificationKinds.UNMATCHED_ITEMS,
           List.of(new UnmatchedItemsSnapshot(NAME, 14)),
           SpecifiedOnlyNotificationKinds.HOUSEHOLD_NEWS,
