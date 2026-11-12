@@ -75,26 +75,7 @@ class ProfileManagerAdministrationServiceTest {
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
 
-  private final ProfileManagerAdministrationService service =
-      new ProfileManagerAdministrationService(
-          authorization,
-          invitations,
-          new ProfileManagerInvitationLifecycle(invitations, new CapturingEventPublisher()),
-          managers,
-          profiles,
-          accounts,
-          new LeavingManagerProposals(
-              new ProfileManagerInvitationLifecycle(invitations, new CapturingEventPublisher()),
-              new ProfileShareLifecycle(shares, new CapturingEventPublisher())),
-          audit,
-          new OpaqueOneTimeCodes(),
-          credentialAttempts.gate(clock),
-          () -> INVITATION_LIFETIME,
-          new MutationTransactions(
-              new FakeTransactionManager(), new ConstraintViolationTranslator()),
-          new ProfileManagerInvitationsList(invitations, clock),
-          new ReceivedManagerInvitationsList(invitations, clock),
-          clock);
+  private final ProfileManagerAdministrationService service = serviceAt(clock);
 
   private UserAccount inviter;
   private UserAccount recipient;
@@ -106,6 +87,27 @@ class ProfileManagerAdministrationServiceTest {
     recipient = eligibleAccount(UUID.randomUUID());
     orphan = profiles.save(ProfileFixture.defaultProfileBuilder().name("Joe").build());
     managers.tryGrantDirectManagement(inviter.getId(), orphan.getId());
+  }
+
+  private ProfileManagerAdministrationService serviceAt(Clock clock) {
+    return new ProfileManagerAdministrationService(
+        authorization,
+        invitations,
+        new ProfileManagerInvitationLifecycle(invitations, new CapturingEventPublisher()),
+        managers,
+        profiles,
+        accounts,
+        new LeavingManagerProposals(
+            new ProfileManagerInvitationLifecycle(invitations, new CapturingEventPublisher()),
+            new ProfileShareLifecycle(shares, new CapturingEventPublisher())),
+        audit,
+        new OpaqueOneTimeCodes(),
+        credentialAttempts.gate(clock),
+        () -> INVITATION_LIFETIME,
+        new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
+        new ProfileManagerInvitationsList(invitations, clock),
+        new ReceivedManagerInvitationsList(invitations, clock),
+        clock);
   }
 
   @Test
