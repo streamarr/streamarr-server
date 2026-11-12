@@ -19,6 +19,8 @@ import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Builder
@@ -42,6 +44,17 @@ public class LibraryQueryService {
   /** Returns the libraries with the given ids; an id without a library is left out. */
   public List<Library> findByIds(Collection<UUID> libraryIds) {
     return libraries.findAllById(libraryIds);
+  }
+
+  /**
+   * Reads the library's latest committed row in a new read-only transaction. The new transaction
+   * suspends the caller's, so the caller's persistence context cannot supply its own copy of the
+   * library. An after-commit listener still holds that context, and its copy can predate a status
+   * that jOOQ wrote. The returned library is detached.
+   */
+  @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+  public Optional<Library> findLatestCommitted(UUID libraryId) {
+    return libraries.findById(libraryId);
   }
 
   /**
