@@ -154,7 +154,9 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   @Override
   public Optional<ChangedShare> tryInvalidatePending(UUID shareId, String reason, Instant now) {
     var pending =
-        findById(shareId).filter(share -> share.getStatus() == ProfileShareStatus.PENDING);
+        findById(shareId)
+            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .filter(share -> share.getExpiresAt() == null || share.getExpiresAt().isAfter(now));
     pending.ifPresent(
         share -> {
           share.setStatus(ProfileShareStatus.INVALIDATED);
