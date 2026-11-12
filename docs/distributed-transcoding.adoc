@@ -143,6 +143,7 @@ Workers need no writable output directory: FFmpeg writes fragmented MP4 to the w
 The server keeps each stream session's media segments in its segment folder and deletes a stream session's directory when the session ends.
 A server process that ends without stopping leaves its stream sessions' directories and its unfinished uploads there.
 Set `STREAMING_SEGMENT_BASE_PATH` to a folder that only this server uses, and the server deletes those leftovers at its next start.
+A second server process that starts with the same folder deletes the stream sessions' directories of the first.
 Name a folder that is empty or does not exist yet. The server marks it with a `.streamarr-segment-folder` file and deletes leftovers only beside that mark, so it deletes nothing from a folder that held something else first.
 Without the setting, the server uses `streamarr-segments` in the system's temporary folder. Every server process on the machine that names no folder shares it, so the server deletes no leftovers there.
 Compose sets the folder to `/tmp/streamarr-server/segments` inside the server's container, which keeps its files when the server restarts.
