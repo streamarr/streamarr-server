@@ -164,8 +164,7 @@ class ServerShutdownIT extends AbstractIntegrationTest {
   }
 
   // The worker answers that it has no free unit, so the probe stores nothing, and its completion
-  // locks the media file's row to defer it. The test holds that row, so the completion waits from
-  // before the shutdown until the shutdown's interrupt ends the wait.
+  // locks the media file's row to defer it.
   @Test
   @DisplayName(
       "Should release a probe without a failure, at its due time, when its completion began before"
@@ -173,27 +172,14 @@ class ServerShutdownIT extends AbstractIntegrationTest {
   void shouldReleaseAProbeWhenItsCompletionBeganBeforeTheShutdownAndWaitsUntilTheInterrupt()
       throws Exception {
     var probed = createMediaFile("probed.mkv");
-    var server = startServer();
-    ScheduledRow atStop;
-    try (var worker = connectedWorker(server)) {
-      requestProbe(server, probed);
-      var started = worker.nextResponse(CLAIM_BOUND);
-      assertThat(started.hasStartProbe()).as("The server starts a probe: %s", started).isTrue();
-      atStop = scheduledRow(PROBE_TABLE, probed);
 
-      try (var held = PostgresLockTestSupport.lockRow(mediaFileRow(probed));
-          var observer = dataSource.getConnection()) {
-        worker.reply(noFreeUnit(started.getStartProbe().getRequest()));
-        PostgresLockTestSupport.awaitBlockedBackendPid(
-            observer, held.backendPid(), "transactionid");
-
-        BoundedTask.runWithin(STOP_BOUND, server::close);
-      }
-    }
+    var atStart =
+        stopTheServerWhileTheProbeWaitsForItsFileRow(
+            probed, ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY);
 
     assertThat(scheduledRow(PROBE_TABLE, probed))
         .as("The probe is claimable at once, at its due time, and counts no failure")
-        .isEqualTo(new ScheduledRow(false, 0, atStop.executionTime()));
+        .isEqualTo(new ScheduledRow(false, 0, atStart.executionTime()));
   }
 
   // Spring stops the lifecycles of one phase together and waits for them all for at most the
@@ -291,6 +277,31 @@ class ServerShutdownIT extends AbstractIntegrationTest {
             tuple(held.probed().getFilename(), false), tuple(held.scanned().getFilename(), true));
   }
 
+  // The test holds the media file's row while the worker answers the started probe. The probe locks
+  // that row to store the answer, so the probe waits from before the shutdown until the shutdown's
+  // interrupt ends the wait. Returns the probe's scheduled row as the probe started.
+  private ScheduledRow stopTheServerWhileTheProbeWaitsForItsFileRow(
+      MediaFile probed, ProbeFailure answer) throws Exception {
+    var server = startServer();
+    try (var worker = connectedWorker(server)) {
+      requestProbe(server, probed);
+      var started = worker.nextResponse(CLAIM_BOUND);
+      assertThat(started.hasStartProbe()).as("The server starts a probe: %s", started).isTrue();
+      var atStart = scheduledRow(PROBE_TABLE, probed);
+
+      try (var held = PostgresLockTestSupport.lockRow(mediaFileRow(probed));
+          var observer = dataSource.getConnection()) {
+        worker.reply(failed(started.getStartProbe().getRequest(), answer));
+        PostgresLockTestSupport.awaitBlockedBackendPid(
+            observer, held.backendPid(), "transactionid");
+
+        BoundedTask.runWithin(STOP_BOUND, server::close);
+      }
+
+      return atStart;
+    }
+  }
+
   private static LoopbackProbeWorker connectedWorker(ConfigurableApplicationContext server)
       throws Exception {
     return LoopbackProbeWorker.builder()
@@ -354,11 +365,11 @@ class ServerShutdownIT extends AbstractIntegrationTest {
         .build();
   }
 
-  private static ProbeAttemptResult noFreeUnit(ProbeRequest request) {
+  private static ProbeAttemptResult failed(ProbeRequest request, ProbeFailure failure) {
     return ProbeAttemptResult.newBuilder()
         .setProbeAttemptId(request.getProbeAttemptId())
         .setProbeVersion(request.getProbeVersion())
-        .setFailure(ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY)
+        .setFailure(failure)
         .build();
   }
 
