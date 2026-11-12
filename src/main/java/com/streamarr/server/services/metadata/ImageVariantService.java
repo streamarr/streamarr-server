@@ -36,6 +36,9 @@ public class ImageVariantService {
   private static final int BLUR_HASH_COMPONENT_Y = 3;
   // A 4x3 BlurHash keeps only the lowest frequencies, which a 128-pixel copy still carries.
   private static final int BLUR_HASH_MAX_INPUT_EDGE = 128;
+  // The pixel count of 8K, 7680 x 4320. A few hundred compressed kilobytes can declare more pixels
+  // than the heap holds, and decoding allocates every declared pixel.
+  private static final long MAX_PIXELS = 7680L * 4320;
 
   private static final List<ImageSize> RESIZABLE_SIZES =
       List.of(ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE);
@@ -192,9 +195,18 @@ public class ImageVariantService {
   private static BufferedImage read(ImageReader reader, ImageInputStream input) throws IOException {
     try {
       reader.setInput(input, true, true);
+      requireAtMostMaxPixels(reader.getWidth(0), reader.getHeight(0));
       return reader.read(0);
     } finally {
       reader.dispose();
+    }
+  }
+
+  private static void requireAtMostMaxPixels(int width, int height) {
+    if ((long) width * height > MAX_PIXELS) {
+      throw new ImageProcessingException(
+          "Image of %dx%d pixels exceeds the limit of %d pixels."
+              .formatted(width, height, MAX_PIXELS));
     }
   }
 

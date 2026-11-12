@@ -1,5 +1,6 @@
 package com.streamarr.server.services.metadata;
 
+import static com.streamarr.server.fakes.TestImages.createBlackGrayscalePngImage;
 import static com.streamarr.server.fakes.TestImages.createGifImage;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createQuadrantPngImage;
@@ -38,6 +39,7 @@ import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -429,6 +431,34 @@ class ImageVariantServiceTest {
     assertThatThrownBy(
             () -> imageVariantService.generateVariants(pngCutAfterItsSignature, ImageType.POSTER))
         .isInstanceOf(ImageProcessingException.class);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"7680, 4320", "4320, 7680"})
+  @DisplayName("Should generate variants when the image has exactly 8K's pixel count")
+  void shouldGenerateVariantsWhenImageHasExactly8KsPixelCount(int width, int height) {
+    var imageData = createBlackGrayscalePngImage(width, height);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
+
+    assertThat(variants)
+        .filteredOn(variant -> variant.variant() == ImageSize.ORIGINAL)
+        .singleElement()
+        .satisfies(
+            original -> {
+              assertThat(original.width()).isEqualTo(width);
+              assertThat(original.height()).isEqualTo(height);
+            });
+  }
+
+  @Test
+  @DisplayName("Should reject the image when it has one row more than 8K's pixel count")
+  void shouldRejectImageWhenItHasOneRowMoreThan8KsPixelCount() {
+    var imageData = createBlackGrayscalePngImage(7680, 4321);
+
+    assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.BACKDROP))
+        .isInstanceOf(ImageProcessingException.class)
+        .hasMessageContaining("7680x4321");
   }
 
   @Test
