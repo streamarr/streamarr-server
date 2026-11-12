@@ -48,13 +48,7 @@ class CancellableDatabaseWorkIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void openSingleConnectionPool() {
-    var config = new HikariConfig();
-    config.setJdbcUrl(pool.getJdbcUrl());
-    config.setUsername(pool.getUsername());
-    config.setPassword(pool.getPassword());
-    config.setDataSourceProperties(pool.getDataSourceProperties());
-    config.setMaximumPoolSize(1);
-    singleConnectionPool = new HikariDataSource(config);
+    singleConnectionPool = singleConnectionPoolAt(pool.getJdbcUrl());
   }
 
   @AfterEach
@@ -171,8 +165,22 @@ class CancellableDatabaseWorkIT extends AbstractIntegrationTest {
     return dsl.configuration().derive(dataSource).dsl();
   }
 
+  private HikariDataSource singleConnectionPoolAt(String jdbcUrl) {
+    var config = new HikariConfig();
+    config.setJdbcUrl(jdbcUrl);
+    config.setUsername(pool.getUsername());
+    config.setPassword(pool.getPassword());
+    config.setDataSourceProperties(pool.getDataSourceProperties());
+    config.setMaximumPoolSize(1);
+    return new HikariDataSource(config);
+  }
+
   private int singleConnectionsBackend() throws SQLException {
-    try (var connection = singleConnectionPool.getConnection()) {
+    return backendOf(singleConnectionPool);
+  }
+
+  private static int backendOf(DataSource dataSource) throws SQLException {
+    try (var connection = dataSource.getConnection()) {
       return backendPid(connection);
     }
   }

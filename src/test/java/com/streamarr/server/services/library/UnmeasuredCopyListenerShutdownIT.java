@@ -108,7 +108,7 @@ class UnmeasuredCopyListenerShutdownIT extends AbstractIntegrationTest {
       throws Exception {
     int connectionsInUseAfterTheClose;
 
-    try (var singleConnectionPool = singleConnectionPoolLike(pool);
+    try (var singleConnectionPool = singleConnectionPoolAt(pool.getJdbcUrl());
         var _ = singleConnectionPool.getConnection()) {
       var listener =
           new UnmeasuredCopyListener(
@@ -133,9 +133,9 @@ class UnmeasuredCopyListenerShutdownIT extends AbstractIntegrationTest {
     assertThat(meters.countOf("failed")).isZero();
   }
 
-  private static HikariDataSource singleConnectionPoolLike(HikariDataSource pool) {
+  private HikariDataSource singleConnectionPoolAt(String jdbcUrl) {
     var config = new HikariConfig();
-    config.setJdbcUrl(pool.getJdbcUrl());
+    config.setJdbcUrl(jdbcUrl);
     config.setUsername(pool.getUsername());
     config.setPassword(pool.getPassword());
     config.setDataSourceProperties(pool.getDataSourceProperties());
