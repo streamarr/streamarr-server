@@ -100,8 +100,8 @@ public class SegmentFolderLeftovers {
     }
   }
 
-  // Read to its end before the first delete: a listing that stays open while its entries are
-  // deleted can skip some of them.
+  // Read to its end before the first delete. MoreFiles.deleteRecursively opens the folder again
+  // for each entry, and on macOS a listing that is open meanwhile then skips entries.
   private List<Path> listedEntries() throws IOException {
     var listed = new ArrayList<Path>();
     try (var entries = Files.newDirectoryStream(segmentFolder)) {
