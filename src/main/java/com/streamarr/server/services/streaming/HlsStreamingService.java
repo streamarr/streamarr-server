@@ -148,7 +148,6 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(refuseForLackOfCapacity(CapacityRefusal.NO_CONNECTED_WORKER));
     }
 
-    var authority = command.identity().playbackAuthority();
     var mediaFileId = command.mediaFileId();
     var options = command.options();
     var request =
@@ -203,21 +202,10 @@ public class HlsStreamingService implements StreamingService {
 
     var decision = admission.decision();
     var variants = admission.variants();
-    var now = Instant.now();
-
     var session =
-        StreamSession.builder()
-            .sessionId(sessionId)
-            .mediaFileId(mediaFileId)
-            .authority(authority)
-            .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
-            .mediaProbe(probe)
+        newSession(command, mediaFile, probe)
             .transcodeDecision(decision)
-            .options(options)
             .variants(variants)
-            .startPosition(command.startPosition().orElse(null))
-            .createdAt(now)
-            .networkRoute(command.networkRoute())
             .build();
     startAtTheStartSegment(session);
 
@@ -263,6 +251,12 @@ public class HlsStreamingService implements StreamingService {
   // or segments.
   private static StreamSession.StreamSessionBuilder directPlaySession(
       CreateStreamSessionCommand command, MediaFile mediaFile, MediaProbe probe) {
+    return newSession(command, mediaFile, probe).delivery(StreamDelivery.DIRECT_PLAY);
+  }
+
+  // What the command gives every stream session, whatever it delivers.
+  private static StreamSession.StreamSessionBuilder newSession(
+      CreateStreamSessionCommand command, MediaFile mediaFile, MediaProbe probe) {
     return StreamSession.builder()
         .sessionId(command.streamSessionId())
         .mediaFileId(command.mediaFileId())
@@ -272,8 +266,7 @@ public class HlsStreamingService implements StreamingService {
         .options(command.options())
         .startPosition(command.startPosition().orElse(null))
         .networkRoute(command.networkRoute())
-        .createdAt(Instant.now())
-        .delivery(StreamDelivery.DIRECT_PLAY);
+        .createdAt(Instant.now());
   }
 
   // The decision that a stream session starts with, and the variants of its ladder.
