@@ -13,15 +13,18 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
@@ -399,8 +402,11 @@ class SegmentFolderLeftoversTest {
           + " processes start at once")
   void shouldLeaveTheFoldersMarkToTheStartThatHoldsTheFoldersLockWhenTwoServerProcessesStartAtOnce()
       throws IOException {
-    try (var otherStartsLock = new SegmentFolderLock()) {
-      var outcome = otherStartsLock.whileAlone(segmentFolder, () -> startOf(segmentFolder));
+    try (var otherStartsLock = new SegmentFolderLock();
+        var opened = (SecureDirectoryStream<Path>) Files.newDirectoryStream(segmentFolder)) {
+      var outcome =
+          otherStartsLock.whileAlone(
+              opened, segmentFolder.toRealPath(), () -> startOf(segmentFolder));
 
       assertThat(outcome).contains(new Refused(SegmentFolderRefusal.IN_USE));
       assertThat(segmentFolder.resolve(MARK_NAME)).doesNotExist();
@@ -652,6 +658,110 @@ class SegmentFolderLeftoversTest {
       assertThat(otherProcessSession).isDirectory();
       assertThat(leftover).doesNotExist();
       assertThat(outcome).isEqualTo(new Deleted(1, 0));
+    }
+  }
+
+  // The folder that took the segment folder's place belongs to another running server process,
+  // which holds its own lock. The start holds the lock of the folder that it found on the path.
+  @Test
+  @DisplayName(
+      "Should keep another server process's stream sessions when the segment folder is replaced by a"
+          + " soft link to its folder while the start takes the lock")
+  void
+      shouldKeepAnotherServerProcesssStreamSessionsWhenTheSegmentFolderIsReplacedByASoftLinkToItsFolderWhileTheStartTakesTheLock()
+          throws IOException {
+    var folder = Files.createDirectory(machine.resolve("segments"));
+    startOf(folder);
+    var leftoverName = leftSessionIn(folder).getFileName();
+    var otherFolder = Files.createDirectory(outside.resolve("segments"));
+    startOf(otherFolder);
+    var movedFolder = machine.resolve("moved");
+    var replacedOnceItOpensTheLock =
+        ThrowingFileSystemWrapper.runningAfterEachChannelOpenOf(
+            FileSystems.getDefault(),
+            LOCK_NAME,
+            () -> replaceBySoftLink(folder, movedFolder, otherFolder));
+    try (var otherProcessLock = new SegmentFolderLock()) {
+      var otherProcessSession =
+          new LocalSegmentStore(otherFolder, otherProcessLock)
+              .getOutputDirectory(UUID.randomUUID());
+
+      var outcome = startOf(leftoversOf(replacedOnceItOpensTheLock.getPath(folder.toString())));
+
+      assertThat(Files.readSymbolicLink(folder))
+          .as("the folder was replaced while the start took the lock")
+          .isEqualTo(otherFolder);
+      assertThat(otherProcessSession).isDirectory();
+      assertThat(movedFolder.resolve(leftoverName)).doesNotExist();
+      assertThat(outcome).isEqualTo(new Deleted(1, 0));
+    }
+  }
+
+  // The mark holds the path of the folder that the start found there. The other folder keeps its
+  // own mark and its leftover.
+  @Test
+  @DisplayName(
+      "Should mark the folder whose lock it holds when the segment folder is replaced by a soft link"
+          + " to another marked folder while the start takes the lock")
+  void
+      shouldMarkTheFolderWhoseLockItHoldsWhenTheSegmentFolderIsReplacedByASoftLinkToAnotherMarkedFolderWhileTheStartTakesTheLock()
+          throws IOException {
+    var folder = Files.createDirectory(machine.resolve("segments"));
+    var folderPath = folder.toRealPath().toString().getBytes(StandardCharsets.UTF_8);
+    var otherFolder = Files.createDirectory(outside.resolve("segments"));
+    startOf(otherFolder);
+    var otherFoldersMark = Files.readAllBytes(otherFolder.resolve(MARK_NAME));
+    var otherFoldersLeftover = leftSessionIn(otherFolder);
+    var movedFolder = machine.resolve("moved");
+    var replacedOnceItOpensTheLock =
+        ThrowingFileSystemWrapper.runningAfterEachChannelOpenOf(
+            FileSystems.getDefault(),
+            LOCK_NAME,
+            () -> replaceBySoftLink(folder, movedFolder, otherFolder));
+
+    var outcome = startOf(leftoversOf(replacedOnceItOpensTheLock.getPath(folder.toString())));
+
+    assertThat(Files.readSymbolicLink(folder))
+        .as("the folder was replaced while the start took the lock")
+        .isEqualTo(otherFolder);
+    assertThat(movedFolder.resolve(MARK_NAME)).hasBinaryContent(folderPath);
+    assertThat(otherFolder.resolve(MARK_NAME)).hasBinaryContent(otherFoldersMark);
+    assertThat(otherFoldersLeftover).isDirectory();
+    assertThat(outcome).isEqualTo(new Deleted(0, 0));
+  }
+
+  // The running process holds the lock of the folder that the start opened. The folder that the
+  // soft link leads to has no running process, so its lock is free.
+  @Test
+  @DisplayName(
+      "Should keep a running server process's stream sessions when its segment folder is replaced by"
+          + " a soft link to another marked folder before the start takes the lock")
+  void
+      shouldKeepARunningServerProcesssStreamSessionsWhenItsSegmentFolderIsReplacedByASoftLinkToAnotherMarkedFolderBeforeTheStartTakesTheLock()
+          throws IOException {
+    var folder = Files.createDirectory(machine.resolve("segments"));
+    startOf(folder);
+    var otherFolder = Files.createDirectory(outside.resolve("segments"));
+    startOf(otherFolder);
+    var movedFolder = machine.resolve("moved");
+    var replacedOnceItReadsTheMark =
+        ThrowingFileSystemWrapper.runningAfterEachAttributeReadOf(
+            FileSystems.getDefault(),
+            MARK_NAME,
+            once(() -> replaceBySoftLink(folder, movedFolder, otherFolder)));
+    try (var runningProcessLock = new SegmentFolderLock()) {
+      var runningSessionName =
+          new LocalSegmentStore(folder, runningProcessLock)
+              .getOutputDirectory(UUID.randomUUID())
+              .getFileName();
+
+      var outcome = startOf(leftoversOf(replacedOnceItReadsTheMark.getPath(folder.toString())));
+
+      assertThat(Files.readSymbolicLink(folder))
+          .as("the folder was replaced before the start took the lock")
+          .isEqualTo(otherFolder);
+      assertThat(movedFolder.resolve(runningSessionName)).isDirectory();
+      assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.IN_USE));
     }
   }
 
@@ -1186,6 +1296,25 @@ class SegmentFolderLeftoversTest {
     try {
       Files.delete(link);
       Files.createSymbolicLink(link, folder);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  private static Runnable once(Runnable action) {
+    var ran = new AtomicBoolean();
+    return () -> {
+      if (ran.compareAndSet(false, true)) {
+        action.run();
+      }
+    };
+  }
+
+  // Moves the folder away and puts a soft link to another folder in its place.
+  private static void replaceBySoftLink(Path folder, Path movedFolder, Path otherFolder) {
+    try {
+      Files.move(folder, movedFolder);
+      Files.createSymbolicLink(folder, otherFolder);
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }

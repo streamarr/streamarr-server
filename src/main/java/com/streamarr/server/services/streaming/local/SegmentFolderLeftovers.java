@@ -84,13 +84,7 @@ public class SegmentFolderLeftovers {
       }
 
       Files.createDirectories(folder);
-      // Before the lock's file, so that a folder that holds something else gets nothing.
-      if (!isMarkable(folder)) {
-        return refused(SegmentFolderRefusal.UNMARKED_FOLDER);
-      }
-
-      return lock.whileAlone(folder, () -> markAndDeleteEachLeftover(folder))
-          .orElseGet(() -> refused(SegmentFolderRefusal.IN_USE));
+      return markAndDeleteIn(folder);
     } catch (IOException | RuntimeException e) {
       log.warn("Failed to delete the leftovers in the segment folder {}", segmentFolder, e);
       return new Refused(SegmentFolderRefusal.UNREADABLE_FOLDER);
@@ -236,33 +230,43 @@ public class SegmentFolderLeftovers {
     return existing;
   }
 
-  // Only one start at a time holds the lock alone, so two starts never write the mark at once.
-  private SegmentFolderLeftoversOutcome markAndDeleteEachLeftover(Path folder) throws IOException {
+  // The start locks, marks and deletes through one handle of the folder, never through the folder's
+  // path again: a soft link or folder that takes the folder's place meanwhile cannot lead it into
+  // another folder.
+  private SegmentFolderLeftoversOutcome markAndDeleteIn(Path folder) throws IOException {
     try (var opened = openedFolder(folder)) {
-      if (isMarked(opened, folder)) {
-        return deleteEachLeftover(opened);
+      // Before the lock's file, so that a folder that holds something else gets nothing.
+      if (!isMarkable(opened, folder)) {
+        return refused(SegmentFolderRefusal.UNMARKED_FOLDER);
       }
+
+      return lock.whileAlone(opened, folder, () -> markAndDeleteEachLeftover(opened, folder))
+          .orElseGet(() -> refused(SegmentFolderRefusal.IN_USE));
+    }
+  }
+
+  // Only one start at a time holds the lock alone, so two starts never write the mark at once.
+  private SegmentFolderLeftoversOutcome markAndDeleteEachLeftover(
+      SecureDirectoryStream<Path> opened, Path folder) throws IOException {
+    if (isMarked(opened, folder)) {
+      return deleteEachLeftover(opened, folder);
     }
 
-    if (!holdsNoOtherEntry(folder)) {
+    if (!holdsNoOtherEntry(opened, folder)) {
       return refused(SegmentFolderRefusal.UNMARKED_FOLDER);
     }
 
-    writeMark(folder);
+    writeMark(opened, folder);
     // The folder held no other entry, so it holds no leftover.
     return new Deleted(0, 0);
   }
 
   // Whether the folder carries its mark, or holds no other entry, so that a start may mark it.
-  private boolean isMarkable(Path folder) throws IOException {
-    try (var opened = openedFolder(folder)) {
-      return isMarked(opened, folder) || holdsNoOtherEntry(folder);
-    }
+  private static boolean isMarkable(SecureDirectoryStream<Path> opened, Path folder)
+      throws IOException {
+    return isMarked(opened, folder) || holdsNoOtherEntry(opened, folder);
   }
 
-  // The delete checks each mark and deletes each leftover through this one handle of the folder,
-  // never through the folder's path again: a soft link or folder on that path that changes
-  // meanwhile cannot lead it into another folder.
   private SecureDirectoryStream<Path> openedFolder(Path folder) throws IOException {
     var opened = Files.newDirectoryStream(folder);
     if (!(opened instanceof SecureDirectoryStream<Path> secureFolder)) {
@@ -291,36 +295,45 @@ public class SegmentFolderLeftovers {
     }
   }
 
-  private static byte[] markedFolder(Path folder) throws IOException {
-    return folder.toRealPath().toString().getBytes(StandardCharsets.UTF_8);
-  }
-
-  private static Path mark(Path folder) {
-    return folder.resolve(MARK_NAME);
+  // The folder's real path as the start resolved it, never resolved again: a folder that takes its
+  // place through a soft link carries a mark with another path.
+  private static byte[] markedFolder(Path folder) {
+    return folder.toString().getBytes(StandardCharsets.UTF_8);
   }
 
   // A mark and a lock alone claim nothing for another owner: an earlier process may have ended
   // while it wrote the mark.
-  private static boolean holdsNoOtherEntry(Path folder) throws IOException {
-    var mark = mark(folder);
-    var lockFile = folder.resolve(SegmentFolderLock.NAME);
-    try (var others =
-        Files.newDirectoryStream(folder, entry -> !entry.equals(mark) && !entry.equals(lockFile))) {
-      return !others.iterator().hasNext();
-    }
+  private static boolean holdsNoOtherEntry(SecureDirectoryStream<Path> opened, Path folder)
+      throws IOException {
+    return namesInFolder(opened, folder).stream()
+        .map(Path::toString)
+        .allMatch(name -> name.equals(MARK_NAME) || name.equals(SegmentFolderLock.NAME));
   }
 
   // Replaces whatever holds the mark's place. CREATE_NEW fails on a soft link there, where a plain
   // write would overwrite the file that the link points to.
-  private static void writeMark(Path folder) throws IOException {
-    Files.deleteIfExists(mark(folder));
-    Files.write(mark(folder), markedFolder(folder), StandardOpenOption.CREATE_NEW);
+  private static void writeMark(SecureDirectoryStream<Path> opened, Path folder)
+      throws IOException {
+    var mark = folder.getFileSystem().getPath(MARK_NAME);
+    try {
+      opened.deleteFile(mark);
+    } catch (NoSuchFileException _) {
+      // There was no mark to replace.
+    }
+
+    try (var markFile =
+        Channels.newOutputStream(
+            opened.newByteChannel(
+                mark, Set.of(StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW)))) {
+      markFile.write(markedFolder(folder));
+    }
   }
 
-  private Deleted deleteEachLeftover(SecureDirectoryStream<Path> folder) {
+  private Deleted deleteEachLeftover(SecureDirectoryStream<Path> opened, Path folder)
+      throws IOException {
     var leftovers = new ArrayList<Leftover>();
-    for (var name : namesIn(folder)) {
-      leftovers.add(deleteIfLeftover(folder, name));
+    for (var name : namesInFolder(opened, folder)) {
+      leftovers.add(deleteIfLeftover(opened, name));
     }
 
     return new Deleted(
@@ -400,6 +413,16 @@ public class SegmentFolderLeftovers {
     }
 
     directory.deleteDirectory(name);
+  }
+
+  // A directory stream lists its entries only once, so each listing of the folder opens it again
+  // through its handle.
+  private static List<Path> namesInFolder(SecureDirectoryStream<Path> opened, Path folder)
+      throws IOException {
+    try (var listing =
+        opened.newDirectoryStream(folder.getFileSystem().getPath("."), LinkOption.NOFOLLOW_LINKS)) {
+      return namesIn(listing);
+    }
   }
 
   // Read to its end before the first delete: on macOS a listing that is open while entries of its
