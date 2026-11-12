@@ -356,7 +356,7 @@ public record MediaProbe(
    * session reads {@link #directPlayMediaEnd} instead.
    */
   public Duration mediaEnd() {
-    var sessionAudio = audioStreams().stream().limit(1).toList();
+    var sessionAudio = sessionAudioStream().stream().toList();
     return mediaEndWith(sessionAudio);
   }
 
@@ -430,7 +430,12 @@ public record MediaProbe(
 
   /** Whether the session's audio stream ends early, by the rule of {@link #videoEndsEarly}. */
   public boolean sessionAudioEndsEarly(@NonNull Duration margin) {
-    return endsEarly(audioStreams().stream().findFirst(), margin);
+    return endsEarly(sessionAudioStream(), margin);
+  }
+
+  // The session plays the first audio stream that the probe lists.
+  private Optional<StreamInfo> sessionAudioStream() {
+    return audioStreams().stream().findFirst();
   }
 
   private Optional<StreamInfo> chosenVideoStream() {
