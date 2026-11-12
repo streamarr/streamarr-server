@@ -1,6 +1,11 @@
 package com.streamarr.server.services.metadata;
 
+import static com.streamarr.server.fakes.TestImages.OPAQUE_MID_GRAY;
+import static com.streamarr.server.fakes.TestImages.alphaOfCornerPixel;
+import static com.streamarr.server.fakes.TestImages.centrePixelOf;
 import static com.streamarr.server.fakes.TestImages.createGifImage;
+import static com.streamarr.server.fakes.TestImages.createGrayscalePngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createPalettePngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
 import static com.streamarr.server.fakes.TestImages.createQuadrantPngImage;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
@@ -193,6 +198,31 @@ class ImageVariantServiceTest {
                 assertThat(largestChannelDifference(v.data(), red))
                     .as("%s variant", v.variant())
                     .isLessThanOrEqualTo(8));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a transparent pixel in the cascaded small PNG variant when transparency is a"
+          + " palette entry")
+  void shouldKeepTransparentPixelInCascadedSmallPngVariantWhenTransparencyIsPaletteEntry() {
+    var imageData = createPalettePngImageWithTransparentBorder();
+
+    var small = smallVariant(imageVariantService.generateVariants(imageData, ImageType.LOGO));
+
+    // Resized into a new palette image, the source's type, the border would turn opaque.
+    assertThat(formatNameOf(small.data())).isEqualTo("png");
+    assertThat(alphaOfCornerPixel(small.data())).as("corner alpha").isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep gray 128 in the cascaded small variant when source is grayscale with alpha")
+  void shouldKeepGray128InCascadedSmallVariantWhenSourceIsGrayscaleWithAlpha() {
+    var imageData = createGrayscalePngImageWithTransparentBorder();
+
+    var small = smallVariant(imageVariantService.generateVariants(imageData, ImageType.LOGO));
+
+    assertThat(centrePixelOf(small.data())).isEqualTo(OPAQUE_MID_GRAY);
   }
 
   @Test
