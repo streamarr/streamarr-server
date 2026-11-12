@@ -876,9 +876,13 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   private String offer(Profile profile, UUID householdId) {
+    return offer(owner, profile, householdId);
+  }
+
+  private String offer(AuthTestSupport.TestIdentity offerer, Profile profile, UUID householdId) {
     var response =
         http.execute(
-            authTestSupport.accountBearer(owner),
+            authTestSupport.accountBearer(offerer),
             """
             mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
               share { id status } userErrors { __typename } } }
