@@ -379,9 +379,9 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should resolve the request as accepted when an Account transfer makes the offer its"
+      "Should resolve the request as withdrawn when an Account transfer makes the offer its"
           + " Profile's home share")
-  void shouldResolveTheRequestAsAcceptedWhenAnAccountTransferMakesTheOfferItsProfilesHomeShare() {
+  void shouldResolveTheRequestAsWithdrawnWhenAnAccountTransferMakesTheOfferItsProfilesHomeShare() {
     var ben = track(authTestSupport.createHouseholdMemberIdentity(riverside));
     var offer = steps.offer(ben, ben.profile(), sam);
     var serverAdmin = track(authTestSupport.createAdminIdentity());
@@ -404,13 +404,13 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
         .satisfies(
             request -> {
               assertThat(request.recipient()).isEqualTo(account(sam));
-              assertThat(request.resolution()).contains("DECIDED");
+              assertThat(request.resolution()).contains("WITHDRAWN");
               assertThat(request.resolvedAt()).contains(home.getDecidedAt());
               assertThat(request.snapshot())
                   .isEqualTo(
                       document(
                           new ProfileShareOfferedSnapshot(
-                              ben.profile().getName(), Optional.of(ProfileShareAnswer.ACCEPTED))));
+                              ben.profile().getName(), Optional.empty())));
             });
     assertThat(answersAbout(offer)).isEmpty();
   }
