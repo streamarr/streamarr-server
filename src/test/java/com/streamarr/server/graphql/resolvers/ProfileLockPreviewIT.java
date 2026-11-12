@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -33,12 +34,14 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
   private static final String POLICY_CHANGE_PREVIEW =
       """
       query { profilePolicyChangePreview(profileId: "%s", kind: %s, maximumAllowedRatingAge: %s) {
+        locksThisProfile otherProfilesWillLock
         households { household { id name } profiles { id name } locksThisProfile } } }
       """;
 
   private static final String CREATION_PREVIEW =
       """
       query { profileCreationPreview(householdId: "%s", kind: %s, maximumAllowedRatingAge: %s) {
+        locksThisProfile otherProfilesWillLock
         households { household { id name } profiles { id name } locksThisProfile } } }
       """;
 
@@ -89,9 +92,9 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should list only the Household whose Profile picker each reader may see when a Kid shared"
-          + " into another Household would lock in both")
-  void shouldListOnlyTheHouseholdWhosePickerEachReaderMaySeeWhenAKidWouldLockInBoth()
+      "Should say the changed Kid locks in every Household it visits when its manager previews the"
+          + " change")
+  void shouldSayTheChangedKidLocksInEveryHouseholdItVisitsWhenItsManagerPreviewsTheChange()
       throws Exception {
     var sam =
         cast.profileManagedBy(
@@ -102,25 +105,115 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
     cast.profileManagedBy(
         cabin, ProfileFixture.kidProfileBuilder().name("Theo").maximumAllowedRatingAge(10));
 
-    var managers = preview(authTestSupport.accountBearer(smith), sam, ProfileKind.KID, "13");
-    var hosts = preview(authTestSupport.accountBearer(cabin), sam, ProfileKind.KID, "13");
+    var preview = preview(authTestSupport.accountBearer(smith), sam, ProfileKind.KID, "13");
 
+    assertThat(preview.path("locksThisProfile").asBoolean()).isTrue();
+    assertThat(preview.path("otherProfilesWillLock").asBoolean()).isFalse();
+    assertThat(preview.path("households"))
+        .extracting(
+            household -> household.path("household").path("id").asString(),
+            household -> household.path("locksThisProfile").asBoolean())
+        .containsExactly(
+            tuple(smith.household().getId().toString(), true),
+            tuple(cabin.household().getId().toString(), true));
+  }
+
+  @Test
+  @DisplayName(
+      "Should say the changed Kid locks without naming where when a HouseholdAdmin who supervises"
+          + " it previews the change")
+  void shouldSayTheChangedKidLocksWithoutNamingWhereWhenAHouseholdAdminWhoSupervisesItPreviews()
+      throws Exception {
+    var sam =
+        cast.profileManagedBy(
+            smith, ProfileFixture.kidProfileBuilder().name("Sam").maximumAllowedRatingAge(7));
+    cast.makeAvailable(sam, cabin);
+    cast.profileManagedBy(
+        smith, ProfileFixture.kidProfileBuilder().name("Mara").maximumAllowedRatingAge(10));
+
+    var preview = preview(authTestSupport.accountBearer(cabin), sam, ProfileKind.KID, "13");
+
+    assertThat(preview.path("locksThisProfile").asBoolean()).isTrue();
+    assertThat(preview.path("otherProfilesWillLock").asBoolean()).isFalse();
+    assertThat(preview.path("households")).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should say others would lock without naming or counting them when the caller cannot see"
+          + " them")
+  void shouldSayOthersWouldLockWithoutNamingOrCountingThemWhenTheCallerCannotSeeThem()
+      throws Exception {
+    var sam =
+        cast.profileManagedBy(
+            smith, ProfileFixture.kidProfileBuilder().name("Sam").maximumAllowedRatingAge(13));
+    cast.makeAvailable(sam, cabin);
+    var mara =
+        cast.profileManagedBy(
+            smith, ProfileFixture.kidProfileBuilder().name("Mara").maximumAllowedRatingAge(10));
+
+    var hosts = preview(authTestSupport.accountBearer(cabin), sam, ProfileKind.KID, "7");
+    var managers = preview(authTestSupport.accountBearer(smith), sam, ProfileKind.KID, "7");
+
+    assertThat(hosts.path("locksThisProfile").asBoolean()).isFalse();
+    assertThat(hosts.path("otherProfilesWillLock").asBoolean()).isTrue();
+    assertThat(hosts.path("households")).isEmpty();
+    assertThat(managers.path("otherProfilesWillLock").asBoolean()).isFalse();
     assertThat(managers.path("households"))
         .singleElement()
         .satisfies(
-            household -> {
-              assertThat(household.path("household").path("id").asString())
-                  .isEqualTo(smith.household().getId().toString());
-              assertThat(household.path("locksThisProfile").asBoolean()).isTrue();
-            });
-    assertThat(hosts.path("households"))
-        .singleElement()
-        .satisfies(
-            household -> {
-              assertThat(household.path("household").path("id").asString())
-                  .isEqualTo(cabin.household().getId().toString());
-              assertThat(household.path("locksThisProfile").asBoolean()).isTrue();
-            });
+            household ->
+                assertThat(household.path("profiles"))
+                    .extracting(profile -> profile.path("id").asString())
+                    .containsExactly(idOf(mara)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should list a Profile the caller manages where the caller cannot use the Household, and"
+          + " only say the others there would lock")
+  void shouldListAProfileTheCallerManagesWhenTheCallerCannotUseTheHousehold() throws Exception {
+    var sam = availableInBothHouseholds("Sam");
+    var theo = availableInBothHouseholds("Theo");
+
+    var preview = preview(authTestSupport.accountBearer(smith), sam, ProfileKind.KID, "10");
+
+    assertThat(preview.path("otherProfilesWillLock").asBoolean()).isTrue();
+    assertThat(preview.path("households"))
+        .extracting(
+            household -> household.path("household").path("id").asString(),
+            household -> lockedIds(household))
+        .containsExactly(
+            tuple(
+                smith.household().getId().toString(),
+                List.of(idOf(smith.profile()), idOf(theo)).stream().sorted().toList()),
+            tuple(cabin.household().getId().toString(), List.of(idOf(theo))));
+  }
+
+  @Test
+  @DisplayName(
+      "Should list every Household where the Profile is available when a ServerAdmin previews the"
+          + " change")
+  void shouldListEveryHouseholdWhereTheProfileIsAvailableWhenAServerAdminPreviews()
+      throws Exception {
+    var sam = availableInBothHouseholds("Sam");
+    var theo = availableInBothHouseholds("Theo");
+    var admin = track(authTestSupport.createAdminIdentity());
+
+    var preview = preview(authTestSupport.accountBearer(admin), sam, ProfileKind.KID, "10");
+
+    assertThat(preview.path("otherProfilesWillLock").asBoolean()).isFalse();
+    assertThat(preview.path("households"))
+        .extracting(
+            household -> household.path("household").path("id").asString(),
+            household -> lockedIds(household))
+        .containsExactlyInAnyOrder(
+            tuple(
+                smith.household().getId().toString(),
+                List.of(idOf(smith.profile()), idOf(theo)).stream().sorted().toList()),
+            tuple(
+                cabin.household().getId().toString(),
+                List.of(idOf(cabin.profile()), idOf(theo)).stream().sorted().toList()));
   }
 
   @Test
@@ -204,6 +297,7 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
 
     var preview = creationPreview(authTestSupport.accountBearer(smith), ProfileKind.ADULT, "null");
 
+    assertThat(preview.path("locksThisProfile").asBoolean()).isTrue();
     assertThat(preview.path("households"))
         .singleElement()
         .satisfies(
@@ -211,6 +305,27 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
               assertThat(household.path("profiles")).isEmpty();
               assertThat(household.path("locksThisProfile").asBoolean()).isTrue();
             });
+  }
+
+  @Test
+  @DisplayName(
+      "Should list the Household when a ServerAdmin previews adding a Kid to a Household it cannot"
+          + " use")
+  void shouldListTheHouseholdWhenAServerAdminPreviewsAddingAKidToAHouseholdItCannotUse()
+      throws Exception {
+    var mara = cast.profileManagedBy(smith, ProfileFixture.defaultProfileBuilder().name("Mara"));
+    var admin = track(authTestSupport.createAdminIdentity());
+
+    var preview = creationPreview(authTestSupport.accountBearer(admin), ProfileKind.KID, "10");
+
+    assertThat(preview.path("otherProfilesWillLock").asBoolean()).isFalse();
+    assertThat(preview.path("households"))
+        .singleElement()
+        .satisfies(
+            household ->
+                assertThat(household.path("profiles"))
+                    .extracting(profile -> profile.path("id").asString())
+                    .containsExactlyInAnyOrder(idOf(mara), idOf(smith.profile())));
   }
 
   @Test
@@ -239,6 +354,19 @@ class ProfileLockPreviewIT extends AbstractIntegrationTest {
             creationPreview(authTestSupport.deviceBoundProfileBearer(smith), ProfileKind.KID, "10")
                 .isNull())
         .isTrue();
+  }
+
+  /** An Adult without a PIN that Smith manages, available in Smith's Household and the Cabin. */
+  private Profile availableInBothHouseholds(String name) {
+    var profile = cast.profileManagedBy(smith, ProfileFixture.defaultProfileBuilder().name(name));
+    cast.makeAvailable(profile, cabin);
+    return profile;
+  }
+
+  private static List<String> lockedIds(JsonNode household) {
+    var ids = new ArrayList<String>();
+    household.path("profiles").forEach(profile -> ids.add(profile.path("id").asString()));
+    return ids.stream().sorted().toList();
   }
 
   private JsonNode preview(String bearer, Profile profile, ProfileKind kind, String ceiling)

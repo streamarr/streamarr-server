@@ -1,6 +1,7 @@
 package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.Profile;
@@ -82,7 +83,7 @@ class ProfileLockPreviewServiceTest {
             .policyChangePreview(reader, sam.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10))
             .orElseThrow();
 
-    assertThat(preview)
+    assertThat(preview.households())
         .singleElement()
         .satisfies(
             locks -> {
@@ -105,7 +106,8 @@ class ProfileLockPreviewServiceTest {
             .policyChangePreview(reader, sam.getId(), new ProfilePolicyTarget(ProfileKind.KID, 13))
             .orElseThrow();
 
-    assertThat(preview)
+    assertThat(preview.locksThisProfile()).isTrue();
+    assertThat(preview.households())
         .singleElement()
         .satisfies(
             locks -> {
@@ -115,10 +117,12 @@ class ProfileLockPreviewServiceTest {
   }
 
   @Test
-  @DisplayName("Should leave out a Household when the caller cannot see its Profile picker")
-  void shouldLeaveOutAHouseholdWhenTheCallerCannotSeeItsProfilePicker() {
+  @DisplayName(
+      "Should list every Household where the Profile is available when a ServerAdmin previews the"
+          + " change")
+  void shouldListEveryHouseholdWhereTheProfileIsAvailableWhenAServerAdminPreviewsTheChange() {
     var sam = available(ProfileFixture.defaultProfileBuilder().name("Sam").pinHash(A_PIN));
-    available(ProfileFixture.defaultProfileBuilder().name("Mara"));
+    var mara = available(ProfileFixture.defaultProfileBuilder().name("Mara"));
     var cabin = households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
     shares.share(sam.getId(), cabin.getId(), false);
     var theo = profiles.save(ProfileFixture.defaultProfileBuilder().name("Theo").build());
@@ -129,9 +133,11 @@ class ProfileLockPreviewServiceTest {
             .policyChangePreview(reader, sam.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10))
             .orElseThrow();
 
-    assertThat(preview)
-        .extracting(locks -> locks.household().getName())
-        .containsExactly("Smith Family");
+    assertThat(preview.households())
+        .extracting(locks -> locks.household().getName(), locks -> ids(locks.profiles()))
+        .containsExactly(
+            tuple("Smith Family", List.of(mara.getId())), tuple("Cabin", List.of(theo.getId())));
+    assertThat(preview.otherProfilesWillLock()).isFalse();
   }
 
   @Test
@@ -143,7 +149,7 @@ class ProfileLockPreviewServiceTest {
     assertThat(
             service.policyChangePreview(
                 reader, sam.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10)))
-        .hasValue(List.of());
+        .hasValue(new ProfileLocks(false, List.of(), false));
   }
 
   @Test
@@ -159,7 +165,7 @@ class ProfileLockPreviewServiceTest {
             .policyChangePreview(reader, sam.getId(), new ProfilePolicyTarget(ProfileKind.KID, 5))
             .orElseThrow();
 
-    assertThat(preview)
+    assertThat(preview.households())
         .singleElement()
         .satisfies(
             locks -> {
@@ -194,7 +200,7 @@ class ProfileLockPreviewServiceTest {
             .policyChangePreview(reader, sam.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10))
             .orElseThrow();
 
-    assertThat(preview)
+    assertThat(preview.households())
         .singleElement()
         .satisfies(
             locks ->
@@ -236,7 +242,7 @@ class ProfileLockPreviewServiceTest {
             .creationPreview(reader, smith.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10))
             .orElseThrow();
 
-    assertThat(preview)
+    assertThat(preview.households())
         .singleElement()
         .satisfies(
             locks -> {
@@ -259,7 +265,8 @@ class ProfileLockPreviewServiceTest {
                 reader, smith.getId(), new ProfilePolicyTarget(ProfileKind.ADULT, null))
             .orElseThrow();
 
-    assertThat(preview)
+    assertThat(preview.locksThisProfile()).isTrue();
+    assertThat(preview.households())
         .singleElement()
         .satisfies(
             locks -> {
@@ -269,16 +276,22 @@ class ProfileLockPreviewServiceTest {
   }
 
   @Test
-  @DisplayName("Should list no Household when the caller cannot see its Profile picker")
-  void shouldListNoHouseholdWhenTheCallerCannotSeeItsProfilePicker() {
+  @DisplayName(
+      "Should list the Household when a ServerAdmin previews adding a Kid where it cannot use the"
+          + " Household")
+  void shouldListTheHouseholdWhenAServerAdminPreviewsAddingAKidWhereItCannotUseTheHousehold() {
     var cabin = households.save(HouseholdFixture.defaultHouseholdBuilder().name("Cabin").build());
     var theo = profiles.save(ProfileFixture.defaultProfileBuilder().name("Theo").build());
     shares.share(theo.getId(), cabin.getId(), true);
 
-    assertThat(
-            service.creationPreview(
-                reader, cabin.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10)))
-        .hasValue(List.of());
+    var preview =
+        service
+            .creationPreview(reader, cabin.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10))
+            .orElseThrow();
+
+    assertThat(preview.households())
+        .extracting(locks -> locks.household().getName(), locks -> ids(locks.profiles()))
+        .containsExactly(tuple("Cabin", List.of(theo.getId())));
   }
 
   @Test
@@ -306,6 +319,10 @@ class ProfileLockPreviewServiceTest {
     var target = ((Intent.SetProfilePolicy) change).target();
     return new ProfilePolicyTransition(
         target.kind(), target.maximumAllowedRatingAge(), Classification.ORDINARY_EDIT);
+  }
+
+  private static List<UUID> ids(List<Profile> profiles) {
+    return profiles.stream().map(Profile::getId).toList();
   }
 
   private Profile available(Profile.ProfileBuilder<?, ?> profile) {

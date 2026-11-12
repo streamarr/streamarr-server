@@ -118,8 +118,10 @@ type Query {
     change, as changeProfileKind, setProfileMaximumAllowedRatingAge and
     removeProfileMaximumAllowedRatingAge decide it, a recent password aside. Null for everyone else,
     for a negative maximumAllowedRatingAge, which the change refuses, for a device-bound session and
-    when no Profile has the id. It lists only the Households whose Profile picker the asking Account
-    may see.
+    when no Profile has the id. It covers every Household where the Profile is available and always
+    says whether the Profile itself would lock, but lists a Household only where the asking Account
+    may already see that the Profile is available, names there only the Profiles it may see, and
+    of the rest says only that other Profiles would lock.
     """
     profilePolicyChangePreview(profileId: ID!, kind: ProfileKind!, maximumAllowedRatingAge: Int): ProfileLockPreview
     """
@@ -127,8 +129,8 @@ type Query {
     there, and whether the new Profile itself would be locked until it has a PIN, before it is
     created; maximumAllowedRatingAge null means no Content Ceiling. For whoever may create a Profile
     there: its HouseholdAdmins whose own Personal Profile is an unrestricted Adult, and
-    ServerAdmins. It lists the Household only when the asking Account may see its Profile picker,
-    so a ServerAdmin who may not use the Household gets an empty list. Null for everyone else, for
+    ServerAdmins. It always lists the Household, a ServerAdmin's included, and names there only the
+    Profiles the asking Account may see. Null for everyone else, for
     a negative maximumAllowedRatingAge, which creation refuses, for a device-bound session and when
     no Household has the id.
     """
