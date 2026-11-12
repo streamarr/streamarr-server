@@ -20,6 +20,8 @@ import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.artwork.ArtworkRequestService;
+import com.streamarr.server.services.artwork.ArtworkRun;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.support.HeldCreditInsert;
 import com.streamarr.server.support.OrderedSourceIds;

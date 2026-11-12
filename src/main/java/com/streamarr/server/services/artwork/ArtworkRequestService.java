@@ -1,4 +1,4 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.artwork;
 
 import com.streamarr.server.domain.media.ArtworkPriority;
 import com.streamarr.server.domain.media.ArtworkSources;
@@ -7,7 +7,7 @@ import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.domain.media.NewArtworkRequest;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository.SavedArtworkRequest;
-import com.streamarr.server.services.ArtworkPlan.PlannedImage;
+import com.streamarr.server.services.artwork.ArtworkPlan.PlannedImage;
 import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;

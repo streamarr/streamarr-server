@@ -1,4 +1,4 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.artwork;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
@@ -34,6 +34,7 @@ import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.concurrency.CpuPermits;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;

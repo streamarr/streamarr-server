@@ -1,4 +1,4 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.artwork;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;

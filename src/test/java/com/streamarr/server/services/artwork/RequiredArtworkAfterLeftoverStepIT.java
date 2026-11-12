@@ -1,4 +1,4 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.artwork;
 
 import com.streamarr.server.config.ArtworkPrioritySchedulers;
 import com.streamarr.server.domain.media.ArtworkSources;

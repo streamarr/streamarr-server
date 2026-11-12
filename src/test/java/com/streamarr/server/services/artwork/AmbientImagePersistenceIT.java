@@ -1,4 +1,4 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.artwork;
 
 import static com.streamarr.server.fixtures.ImageFixture.imageBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,7 +15,8 @@ import com.streamarr.server.fixtures.SavedMediaFixture;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.ImageService.ProcessedImage;
+import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.artwork.ImageService.ProcessedImage;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;

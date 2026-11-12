@@ -16,7 +16,7 @@ import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
-import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.artwork.ImageService;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import java.io.IOException;
 import java.nio.file.FileSystem;

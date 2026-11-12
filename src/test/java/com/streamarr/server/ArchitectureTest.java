@@ -346,6 +346,20 @@ class ArchitectureTest {
                   + " services that call them; shared helpers belong in a package both may depend"
                   + " on");
 
+  // The catalog services in the root services package request artwork, so a dependency back from
+  // artwork to them puts the two in a cycle.
+  @ArchTest
+  static final ArchRule artworkMustNotDependOnCatalogServices =
+      noClasses()
+          .that()
+          .resideInAPackage("com.streamarr.server.services.artwork..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage(SERVICES_PACKAGE)
+          .as(
+              "Artwork services must remain below the catalog services in the root services"
+                  + " package that request artwork");
+
   @ArchTest
   static final ArchRule repositoriesMustNotDependOnServices =
       noClasses()
@@ -761,6 +775,7 @@ class ArchitectureTest {
         .that()
         .resideInAnyPackage(
             "com.streamarr.server.services",
+            "com.streamarr.server.services.artwork..",
             "com.streamarr.server.services.concurrency..",
             "com.streamarr.server.services.library..",
             "com.streamarr.server.config..")

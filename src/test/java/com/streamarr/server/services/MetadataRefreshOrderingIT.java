@@ -12,6 +12,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.artwork.ArtworkRequestService;
 import com.streamarr.server.services.metadata.MetadataResult;
 import jakarta.persistence.EntityManager;
 import java.util.List;
