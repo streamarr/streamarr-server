@@ -50,7 +50,8 @@ final class ProbeReportFieldCounter {
   // least its tag and its length.
   private static final int FEWEST_BYTES_OF_A_STREAM_IN_THE_RESULT = 2;
   private static final Field STREAM_INDEX = new Skipped(Set.of(WireFormat.WIRETYPE_VARINT));
-  // A field that the contract does not declare may arrive in any wire type but a group's.
+  // A field that the contract does not declare may arrive in any wire type but a group's. Its
+  // encoding still counts, and the decoder discards it.
   private static final Field UNDECLARED =
       new Skipped(
           Set.of(

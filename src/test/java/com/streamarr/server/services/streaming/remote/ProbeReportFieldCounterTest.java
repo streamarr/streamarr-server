@@ -184,6 +184,18 @@ class ProbeReportFieldCounterTest {
             bytes(0x22, 2, 0x12, 1),
             BrokenRule.FIELD_PAST_ITS_END),
         arguments("a group inside a measured stream", bytes(0x22, 1, 0x0b), BrokenRule.GROUP),
+        arguments(
+            "a varint of eleven bytes in an undeclared field",
+            bytes(0x48).concat(repeated(0xff, 10)),
+            BrokenRule.OVERLONG_VARINT),
+        arguments(
+            "an undeclared field longer than the probe report",
+            bytes(0x4a, STATED_LENGTH - 1),
+            BrokenRule.FIELD_PAST_ITS_END),
+        arguments(
+            "an undeclared field of a measured stream longer than the measured stream",
+            bytes(0x22, 2, 0x4a, 1),
+            BrokenRule.FIELD_PAST_ITS_END),
         arguments("the result as a varint", bytes(0x08), BrokenRule.WRONG_WIRE_TYPE),
         arguments("the result as a fixed64 value", bytes(0x09), BrokenRule.WRONG_WIRE_TYPE),
         arguments("the result as a fixed32 value", bytes(0x0d), BrokenRule.WRONG_WIRE_TYPE),
@@ -436,6 +448,31 @@ class ProbeReportFieldCounterTest {
 
     assertThat(uncounted).isEmpty();
     assertThat(lengthOfResult).contains(BrokenRule.RESULT_LENGTH);
+  }
+
+  @Test
+  @DisplayName(
+      "Should go on counting a measured stream's intervals after a field of the measured stream"
+          + " that the contract does not declare")
+  void shouldGoOnCountingMeasuredStreamsIntervalsAfterFieldOfMeasuredStreamThatIsNotDeclared()
+      throws IOException {
+    var stream = ByteString.newOutput();
+    var streamFields = CodedOutputStream.newInstance(stream);
+    streamFields.writeUInt64(9, 150);
+    streamFields.writeByteArray(10, new byte[] {1, 2, 3});
+    packed(
+        streamFields,
+        StreamMeasurementIntervals.KEYFRAME_INTERVAL_BYTES_FIELD_NUMBER,
+        LIMITS.measuredKeyframeIntervalLimit() + 1);
+    streamFields.flush();
+    var out = ByteString.newOutput();
+    var fields = CodedOutputStream.newInstance(out);
+    fields.writeBytes(
+        ProbeAttemptReport.STREAM_MEASUREMENT_INTERVALS_FIELD_NUMBER, stream.toByteString());
+    fields.flush();
+    var bytes = out.toByteString();
+
+    assertThat(counterOf(bytes).read(bytes)).contains(BrokenRule.MEASURED_KEYFRAME_INTERVALS);
   }
 
   @Test

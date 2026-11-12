@@ -1,7 +1,9 @@
 package com.streamarr.server.services.streaming.remote;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.DiscardUnknownFieldsParser;
 import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.Parser;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
 import com.streamarr.transcode.v1.ReportProbeAttemptRequest;
@@ -29,6 +31,11 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequest> {
+
+  // A field that the contract does not declare, such as one that a later contract removed, holds
+  // nothing that the server reads (ADR 0033). The decoder drops it at every level of the report.
+  private static final Parser<ProbeAttemptReport> DECODER =
+      DiscardUnknownFieldsParser.wrap(ProbeAttemptReport.parser());
 
   private final UUID authenticatedWorkerId;
   private final LiveWorkerConnectionRegistry workerConnections;
@@ -227,7 +234,7 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
 
   private Optional<ProbeAttemptReport> decode() {
     try {
-      var report = ProbeAttemptReport.parseFrom(received);
+      var report = DECODER.parseFrom(received);
       received = ByteString.EMPTY;
       return Optional.of(report);
     } catch (InvalidProtocolBufferException _) {

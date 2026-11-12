@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.UnknownFieldSet;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
@@ -511,6 +512,29 @@ class ProbeReportCallTest {
     worker.report(probe.request(), report);
 
     assertThat(probe.outcome().get(1, TimeUnit.SECONDS)).isEqualTo(report);
+  }
+
+  @Test
+  @DisplayName(
+      "Should accept a probe report and keep none of the fields that the contract does not declare,"
+          + " at any level, when the worker sends such fields")
+  void shouldAcceptReportAndKeepNoUndeclaredFieldAtAnyLevelWhenWorkerSendsSuchFields()
+      throws Exception {
+    var worker = ReportingWorker.connectedTo(LIMITS);
+    var probe = worker.dispatch();
+    var declared = reportAtBothLimits(probe.request());
+    var withUndeclaredFields = declared.toBuilder().setUnknownFields(undeclaredFields());
+    withUndeclaredFields.getResultBuilder().setUnknownFields(undeclaredFields());
+    withUndeclaredFields
+        .getStreamMeasurementIntervalsBuilder(1)
+        .setUnknownFields(undeclaredFields());
+
+    var call = worker.report(probe.request(), withUndeclaredFields.build());
+
+    assertThat(call.answer()).isNotCompletedExceptionally();
+    assertThat(probe.outcome().get(1, TimeUnit.SECONDS))
+        .as("The decoded probe report holds only the fields that the contract declares")
+        .isEqualTo(declared);
   }
 
   @ParameterizedTest(name = "{0}")
@@ -1189,6 +1213,20 @@ class ProbeReportCallTest {
     return report
         .addAllKeyframePresentationTimeDeltas(widestDeltas)
         .addAllKeyframeDecodeTimeDeltas(widestDeltas);
+  }
+
+  /**
+   * A varint and a length-delimited field of numbers that no message of a probe report declares.
+   */
+  private static UnknownFieldSet undeclaredFields() {
+    return UnknownFieldSet.newBuilder()
+        .addField(90, UnknownFieldSet.Field.newBuilder().addVarint(150).build())
+        .addField(
+            91,
+            UnknownFieldSet.Field.newBuilder()
+                .addLengthDelimited(ByteString.copyFromUtf8("removed"))
+                .build())
+        .build();
   }
 
   /** A report with as many keyframes and measured keyframe intervals as the limits allow. */
