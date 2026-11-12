@@ -263,9 +263,9 @@ class SpecifiedOnlyKindsFitIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should keep two invitation requests waiting for one Account until one is accepted and the"
-          + " other withdrawn")
-  void shouldKeepTwoInvitationRequestsWaitingForOneAccountUntilOneIsWithdrawn() {
+      "Should keep each invitation request waiting until it is resolved when one Account is"
+          + " invited twice")
+  void shouldKeepEachInvitationRequestWaitingUntilItIsResolvedWhenOneAccountIsInvitedTwice() {
     var toHome = SubjectReference.profileManagerInvitation(UUID.randomUUID());
     var toWork = SubjectReference.profileManagerInvitation(UUID.randomUUID());
     publish(invited(toHome).build());

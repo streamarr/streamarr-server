@@ -395,9 +395,10 @@ class AccountAdministrationServiceTest {
 
   @Test
   @DisplayName(
-      "Should dismiss only the demoted Account's waiting requests about the offers still pending"
-          + " into its Household")
-  void shouldDismissOnlyTheDemotedAccountsWaitingRequestsAboutOffersIntoItsHousehold() {
+      "Should dismiss only its waiting requests about the offers still pending into its Household"
+          + " when a HouseholdAdmin is demoted")
+  void
+      shouldDismissOnlyItsWaitingRequestsAboutOffersIntoItsHouseholdWhenAHouseholdAdminIsDemoted() {
     target.setHouseholdRole(HouseholdRole.ADMIN);
     var waiting = offerInto(target.getHouseholdId(), Instant.now().plus(Duration.ofHours(1)));
     offerInto(target.getHouseholdId(), Instant.now().minusSeconds(1));

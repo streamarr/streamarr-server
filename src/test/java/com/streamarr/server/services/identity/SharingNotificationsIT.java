@@ -207,8 +207,8 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should give no request to a ServerAdmin who does not administer the target Household")
-  void shouldGiveNoRequestToAServerAdminWhoDoesNotAdministerTheTargetHousehold() {
+      "Should give no request to a ServerAdmin when it does not administer the target Household")
+  void shouldGiveNoRequestToAServerAdminWhenItDoesNotAdministerTheTargetHousehold() {
     var serverAdmin = track(authTestSupport.createAdminIdentity());
 
     var offer = steps.offer(sam, sam.profile(), riverside);
