@@ -769,8 +769,7 @@ class ProfileAdministrationServiceTest {
     var rejection = rejectionOf(outcome);
     assertThat(rejection).isInstanceOf(ProfileRejections.WouldLockProfile.class);
     var wouldLock = (ProfileRejections.WouldLockProfile) rejection;
-    assertThat(wouldLock.householdId()).isEqualTo(household.getId());
-    assertThat(wouldLock.householdName()).contains(household.getName());
+    assertThat(wouldLock.household()).map(Household::getId).contains(household.getId());
     assertThat(profiles.findById(adult.getId()).orElseThrow().getPinHash()).isEqualTo("hash");
   }
 
@@ -795,30 +794,38 @@ class ProfileAdministrationServiceTest {
 
     assertThat(rejection).isInstanceOf(ProfileRejections.WouldLockProfile.class);
     var wouldLock = (ProfileRejections.WouldLockProfile) rejection;
-    assertThat(wouldLock.householdId()).isEqualTo(otherHousehold.getId());
-    assertThat(wouldLock.householdName()).contains(otherHousehold.getName());
+    assertThat(wouldLock.household()).map(Household::getId).contains(otherHousehold.getId());
     assertThat(profiles.findById(adult.getId()).orElseThrow().getPinHash()).isEqualTo("hash");
   }
 
   @Test
-  @DisplayName("Should withhold the Household name when the caller may not view it")
-  void shouldWithholdHouseholdNameWhenCallerMayNotViewIt() {
-    var adult =
+  @DisplayName(
+      "Should withhold the Household when the caller may not use it and does not manage the"
+          + " Profile")
+  void shouldWithholdTheHouseholdWhenTheCallerMayNotUseItAndDoesNotManageTheProfile() {
+    var otherHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var kid =
         profiles.save(
-            ProfileFixture.defaultProfileBuilder()
-                .householdId(household.getId())
+            ProfileFixture.kidProfileBuilder()
+                .householdId(otherHousehold.getId())
+                .maximumAllowedRatingAge(13)
                 .pinHash("hash")
                 .build());
-    var kid =
-        profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
-    shares.share(adult.getId(), household.getId(), false);
+    var stricterKid =
+        profiles.save(
+            ProfileFixture.kidProfileBuilder()
+                .householdId(otherHousehold.getId())
+                .maximumAllowedRatingAge(10)
+                .build());
+    shares.share(kid.getId(), otherHousehold.getId(), false);
     shares.share(kid.getId(), household.getId(), false);
+    shares.share(stricterKid.getId(), otherHousehold.getId(), false);
     authorization.decideUnitWith(
-        intent -> intent instanceof Intent.ViewHouseholdAdministration ? denied() : allowed());
+        intent -> intent instanceof Intent.ViewProfileManagers ? denied() : allowed());
 
-    var rejection = rejectionOf(service.removeProfilePin(identity(), adult.getId()));
+    var rejection = rejectionOf(service.removeProfilePin(identity(), kid.getId()));
 
-    assertThat(((ProfileRejections.WouldLockProfile) rejection).householdName()).isEmpty();
+    assertThat(((ProfileRejections.WouldLockProfile) rejection).household()).isEmpty();
   }
 
   @Test

@@ -107,7 +107,8 @@ type Mutation {
     """
     Removes a Profile's PIN. Its managers and a HouseholdAdmin who supervises the restricted Profile
     where it is available. Refused with ProfilePinRequiredError while removing it would lock the
-    Profile in a Household where it is available. A caller who may read profileAdministration of the
+    Profile in a Household where it is available; the refusal names that Household only to a caller
+    who may use it, manages the Profile or is a ServerAdmin. A caller who may read profileAdministration of the
     Profile but may not do this gets FORBIDDEN; everyone else, a device-bound session included, gets
     ProfileNotFoundError.
     """
