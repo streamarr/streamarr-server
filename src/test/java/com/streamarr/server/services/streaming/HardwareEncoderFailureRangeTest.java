@@ -386,6 +386,38 @@ class HardwareEncoderFailureRangeTest {
             Named.of("a client that declares AV1 alone", av1Only), svtAv1(NO_ENCODE_FEATURE)));
   }
 
+  // A worker runs a software encode only on a software encoder of its codec family (ADR 0044), so
+  // without one the codec family whose hardware encoder refused has no encode left, and Auto plays
+  // the client's other codec family, although the client declares it at a lower frame rate.
+  @Test
+  @DisplayName(
+      "Should play H.264 in Auto's next format attempt when the hardware AV1 encoder refused a PQ"
+          + " encode and no worker has a software AV1 encoder")
+  void
+      shouldPlayH264InAutosNextFormatAttemptWhenTheHardwareAv1EncoderRefusedAndNoWorkerHasSoftwareAv1() {
+    workers.setTargetEncoders(FAILING_WORKER, List.of(av1Nvenc(EVERY_ENCODE_FEATURE), libx264()));
+    workers.setTargetSoftwareEncoders(FAILING_WORKER, List.of(libx264()));
+    probes.setDefaultProbe(sourceOf(CompatibleBase.PQ));
+    var h264AtHalfTheFrameRate =
+        defaultDeclarationBuilder()
+            .video(
+                List.of(
+                    av1EntryBuilder()
+                        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                        .build(),
+                    h264EntryBuilder().maxFrameRate(12).build()))
+            .build();
+    var hardware =
+        accepted(playback.start(start(options(VideoQuality.AUTO, null), h264AtHalfTheFrameRate)));
+    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.AV1_MAIN);
+
+    var h264 = refuseTheHardwareEncoderOf(hardware);
+
+    assertThat(encoderOfTheStartedEncode(h264)).contains(libx264());
+    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.H264_HIGH);
+    assertThat(h264.formatAttemptCount()).isEqualTo(2);
+  }
+
   @Test
   @DisplayName(
       "Should end playback for its spent budget when the hardware encoder fails in Auto's last"

@@ -8052,6 +8052,32 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.isRunning(switchingId, "480p")).isFalse();
   }
 
+  // A worker runs a software encode only on a software encoder of its codec family (ADR 0044). A
+  // codec family whose hardware encoder failed earlier in the playback session has no encode
+  // without one, and a slot that frees later gives it none, so this is no lack of capacity.
+  @Test
+  @DisplayName(
+      "Should refuse for no eligible video format when the codec family's hardware encoder failed"
+          + " earlier in the playback session and no worker has a software encoder of the family")
+  void
+      shouldRefuseForNoEligibleVideoFormatWhenNoWorkerHasASoftwareEncoderOfTheFamilyWhoseHardwareEncoderFailed() {
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("av1"));
+    transcodeExecutor.setExecutionTargets(List.of(AV1_WORKER));
+    transcodeExecutor.setTargetEncoders(AV1_WORKER, List.of(av1Nvenc()));
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .capabilityDeclaration(av1Declaration(List.of(CompatibleBase.SDR)))
+                .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                .build());
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CreateStreamSessionRejection.NoEligibleVideoFormat.class);
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   // An SDR AV1 session keeps 480p as its left variant on the AV1 worker without PQ while it
   // switches to 1080p there, and another session fills the only worker whose AV1 encoder writes PQ.
   private LeftVariantOnAWorker keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy() {

@@ -13,6 +13,8 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.a
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libsvtav1;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -1139,6 +1141,7 @@ class TranscodeDecisionServiceTest {
                     .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
+                    .videoEncoders(List.of(libx264()))
                     .softwareContinuation(
                         Optional.of(new SoftwareContinuation("h264", EncodeFormat.SDR_8_BIT)))
                     .build())
@@ -1199,6 +1202,7 @@ class TranscodeDecisionServiceTest {
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
                     .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                    .videoEncoders(List.of(libsvtav1()))
                     .build())
             .orElseThrow();
 
@@ -1221,11 +1225,35 @@ class TranscodeDecisionServiceTest {
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
                     .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                    .videoEncoders(List.of(libsvtav1()))
                     .build())
             .orElseThrow();
 
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
     assertThat(decision.softwareEncoder()).isTrue();
+  }
+
+  // A worker runs a software encode only on a software encoder of its codec family (ADR 0044), so
+  // without one the codec family has no encode, not even in 8-bit SDR.
+  @Test
+  @DisplayName(
+      "Should decide nothing when a codec family's hardware encoder failed earlier in the playback"
+          + " session and no software encoder of the family is listed")
+  void
+      shouldDecideNothingWhenNoSoftwareEncoderIsListedForAFamilyWhoseHardwareEncoderFailedEarlier() {
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe("hevc", "aac"))
+                .capabilityDeclaration(declaring(AV1))
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
+                .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                .videoEncoders(List.of(libx264()))
+                .build());
+
+    assertThat(decision).isEmpty();
   }
 
   // ADR 0013: a software continuation keeps the failed encode's range and bit depth, so the
