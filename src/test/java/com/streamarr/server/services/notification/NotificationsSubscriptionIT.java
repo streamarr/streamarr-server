@@ -36,6 +36,8 @@ import com.streamarr.server.services.identity.ProfileManagerAdministrationServic
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.ShareRejections;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.notification.events.ChangedNotification;
+import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
 import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
@@ -772,6 +774,20 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
         .isEqualTo(sentinel.id().toString());
     assertThat(stored(kai).readAt()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should deliver nothing when a change is announced with no transaction behind it")
+  void shouldDeliverNothingWhenAChangeIsAnnouncedWithNoTransactionBehindIt() {
+    var kai = newsFor(theo, "Kai");
+    var socket = subscribedSocket(authTestSupport.accountBearer(theo));
+
+    eventPublisher.publishEvent(
+        new NotificationsChangedEvent(List.of(new ChangedNotification(kai.id(), accountOf(theo)))));
+    var sentinel = newsFor(theo, "Ash");
+
+    assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
+        .isEqualTo(sentinel.id().toString());
   }
 
   @Test
