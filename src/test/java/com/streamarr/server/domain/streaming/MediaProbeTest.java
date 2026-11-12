@@ -644,12 +644,14 @@ class MediaProbeTest {
   }
 
   // The margin is one 6 s segment (ADR 0037, early ends). Every media playlist of the session runs
-  // to its media end, so that end, and not another stream's, decides whether a stream ends early.
+  // to its media end, and a copy that runs short after every stream's end ends playback there
+  // normally (ADR 0052), so a stream ends early only when both of those ends lie past it.
   @ParameterizedTest(name = "{0}")
   @MethodSource("videoEnds")
   @DisplayName(
-      "Should find that the video ends early only when the media ends at least one margin after it")
-  void shouldFindThatTheVideoEndsEarlyOnlyWhenTheMediaEndsAtLeastOneMarginAfterIt(
+      "Should find that the video ends early only when the media and another stream end at least"
+          + " one margin after it")
+  void shouldFindThatTheVideoEndsEarlyOnlyWhenTheMediaAndAnotherStreamEndAtLeastOneMarginAfterIt(
       MediaProbe probe, boolean endsEarly) {
     assertThat(probe.videoEndsEarly(ONE_SEGMENT)).isEqualTo(endsEarly);
   }
@@ -716,6 +718,21 @@ class MediaProbeTest {
             true),
         Arguments.of(
             Named.of(
+                "only the header states the ends, and the container runs one margin past every"
+                    + " stream",
+                probeLasting(
+                    Duration.ofSeconds(16),
+                    videoStatedToEndAt(10_000),
+                    audioStatedToEndAt(1, 10_000))),
+            false),
+        Arguments.of(
+            Named.of(
+                "only the header states the end of the video, which a file without audio holds,"
+                    + " and the container runs one margin past it",
+                probeLasting(Duration.ofSeconds(16), videoStatedToEndAt(10_000))),
+            false),
+        Arguments.of(
+            Named.of(
                 "no scan read the session audio's end, and another track ends one margin after"
                     + " the video",
                 probeLasting(Duration.ofSeconds(16), video(), audio(1), audio(2))
@@ -731,10 +748,11 @@ class MediaProbeTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("sessionAudioEnds")
   @DisplayName(
-      "Should find that the session's audio ends early only when the media ends at least one margin"
-          + " after it")
-  void shouldFindThatTheSessionsAudioEndsEarlyOnlyWhenTheMediaEndsAtLeastOneMarginAfterIt(
-      MediaProbe probe, boolean endsEarly) {
+      "Should find that the session's audio ends early only when the media and another stream end"
+          + " at least one margin after it")
+  void
+      shouldFindThatTheSessionsAudioEndsEarlyOnlyWhenTheMediaAndAnotherStreamEndAtLeastOneMarginAfterIt(
+          MediaProbe probe, boolean endsEarly) {
     assertThat(probe.sessionAudioEndsEarly(ONE_SEGMENT)).isEqualTo(endsEarly);
   }
 
@@ -774,6 +792,21 @@ class MediaProbeTest {
                     audioStatedToEndAt(1, 10_000),
                     audioStatedToEndAt(2, 16_000))),
             true),
+        Arguments.of(
+            Named.of(
+                "only the header states the ends, and the container runs one margin past every"
+                    + " stream",
+                probeLasting(
+                    Duration.ofSeconds(16),
+                    videoStatedToEndAt(10_000),
+                    audioStatedToEndAt(1, 10_000))),
+            false),
+        Arguments.of(
+            Named.of(
+                "only the header states the session audio's end, beside video whose end it does"
+                    + " not state, and the container runs one margin past it",
+                probeLasting(Duration.ofSeconds(16), video(), audioStatedToEndAt(1, 10_000))),
+            false),
         Arguments.of(
             Named.of(
                 "the session's audio has no stated end",

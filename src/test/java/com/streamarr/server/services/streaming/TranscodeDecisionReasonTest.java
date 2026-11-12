@@ -929,9 +929,10 @@ class TranscodeDecisionReasonTest {
   @MethodSource("earlyEndingStreams")
   @DisplayName(
       "Should encode a delivered stream only when it ends at least one segment before the session's"
-          + " media end")
-  void shouldEncodeADeliveredStreamOnlyWhenItEndsAtLeastOneSegmentBeforeTheSessionsMediaEnd(
-      Source source, boolean copiesVideo, AudioMode audio, List<DecisionReason> expected) {
+          + " media end and another stream's end")
+  void
+      shouldEncodeADeliveredStreamOnlyWhenItEndsAtLeastOneSegmentBeforeTheSessionsMediaEndAndAnotherStreamsEnd(
+          Source source, boolean copiesVideo, AudioMode audio, List<DecisionReason> expected) {
     var decision = decide(source.probe(), defaultDeclarationBuilder().build());
 
     assertThat(decision.transcodeMode().copiesVideo()).isEqualTo(copiesVideo);
@@ -988,12 +989,20 @@ class TranscodeDecisionReasonTest {
             List.of(DecisionReason.VIDEO_ENDS_EARLY, DecisionReason.AUDIO_ENDS_EARLY)),
         Arguments.of(
             Named.of(
-                "audio that ends long before the container's duration, beside video whose end the"
-                    + " probe does not state",
+                "video and audio that end together one segment before the container's duration,"
+                    + " which no stream's end reaches",
+                Source.builder().videoEnd(oneSegmentEarlier).audioEnd(oneSegmentEarlier).build()),
+            true,
+            AudioMode.COPY,
+            List.of()),
+        Arguments.of(
+            Named.of(
+                "audio whose end the probe states long before the container's duration, beside"
+                    + " video whose end it does not",
                 Source.builder().audioEnd(Duration.ofSeconds(20)).build()),
             true,
-            AudioMode.TRANSCODE,
-            List.of(DecisionReason.AUDIO_ENDS_EARLY)),
+            AudioMode.COPY,
+            List.of()),
         Arguments.of(
             Named.of(
                 "audio that ends early beside video that the client cannot copy",

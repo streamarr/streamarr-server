@@ -419,21 +419,25 @@ public record MediaProbe(
   }
 
   /**
-   * Whether the chosen video stream's probed end time lies at least {@code margin} before the
-   * {@link #mediaEnd}, to which every media playlist of the session runs (ADR 0037, early ends).
-   * Where a keyframe packet scan read the ends of the two streams that the session delivers, the
-   * media end is the later of them, so no other stream of the file, such as an audio track that the
-   * session does not play, makes the video end early. Where no scan read them, the media end is the
-   * container's duration, which the longest stream of the file sets. A stream whose end time the
-   * probe does not state never ends early.
+   * Whether the chosen video stream's probed end time lies at least {@code margin} before both the
+   * {@link #mediaEnd}, to which every media playlist of the session runs, and the latest end time
+   * that the probe states for a stream of the file (ADR 0037, early ends). Where a keyframe packet
+   * scan read the ends of the two streams that the session delivers, the media end is the later of
+   * them, so no other stream of the file, such as an audio track that the session does not play,
+   * makes the video end early. Where no scan read them, the media end is the container's duration,
+   * and the video ends early only when another stream's stated end also lies that far past it. A
+   * copy that runs short after every stream's end ends playback there normally (ADR 0052), so the
+   * time between the last stream's end and the container's duration never needs an encode. A stream
+   * whose end time the probe does not state never ends early.
    */
   public boolean videoEndsEarly(@NonNull Duration margin) {
     return endsEarly(chosenVideoStream(), margin);
   }
 
   /**
-   * Whether the session's audio stream ends at least {@code margin} before the media end, by the
-   * rule of {@link #videoEndsEarly}.
+   * Whether the session's audio stream ends at least {@code margin} before both the media end and
+   * the latest end time that the probe states for a stream of the file, by the rule of {@link
+   * #videoEndsEarly}.
    */
   public boolean sessionAudioEndsEarly(@NonNull Duration margin) {
     return endsEarly(sessionAudioStream(), margin);
@@ -450,11 +454,21 @@ public record MediaProbe(
   }
 
   private boolean endsEarly(Optional<StreamInfo> stream, Duration margin) {
-    var mediaEnd = mediaEnd();
+    var sourceEnd = advertisedSourceEnd();
     return stream
         .flatMap(StreamInfo::endTime)
-        .filter(end -> mediaEnd.compareTo(end.plus(margin)) >= 0)
+        .filter(end -> sourceEnd.compareTo(end.plus(margin)) >= 0)
         .isPresent();
+  }
+
+  // The earlier of the media end and the latest end time that the probe states for a stream.
+  private Duration advertisedSourceEnd() {
+    var mediaEnd = mediaEnd();
+    return streams.stream()
+        .flatMap(stream -> stream.endTime().stream())
+        .max(Comparator.naturalOrder())
+        .filter(latestEnd -> latestEnd.compareTo(mediaEnd) < 0)
+        .orElse(mediaEnd);
   }
 
   /**
