@@ -19,8 +19,9 @@ type HouseholdAdministration {
     How many offers into this Household wait for its decision: the offers householdShares lists
     with [PENDING], so none past its expiry, counted from the offers themselves. An Account that
     becomes a HouseholdAdmin counts the offers made before it did. For the Household's
-    HouseholdAdmins and for ServerAdmins, who may list those offers; anyone else gets 0, as
-    householdShares gives them an empty list.
+    HouseholdAdmins and for ServerAdmins, who may list those offers. Only they reach this
+    Household's HouseholdAdministration, so nobody else reads a count: householdAdministration
+    answers anyone else null.
     """
     pendingOfferCount: Int!
 }
