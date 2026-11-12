@@ -121,12 +121,16 @@ public class ProfileSharingService {
     // transaction holds it is refused.
     shareCodeRepository.lockById(shareCode.getId());
     var now = clock.instant();
+    var householdId = shareCode.getHouseholdId();
+    // The offer holds the HouseholdAdmins it tells from before it spends the code: a change to an
+    // issuer's authority holds the issuer's Account and then its codes, and the opposite order
+    // would deadlock with it.
+    userAccountRepository.lockHouseholdAdminIds(householdId);
     // The code may have been spent, withdrawn or invalidated since it was presented.
     if (!shareCodeRepository.trySpend(shareCode.getId(), now)) {
       throw new MutationRejection(new ShareCodeRejections.ShareCodeRefused());
     }
 
-    var householdId = shareCode.getHouseholdId();
     shareLifecycle.supersedePending(profileId, householdId, now);
     return shareLifecycle.create(
         ProfileHouseholdShare.builder()
