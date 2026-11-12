@@ -27,6 +27,7 @@ import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
+import com.streamarr.server.support.StatementCount;
 import com.streamarr.server.support.StoredNotificationRows;
 import com.streamarr.server.support.StoredNotificationRows.Row;
 import com.streamarr.server.support.TestFixtureWork;
@@ -79,6 +80,7 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private StatementCount statementCount;
 
   private final RecipientReference sam = RecipientReference.account(UUID.randomUUID());
   private final RecipientReference kai = RecipientReference.account(UUID.randomUUID());
@@ -306,6 +308,17 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
 
     assertThat(rows.about(share)).isEmpty();
     assertThat(announced()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should run as many statements when a tell names no recipient as when it names one")
+  void shouldRunAsManyStatementsWhenATellNamesNoRecipientAsWhenItNamesOne() throws Exception {
+    var toNobody =
+        statementCount.statementsWhile(() -> tell(offeredTheo().recipients(Set.of()).build()));
+
+    var toOne = statementCount.statementsWhile(() -> tell(offeredTheo().build()));
+
+    assertThat(toNobody).isEqualTo(toOne);
   }
 
   @Test
