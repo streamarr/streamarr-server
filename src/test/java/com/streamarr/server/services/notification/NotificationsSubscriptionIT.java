@@ -961,7 +961,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     var serverAdmin = track(authTestSupport.createAdminIdentity());
     var socket = subscribedSocket(authTestSupport.accountBearer(mara));
 
-    removeAdministratively(serverAdmin, alex, mara);
+    invitations.removeManagement(serverAdmin, mara, alex);
     var made = nextChange(socket);
     assertThat(nodeOf(made).path("__typename").asString())
         .isEqualTo("ProfileManagementRemovedNotification");
@@ -970,7 +970,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     assertMatchesAFreshQuery(made, mara);
     cast.grant(mara, alex);
     cast.rename(alex, "Alexandra");
-    removeAdministratively(serverAdmin, alex, mara);
+    invitations.removeManagement(serverAdmin, mara, alex);
 
     var updated = nextChange(socket);
     assertThat(onlyChange(updated).path("notificationId"))
@@ -1209,17 +1209,6 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     assertThat(nodeOf(change).path("resolution").asString()).isEqualTo("WITHDRAWN");
     assertThat(change.path("unreadNotificationCount").asInt()).isZero();
     assertMatchesAFreshQuery(change, recipient);
-  }
-
-  private void removeAdministratively(
-      TestIdentity serverAdmin, Profile profile, TestIdentity manager) {
-    assertThat(
-            profileManagement.administrativelyRemoveProfileManager(
-                authTestSupport.freshIdentityOf(serverAdmin),
-                profile.getId(),
-                manager.account().getId(),
-                "no longer looks after " + profile.getName()))
-        .isInstanceOf(Outcome.Accepted.class);
   }
 
   /** The recipient's news that Riverside accepted an offer of a new Profile that Theo manages. */
