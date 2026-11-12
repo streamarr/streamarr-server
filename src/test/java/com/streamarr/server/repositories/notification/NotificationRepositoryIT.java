@@ -32,7 +32,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -357,69 +356,6 @@ class NotificationRepositoryIT extends AbstractIntegrationTest {
     authTestSupport.deleteIdentity(kai);
 
     assertThat(notificationsAbout(share)).extracting(Notification::getId).containsExactly(request);
-  }
-
-  @Test
-  @DisplayName(
-      "Should read the unread news before the cutoff in pages of the limit, each after the last id"
-          + " of the one before, when there is more than a page of it")
-  void shouldReadTheUnreadNewsBeforeTheCutoffInPagesOfTheLimitWhenThereIsMoreThanAPage() {
-    var old = EVENT.minus(Duration.ofDays(100));
-    var arranged = new ArrayList<UUID>();
-    for (var made = 0; made < 5; made++) {
-      arranged.add(
-          insert(answered(sam, offerOf(managedProfile("Ollie " + made), sam)).at(old).build()));
-    }
-
-    var read = new ArrayList<UUID>();
-    var after = Optional.<UUID>empty();
-    while (true) {
-      var page =
-          notificationRepository.findUnreadNewsBefore(EVENT.minus(Duration.ofDays(90)), after, 2);
-      assertThat(page).hasSizeLessThanOrEqualTo(2);
-      if (page.isEmpty()) {
-        break;
-      }
-
-      assertThat(page).extracting(Notification::getId).noneMatch(read::contains);
-      page.forEach(notification -> read.add(notification.getId()));
-      after = Optional.of(page.getLast().getId());
-    }
-
-    assertThat(read).doesNotHaveDuplicates().containsAll(arranged);
-  }
-
-  @Test
-  @DisplayName(
-      "Should keep the news when a later event moved it past the cutoff or its recipient read it"
-          + " after the sweep chose it")
-  void shouldKeepTheNewsWhenALaterEventMovedItPastTheCutoffOrItsRecipientReadItAfterItWasChosen() {
-    var cutoff = EVENT.minus(Duration.ofDays(90));
-    var movedShare = offerOf(managedProfile("Ollie"), sam);
-    var moved = upsert(answered(sam, movedShare).at(cutoff.minusSeconds(60)).build());
-    var read =
-        upsert(
-            answered(sam, offerOf(managedProfile("Ash"), sam)).at(cutoff.minusSeconds(60)).build());
-    var arranged = List.of(moved.notificationId(), read.notificationId());
-    var chosen =
-        notificationRepository
-            .findUnreadNewsBefore(cutoff, Optional.empty(), Integer.MAX_VALUE)
-            .stream()
-            .map(Notification::getId)
-            .filter(arranged::contains)
-            .toList();
-    assertThat(chosen).containsExactlyInAnyOrderElementsOf(arranged);
-    upsert(answered(sam, movedShare).at(EVENT).build());
-    markRead(read.notificationId());
-
-    var deleted =
-        transactionTemplate.execute(
-            _ -> notificationRepository.deleteUnreadNewsBefore(chosen, cutoff));
-
-    assertThat(deleted).isZero();
-    assertThat(notificationsOf(sam))
-        .extracting(Notification::getId)
-        .containsExactlyInAnyOrderElementsOf(arranged);
   }
 
   private UUID insert(NotificationDraft<NotificationKind, ProfileShareFacts> draft) {

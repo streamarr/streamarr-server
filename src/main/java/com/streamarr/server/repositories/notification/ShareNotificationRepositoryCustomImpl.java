@@ -5,21 +5,16 @@ import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.P
 import static com.streamarr.server.jooq.generated.tables.ProfileManager.PROFILE_MANAGER;
 import static com.streamarr.server.jooq.generated.tables.ShareNotification.SHARE_NOTIFICATION;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
-import static com.streamarr.server.repositories.auth.ProfileShareStatusReads.readsAs;
 import static org.jooq.impl.DSL.greatest;
 import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.val;
 
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
-import com.streamarr.server.domain.notification.NotificationSubject;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.domain.notification.UnreadNews;
-import com.streamarr.server.domain.pagination.Row;
-import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.enums.NotificationForm;
 import com.streamarr.server.jooq.generated.enums.ProfileShareAnswer;
@@ -27,13 +22,9 @@ import com.streamarr.server.jooq.generated.enums.ProfileShareEndedBy;
 import com.streamarr.server.jooq.generated.enums.ProfileShareSide;
 import com.streamarr.server.jooq.generated.tables.records.ShareNotificationRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
-import com.streamarr.server.repositories.Keyset;
-import com.streamarr.server.repositories.auth.ProfileShareReaders;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -41,7 +32,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.InsertSetMoreStep;
@@ -57,40 +47,8 @@ public class ShareNotificationRepositoryCustomImpl implements ShareNotificationR
   private static final Field<Boolean> INSERTED =
       DSL.field("(xmax = 0)", SQLDataType.BOOLEAN).as("inserted");
 
-  private static final Keyset<OffsetDateTime> NEWEST_FIRST =
-      Keyset.<OffsetDateTime>builder()
-          .sortValue(SHARE_NOTIFICATION.LATEST_EVENT_AT)
-          .itemId(SHARE_NOTIFICATION.ID)
-          .build();
-
   private final DSLContext dsl;
   private final EntityManager entityManager;
-
-  @Override
-  public List<Row<Notification>> rowsOfRecipient(UUID recipientAccountId, Seek seek) {
-    var query =
-        NEWEST_FIRST.rowsBeyond(
-            NEWEST_FIRST.selectFrom(dsl, SHARE_NOTIFICATION),
-            SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId).and(mayBeShown()),
-            seek);
-    return JooqQueryHelper.nativeRows(entityManager, query, Notification.class, NEWEST_FIRST);
-  }
-
-  @Override
-  public List<Row<Notification>> rowsOfRecipientWithIds(
-      UUID recipientAccountId, Collection<UUID> notificationIds) {
-    if (notificationIds.isEmpty()) {
-      return List.of();
-    }
-
-    var query =
-        NEWEST_FIRST
-            .selectFrom(dsl, SHARE_NOTIFICATION)
-            .where(SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
-            .and(SHARE_NOTIFICATION.ID.in(notificationIds))
-            .and(mayBeShown());
-    return JooqQueryHelper.nativeRows(entityManager, query, Notification.class, NEWEST_FIRST);
-  }
 
   @Override
   public List<Notification> findRequestsAbout(UUID shareId) {
@@ -99,17 +57,6 @@ public class ShareNotificationRepositoryCustomImpl implements ShareNotificationR
             .where(SHARE_NOTIFICATION.SHARE_ID.eq(shareId))
             .and(SHARE_NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)));
     return JooqQueryHelper.nativeQuery(entityManager, query, Notification.class);
-  }
-
-  @Override
-  public List<Notification> findUnreadOfRecipient(UUID recipientAccountId, Instant now) {
-    return unreadOf(recipientAccountId, DSL.noCondition(), now);
-  }
-
-  @Override
-  public List<Notification> findUnreadOfRecipientWithIds(
-      UUID recipientAccountId, Collection<UUID> notificationIds, Instant now) {
-    return unreadOf(recipientAccountId, SHARE_NOTIFICATION.ID.in(notificationIds), now);
   }
 
   @Override
@@ -126,17 +73,6 @@ public class ShareNotificationRepositoryCustomImpl implements ShareNotificationR
         .and(SHARE_NOTIFICATION.READ_AT.isNull())
         .returning(SHARE_NOTIFICATION.ID)
         .fetch(SHARE_NOTIFICATION.ID);
-  }
-
-  private List<Notification> unreadOf(UUID recipientAccountId, Condition among, Instant now) {
-    var query =
-        dsl.selectFrom(SHARE_NOTIFICATION)
-            .where(SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
-            .and(SHARE_NOTIFICATION.READ_AT.isNull())
-            .and(SHARE_NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).or(requestWaitsAt(now)))
-            .and(mayBeShown())
-            .and(among);
-    return JooqQueryHelper.nativeQuery(entityManager, query, Notification.class);
   }
 
   @Override
@@ -219,135 +155,6 @@ public class ShareNotificationRepositoryCustomImpl implements ShareNotificationR
                     .offeringSide(offeringSide(share.value2(), share.value4()))
                     .householdSide(householdAdmins(share.value3()))
                     .build());
-  }
-
-  @Override
-  public int deleteHistoryBefore(Instant cutoff, Instant now) {
-    var readNews =
-        SHARE_NOTIFICATION
-            .FORM
-            .eq(inline(NotificationForm.NEWS))
-            .and(SHARE_NOTIFICATION.READ_AT.isNotNull());
-    var resolvedRequest =
-        SHARE_NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)).andNot(requestWaitsAt(now));
-    return dsl.deleteFrom(SHARE_NOTIFICATION)
-        .where(SHARE_NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)))
-        .and(readNews.or(resolvedRequest))
-        .execute();
-  }
-
-  @Override
-  public List<Notification> findUnreadNewsBefore(Instant cutoff, Optional<UUID> after, int limit) {
-    var query =
-        dsl.selectFrom(SHARE_NOTIFICATION)
-            .where(unreadNewsBefore(cutoff))
-            .and(after.map(SHARE_NOTIFICATION.ID::gt).orElse(DSL.noCondition()))
-            .orderBy(SHARE_NOTIFICATION.ID)
-            .limit(limit);
-    return JooqQueryHelper.nativeQuery(entityManager, query, Notification.class);
-  }
-
-  @Override
-  public int deleteUnreadNewsBefore(Collection<UUID> notificationIds, Instant cutoff) {
-    return dsl.deleteFrom(SHARE_NOTIFICATION)
-        .where(SHARE_NOTIFICATION.ID.in(notificationIds))
-        .and(unreadNewsBefore(cutoff))
-        .execute();
-  }
-
-  /** A request that waits at the instant: its subject still waits, as its kind's subject says. */
-  private static Condition requestWaitsAt(Instant now) {
-    return SHARE_NOTIFICATION
-        .FORM
-        .eq(inline(NotificationForm.REQUEST))
-        .and(
-            DSL.or(
-                Arrays.stream(NotificationSubject.values())
-                    .map(subject -> kindAbout(subject).and(subjectWaitsAt(subject, now)))
-                    .toList()));
-  }
-
-  private static Condition subjectWaitsAt(NotificationSubject subject, Instant now) {
-    return switch (subject) {
-      case PROFILE_SHARE ->
-          DSL.exists(
-              DSL.selectOne()
-                  .from(PROFILE_HOUSEHOLD_SHARE)
-                  .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(SHARE_NOTIFICATION.SHARE_ID))
-                  .and(waitingAt(now)));
-    };
-  }
-
-  /**
-   * The Notifications whose subject's read rule could let the recipient see them. The guard still
-   * decides each one; this keeps those no rule can allow from being read and decided at all, so a
-   * recipient's hidden Notifications cost the list and the count nothing.
-   */
-  private static Condition mayBeShown() {
-    return DSL.or(
-        Arrays.stream(NotificationSubject.values())
-            .map(subject -> kindAbout(subject).and(subjectMayBeShown(subject)))
-            .toList());
-  }
-
-  private static Condition subjectMayBeShown(NotificationSubject subject) {
-    return switch (subject) {
-      case PROFILE_SHARE ->
-          DSL.exists(
-              DSL.selectOne()
-                  .from(PROFILE_HOUSEHOLD_SHARE)
-                  .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(SHARE_NOTIFICATION.SHARE_ID))
-                  .and(
-                      ProfileShareReaders.couldRead(
-                          SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID,
-                          PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
-                          PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID,
-                          householdSideReads())));
-    };
-  }
-
-  // The stored status, which reads a pending offer as live until the expiry sweep stores its
-  // expiry: wider than the guard, which reads the offer as expired from its expiry time on.
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static Condition householdSideReads() {
-    return PROFILE_HOUSEHOLD_SHARE
-        .STATUS
-        .in(
-            inline(com.streamarr.server.jooq.generated.enums.ProfileShareStatus.PENDING),
-            inline(com.streamarr.server.jooq.generated.enums.ProfileShareStatus.ACTIVE))
-        .or(SHARE_NOTIFICATION.ADDRESSED_TO.eq(inline(ProfileShareSide.HOUSEHOLD_SIDE)));
-  }
-
-  private static Condition kindAbout(NotificationSubject subject) {
-    return SHARE_NOTIFICATION.KIND.in(
-        Arrays.stream(NotificationKind.values())
-            .filter(kind -> kind.getSubject() == subject)
-            .map(ShareNotificationRepositoryCustomImpl::storedKind)
-            .map(DSL::inline)
-            .toList());
-  }
-
-  // A pending offer whose time ran out no longer waits, before the expiry sweep stores it.
-  @SuppressWarnings("checkstyle:fullyQualifiedName")
-  private static Condition waitingAt(Instant now) {
-    return readsAs(
-        com.streamarr.server.jooq.generated.enums.ProfileShareStatus.PENDING,
-        val(now.atOffset(ZoneOffset.UTC)));
-  }
-
-  // Disabling an Account changes nothing for its Notifications, and the guard denies a disabled
-  // Account everything, so its unread news is never a candidate.
-  private static Condition unreadNewsBefore(Instant cutoff) {
-    return SHARE_NOTIFICATION
-        .FORM
-        .eq(inline(NotificationForm.NEWS))
-        .and(SHARE_NOTIFICATION.READ_AT.isNull())
-        .and(SHARE_NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)))
-        .andNotExists(
-            DSL.selectOne()
-                .from(USER_ACCOUNT)
-                .where(USER_ACCOUNT.ID.eq(SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID))
-                .and(USER_ACCOUNT.ENABLED.isFalse()));
   }
 
   // The Profile's direct managers, its own Account while it is an unrestricted Adult Personal
