@@ -56,14 +56,17 @@ type ProfileShare {
     """
     offeredByDisplayName: String
     """
-    Whether the requesting Account made this offer, told to every reader of the share at every
-    status: true for the manager or ServerAdmin that offered the Profile. False for every other
-    reader, the Profile's other managers included, and for a share the system made. It tells the
-    reader only whether it made the offer itself; offeredByDisplayName names the Account that made
-    it, to that field's readers. The Account that made an offer may withdraw it while it is
-    PENDING; cancelProfileShare says who else may.
+    Whether the requesting Account made this offer: true for the manager or ServerAdmin that
+    offered the Profile, false for every other reader, the Profile's other managers included, and
+    for a share the system made. Shown to the same readers as profile: the Profile's managers and
+    ServerAdmins at every status, and the target Household's HouseholdAdmins only while the offer
+    is PENDING and not past its expiresAt, or the share is ACTIVE. Null for everyone else, so once
+    the share is over that Household's side hears nothing about who was asking, even when it made
+    the offer itself. It tells the reader only whether it made the offer itself;
+    offeredByDisplayName names the Account that made it, to that field's readers. The Account that
+    made an offer may withdraw it while it is PENDING; cancelProfileShare says who else may.
     """
-    offeredByReader: Boolean!
+    offeredByReader: Boolean
     """
     The Household the Profile is offered or shared to, at every status. Shown to the Profile's
     managers and to ServerAdmins. Null for everyone else, including that Household's

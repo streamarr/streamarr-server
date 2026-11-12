@@ -311,7 +311,7 @@ The HouseholdAdmin role comes from the access token, so a HouseholdAdmin who los
 The target Household's HouseholdAdmins follow a share while the offer is `PENDING` or the share is `ACTIVE`.
 They also receive the change that ends it: the offer is declined, canceled, expired or invalidated, or the share ends.
 That last change carries the share's own fields, such as `status`.
-Its `profile`, `visitor`, `offeredByDisplayName`, `household` and `invalidationReason` are `null`, as in the queries, which no longer list the share for them.
+Its `profile`, `visitor`, `offeredByDisplayName`, `offeredByReader`, `household` and `invalidationReason` are `null`, as in the queries, which no longer list the share for them.
 The client takes the share out of its lists when that change arrives.
 No later change of the share reaches them, not even its removal, and the share mutations answer `ShareNotFoundError` for it, as for a share that no longer exists.
 ServerAdmins and the Profile's managers receive every change of the share.
