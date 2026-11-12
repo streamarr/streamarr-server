@@ -14,6 +14,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepositoryCus
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -133,6 +134,16 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
         .filter(share -> share.getProfileId().equals(profileId))
         .filter(share -> keeps(filter, share))
         .map(InMemoryKeyset::rowByCreationTime);
+  }
+
+  @Override
+  public Map<UUID, Integer> countIntoHouseholds(Set<UUID> householdIds, ShareStatusFilter filter) {
+    return database.values().stream()
+        .filter(share -> householdIds.contains(share.getHouseholdId()))
+        .filter(share -> keeps(filter, share))
+        .collect(
+            Collectors.groupingBy(
+                ProfileHouseholdShare::getHouseholdId, Collectors.summingInt(_ -> 1)));
   }
 
   // As the real query reads it: an offer past its expiry is EXPIRED, never PENDING.
