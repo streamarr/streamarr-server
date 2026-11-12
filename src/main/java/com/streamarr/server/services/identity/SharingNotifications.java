@@ -63,12 +63,9 @@ class SharingNotifications {
     var recipients = householdSide(share);
     share.offeredByAccountId().ifPresent(recipients::remove);
     events.publishEvent(
-        TellNotificationEvent.builder()
+        tellAbout(change, recipients)
             .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
-            .subject(SubjectReference.profileShare(share.shareId()))
-            .recipients(accounts(recipients))
             .snapshot(new ProfileShareOfferedSnapshot(profileNameOf(share), Optional.empty()))
-            .at(instantOf(change))
             .subjectExpiresAt(share.expiresAt())
             .build());
   }
