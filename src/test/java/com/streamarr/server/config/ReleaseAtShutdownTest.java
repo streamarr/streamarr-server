@@ -14,12 +14,18 @@ import com.github.kagkarlsson.scheduler.task.ExecutionHandler;
 import com.github.kagkarlsson.scheduler.task.ExecutionOperations;
 import com.github.kagkarlsson.scheduler.task.helper.Tasks;
 import com.streamarr.server.fakes.FakeTaskRepository;
+import java.io.InterruptedIOException;
+import java.nio.channels.ClosedByInterruptException;
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Release at shutdown tests")
@@ -63,17 +69,17 @@ class ReleaseAtShutdownTest {
     assertThat(tasks.removed()).isEmpty();
   }
 
-  @Test
+  @ParameterizedTest
+  @MethodSource("interruptCauses")
   @DisplayName(
       "Should release the execution when a failure that an interrupt caused ends it while its"
           + " scheduler shuts down")
-  void
-      shouldReleaseTheExecutionWhenAFailureThatAnInterruptCausedEndsItWhileItsSchedulerShutsDown() {
+  void shouldReleaseTheExecutionWhenAFailureThatAnInterruptCausedEndsItWhileItsSchedulerShutsDown(
+      Exception interruptCause) {
     var picked =
         picked(
             (_, _) -> {
-              throw new IllegalStateException(
-                  "The pool stopped waiting for a connection", new InterruptedException());
+              throw new IllegalStateException("The interrupt ended a wait", interruptCause);
             });
     schedulerState.setIsShuttingDown();
 
@@ -170,6 +176,14 @@ class ReleaseAtShutdownTest {
 
     assertThatIllegalStateException().isThrownBy(() -> complete(picked, completion));
     assertThat(tasks.released()).isEmpty();
+  }
+
+  // An interrupt that ends a wait reaches the task as one of these causes.
+  static Stream<Named<Exception>> interruptCauses() {
+    return Stream.of(
+        Named.of("a connection pool wait", new InterruptedException()),
+        Named.of("a blocking stream read", new InterruptedIOException()),
+        Named.of("a channel read", new ClosedByInterruptException()));
   }
 
   // Saves the execution's end as a database write does: the connection pool refuses a connection
