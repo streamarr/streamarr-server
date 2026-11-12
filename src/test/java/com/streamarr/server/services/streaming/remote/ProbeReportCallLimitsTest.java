@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.CodedOutputStream;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeRequest;
@@ -28,7 +29,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 @Timeout(30)
 class ProbeReportCallLimitsTest {
 
-  private static final int RESULT_LENGTH_LIMIT = 1_000;
+  private static final int RESULT_LENGTH_LIMIT = 64 * 1024;
   private static final ProbeReportLimits LIMITS =
       ProbeReportLimits.builder()
           .keyframeLimit(4)
@@ -213,8 +214,10 @@ class ProbeReportCallLimitsTest {
     return reportWithResultOfLength(request, RESULT_LENGTH_LIMIT + 1).build().toByteString();
   }
 
-  /** The result's tag and the two bytes of its length, which open the probe report. */
+  /** The result's tag and the bytes of its length, which open the probe report. */
   private static ByteString tagAndLengthOfResult(ByteString report) {
-    return report.substring(0, 3);
+    var tagBytes = CodedOutputStream.computeTagSize(ProbeAttemptReport.RESULT_FIELD_NUMBER);
+    return report.substring(
+        0, tagBytes + CodedOutputStream.computeUInt32SizeNoTag(RESULT_LENGTH_LIMIT + 1));
   }
 }

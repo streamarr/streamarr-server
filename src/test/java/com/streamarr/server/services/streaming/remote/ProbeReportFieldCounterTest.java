@@ -32,7 +32,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Probe Report Field Counter Tests")
 class ProbeReportFieldCounterTest {
 
-  private static final int RESULT_LENGTH_LIMIT = 200;
+  private static final int RESULT_LENGTH_LIMIT = 64 * 1024;
   private static final ProbeReportLimits LIMITS =
       ProbeReportLimits.builder()
           .keyframeLimit(3)
@@ -41,6 +41,8 @@ class ProbeReportFieldCounterTest {
           .build();
   // Long enough for every broken encoding below, so that only the encoding breaks a rule.
   private static final int STATED_LENGTH = 32;
+  // Long enough for a result beyond the result length limit, so that only the result breaks a rule.
+  private static final long ROOM_FOR_A_LONGER_RESULT = 2L * RESULT_LENGTH_LIMIT;
   private static final ProbeRequest REQUEST =
       ProbeRequest.newBuilder()
           .setProbeAttemptId(toProto(UUID.randomUUID()))
@@ -82,14 +84,15 @@ class ProbeReportFieldCounterTest {
           + " the result's bytes arrive")
   void shouldBreakResultLengthLimitOnceLengthOfLongerResultIsReadBeforeResultsBytesArrive()
       throws IOException {
-    var tagAndLength = tagAndLength(ProbeAttemptReport.RESULT_FIELD_NUMBER, 201);
-    var counter = counter(1_000);
+    var tagAndLength =
+        tagAndLength(ProbeAttemptReport.RESULT_FIELD_NUMBER, RESULT_LENGTH_LIMIT + 1);
+    var counter = counter(ROOM_FOR_A_LONGER_RESULT);
 
-    // The length of 201 takes two bytes.
-    var tagAndFirstByteOfLength = counter.read(tagAndLength.substring(0, 2));
-    var lastByteOfLength = counter.read(tagAndLength.substring(2));
+    // The length takes three bytes.
+    var tagAndFirstByteOfLength = counter.read(tagAndLength.substring(0, 3));
+    var lastByteOfLength = counter.read(tagAndLength.substring(3));
 
-    assertThat(tagAndLength.size()).isEqualTo(3);
+    assertThat(tagAndLength.size()).isEqualTo(4);
     assertThat(tagAndFirstByteOfLength).isEmpty();
     assertThat(lastByteOfLength).contains(BrokenRule.RESULT_LENGTH);
   }
@@ -114,7 +117,7 @@ class ProbeReportFieldCounterTest {
     var first = lengthDelimited(ProbeAttemptReport.RESULT_FIELD_NUMBER, 100);
     var second =
         tagAndLength(ProbeAttemptReport.RESULT_FIELD_NUMBER, RESULT_LENGTH_LIMIT - 100 + 1);
-    var counter = counter(1_000);
+    var counter = counter(ROOM_FOR_A_LONGER_RESULT);
 
     var beforeSecond = counter.read(keyframe.concat(first).concat(keyframe));
     var lengthOfSecond = counter.read(second);
@@ -376,8 +379,9 @@ class ProbeReportFieldCounterTest {
     fields.writeFixed32(11, 1);
     fields.writeByteArray(12, new byte[] {1, 2, 3});
     fields.flush();
-    var tooLongResult = tagAndLength(ProbeAttemptReport.RESULT_FIELD_NUMBER, 201);
-    var counter = counter(1_000);
+    var tooLongResult =
+        tagAndLength(ProbeAttemptReport.RESULT_FIELD_NUMBER, RESULT_LENGTH_LIMIT + 1);
+    var counter = counter(ROOM_FOR_A_LONGER_RESULT);
 
     var uncounted = counter.read(out.toByteString());
     var lengthOfResult = counter.read(tooLongResult);

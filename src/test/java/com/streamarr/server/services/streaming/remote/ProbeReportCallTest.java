@@ -526,7 +526,7 @@ class ProbeReportCallTest {
                 .keyframeLimit(5)
                 .measuredKeyframeIntervalLimit(7)
                 .lengthLimitBytes(200_000)
-                .resultLengthLimitBytes(1_000)
+                .resultLengthLimitBytes(64 * 1024)
                 .build());
     var stated = worker.commands().getFirst().getSessionAccepted();
     var atTheLimit = worker.dispatch();
