@@ -105,13 +105,37 @@ public class LocalSegmentStore implements SegmentStore {
 
     @Override
     public SegmentPublication publish() {
-      getOutputDirectory(sessionId);
+      getOutputDirectory();
       var segmentPath = resolveSegmentPath();
       try {
         createOrReuseFolder(segmentPath.getParent());
         return publishOnce(segmentPath);
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
+      }
+    }
+
+    private Path getOutputDirectory() {
+      var sessionDir = sessionDirs.computeIfAbsent(sessionId, _ -> createSessionDirectory());
+
+      try {
+        // A soft link can take this folder's place after the store created it. A variant folder
+        // created through that soft link would sit outside the segment folder.
+        requireFolder(sessionDir);
+        return sessionDir;
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to reuse session directory", e);
+      }
+    }
+
+    private Path createSessionDirectory() {
+      var dir = baseDir.resolve(sessionId.toString());
+
+      try {
+        createOrReuseFolder(dir);
+        return dir;
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to create session directory", e);
       }
     }
 
@@ -187,30 +211,6 @@ public class LocalSegmentStore implements SegmentStore {
     }
 
     return Optional.of(resolved);
-  }
-
-  private Path getOutputDirectory(UUID sessionId) {
-    var sessionDir = sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
-
-    try {
-      // A soft link can take this folder's place after the store created it. A variant folder
-      // created through that soft link would sit outside the segment folder.
-      requireFolder(sessionDir);
-      return sessionDir;
-    } catch (IOException e) {
-      throw new UncheckedIOException("Failed to reuse session directory", e);
-    }
-  }
-
-  private Path createSessionDirectory(UUID sessionId) {
-    var dir = baseDir.resolve(sessionId.toString());
-
-    try {
-      createOrReuseFolder(dir);
-      return dir;
-    } catch (IOException e) {
-      throw new UncheckedIOException("Failed to create session directory", e);
-    }
   }
 
   // Files.createDirectories accepts a soft link to a folder in the folder's place, and the store
