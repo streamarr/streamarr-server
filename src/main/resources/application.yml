@@ -183,7 +183,7 @@ streaming:
     keepalive:
       time: ${STREAMING_WORKER_SESSION_KEEPALIVE_TIME:30s}
       timeout: ${STREAMING_WORKER_SESSION_KEEPALIVE_TIMEOUT:10s}
-    # A worker sends each probe report in a report call. The server states the first three limits
+    # A worker sends each probe report in a report call. The server states the first four limits
     # to every worker whose session it accepts (ADR 0062).
     probe-report:
       # The most keyframes in one probe report. A worker reports the keyframes of a file with more
@@ -194,6 +194,9 @@ streaming:
       measured-keyframe-interval-limit: ${STREAMING_WORKER_SESSION_PROBE_REPORT_MEASURED_KEYFRAME_INTERVAL_LIMIT:1000000}
       # The length of the longest probe report. It must be at least 128KB, the limit of one message.
       length-limit: ${STREAMING_WORKER_SESSION_PROBE_REPORT_LENGTH_LIMIT:16MB}
+      # The length of the longest encoded result in one probe report. It must be at most the length
+      # limit.
+      result-length-limit: ${STREAMING_WORKER_SESSION_PROBE_REPORT_RESULT_LENGTH_LIMIT:128KB}
       # The server ends a report call when it asked for a message and none arrives in this time.
       idle-timeout: ${STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT:30s}
       # The most bytes of probe reports that the server reads at once. A report call waits while

@@ -203,7 +203,7 @@ Closing a dead worker's connection releases its playback slots, its probe capaci
 The time defaults to `30s` and must be at least `10s`, the shortest that gRPC allows. The timeout defaults to `10s`.
 
 A worker sends each probe report in a call of its own, the report call (https://github.com/streamarr/streamarr-adr/blob/main/adr/0062-a-worker-sends-each-probe-report-in-a-call-of-its-own.adoc[ADR 0062]).
-When the server accepts a worker session, it states four limits beside `segment_upload_limit`, each from the value that it enforces.
+When the server accepts a worker session, it states five limits beside `segment_upload_limit`, each from the value that it enforces.
 `probe_report_limit` is the most report calls that the server accepts from one worker at once.
 It is 24: the 33 calls that the server accepts on one connection, less the worker session and the 8 segment uploads of one worker.
 The server refuses a report call beyond that limit with `RESOURCE_EXHAUSTED`.
@@ -213,6 +213,9 @@ A worker reports the keyframes of a file with more keyframes as unavailable, and
 A worker leaves a larger measurement out of a probe.
 The server sizes each bitrate scan chunk so that its keyframes, each measured in every measured stream, stay within the limit.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_LENGTH_LIMIT` sets `probe_report_length_limit_bytes`, the length of the longest probe report. It defaults to `16MB` and must be at least `128KB`, the limit of one message.
+`STREAMING_WORKER_SESSION_PROBE_REPORT_RESULT_LENGTH_LIMIT` sets `probe_result_length_limit_bytes`, the length of the longest encoded result in one probe report. It defaults to `128KB` and must be at most the length limit.
+It bounds the heap that decoding a result takes, which can be many times the result's length because every small entry of the result decodes to an object.
+A worker fails a probe whose result is longer with `PROBE_FAILURE_RESULT_TOO_LARGE`.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT` bounds how long the server waits for a message that it asked for on a report call. It defaults to `30s`.
 When no message arrives in that time, the server ends the report call with `DEADLINE_EXCEEDED`, and the probe runs again.
 The time that a probe report waits for the memory budget does not count, and no bound covers the whole probe report.
@@ -222,7 +225,7 @@ The server reserves the length that the first message states before it reads any
 While a probe report does not fit the budget, the server reads no message of its report call.
 The waiting probe reports of playback probes get room before the waiting probe reports of other probes, and within each of the two groups the probe reports get room in the order in which they asked.
 The server never refuses a report call for lack of room.
-The server refuses to start when a limit or the idle timeout is not positive, when the length limit is below `128KB`, or when the memory budget is below the length limit.
+The server refuses to start when a limit or the idle timeout is not positive, when the length limit is below `128KB`, when the result length limit is above the length limit, or when the memory budget is below the length limit.
 
 The first message of a report call names the worker session, the worker and the probe attempt, and states the length of the probe report.
 The server reads the report call only when that message names a probe attempt that the worker's live session runs and that no other report call reports. It refuses any other report call with `PERMISSION_DENIED`, or with `ALREADY_EXISTS` when another report call already reports the attempt.

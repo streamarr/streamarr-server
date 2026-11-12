@@ -118,6 +118,8 @@ class WorkerSessionConfigurationTest {
         + "Worker probe report measured keyframe interval limit must be positive",
     "length-limit,0B,Worker probe report length limit must be positive",
     "length-limit,-1B,Worker probe report length limit must be positive",
+    "result-length-limit,0B,Worker probe report result length limit must be positive",
+    "result-length-limit,-1B,Worker probe report result length limit must be positive",
     "idle-timeout,0s,Worker probe report idle timeout must be positive",
     "idle-timeout,-1s,Worker probe report idle timeout must be positive",
     "memory-budget,0B,Worker probe report memory budget must be positive",
@@ -156,6 +158,28 @@ class WorkerSessionConfigurationTest {
                   .rootCause()
                   .isInstanceOf(IllegalArgumentException.class)
                   .hasMessage("Worker probe report length limit must be at least 131072 bytes");
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a probe report result length limit above the length limit when starting the"
+          + " listener")
+  void shouldRejectProbeReportResultLengthLimitAboveLengthLimitWhenStartingListener() {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.port=0",
+            "streaming.worker-session.probe-report.length-limit=1MB",
+            "streaming.worker-session.probe-report.result-length-limit=1048577B")
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessage(
+                      "Worker probe report result length limit must be at most the probe report"
+                          + " length limit");
             });
   }
 

@@ -1162,7 +1162,8 @@ final class LiveWorkerConnectionRegistry {
               .setProbeReportLimit(ProbeReportLimits.REPORT_CALLS_PER_WORKER)
               .setProbeReportLengthLimitBytes(probeReportLimits.lengthLimitBytes())
               .setKeyframeLimit(probeReportLimits.keyframeLimit())
-              .setMeasuredKeyframeIntervalLimit(probeReportLimits.measuredKeyframeIntervalLimit());
+              .setMeasuredKeyframeIntervalLimit(probeReportLimits.measuredKeyframeIntervalLimit())
+              .setProbeResultLengthLimitBytes(probeReportLimits.resultLengthLimitBytes());
       synchronized (outbound) {
         responseObserver.onNext(
             EstablishWorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());

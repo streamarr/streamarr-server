@@ -28,6 +28,42 @@ class ProbeReportLimitsTest {
   }
 
   @Test
+  @DisplayName(
+      "Should limit the result of a probe report to 128 KiB when no result length limit is"
+          + " configured")
+  void shouldLimitResultOfProbeReportTo128KibibytesWhenNoResultLengthLimitIsConfigured() {
+    var limits = ProbeReportLimits.builder().build();
+
+    assertThat(limits.resultLengthLimitBytes()).isEqualTo(128 * 1024);
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a result length limit when it is longer than the probe report length limit")
+  void shouldRefuseResultLengthLimitWhenItIsLongerThanProbeReportLengthLimit() {
+    var limits =
+        ProbeReportLimits.builder().lengthLimitBytes(MEBIBYTE).resultLengthLimitBytes(MEBIBYTE + 1);
+
+    assertThatIllegalArgumentException()
+        .isThrownBy(limits::build)
+        .withMessage(
+            "Worker probe report result length limit must be at most the probe report length"
+                + " limit");
+  }
+
+  @Test
+  @DisplayName("Should accept a result length limit when it equals the probe report length limit")
+  void shouldAcceptResultLengthLimitWhenItEqualsProbeReportLengthLimit() {
+    var limits =
+        ProbeReportLimits.builder()
+            .lengthLimitBytes(MEBIBYTE)
+            .resultLengthLimitBytes(MEBIBYTE)
+            .build();
+
+    assertThat(limits.resultLengthLimitBytes()).isEqualTo(MEBIBYTE);
+  }
+
+  @Test
   @DisplayName("Should refuse a length limit when one array cannot hold a probe report that long")
   void shouldRefuseLengthLimitWhenOneArrayCannotHoldProbeReportThatLong() {
     var limits =

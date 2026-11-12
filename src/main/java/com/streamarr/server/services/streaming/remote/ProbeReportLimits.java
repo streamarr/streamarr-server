@@ -6,13 +6,15 @@ import lombok.NonNull;
 
 /**
  * The bounds that the server enforces on the probe reports that workers send in report calls. The
- * server states the keyframe limit, the measured keyframe interval limit, the length limit and
- * {@link #REPORT_CALLS_PER_WORKER} to every worker whose session it accepts.
+ * server states the keyframe limit, the measured keyframe interval limit, the length limit, the
+ * result length limit and {@link #REPORT_CALLS_PER_WORKER} to every worker whose session it
+ * accepts.
  *
  * @param keyframeLimit the most keyframes in one probe report
  * @param measuredKeyframeIntervalLimit the most measured keyframe intervals in one probe report,
  *     added up over its measured streams
  * @param lengthLimitBytes the length of the longest probe report
+ * @param resultLengthLimitBytes the length of the longest encoded result in one probe report
  * @param idleTimeout how long a report call may leave a message that the server asked for unsent
  * @param memoryBudgetBytes the most bytes of probe reports that the server reads at once
  */
@@ -21,6 +23,7 @@ public record ProbeReportLimits(
     int keyframeLimit,
     int measuredKeyframeIntervalLimit,
     long lengthLimitBytes,
+    long resultLengthLimitBytes,
     @NonNull Duration idleTimeout,
     long memoryBudgetBytes) {
 
@@ -39,6 +42,7 @@ public record ProbeReportLimits(
     requirePositive(keyframeLimit, "keyframe limit");
     requirePositive(measuredKeyframeIntervalLimit, "measured keyframe interval limit");
     requirePositive(lengthLimitBytes, "length limit");
+    requirePositive(resultLengthLimitBytes, "result length limit");
     requirePositive(memoryBudgetBytes, "memory budget");
     if (!idleTimeout.isPositive()) {
       throw new IllegalArgumentException("Worker probe report idle timeout must be positive");
@@ -55,6 +59,12 @@ public record ProbeReportLimits(
       throw new IllegalArgumentException(
           "Worker probe report length limit must be at most %d bytes"
               .formatted(LONGEST_LENGTH_LIMIT_BYTES));
+    }
+
+    // A result longer than the probe report that holds it could never arrive.
+    if (resultLengthLimitBytes > lengthLimitBytes) {
+      throw new IllegalArgumentException(
+          "Worker probe report result length limit must be at most the probe report length limit");
     }
 
     // Otherwise a probe report at the length limit would wait for the budget without end.
@@ -81,6 +91,9 @@ public record ProbeReportLimits(
 
     @SuppressWarnings("java:S1068")
     private long lengthLimitBytes = 16L * 1024 * 1024;
+
+    @SuppressWarnings("java:S1068")
+    private long resultLengthLimitBytes = 128L * 1024;
 
     @SuppressWarnings("java:S1068")
     private Duration idleTimeout = Duration.ofSeconds(30);

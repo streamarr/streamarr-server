@@ -51,6 +51,7 @@ public class WorkerSessionConfiguration {
         .keyframeLimit(report.keyframeLimit())
         .measuredKeyframeIntervalLimit(report.measuredKeyframeIntervalLimit())
         .lengthLimitBytes(report.lengthLimit().toBytes())
+        .resultLengthLimitBytes(report.resultLengthLimit().toBytes())
         .idleTimeout(report.idleTimeout())
         .memoryBudgetBytes(report.memoryBudget().toBytes())
         .build();

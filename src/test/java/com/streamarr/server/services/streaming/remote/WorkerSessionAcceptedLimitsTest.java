@@ -34,6 +34,7 @@ class WorkerSessionAcceptedLimitsTest {
     assertThat(accepted.getProbeReportLengthLimitBytes()).isEqualTo(16L * 1024 * 1024);
     assertThat(accepted.getKeyframeLimit()).isEqualTo(150_000);
     assertThat(accepted.getMeasuredKeyframeIntervalLimit()).isEqualTo(1_000_000);
+    assertThat(accepted.getProbeResultLengthLimitBytes()).isEqualTo(128L * 1024);
   }
 
   @Test
@@ -45,6 +46,7 @@ class WorkerSessionAcceptedLimitsTest {
             .keyframeLimit(7)
             .measuredKeyframeIntervalLimit(9)
             .lengthLimitBytes(262_144)
+            .resultLengthLimitBytes(4_096)
             .build();
 
     var accepted =
@@ -53,6 +55,7 @@ class WorkerSessionAcceptedLimitsTest {
     assertThat(accepted.getKeyframeLimit()).isEqualTo(7);
     assertThat(accepted.getMeasuredKeyframeIntervalLimit()).isEqualTo(9);
     assertThat(accepted.getProbeReportLengthLimitBytes()).isEqualTo(262_144);
+    assertThat(accepted.getProbeResultLengthLimitBytes()).isEqualTo(4_096);
   }
 
   @Test

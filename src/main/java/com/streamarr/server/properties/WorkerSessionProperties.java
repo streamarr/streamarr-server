@@ -25,6 +25,7 @@ public record WorkerSessionProperties(
       @DefaultValue("150000") int keyframeLimit,
       @DefaultValue("1000000") int measuredKeyframeIntervalLimit,
       @DefaultValue("16MB") DataSize lengthLimit,
+      @DefaultValue("128KB") DataSize resultLengthLimit,
       @DefaultValue("30s") Duration idleTimeout,
       @DefaultValue("64MB") DataSize memoryBudget) {}
 }
