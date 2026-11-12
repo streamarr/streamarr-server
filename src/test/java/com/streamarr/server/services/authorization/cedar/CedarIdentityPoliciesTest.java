@@ -1723,8 +1723,9 @@ class CedarIdentityPoliciesTest {
           Set.<Intent.UnitIntent>of(
               new Intent.ViewProfileShareHouseholds(personal.getId()),
               new Intent.ViewProfileShareHouseholds(UUID.randomUUID()));
+      var identity = atHome();
 
-      assertThatThrownBy(() -> authorizationService.allowedAmong(atHome(), reads))
+      assertThatThrownBy(() -> authorizationService.allowedAmong(identity, reads))
           .isInstanceOf(AuthorizationUnavailableException.class);
     }
 
@@ -1735,8 +1736,9 @@ class CedarIdentityPoliciesTest {
           Set.<Intent.UnitIntent>of(
               new Intent.ViewProfileShareHouseholds(personal.getId()),
               new Intent.OfferProfileShare(personal.getId()));
+      var identity = atHome();
 
-      assertThatThrownBy(() -> authorizationService.allowedAmong(atHome(), batch))
+      assertThatThrownBy(() -> authorizationService.allowedAmong(identity, batch))
           .isInstanceOf(AuthorizationUnavailableException.class);
     }
 

@@ -155,6 +155,7 @@ class CedarAuthorizationDeciderTest {
             (_, decision) ->
                 assertThat(decision).isEqualTo(new Decision.Allowed<>(AuthorizationUnit.INSTANCE)));
     assertThat(List.of(decider.decideEach(disabled, reads), decider.decideEach(unknown, reads)))
+        .hasSize(2)
         .allSatisfy(
             decisions ->
                 assertThat(decisions.values())
