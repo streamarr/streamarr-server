@@ -102,20 +102,22 @@ class TranscodeDecisionReasonTest {
     assertThat(decision.reasons()).isEmpty();
   }
 
-  // hvc1.2.4.H153.90 is HEVC Main 10 in the High tier at level 5.1.
-  @Test
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("highTierSources")
   @DisplayName(
-      "Should copy a High tier HEVC source with no reason when an HEVC entry accepts its codec"
-          + " profile, level and other properties")
+      "Should copy a High tier source with no reason when an entry of its codec family accepts its"
+          + " codec profile, level and other properties")
   void
-      shouldCopyAHighTierHevcSourceWithNoReasonWhenAnHevcEntryAcceptsItsCodecProfileLevelAndOtherProperties() {
+      shouldCopyAHighTierSourceWithNoReasonWhenAnEntryOfItsCodecFamilyAcceptsItsCodecProfileLevelAndOtherProperties(
+          Source.SourceBuilder source,
+          VideoCodecProfile profile,
+          ClientCapabilityDeclaration client) {
     var highTier =
-        hevcMain10()
-            .codecString("hvc1.2.4.H153.90")
+        source
             .videoProperties(
                 Optional.of(
                     VideoStreamProperties.builder()
-                        .codecProfile(Optional.of(VideoCodecProfile.HEVC_MAIN_10))
+                        .codecProfile(Optional.of(profile))
                         .codecLevel(OptionalInt.of(51))
                         .codecTier(Optional.of(VideoCodecTier.HIGH))
                         .firstFramesRead(true)
@@ -123,10 +125,27 @@ class TranscodeDecisionReasonTest {
             .build()
             .probe();
 
-    var decision = decide(highTier, client(hevcEntryBuilder().build()));
+    var decision = decide(highTier, client);
 
     assertThat(decision.reasons()).isEmpty();
     assertThat(decision.transcodeMode().copiesVideo()).isTrue();
+  }
+
+  // hvc1.2.4.H153.90 and av01.0.13H.10 are each in the High tier at level 5.1.
+  static Stream<Arguments> highTierSources() {
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "an HEVC Main 10 source at level 5.1 to an HEVC entry",
+                hevcMain10().codecString("hvc1.2.4.H153.90")),
+            VideoCodecProfile.HEVC_MAIN_10,
+            client(hevcEntryBuilder().build())),
+        Arguments.of(
+            Named.of(
+                "an AV1 Main source at level 5.1 to an AV1 entry",
+                Source.builder().codec("av1").codecString("av01.0.13H.10").bitDepth(10)),
+            VideoCodecProfile.AV1_MAIN,
+            client()));
   }
 
   @Test
