@@ -206,21 +206,25 @@ class SegmentFolderLeftoversTest {
   void shouldDeleteTheOtherLeftoversWhenItCannotDeleteOne() throws IOException {
     new SegmentFolderLeftovers(segmentFolder).delete();
     var store = earlierStore();
-    var firstLocked = lockedLeftover(store, "00000000-0000-0000-0000-000000000001");
-    var deletable =
-        store.getOutputDirectory(UUID.fromString("00000000-0000-0000-0000-000000000002"));
-    var lastLocked = lockedLeftover(store, "00000000-0000-0000-0000-000000000003");
+    leftover(store);
+    leftover(store);
+    leftover(store);
+    // The leftover that a listing returns first, so a delete that stopped at its first failure
+    // would keep the two after it.
+    var undeletable = firstListedDirectory();
+    var lockedVariantDirectory = lock(undeletable.resolve("720p"));
     try {
-      assumeFalse(Files.isWritable(firstLocked), "folder permissions apply to the test user");
+      assumeFalse(
+          Files.isWritable(lockedVariantDirectory), "folder permissions apply to the test user");
 
       assertThatNoException().isThrownBy(new SegmentFolderLeftovers(segmentFolder)::delete);
 
-      assertThat(deletable).doesNotExist();
-      assertThat(firstLocked.resolve("0.m4s")).exists();
-      assertThat(lastLocked.resolve("0.m4s")).exists();
+      assertThat(lockedVariantDirectory.resolve("0.m4s")).exists();
+      assertThat(segmentFolder)
+          .isDirectoryNotContaining(
+              entry -> Files.isDirectory(entry) && !entry.equals(undeletable));
     } finally {
-      unlock(firstLocked);
-      unlock(lastLocked);
+      unlock(lockedVariantDirectory);
     }
   }
 
@@ -244,13 +248,21 @@ class SegmentFolderLeftoversTest {
     return new LocalSegmentStore(segmentFolder);
   }
 
+  private static void leftover(LocalSegmentStore store) throws IOException {
+    Files.write(store.getOutputDirectory(UUID.randomUUID(), "720p").resolve("0.m4s"), SEGMENT);
+  }
+
+  private Path firstListedDirectory() throws IOException {
+    try (var directories = Files.newDirectoryStream(segmentFolder, Files::isDirectory)) {
+      return directories.iterator().next();
+    }
+  }
+
   // A variant directory that cannot be written keeps its segment, so the session's directory
   // cannot be deleted.
-  private static Path lockedLeftover(LocalSegmentStore store, String sessionId) throws IOException {
-    var variantDirectory = store.getOutputDirectory(UUID.fromString(sessionId), "720p");
-    Files.write(variantDirectory.resolve("0.m4s"), SEGMENT);
-    Files.setPosixFilePermissions(variantDirectory, PosixFilePermissions.fromString("r-x------"));
-    return variantDirectory;
+  private static Path lock(Path variantDirectory) throws IOException {
+    return Files.setPosixFilePermissions(
+        variantDirectory, PosixFilePermissions.fromString("r-x------"));
   }
 
   private static void unlock(Path variantDirectory) throws IOException {
