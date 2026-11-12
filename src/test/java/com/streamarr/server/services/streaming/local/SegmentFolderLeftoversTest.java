@@ -485,7 +485,7 @@ class SegmentFolderLeftoversTest {
   // A volume of its own for segments, such as a tmpfs, is mounted on the folder itself.
   @Test
   @DisplayName("Should delete leftovers when a file system is mounted on the folder itself")
-  void shouldDeleteLeftoversWhenAFileSystemIsMountedOnTheFolderItself() throws IOException {
+  void shouldDeleteLeftoversWhenAFileSystemIsMountedOnTheFolderItself() {
     startOf(segmentFolder);
     var session = leftSessionIn(segmentFolder);
 
