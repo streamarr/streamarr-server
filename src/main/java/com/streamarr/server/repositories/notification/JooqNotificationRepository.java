@@ -6,12 +6,16 @@ import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.function;
 import static org.jooq.impl.DSL.greatest;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.noCondition;
+import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.jooq.generated.enums.NotificationForm;
 import com.streamarr.server.jooq.generated.enums.RequestResolution;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
+import com.streamarr.server.services.events.notification.DismissalSelector;
+import com.streamarr.server.services.events.notification.NotificationKind;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
@@ -19,6 +23,7 @@ import com.streamarr.server.services.notification.events.ChangedNotification;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
@@ -92,6 +97,54 @@ public class JooqNotificationRepository implements NotificationRepository {
         .and(NOTIFICATION.RESOLUTION.isNull())
         .returningResult(NOTIFICATION.ID, NOTIFICATION.RECIPIENT_TYPE, NOTIFICATION.RECIPIENT_ID)
         .fetch(JooqNotificationRepository::changed);
+  }
+
+  @Override
+  public List<ChangedNotification> dismiss(DismissalSelector selector) {
+    return dsl.deleteFrom(NOTIFICATION)
+        .where(selected(selector.targets()))
+        .and(
+            selector.recipient().map(JooqNotificationRepository::ofRecipient).orElse(noCondition()))
+        .and(ofKinds(selector.kinds()))
+        .and(selector.form().map(JooqNotificationRepository::ofForm).orElse(noCondition()))
+        .returningResult(NOTIFICATION.ID, NOTIFICATION.RECIPIENT_TYPE, NOTIFICATION.RECIPIENT_ID)
+        .fetch(JooqNotificationRepository::changed);
+  }
+
+  private static Condition selected(DismissalSelector.Targets targets) {
+    return switch (targets) {
+      case DismissalSelector.ById(var notificationIds) -> NOTIFICATION.ID.in(notificationIds);
+      case DismissalSelector.BySubject(var subjects) ->
+          row(NOTIFICATION.SUBJECT_TYPE, NOTIFICATION.SUBJECT_ID)
+              .in(subjects.stream().map(subject -> row(subject.type(), subject.id())).toList());
+    };
+  }
+
+  private static Condition ofRecipient(RecipientReference recipient) {
+    return NOTIFICATION
+        .RECIPIENT_TYPE
+        .eq(recipient.type())
+        .and(NOTIFICATION.RECIPIENT_ID.eq(recipient.id()));
+  }
+
+  // No kind named narrows to none: every kind.
+  private static Condition ofKinds(Set<NotificationKind> kinds) {
+    if (kinds.isEmpty()) {
+      return noCondition();
+    }
+
+    return NOTIFICATION.KIND.in(kinds.stream().map(NotificationKind::name).toList());
+  }
+
+  private static Condition ofForm(DismissalSelector.DismissedForm form) {
+    return switch (form) {
+      case NEWS -> NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS));
+      case WAITING_REQUESTS ->
+          NOTIFICATION
+              .FORM
+              .eq(inline(NotificationForm.REQUEST))
+              .and(NOTIFICATION.RESOLUTION.isNull());
+    };
   }
 
   // A decision made before the expiry joins its answer to the snapshot, under the name every

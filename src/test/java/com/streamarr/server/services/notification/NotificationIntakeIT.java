@@ -6,6 +6,7 @@ import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind
 import static com.streamarr.server.support.StoredNotificationRows.document;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -13,6 +14,8 @@ import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.domain.notification.RequestAnswer;
 import com.streamarr.server.domain.notification.RequestResolution;
+import com.streamarr.server.services.events.notification.DismissNotificationsEvent;
+import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareEndedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
@@ -558,6 +561,153 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
     assertThat(announced()).hasSize(2);
     assertThat(announced().getLast().notifications())
         .containsExactlyInAnyOrderElementsOf(changesOf(rows.about(share)));
+  }
+
+  @Test
+  @DisplayName("Should delete exactly the Notifications named when they are dismissed by id")
+  void shouldDeleteExactlyTheNotificationsNamedWhenTheyAreDismissedById() {
+    var other = SubjectReference.profileShare(UUID.randomUUID());
+    tell(
+        answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED))
+            .recipients(Set.of(sam, kai))
+            .build());
+    tell(offered(new ProfileShareOfferedSnapshot("Theo", Optional.empty()), other).build());
+    var samsNews = rows.about(share).stream().filter(row -> row.recipient().equals(sam)).toList();
+    var named = changesOf(samsNews).stream().map(ChangedNotification::notificationId).toList();
+
+    dismiss(DismissalSelector.byId(Set.copyOf(named)).build());
+
+    assertThat(rows.of(sam)).extracting(Row::subject).containsExactly(other);
+    assertThat(rows.of(kai)).extracting(Row::subject).containsExactly(share);
+  }
+
+  @Test
+  @DisplayName(
+      "Should delete every Notification about the subjects for every recipient when they are"
+          + " dismissed by subject")
+  void
+      shouldDeleteEveryNotificationAboutTheSubjectsForEveryRecipientWhenTheyAreDismissedBySubject() {
+    var endedShare = SubjectReference.profileShare(UUID.randomUUID());
+    var kept = SubjectReference.profileShare(UUID.randomUUID());
+    tell(offeredTheo().recipients(Set.of(sam, kai)).build());
+    tell(
+        answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED))
+            .recipients(Set.of(sam, kai))
+            .build());
+    tell(
+        ended(new ProfileShareEndedSnapshot("Theo", ProfileShareEndedBy.SERVER))
+            .subject(endedShare)
+            .recipients(Set.of(sam, kai))
+            .build());
+    tell(
+        offered(new ProfileShareOfferedSnapshot("Theo", Optional.empty()), kept)
+            .recipients(Set.of(sam, kai))
+            .build());
+
+    dismiss(DismissalSelector.bySubject(Set.of(share, endedShare)).build());
+
+    assertThat(rows.of(sam)).extracting(Row::subject).containsExactly(kept);
+    assertThat(rows.of(kai)).extracting(Row::subject).containsExactly(kept);
+  }
+
+  @Test
+  @DisplayName(
+      "Should delete only the recipient's Notifications when the dismissal is narrowed to a"
+          + " recipient")
+  void shouldDeleteOnlyTheRecipientsNotificationsWhenTheDismissalIsNarrowedToARecipient() {
+    tell(offeredTheo().recipients(Set.of(sam, kai)).build());
+
+    dismiss(DismissalSelector.bySubject(Set.of(share)).recipient(Optional.of(sam)).build());
+
+    assertThat(rows.of(sam)).isEmpty();
+    assertThat(rows.of(kai)).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should delete only the kinds named when the dismissal is narrowed to kinds")
+  void shouldDeleteOnlyTheKindsNamedWhenTheDismissalIsNarrowedToKinds() {
+    tell(answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED)).build());
+    tell(ended(new ProfileShareEndedSnapshot("Theo", ProfileShareEndedBy.SERVER)).build());
+
+    dismiss(
+        DismissalSelector.bySubject(Set.of(share))
+            .kinds(Set.of(SharingNotificationKinds.PROFILE_SHARE_ENDED))
+            .build());
+
+    assertThat(rows.of(sam)).extracting(Row::kind).containsExactly("PROFILE_SHARE_ANSWERED");
+  }
+
+  @Test
+  @DisplayName("Should delete only news when the dismissal is narrowed to news")
+  void shouldDeleteOnlyNewsWhenTheDismissalIsNarrowedToNews() {
+    tell(offeredTheo().build());
+    tell(answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED)).build());
+
+    dismiss(
+        DismissalSelector.bySubject(Set.of(share))
+            .form(Optional.of(DismissalSelector.DismissedForm.NEWS))
+            .build());
+
+    assertThat(rows.of(sam)).extracting(Row::form).containsExactly("REQUEST");
+  }
+
+  @Test
+  @DisplayName(
+      "Should delete only requests no event resolved when the dismissal is narrowed to waiting"
+          + " requests")
+  void shouldDeleteOnlyRequestsNoEventResolvedWhenTheDismissalIsNarrowedToWaitingRequests() {
+    var resolved = SubjectReference.profileShare(UUID.randomUUID());
+    var expired = SubjectReference.profileShare(UUID.randomUUID());
+    tell(offeredTheo().build());
+    tell(answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED)).build());
+    tell(offered(new ProfileShareOfferedSnapshot("Theo", Optional.empty()), resolved).build());
+    publish(withdrawn(EVENT.plusSeconds(60)).subject(resolved).build());
+    tell(
+        offered(new ProfileShareOfferedSnapshot("Theo", Optional.empty()), expired)
+            .at(EVENT.minus(Duration.ofDays(8)))
+            .subjectExpiresAt(Optional.of(EVENT.minus(Duration.ofDays(1))))
+            .build());
+
+    dismiss(
+        DismissalSelector.bySubject(Set.of(share, resolved, expired))
+            .form(Optional.of(DismissalSelector.DismissedForm.WAITING_REQUESTS))
+            .build());
+
+    assertThat(rows.of(sam))
+        .extracting(Row::subject, Row::form)
+        .containsExactly(tuple(share, "NEWS"), tuple(resolved, "REQUEST"));
+  }
+
+  @Test
+  @DisplayName("Should delete nothing when the dismissal's transaction rolls back")
+  void shouldDeleteNothingWhenTheDismissalsTransactionRollsBack() {
+    tell(offeredTheo().build());
+
+    transactionTemplate.executeWithoutResult(
+        status -> {
+          eventPublisher.publishEvent(
+              new DismissNotificationsEvent(DismissalSelector.bySubject(Set.of(share)).build()));
+          status.setRollbackOnly();
+        });
+
+    assertThat(rows.of(sam)).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should announce each dismissed Notification to the recipient that lost it")
+  void shouldAnnounceEachDismissedNotificationToTheRecipientThatLostIt() {
+    tell(offeredTheo().recipients(Set.of(sam, kai)).build());
+    tell(answered(new ProfileShareAnsweredSnapshot("Theo", ProfileShareAnswer.ACCEPTED)).build());
+    var lost = changesOf(rows.about(share));
+
+    dismiss(DismissalSelector.bySubject(Set.of(share)).build());
+
+    assertThat(announced()).hasSize(3);
+    assertThat(announced().getLast().notifications()).containsExactlyInAnyOrderElementsOf(lost);
+  }
+
+  private void dismiss(DismissalSelector selector) {
+    publish(new DismissNotificationsEvent(selector));
   }
 
   private void tell(TellNotificationEvent tell) {
