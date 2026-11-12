@@ -52,6 +52,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -227,6 +228,34 @@ class NotificationMarksIT extends AbstractIntegrationTest {
         .isEqualTo(ProfileShareStatus.PENDING);
   }
 
+  @ParameterizedTest
+  @EnumSource(Settled.class)
+  @DisplayName(
+      "Should skip a request when its recipient marks it after it was decided or its time ran out")
+  void shouldSkipARequestWhenItsRecipientMarksItAfterItWasDecidedOrItsTimeRanOut(Settled settled)
+      throws Exception {
+    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
+    var request = notificationFor(riversideAdmin, offer);
+    switch (settled) {
+      case DECIDED ->
+          sharing.rejectProfileShare(authTestSupport.identityOf(riverside), offer.getId());
+      case TIME_RAN_OUT -> runOut(request);
+    }
+
+    mark(riversideAdmin, request.id())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.markNotificationsRead.unreadNotificationCount").value(0))
+        .andExpect(jsonPath("$.data.markNotificationsRead.userErrors").isEmpty());
+
+    assertThat(stored(request).readAt()).isEmpty();
+  }
+
+  /** How a request stopped waiting before its recipient marked it. */
+  enum Settled {
+    DECIDED,
+    TIME_RAN_OUT
+  }
+
   @Test
   @DisplayName("Should answer that the id is invalid and mark nothing when one given is not an id")
   void shouldAnswerThatTheIdIsInvalidAndMarkNothingWhenOneGivenIsNotAnId() throws Exception {
@@ -339,6 +368,17 @@ class NotificationMarksIT extends AbstractIntegrationTest {
             dsl.update(NOTIFICATION)
                 .set(NOTIFICATION.LATEST_EVENT_AT, before)
                 .where(NOTIFICATION.ID.eq(earlier.id()))
+                .execute());
+  }
+
+  /** Moves the request's stored expiry into the past, as when its offer's time runs out. */
+  private void runOut(Row request) {
+    var expired = Instant.now().minusSeconds(60).atOffset(ZoneOffset.UTC);
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.update(NOTIFICATION)
+                .set(NOTIFICATION.EXPIRES_AT, expired)
+                .where(NOTIFICATION.ID.eq(request.id()))
                 .execute());
   }
 

@@ -839,6 +839,21 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should deliver nothing when the recipient marks a request that was decided")
+  void shouldDeliverNothingWhenTheRecipientMarksARequestThatWasDecided() throws Exception {
+    var offer = steps.offer(sam, kai(), riverside);
+    sharing.rejectProfileShare(authTestSupport.identityOf(riverside), offer.getId());
+    var decided = requestFor(riversideAdmin, offer);
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    markRead(riversideAdmin, decided);
+    var sentinel = tellSentinel(riversideAdmin);
+
+    assertThat(onlyChange(nextChange(socket)).path("notificationId").asString())
+        .isEqualTo(sentinel.get(accountOf(riversideAdmin)).toString());
+  }
+
+  @Test
   @DisplayName("Should deliver nothing and leave the news unread when the mark rolls back")
   void shouldDeliverNothingAndLeaveTheNewsUnreadWhenTheMarkRollsBack() {
     var kai = newsFor(theo, "Kai");
