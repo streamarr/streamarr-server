@@ -42,7 +42,7 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
-import org.jooq.InsertValuesStep9;
+import org.jooq.InsertValuesStep10;
 import org.jooq.JSONB;
 import org.jooq.Record3;
 import org.jooq.impl.SQLDataType;
@@ -240,7 +240,7 @@ public class JooqNotificationRepository implements NotificationRepository {
         .kind(kind)
         .subject(new SubjectReference(stored.getSubjectType(), stored.getSubjectId()))
         .snapshot(SnapshotJson.read(kind, stored.getSnapshot()))
-        .createdAt(stored.getCreatedOn().toInstant())
+        .createdAt(stored.getFirstEventAt().toInstant())
         .latestEventAt(stored.getLatestEventAt().toInstant())
         .readAt(instantOf(stored.getReadAt()))
         .resolution(
@@ -356,7 +356,9 @@ public class JooqNotificationRepository implements NotificationRepository {
         cast(jsonbGetAttributeAsText(snapshot, figure), SQLDataType.BIGINT), inline(0L));
   }
 
-  private InsertValuesStep9<
+  // The tell's event is a new Notification's first and latest event; an update in place moves only
+  // the latest.
+  private InsertValuesStep10<
           NotificationRecord,
           String,
           UUID,
@@ -365,6 +367,7 @@ public class JooqNotificationRepository implements NotificationRepository {
           String,
           UUID,
           JSONB,
+          OffsetDateTime,
           OffsetDateTime,
           OffsetDateTime>
       rowsFor(TellNotificationEvent tell) {
@@ -378,6 +381,7 @@ public class JooqNotificationRepository implements NotificationRepository {
             NOTIFICATION.SUBJECT_TYPE,
             NOTIFICATION.SUBJECT_ID,
             NOTIFICATION.SNAPSHOT,
+            NOTIFICATION.FIRST_EVENT_AT,
             NOTIFICATION.LATEST_EVENT_AT,
             NOTIFICATION.EXPIRES_AT);
     var kind = tell.kind();
@@ -395,6 +399,7 @@ public class JooqNotificationRepository implements NotificationRepository {
               tell.subject().type(),
               tell.subject().id(),
               snapshot,
+              at,
               at,
               expiresAt.orElse(null));
     }
