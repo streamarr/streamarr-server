@@ -70,6 +70,13 @@ public interface ProfileRepositoryCustom {
    */
   boolean lockForInvitationTo(UUID profileId, String email);
 
+  /**
+   * Locks the Profile and the Account's Personal Profile in the order {@link #lockForInvitationTo}
+   * takes them, so an acceptance that rechecks its inviter and an invite to that inviter's address
+   * wait for each other rather than deadlock. Whether the Profile exists.
+   */
+  boolean lockWithPersonalProfileOf(UUID profileId, UUID accountId);
+
   /** Locks and confirms the Profile is unrestricted for a Share sovereignty decision. */
   boolean lockIfUnrestricted(UUID profileId);
 
