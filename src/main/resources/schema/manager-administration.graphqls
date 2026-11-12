@@ -1,12 +1,24 @@
 # Direct ProfileManagers (ADR 0024 §ProfileManager; ADR 0026 shapes).
 # Codes are returned exactly once at issuance and are never queryable again.
 
+"Where an invitation to manage a Profile stands, as its reader reads it."
 enum ProfileManagerInvitationStatus {
+    "Waiting for the named Account to accept or decline it, until it expires."
     PENDING
+    "The named Account accepted it and became one of the Profile's managers."
     ACCEPTED
+    "The named Account declined it."
     DECLINED
+    "The Account that sent it, or a ServerAdmin, withdrew it."
     CANCELED
+    "Its time ran out before the named Account answered it."
     EXPIRED
+    """
+    The server ended it: a newer invitation to the same address replaced it, or its Profile, its
+    inviter or the inviter's management of the Profile is gone. Only the named Account and
+    ServerAdmins read an invitation ended because of what became of the named Account as
+    INVALIDATED; the Profile's managers read it as still waiting.
+    """
     INVALIDATED
 }
 
@@ -20,8 +32,11 @@ enum ProfileManagerSource {
 
 "An Account that manages a Profile."
 type ProfileManagerDetails {
+    "The managing Account."
     accountId: ID!
+    "The managing Account's display name as it is now."
     displayName: String!
+    "Whether it manages the Profile as its own Personal Profile or by a direct grant."
     source: ProfileManagerSource!
     "Whether this is the reading Account."
     reader: Boolean!
@@ -29,13 +44,17 @@ type ProfileManagerDetails {
 
 "A page of the Accounts that manage a Profile."
 type ProfileManagerConnection {
+    "The managers on this page, in the list's order."
     edges: [ProfileManagerEdge!]!
+    "Where this page sits in the list, to ask for the page after or before it."
     pageInfo: PageInfo!
 }
 
 "One Account that manages a Profile and where it sits in the list."
 type ProfileManagerEdge {
+    "The manager."
     node: ProfileManagerDetails!
+    "Where this manager sits in the list, to page from it."
     cursor: String!
 }
 
@@ -44,6 +63,7 @@ An invitation to manage a Profile (ADR 0024 §ProfileManager). It never carries 
 never says whether an Account has the address it was sent to.
 """
 type ManagerInvitationDetails {
+    "The invitation's id, which managerInvitation and the mutations that decide it take."
     id: ID!
     "The Profile, or null once it is deleted."
     profileId: ID
@@ -77,17 +97,23 @@ type ManagerInvitationDetails {
 
 "A page of invitations to manage a Profile."
 type ManagerInvitationConnection {
+    "The invitations on this page, in the list's order."
     edges: [ManagerInvitationEdge!]!
+    "Where this page sits in the list, to ask for the page after or before it."
     pageInfo: PageInfo!
 }
 
 "One invitation to manage a Profile and where it sits in its list."
 type ManagerInvitationEdge {
+    "The invitation."
     node: ManagerInvitationDetails!
+    "Where this invitation sits in the list, to page from it."
     cursor: String!
 }
 
+"What inviteProfileManager takes: the Profile and the address to invite."
 input InviteProfileManagerInput {
+    "The Profile to invite a manager for."
     profileId: ID!
     """
     The email address of the person to invite. Spaces around it are ignored, and its case does not
@@ -98,15 +124,24 @@ input InviteProfileManagerInput {
 
 "The code appears here once and never again."
 type IssuedManagerInvitation {
+    "The invitation as the Profile's managers read it."
     invitation: ManagerInvitationDetails!
+    """
+    The code to pass on to the person invited, for lookUpManagerInvitationCode. Shown this once; no
+    query reads it again.
+    """
     code: String!
 }
 
+"What inviteProfileManager answers: the change when it is made, and why when it is refused."
 type InviteProfileManagerPayload {
+    "The invitation and its code; null when the invitation was refused."
     issued: IssuedManagerInvitation
+    "Why the change was refused; empty when it was made."
     userErrors: [InviteProfileManagerError!]!
 }
 
+"The refusals inviteProfileManager may answer with, in userErrors."
 union InviteProfileManagerError =
     ProfileNotFoundError
   | EmailRequiredError
@@ -119,20 +154,28 @@ that is accepted, declined, canceled, replaced or invalidated, or that expires, 
 an address that already has one waiting replaces it, and is never refused for this.
 """
 type ManagerInvitationLimitReachedError implements MutationError {
+    "A sentence saying that ten invitations already wait."
     message: String!
 }
 
+"What cancelManagerInvitation takes."
 input CancelManagerInvitationInput {
+    "The invitation to withdraw."
     invitationId: ID!
 }
 
+"What cancelManagerInvitation answers: the change when it is made, and why when it is refused."
 type CancelManagerInvitationPayload {
+    "The invitation, now CANCELED; null when the cancel was refused."
     invitation: ManagerInvitationDetails
+    "Why the change was refused; empty when it was made."
     userErrors: [CancelManagerInvitationError!]!
 }
 
+"The refusals cancelManagerInvitation may answer with, in userErrors."
 union CancelManagerInvitationError = ManagerInvitationNotFoundError | InvitationNotPendingError
 
+"What acceptManagerInvitation takes."
 input AcceptManagerInvitationInput {
     """
     The invitation to accept, as pendingManagerInvitations or lookUpManagerInvitationCode gives it
@@ -141,17 +184,22 @@ input AcceptManagerInvitationInput {
     invitationId: ID!
 }
 
+"What acceptManagerInvitation answers: the change when it is made, and why when it is refused."
 type AcceptManagerInvitationPayload {
+    "The invitation, now ACCEPTED; null when the acceptance was refused."
     invitation: ManagerInvitationDetails
+    "Why the change was refused; empty when it was made."
     userErrors: [AcceptManagerInvitationError!]!
 }
 
+"The refusals acceptManagerInvitation may answer with, in userErrors."
 union AcceptManagerInvitationError =
     ManagerInvitationNotFoundError
   | InvitationNotPendingError
   | ProfileManagerNotEligibleError
   | AlreadyManagerError
 
+"What declineManagerInvitation takes."
 input DeclineManagerInvitationInput {
     """
     The invitation to decline, as pendingManagerInvitations or lookUpManagerInvitationCode gives it
@@ -160,24 +208,31 @@ input DeclineManagerInvitationInput {
     invitationId: ID!
 }
 
+"What declineManagerInvitation answers: the change when it is made, and why when it is refused."
 type DeclineManagerInvitationPayload {
+    "The invitation, now DECLINED; null when the decline was refused."
     invitation: ManagerInvitationDetails
+    "Why the change was refused; empty when it was made."
     userErrors: [DeclineManagerInvitationError!]!
 }
 
+"The refusals declineManagerInvitation may answer with, in userErrors."
 union DeclineManagerInvitationError = ManagerInvitationNotFoundError | InvitationNotPendingError
 
+"What lookUpManagerInvitationCode takes."
 input LookUpManagerInvitationCodeInput {
     "The code the inviter passed on, exactly as inviteProfileManager gave it."
     code: String!
 }
 
+"What lookUpManagerInvitationCode answers: the change when it is made, and why when it is refused."
 type LookUpManagerInvitationCodePayload {
     """
     The pending invitation the code belongs to, for the Account it names to accept or decline by
     its id. Null when the code is refused.
     """
     invitation: ManagerInvitationDetails
+    "Why the code was refused; empty when it was found."
     userErrors: [LookUpManagerInvitationCodeError!]!
 }
 
@@ -187,46 +242,70 @@ Account get the same ManagerInvitationNotFoundError.
 """
 union LookUpManagerInvitationCodeError = ManagerInvitationNotFoundError
 
+"What relinquishProfileManagement takes."
 input RelinquishProfileManagementInput {
+    "The Profile the caller stops managing."
     profileId: ID!
 }
 
+"What relinquishProfileManagement answers: the change when it is made, and why when it is refused."
 type RelinquishProfileManagementPayload {
+    "The Profile the caller no longer manages; null when it was refused."
     profileId: ID
+    "Why the change was refused; empty when it was made."
     userErrors: [RelinquishProfileManagementError!]!
 }
 
+"The refusals relinquishProfileManagement may answer with, in userErrors."
 union RelinquishProfileManagementError =
     ProfileNotFoundError
   | ManagementAlreadyRemovedError
   | ProfileRequiresEligibleManagerError
 
+"What removeProfileManager takes."
 input RemoveProfileManagerInput {
+    "The Profile to remove a manager from."
     profileId: ID!
+    "The Account that stops managing it."
     accountId: ID!
 }
 
+"What removeProfileManager answers: the change when it is made, and why when it is refused."
 type RemoveProfileManagerPayload {
+    "The Profile whose manager was removed; null when it was refused."
     profileId: ID
+    "Why the change was refused; empty when it was made."
     userErrors: [RemoveProfileManagerError!]!
 }
 
+"The refusals removeProfileManager may answer with, in userErrors."
 union RemoveProfileManagerError =
     ProfileNotFoundError
   | NotAManagerError
   | ProfileRequiresEligibleManagerError
 
+"What administrativelyGrantProfileManager takes."
 input AdministrativelyGrantProfileManagerInput {
+    "The Profile to give a manager."
     profileId: ID!
+    "The Account that becomes its direct manager."
     accountId: ID!
+    "Why the ServerAdmin overrides, kept in the security audit log; it may not be blank."
     reason: String!
 }
 
+"""
+What administrativelyGrantProfileManager answers: the change when it is made, and why when it is
+refused.
+"""
 type AdministrativelyGrantProfileManagerPayload {
+    "The Profile that gained a manager; null when the grant was refused."
     profileId: ID
+    "Why the change was refused; empty when it was made."
     userErrors: [AdministrativelyGrantProfileManagerError!]!
 }
 
+"The refusals administrativelyGrantProfileManager may answer with, in userErrors."
 union AdministrativelyGrantProfileManagerError =
     ProfileNotFoundError
   | ReasonRequiredError
@@ -235,17 +314,28 @@ union AdministrativelyGrantProfileManagerError =
   | ProfileManagerNotEligibleError
   | AlreadyManagerError
 
+"What administrativelyRemoveProfileManager takes."
 input AdministrativelyRemoveProfileManagerInput {
+    "The Profile to remove a manager from."
     profileId: ID!
+    "The Account that stops managing it."
     accountId: ID!
+    "Why the ServerAdmin overrides, kept in the security audit log; it may not be blank."
     reason: String!
 }
 
+"""
+What administrativelyRemoveProfileManager answers: the change when it is made, and why when it is
+refused.
+"""
 type AdministrativelyRemoveProfileManagerPayload {
+    "The Profile whose manager was removed; null when it was refused."
     profileId: ID
+    "Why the change was refused; empty when it was made."
     userErrors: [AdministrativelyRemoveProfileManagerError!]!
 }
 
+"The refusals administrativelyRemoveProfileManager may answer with, in userErrors."
 union AdministrativelyRemoveProfileManagerError =
     ProfileNotFoundError
   | ReasonRequiredError
