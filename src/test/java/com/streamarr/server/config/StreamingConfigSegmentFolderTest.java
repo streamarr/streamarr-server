@@ -2,6 +2,7 @@ package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.properties.StreamingProperties;
 import java.nio.file.Path;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
