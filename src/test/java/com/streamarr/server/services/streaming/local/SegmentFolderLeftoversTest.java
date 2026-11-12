@@ -17,8 +17,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -42,9 +44,12 @@ class SegmentFolderLeftoversTest {
   void shouldDeleteAStreamSessionsDirectoryWhenAnEarlierStoreLeftIt() {
     startOf(segmentFolder);
     var sessionId = UUID.randomUUID();
-    try (var stored = earlierStore().prepareSegment(sessionId, "720p/0.m4s", SEGMENT)) {
-      stored.publish();
-    }
+    leftByAnEndedProcess(
+        store -> {
+          try (var stored = store.prepareSegment(sessionId, "720p/0.m4s", SEGMENT)) {
+            return stored.publish();
+          }
+        });
 
     var outcome = startOf(segmentFolder);
 
@@ -57,7 +62,9 @@ class SegmentFolderLeftoversTest {
   void shouldDeleteAnUnpublishedUploadWhenAnEarlierStoreLeftIt() {
     startOf(segmentFolder);
     // Still open: the store's process ended before it published or discarded the upload.
-    try (var _ = earlierStore().prepareSegment(UUID.randomUUID(), "720p/0.m4s", SEGMENT)) {
+    try (var _ =
+        leftByAnEndedProcess(
+            store -> store.prepareSegment(UUID.randomUUID(), "720p/0.m4s", SEGMENT))) {
       assertThat(segmentFolder).isDirectoryContaining("glob:**/.upload-*");
 
       var outcome = startOf(segmentFolder);
@@ -71,7 +78,7 @@ class SegmentFolderLeftoversTest {
   @DisplayName("Should keep the segment folder itself when it deletes every leftover")
   void shouldKeepTheSegmentFolderItselfWhenItDeletesEveryLeftover() {
     startOf(segmentFolder);
-    earlierStore().getOutputDirectory(UUID.randomUUID());
+    leftSessionIn(segmentFolder);
 
     startOf(segmentFolder);
 
@@ -84,20 +91,19 @@ class SegmentFolderLeftoversTest {
   void shouldDeleteLeftoversWhenItCreatedTheSegmentFolder() {
     var created = segmentFolder.resolve("server").resolve("segments");
     startOf(created);
-    var sessionId = UUID.randomUUID();
-    new LocalSegmentStore(created, new SegmentFolderLock()).getOutputDirectory(sessionId);
+    var session = leftSessionIn(created);
 
     startOf(created);
 
-    assertThat(created.resolve(sessionId.toString())).doesNotExist();
+    assertThat(session).doesNotExist();
   }
 
   @Test
   @DisplayName("Should keep everything when the folder held other entries before a store used it")
   void shouldKeepEverythingWhenTheFolderHeldOtherEntriesBeforeAStoreUsedIt() throws IOException {
     var fileInThatDirectory = deletableFileIn(segmentFolder);
-    var directoryNamedLikeASession = fileInThatDirectory.getParent();
     var fileNamedLikeAnUpload = Files.write(segmentFolder.resolve(".upload-1.tmp"), MEDIA);
+    var entriesBefore = entriesOf(segmentFolder);
 
     startOf(segmentFolder);
     var outcome = startOf(segmentFolder);
@@ -105,10 +111,7 @@ class SegmentFolderLeftoversTest {
     assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.UNMARKED_FOLDER));
     assertThat(fileInThatDirectory).exists();
     assertThat(fileNamedLikeAnUpload).exists();
-    assertThat(segmentFolder)
-        .isDirectoryNotContaining(
-            entry ->
-                !entry.equals(directoryNamedLikeASession) && !entry.equals(fileNamedLikeAnUpload));
+    assertThat(entriesOf(segmentFolder)).isEqualTo(entriesBefore);
   }
 
   // A process that ends between creating the mark and writing it leaves an empty mark.
@@ -119,12 +122,11 @@ class SegmentFolderLeftoversTest {
       throws IOException {
     Files.createFile(segmentFolder.resolve(MARK_NAME));
     startOf(segmentFolder);
-    var sessionId = UUID.randomUUID();
-    earlierStore().getOutputDirectory(sessionId);
+    var session = leftSessionIn(segmentFolder);
 
     startOf(segmentFolder);
 
-    assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
+    assertThat(session).doesNotExist();
   }
 
   // Bytes that are no UTF-8 text cannot be read as a folder's path.
@@ -133,12 +135,11 @@ class SegmentFolderLeftoversTest {
   void shouldDeleteLeftoversWhenTheFolderHeldOnlyAMarkThatIsNotText() throws IOException {
     Files.write(segmentFolder.resolve(MARK_NAME), new byte[] {(byte) 0xC3, 0x28});
     startOf(segmentFolder);
-    var sessionId = UUID.randomUUID();
-    earlierStore().getOutputDirectory(sessionId);
+    var session = leftSessionIn(segmentFolder);
 
     startOf(segmentFolder);
 
-    assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
+    assertThat(session).doesNotExist();
   }
 
   // A file of more than Integer.MAX_VALUE bytes cannot be read into memory. This one is sparse,
@@ -173,13 +174,12 @@ class SegmentFolderLeftoversTest {
     var outsideFile = Files.write(outside.resolve("movie.mkv"), MEDIA);
     Files.createSymbolicLink(segmentFolder.resolve(MARK_NAME), outsideFile);
     startOf(segmentFolder);
-    var sessionId = UUID.randomUUID();
-    earlierStore().getOutputDirectory(sessionId);
+    var session = leftSessionIn(segmentFolder);
 
     startOf(segmentFolder);
 
     assertThat(outsideFile).hasBinaryContent(MEDIA);
-    assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
+    assertThat(session).doesNotExist();
   }
 
   // Copying a segment folder's entries into another folder brings the mark along.
@@ -304,7 +304,9 @@ class SegmentFolderLeftoversTest {
       throws IOException {
     try (var runningProcessLock = new SegmentFolderLock()) {
       leftoversOf(segmentFolder).lock(runningProcessLock).build().delete();
-      var runningSession = earlierStore().getOutputDirectory(UUID.randomUUID());
+      var runningSession =
+          new LocalSegmentStore(segmentFolder, runningProcessLock)
+              .getOutputDirectory(UUID.randomUUID());
 
       var outcome = startOf(segmentFolder);
 
@@ -314,12 +316,101 @@ class SegmentFolderLeftoversTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep a running server process's stream sessions when its own start refused the"
+          + " folder")
+  void shouldKeepARunningServerProcesssStreamSessionsWhenItsOwnStartRefusedTheFolder()
+      throws IOException {
+    startOf(segmentFolder);
+    try (var runningProcessLock = new SegmentFolderLock()) {
+      var refusedStart =
+          leftoversOf(segmentFolder)
+              .mediaFolders(unreadableMediaFolders())
+              .lock(runningProcessLock)
+              .build()
+              .delete();
+      var runningSession =
+          new LocalSegmentStore(segmentFolder, runningProcessLock)
+              .getOutputDirectory(UUID.randomUUID());
+
+      var outcome = startOf(segmentFolder);
+
+      assertThat(refusedStart).isEqualTo(new Refused(SegmentFolderRefusal.UNKNOWN_MEDIA_FOLDERS));
+      assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.IN_USE));
+      assertThat(runningSession).isDirectory();
+    }
+  }
+
+  // A running process can have no start of its own on the folder, as after a refusal: only what
+  // its store writes shows that it uses the folder.
+  @Test
+  @DisplayName(
+      "Should keep what a running server process's store wrote when that process ran no start on"
+          + " the folder")
+  void shouldKeepWhatARunningServerProcesssStoreWroteWhenThatProcessRanNoStartOnTheFolder()
+      throws IOException {
+    startOf(segmentFolder);
+    try (var runningProcessLock = new SegmentFolderLock()) {
+      var runningStore = new LocalSegmentStore(segmentFolder, runningProcessLock);
+      var runningSession = runningStore.getOutputDirectory(UUID.randomUUID());
+      try (var _ = runningStore.prepareSegment(UUID.randomUUID(), "720p/0.m4s", SEGMENT)) {
+
+        var outcome = startOf(segmentFolder);
+
+        assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.IN_USE));
+        assertThat(runningSession).isDirectory();
+        assertThat(segmentFolder).isDirectoryContaining("glob:**/.upload-*");
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the stream sessions of each running server process when two processes write into"
+          + " the folder")
+  void shouldKeepTheStreamSessionsOfEachRunningServerProcessWhenTwoProcessesWriteIntoTheFolder()
+      throws IOException {
+    startOf(segmentFolder);
+    try (var firstProcessLock = new SegmentFolderLock();
+        var secondProcessLock = new SegmentFolderLock()) {
+      var firstSession =
+          new LocalSegmentStore(segmentFolder, firstProcessLock)
+              .getOutputDirectory(UUID.randomUUID());
+      var secondSession =
+          new LocalSegmentStore(segmentFolder, secondProcessLock)
+              .getOutputDirectory(UUID.randomUUID());
+
+      var outcome = startOf(segmentFolder);
+
+      assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.IN_USE));
+      assertThat(firstSession).isDirectory();
+      assertThat(secondSession).isDirectory();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the folder's mark to the start that holds the folder's lock when two server"
+          + " processes start at once")
+  void shouldLeaveTheFoldersMarkToTheStartThatHoldsTheFoldersLockWhenTwoServerProcessesStartAtOnce()
+      throws IOException {
+    try (var otherStartsLock = new SegmentFolderLock()) {
+      var outcome = otherStartsLock.whileAlone(segmentFolder, () -> startOf(segmentFolder));
+
+      assertThat(outcome).contains(new Refused(SegmentFolderRefusal.IN_USE));
+      assertThat(segmentFolder.resolve(MARK_NAME)).doesNotExist();
+    }
+  }
+
+  @Test
   @DisplayName("Should delete a stream session's directory when the process that left it ended")
   void shouldDeleteAStreamSessionsDirectoryWhenTheProcessThatLeftItEnded() throws IOException {
     Path leftover;
     try (var endedProcessLock = new SegmentFolderLock()) {
       leftoversOf(segmentFolder).lock(endedProcessLock).build().delete();
-      leftover = earlierStore().getOutputDirectory(UUID.randomUUID());
+      leftover =
+          new LocalSegmentStore(segmentFolder, endedProcessLock)
+              .getOutputDirectory(UUID.randomUUID());
     }
 
     var outcome = startOf(segmentFolder);
@@ -333,7 +424,7 @@ class SegmentFolderLeftoversTest {
       "Should keep the file that a soft link in the lock's place points to and delete nothing")
   void shouldKeepTheFileThatASoftLinkInTheLocksPlacePointsToAndDeleteNothing() throws IOException {
     startOf(segmentFolder);
-    var leftover = earlierStore().getOutputDirectory(UUID.randomUUID());
+    var leftover = leftSessionIn(segmentFolder);
     var outsideFile = Files.write(outside.resolve("movie.mkv"), MEDIA);
     Files.delete(segmentFolder.resolve(LOCK_NAME));
     Files.createSymbolicLink(segmentFolder.resolve(LOCK_NAME), outsideFile);
@@ -352,8 +443,7 @@ class SegmentFolderLeftoversTest {
   void shouldKeepAFolderOutsideTheSegmentFolderWhenALeftoverStreamSessionsDirectoryLinksToIt()
       throws IOException {
     startOf(segmentFolder);
-    var sessionId = UUID.randomUUID();
-    var sessionDirectory = earlierStore().getOutputDirectory(sessionId);
+    var sessionDirectory = leftSessionIn(segmentFolder);
     var outsideFile = Files.write(outside.resolve("movie.mkv"), MEDIA);
     Files.createSymbolicLink(sessionDirectory.resolve("link"), outside);
 
@@ -367,10 +457,9 @@ class SegmentFolderLeftoversTest {
   @DisplayName("Should delete the other leftovers and count the rest when it cannot delete some")
   void shouldDeleteTheOtherLeftoversAndCountTheRestWhenItCannotDeleteSome() throws IOException {
     startOf(segmentFolder);
-    var store = earlierStore();
-    leftover(store);
-    leftover(store);
-    leftover(store);
+    leftover(segmentFolder);
+    leftover(segmentFolder);
+    leftover(segmentFolder);
     // The leftover that a listing returns first, so a delete that stopped at its first failure
     // would keep the two after it.
     var undeletable = firstListedDirectory();
@@ -397,9 +486,8 @@ class SegmentFolderLeftoversTest {
   @DisplayName("Should delete every leftover when the segment folder holds hundreds of them")
   void shouldDeleteEveryLeftoverWhenTheSegmentFolderHoldsHundredsOfThem() throws IOException {
     startOf(segmentFolder);
-    var store = earlierStore();
     for (var i = 0; i < 300; i++) {
-      leftover(store);
+      leftover(segmentFolder);
     }
 
     var outcome = startOf(segmentFolder);
@@ -423,7 +511,7 @@ class SegmentFolderLeftoversTest {
 
   @Test
   @DisplayName("Should refuse the folder when it is a media folder")
-  void shouldRefuseTheFolderWhenItIsAMediaFolder() throws IOException {
+  void shouldRefuseTheFolderWhenItIsAMediaFolder() {
     startOf(segmentFolder);
     var movie = deletableFileIn(segmentFolder);
 
@@ -435,7 +523,7 @@ class SegmentFolderLeftoversTest {
 
   @Test
   @DisplayName("Should refuse the folder when it holds a media folder")
-  void shouldRefuseTheFolderWhenItHoldsAMediaFolder() throws IOException {
+  void shouldRefuseTheFolderWhenItHoldsAMediaFolder() {
     startOf(segmentFolder);
     var movie = deletableFileIn(segmentFolder);
     var library = segmentFolder.resolve("movies");
@@ -478,35 +566,29 @@ class SegmentFolderLeftoversTest {
     var segments = outside.resolve("segments");
     var library = outside.resolve("segments2");
     startOf(segments);
-    var sessionId = UUID.randomUUID();
-    new LocalSegmentStore(segments, new SegmentFolderLock()).getOutputDirectory(sessionId);
+    var session = leftSessionIn(segments);
 
     var outcome = startOf(leftoversOf(segments).mediaFolders(() -> List.of(library)));
 
     assertThat(outcome).isEqualTo(new Deleted(1, 0));
-    assertThat(segments.resolve(sessionId.toString())).doesNotExist();
+    assertThat(session).doesNotExist();
   }
 
   @Test
   @DisplayName("Should refuse every folder when the media folders cannot be read")
   void shouldRefuseEveryFolderWhenTheMediaFoldersCannotBeRead() {
     startOf(segmentFolder);
-    var sessionId = UUID.randomUUID();
-    earlierStore().getOutputDirectory(sessionId);
-    Supplier<List<Path>> unreadable =
-        () -> {
-          throw new IllegalStateException("The library table cannot be read");
-        };
+    var session = leftSessionIn(segmentFolder);
 
-    var outcome = startOf(leftoversOf(segmentFolder).mediaFolders(unreadable));
+    var outcome = startOf(leftoversOf(segmentFolder).mediaFolders(unreadableMediaFolders()));
 
     assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.UNKNOWN_MEDIA_FOLDERS));
-    assertThat(segmentFolder.resolve(sessionId.toString())).isDirectory();
+    assertThat(session).isDirectory();
   }
 
   @Test
   @DisplayName("Should refuse the folder when it is the home folder")
-  void shouldRefuseTheFolderWhenItIsTheHomeFolder() throws IOException {
+  void shouldRefuseTheFolderWhenItIsTheHomeFolder() {
     startOf(segmentFolder);
     var file = deletableFileIn(segmentFolder);
 
@@ -518,7 +600,7 @@ class SegmentFolderLeftoversTest {
 
   @Test
   @DisplayName("Should refuse the folder when it holds the home folder")
-  void shouldRefuseTheFolderWhenItHoldsTheHomeFolder() throws IOException {
+  void shouldRefuseTheFolderWhenItHoldsTheHomeFolder() {
     startOf(segmentFolder);
     var file = deletableFileIn(segmentFolder);
     var home = segmentFolder.resolve("home").resolve("streamarr");
@@ -598,21 +680,56 @@ class SegmentFolderLeftoversTest {
     }
   }
 
-  private LocalSegmentStore earlierStore() {
-    return new LocalSegmentStore(segmentFolder, new SegmentFolderLock());
+  // What the store of a server process wrote before the process ended: the operating system
+  // released the process's lock, and what the store wrote stays.
+  private <T> T leftByAnEndedProcess(StoreWrites<T> writes) {
+    return leftByAnEndedProcess(segmentFolder, writes);
+  }
+
+  private static <T> T leftByAnEndedProcess(Path folder, StoreWrites<T> writes) {
+    try (var lock = new SegmentFolderLock()) {
+      return writes.apply(new LocalSegmentStore(folder, lock));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  private static Path leftSessionIn(Path folder) {
+    return leftByAnEndedProcess(folder, store -> store.getOutputDirectory(UUID.randomUUID()));
   }
 
   // A file in a stream session's directory that a store wrote, which a start that deletes would
   // remove with the directory.
-  private static Path deletableFileIn(Path folder) throws IOException {
-    var directory =
-        new LocalSegmentStore(folder, new SegmentFolderLock())
-            .getOutputDirectory(UUID.randomUUID());
-    return Files.write(directory.resolve("movie.mkv"), MEDIA);
+  private static Path deletableFileIn(Path folder) {
+    return leftByAnEndedProcess(
+        folder,
+        store ->
+            Files.write(store.getOutputDirectory(UUID.randomUUID()).resolve("movie.mkv"), MEDIA));
   }
 
-  private static void leftover(LocalSegmentStore store) throws IOException {
-    Files.write(store.getOutputDirectory(UUID.randomUUID(), "720p").resolve("0.m4s"), SEGMENT);
+  private static Set<Path> entriesOf(Path folder) throws IOException {
+    try (var entries = Files.list(folder)) {
+      return entries.collect(Collectors.toSet());
+    }
+  }
+
+  private static Supplier<List<Path>> unreadableMediaFolders() {
+    return () -> {
+      throw new IllegalStateException("The library table cannot be read");
+    };
+  }
+
+  @FunctionalInterface
+  private interface StoreWrites<T> {
+    T apply(LocalSegmentStore store) throws IOException;
+  }
+
+  private static void leftover(Path folder) {
+    leftByAnEndedProcess(
+        folder,
+        store ->
+            Files.write(
+                store.getOutputDirectory(UUID.randomUUID(), "720p").resolve("0.m4s"), SEGMENT));
   }
 
   private Path firstListedDirectory() throws IOException {

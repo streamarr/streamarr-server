@@ -37,6 +37,8 @@ class LocalSegmentStoreTest {
   private static final String VARIANT_INITIALIZATION_SEGMENT = "720p/init.mp4";
   private static final int CONTENDERS = 8;
   private static final int RACE_ROUNDS = 25;
+  // The store's unpublished uploads, beside the folder's lock that the store holds.
+  private static final String UPLOADS = ".upload-*";
 
   @TempDir Path tempDir;
 
@@ -327,7 +329,7 @@ class LocalSegmentStoreTest {
       assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
     }
 
-    assertThat(tempDir).isEmptyDirectory();
+    assertThat(tempDir).isDirectoryNotContaining("glob:**/" + UPLOADS);
   }
 
   @Test
@@ -336,8 +338,8 @@ class LocalSegmentStoreTest {
     var prepared =
         store.prepareSegment(UUID.randomUUID(), "720p/segment0.m4s", "remote segment".getBytes());
     Path temporary;
-    try (var files = Files.list(tempDir)) {
-      temporary = files.findFirst().orElseThrow();
+    try (var files = Files.newDirectoryStream(tempDir, UPLOADS)) {
+      temporary = files.iterator().next();
     }
     Files.delete(temporary);
     Files.createDirectory(temporary);
@@ -357,7 +359,7 @@ class LocalSegmentStoreTest {
 
     assertThatThrownBy(() -> store.prepareSegment(sessionId, "segment0.m4s", null))
         .isInstanceOf(NullPointerException.class);
-    assertThat(tempDir).isEmptyDirectory();
+    assertThat(tempDir).isDirectoryNotContaining("glob:**/" + UPLOADS);
   }
 
   @Test

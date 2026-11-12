@@ -47,7 +47,7 @@ public class SegmentFolderLeftovers {
   // The media root and every library's folder, read when the delete runs.
   @NonNull private final Supplier<List<Path>> mediaFolders;
 
-  // Held by this server process until it ends, once the folder carries the mark.
+  // The lock of this server process, which its segment store holds shared once it writes.
   @NonNull private final SegmentFolderLock lock;
 
   /**
@@ -64,9 +64,8 @@ public class SegmentFolderLeftovers {
    * mark holds the path of the folder that it marks, so a mark that was copied into another folder
    * marks nothing there. It never throws: what it cannot delete stays.
    *
-   * <p>It deletes only while no other server process holds the folder's lock, and it leaves this
-   * process holding the lock shared, so that a later start deletes nothing of this process's stream
-   * sessions.
+   * <p>It marks the folder and deletes only while it holds the folder's lock alone, so only while
+   * no other running server process has written into the folder.
    */
   public SegmentFolderLeftoversOutcome delete() {
     try {
@@ -76,16 +75,13 @@ public class SegmentFolderLeftovers {
       }
 
       Files.createDirectories(segmentFolder);
-      if (!tryMark()) {
+      // Before the lock's file, so that a folder that holds something else gets nothing.
+      if (!isMarkable()) {
         return refused(SegmentFolderRefusal.UNMARKED_FOLDER);
       }
 
-      var deleted = lock.whileAlone(segmentFolder, this::deleteEachLeftover);
-      if (deleted.isEmpty()) {
-        return refused(SegmentFolderRefusal.IN_USE);
-      }
-
-      return deleted.get();
+      return lock.whileAlone(segmentFolder, this::markAndDeleteEachLeftover)
+          .orElseGet(() -> refused(SegmentFolderRefusal.IN_USE));
     } catch (IOException | RuntimeException e) {
       log.warn("Failed to delete the leftovers in the segment folder {}", segmentFolder, e);
       return new Refused(SegmentFolderRefusal.UNREADABLE_FOLDER);
@@ -147,18 +143,23 @@ public class SegmentFolderLeftovers {
     return existing.toRealPath().resolve(existing.relativize(absolute)).normalize();
   }
 
-  // Marks a folder that holds no other entry. Returns whether the folder carries its mark.
-  private boolean tryMark() throws IOException {
+  // Only one start at a time holds the lock alone, so two starts never write the mark at once.
+  private SegmentFolderLeftoversOutcome markAndDeleteEachLeftover() throws IOException {
     if (isMarked()) {
-      return true;
+      return deleteEachLeftover();
     }
 
     if (!holdsNoOtherEntry()) {
-      return false;
+      return refused(SegmentFolderRefusal.UNMARKED_FOLDER);
     }
 
     writeMark();
-    return true;
+    return deleteEachLeftover();
+  }
+
+  // Whether the folder carries its mark, or holds no other entry, so that a start may mark it.
+  private boolean isMarkable() throws IOException {
+    return isMarked() || holdsNoOtherEntry();
   }
 
   // Compared as bytes, so that a mark which is not text reads as the mark of another folder. A
