@@ -670,6 +670,13 @@ message TranscodeExecution {
   // seek_position against it. Missing, or set on another attempt, it makes the
   // job an invalid specification (ADR 0037, seek).
   google.protobuf.Duration read_from_last_keyframe_presenting_at_or_before = 12;
+  // This field holds where the chosen video stream ends: the latest
+  // presentation time plus duration of its packets, on seek_position's
+  // timeline. A packet without a presentation time counts at its decode time.
+  // The server sets this field only from a keyframe packet scan. Without this
+  // field, the video's end is unknown. A first picture check stops reading
+  // once a copied video packet reaches that end (ADR 0037, seek).
+  google.protobuf.Duration video_end = 13;
 }
 
 message VariantJob {

@@ -1003,6 +1003,39 @@ class TranscodeWorkerContractTest {
     assertThat(field.hasPresence()).isTrue();
   }
 
+  // A worker reads a job without field 13 as a video whose end is unknown, so a missing end must
+  // stay apart from an end at 0 s.
+  @Test
+  @DisplayName(
+      "Should carry the chosen video's end beside the keyframe search time, and keep a missing end"
+          + " apart from one at zero, when an encode reads from a later segment")
+  void shouldCarryTheVideosEndBesideTheSearchTimeWhenAnEncodeReadsFromALaterSegment()
+      throws Exception {
+    var searchTime = Duration.newBuilder().setSeconds(23).setNanos(500_000_000).build();
+    var videoEnd = Duration.newBuilder().setSeconds(6).setNanos(21_333_333).build();
+    var execution =
+        TranscodeExecution.newBuilder()
+            .setStartSequenceNumber(4)
+            .setReadFromLastKeyframePresentingAtOrBefore(searchTime)
+            .setVideoEnd(videoEnd)
+            .build();
+    var withoutEnd =
+        TranscodeExecution.newBuilder()
+            .setStartSequenceNumber(4)
+            .setReadFromLastKeyframePresentingAtOrBefore(searchTime)
+            .build();
+
+    var decoded = TranscodeExecution.parseFrom(execution.toByteArray());
+    var decodedWithoutEnd = TranscodeExecution.parseFrom(withoutEnd.toByteArray());
+    var field = TranscodeExecution.getDescriptor().findFieldByName("video_end");
+
+    assertThat(decoded.getVideoEnd()).isEqualTo(videoEnd);
+    assertThat(decoded.getReadFromLastKeyframePresentingAtOrBefore()).isEqualTo(searchTime);
+    assertThat(decodedWithoutEnd.hasVideoEnd()).as("a job without the video's end").isFalse();
+    assertThat(field.getNumber()).isEqualTo(13);
+    assertThat(field.getMessageType()).isEqualTo(Duration.getDescriptor());
+  }
+
   @Test
   @DisplayName(
       "Should tell a first segment that opened late apart from a generic transcode failure when an"
