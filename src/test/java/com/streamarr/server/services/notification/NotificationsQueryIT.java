@@ -29,6 +29,7 @@ import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.identity.AccountAdministrationService;
 import com.streamarr.server.services.identity.AccountLifecycleService;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
+import com.streamarr.server.services.identity.ProfileAdministrationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
@@ -95,6 +96,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ProfileSharingService sharing;
   @Autowired private AccountAdministrationService accountAdministration;
+  @Autowired private ProfileAdministrationService profileAdministration;
   @Autowired private AccountLifecycleService accountLifecycle;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
@@ -770,13 +772,12 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
     return RecipientReference.account(identity.account().getId());
   }
 
+  /** Renames the Profile as its manager Sam does. */
   private void rename(Profile profile, String name) {
-    transactionTemplate.executeWithoutResult(
-        _ -> {
-          var renamed = profileRepository.findById(profile.getId()).orElseThrow();
-          renamed.setName(name);
-          profileRepository.saveAndFlush(renamed);
-        });
+    assertThat(
+            profileAdministration.renameProfile(
+                authTestSupport.identityOf(sam), profile.getId(), name))
+        .isInstanceOf(Outcome.Accepted.class);
   }
 
   private TestIdentity track(TestIdentity identity) {
