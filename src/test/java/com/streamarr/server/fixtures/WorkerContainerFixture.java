@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.testcontainers.Testcontainers;
@@ -23,6 +24,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.Transferable;
+import tools.jackson.databind.json.JsonMapper;
 
 @Slf4j
 public final class WorkerContainerFixture implements AutoCloseable {
@@ -218,16 +220,8 @@ public final class WorkerContainerFixture implements AutoCloseable {
   }
 
   public List<Double> packetTimestamps(Path media) throws Exception {
-    return packetTimestamps(media, "v");
-  }
-
-  public List<Double> audioPacketTimestamps(Path media) throws Exception {
-    return packetTimestamps(media, "a");
-  }
-
-  private List<Double> packetTimestamps(Path media, String streamSelector) throws Exception {
     var timestamps =
-        probePackets(media, streamSelector, List.of("-show_entries", "packet=pts_time")).stream()
+        probePackets(media, "v", List.of("-show_entries", "packet=pts_time")).stream()
             .filter(line -> !line.equals("N/A"))
             .map(line -> line.replace(",", ""))
             .map(Double::parseDouble)
@@ -267,6 +261,77 @@ public final class WorkerContainerFixture implements AutoCloseable {
         List.of("-show_entries", "packet=data_hash", "-show_data_hash", "sha256"));
   }
 
+  /**
+   * The codec of each stream of the media and each of its packets in file order, as the worker
+   * image's ffprobe reads them without decoding. A packet without a presentation time is left out.
+   */
+  public ProbedPackets probedPackets(Path media) throws Exception {
+    var probed =
+        JsonMapper.shared()
+            .readTree(
+                probeOutput(
+                    media,
+                    List.of(
+                        "-show_entries",
+                        "stream=codec_type,codec_name:packet=codec_type,pts_time,data_hash",
+                        "-show_data_hash",
+                        "sha256",
+                        "-of",
+                        "json")));
+    var streams =
+        probed
+            .path("streams")
+            .valueStream()
+            .map(
+                stream ->
+                    new ProbedStream(
+                        stream.path("codec_type").asString(), stream.path("codec_name").asString()))
+            .toList();
+    var packets =
+        probed
+            .path("packets")
+            .valueStream()
+            .filter(packet -> !packet.path("pts_time").asString("N/A").equals("N/A"))
+            .map(
+                packet ->
+                    new ProbedPacket(
+                        packet.path("codec_type").asString(),
+                        Double.parseDouble(packet.path("pts_time").asString()),
+                        packet.path("data_hash").asString()))
+            .toList();
+    assertThat(packets).isNotEmpty();
+    return new ProbedPackets(streams, packets);
+  }
+
+  /** A stream's media type as ffprobe names it, such as {@code video}, and its codec. */
+  public record ProbedStream(String mediaType, String codecName) {}
+
+  /** A packet's media type, presentation time in seconds and the SHA-256 hash of its data. */
+  public record ProbedPacket(String mediaType, double presentationSeconds, String dataHash) {}
+
+  /** The streams and packets that ffprobe reads of one file. */
+  public record ProbedPackets(List<ProbedStream> streams, List<ProbedPacket> packets) {
+
+    public List<String> codecsOf(String mediaType) {
+      return streams.stream()
+          .filter(stream -> stream.mediaType().equals(mediaType))
+          .map(ProbedStream::codecName)
+          .toList();
+    }
+
+    public List<Double> presentationTimesOf(String mediaType) {
+      return packetsOf(mediaType).map(ProbedPacket::presentationSeconds).toList();
+    }
+
+    public List<String> dataHashesOf(String mediaType) {
+      return packetsOf(mediaType).map(ProbedPacket::dataHash).toList();
+    }
+
+    private Stream<ProbedPacket> packetsOf(String mediaType) {
+      return packets.stream().filter(packet -> packet.mediaType().equals(mediaType));
+    }
+  }
+
   private List<String> probePackets(
       Path media, String streamSelector, List<String> inspectionArguments) throws Exception {
     return probe(media, streamSelector, inspectionArguments, "csv=p=0");
@@ -275,25 +340,28 @@ public final class WorkerContainerFixture implements AutoCloseable {
   private List<String> probe(
       Path media, String streamSelector, List<String> inspectionArguments, String outputFormat)
       throws Exception {
+    var arguments = new ArrayList<>(List.of("-select_streams", streamSelector));
+    arguments.addAll(inspectionArguments);
+    arguments.addAll(List.of("-of", outputFormat));
+    return probeOutput(media, arguments)
+        .lines()
+        .map(String::trim)
+        .filter(line -> !line.isEmpty())
+        .toList();
+  }
+
+  private String probeOutput(Path media, List<String> arguments) throws Exception {
     var input = "/tmp/inspect-" + UUID.randomUUID() + ".mp4";
     container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
     // A native output file excludes launcher diagnostics and avoids truncated Docker exec stdout.
-    var command =
-        new ArrayList<>(
-            List.of(
-                "/cnb/lifecycle/launcher",
-                "ffprobe",
-                "-v",
-                "error",
-                "-select_streams",
-                streamSelector));
-    command.addAll(inspectionArguments);
-    command.addAll(List.of("-of", outputFormat, "-o", input + ".pts", input));
+    var command = new ArrayList<>(List.of("/cnb/lifecycle/launcher", "ffprobe", "-v", "error"));
+    command.addAll(arguments);
+    command.addAll(List.of("-o", input + ".pts", input));
     var probe = container.execInContainer(command.toArray(String[]::new));
     assertThat(probe.getExitCode()).as(probe.getStderr()).isZero();
     var result = container.execInContainer("cat", input + ".pts");
     assertThat(result.getExitCode()).as(result.getStderr()).isZero();
-    return result.getStdout().lines().map(String::trim).filter(line -> !line.isEmpty()).toList();
+    return result.getStdout();
   }
 
   /**
