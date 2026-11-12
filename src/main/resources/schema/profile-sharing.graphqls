@@ -58,10 +58,10 @@ type ProfileShare {
     """
     Whether the requesting Account made this offer, told to every reader of the share at every
     status: true for the manager or ServerAdmin that offered the Profile. False for every other
-    reader, the Profile's other managers included, and for a share the system made. It names
-    nobody: only the readers of offeredByDisplayName learn who made an offer they did not make. The
-    Account that made an offer may withdraw it while it is PENDING; cancelProfileShare says who
-    else may.
+    reader, the Profile's other managers included, and for a share the system made. It tells the
+    reader only whether it made the offer itself; offeredByDisplayName names the Account that made
+    it, to that field's readers. The Account that made an offer may withdraw it while it is
+    PENDING; cancelProfileShare says who else may.
     """
     offeredByReader: Boolean!
     """
