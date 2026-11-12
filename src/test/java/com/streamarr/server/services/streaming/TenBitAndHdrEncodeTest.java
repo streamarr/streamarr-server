@@ -1047,16 +1047,19 @@ class TenBitAndHdrEncodeTest {
 
   // A PQ or HLG encode moves ahead for its range, not for its 10 bits: a codec family that a worker
   // encodes in hardware still comes before a 10-bit SDR encode of a software codec family (ADR 0009
-  // and decision 179). 720p forces an encode, because the client's HEVC entry plays the 1080p
-  // 10-bit SDR source as it is.
-  @Test
+  // and decision 179), whether the 10-bit encode is AV1 or HEVC Main 10. 720p forces an encode,
+  // because the client's HEVC entry plays the 1080p 10-bit SDR source as it is.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("hardware8BitSdrEncodersBesideASoftware10BitEncoderOfAnotherCodecFamily")
   @DisplayName(
       "Should encode a 10-bit SDR source to 8-bit SDR in the hardware encoder's codec family when"
           + " only a software encoder of another codec family writes 10 bits")
   void
-      shouldEncodeA10BitSdrSourceTo8BitSdrInTheHardwareCodecFamilyWhenOnlyASoftwareEncoderWrites10Bits() {
-    connectAHardwareWorkerBesideASoftwareHdrWorker(
-        HardwareSdrEncoder.OF_ANOTHER_CODEC_FAMILY.writing(Set.of()));
+      shouldEncodeA10BitSdrSourceTo8BitSdrInTheHardwareCodecFamilyWhenOnlyASoftwareEncoderWrites10Bits(
+          WorkerVerifiedEncoder hardware,
+          WorkerVerifiedEncoder software,
+          EncodeCodecProfile hardwareSdrProfile) {
+    connectAHardwareWorkerBesideASoftwareHdrWorker(hardware, software);
     probes.setDefaultProbe(
         hdrSource(rangeOf(CompatibleBase.SDR), Optional.empty(), Optional.empty()));
 
@@ -1065,9 +1068,24 @@ class TenBitAndHdrEncodeTest {
             playback.start(
                 start(options(VideoQuality.HIGH_720P, null), hdrAv1ClientWithSdrHevc())));
 
-    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.HEVC_MAIN);
+    assertThat(plannedEncode().codecProfile()).contains(hardwareSdrProfile);
     assertThatAn8BitSdrEncodePlays(encode);
     assertThat(workerOfTheStartedEncode()).contains(HARDWARE_WORKER);
+  }
+
+  static Stream<Arguments>
+      hardware8BitSdrEncodersBesideASoftware10BitEncoderOfAnotherCodecFamily() {
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "hardware HEVC beside software AV1",
+                hardwareEncoder("hevc", "hevc_nvenc", Set.of())),
+            svtAv1(EVERY_ENCODE_FEATURE),
+            EncodeCodecProfile.HEVC_MAIN),
+        Arguments.of(
+            Named.of("hardware AV1 beside software HEVC", hardwareAv1WithoutFeatures()),
+            encoder("hevc", "libx265", EVERY_ENCODE_FEATURE),
+            EncodeCodecProfile.AV1_MAIN));
   }
 
   // The codec family of the hardware encoder beside the software AV1 encoder that writes HDR: HEVC,
