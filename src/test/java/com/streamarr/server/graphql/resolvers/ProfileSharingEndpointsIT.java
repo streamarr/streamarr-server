@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,6 +21,7 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -705,6 +707,44 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         .containsExactly("ShareNotPendingError");
     assertThat(shareRepository.findById(shareId).orElseThrow().getStatus())
         .isIn(ProfileShareStatus.ACTIVE, ProfileShareStatus.REJECTED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer share-not-found to an unrelated Account whose acceptance waits while the"
+          + " Profile is deleted")
+  void shouldAnswerShareNotFoundToUnrelatedAccountWhoseAcceptanceWaitsWhileTheProfileIsDeleted()
+      throws Exception {
+    var orphan = managedOrphan();
+    var shareId = offer(orphan, host.household().getId());
+    var stranger = authTestSupport.createIdentity();
+    try {
+      var bearer = authTestSupport.accountBearer(stranger);
+
+      var response =
+          deleteWhileWaiting(
+              "profile",
+              orphan.getId(),
+              () ->
+                  graphql(
+                          bearer,
+                          """
+                          mutation { acceptProfileShare(input: {shareId: "%s"}) {
+                            share { status } userErrors { __typename } } }
+                          """
+                              .formatted(shareId))
+                      .andExpect(status().isOk())
+                      .andReturn()
+                      .getResponse()
+                      .getContentAsString());
+
+      // It may not read the share, so it gets the answer a share that never existed gets.
+      assertThat(mutationResult(response, "acceptProfileShare").errorType())
+          .as("acceptance in %s", response)
+          .isEqualTo("ShareNotFoundError");
+    } finally {
+      authTestSupport.deleteIdentity(stranger);
+    }
   }
 
   @Test
@@ -1416,6 +1456,48 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           .as("share row should be released by the race")
           .isTrue();
       connection.rollback();
+    }
+  }
+
+  /**
+   * Runs the mutation while this test holds the lock of one row of the table, then deletes the row
+   * under that lock and commits, so the mutation wakes to find it gone.
+   */
+  private String deleteWhileWaiting(String table, UUID rowId, Callable<String> mutation)
+      throws Exception {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      try (var lock =
+          connection.prepareStatement(
+              "SELECT id FROM %s WHERE id = ? FOR UPDATE".formatted(table))) {
+        lock.setObject(1, rowId);
+        try (var rows = lock.executeQuery()) {
+          assertThat(rows.next()).as("%s row %s exists", table, rowId).isTrue();
+        }
+      }
+
+      var holderPid = backendPid(connection);
+      var waiting = executor.submit(mutation);
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(
+              () ->
+                  assertThat(waitersBehind(jdbcTemplate, holderPid, "%"))
+                      .as("the mutation should wait on the %s row", table)
+                      .isEqualTo(1));
+      try (var actor =
+              connection.prepareStatement("SELECT set_config('streamarr.actor_id', ?, true)");
+          var deletion =
+              connection.prepareStatement("DELETE FROM %s WHERE id = ?".formatted(table))) {
+        actor.setString(1, SystemActor.ID.toString());
+        actor.execute();
+        deletion.setObject(1, rowId);
+        assertThat(deletion.executeUpdate()).isEqualTo(1);
+      }
+
+      connection.commit();
+      return waiting.get(10, TimeUnit.SECONDS);
     }
   }
 
