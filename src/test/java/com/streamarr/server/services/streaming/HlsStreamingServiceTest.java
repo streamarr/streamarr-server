@@ -7974,6 +7974,24 @@ class HlsStreamingServiceTest {
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("autoCopiesWithoutLowerVariants")
+  @DisplayName(
+      "Should name the upload budget as the reason when it turns an Auto copy without lower"
+          + " variants into an encode")
+  void shouldNameTheUploadBudgetAsTheReasonWhenItTurnsAnAutoCopyWithoutLowerVariantsIntoAnEncode(
+      LoneCopy lone) {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, less than this
+    // copy's 5 Mb/s average.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session = createLoneCopySession(lone, VideoQuality.AUTO);
+
+    assertThat(session.getTranscodeDecision().reasons())
+        .containsExactly(DecisionReason.BITRATE_ABOVE_UPLOAD_BUDGET);
+  }
+
   // The budget's encode keeps the copy's PQ when the client plays an HDR encode that a worker's
   // encoder writes. The Dolby Vision copy stays alone beside an H.265 encoder that writes PQ,
   // because no encode writes Dolby Vision, and the HDR10 H.265 copy stays alone beside an AV1

@@ -941,8 +941,8 @@ class LowerVariantsInTheCopysRangeTest {
     assertThat(replacement.getSessionId()).isNotEqualTo(replacedId);
     assertThat(afterTheFailure.formatAttemptCount()).isEqualTo(1);
     assertThat(afterTheFailure.decisions().getLast().reasons())
-        .first()
-        .isEqualTo(DecisionReason.LOWER_VARIANT_FAILED);
+        .containsExactly(
+            DecisionReason.LOWER_VARIANT_FAILED, DecisionReason.BITRATE_ABOVE_UPLOAD_BUDGET);
     assertThat(replacement.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
     assertThat(streamInfEntries(afterTheFailure))
         .isNotEmpty()
@@ -974,8 +974,7 @@ class LowerVariantsInTheCopysRangeTest {
     assertThatTheCopyPlaysAlone(afterTheFailure);
     assertThat(afterTheFailure.formatAttemptCount()).isEqualTo(1);
     assertThat(afterTheFailure.decisions().getLast().reasons())
-        .first()
-        .isEqualTo(DecisionReason.LOWER_VARIANT_FAILED);
+        .containsExactly(DecisionReason.LOWER_VARIANT_FAILED);
     assertThat(workers.isRunning(copyAlone.getSessionId(), StreamSession.defaultVariant()))
         .isTrue();
   }

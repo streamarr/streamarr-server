@@ -23,7 +23,10 @@ import lombok.NonNull;
  * before its own reasons. {@code softwareEncodeCodecFamily} names the only codec family that the
  * decision may encode, with the software encoder, after a hardware encoder failed (ADR 0044).
  * {@code lowerVariantsWithdrawn} lists a copy alone, without the encoded lower variants that Auto
- * lists beside it, after one of them failed (ADR 0050).
+ * lists beside it, after one of them failed (ADR 0050). {@code copyAboveUploadBudget} marks an
+ * encode-only request that replaces an Auto copy without lower variants whose average exceeds the
+ * upload budget's remaining share, so the decision names the budget as the reason that it does not
+ * copy (ADR 0050).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecisionRequest(
@@ -41,7 +44,8 @@ public record TranscodeDecisionRequest(
     @NonNull List<WorkerVerifiedEncoder> verifiedVideoEncoders,
     @NonNull List<DecisionReason> directPlayRefusals,
     @NonNull Optional<String> softwareEncodeCodecFamily,
-    boolean lowerVariantsWithdrawn) {
+    boolean lowerVariantsWithdrawn,
+    boolean copyAboveUploadBudget) {
 
   public TranscodeDecisionRequest {
     // A codec family that a worker with a free slot encodes has a worker-verified encoder.
@@ -90,7 +94,8 @@ public record TranscodeDecisionRequest(
           verifiedVideoEncoders,
           directPlayRefusals,
           softwareEncodeCodecFamily,
-          lowerVariantsWithdrawn);
+          lowerVariantsWithdrawn,
+          copyAboveUploadBudget);
     }
   }
 }
