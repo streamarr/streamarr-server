@@ -109,12 +109,12 @@ public class ProfileShareLifecycle {
 
   /** Announces every share of the Profile, which the database deletes with the Profile. */
   public void announceDeletionWithProfile(UUID profileId) {
-    shareRepository.findByProfileId(profileId).forEach(this::announceAsStored);
+    shareRepository.findByProfileId(profileId).forEach(this::announceRemoval);
   }
 
   /** Announces every share into the Household, which the database deletes with the Household. */
   public void announceDeletionWithHousehold(UUID householdId) {
-    shareRepository.findByHouseholdId(householdId).forEach(this::announceAsStored);
+    shareRepository.findByHouseholdId(householdId).forEach(this::announceRemoval);
   }
 
   /**
@@ -143,11 +143,16 @@ public class ProfileShareLifecycle {
     events.publishEvent(new ProfileShareChangedEvent(changed, true));
   }
 
-  // An offer past its expiry that the sweep has not reached is still stored pending, so it is
-  // announced as live and its Household hears this change as the one that tells it the offer is
-  // over.
   private void announceAsStored(ProfileHouseholdShare share) {
     events.publishEvent(
         new ProfileShareChangedEvent(ChangedShare.of(share), share.getStatus().isLive()));
+  }
+
+  // An offer past its expiry that the sweep has not reached is still stored pending, so it is
+  // announced as live and its Household hears its removal as the change that tells it the offer is
+  // over.
+  private void announceRemoval(ProfileHouseholdShare share) {
+    events.publishEvent(
+        new ProfileShareChangedEvent(ChangedShare.of(share), share.getStatus().isLive(), true));
   }
 }

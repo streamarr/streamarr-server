@@ -881,6 +881,47 @@ class ProfileSharingServiceTest {
 
   @Test
   @DisplayName(
+      "Should give nothing to the Household's HouseholdAdmin when a change that waited is delivered"
+          + " after its share ended and was deleted")
+  void shouldGiveNothingToHouseholdAdminWhenWaitingChangeArrivesAfterShareWasDeleted() {
+    var share = activeShare();
+    var accepted = changeOf(share);
+    share.setStatus(ProfileShareStatus.ENDED);
+    shares.deleteById(share.getId());
+    followChangesAndAdministerHouseholdOnly();
+
+    assertThat(service.shareChange(identity(), accepted)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should give nothing to the Household's HouseholdAdmin when a change that waited is delivered"
+          + " after its share ended")
+  void shouldGiveNothingToHouseholdAdminWhenWaitingChangeArrivesAfterShareEnded() {
+    var share = pendingShare();
+    var offered = changeOf(share);
+    share.setStatus(ProfileShareStatus.CANCELED);
+    followChangesAndAdministerHouseholdOnly();
+
+    assertThat(service.shareChange(identity(), offered)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should give the removal to the Household's HouseholdAdmin when its share is deleted while"
+          + " live")
+  void shouldGiveRemovalToHouseholdAdminWhenItsShareIsDeletedWhileLive() {
+    var share = activeShare();
+    var removal = removalOf(share);
+    shares.deleteById(share.getId());
+    followChangesAndAdministerHouseholdOnly();
+
+    assertThat(service.shareChange(identity(), removal))
+        .hasValueSatisfying(change -> assertThat(change.share()).isEmpty());
+  }
+
+  @Test
+  @DisplayName(
       "Should give the share as it stands with the change that ends it when the reader also reads"
           + " it from the Profile's side or the Household's share history")
   void shouldGiveShareAsItStandsWithChangeThatEndsItWhenReaderAlsoReadsItFromProfileOrHistory() {
@@ -1078,6 +1119,22 @@ class ProfileSharingServiceTest {
   /** A change of a share that was already over, such as its deletion with its Profile. */
   private static ProfileShareChangedEvent laterChangeOf(ProfileHouseholdShare share) {
     return new ProfileShareChangedEvent(ChangedShare.of(share), false);
+  }
+
+  /** The deletion of a share that is pending or active, with its Profile or its Household. */
+  private static ProfileShareChangedEvent removalOf(ProfileHouseholdShare share) {
+    return new ProfileShareChangedEvent(ChangedShare.of(share), true, true);
+  }
+
+  private void followChangesAndAdministerHouseholdOnly() {
+    authorization.decideUnitWith(
+        intent ->
+            switch (intent) {
+              case Intent.ViewProfileShareChanges _ -> allowed();
+              case Intent.ViewHouseholdAdministration(var id) when id.equals(household.getId()) ->
+                  allowed();
+              default -> denied();
+            });
   }
 
   private ProfileHouseholdShare declinedShare() {

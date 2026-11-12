@@ -585,19 +585,21 @@ public class ProfileSharingService {
    * stands now, or no share once the share was deleted. The Household's HouseholdAdmins get the
    * changes of a live share and none after it ends. The change that ends it reaches them as it was
    * made, with nothing read later, unless they also read the share from the Profile's side or the
-   * Household's share history, as a ServerAdmin does, and get every change as it stands. A share
-   * deleted with its Profile is decided by its Household alone. Refuses a reader who may no longer
-   * follow share changes at all.
+   * Household's share history, as a ServerAdmin does, and get every change as it stands. An earlier
+   * change delivered once the share is over or deleted does not reach them; the deletion of a live
+   * share does, as the share's removal. A share deleted with its Profile is decided by its
+   * Household alone. Refuses a reader who may no longer follow share changes at all.
    */
   public Optional<ShareChange> shareChange(
       AuthenticatedIdentity identity, ProfileShareChangedEvent change) {
     requireViewProfileShareChanges(identity);
     var changed = change.share();
     if (householdSideFollows(identity, change)) {
-      return Optional.of(
+      var shown =
           change.ended() && !followsEveryChange(identity, changed)
               ? ShareChange.endedAs(changed)
-              : asItStands(changed));
+              : asItStands(changed);
+      return Optional.of(shown).filter(_ -> stillShown(identity, change, shown));
     }
 
     if (mayViewProfileShares(identity, changed.profileId())) {
@@ -605,6 +607,16 @@ public class ProfileSharingService {
     }
 
     return Optional.empty();
+  }
+
+  // A change that waited while its share ended or was deleted would show the Household's
+  // HouseholdAdmins what came after; then only the change that ended or removed the share does.
+  private boolean stillShown(
+      AuthenticatedIdentity identity, ProfileShareChangedEvent change, ShareChange shown) {
+    return change.ended()
+        || change.removal()
+        || shown.share().filter(share -> share.statusAt(clock.instant()).isLive()).isPresent()
+        || followsEveryChange(identity, change.share());
   }
 
   private boolean followsEveryChange(AuthenticatedIdentity identity, ChangedShare changed) {
