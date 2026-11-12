@@ -13,7 +13,21 @@ public record SubjectReference(@NonNull String type, @NonNull UUID id) {
   /** One Profile share, from the pending offer to the ended share. */
   public static final String PROFILE_SHARE = "PROFILE_SHARE";
 
+  /** One Profile. */
+  public static final String PROFILE = "PROFILE";
+
+  /** One ProfileManager invitation. */
+  public static final String PROFILE_MANAGER_INVITATION = "PROFILE_MANAGER_INVITATION";
+
   public static SubjectReference profileShare(UUID shareId) {
     return new SubjectReference(PROFILE_SHARE, shareId);
+  }
+
+  public static SubjectReference profile(UUID profileId) {
+    return new SubjectReference(PROFILE, profileId);
+  }
+
+  public static SubjectReference profileManagerInvitation(UUID invitationId) {
+    return new SubjectReference(PROFILE_MANAGER_INVITATION, invitationId);
   }
 }

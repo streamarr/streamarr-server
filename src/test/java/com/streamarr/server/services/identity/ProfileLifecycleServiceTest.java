@@ -88,6 +88,7 @@ class ProfileLifecycleServiceTest {
           accountInvitations,
           shares,
           new ProfileShareLifecycle(shares, shareEvents),
+          new NotificationDismissals(managerInvitations, shareEvents),
           sessions,
           audit,
           new MutationTransactions(
