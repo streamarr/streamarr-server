@@ -1,6 +1,7 @@
 package com.streamarr.server.services.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.domain.auth.Household;
@@ -8,6 +9,7 @@ import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -185,6 +187,19 @@ class ProfileLockPreviewServiceTest {
             service.policyChangePreview(
                 reader, sam.getId(), new ProfilePolicyTarget(ProfileKind.KID, 10)))
         .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should surface authorization unavailable when the preview cannot decide the change")
+  void shouldSurfaceAuthorizationUnavailableWhenThePreviewCannotDecideTheChange() {
+    var sam = available(ProfileFixture.defaultProfileBuilder().name("Sam"));
+    available(ProfileFixture.defaultProfileBuilder().name("Mara"));
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var target = new ProfilePolicyTarget(ProfileKind.KID, 10);
+    var samId = sam.getId();
+
+    assertThatThrownBy(() -> service.policyChangePreview(reader, samId, target))
+        .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
   @Test
