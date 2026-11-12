@@ -1,4 +1,4 @@
-package com.streamarr.server.services.notification;
+package com.streamarr.server.support;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,7 +14,6 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.ShareCodeCommand;
-import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import java.time.Instant;
 import lombok.Builder;
@@ -22,13 +21,13 @@ import lombok.NonNull;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The share writes and the parties that the Notification tests arrange: offers and answers go
- * through the sharing service, as a person makes them, so each makes its Notifications.
+ * The share writes and the parties that the sharing and Notification tests arrange: offers and
+ * answers go through the sharing service, as a person makes them, so each makes its Notifications.
  */
 @Builder
-final class ShareSteps {
+public final class ShareSteps {
 
-  static final String IP_ADDRESS = "203.0.113.7";
+  public static final String IP_ADDRESS = "203.0.113.7";
 
   @NonNull private final ProfileSharingService sharing;
   @NonNull private final AuthTestSupport auth;
@@ -38,7 +37,7 @@ final class ShareSteps {
   @NonNull private final UserAccountRepository accounts;
   @NonNull private final TransactionTemplate transactions;
 
-  ProfileHouseholdShare offer(TestIdentity offerer, Profile profile, TestIdentity target) {
+  public ProfileHouseholdShare offer(TestIdentity offerer, Profile profile, TestIdentity target) {
     var code = auth.shareCodeFor(target);
     return sharing
         .offerProfileShare(
@@ -52,7 +51,7 @@ final class ShareSteps {
             });
   }
 
-  ProfileHouseholdShare accept(TestIdentity answerer, ProfileHouseholdShare offer) {
+  public ProfileHouseholdShare accept(TestIdentity answerer, ProfileHouseholdShare offer) {
     return sharing
         .acceptProfileShare(auth.identityOf(answerer), offer.getId())
         .fold(
@@ -63,7 +62,7 @@ final class ShareSteps {
   }
 
   /** Moves the offer's expiry into the past, as if its time ran out. */
-  void lapse(ProfileHouseholdShare offer) {
+  public void lapse(ProfileHouseholdShare offer) {
     transactions.executeWithoutResult(
         _ -> {
           var lapsed = shares.findById(offer.getId()).orElseThrow();
@@ -73,7 +72,8 @@ final class ShareSteps {
   }
 
   /** A Profile of the member's Household, available there, with the given direct managers. */
-  Profile profileManagedBy(String name, TestIdentity member, TestIdentity... directManagers) {
+  public Profile profileManagedBy(
+      String name, TestIdentity member, TestIdentity... directManagers) {
     return transactions.execute(
         _ -> {
           var profile =
@@ -101,7 +101,7 @@ final class ShareSteps {
   }
 
   /** The member, promoted to HouseholdAdmin of its Household. */
-  TestIdentity promoted(TestIdentity member) {
+  public TestIdentity promoted(TestIdentity member) {
     transactions.executeWithoutResult(
         _ -> accounts.tryPromoteToHouseholdAdmin(member.account().getId()));
     var promoted = accounts.findById(member.account().getId()).orElseThrow();

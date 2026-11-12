@@ -31,6 +31,8 @@ import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.ShareRejections;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.ProfileConnections;
+import com.streamarr.server.support.ShareSteps;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
