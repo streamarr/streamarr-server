@@ -20,6 +20,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -269,6 +270,21 @@ class LocalSegmentStoreTest {
 
     assertThat(store.segmentExists(sessionId, segmentName)).isTrue();
     assertThat(StoredSegments.bytes(store, sessionId, segmentName)).isEqualTo(segmentData);
+  }
+
+  @Test
+  @DisplayName(
+      "Should let only the server's user read and write a published segment when the volume has"
+          + " POSIX permissions")
+  void shouldLetOnlyServersUserReadAndWritePublishedSegmentWhenVolumeHasPosixPermissions()
+      throws IOException {
+    var sessionId = UUID.randomUUID();
+
+    store.storeSegment(sessionId, "segment0.m4s", "moof mdat".getBytes());
+
+    var published = tempDir.resolve(sessionId.toString()).resolve("segment0.m4s");
+    assertThat(Files.getPosixFilePermissions(published))
+        .containsExactlyInAnyOrder(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
   }
 
   @Test
