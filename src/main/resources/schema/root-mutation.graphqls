@@ -138,7 +138,9 @@ type Mutation {
     uses setLanguagePreferences. A caller who may read profileAdministration of the Profile only as a
     HouseholdAdmin where it is available, whether it supervises or hosts the Profile, gets
     ProfileManagersOnlyError; a ServerAdmin that does not manage it gets FORBIDDEN; everyone else, a
-    device-bound session included, gets ProfileNotFoundError.
+    device-bound session included, gets ProfileNotFoundError. Each of them gets that answer whatever
+    audio languages it sends: TooManyAudioLanguagesError and RepeatedAudioLanguageError go only to a
+    manager.
     """
     setProfileLanguagePreferences(input: SetProfileLanguagePreferencesInput!): SetProfileLanguagePreferencesPayload
     """
