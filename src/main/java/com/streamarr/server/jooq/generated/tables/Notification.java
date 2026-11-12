@@ -11,6 +11,7 @@ import com.streamarr.server.jooq.generated.enums.NotificationForm;
 import com.streamarr.server.jooq.generated.enums.NotificationKind;
 import com.streamarr.server.jooq.generated.enums.ProfileShareAnswer;
 import com.streamarr.server.jooq.generated.enums.ProfileShareEndedBy;
+import com.streamarr.server.jooq.generated.enums.ProfileShareSide;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
 
@@ -136,6 +137,11 @@ public class Notification extends TableImpl<NotificationRecord> {
      */
     public final TableField<NotificationRecord, OffsetDateTime> READ_AT = createField(DSL.name("read_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
 
+    /**
+     * The column <code>public.notification.addressed_to</code>.
+     */
+    public final TableField<NotificationRecord, ProfileShareSide> ADDRESSED_TO = createField(DSL.name("addressed_to"), SQLDataType.VARCHAR.nullable(false).asEnumDataType(ProfileShareSide.class), this, "");
+
     private Notification(Name alias, Table<NotificationRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -234,6 +240,7 @@ public class Notification extends TableImpl<NotificationRecord> {
     @Override
     public List<Check<NotificationRecord>> getChecks() {
         return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_notification_addressed_to"), "((((kind <> 'PROFILE_SHARE_OFFERED'::notification_kind) OR (addressed_to = 'HOUSEHOLD_SIDE'::profile_share_side)) AND ((kind <> 'PROFILE_SHARE_ANSWERED'::notification_kind) OR (addressed_to = 'OFFERING_SIDE'::profile_share_side))))", true),
             Internal.createCheck(this, DSL.name("chk_notification_form"), "(((kind = 'PROFILE_SHARE_OFFERED'::notification_kind) = (form = 'REQUEST'::notification_form)))", true),
             Internal.createCheck(this, DSL.name("chk_notification_share_answer"), "(((kind = 'PROFILE_SHARE_ANSWERED'::notification_kind) = (share_answer IS NOT NULL)))", true),
             Internal.createCheck(this, DSL.name("chk_notification_share_ended_by"), "(((kind = 'PROFILE_SHARE_ENDED'::notification_kind) = (share_ended_by IS NOT NULL)))", true)

@@ -6,13 +6,16 @@ import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
+import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.domain.notification.ShareSides;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.notification.events.NotificationsReadEvent;
 import com.streamarr.server.services.notification.events.ReadNotification;
 import java.time.Clock;
+import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -147,24 +150,38 @@ class ProfileShareNotifications {
       NotificationEvent.NotificationEventBuilder<NotificationKind, ProfileShareFacts> end,
       ShareSides sides,
       ProfileShareEndedBy endedBy) {
-    writer.tell(
-        end.kind(NotificationKind.PROFILE_SHARE_ENDED)
-            .facts(ProfileShareFacts.ended(sides.profileName(), endedBy))
-            .recipients(toldOfEnd(sides, endedBy))
-            .build());
+    var ended = end.kind(NotificationKind.PROFILE_SHARE_ENDED);
+    toldOfEnd(sides, endedBy)
+        .forEach(
+            (side, recipients) ->
+                writer.tell(
+                    ended
+                        .facts(ProfileShareFacts.ended(sides.profileName(), endedBy, side))
+                        .recipients(recipients)
+                        .build()));
   }
 
-  /** The side that did not end the share, or both sides when the server ended it. */
-  private static Set<UUID> toldOfEnd(ShareSides sides, ProfileShareEndedBy endedBy) {
+  /**
+   * Each side told of the end, with its recipients: the side that did not end the share, or both
+   * sides when the server ended it. An Account on both sides is then told once, as the Household's
+   * side, the side for which such an Account ends a share.
+   */
+  private static Map<ProfileShareSide, Set<UUID>> toldOfEnd(
+      ShareSides sides, ProfileShareEndedBy endedBy) {
     return switch (endedBy) {
-      case HOUSEHOLD_SIDE -> sides.offeringSide();
-      case OFFERING_SIDE -> sides.householdSide();
-      case SERVER -> {
-        var bothSides = new HashSet<>(sides.offeringSide());
-        bothSides.addAll(sides.householdSide());
-        yield bothSides;
-      }
+      case HOUSEHOLD_SIDE -> Map.of(ProfileShareSide.OFFERING_SIDE, sides.offeringSide());
+      case OFFERING_SIDE -> Map.of(ProfileShareSide.HOUSEHOLD_SIDE, sides.householdSide());
+      case SERVER -> bothSides(sides);
     };
+  }
+
+  private static Map<ProfileShareSide, Set<UUID>> bothSides(ShareSides sides) {
+    var offeringSideAlone = new HashSet<>(sides.offeringSide());
+    offeringSideAlone.removeAll(sides.householdSide());
+    var told = new EnumMap<ProfileShareSide, Set<UUID>>(ProfileShareSide.class);
+    told.put(ProfileShareSide.HOUSEHOLD_SIDE, sides.householdSide());
+    told.put(ProfileShareSide.OFFERING_SIDE, offeringSideAlone);
+    return told;
   }
 
   private NotificationEvent.NotificationEventBuilder<NotificationKind, ProfileShareFacts> about(

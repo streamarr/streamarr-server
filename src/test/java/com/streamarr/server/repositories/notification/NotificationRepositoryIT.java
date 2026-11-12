@@ -17,6 +17,7 @@ import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
+import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.domain.notification.UnreadNews;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -155,7 +156,11 @@ class NotificationRepositoryIT extends AbstractIntegrationTest {
         upsert(
             draft(sam, share)
                 .kind(NotificationKind.PROFILE_SHARE_ENDED)
-                .facts(ProfileShareFacts.ended("Ollie", ProfileShareEndedBy.HOUSEHOLD_SIDE))
+                .facts(
+                    ProfileShareFacts.ended(
+                        "Ollie",
+                        ProfileShareEndedBy.HOUSEHOLD_SIDE,
+                        ProfileShareSide.OFFERING_SIDE))
                 .at(EVENT.plusSeconds(60))
                 .build());
 
@@ -163,6 +168,38 @@ class NotificationRepositoryIT extends AbstractIntegrationTest {
     assertThat(notificationsOf(sam))
         .extracting(Notification::getId)
         .containsExactlyInAnyOrder(answer.notificationId(), end.notificationId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the side the news was addressed to when a later event of its kind updates it in"
+          + " place")
+  void shouldKeepTheSideTheNewsWasAddressedToWhenALaterEventOfItsKindUpdatesItInPlace() {
+    var share = offerOf(managedProfile("Ollie"), sam);
+    var made = upsert(endedAs(ProfileShareSide.HOUSEHOLD_SIDE, sam, share).at(EVENT).build());
+
+    var moved =
+        upsert(
+            endedAs(ProfileShareSide.OFFERING_SIDE, sam, share).at(EVENT.plusSeconds(60)).build());
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            notificationRepository.replaceFacts(
+                made.notificationId(),
+                ProfileShareFacts.ended(
+                    "Ollie Rose", ProfileShareEndedBy.SERVER, ProfileShareSide.OFFERING_SIDE)));
+
+    assertThat(moved)
+        .isEqualTo(
+            new UnreadNews.Moved<>(
+                made.notificationId(),
+                ProfileShareFacts.ended(
+                    "Ollie", ProfileShareEndedBy.SERVER, ProfileShareSide.HOUSEHOLD_SIDE)));
+    assertThat(notificationsOf(sam))
+        .singleElement()
+        .extracting(Notification::getFacts)
+        .isEqualTo(
+            ProfileShareFacts.ended(
+                "Ollie Rose", ProfileShareEndedBy.SERVER, ProfileShareSide.HOUSEHOLD_SIDE));
   }
 
   @Test
@@ -440,6 +477,16 @@ class NotificationRepositoryIT extends AbstractIntegrationTest {
     return draft(recipient, share)
         .kind(NotificationKind.PROFILE_SHARE_ANSWERED)
         .facts(ProfileShareFacts.answered("Ollie", ProfileShareAnswer.ACCEPTED));
+  }
+
+  private static NotificationDraft.NotificationDraftBuilder<NotificationKind, ProfileShareFacts>
+      endedAs(
+          ProfileShareSide side,
+          AuthTestSupport.TestIdentity recipient,
+          ProfileHouseholdShare share) {
+    return draft(recipient, share)
+        .kind(NotificationKind.PROFILE_SHARE_ENDED)
+        .facts(ProfileShareFacts.ended("Ollie", ProfileShareEndedBy.SERVER, side));
   }
 
   /** A Profile Sam alone manages, available in Sam's Household. */

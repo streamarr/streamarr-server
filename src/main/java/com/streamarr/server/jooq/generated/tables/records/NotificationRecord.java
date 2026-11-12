@@ -8,6 +8,7 @@ import com.streamarr.server.jooq.generated.enums.NotificationForm;
 import com.streamarr.server.jooq.generated.enums.NotificationKind;
 import com.streamarr.server.jooq.generated.enums.ProfileShareAnswer;
 import com.streamarr.server.jooq.generated.enums.ProfileShareEndedBy;
+import com.streamarr.server.jooq.generated.enums.ProfileShareSide;
 import com.streamarr.server.jooq.generated.tables.Notification;
 
 import java.time.OffsetDateTime;
@@ -221,6 +222,20 @@ public class NotificationRecord extends UpdatableRecordImpl<NotificationRecord> 
         return (OffsetDateTime) get(13);
     }
 
+    /**
+     * Setter for <code>public.notification.addressed_to</code>.
+     */
+    public void setAddressedTo(ProfileShareSide value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for <code>public.notification.addressed_to</code>.
+     */
+    public ProfileShareSide getAddressedTo() {
+        return (ProfileShareSide) get(14);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -244,7 +259,7 @@ public class NotificationRecord extends UpdatableRecordImpl<NotificationRecord> 
     /**
      * Create a detached, initialised NotificationRecord
      */
-    public NotificationRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID recipientAccountId, NotificationKind kind, NotificationForm form, UUID shareId, String profileName, ProfileShareAnswer shareAnswer, ProfileShareEndedBy shareEndedBy, OffsetDateTime latestEventAt, OffsetDateTime readAt) {
+    public NotificationRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID recipientAccountId, NotificationKind kind, NotificationForm form, UUID shareId, String profileName, ProfileShareAnswer shareAnswer, ProfileShareEndedBy shareEndedBy, OffsetDateTime latestEventAt, OffsetDateTime readAt, ProfileShareSide addressedTo) {
         super(Notification.NOTIFICATION);
 
         setId(id);
@@ -261,6 +276,7 @@ public class NotificationRecord extends UpdatableRecordImpl<NotificationRecord> 
         setShareEndedBy(shareEndedBy);
         setLatestEventAt(latestEventAt);
         setReadAt(readAt);
+        setAddressedTo(addressedTo);
         resetTouchedOnNotNull();
     }
 }

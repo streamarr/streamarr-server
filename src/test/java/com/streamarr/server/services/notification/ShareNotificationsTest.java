@@ -7,6 +7,7 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.domain.notification.NotificationForm;
 import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -57,6 +58,7 @@ class ShareNotificationsTest {
         .form(NotificationForm.NEWS)
         .shareId(share.getId())
         .profileName("Kai")
+        .addressedTo(ProfileShareSide.OFFERING_SIDE)
         .latestEventAt(Instant.now())
         .build();
   }

@@ -62,12 +62,20 @@ public class Notification extends BaseAuditableEntity<Notification> {
   @Getter(AccessLevel.NONE)
   private Instant readAt;
 
+  @Getter(AccessLevel.NONE)
+  @Enumerated(EnumType.STRING)
+  @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+  private ProfileShareSide addressedTo;
+
   public Optional<Instant> getReadAt() {
     return Optional.ofNullable(readAt);
   }
 
   public ProfileShareFacts getFacts() {
     return new ProfileShareFacts(
-        profileName, Optional.ofNullable(shareAnswer), Optional.ofNullable(shareEndedBy));
+        profileName,
+        Optional.ofNullable(shareAnswer),
+        Optional.ofNullable(shareEndedBy),
+        addressedTo);
   }
 }

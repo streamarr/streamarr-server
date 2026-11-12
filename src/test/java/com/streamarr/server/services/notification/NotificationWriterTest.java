@@ -6,6 +6,7 @@ import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
+import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.InMemoryNotificationStore;
 import com.streamarr.server.services.notification.events.NotificationsWrittenEvent;
@@ -86,6 +87,23 @@ class NotificationWriterTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep the side the news was addressed to when its kind is told again to another side")
+  void shouldKeepTheSideTheNewsWasAddressedToWhenItsKindIsToldAgainToAnotherSide() {
+    writer.tell(endedAs(ProfileShareSide.HOUSEHOLD_SIDE, "Ollie").build());
+
+    writer.tell(
+        endedAs(ProfileShareSide.OFFERING_SIDE, "Ollie Rose").at(NOW.plusSeconds(60)).build());
+
+    assertThat(store.rowsOf(SAM))
+        .singleElement()
+        .extracting(InMemoryNotificationStore.Stored::facts)
+        .isEqualTo(
+            ProfileShareFacts.ended(
+                "Ollie Rose", ProfileShareEndedBy.SERVER, ProfileShareSide.HOUSEHOLD_SIDE));
+  }
+
+  @Test
   @DisplayName("Should make new news when the recipient read the earlier news of the kind")
   void shouldMakeNewNewsWhenTheRecipientReadTheEarlierNewsOfTheKind() {
     var read = writer.tell(answered("Ollie").build()).getFirst();
@@ -104,7 +122,9 @@ class NotificationWriterTest {
     writer.tell(
         event()
             .kind(NotificationKind.PROFILE_SHARE_ENDED)
-            .facts(ProfileShareFacts.ended("Ollie", ProfileShareEndedBy.HOUSEHOLD_SIDE))
+            .facts(
+                ProfileShareFacts.ended(
+                    "Ollie", ProfileShareEndedBy.HOUSEHOLD_SIDE, ProfileShareSide.OFFERING_SIDE))
             .recipients(Set.of(SAM))
             .at(NOW.plusSeconds(60))
             .build());
@@ -168,6 +188,14 @@ class NotificationWriterTest {
     return event()
         .kind(NotificationKind.PROFILE_SHARE_ANSWERED)
         .facts(ProfileShareFacts.answered(profileName, ProfileShareAnswer.ACCEPTED))
+        .recipients(Set.of(SAM));
+  }
+
+  private static NotificationEvent.NotificationEventBuilder<NotificationKind, ProfileShareFacts>
+      endedAs(ProfileShareSide side, String profileName) {
+    return event()
+        .kind(NotificationKind.PROFILE_SHARE_ENDED)
+        .facts(ProfileShareFacts.ended(profileName, ProfileShareEndedBy.SERVER, side))
         .recipients(Set.of(SAM));
   }
 }

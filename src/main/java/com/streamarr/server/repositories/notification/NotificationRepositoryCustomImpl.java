@@ -25,6 +25,7 @@ import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.enums.NotificationForm;
 import com.streamarr.server.jooq.generated.enums.ProfileShareAnswer;
 import com.streamarr.server.jooq.generated.enums.ProfileShareEndedBy;
+import com.streamarr.server.jooq.generated.enums.ProfileShareSide;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
@@ -171,10 +172,11 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
                 NOTIFICATION.PROFILE_NAME,
                 NOTIFICATION.SHARE_ANSWER,
                 NOTIFICATION.SHARE_ENDED_BY,
+                NOTIFICATION.ADDRESSED_TO,
                 INSERTED)
             .fetchSingle();
     var notificationId = stored.value1();
-    if (Boolean.TRUE.equals(stored.value5())) {
+    if (Boolean.TRUE.equals(stored.value6())) {
       return new UnreadNews.Made<>(notificationId);
     }
 
@@ -183,7 +185,8 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
         new ProfileShareFacts(
             stored.value2(),
             Optional.ofNullable(stored.value3()).map(NotificationRepositoryCustomImpl::answerOf),
-            Optional.ofNullable(stored.value4()).map(NotificationRepositoryCustomImpl::endedByOf)));
+            Optional.ofNullable(stored.value4()).map(NotificationRepositoryCustomImpl::endedByOf),
+            addressedToOf(stored.value5())));
   }
 
   @Override
@@ -376,7 +379,8 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
         .set(NOTIFICATION.PROFILE_NAME, facts.profileName())
         .set(NOTIFICATION.SHARE_ANSWER, answer(facts))
         .set(NOTIFICATION.SHARE_ENDED_BY, endedBy(facts))
-        .set(NOTIFICATION.LATEST_EVENT_AT, draft.at().atOffset(ZoneOffset.UTC));
+        .set(NOTIFICATION.LATEST_EVENT_AT, draft.at().atOffset(ZoneOffset.UTC))
+        .set(NOTIFICATION.ADDRESSED_TO, ProfileShareSide.valueOf(facts.addressedTo().name()));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -397,6 +401,12 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   private static com.streamarr.server.domain.notification.ProfileShareAnswer answerOf(
       ProfileShareAnswer stored) {
     return com.streamarr.server.domain.notification.ProfileShareAnswer.valueOf(stored.name());
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static com.streamarr.server.domain.notification.ProfileShareSide addressedToOf(
+      ProfileShareSide stored) {
+    return com.streamarr.server.domain.notification.ProfileShareSide.valueOf(stored.name());
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
