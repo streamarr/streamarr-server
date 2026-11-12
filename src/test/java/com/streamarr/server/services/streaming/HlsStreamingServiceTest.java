@@ -7881,6 +7881,51 @@ class HlsStreamingServiceTest {
     assertThat(listedVariants(session)).containsExactly("stream.m3u8?t=t");
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("autoCopiesWithoutLowerVariants")
+  @DisplayName(
+      "Should copy the video alone when an Auto copy without lower variants that its client reached"
+          + " over the local network exceeds what the upload budget leaves for counted streams")
+  void shouldCopyTheVideoAloneWhenALocalNetworkAutoCopyWithoutLowerVariantsExceedsTheShare(
+      LoneCopy lone) {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, less than this
+    // copy's 5 Mb/s average, but a stream session on the local network never counts (ADR 0050).
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session =
+        accepted(
+            service.createSession(
+                loneCopyCommand(lone)
+                    .options(defaultOptions())
+                    .networkRoute(NetworkRoute.LOCAL_NETWORK)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getVariants()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy the video alone when an Auto copy without lower variants equals what the upload"
+          + " budget leaves beside the other counted stream sessions")
+  void shouldCopyTheVideoAloneWhenAnAutoCopyWithoutLowerVariantsEqualsTheBudgetsRemainingShare() {
+    // 80% of 10 Mb/s leaves 3 Mb/s beside the active copy's 5 Mb/s average, exactly this copy's
+    // 3 Mb/s average. Only a copy that exceeds what is left is decided again.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(10);
+    var lone =
+        new LoneCopy(
+            "a 3 Mb/s HDR10 copy",
+            hdr10HevcProbe().toBuilder().bitrate(3_000_000).build(),
+            pqDeclaration());
+
+    var session = createLoneCopySession(lone, VideoQuality.AUTO);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getVariants()).isEmpty();
+  }
+
   // Workers encode only at a known output frame rate, so a source without one has no encode to
   // replace its copy, and the budget never refuses playback (#446).
   @Test
@@ -7961,6 +8006,16 @@ class HlsStreamingServiceTest {
   }
 
   private StreamSession createLoneCopySession(LoneCopy lone, VideoQuality quality) {
+    return accepted(
+        service.createSession(
+            loneCopyCommand(lone)
+                .options(StreamingOptions.builder().quality(quality).build())
+                .build()));
+  }
+
+  // The lone copy's source and declaration, on workers that can copy its video.
+  private CreateStreamSessionCommand.CreateStreamSessionCommandBuilder loneCopyCommand(
+      LoneCopy lone) {
     probeResults.setDefaultProbe(lone.source());
     transcodeExecutor.setVideoCopySupportByWorker(
         List.of(
@@ -7968,9 +8023,8 @@ class HlsStreamingServiceTest {
                 .plannedOutput(true)
                 .bitstreamRewrites(Set.of(BitstreamRewrite.values()))
                 .build()));
-    return accepted(
-        createSessionDeclaring(
-            lone.declaration(), StreamingOptions.builder().quality(quality).build()));
+    return createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+        .capabilityDeclaration(lone.declaration());
   }
 
   @Test
