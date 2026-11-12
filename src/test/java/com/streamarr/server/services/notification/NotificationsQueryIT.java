@@ -18,6 +18,7 @@ import com.streamarr.server.domain.notification.DismissalSelector;
 import com.streamarr.server.domain.notification.RecipientReference;
 import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -30,10 +31,12 @@ import com.streamarr.server.services.identity.AccountAdministrationService;
 import com.streamarr.server.services.identity.AccountLifecycleService;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
 import com.streamarr.server.services.identity.ProfileAdministrationService;
+import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
+import com.streamarr.server.support.ManagerInvitationSteps;
 import com.streamarr.server.support.ShareSteps;
 import com.streamarr.server.support.StoredNotificationRows;
 import java.time.Duration;
@@ -60,7 +63,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Notifications Query Integration Tests")
 class NotificationsQueryIT extends AbstractIntegrationTest {
 
-  // An offer's answer is nullable and an answer's is not, so each takes its own name.
+  // An offer's answer is nullable and an answer's is not, and an invitation's answer is of another
+  // enum, so each takes its own name.
   private static final String NOTIFICATIONS =
       """
       query {
@@ -75,6 +79,9 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
               ... on ProfileShareOfferedNotification { profileName shareId offerAnswer: answer }
               ... on ProfileShareAnsweredNotification { profileName shareId answer }
               ... on ProfileShareEndedNotification { profileName shareId endedBy }
+              ... on ProfileManagerInvitationReceivedNotification {
+                profileName invitationId invitationAnswer: answer
+              }
             }
           }
           pageInfo { hasNextPage endCursor }
@@ -90,6 +97,8 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private ProfileSharingService sharing;
+  @Autowired private ProfileManagerAdministrationService profileManagement;
+  @Autowired private ProfileManagerInvitationRepository invitationRepository;
   @Autowired private AccountAdministrationService accountAdministration;
   @Autowired private ProfileAdministrationService profileAdministration;
   @Autowired private AccountLifecycleService accountLifecycle;
@@ -107,6 +116,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
   private TestIdentity riverside;
   private TestIdentity riversideAdmin;
   private ShareSteps steps;
+  private ManagerInvitationSteps invitationSteps;
   private StoredNotificationRows rows;
 
   @BeforeEach
@@ -122,6 +132,13 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
             .accounts(userAccountRepository)
             .transactions(transactionTemplate)
             .build();
+    invitationSteps =
+        ManagerInvitationSteps.builder()
+            .management(profileManagement)
+            .auth(authTestSupport)
+            .invitations(invitationRepository)
+            .transactions(transactionTemplate)
+            .build();
     sam = track(authTestSupport.createIdentity());
     riverside = track(authTestSupport.createIdentity());
     riversideAdmin =
@@ -131,6 +148,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
   @AfterEach
   void tearDown() {
     rows.deleteOf(identities.stream().map(NotificationsQueryIT::accountOf).toList());
+    invitationRepository.deleteAll();
     identities.reversed().forEach(authTestSupport::deleteIdentity);
   }
 
@@ -169,6 +187,42 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
             jsonPath("$.data.notifications.edges[0].node.expiresAt").value(storedExpiry.toString()))
         .andExpect(jsonPath("$.data.notifications.edges[0].orderKey").isString())
         .andExpect(jsonPath("$.data.notifications.pageInfo.hasNextPage").value(false));
+  }
+
+  @Test
+  @DisplayName(
+      "Should list a waiting invitation request with its invitation's id, the Profile's name and its"
+          + " line when an Account is invited")
+  void
+      shouldListAWaitingInvitationRequestWithItsInvitationIdTheProfilesNameAndItsLineWhenAnAccountIsInvited()
+          throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam);
+    var issued = invitationSteps.invite(sam, kai, riversideAdmin.account().getEmail());
+    var storedExpiry =
+        invitationRepository.findById(issued.invitation().getId()).orElseThrow().getExpiresAt();
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(1))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.__typename")
+                .value("ProfileManagerInvitationReceivedNotification"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.message")
+                .value("You were invited to manage “Kai”."))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.invitationId")
+                .value(issued.invitation().getId().toString()))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(true))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").doesNotExist())
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.invitationAnswer").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.expiresAt")
+                .value(storedExpiry.toString()));
   }
 
   @Test
