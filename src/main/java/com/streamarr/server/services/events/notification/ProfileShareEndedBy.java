@@ -1,4 +1,4 @@
-package com.streamarr.server.domain.notification;
+package com.streamarr.server.services.events.notification;
 
 /** Which side ended an active share (ADR 0063 §The sharing kinds). */
 public enum ProfileShareEndedBy {

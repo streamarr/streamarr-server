@@ -1,6 +1,5 @@
 package com.streamarr.server.services.events.notification;
 
-import com.streamarr.server.domain.notification.RequestResolution;
 import java.util.Optional;
 
 /**

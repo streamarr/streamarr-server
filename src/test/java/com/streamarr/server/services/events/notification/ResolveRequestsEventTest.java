@@ -2,8 +2,6 @@ package com.streamarr.server.services.events.notification;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.domain.notification.ProfileShareAnswer;
-import com.streamarr.server.domain.notification.RequestResolution;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;

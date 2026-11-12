@@ -1,4 +1,4 @@
-package com.streamarr.server.domain.notification;
+package com.streamarr.server.services.events.notification;
 
 /**
  * How a request resolved (ADR 0063 §Requests and news). The request stores it when its subject's
