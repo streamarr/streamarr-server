@@ -10,6 +10,7 @@ import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.domain.language.ProfileLanguagePreferences;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
@@ -19,6 +20,7 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.repositories.language.LanguagePreferenceRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfilePinHasher;
@@ -28,6 +30,7 @@ import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfilePolicyTransition;
 import com.streamarr.server.services.authorization.ProfileSafetyRule;
+import com.streamarr.server.services.language.PreferredAudioLanguagesRule;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
@@ -70,6 +73,7 @@ public class ProfileAdministrationService {
   private final ProfileManagerInvitationRepository managerInvitationRepository;
   private final LeavingManagerProposals leavingManagerProposals;
   private final SecurityAuditEventRepository securityAuditEventRepository;
+  private final LanguagePreferenceRepository languagePreferenceRepository;
   private final ProfilePinHasher profilePinHasher;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
@@ -395,6 +399,40 @@ public class ProfileAdministrationService {
                   .resource("profileId", profileId)
                   .build());
           return profileRepository.findByIdAndReloadFromDatabase(profileId).orElseThrow();
+        },
+        _ -> Optional.empty());
+  }
+
+  /**
+   * Replaces the Profile's own language preferences for one of its managers, whether or not its
+   * session has the Profile selected: a manager edits the Profile, and the preferences are the
+   * Profile's (ADR 0024 §ProfileManager).
+   */
+  public Outcome<ProfileLanguagePreferences, ProfileRejections.SetProfileLanguagePreferences>
+      setProfileLanguagePreferences(
+          AuthenticatedIdentity identity, UUID profileId, ProfileLanguagePreferences preferences) {
+    var refused = PreferredAudioLanguagesRule.rejectionOf(preferences.audioLanguages());
+    if (refused.isPresent()) {
+      return Outcome.rejected(new ProfileRejections.PreferredAudioLanguagesRefused(refused.get()));
+    }
+
+    return mutationTransactions.write(
+        () -> {
+          if (!profileRepository.lockById(profileId)) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+
+          var refusal =
+              editRefusal(identity, new Intent.SetProfileLanguagePreferences(profileId), profileId);
+          if (refusal.isPresent()) {
+            throw new MutationRejection(refusal.get());
+          }
+
+          if (!languagePreferenceRepository.trySetProfilePreferences(profileId, preferences)) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+
+          return preferences;
         },
         _ -> Optional.empty());
   }

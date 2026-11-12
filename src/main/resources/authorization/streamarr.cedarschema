@@ -232,6 +232,11 @@ namespace Streamarr {
     resource: Profile,
     context: { freshReauthentication: Bool },
   };
+  action setProfileLanguagePreferences in profileAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
   action deleteProfile in profileAdministration appliesTo {
     principal: Account,
     resource: Profile,

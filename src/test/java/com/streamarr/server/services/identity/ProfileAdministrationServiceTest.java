@@ -18,12 +18,17 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
+import com.streamarr.server.fakes.FakeLanguagePreferenceRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
+import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
+import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -84,6 +89,12 @@ class ProfileAdministrationServiceTest {
   private final FakeProfileManagerInvitationRepository managerInvitations =
       new FakeProfileManagerInvitationRepository();
   private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
+  private final FakeLanguagePreferenceRepository languagePreferences =
+      new FakeLanguagePreferenceRepository(
+          new FakeMovieRepository(),
+          new FakeSeriesRepository(),
+          new FakeSeasonRepository(),
+          new FakeEpisodeRepository());
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
   private final RecordingEncoder encoder = new RecordingEncoder();
@@ -107,6 +118,7 @@ class ProfileAdministrationServiceTest {
                   managerInvitations, new CapturingEventPublisher()),
               new ProfileShareLifecycle(shares, shareEvents)),
           audit,
+          languagePreferences,
           new ProfilePinHasher(encoder),
           new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),
           Clock.systemUTC());
@@ -1210,6 +1222,7 @@ class ProfileAdministrationServiceTest {
                 managerInvitations, new CapturingEventPublisher()),
             new ProfileShareLifecycle(shares, shareEvents)),
         audit,
+        languagePreferences,
         new ProfilePinHasher(encoder),
         new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),
         Clock.systemUTC());

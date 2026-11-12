@@ -740,6 +740,60 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName(
+        "Should allow a Profile's language preferences when the caller manages it, selected or not")
+    void shouldAllowProfileLanguagePreferencesWhenCallerManagesProfile() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      var change = new Intent.SetProfileLanguagePreferences(kid.getId());
+      var watchingAsPersonal =
+          identityBuilder().scope(TokenScope.PROFILE).profileId(personal.getId()).build();
+
+      // The sovereign Account manages its own Personal Profile.
+      assertThat(decide(atHome(), new Intent.SetProfileLanguagePreferences(personal.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), change)).isEqualTo(DENIED);
+
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(kid.getId()).build());
+      assertThat(decide(atHome(), change)).isEqualTo(ALLOWED);
+      assertThat(decide(watchingAsPersonal, change)).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should deny a Profile's language preferences when the caller does not manage the Profile")
+    void shouldDenyProfileLanguagePreferencesWhenCallerDoesNotManageProfile() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      shares.share(kid.getId(), account.getHouseholdId(), false);
+      var change = new Intent.SetProfileLanguagePreferences(kid.getId());
+      var watchingAsKid =
+          identityBuilder().scope(TokenScope.PROFILE).profileId(kid.getId()).build();
+
+      // Supervision edits the name, never the preferences.
+      assertThat(decide(atHome(), new Intent.RenameProfile(kid.getId()))).isEqualTo(ALLOWED);
+      assertThat(decide(atHome(), change)).isEqualTo(DENIED);
+      // A session that has it selected changes them as the viewer, not as a manager.
+      assertThat(decide(watchingAsKid, new Intent.SetLanguagePreferences(kid.getId())))
+          .isEqualTo(ALLOWED);
+      assertThat(decide(watchingAsKid, change)).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), change)).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should deny a Profile's language preferences when the managing Account is disabled")
+    void shouldDenyProfileLanguagePreferencesWhenManagingAccountIsDisabled() {
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(decide(atHome(), new Intent.SetProfileLanguagePreferences(personal.getId())))
+          .isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should require fresh reauthentication when lifting the final restriction")
     void shouldRequireFreshReauthenticationWhenLiftingFinalRestriction() {
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
@@ -1529,6 +1583,8 @@ class CedarIdentityPoliciesTest {
       assertThat(decide(device, new Intent.ViewHouseholdAdministration(account.getHouseholdId())))
           .isEqualTo(DENIED);
       assertThat(decide(device, new Intent.RenameProfile(personal.getId()))).isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.SetProfileLanguagePreferences(personal.getId())))
+          .isEqualTo(DENIED);
       assertThat(decide(device, new Intent.IssueAccountInvitation())).isEqualTo(DENIED);
       assertThat(decide(device, new Intent.OfferProfileShare(personal.getId()))).isEqualTo(DENIED);
       assertThat(decide(device, new Intent.IssueShareCode(account.getHouseholdId())))

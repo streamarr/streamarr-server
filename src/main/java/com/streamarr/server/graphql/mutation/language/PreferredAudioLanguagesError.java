@@ -9,7 +9,7 @@ import java.util.List;
  * sets them. Record names are the schema type names DGS resolves by.
  */
 public sealed interface PreferredAudioLanguagesError
-    extends SetLanguagePreferencesError, InputMutationError {
+    extends SetLanguagePreferencesError, SetProfileLanguagePreferencesError, InputMutationError {
 
   record TooManyAudioLanguagesError(String message, List<String> inputPath, int maximum)
       implements PreferredAudioLanguagesError {}

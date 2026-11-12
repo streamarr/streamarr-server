@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.mutation.language;
 
 import com.streamarr.server.graphql.mutation.InputPath;
+import com.streamarr.server.services.identity.ProfileRejections;
 import com.streamarr.server.services.language.SetLanguagePreferencesRejection;
 import lombok.NonNull;
 
@@ -10,6 +11,16 @@ public final class LanguagePreferenceErrors {
   private static final String AUDIO_LANGUAGES = "audioLanguages";
 
   private LanguagePreferenceErrors() {}
+
+  public static SetProfileLanguagePreferencesError toSetProfileLanguagePreferencesError(
+      @NonNull ProfileRejections.SetProfileLanguagePreferences rejection) {
+    return switch (rejection) {
+      case ProfileRejections.ProfileNotFound _ ->
+          new ProfileNotFoundError("No such Profile.", InputPath.of("profileId"));
+      case ProfileRejections.PreferredAudioLanguagesRefused(var reason) ->
+          toPreferredAudioLanguagesError(reason);
+    };
+  }
 
   public static PreferredAudioLanguagesError toPreferredAudioLanguagesError(
       @NonNull SetLanguagePreferencesRejection rejection) {
