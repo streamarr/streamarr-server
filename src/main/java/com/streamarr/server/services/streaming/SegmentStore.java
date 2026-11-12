@@ -35,9 +35,11 @@ public interface SegmentStore {
     void append(ByteBuffer bytes);
 
     /**
-     * Makes the prepared bytes readable under the segment's name. A variant's initialization
-     * segment is stored once: its first publication is atomic, identical bytes publish again
-     * without change, and different bytes are refused while the stored segment stays untouched.
+     * Makes the prepared bytes readable under the segment's name. A segment is stored once: its
+     * first publication is atomic, and the bytes stored under a name never change afterwards. A
+     * later publication of a media segment succeeds and leaves the stored segment untouched. A
+     * later publication of a variant's initialization segment succeeds with identical bytes and is
+     * refused with different bytes.
      */
     SegmentPublication publish();
 

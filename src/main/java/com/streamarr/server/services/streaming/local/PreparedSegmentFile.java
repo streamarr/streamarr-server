@@ -4,11 +4,12 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import lombok.NonNull;
 
 final class PreparedSegmentFile implements AutoCloseable {
@@ -18,11 +19,11 @@ final class PreparedSegmentFile implements AutoCloseable {
 
     WritableByteChannel openForWriting(Path path) throws IOException;
 
+    /** Fails, moving nothing, on a volume that cannot move a file atomically. */
     void moveAtomically(Path source, Path target) throws IOException;
 
-    void moveReplacing(Path source, Path target) throws IOException;
-
-    boolean notExists(Path path);
+    /** Fails when the file system cannot say whether a file is at {@code path}. */
+    boolean notExists(Path path) throws IOException;
 
     boolean hasSameContent(Path first, Path second) throws IOException;
 
@@ -49,13 +50,14 @@ final class PreparedSegmentFile implements AutoCloseable {
     }
 
     @Override
-    public void moveReplacing(Path source, Path target) throws IOException {
-      Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
-    }
-
-    @Override
-    public boolean notExists(Path path) {
-      return Files.notExists(path);
+    public boolean notExists(Path path) throws IOException {
+      // Files.notExists answers false for a failed lookup as well as for a stored file.
+      try {
+        Files.readAttributes(path, BasicFileAttributes.class);
+        return false;
+      } catch (NoSuchFileException _) {
+        return true;
+      }
     }
 
     @Override
@@ -105,13 +107,24 @@ final class PreparedSegmentFile implements AutoCloseable {
     }
   }
 
-  void publishTo(Path target) throws IOException {
+  /**
+   * Publishes when nothing is stored at {@code target} yet; otherwise leaves the stored file
+   * untouched. Answers whether it published. Callers serialize publications to one target.
+   */
+  boolean publishWhenNothingIsStored(Path target) throws IOException {
     content.close();
-    try {
-      files.moveAtomically(temporary, target);
-    } catch (AtomicMoveNotSupportedException _) {
-      files.moveReplacing(temporary, target);
+    if (!files.notExists(target)) {
+      return false;
     }
+
+    publishTo(target);
+    return true;
+  }
+
+  private void publishTo(Path target) throws IOException {
+    // Never a plain move: one that fails can leave part of the file at the target, and the next
+    // publication would keep that part as the stored segment.
+    files.moveAtomically(temporary, target);
   }
 
   /**
@@ -120,9 +133,7 @@ final class PreparedSegmentFile implements AutoCloseable {
    * target.
    */
   SegmentPublication publishUnlessStored(Path target) throws IOException {
-    content.close();
-    if (files.notExists(target)) {
-      publishTo(target);
+    if (publishWhenNothingIsStored(target)) {
       return SegmentPublication.PUBLISHED;
     }
 

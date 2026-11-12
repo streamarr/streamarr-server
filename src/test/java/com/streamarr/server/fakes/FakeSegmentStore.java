@@ -116,7 +116,7 @@ public class FakeSegmentStore implements SegmentStore {
           return publishInitialization(sessionId, segmentName, data);
         }
 
-        addSegment(sessionId, segmentName, data);
+        addSegmentUnlessStored(sessionId, segmentName, data);
         return SegmentPublication.PUBLISHED;
       }
 
@@ -143,6 +143,13 @@ public class FakeSegmentStore implements SegmentStore {
   @Override
   public void deleteSession(UUID sessionId) {
     sessions.remove(sessionId);
+  }
+
+  private synchronized void addSegmentUnlessStored(
+      UUID sessionId, String segmentName, byte[] data) {
+    if (!segmentExists(sessionId, segmentName)) {
+      addSegment(sessionId, segmentName, data);
+    }
   }
 
   public void addSegment(UUID sessionId, String segmentName, byte[] data) {

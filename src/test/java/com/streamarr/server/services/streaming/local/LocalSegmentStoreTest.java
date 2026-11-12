@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,8 +40,11 @@ import org.junit.jupiter.api.io.TempDir;
 class LocalSegmentStoreTest {
 
   private static final String VARIANT_INITIALIZATION_SEGMENT = "720p/init.mp4";
+  private static final String VARIANT_MEDIA_SEGMENT = "720p/segment0.m4s";
   private static final int CONTENDERS = 8;
   private static final int RACE_ROUNDS = 25;
+  // Without the per-name lock, only some rounds of a media race interleave a check and a move.
+  private static final int MEDIA_RACE_ROUNDS = 100;
 
   @TempDir Path tempDir;
 
@@ -268,6 +272,20 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should keep the stored media segment when its name is published again")
+  void shouldKeepStoredMediaSegmentWhenItsNameIsPublishedAgain() {
+    var sessionId = UUID.randomUUID();
+    var stored = "moof mdat from the first job attempt".getBytes();
+    store.storeSegment(sessionId, "720p/segment0.m4s", stored);
+
+    var publication =
+        store.storeSegment(sessionId, "720p/segment0.m4s", "moof mdat from a later one".getBytes());
+
+    assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
+    assertThat(StoredSegments.bytes(store, sessionId, "720p/segment0.m4s")).isEqualTo(stored);
+  }
+
+  @Test
   @DisplayName(
       "Should keep the stored initialization segment when a different one is published for the variant")
   void shouldKeepStoredInitializationSegmentWhenDifferentOneIsPublishedForVariant() {
@@ -355,7 +373,6 @@ class LocalSegmentStoreTest {
 
   private static List<Integer> contendersStoredByConcurrentPublication(
       SegmentStore store, UUID sessionId) {
-    var start = new CountDownLatch(1);
     var prepared =
         IntStream.range(0, CONTENDERS)
             .mapToObj(
@@ -364,20 +381,61 @@ class LocalSegmentStoreTest {
                         store.prepareSegment(sessionId, VARIANT_INITIALIZATION_SEGMENT),
                         contenderInitialization(contender)))
             .toList();
+    var publications = afterConcurrentPublication(prepared, Function.identity());
+    return IntStream.range(0, CONTENDERS)
+        .filter(contender -> publications.get(contender) == SegmentPublication.PUBLISHED)
+        .boxed()
+        .toList();
+  }
+
+  @Test
+  @DisplayName(
+      "Should never change a stored media segment when differing ones are published concurrently")
+  void shouldNeverChangeStoredMediaSegmentWhenDifferingOnesArePublishedConcurrently() {
+    for (var round = 0; round < MEDIA_RACE_ROUNDS; round++) {
+      var sessionId = UUID.randomUUID();
+
+      var readsAfterPublication = readsAfterConcurrentMediaPublication(sessionId);
+
+      var stored = StoredSegments.bytes(store, sessionId, VARIANT_MEDIA_SEGMENT);
+      assertThat(readsAfterPublication)
+          .as("bytes each contender read after its own publication in round %s", round)
+          .hasSize(CONTENDERS)
+          .allSatisfy(read -> assertThat(read).isEqualTo(stored));
+    }
+  }
+
+  // Each contender reads the stored segment as soon as its own publication returns.
+  private List<byte[]> readsAfterConcurrentMediaPublication(UUID sessionId) {
+    var prepared =
+        IntStream.range(0, CONTENDERS)
+            .mapToObj(
+                contender ->
+                    appended(
+                        store.prepareSegment(sessionId, VARIANT_MEDIA_SEGMENT),
+                        ("moof mdat from encoder " + contender).getBytes()))
+            .toList();
+    return afterConcurrentPublication(
+        prepared, _ -> StoredSegments.bytes(store, sessionId, VARIANT_MEDIA_SEGMENT));
+  }
+
+  // Publishes every prepared segment at once and answers, in order, what each contender saw
+  // straight after its own publication returned.
+  private static <T> List<T> afterConcurrentPublication(
+      List<SegmentStore.PreparedSegment> prepared,
+      Function<SegmentPublication, T> afterPublication) {
+    var start = new CountDownLatch(1);
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var publications =
+      var contenders =
           prepared.stream()
               .map(
                   segment ->
-                      CompletableFuture.supplyAsync(() -> publishAfter(start, segment), executor))
+                      CompletableFuture.supplyAsync(
+                          () -> afterPublication.apply(publishAfter(start, segment)), executor))
               .toList();
       start.countDown();
-      return IntStream.range(0, CONTENDERS)
-          .filter(
-              contender ->
-                  publications.get(contender).orTimeout(5, TimeUnit.SECONDS).join()
-                      == SegmentPublication.PUBLISHED)
-          .boxed()
+      return contenders.stream()
+          .map(contender -> contender.orTimeout(5, TimeUnit.SECONDS).join())
           .toList();
     }
   }
@@ -477,6 +535,38 @@ class LocalSegmentStoreTest {
         .hasMessage("Failed to clean up segment upload: 720p/segment0.m4s")
         .cause()
         .isInstanceOf(IOException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should escalate an I/O failure when a media segment's stored state cannot be determined")
+  void shouldEscalateIoFailureWhenMediaSegmentStoredStateCannotBeDetermined() throws Exception {
+    var sessionId = UUID.randomUUID();
+    plantUnresolvableLink(sessionId, "segment0.m4s");
+
+    assertThatThrownBy(() -> store.storeSegment(sessionId, "segment0.m4s", new byte[] {0x47}))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessageContaining("segment0.m4s");
+  }
+
+  @Test
+  @DisplayName(
+      "Should escalate an I/O failure when an initialization segment's stored state cannot be determined")
+  void shouldEscalateIoFailureWhenInitializationSegmentStoredStateCannotBeDetermined()
+      throws Exception {
+    var sessionId = UUID.randomUUID();
+    plantUnresolvableLink(sessionId, "init.mp4");
+
+    assertThatThrownBy(() -> store.storeSegment(sessionId, "init.mp4", new byte[] {0x47}))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessageContaining("init.mp4");
+  }
+
+  // A soft link that names itself: looking the name up fails, so the file system can say neither
+  // that a segment is stored there nor that none is.
+  private void plantUnresolvableLink(UUID sessionId, String segmentName) throws IOException {
+    var link = store.getOutputDirectory(sessionId).resolve(segmentName);
+    Files.createSymbolicLink(link, link.getFileName());
   }
 
   @Test
