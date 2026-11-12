@@ -10,7 +10,6 @@ import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -27,6 +26,8 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.graphql.dto.ActiveStreamDto;
 import com.streamarr.server.graphql.dto.MediaTimeRangeDto;
+import com.streamarr.server.properties.StreamingProperties;
+import com.streamarr.server.properties.SubscriptionProperties;
 import com.streamarr.server.services.streaming.ActiveStreamService;
 import com.streamarr.server.services.streaming.PlaybackSessionService;
 import com.streamarr.server.services.streaming.PlaybackSessionSnapshot;

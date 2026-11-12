@@ -5,7 +5,6 @@ import static com.streamarr.server.jooq.generated.tables.ItemResult.ITEM_RESULT;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toDomain;
 import static com.streamarr.server.repositories.media.MediaEnumMapping.toJooq;
 
-import com.streamarr.server.config.ArtworkRequestLockProperties;
 import com.streamarr.server.domain.media.ArtworkResultCounts;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -17,6 +16,7 @@ import com.streamarr.server.jooq.generated.enums.ItemResultFailureReason;
 import com.streamarr.server.jooq.generated.enums.ItemResultOutcome;
 import com.streamarr.server.jooq.generated.enums.ItemResultStep;
 import com.streamarr.server.jooq.generated.tables.records.ItemResultRecord;
+import com.streamarr.server.properties.ArtworkRequestLockProperties;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
 import java.time.Instant;
 import java.time.ZoneOffset;

@@ -6,7 +6,6 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
@@ -31,6 +30,7 @@ import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.properties.StreamingProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;

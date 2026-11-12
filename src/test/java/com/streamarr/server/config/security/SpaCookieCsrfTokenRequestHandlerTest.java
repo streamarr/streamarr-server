@@ -2,6 +2,7 @@ package com.streamarr.server.config.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.web.AuthCookies;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

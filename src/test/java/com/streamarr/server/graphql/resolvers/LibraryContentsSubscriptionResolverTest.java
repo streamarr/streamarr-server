@@ -10,7 +10,7 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.graphql.subscriptions.LibraryContentsBroadcasters;
 import com.streamarr.server.graphql.subscriptions.RecordingSubscriber;
 import com.streamarr.server.graphql.subscriptions.SubscriptionOverflowException;
-import com.streamarr.server.graphql.subscriptions.SubscriptionProperties;
+import com.streamarr.server.properties.SubscriptionProperties;
 import com.streamarr.server.services.library.LibraryContentsService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;

@@ -1,11 +1,11 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
+import com.streamarr.server.properties.StreamingProperties;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;

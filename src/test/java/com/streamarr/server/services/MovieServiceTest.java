@@ -7,7 +7,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
-import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
@@ -37,6 +36,7 @@ import com.streamarr.server.fixtures.ArtworkFixture;
 import com.streamarr.server.fixtures.CreditServiceFixture;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.fixtures.MetadataFixture;
+import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.services.artwork.ArtworkRequestService;
 import com.streamarr.server.services.artwork.ArtworkRun;
 import com.streamarr.server.services.artwork.ArtworkRunSummary;

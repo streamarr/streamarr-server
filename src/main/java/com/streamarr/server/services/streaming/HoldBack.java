@@ -1,6 +1,6 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.properties.StreamingProperties;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;

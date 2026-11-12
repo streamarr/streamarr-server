@@ -2,7 +2,8 @@ package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.security.Argon2Properties;
+import com.streamarr.server.properties.Argon2Properties;
+import com.streamarr.server.properties.StreamingProperties;
 import io.swagger.v3.oas.models.OpenAPI;
 import java.io.IOException;
 import java.nio.file.Files;

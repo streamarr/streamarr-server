@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
-import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.ArtworkPriority;
 import com.streamarr.server.domain.media.ArtworkSources;
 import com.streamarr.server.domain.media.ArtworkTarget;
@@ -29,6 +28,7 @@ import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.GatedImageDownloader;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ArtworkFixture;
+import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.support.BoundedTask;

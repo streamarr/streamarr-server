@@ -14,6 +14,7 @@ import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.properties.ProbeSchedulingProperties;
 import com.streamarr.server.repositories.media.BitrateScanRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.audit.SystemWork;

@@ -11,7 +11,6 @@ import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractWireMockIntegrationTest;
-import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.ArtworkPriority;
 import com.streamarr.server.domain.media.ArtworkSources;
 import com.streamarr.server.domain.media.ArtworkTarget;
@@ -29,6 +28,7 @@ import com.streamarr.server.domain.media.NewArtworkRequest;
 import com.streamarr.server.exceptions.ImageDownloadException;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.SavedMediaFixture;
+import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
 import com.streamarr.server.repositories.media.ImageRepository;

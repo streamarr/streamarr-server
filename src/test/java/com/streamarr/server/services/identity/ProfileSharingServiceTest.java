@@ -4,7 +4,6 @@ import static com.streamarr.server.fixtures.ProfileHouseholdShareFixture.activeS
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.Profile;
@@ -25,6 +24,7 @@ import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;

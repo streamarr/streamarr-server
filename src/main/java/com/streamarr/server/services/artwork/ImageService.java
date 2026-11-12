@@ -1,6 +1,5 @@
 package com.streamarr.server.services.artwork;
 
-import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -10,6 +9,7 @@ import com.streamarr.server.domain.media.ItemOutcome;
 import com.streamarr.server.domain.media.ItemResult;
 import com.streamarr.server.domain.media.ItemStep;
 import com.streamarr.server.exceptions.ImageStorageException;
+import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.repositories.media.ItemResultRepository;
 import com.streamarr.server.services.events.library.CollectablesChangedEvent;

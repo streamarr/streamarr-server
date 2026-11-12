@@ -1,10 +1,10 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.PersistedProbeOutcome;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.concurrency.NanoClock;

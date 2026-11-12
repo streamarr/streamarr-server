@@ -2,7 +2,7 @@ package com.streamarr.server.graphql.transport;
 
 import com.netflix.graphql.types.errors.ErrorType;
 import com.streamarr.server.graphql.CodedGraphQlErrors;
-import com.streamarr.server.graphql.subscriptions.SubscriptionProperties;
+import com.streamarr.server.properties.SubscriptionProperties;
 import graphql.ExecutionResult;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;

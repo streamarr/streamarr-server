@@ -1,10 +1,10 @@
 package com.streamarr.server.services.identity;
 
-import com.streamarr.server.config.security.CredentialCodeProperties;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;

@@ -26,6 +26,7 @@ Services, repository contracts, and repository implementations share domain type
 * *Repository contracts* expose data access and atomic operations needed by services
 * *Repository implementations* use JPA for CRUD and jOOQ for complex queries
 * *Domain* defines the core model and does not depend on services, repositories, or protocol adapters
+* *Configuration* (`config`) wires the application and may depend on every layer, and nothing outside `config` depends on it; configuration properties live in `properties` and shared HTTP helpers live in `web`
 
 These rules are enforced by ArchUnit tests (see https://github.com/streamarr/streamarr-adr/blob/main/adr/0014-protocol-agnostic-pagination.adoc[ADR 0014] for pagination-specific architecture).
 

@@ -1,5 +1,6 @@
 package com.streamarr.server.config.security;
 
+import com.streamarr.server.properties.Argon2Properties;
 import java.util.Map;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

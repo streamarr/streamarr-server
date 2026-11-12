@@ -2,13 +2,13 @@ package com.streamarr.server.fixtures;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
-import com.streamarr.server.config.ArtworkRunProperties;
-import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.fakes.FakeArtworkRequestRepository;
 import com.streamarr.server.fakes.FakeArtworkScheduling;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeItemResultRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
+import com.streamarr.server.properties.ArtworkRunProperties;
+import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.services.artwork.ArtworkProgressReporter;
 import com.streamarr.server.services.artwork.ArtworkRequestService;
 import com.streamarr.server.services.artwork.ArtworkRun;

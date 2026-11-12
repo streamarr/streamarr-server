@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import com.streamarr.server.graphql.dto.WatchStateChange;
+import com.streamarr.server.properties.SubscriptionProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.UUID;
 import org.springframework.context.annotation.Bean;
