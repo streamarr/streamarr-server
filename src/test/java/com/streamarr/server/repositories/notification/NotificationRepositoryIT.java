@@ -61,7 +61,7 @@ class NotificationRepositoryIT extends AbstractIntegrationTest {
 
   private static final Instant EVENT = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
-  @Autowired private NotificationRepository notificationRepository;
+  @Autowired private ShareNotificationRepository notificationRepository;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;

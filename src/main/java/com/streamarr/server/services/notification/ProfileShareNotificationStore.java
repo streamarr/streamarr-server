@@ -4,7 +4,7 @@ import com.streamarr.server.domain.notification.NotificationDraft;
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.UnreadNews;
-import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 
@@ -13,7 +13,7 @@ import lombok.RequiredArgsConstructor;
 class ProfileShareNotificationStore
     implements NotificationStore<NotificationKind, ProfileShareFacts> {
 
-  private final NotificationRepository notificationRepository;
+  private final ShareNotificationRepository notificationRepository;
 
   @Override
   public UUID make(NotificationDraft<NotificationKind, ProfileShareFacts> draft) {

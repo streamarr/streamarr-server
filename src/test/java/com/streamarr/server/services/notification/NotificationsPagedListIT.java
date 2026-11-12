@@ -9,7 +9,7 @@ import com.streamarr.server.domain.notification.SubjectNotification;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
-import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.support.AuthTestSupport;
@@ -41,7 +41,7 @@ class NotificationsPagedListIT
   private static final Instant NEWEST = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
   @Autowired private NotificationService notificationService;
-  @Autowired private NotificationRepository notificationRepository;
+  @Autowired private ShareNotificationRepository notificationRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private AuthTestSupport auth;
   @Autowired private TransactionTemplate transactionTemplate;

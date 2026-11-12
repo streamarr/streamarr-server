@@ -1,8 +1,8 @@
 package com.streamarr.server.services.notification;
 
-import static com.streamarr.server.jooq.generated.tables.Notification.NOTIFICATION;
 import static com.streamarr.server.jooq.generated.tables.ProfileManager.PROFILE_MANAGER;
 import static com.streamarr.server.jooq.generated.tables.ServerSettings.SERVER_SETTINGS;
+import static com.streamarr.server.jooq.generated.tables.ShareNotification.SHARE_NOTIFICATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -14,7 +14,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
@@ -47,7 +47,7 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
   private static final Duration WITHIN_THE_PERIOD = Duration.ofDays(89);
 
   @Autowired private NotificationRetentionSweeper sweeper;
-  @Autowired private NotificationRepository notificationRepository;
+  @Autowired private ShareNotificationRepository notificationRepository;
   @Autowired private NotificationService notificationService;
   @Autowired private ProfileSharingService sharing;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
@@ -241,18 +241,18 @@ class NotificationRetentionSweeperIT extends AbstractIntegrationTest {
     var latestEvent = Instant.now().minus(age).atOffset(ZoneOffset.UTC);
     transactionTemplate.executeWithoutResult(
         _ ->
-            dsl.update(NOTIFICATION)
-                .set(NOTIFICATION.LATEST_EVENT_AT, latestEvent)
-                .where(NOTIFICATION.SHARE_ID.eq(share.getId()))
+            dsl.update(SHARE_NOTIFICATION)
+                .set(SHARE_NOTIFICATION.LATEST_EVENT_AT, latestEvent)
+                .where(SHARE_NOTIFICATION.SHARE_ID.eq(share.getId()))
                 .execute());
   }
 
   private void markRead(Notification notification) {
     transactionTemplate.executeWithoutResult(
         _ ->
-            dsl.update(NOTIFICATION)
-                .set(NOTIFICATION.READ_AT, Instant.now().atOffset(ZoneOffset.UTC))
-                .where(NOTIFICATION.ID.eq(notification.getId()))
+            dsl.update(SHARE_NOTIFICATION)
+                .set(SHARE_NOTIFICATION.READ_AT, Instant.now().atOffset(ZoneOffset.UTC))
+                .where(SHARE_NOTIFICATION.ID.eq(notification.getId()))
                 .execute());
   }
 

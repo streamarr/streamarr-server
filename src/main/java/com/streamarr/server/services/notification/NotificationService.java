@@ -1,7 +1,7 @@
 package com.streamarr.server.services.notification;
 
 import com.streamarr.server.domain.notification.SubjectNotification;
-import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
@@ -37,7 +37,7 @@ public class NotificationService {
   private final AuthorizationService authorizationService;
   private final NotificationsList notificationsList;
   private final NotificationReads notificationReads;
-  private final NotificationRepository notificationRepository;
+  private final ShareNotificationRepository notificationRepository;
   private final Clock clock;
   private final ApplicationEventPublisher events;
 

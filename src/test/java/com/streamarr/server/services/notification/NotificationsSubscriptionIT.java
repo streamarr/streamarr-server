@@ -15,7 +15,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
 import com.streamarr.server.services.identity.AccountAdministrationService;
@@ -128,7 +128,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private UserAccountRepository userAccountRepository;
-  @Autowired private NotificationRepository notificationRepository;
+  @Autowired private ShareNotificationRepository notificationRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private MeterRegistry meterRegistry;

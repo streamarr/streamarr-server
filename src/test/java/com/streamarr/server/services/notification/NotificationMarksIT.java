@@ -1,6 +1,6 @@
 package com.streamarr.server.services.notification;
 
-import static com.streamarr.server.jooq.generated.tables.Notification.NOTIFICATION;
+import static com.streamarr.server.jooq.generated.tables.ShareNotification.SHARE_NOTIFICATION;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
@@ -22,7 +22,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.mutation.Outcome;
@@ -74,7 +74,7 @@ class NotificationMarksIT extends AbstractIntegrationTest {
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private UserAccountRepository userAccountRepository;
-  @Autowired private NotificationRepository notificationRepository;
+  @Autowired private ShareNotificationRepository notificationRepository;
   @Autowired private NotificationService notificationService;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
@@ -377,9 +377,9 @@ class NotificationMarksIT extends AbstractIntegrationTest {
     var before = stored(later).getLatestEventAt().minusSeconds(60).atOffset(ZoneOffset.UTC);
     transactionTemplate.executeWithoutResult(
         _ ->
-            dsl.update(NOTIFICATION)
-                .set(NOTIFICATION.LATEST_EVENT_AT, before)
-                .where(NOTIFICATION.ID.eq(earlier.getId()))
+            dsl.update(SHARE_NOTIFICATION)
+                .set(SHARE_NOTIFICATION.LATEST_EVENT_AT, before)
+                .where(SHARE_NOTIFICATION.ID.eq(earlier.getId()))
                 .execute());
   }
 

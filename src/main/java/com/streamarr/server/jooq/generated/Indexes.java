@@ -24,7 +24,6 @@ import com.streamarr.server.jooq.generated.tables.MovieCompany;
 import com.streamarr.server.jooq.generated.tables.MovieDirector;
 import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
-import com.streamarr.server.jooq.generated.tables.Notification;
 import com.streamarr.server.jooq.generated.tables.PasswordResetCode;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
 import com.streamarr.server.jooq.generated.tables.ProfileManager;
@@ -41,6 +40,7 @@ import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
 import com.streamarr.server.jooq.generated.tables.ShareCode;
+import com.streamarr.server.jooq.generated.tables.ShareNotification;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
 
@@ -97,8 +97,6 @@ public class Indexes {
     public static final Index IDX_MOVIE_GENRE_MOVIE_ID = Internal.createIndex(DSL.name("idx_movie_genre_movie_id"), MovieGenre.MOVIE_GENRE, new OrderField[] { MovieGenre.MOVIE_GENRE.MOVIE_ID }, false);
     public static final Index IDX_MOVIE_PERSON_MOVIE_ID = Internal.createIndex(DSL.name("idx_movie_person_movie_id"), MoviePerson.MOVIE_PERSON, new OrderField[] { MoviePerson.MOVIE_PERSON.MOVIE_ID }, false);
     public static final Index IDX_MOVIE_PERSON_PERSON_ID = Internal.createIndex(DSL.name("idx_movie_person_person_id"), MoviePerson.MOVIE_PERSON, new OrderField[] { MoviePerson.MOVIE_PERSON.PERSON_ID }, false);
-    public static final Index IDX_NOTIFICATION_RECIPIENT_LATEST_EVENT = Internal.createIndex(DSL.name("idx_notification_recipient_latest_event"), Notification.NOTIFICATION, new OrderField[] { Notification.NOTIFICATION.RECIPIENT_ACCOUNT_ID, Notification.NOTIFICATION.LATEST_EVENT_AT.desc(), Notification.NOTIFICATION.ID.desc() }, false);
-    public static final Index IDX_NOTIFICATION_SHARE = Internal.createIndex(DSL.name("idx_notification_share"), Notification.NOTIFICATION, new OrderField[] { Notification.NOTIFICATION.SHARE_ID }, false);
     public static final Index IDX_PASSWORD_RESET_CODE_ISSUER = Internal.createIndex(DSL.name("idx_password_reset_code_issuer"), PasswordResetCode.PASSWORD_RESET_CODE, new OrderField[] { PasswordResetCode.PASSWORD_RESET_CODE.ISSUER_ACCOUNT_ID }, false);
     public static final Index IDX_PM_INVITATION_PROFILE = Internal.createIndex(DSL.name("idx_pm_invitation_profile"), ProfileManagerInvitation.PROFILE_MANAGER_INVITATION, new OrderField[] { ProfileManagerInvitation.PROFILE_MANAGER_INVITATION.PROFILE_ID }, false);
     public static final Index IDX_PM_INVITATION_RECIPIENT = Internal.createIndex(DSL.name("idx_pm_invitation_recipient"), ProfileManagerInvitation.PROFILE_MANAGER_INVITATION, new OrderField[] { ProfileManagerInvitation.PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID }, false);
@@ -122,6 +120,8 @@ public class Indexes {
     public static final Index IDX_SESSION_PROGRESS_RESUME = Internal.createIndex(DSL.name("idx_session_progress_resume"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.PROFILE_ID, SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID, SessionProgress.SESSION_PROGRESS.LAST_MODIFIED_ON.desc() }, false);
     public static final Index IDX_SHARE_CODE_HOUSEHOLD_CREATED_ID = Internal.createIndex(DSL.name("idx_share_code_household_created_id"), ShareCode.SHARE_CODE, new OrderField[] { ShareCode.SHARE_CODE.HOUSEHOLD_ID, ShareCode.SHARE_CODE.CREATED_ON.desc(), ShareCode.SHARE_CODE.ID }, false);
     public static final Index IDX_SHARE_CODE_ISSUER = Internal.createIndex(DSL.name("idx_share_code_issuer"), ShareCode.SHARE_CODE, new OrderField[] { ShareCode.SHARE_CODE.ISSUER_ACCOUNT_ID }, false);
+    public static final Index IDX_SHARE_NOTIFICATION_RECIPIENT_LATEST_EVENT = Internal.createIndex(DSL.name("idx_share_notification_recipient_latest_event"), ShareNotification.SHARE_NOTIFICATION, new OrderField[] { ShareNotification.SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID, ShareNotification.SHARE_NOTIFICATION.LATEST_EVENT_AT.desc(), ShareNotification.SHARE_NOTIFICATION.ID.desc() }, false);
+    public static final Index IDX_SHARE_NOTIFICATION_SHARE = Internal.createIndex(DSL.name("idx_share_notification_share"), ShareNotification.SHARE_NOTIFICATION, new OrderField[] { ShareNotification.SHARE_NOTIFICATION.SHARE_ID }, false);
     public static final Index IDX_USER_ACCOUNT_HOUSEHOLD_ID = Internal.createIndex(DSL.name("idx_user_account_household_id"), UserAccount.USER_ACCOUNT, new OrderField[] { UserAccount.USER_ACCOUNT.HOUSEHOLD_ID }, false);
     public static final Index IDX_WATCH_HISTORY_PROFILE_COLLECTABLE = Internal.createIndex(DSL.name("idx_watch_history_profile_collectable"), WatchHistory.WATCH_HISTORY, new OrderField[] { WatchHistory.WATCH_HISTORY.PROFILE_ID, WatchHistory.WATCH_HISTORY.COLLECTABLE_ID, WatchHistory.WATCH_HISTORY.WATCHED_AT.desc() }, false);
     public static final Index IMAGE_COMPANY_ID_IDX = Internal.createIndex(DSL.name("image_company_id_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.COMPANY_ID }, false);
@@ -148,9 +148,9 @@ public class Indexes {
     public static final Index MEDIA_FILE_FILEPATH_URI_IDX = Internal.createIndex(DSL.name("media_file_filepath_uri_idx"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.FILEPATH_URI }, true);
     public static final Index SCHEMA_HISTORY_S_IDX = Internal.createIndex(DSL.name("schema_history_s_idx"), SchemaHistory.SCHEMA_HISTORY, new OrderField[] { SchemaHistory.SCHEMA_HISTORY.SUCCESS }, false);
     public static final Index UQ_DEVICE_REGISTRATION_LIVE = Internal.createIndex(DSL.name("uq_device_registration_live"), DeviceRegistration.DEVICE_REGISTRATION, new OrderField[] { DeviceRegistration.DEVICE_REGISTRATION.ESN }, true);
-    public static final Index UQ_NOTIFICATION_UNREAD_NEWS = Internal.createIndex(DSL.name("uq_notification_unread_news"), Notification.NOTIFICATION, new OrderField[] { Notification.NOTIFICATION.RECIPIENT_ACCOUNT_ID, Notification.NOTIFICATION.KIND, Notification.NOTIFICATION.SHARE_ID }, true);
     public static final Index UQ_PASSWORD_RESET_CODE_PENDING_ACCOUNT = Internal.createIndex(DSL.name("uq_password_reset_code_pending_account"), PasswordResetCode.PASSWORD_RESET_CODE, new OrderField[] { PasswordResetCode.PASSWORD_RESET_CODE.ACCOUNT_ID }, true);
     public static final Index UQ_PM_INVITATION_LIVE = Internal.createIndex(DSL.name("uq_pm_invitation_live"), ProfileManagerInvitation.PROFILE_MANAGER_INVITATION, new OrderField[] { ProfileManagerInvitation.PROFILE_MANAGER_INVITATION.PROFILE_ID, ProfileManagerInvitation.PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID }, true);
     public static final Index UQ_PROFILE_HOUSEHOLD_SHARE_LIVE = Internal.createIndex(DSL.name("uq_profile_household_share_live"), ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, new OrderField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.PROFILE_ID, ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID }, true);
     public static final Index UQ_REFRESH_TOKEN_ACTIVE_SESSION = Internal.createIndex(DSL.name("uq_refresh_token_active_session"), RefreshToken.REFRESH_TOKEN, new OrderField[] { RefreshToken.REFRESH_TOKEN.SESSION_ID }, true);
+    public static final Index UQ_SHARE_NOTIFICATION_UNREAD_NEWS = Internal.createIndex(DSL.name("uq_share_notification_unread_news"), ShareNotification.SHARE_NOTIFICATION, new OrderField[] { ShareNotification.SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID, ShareNotification.SHARE_NOTIFICATION.KIND, ShareNotification.SHARE_NOTIFICATION.SHARE_ID }, true);
 }

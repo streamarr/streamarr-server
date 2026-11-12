@@ -1,9 +1,9 @@
 package com.streamarr.server.repositories.notification;
 
-import static com.streamarr.server.jooq.generated.tables.Notification.NOTIFICATION;
 import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.ProfileManager.PROFILE_MANAGER;
+import static com.streamarr.server.jooq.generated.tables.ShareNotification.SHARE_NOTIFICATION;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static com.streamarr.server.repositories.auth.ProfileShareStatusReads.readsAs;
 import static org.jooq.impl.DSL.greatest;
@@ -25,7 +25,7 @@ import com.streamarr.server.jooq.generated.enums.NotificationForm;
 import com.streamarr.server.jooq.generated.enums.ProfileShareAnswer;
 import com.streamarr.server.jooq.generated.enums.ProfileShareEndedBy;
 import com.streamarr.server.jooq.generated.enums.ProfileShareSide;
-import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
+import com.streamarr.server.jooq.generated.tables.records.ShareNotificationRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.repositories.auth.ProfileShareReaders;
@@ -50,7 +50,7 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 
 @RequiredArgsConstructor
-public class NotificationRepositoryCustomImpl implements NotificationRepositoryCustom {
+public class ShareNotificationRepositoryCustomImpl implements ShareNotificationRepositoryCustom {
 
   // PostgreSQL leaves xmax at zero on a row the statement inserted, and sets it on a row the
   // statement's ON CONFLICT DO UPDATE took.
@@ -59,8 +59,8 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
 
   private static final Keyset<OffsetDateTime> NEWEST_FIRST =
       Keyset.<OffsetDateTime>builder()
-          .sortValue(NOTIFICATION.LATEST_EVENT_AT)
-          .itemId(NOTIFICATION.ID)
+          .sortValue(SHARE_NOTIFICATION.LATEST_EVENT_AT)
+          .itemId(SHARE_NOTIFICATION.ID)
           .build();
 
   private final DSLContext dsl;
@@ -70,8 +70,8 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   public List<Row<Notification>> rowsOfRecipient(UUID recipientAccountId, Seek seek) {
     var query =
         NEWEST_FIRST.rowsBeyond(
-            NEWEST_FIRST.selectFrom(dsl, NOTIFICATION),
-            NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId).and(mayBeShown()),
+            NEWEST_FIRST.selectFrom(dsl, SHARE_NOTIFICATION),
+            SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId).and(mayBeShown()),
             seek);
     return JooqQueryHelper.nativeRows(entityManager, query, Notification.class, NEWEST_FIRST);
   }
@@ -85,9 +85,9 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
 
     var query =
         NEWEST_FIRST
-            .selectFrom(dsl, NOTIFICATION)
-            .where(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
-            .and(NOTIFICATION.ID.in(notificationIds))
+            .selectFrom(dsl, SHARE_NOTIFICATION)
+            .where(SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
+            .and(SHARE_NOTIFICATION.ID.in(notificationIds))
             .and(mayBeShown());
     return JooqQueryHelper.nativeRows(entityManager, query, Notification.class, NEWEST_FIRST);
   }
@@ -95,9 +95,9 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   @Override
   public List<Notification> findRequestsAbout(UUID shareId) {
     var query =
-        dsl.selectFrom(NOTIFICATION)
-            .where(NOTIFICATION.SHARE_ID.eq(shareId))
-            .and(NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)));
+        dsl.selectFrom(SHARE_NOTIFICATION)
+            .where(SHARE_NOTIFICATION.SHARE_ID.eq(shareId))
+            .and(SHARE_NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)));
     return JooqQueryHelper.nativeQuery(entityManager, query, Notification.class);
   }
 
@@ -109,7 +109,7 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   @Override
   public List<Notification> findUnreadOfRecipientWithIds(
       UUID recipientAccountId, Collection<UUID> notificationIds, Instant now) {
-    return unreadOf(recipientAccountId, NOTIFICATION.ID.in(notificationIds), now);
+    return unreadOf(recipientAccountId, SHARE_NOTIFICATION.ID.in(notificationIds), now);
   }
 
   @Override
@@ -119,21 +119,21 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
       return List.of();
     }
 
-    return dsl.update(NOTIFICATION)
-        .set(NOTIFICATION.READ_AT, now.atOffset(ZoneOffset.UTC))
-        .where(NOTIFICATION.ID.in(notificationIds))
-        .and(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
-        .and(NOTIFICATION.READ_AT.isNull())
-        .returning(NOTIFICATION.ID)
-        .fetch(NOTIFICATION.ID);
+    return dsl.update(SHARE_NOTIFICATION)
+        .set(SHARE_NOTIFICATION.READ_AT, now.atOffset(ZoneOffset.UTC))
+        .where(SHARE_NOTIFICATION.ID.in(notificationIds))
+        .and(SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
+        .and(SHARE_NOTIFICATION.READ_AT.isNull())
+        .returning(SHARE_NOTIFICATION.ID)
+        .fetch(SHARE_NOTIFICATION.ID);
   }
 
   private List<Notification> unreadOf(UUID recipientAccountId, Condition among, Instant now) {
     var query =
-        dsl.selectFrom(NOTIFICATION)
-            .where(NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
-            .and(NOTIFICATION.READ_AT.isNull())
-            .and(NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).or(requestWaitsAt(now)))
+        dsl.selectFrom(SHARE_NOTIFICATION)
+            .where(SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId))
+            .and(SHARE_NOTIFICATION.READ_AT.isNull())
+            .and(SHARE_NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).or(requestWaitsAt(now)))
             .and(mayBeShown())
             .and(among);
     return JooqQueryHelper.nativeQuery(entityManager, query, Notification.class);
@@ -141,7 +141,7 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
 
   @Override
   public UUID insert(NotificationDraft<NotificationKind, ProfileShareFacts> draft) {
-    return values(draft).returning(NOTIFICATION.ID).fetchSingle().getId();
+    return values(draft).returning(SHARE_NOTIFICATION.ID).fetchSingle().getId();
   }
 
   @Override
@@ -149,22 +149,27 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
       NotificationDraft<NotificationKind, ProfileShareFacts> draft) {
     var stored =
         values(draft)
-            .onConflict(NOTIFICATION.RECIPIENT_ACCOUNT_ID, NOTIFICATION.KIND, NOTIFICATION.SHARE_ID)
+            .onConflict(
+                SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID,
+                SHARE_NOTIFICATION.KIND,
+                SHARE_NOTIFICATION.SHARE_ID)
             .where(
-                NOTIFICATION
+                SHARE_NOTIFICATION
                     .FORM
                     .eq(inline(NotificationForm.NEWS))
-                    .and(NOTIFICATION.READ_AT.isNull()))
+                    .and(SHARE_NOTIFICATION.READ_AT.isNull()))
             .doUpdate()
             .set(
-                NOTIFICATION.LATEST_EVENT_AT,
-                greatest(NOTIFICATION.LATEST_EVENT_AT, DSL.excluded(NOTIFICATION.LATEST_EVENT_AT)))
+                SHARE_NOTIFICATION.LATEST_EVENT_AT,
+                greatest(
+                    SHARE_NOTIFICATION.LATEST_EVENT_AT,
+                    DSL.excluded(SHARE_NOTIFICATION.LATEST_EVENT_AT)))
             .returningResult(
-                NOTIFICATION.ID,
-                NOTIFICATION.PROFILE_NAME,
-                NOTIFICATION.SHARE_ANSWER,
-                NOTIFICATION.SHARE_ENDED_BY,
-                NOTIFICATION.ADDRESSED_TO,
+                SHARE_NOTIFICATION.ID,
+                SHARE_NOTIFICATION.PROFILE_NAME,
+                SHARE_NOTIFICATION.SHARE_ANSWER,
+                SHARE_NOTIFICATION.SHARE_ENDED_BY,
+                SHARE_NOTIFICATION.ADDRESSED_TO,
                 INSERTED)
             .fetchSingle();
     var notificationId = stored.value1();
@@ -176,18 +181,20 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
         notificationId,
         new ProfileShareFacts(
             stored.value2(),
-            Optional.ofNullable(stored.value3()).map(NotificationRepositoryCustomImpl::answerOf),
-            Optional.ofNullable(stored.value4()).map(NotificationRepositoryCustomImpl::endedByOf),
+            Optional.ofNullable(stored.value3())
+                .map(ShareNotificationRepositoryCustomImpl::answerOf),
+            Optional.ofNullable(stored.value4())
+                .map(ShareNotificationRepositoryCustomImpl::endedByOf),
             addressedToOf(stored.value5())));
   }
 
   @Override
   public void replaceFacts(UUID notificationId, ProfileShareFacts facts) {
-    dsl.update(NOTIFICATION)
-        .set(NOTIFICATION.PROFILE_NAME, facts.profileName())
-        .set(NOTIFICATION.SHARE_ANSWER, answer(facts))
-        .set(NOTIFICATION.SHARE_ENDED_BY, endedBy(facts))
-        .where(NOTIFICATION.ID.eq(notificationId))
+    dsl.update(SHARE_NOTIFICATION)
+        .set(SHARE_NOTIFICATION.PROFILE_NAME, facts.profileName())
+        .set(SHARE_NOTIFICATION.SHARE_ANSWER, answer(facts))
+        .set(SHARE_NOTIFICATION.SHARE_ENDED_BY, endedBy(facts))
+        .where(SHARE_NOTIFICATION.ID.eq(notificationId))
         .execute();
   }
 
@@ -217,11 +224,14 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   @Override
   public int deleteHistoryBefore(Instant cutoff, Instant now) {
     var readNews =
-        NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).and(NOTIFICATION.READ_AT.isNotNull());
+        SHARE_NOTIFICATION
+            .FORM
+            .eq(inline(NotificationForm.NEWS))
+            .and(SHARE_NOTIFICATION.READ_AT.isNotNull());
     var resolvedRequest =
-        NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)).andNot(requestWaitsAt(now));
-    return dsl.deleteFrom(NOTIFICATION)
-        .where(NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)))
+        SHARE_NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)).andNot(requestWaitsAt(now));
+    return dsl.deleteFrom(SHARE_NOTIFICATION)
+        .where(SHARE_NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)))
         .and(readNews.or(resolvedRequest))
         .execute();
   }
@@ -229,25 +239,25 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   @Override
   public List<Notification> findUnreadNewsBefore(Instant cutoff, Optional<UUID> after, int limit) {
     var query =
-        dsl.selectFrom(NOTIFICATION)
+        dsl.selectFrom(SHARE_NOTIFICATION)
             .where(unreadNewsBefore(cutoff))
-            .and(after.map(NOTIFICATION.ID::gt).orElse(DSL.noCondition()))
-            .orderBy(NOTIFICATION.ID)
+            .and(after.map(SHARE_NOTIFICATION.ID::gt).orElse(DSL.noCondition()))
+            .orderBy(SHARE_NOTIFICATION.ID)
             .limit(limit);
     return JooqQueryHelper.nativeQuery(entityManager, query, Notification.class);
   }
 
   @Override
   public int deleteUnreadNewsBefore(Collection<UUID> notificationIds, Instant cutoff) {
-    return dsl.deleteFrom(NOTIFICATION)
-        .where(NOTIFICATION.ID.in(notificationIds))
+    return dsl.deleteFrom(SHARE_NOTIFICATION)
+        .where(SHARE_NOTIFICATION.ID.in(notificationIds))
         .and(unreadNewsBefore(cutoff))
         .execute();
   }
 
   /** A request that waits at the instant: its subject still waits, as its kind's subject says. */
   private static Condition requestWaitsAt(Instant now) {
-    return NOTIFICATION
+    return SHARE_NOTIFICATION
         .FORM
         .eq(inline(NotificationForm.REQUEST))
         .and(
@@ -263,7 +273,7 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
           DSL.exists(
               DSL.selectOne()
                   .from(PROFILE_HOUSEHOLD_SHARE)
-                  .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
+                  .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(SHARE_NOTIFICATION.SHARE_ID))
                   .and(waitingAt(now)));
     };
   }
@@ -286,10 +296,10 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
           DSL.exists(
               DSL.selectOne()
                   .from(PROFILE_HOUSEHOLD_SHARE)
-                  .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(NOTIFICATION.SHARE_ID))
+                  .where(PROFILE_HOUSEHOLD_SHARE.ID.eq(SHARE_NOTIFICATION.SHARE_ID))
                   .and(
                       ProfileShareReaders.couldRead(
-                          NOTIFICATION.RECIPIENT_ACCOUNT_ID,
+                          SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID,
                           PROFILE_HOUSEHOLD_SHARE.PROFILE_ID,
                           PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID,
                           householdSideReads())));
@@ -305,14 +315,14 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
         .in(
             inline(com.streamarr.server.jooq.generated.enums.ProfileShareStatus.PENDING),
             inline(com.streamarr.server.jooq.generated.enums.ProfileShareStatus.ACTIVE))
-        .or(NOTIFICATION.ADDRESSED_TO.eq(inline(ProfileShareSide.HOUSEHOLD_SIDE)));
+        .or(SHARE_NOTIFICATION.ADDRESSED_TO.eq(inline(ProfileShareSide.HOUSEHOLD_SIDE)));
   }
 
   private static Condition kindAbout(NotificationSubject subject) {
-    return NOTIFICATION.KIND.in(
+    return SHARE_NOTIFICATION.KIND.in(
         Arrays.stream(NotificationKind.values())
             .filter(kind -> kind.getSubject() == subject)
-            .map(NotificationRepositoryCustomImpl::storedKind)
+            .map(ShareNotificationRepositoryCustomImpl::storedKind)
             .map(DSL::inline)
             .toList());
   }
@@ -328,15 +338,15 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
   // Disabling an Account changes nothing for its Notifications, and the guard denies a disabled
   // Account everything, so its unread news is never a candidate.
   private static Condition unreadNewsBefore(Instant cutoff) {
-    return NOTIFICATION
+    return SHARE_NOTIFICATION
         .FORM
         .eq(inline(NotificationForm.NEWS))
-        .and(NOTIFICATION.READ_AT.isNull())
-        .and(NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)))
+        .and(SHARE_NOTIFICATION.READ_AT.isNull())
+        .and(SHARE_NOTIFICATION.LATEST_EVENT_AT.lt(cutoff.atOffset(ZoneOffset.UTC)))
         .andNotExists(
             DSL.selectOne()
                 .from(USER_ACCOUNT)
-                .where(USER_ACCOUNT.ID.eq(NOTIFICATION.RECIPIENT_ACCOUNT_ID))
+                .where(USER_ACCOUNT.ID.eq(SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID))
                 .and(USER_ACCOUNT.ENABLED.isFalse()));
   }
 
@@ -372,20 +382,20 @@ public class NotificationRepositoryCustomImpl implements NotificationRepositoryC
             .fetch(USER_ACCOUNT.ID));
   }
 
-  private InsertSetMoreStep<NotificationRecord> values(
+  private InsertSetMoreStep<ShareNotificationRecord> values(
       NotificationDraft<NotificationKind, ProfileShareFacts> draft) {
     var facts = draft.facts();
     var kind = draft.kind();
-    return dsl.insertInto(NOTIFICATION)
-        .set(NOTIFICATION.RECIPIENT_ACCOUNT_ID, draft.recipientAccountId())
-        .set(NOTIFICATION.KIND, storedKind(kind))
-        .set(NOTIFICATION.FORM, NotificationForm.valueOf(kind.getForm().name()))
-        .set(NOTIFICATION.SHARE_ID, draft.subjectId())
-        .set(NOTIFICATION.PROFILE_NAME, facts.profileName())
-        .set(NOTIFICATION.SHARE_ANSWER, answer(facts))
-        .set(NOTIFICATION.SHARE_ENDED_BY, endedBy(facts))
-        .set(NOTIFICATION.LATEST_EVENT_AT, draft.at().atOffset(ZoneOffset.UTC))
-        .set(NOTIFICATION.ADDRESSED_TO, ProfileShareSide.valueOf(facts.addressedTo().name()));
+    return dsl.insertInto(SHARE_NOTIFICATION)
+        .set(SHARE_NOTIFICATION.RECIPIENT_ACCOUNT_ID, draft.recipientAccountId())
+        .set(SHARE_NOTIFICATION.KIND, storedKind(kind))
+        .set(SHARE_NOTIFICATION.FORM, NotificationForm.valueOf(kind.getForm().name()))
+        .set(SHARE_NOTIFICATION.SHARE_ID, draft.subjectId())
+        .set(SHARE_NOTIFICATION.PROFILE_NAME, facts.profileName())
+        .set(SHARE_NOTIFICATION.SHARE_ANSWER, answer(facts))
+        .set(SHARE_NOTIFICATION.SHARE_ENDED_BY, endedBy(facts))
+        .set(SHARE_NOTIFICATION.LATEST_EVENT_AT, draft.at().atOffset(ZoneOffset.UTC))
+        .set(SHARE_NOTIFICATION.ADDRESSED_TO, ProfileShareSide.valueOf(facts.addressedTo().name()));
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")

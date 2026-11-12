@@ -9,9 +9,9 @@ import com.streamarr.server.domain.notification.NotificationForm;
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.fakes.FakeAuthorizationService;
-import com.streamarr.server.fakes.FakeNotificationRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeServerSettingsRepository;
+import com.streamarr.server.fakes.FakeShareNotificationRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
@@ -38,7 +38,8 @@ class NotificationRetentionSweeperTest {
   private static final UUID UNDECIDED_RECIPIENT = UUID.randomUUID();
   private static final UUID HIDDEN_RECIPIENT = UUID.randomUUID();
 
-  private final FakeNotificationRepository notifications = new FakeNotificationRepository();
+  private final FakeShareNotificationRepository notifications =
+      new FakeShareNotificationRepository();
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
   private final FakeAuthorizationService authorization =

@@ -31,7 +31,7 @@ CREATE TYPE profile_share_ended_by AS ENUM ('OFFERING_SIDE', 'HOUSEHOLD_SIDE', '
 
 CREATE TYPE profile_share_side AS ENUM ('OFFERING_SIDE', 'HOUSEHOLD_SIDE');
 
-CREATE TABLE notification
+CREATE TABLE share_notification
 (
     id                   UUID                     NOT NULL DEFAULT gen_random_uuid(),
     created_on           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -48,34 +48,35 @@ CREATE TABLE notification
     latest_event_at      TIMESTAMP WITH TIME ZONE NOT NULL,
     read_at              TIMESTAMP WITH TIME ZONE,
     addressed_to         profile_share_side       NOT NULL,
-    CONSTRAINT notification_pkey PRIMARY KEY (id),
-    CONSTRAINT chk_notification_form CHECK ((kind = 'PROFILE_SHARE_OFFERED') = (form = 'REQUEST')),
-    CONSTRAINT chk_notification_share_answer
+    CONSTRAINT share_notification_pkey PRIMARY KEY (id),
+    CONSTRAINT chk_share_notification_form
+        CHECK ((kind = 'PROFILE_SHARE_OFFERED') = (form = 'REQUEST')),
+    CONSTRAINT chk_share_notification_share_answer
         CHECK ((kind = 'PROFILE_SHARE_ANSWERED') = (share_answer IS NOT NULL)),
-    CONSTRAINT chk_notification_share_ended_by
+    CONSTRAINT chk_share_notification_share_ended_by
         CHECK ((kind = 'PROFILE_SHARE_ENDED') = (share_ended_by IS NOT NULL)),
     -- Offer waiting tells the Household's side and Offer answered the offering side; Share ended
     -- tells either.
-    CONSTRAINT chk_notification_addressed_to
+    CONSTRAINT chk_share_notification_addressed_to
         CHECK ((kind <> 'PROFILE_SHARE_OFFERED' OR addressed_to = 'HOUSEHOLD_SIDE')
             AND (kind <> 'PROFILE_SHARE_ANSWERED' OR addressed_to = 'OFFERING_SIDE')),
-    CONSTRAINT fk_notification_share FOREIGN KEY (share_id)
+    CONSTRAINT fk_share_notification_share FOREIGN KEY (share_id)
         REFERENCES profile_household_share (id) ON DELETE CASCADE
 );
 
 -- One unread Notification per recipient, kind and subject: a later event of the kind updates the
 -- unread one in place. Requests never update in place, so the rule covers news alone.
-CREATE UNIQUE INDEX uq_notification_unread_news
-    ON notification (recipient_account_id, kind, share_id)
+CREATE UNIQUE INDEX uq_share_notification_unread_news
+    ON share_notification (recipient_account_id, kind, share_id)
     WHERE form = 'NEWS' AND read_at IS NULL;
 
 -- The recipient's list, newest latest event first.
-CREATE INDEX idx_notification_recipient_latest_event
-    ON notification (recipient_account_id, latest_event_at DESC, id DESC);
+CREATE INDEX idx_share_notification_recipient_latest_event
+    ON share_notification (recipient_account_id, latest_event_at DESC, id DESC);
 
-CREATE INDEX idx_notification_share ON notification (share_id);
+CREATE INDEX idx_share_notification_share ON share_notification (share_id);
 
-CREATE TRIGGER fill_audit_columns BEFORE INSERT OR UPDATE ON notification
+CREATE TRIGGER fill_audit_columns BEFORE INSERT OR UPDATE ON share_notification
     FOR EACH ROW EXECUTE FUNCTION fill_audit_columns();
 
 CREATE FUNCTION delete_notifications_of_deleted_accounts()
@@ -84,7 +85,7 @@ CREATE FUNCTION delete_notifications_of_deleted_accounts()
 AS
 $$
 BEGIN
-    DELETE FROM notification n USING deleted_accounts d WHERE n.recipient_account_id = d.id;
+    DELETE FROM share_notification n USING deleted_accounts d WHERE n.recipient_account_id = d.id;
     RETURN NULL;
 END;
 $$;

@@ -1,7 +1,7 @@
 package com.streamarr.server.services.notification;
 
 import com.streamarr.server.domain.notification.Notification;
-import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
@@ -30,7 +30,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 class NotificationRetentionSweeper {
 
-  private final NotificationRepository notificationRepository;
+  private final ShareNotificationRepository notificationRepository;
   private final NotificationReads notificationReads;
   private final ServerSettingsService serverSettingsService;
   private final TransactionTemplate transactionTemplate;
@@ -38,7 +38,7 @@ class NotificationRetentionSweeper {
   private final int batchSize;
 
   NotificationRetentionSweeper(
-      NotificationRepository notificationRepository,
+      ShareNotificationRepository notificationRepository,
       NotificationReads notificationReads,
       ServerSettingsService serverSettingsService,
       TransactionTemplate transactionTemplate,

@@ -21,7 +21,7 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
 import com.streamarr.server.services.identity.AccountLifecycleService;
@@ -61,7 +61,7 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
   @Autowired private AccountInvitationService accountInvitations;
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private ProfileShareExpirySweeper expirySweeper;
-  @Autowired private NotificationRepository notificationRepository;
+  @Autowired private ShareNotificationRepository notificationRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
