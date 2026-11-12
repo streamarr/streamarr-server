@@ -72,8 +72,7 @@ public class LocalSegmentStore implements SegmentStore {
   @Override
   public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
     try {
-      holdFolderLock();
-      var temporary = PreparedSegmentFile.create(baseDir, data);
+      var temporary = PreparedSegmentFile.create(heldFolder(), data);
       return new LocalPreparedSegment(sessionId, segmentName, temporary);
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to prepare segment: " + segmentName, e);
@@ -190,10 +189,8 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   private Path createSessionDirectory(UUID sessionId) {
-    var dir = baseDir.resolve(sessionId.toString());
-
     try {
-      holdFolderLock();
+      var dir = heldFolder().resolve(sessionId.toString());
       Files.createDirectories(dir);
       Files.write(
           dir.resolve(SESSION_MARK_NAME),
@@ -207,11 +204,11 @@ public class LocalSegmentStore implements SegmentStore {
     }
   }
 
-  // Before the store's first write into the folder, so that no other server process's start
-  // deletes what it writes there.
-  private void holdFolderLock() throws IOException {
+  // The folder of each write, whose lock the store holds from its first write, so that no other
+  // server process's start deletes what it writes there.
+  private Path heldFolder() throws IOException {
     Files.createDirectories(baseDir);
-    lock.holdShared(baseDir);
+    return lock.holdShared(baseDir);
   }
 
   private void deleteDirectoryRecursively(Path dir) {

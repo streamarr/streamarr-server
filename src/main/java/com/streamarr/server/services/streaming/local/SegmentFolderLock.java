@@ -43,11 +43,12 @@ public final class SegmentFolderLock implements AutoCloseable {
   /**
    * Holds the folder's lock shared until this lock closes, so that no other server process's start
    * deletes what this process writes there. It waits while another process's start holds the lock
-   * alone.
+   * alone. It returns the folder whose lock it holds, the only folder that this process may write
+   * into.
    */
-  public synchronized void holdShared(Path folder) throws IOException {
+  public synchronized Path holdShared(Path folder) throws IOException {
     if (heldShared) {
-      return;
+      return folder;
     }
 
     try {
@@ -57,6 +58,7 @@ public final class SegmentFolderLock implements AutoCloseable {
     }
 
     heldShared = true;
+    return folder;
   }
 
   private Optional<FileLock> tryLockAlone(Path folder) throws IOException {
