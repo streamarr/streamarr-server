@@ -2,6 +2,7 @@ package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.github.kagkarlsson.scheduler.SchedulerState;
 import com.github.kagkarlsson.scheduler.event.ExecutionChain;
@@ -88,15 +89,21 @@ class ReleaseAtShutdownTest {
     assertThat(tasks.released()).containsExactly(picked.execution());
   }
 
-  @Test
+  @ParameterizedTest
+  @MethodSource("failuresTheShutdownDidNotCause")
   @DisplayName(
       "Should hand the failure to the task when a failure that the shutdown did not cause ends the"
           + " execution while its scheduler shuts down")
-  void shouldHandTheFailureToTheTaskWhenAFailureThatTheShutdownDidNotCauseEndsTheExecution() {
-    var picked = picked(FAILING_ON_ITS_OWN);
+  void shouldHandTheFailureToTheTaskWhenAFailureThatTheShutdownDidNotCauseEndsTheExecution(
+      RuntimeException failure) {
+    var picked =
+        picked(
+            (_, _) -> {
+              throw failure;
+            });
     schedulerState.setIsShuttingDown();
 
-    assertThatIllegalStateException().isThrownBy(() -> executeThroughTheRelease(picked));
+    assertThatThrownBy(() -> executeThroughTheRelease(picked)).isSameAs(failure);
     assertThat(tasks.released()).isEmpty();
   }
 
@@ -184,6 +191,12 @@ class ReleaseAtShutdownTest {
         Named.of("a connection pool wait", new InterruptedException()),
         Named.of("a blocking stream read", new InterruptedIOException()),
         Named.of("a channel read", new ClosedByInterruptException()));
+  }
+
+  static Stream<Named<RuntimeException>> failuresTheShutdownDidNotCause() {
+    return Stream.of(
+        Named.of(
+            "a failure of the task's own", new IllegalStateException("The source file is gone")));
   }
 
   // Saves the execution's end as a database write does: the connection pool refuses a connection
