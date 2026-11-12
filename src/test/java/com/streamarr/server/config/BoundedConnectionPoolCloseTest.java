@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.support.BoundedTask;
 import com.zaxxer.hikari.HikariConfig;
@@ -77,6 +78,41 @@ class BoundedConnectionPoolCloseTest {
     assertThat(poolCloseEnded.await(CLOSE_WAIT.toSeconds(), TimeUnit.SECONDS))
         .as("The pool's own close ends at its interrupt, not after its login timeout")
         .isTrue();
+  }
+
+  // The context's close goes on, and the interrupt stays for whoever stops the server.
+  @Test
+  @DisplayName(
+      "Should stop waiting for the pool's close, end that close and keep the interrupt, when the"
+          + " thread that closes the context is interrupted")
+  void shouldStopWaitingEndTheCloseAndKeepTheInterruptWhenTheClosingThreadIsInterrupted()
+      throws Exception {
+    var pool = poolOfTheSilentDatabase();
+    assertThat(connectionOpening.await(CLOSE_WAIT.toSeconds(), TimeUnit.SECONDS)).isTrue();
+
+    try (var closing =
+        BoundedTask.start(
+            () -> {
+              Thread.currentThread().interrupt();
+              boundedClose.postProcessBeforeDestruction(pool, "dataSource");
+              return Thread.currentThread().isInterrupted();
+            })) {
+      assertThat(closing.await(CLOSE_WAIT)).as("The close keeps the interrupt").isTrue();
+    }
+
+    assertThat(poolCloseEnded.await(CLOSE_WAIT.toSeconds(), TimeUnit.SECONDS))
+        .as("The pool's own close ends at its interrupt")
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should leave a bean alone when it is not a connection pool")
+  void shouldLeaveABeanAloneWhenItIsNotAConnectionPool() {
+    var notAPool = new Object();
+
+    assertThat(boundedClose.requiresDestruction(notAPool)).isFalse();
+    assertThatNoException()
+        .isThrownBy(() -> boundedClose.postProcessBeforeDestruction(notAPool, "notAPool"));
   }
 
   private HikariDataSource poolOfTheSilentDatabase() {
