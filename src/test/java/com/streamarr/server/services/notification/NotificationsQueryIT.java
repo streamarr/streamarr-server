@@ -81,6 +81,11 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
       }
       """;
 
+  private static final String HOUSEHOLD_SHARES =
+      """
+      query { householdShares(householdId: "%s") { edges { node { id } } } }
+      """;
+
   private static final String PAGE =
       """
       query { notifications(first: %d%s) {
@@ -540,6 +545,40 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
                     ended.getId().toString())));
   }
 
+  /**
+   * The record's share query for the same share is a by-id read that is not built yet, and a
+   * HouseholdAdmin never lists an ended share, so the Household's shares stand in for it: the
+   * demoted Account, which listed them, now reads none.
+   */
+  @Test
+  @DisplayName(
+      "Should keep the share ended news and the name it was told after its recipient is demoted,"
+          + " while the Household's shares answer none")
+  void
+      shouldKeepTheShareEndedNewsAndItsNameAfterItsRecipientIsDemotedWhileTheShareQueryAnswersNone()
+          throws Exception {
+    var told = sam.profile().getName();
+    var ended = steps.accept(riverside, steps.offer(sam, sam.profile(), riverside));
+    sharing.endProfileShare(authTestSupport.identityOf(sam), ended.getId());
+    assertThat(householdShareIds(riversideAdmin)).isNotEmpty();
+
+    demote(riversideAdmin);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.__typename")
+                .value("ProfileShareEndedNotification"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.shareId").value(ended.getId().toString()))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value(told))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(true))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.message", containsString(told)));
+    assertThat(householdShareIds(riversideAdmin)).isEmpty();
+  }
+
   @Test
   @DisplayName(
       "Should give no request back when a demoted HouseholdAdmin is promoted again while the offer"
@@ -623,6 +662,33 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
             jsonPath(
                 "$.data.notifications.edges[*].node.shareId",
                 contains(ended.getId().toString(), ended.getId().toString())));
+  }
+
+  /**
+   * The ids of the shares into Riverside that the reader lists, signed in afresh, so its token
+   * carries the role that its Account holds now.
+   */
+  private List<String> householdShareIds(TestIdentity reader) throws Exception {
+    var signedInAfresh =
+        TestIdentity.builder()
+            .account(userAccountRepository.findById(reader.account().getId()).orElseThrow())
+            .household(reader.household())
+            .profile(reader.profile())
+            .session(reader.session())
+            .rawRefreshToken(reader.rawRefreshToken())
+            .build();
+    var body =
+        mockMvc
+            .perform(
+                graphqlRequest(
+                    authTestSupport.accountBearer(signedInAfresh),
+                    HOUSEHOLD_SHARES.formatted(riverside.household().getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return JsonPath.read(body, "$.data.householdShares.edges[*].node.id");
   }
 
   /** A ServerAdmin moves the Account into Sam's Household, where it keeps visiting its old one. */
