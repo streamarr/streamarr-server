@@ -2311,10 +2311,11 @@ class StreamingResolverTest {
   }
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("capabilitiesWithValuesTheSchemaDoesNotName")
-  @DisplayName("Should refuse the request when its declaration names a value the schema does not")
-  void shouldRefuseTheRequestWhenItsDeclarationNamesAValueTheSchemaDoesNot(
-      String scenario, String capabilities, String undefinedValue) {
+  @MethodSource("capabilitiesWithValuesOrFieldsTheSchemaDoesNotName")
+  @DisplayName(
+      "Should refuse the request when its declaration names a value or a field the schema does not")
+  void shouldRefuseTheRequestWhenItsDeclarationNamesAValueOrAFieldTheSchemaDoesNot(
+      String scenario, String capabilities, String undefinedName) {
     STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
 
     var result =
@@ -2333,14 +2334,14 @@ class StreamingResolverTest {
         .satisfies(
             error -> {
               assertThat(error.getErrorType()).hasToString("INVALID_ARGUMENT");
-              assertThat(error.getMessage()).contains(undefinedValue);
+              assertThat(error.getMessage()).contains(undefinedName);
             });
     assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
   }
 
-  // ADR 0049 declares no Dolby Vision profile 7 and no NONE or UNSPECIFIED compatible base, and
-  // issue 395 declares no VP9 codec family.
-  static Stream<Arguments> capabilitiesWithValuesTheSchemaDoesNotName() {
+  // ADR 0049 declares no Dolby Vision profile 7, no NONE or UNSPECIFIED compatible base and no
+  // maximum codec tier, and issue 395 declares no VP9 codec family.
+  static Stream<Arguments> capabilitiesWithValuesOrFieldsTheSchemaDoesNotName() {
     return Stream.of(
         Arguments.of(
             "Dolby Vision profile 7",
@@ -2359,7 +2360,13 @@ class StreamingResolverTest {
         Arguments.of(
             "codec family VP9",
             CAPABILITIES.replace("codecFamily: H264", "codecFamily: VP9"),
-            "VP9"));
+            "VP9"),
+        Arguments.of(
+            "codec profile maximum tier",
+            CAPABILITIES.replace(
+                "codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]",
+                "codecFamily: HEVC, codecProfiles: [{profile: HEVC_MAIN, maxLevel: 51, maxTier: MAIN}]"),
+            "maxTier"));
   }
 
   // A client states whether its direct-play player selects an audio track (ADR 0045), so the
@@ -2388,38 +2395,6 @@ class StreamingResolverTest {
         .singleElement()
         .satisfies(
             error -> assertThat(error.getMessage()).contains("selectsAudioTrackInDirectPlay"));
-    assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
-  }
-
-  @Test
-  @DisplayName(
-      "Should refuse the request when a codec profile in its declaration carries a maximum tier")
-  void shouldRefuseTheRequestWhenACodecProfileInItsDeclarationCarriesAMaximumTier() {
-    STUB_SERVICE.setNextResult(buildSession(UUID.randomUUID()));
-    var capabilities =
-        CAPABILITIES.replace(
-            "codecFamily: H264, codecProfiles: [{profile: H264_HIGH, maxLevel: 41}]",
-            "codecFamily: HEVC, codecProfiles: [{profile: HEVC_MAIN, maxLevel: 51, maxTier: MAIN}]");
-    assertThat(capabilities).contains("maxTier: MAIN");
-
-    var result =
-        dgsQueryExecutor.execute(
-            """
-            mutation {
-              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
-                playbackSession { id }
-              }
-            }
-            """
-                .formatted(UUID.randomUUID(), capabilities));
-
-    assertThat(result.getErrors())
-        .singleElement()
-        .satisfies(
-            error -> {
-              assertThat(error.getErrorType()).hasToString("INVALID_ARGUMENT");
-              assertThat(error.getMessage()).contains("maxTier");
-            });
     assertThat(STUB_SERVICE.getAllSessions()).isEmpty();
   }
 
