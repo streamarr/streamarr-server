@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.web.AuthCookies;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
 import java.util.stream.Stream;

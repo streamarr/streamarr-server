@@ -1,10 +1,10 @@
 package com.streamarr.server.fixtures;
 
-import com.streamarr.server.services.pagination.ListOrder;
+import com.streamarr.server.domain.pagination.ListOrder;
+import com.streamarr.server.domain.pagination.PaginationDirection;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.services.pagination.PageRequest;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import java.util.Optional;
 
 public final class PaginationFixture {

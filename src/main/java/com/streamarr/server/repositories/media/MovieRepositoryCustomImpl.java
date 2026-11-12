@@ -12,15 +12,15 @@ import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.selectOne;
 
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.pagination.MediaFilter;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.repositories.LastWatchedExpression;
 import com.streamarr.server.repositories.WatchStateConditions;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
 import java.util.Collection;

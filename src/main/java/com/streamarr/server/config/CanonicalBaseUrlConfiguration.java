@@ -1,5 +1,7 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.properties.CanonicalBaseUrl;
+import com.streamarr.server.properties.StreamarrServerProperties;
 import java.util.Arrays;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;

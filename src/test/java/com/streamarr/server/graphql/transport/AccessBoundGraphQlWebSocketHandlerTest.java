@@ -3,11 +3,11 @@ package com.streamarr.server.graphql.transport;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.fakes.FakeTaskScheduler;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.graphql.transport.AccessBoundGraphQlWebSocketHandler.AccessBoundGraphQlWebSocketHandlerBuilder;
+import com.streamarr.server.services.auth.StreamarrAuthenticationToken;
 import io.micrometer.context.ContextSnapshot;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;

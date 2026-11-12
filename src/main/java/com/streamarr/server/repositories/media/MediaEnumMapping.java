@@ -1,8 +1,8 @@
 package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.domain.media.ImageType;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.util.List;
 
 /** Maps the media enums to the generated jOOQ enums that share their names and back. */

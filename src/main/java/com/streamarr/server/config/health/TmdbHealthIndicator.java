@@ -1,5 +1,6 @@
 package com.streamarr.server.config.health;
 
+import com.streamarr.server.properties.TmdbHealthProperties;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;

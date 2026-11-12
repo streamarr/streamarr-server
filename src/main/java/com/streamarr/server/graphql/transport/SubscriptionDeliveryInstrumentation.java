@@ -1,6 +1,6 @@
 package com.streamarr.server.graphql.transport;
 
-import com.streamarr.server.graphql.subscriptions.SubscriptionProperties;
+import com.streamarr.server.properties.SubscriptionProperties;
 import graphql.ExecutionInput;
 import graphql.execution.SubscriptionExecutionStrategy;
 import graphql.execution.instrumentation.InstrumentationState;

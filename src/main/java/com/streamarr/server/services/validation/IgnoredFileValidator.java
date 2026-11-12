@@ -1,6 +1,6 @@
 package com.streamarr.server.services.validation;
 
-import com.streamarr.server.config.LibraryScanProperties;
+import com.streamarr.server.properties.LibraryScanProperties;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;

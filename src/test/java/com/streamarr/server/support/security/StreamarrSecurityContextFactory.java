@@ -1,8 +1,8 @@
 package com.streamarr.server.support.security;
 
-import com.streamarr.server.config.security.StreamarrAuthenticationToken;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.StreamarrAuthenticationToken;
 import com.streamarr.server.services.auth.TokenScope;
 import java.util.List;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;

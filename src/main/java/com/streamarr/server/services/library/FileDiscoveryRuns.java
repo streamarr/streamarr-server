@@ -1,12 +1,12 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ImageRefreshMode;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.ArtworkRequestService;
-import com.streamarr.server.services.ArtworkRunWaiter;
+import com.streamarr.server.services.artwork.ArtworkRequestService;
+import com.streamarr.server.services.artwork.ArtworkRunWaiter;
 import com.streamarr.server.services.audit.SystemWork;
-import com.streamarr.server.services.metadata.ImageRefreshMode;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import lombok.Builder;

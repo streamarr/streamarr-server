@@ -1,6 +1,6 @@
 package com.streamarr.server.services.metadata.series;
 
-import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.domain.media.ImageSource;
 import java.time.LocalDate;
 import java.util.List;
 import lombok.Builder;

@@ -1,7 +1,5 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.config.CanonicalBaseUrl;
-import com.streamarr.server.config.security.DeviceAuthProperties;
 import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
@@ -14,6 +12,8 @@ import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.exceptions.DevicePairingNotConfiguredException;
 import com.streamarr.server.exceptions.SetupIncompleteException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
+import com.streamarr.server.properties.CanonicalBaseUrl;
+import com.streamarr.server.properties.DeviceAuthProperties;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;

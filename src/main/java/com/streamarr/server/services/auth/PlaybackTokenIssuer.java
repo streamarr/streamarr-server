@@ -1,9 +1,9 @@
 package com.streamarr.server.services.auth;
 
-import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
+import com.streamarr.server.properties.AuthTokenProperties;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;

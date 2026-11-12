@@ -6,7 +6,6 @@ import static com.streamarr.server.jooq.generated.tables.Movie.MOVIE;
 import static com.streamarr.server.jooq.generated.tables.Season.SEASON;
 import static com.streamarr.server.jooq.generated.tables.Series.SERIES;
 
-import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.ArtworkStepsAttempt;
 import com.streamarr.server.domain.media.Image;
@@ -14,6 +13,7 @@ import com.streamarr.server.exceptions.ObsoleteArtworkStepsAttemptException;
 import com.streamarr.server.jooq.generated.enums.ImageEntityType;
 import com.streamarr.server.jooq.generated.enums.ImageSize;
 import com.streamarr.server.jooq.generated.enums.ImageType;
+import com.streamarr.server.properties.ImageProperties;
 import com.streamarr.server.repositories.PostgresTransactionLocks;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;

@@ -1,9 +1,9 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.config.ProbeSchedulingProperties;
 import com.streamarr.server.domain.task.ProbeState;
 import com.streamarr.server.domain.task.RequestedProbe;
 import com.streamarr.server.domain.task.RequestedProbeResult;
+import com.streamarr.server.properties.ProbeSchedulingProperties;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;

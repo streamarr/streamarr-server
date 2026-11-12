@@ -2,11 +2,11 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
+import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
-import com.streamarr.server.services.pagination.SortValue;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;

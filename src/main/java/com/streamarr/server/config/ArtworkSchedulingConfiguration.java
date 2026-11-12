@@ -2,8 +2,9 @@ package com.streamarr.server.config;
 
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
+import com.streamarr.server.properties.ArtworkSchedulingProperties;
 import com.streamarr.server.repositories.media.ArtworkRequestRepository;
-import com.streamarr.server.services.ArtworkStepsRunner;
+import com.streamarr.server.services.artwork.ArtworkStepsRunner;
 import java.time.Clock;
 import java.util.List;
 import java.util.function.Supplier;

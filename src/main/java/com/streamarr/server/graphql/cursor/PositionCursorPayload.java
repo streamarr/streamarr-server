@@ -1,9 +1,9 @@
 package com.streamarr.server.graphql.cursor;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.services.pagination.CursorSortValues;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.SortValue;
 import java.util.UUID;
 import lombok.NonNull;
 

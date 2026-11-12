@@ -1,9 +1,9 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.domain.pagination.PaginationDirection.FORWARD;
+import static com.streamarr.server.domain.pagination.PaginationDirection.REVERSE;
 import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static com.streamarr.server.fixtures.PaginationFixture.rowsFrom;
-import static com.streamarr.server.services.pagination.PaginationDirection.FORWARD;
-import static com.streamarr.server.services.pagination.PaginationDirection.REVERSE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -12,14 +12,14 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.pagination.MediaFilter;
+import com.streamarr.server.domain.pagination.PaginationDirection;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.pagination.ListPage;
-import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.PageRequest;
-import com.streamarr.server.services.pagination.PaginationDirection;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;

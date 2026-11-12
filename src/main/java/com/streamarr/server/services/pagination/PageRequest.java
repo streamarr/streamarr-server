@@ -1,5 +1,7 @@
 package com.streamarr.server.services.pagination;
 
+import com.streamarr.server.domain.pagination.PaginationDirection;
+import com.streamarr.server.domain.pagination.Position;
 import java.util.Optional;
 import lombok.Builder;
 import lombok.NonNull;

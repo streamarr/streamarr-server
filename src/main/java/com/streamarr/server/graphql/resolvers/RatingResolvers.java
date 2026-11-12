@@ -7,7 +7,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.dto.RatingInput;
-import com.streamarr.server.repositories.RatingRepository;
+import com.streamarr.server.services.RatingService;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,20 +17,19 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class RatingResolvers {
 
-  private final RatingRepository ratingRepository;
+  private final RatingService ratingService;
   private final AuthorizationService authorizationService;
 
   @DgsMutation
   public Rating addRating(@InputArgument("input") RatingInput ratingInput) {
     authorizationService.requireProfile();
-    return ratingRepository.save(
-        Rating.builder().source(ratingInput.getSource()).value(ratingInput.getValue()).build());
+    return ratingService.addRating(ratingInput.getSource(), ratingInput.getValue());
   }
 
   @DgsQuery
   public Optional<Rating> rating(String id) {
     authorizationService.requireProfile();
-    return ratingRepository.findById(parseUuid(id));
+    return ratingService.findById(parseUuid(id));
   }
 
   private UUID parseUuid(String id) {

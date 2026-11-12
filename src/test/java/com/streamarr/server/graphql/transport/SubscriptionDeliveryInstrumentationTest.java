@@ -2,7 +2,7 @@ package com.streamarr.server.graphql.transport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.graphql.subscriptions.SubscriptionProperties;
+import com.streamarr.server.properties.SubscriptionProperties;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;

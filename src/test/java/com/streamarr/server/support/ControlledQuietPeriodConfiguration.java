@@ -1,7 +1,7 @@
 package com.streamarr.server.support;
 
-import com.streamarr.server.config.LibraryWatcherProperties;
 import com.streamarr.server.fakes.VirtualTimeSleeper;
+import com.streamarr.server.properties.LibraryWatcherProperties;
 import com.streamarr.server.services.library.FileStabilityChecker;
 import com.streamarr.server.services.library.PollingFileStabilityChecker;
 import org.springframework.boot.test.context.TestConfiguration;
