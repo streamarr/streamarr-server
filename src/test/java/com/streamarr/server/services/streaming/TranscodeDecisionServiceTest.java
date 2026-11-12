@@ -1036,9 +1036,9 @@ class TranscodeDecisionServiceTest {
   // software encoder, so it no longer comes first as a codec family encoded in hardware (ADR 0009).
   @Test
   @DisplayName(
-      "Should encode H.264 before a codec family whose hardware encoder failed earlier in the"
+      "Should encode H.264 before a codec family when its hardware encoder failed earlier in the"
           + " playback session")
-  void shouldEncodeH264BeforeACodecFamilyWhoseHardwareEncoderFailedEarlier() {
+  void shouldEncodeH264BeforeACodecFamilyWhenItsHardwareEncoderFailedEarlier() {
     var decision =
         service
             .decide(

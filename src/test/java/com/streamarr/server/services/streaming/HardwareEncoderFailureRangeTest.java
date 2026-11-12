@@ -321,8 +321,7 @@ class HardwareEncoderFailureRangeTest {
 
   // The range that Auto gave up stays out of every later format attempt of the playback session,
   // as after a format error (ADR 0013), also once the worker's encoders write it again. The
-  // hardware
-  // encoder that failed stays out of them too.
+  // hardware encoder that failed stays out of them too.
   @Test
   @DisplayName(
       "Should keep 8-bit SDR on the software encoder in a later format attempt when the worker"
@@ -348,16 +347,16 @@ class HardwareEncoderFailureRangeTest {
   }
 
   // A worker keeps offering a hardware encoder that refused an encode at its driver's session
-  // limit.
-  // Auto's next format attempt leaves that encoder out, so the driver cannot refuse it again, and
-  // keeps the codec family on its software encoder.
+  // limit. Auto's next format attempt leaves that encoder out, so the driver cannot refuse it
+  // again, and keeps the codec family on its software encoder.
   @ParameterizedTest(name = "{0}")
   @MethodSource("clientsAndTheEncoderOfAutosNextFormatAttempt")
   @DisplayName(
-      "Should plan Auto's next format attempt off the hardware encoder that refused the encode when"
-          + " no software encoder continues it in PQ")
-  void shouldPlanAutosNextFormatAttemptOffTheHardwareEncoderThatRefusedTheEncode(
-      ClientCapabilityDeclaration client, WorkerVerifiedEncoder expectedEncoder) {
+      "Should plan Auto's next format attempt off a hardware encoder when it refused a PQ encode"
+          + " that no software encoder writes")
+  void
+      shouldPlanAutosNextFormatAttemptOffAHardwareEncoderWhenItRefusedAPqEncodeThatNoSoftwareEncoderWrites(
+          ClientCapabilityDeclaration client, WorkerVerifiedEncoder expectedEncoder) {
     connectTheFailingWorker(NO_ENCODE_FEATURE);
     probes.setDefaultProbe(sourceOf(CompatibleBase.PQ));
     var hardware = accepted(playback.start(start(options(VideoQuality.AUTO, null), client)));

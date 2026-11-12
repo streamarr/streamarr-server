@@ -7906,10 +7906,11 @@ class HlsStreamingServiceTest {
   // without 10 bits makes room for the software continuation, as it does for an ordinary encode.
   @Test
   @DisplayName(
-      "Should stop a left variant on a worker without 10 bits and continue there in 8-bit SDR when"
-          + " a 10-bit SDR encode continues in software and the only worker whose software encoder"
+      "Should continue a 10-bit SDR encode in 8-bit SDR on a worker without 10 bits when a left"
+          + " variant stopped there frees its slot and the only worker whose software encoder"
           + " writes 10 bits is busy")
-  void shouldContinueA10BitSdrEncodeIn8BitSdrWhereItStopsALeftVariantOnAWorkerWithout10Bits() {
+  void
+      shouldContinueA10BitSdrEncodeIn8BitSdrOnAWorkerWithout10BitsWhenAStoppedLeftVariantFreesIt() {
     var left = keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy();
     var switchingId = left.session().getSessionId();
     transcodeExecutor.setTargetSoftwareEncoders(AV1_WORKER, List.of(libsvtav1()));
