@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.local;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Feature;
@@ -168,6 +169,45 @@ class LocalSegmentStoreSoftLinkTest {
           .as("the media file that the soft links point to")
           .hasBinaryContent(MEDIA_FILE);
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should store no segment in the folder that a soft link points to when the soft link sits at"
+          + " a stream session's folder")
+  void shouldStoreNoSegmentInTheFolderASoftLinkPointsToWhenItSitsAtAStreamSessionsFolder()
+      throws IOException {
+    var store = new LocalSegmentStore(segmentFolder);
+    var sessionId = UUID.randomUUID();
+    Files.createSymbolicLink(segmentFolder.resolve(sessionId.toString()), outside);
+
+    var failure = catchThrowable(() -> store.storeSegment(sessionId, "720p/segment0.m4s", UPLOAD));
+
+    assertThat(outside).as("the folder that the soft link points to").isEmptyDirectory();
+    assertThat(failure).isInstanceOf(UncheckedIOException.class);
+    assertThat(entryNames(segmentFolder))
+        .as("no temporary upload file remains in the segment folder")
+        .containsExactly(sessionId.toString());
+  }
+
+  @Test
+  @DisplayName(
+      "Should store no segment in the folder that a soft link points to when the soft link sits at"
+          + " a variant folder")
+  void shouldStoreNoSegmentInTheFolderASoftLinkPointsToWhenItSitsAtAVariantFolder()
+      throws IOException {
+    var store = new LocalSegmentStore(segmentFolder);
+    var sessionId = UUID.randomUUID();
+    store.storeSegment(sessionId, "init.mp4", "ftyp moov".getBytes());
+    Files.createSymbolicLink(segmentFolder.resolve(sessionId.toString()).resolve("720p"), outside);
+
+    var failure = catchThrowable(() -> store.storeSegment(sessionId, "720p/segment0.m4s", UPLOAD));
+
+    assertThat(outside).as("the folder that the soft link points to").isEmptyDirectory();
+    assertThat(failure).isInstanceOf(UncheckedIOException.class);
+    assertThat(entryNames(segmentFolder))
+        .as("no temporary upload file remains in the segment folder")
+        .containsExactly(sessionId.toString());
   }
 
   // Stands in for a soft link that takes a file's name in the segment folder once the file exists.
