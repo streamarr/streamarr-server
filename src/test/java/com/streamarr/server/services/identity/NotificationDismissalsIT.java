@@ -14,6 +14,9 @@ import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.events.notification.ProfileManagementNotificationKinds;
+import com.streamarr.server.services.events.notification.ProfileManagementRemovedSnapshot;
+import com.streamarr.server.services.events.notification.ProfileManagerInvitationReceivedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
@@ -30,8 +33,6 @@ import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.ShareSteps;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.HouseholdNewsSnapshot;
-import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.InvitationReceivedSnapshot;
-import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.ManagementRemovedSnapshot;
 import com.streamarr.server.support.StoredNotificationRows;
 import com.streamarr.server.support.StoredNotificationRows.Row;
 import java.time.Duration;
@@ -128,17 +129,17 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
     var kai = steps.unsharedProfileManagedBy("Kai", theo, theo);
     var invitation = SubjectReference.profileManagerInvitation(invite(theo, ollie));
     tell(
-        SpecifiedOnlyNotificationKinds.MANAGEMENT_REMOVED,
+        ProfileManagementNotificationKinds.PROFILE_MANAGEMENT_REMOVED,
         SubjectReference.profile(ollie.getId()),
-        new ManagementRemovedSnapshot("Ollie"));
+        new ProfileManagementRemovedSnapshot("Ollie"));
     tell(
-        SpecifiedOnlyNotificationKinds.INVITATION_RECEIVED,
+        ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_RECEIVED,
         invitation,
-        new InvitationReceivedSnapshot("Ollie", Optional.empty()));
+        new ProfileManagerInvitationReceivedSnapshot("Ollie", Optional.empty()));
     tell(
-        SpecifiedOnlyNotificationKinds.MANAGEMENT_REMOVED,
+        ProfileManagementNotificationKinds.PROFILE_MANAGEMENT_REMOVED,
         SubjectReference.profile(kai.getId()),
-        new ManagementRemovedSnapshot("Kai"));
+        new ProfileManagementRemovedSnapshot("Kai"));
 
     var outcome = delete(ollie, deletion);
 
@@ -235,9 +236,9 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
     var personal = SubjectReference.profile(brook.profile().getId());
     var offer = steps.offer(brook, brook.profile(), theo);
     tell(
-        SpecifiedOnlyNotificationKinds.MANAGEMENT_REMOVED,
+        ProfileManagementNotificationKinds.PROFILE_MANAGEMENT_REMOVED,
         personal,
-        new ManagementRemovedSnapshot(brook.profile().getName()));
+        new ProfileManagementRemovedSnapshot(brook.profile().getName()));
 
     var outcome = delete(brook, AccountDeletion.BY_A_SERVER_ADMIN);
 

@@ -33,6 +33,14 @@ final class NotificationLines {
     };
   }
 
+  /** How the invited Account's answer to an invitation to manage a Profile reads. */
+  static String answered(ProfileManagerInvitationAnswer answer) {
+    return switch (answer) {
+      case ACCEPTED -> "accepted";
+      case DECLINED -> "declined";
+    };
+  }
+
   /**
    * How the request about a subject resolved, after the words that name the subject: decided with
    * the answer, which reads as decided while it is unknown, withdrawn, or expired.
