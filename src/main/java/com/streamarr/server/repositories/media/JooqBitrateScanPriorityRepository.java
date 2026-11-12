@@ -2,7 +2,7 @@ package com.streamarr.server.repositories.media;
 
 import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
-import com.streamarr.server.services.library.BitrateScanPriority;
+import com.streamarr.server.domain.task.BitrateScanPriority;
 import com.streamarr.server.services.library.BitrateScanTask;
 import java.util.UUID;
 import org.jooq.DSLContext;

@@ -1,6 +1,6 @@
 package com.streamarr.server.repositories.media;
 
-import com.streamarr.server.services.library.BitrateScanPriority;
+import com.streamarr.server.domain.task.BitrateScanPriority;
 import java.util.UUID;
 
 @FunctionalInterface

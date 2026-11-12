@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.domain.task.BitrateScanPriority;
 import com.streamarr.server.repositories.CancellableDatabaseWork;
 import com.streamarr.server.repositories.media.BitrateScanPriorityRepository;
 import com.streamarr.server.services.audit.SystemWork;

@@ -1,4 +1,4 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.domain.task;
 
 /**
  * The scan scheduler's claim priority of a file's bitrate scan (ADR 0054). Keyframe packet scans
@@ -25,7 +25,7 @@ public enum BitrateScanPriority {
     return value;
   }
 
-  static BitrateScanPriority of(boolean chosenVideoHasProbedBitrate) {
+  public static BitrateScanPriority of(boolean chosenVideoHasProbedBitrate) {
     if (chosenVideoHasProbedBitrate) {
       return PROBED_BITRATE;
     }

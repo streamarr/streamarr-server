@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.domain.task.BitrateScanPriority;
 import com.streamarr.server.domain.task.BitrateScanTaskRequest;
 
 /** Schedules the durable bitrate scan of a media file (ADR 0054). */

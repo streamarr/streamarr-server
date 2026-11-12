@@ -4,6 +4,7 @@ import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.streamarr.server.domain.task.BitrateScanPriority;
 import com.streamarr.server.repositories.media.BitrateScanPriorityRepository;
 import com.streamarr.server.services.events.library.UnmeasuredCopyStartedEvent;
 import com.streamarr.server.support.BoundedTask;

@@ -10,6 +10,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
+import com.streamarr.server.domain.task.BitrateScanPriority;
 import com.streamarr.server.domain.task.BitrateScanTaskRequest;
 import com.streamarr.server.repositories.media.BitrateScanPriorityRepository;
 import com.streamarr.server.repositories.media.JooqBitrateScanPriorityRepository;
