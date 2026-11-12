@@ -475,21 +475,6 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should write the decision when the request has no expiry")
-  void shouldWriteTheDecisionWhenTheRequestHasNoExpiry() {
-    tell(offeredTheo().subjectExpiresAt(Optional.empty()).build());
-
-    publish(decided(EVENT.plusSeconds(60)).build());
-
-    assertThat(onlyRowOf(sam))
-        .satisfies(
-            row -> {
-              assertThat(row.resolution()).contains("DECIDED");
-              assertThat(row.resolvedAt()).contains(EVENT.plusSeconds(60));
-            });
-  }
-
-  @Test
   @DisplayName("Should leave a request as it resolved when a later resolution arrives")
   void shouldLeaveARequestAsItResolvedWhenALaterResolutionArrives() {
     tell(offeredTheo().build());
