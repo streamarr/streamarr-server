@@ -12,11 +12,11 @@ import org.jooq.Field;
  * How a share's stored status reads at a time: a pending offer whose time ran out reads as expired
  * before the expiry sweep stores it.
  */
-public final class ProfileShareStatusReads {
+final class ProfileShareStatusReads {
 
   private ProfileShareStatusReads() {}
 
-  public static Condition readsAs(ProfileShareStatus status, Field<OffsetDateTime> at) {
+  static Condition readsAs(ProfileShareStatus status, Field<OffsetDateTime> at) {
     var stored = PROFILE_HOUSEHOLD_SHARE.STATUS.eq(inline(status));
     return switch (status) {
       case PENDING -> stored.and(unexpiredAt(at));
