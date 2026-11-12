@@ -171,6 +171,7 @@ public class HlsStreamingService implements StreamingService {
             .verifiedVideoEncoders(verifiedVideoEncoders(command.softwareEncodeCodecFamily()))
             .directPlayRefusals(directPlay.refusals())
             .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
+            .lowerVariantsWithdrawn(command.lowerVariantsWithdrawn())
             .build();
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {

@@ -19,7 +19,9 @@ import lombok.NonNull;
  * {@code audioTrackPosition} names the audio track that the viewer chose, by its position, counting
  * from 0, among the file's audio tracks in stream order. When it is empty, the stream session plays
  * its own choice of track. {@code softwareEncodeCodecFamily} names the codec family that the stream
- * session encodes with the software encoder after a hardware encoder failure (ADR 0044).
+ * session encodes with the software encoder after a hardware encoder failure (ADR 0044). {@code
+ * lowerVariantsWithdrawn} lists a copy alone, without the encoded lower variants that Auto lists
+ * beside it, after one of them failed (ADR 0050).
  */
 @Builder
 public record CreateStreamSessionCommand(
@@ -34,7 +36,8 @@ public record CreateStreamSessionCommand(
     @NonNull Set<EncodeFormat> excludedEncodeFormats,
     @NonNull Optional<Duration> startPosition,
     @NonNull OptionalInt audioTrackPosition,
-    @NonNull Optional<String> softwareEncodeCodecFamily) {
+    @NonNull Optional<String> softwareEncodeCodecFamily,
+    boolean lowerVariantsWithdrawn) {
   public CreateStreamSessionCommand {
     excludedEncodeCodecFamilies = Set.copyOf(excludedEncodeCodecFamilies);
     excludedEncodeFormats = Set.copyOf(excludedEncodeFormats);
@@ -63,7 +66,8 @@ public record CreateStreamSessionCommand(
           excludedEncodeFormats,
           startPosition,
           audioTrackPosition,
-          softwareEncodeCodecFamily);
+          softwareEncodeCodecFamily,
+          lowerVariantsWithdrawn);
     }
   }
 }

@@ -342,6 +342,11 @@ enum DecisionReason {
     the software encoder. That format attempt does not count against maximumFormatAttempts (ADR 0044).
     """
     HARDWARE_ENCODER_FAILED
+    """
+    An encoded lower variant beside the copy of the format attempt before this one failed, so this one plays the same
+    copy alone. That format attempt does not count against maximumFormatAttempts (ADR 0050).
+    """
+    LOWER_VARIANT_FAILED
 }
 
 "Why the output differs from the output that the requested playback choice asked for (ADR 0052)."

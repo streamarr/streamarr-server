@@ -187,5 +187,10 @@ public enum DecisionReason {
    * The hardware encoder of an earlier format attempt failed, so this one encodes the same codec
    * family with the software encoder (ADR 0044).
    */
-  HARDWARE_ENCODER_FAILED
+  HARDWARE_ENCODER_FAILED,
+  /**
+   * An encoded lower variant beside the copy of the format attempt before this one failed, so this
+   * one lists the same copy alone. It spends no format attempt (ADR 0050).
+   */
+  LOWER_VARIANT_FAILED
 }

@@ -22,6 +22,8 @@ import lombok.NonNull;
  * names why the format attempt does not direct-play the source file, and the decision names them
  * before its own reasons. {@code softwareEncodeCodecFamily} names the only codec family that the
  * decision may encode, with the software encoder, after a hardware encoder failed (ADR 0044).
+ * {@code lowerVariantsWithdrawn} lists a copy alone, without the encoded lower variants that Auto
+ * lists beside it, after one of them failed (ADR 0050).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecisionRequest(
@@ -38,7 +40,8 @@ public record TranscodeDecisionRequest(
     @NonNull List<WorkerVerifiedEncoder> videoEncoders,
     @NonNull List<WorkerVerifiedEncoder> verifiedVideoEncoders,
     @NonNull List<DecisionReason> directPlayRefusals,
-    @NonNull Optional<String> softwareEncodeCodecFamily) {
+    @NonNull Optional<String> softwareEncodeCodecFamily,
+    boolean lowerVariantsWithdrawn) {
 
   public TranscodeDecisionRequest {
     // A codec family that a worker with a free slot encodes has a worker-verified encoder.
@@ -86,7 +89,8 @@ public record TranscodeDecisionRequest(
           videoEncoders,
           verifiedVideoEncoders,
           directPlayRefusals,
-          softwareEncodeCodecFamily);
+          softwareEncodeCodecFamily,
+          lowerVariantsWithdrawn);
     }
   }
 }

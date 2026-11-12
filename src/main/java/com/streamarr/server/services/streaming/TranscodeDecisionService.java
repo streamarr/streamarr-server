@@ -281,10 +281,12 @@ public class TranscodeDecisionService {
   // when the format or the codec family failed earlier in the playback session, and when the source
   // has no encoded variant, such as one without a usable frame rate. So does a copy that the
   // playlist describes as Dolby Vision: no encode writes Dolby Vision (ADR 0013), so a lower
-  // variant would take a television out of its Dolby Vision mode.
+  // variant would take a television out of its Dolby Vision mode. So does the copy alone that
+  // replaces a stream session after one of its lower variants failed.
   private static Optional<LowerVariantEncode> lowerVariantEncode(
       TranscodeDecisionRequest request, CopyPlan plan) {
-    if (request.viewerLimits().quality() != VideoQuality.AUTO
+    if (request.lowerVariantsWithdrawn()
+        || request.viewerLimits().quality() != VideoQuality.AUTO
         || plan.dolbyVisionOutput().isPresent()) {
       return Optional.empty();
     }

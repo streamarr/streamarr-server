@@ -11,7 +11,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static com.streamarr.server.fixtures.StreamSessionFixture.identityFor;
 import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
@@ -20,6 +19,7 @@ import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ChromaSubsampling;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
+import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionConfiguration;
 import com.streamarr.server.domain.streaming.DolbyVisionProfile;
@@ -62,7 +62,6 @@ import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
-import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
@@ -76,17 +75,12 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.Singular;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -102,7 +96,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * family, so a copy lists no lower variants when no verified encoder writes its range in its codec
  * family, or when no capability entry plays that encode. Neither does a copy that the playlist
  * describes as Dolby Vision, which no encode writes. A failure of a lower variant withdraws the
- * lower variants, and the copy plays on alone in its stream session.
+ * lower variants: a stream session that lists the copy alone replaces the stream session, in the
+ * same range and without spending a format attempt.
  */
 @Tag("UnitTest")
 @DisplayName("Lower Variants In The Copy's Range Tests")
@@ -132,8 +127,6 @@ class LowerVariantsInTheCopysRangeTest {
       new FakeMediaFileContainerInfoRepository();
   private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
   private final FakeSegmentStore segments = new FakeSegmentStore();
-  private final MutexFactory<UUID> sessionMutex = new MutexFactory<>();
-  private final ExecutorService requests = Executors.newVirtualThreadPerTaskExecutor();
   private StreamingRigFixture.StreamingRig rig;
   private PlaybackSessionService playback;
 
@@ -161,11 +154,6 @@ class LowerVariantsInTheCopysRangeTest {
             .executor(Runnable::run)
             .maximumFormatAttempts(4)
             .build();
-  }
-
-  @AfterEach
-  void tearDown() {
-    requests.shutdownNow();
   }
 
   // Each copy lists 720p, 480p and 360p below its own 1080p picture. Every entry announces one
@@ -647,164 +635,145 @@ class LowerVariantsInTheCopysRangeTest {
   }
 
   // A television stays in HDR as long as the copy plays: the player's failure on an encoded lower
-  // variant says nothing about the copy, so the stream session keeps the copy and stops listing
-  // the lower variants. A withdrawn variant's segment answers as a stream session that ended does,
-  // with 404, so the player moves to the copy.
+  // variant says nothing about the copy. A stream session that lists the copy alone replaces the
+  // stream session, in the same range and without spending a format attempt, and the player loads
+  // it as it loads any replacement.
   @Test
   @DisplayName(
-      "Should withdraw the lower variants and keep the HDR copy in its stream session when the"
-          + " player reports a format failure on a lower variant")
-  void shouldWithdrawTheLowerVariantsAndKeepTheHdrCopyWhenThePlayerFailsOnALowerVariant() {
+      "Should replace the stream session with the HDR copy alone when the player reports a format"
+          + " failure on a lower variant")
+  void shouldReplaceTheStreamSessionWithTheHdrCopyAloneWhenThePlayerFailsOnALowerVariant() {
     var command = startAuto(clientThatPlaysEveryRange());
     var copy = startAnHdr10CopyBesideLowerVariants(command);
-    var sessionId = sessionOf(copy).getSessionId();
-    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
+    var replaced = sessionOf(copy);
+    rig.lifecycle().prepareRequestedVariant(replaced.getSessionId(), "720p", "720p/segment0.m4s");
 
     var afterTheFailure = rejectCurrentFormatAttempt(copy, command);
-    var lowerVariantSegment = rig.coordinator().deliver(sessionId, "720p", "720p/segment1.m4s");
-    rig.lifecycle().prepareRequestedVariant(sessionId, "default", "segment0.m4s");
 
-    assertThatTheHdrCopyPlaysOnAlone(afterTheFailure, sessionId);
-    assertThat(lowerVariantSegment).isEqualTo(new SegmentDelivery.SessionEnded());
-    assertThat(workers.isRunning(sessionId, "720p")).isFalse();
-    assertThat(workers.isRunning(sessionId, "default")).isTrue();
-    assertThat(withdrawalsAfter("player_format_failure")).isEqualTo(1);
+    assertThatTheCopyAloneReplaced(afterTheFailure, replaced);
+    assertThatTheReplacedStreamSessionEnded(replaced.getSessionId());
   }
 
   // The worker contract says that every job attempt with the same decision repeats these failures.
-  // The copy runs another decision, so its segment requests still wait on its own job attempt.
+  // The copy runs another decision, so it plays on in the stream session that replaces this one.
   @ParameterizedTest
   @EnumSource(
       value = TranscodeFailure.class,
       names = {"OUTPUT_MISMATCH", "INVALID_SPECIFICATION", "SEGMENT_CAP_EXCEEDED"})
   @DisplayName(
-      "Should withdraw the lower variants and keep the HDR copy in its stream session when a lower"
-          + " variant's job attempts fail for good")
-  void shouldWithdrawTheLowerVariantsAndKeepTheHdrCopyWhenALowerVariantsJobAttemptsFailForGood(
+      "Should replace the stream session with the HDR copy alone when a lower variant's job"
+          + " attempts fail for good")
+  void shouldReplaceTheStreamSessionWithTheHdrCopyAloneWhenALowerVariantsJobAttemptsFailForGood(
       TranscodeFailure failure) {
     var command = startAuto(clientThatPlaysEveryRange());
     var copy = startAnHdr10CopyBesideLowerVariants(command);
-    var sessionId = sessionOf(copy).getSessionId();
-    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
+    var replaced = sessionOf(copy);
+    var replacedId = replaced.getSessionId();
+    rig.lifecycle().prepareRequestedVariant(replacedId, "720p", "720p/segment0.m4s");
 
-    workers.failTerminally(sessionId, "720p", failure);
-    playback.onTerminalTranscodeFailure(
-        TerminalTranscodeFailureEvent.builder()
-            .streamSessionId(sessionId)
-            .jobAttemptId(UUID.randomUUID())
-            .variantLabel("720p")
-            .failure(failure)
-            .build());
-    var copyRequest = rig.lifecycle().prepareRequestedVariant(sessionId, "default", "segment0.m4s");
+    workers.failTerminally(replacedId, "720p", failure);
+    playback.onTerminalTranscodeFailure(terminalFailure(replacedId, "720p", failure));
 
-    assertThatTheHdrCopyPlaysOnAlone(snapshotOf(copy, command), sessionId);
-    assertThat(rig.coordinator().deliver(sessionId, "720p", "720p/segment1.m4s"))
-        .isEqualTo(new SegmentDelivery.SessionEnded());
-    assertThat(workers.isRunning(sessionId, "default")).isTrue();
-    assertThat(rig.lifecycle().recover(copyRequest))
-        .isEqualTo(ProducerLifecycleService.RecoveryResult.WAITING);
-    assertThat(withdrawalsAfter("job_failure")).isEqualTo(1);
+    var afterTheFailure = snapshotOf(copy, command);
+    assertThatTheCopyAloneReplaced(afterTheFailure, replaced);
+    assertThatTheReplacedStreamSessionEnded(replacedId);
+    assertThat(workers.isRunning(sessionOf(afterTheFailure).getSessionId(), "default")).isTrue();
   }
 
   // Two lower variants can fail close together, and a worker's report can arrive after the
-  // withdrawal. The player already plays the copy here, and stays on it.
+  // replacement. It names the replaced stream session, so nothing more changes.
   @Test
   @DisplayName(
-      "Should count one withdrawal and keep the played copy when a second lower variant's job"
-          + " attempts fail for good after the lower variants were withdrawn")
-  void
-      shouldCountOneWithdrawalAndKeepThePlayedCopyWhenASecondLowerVariantFailsAfterTheWithdrawal() {
+      "Should replace the stream session once when a second lower variant's job attempts fail for"
+          + " good after the first replaced it")
+  void shouldReplaceTheStreamSessionOnceWhenASecondLowerVariantFailsAfterTheFirstReplacedIt() {
     var command = startAuto(clientThatPlaysEveryRange());
     var copy = startAnHdr10CopyBesideLowerVariants(command);
-    var sessionId = sessionOf(copy).getSessionId();
-    rig.lifecycle().prepareRequestedVariant(sessionId, "default", "segment0.m4s");
+    var replaced = sessionOf(copy);
+    var replacedId = replaced.getSessionId();
 
-    for (var failedVariant : List.of("720p", "480p")) {
-      playback.onTerminalTranscodeFailure(
-          TerminalTranscodeFailureEvent.builder()
-              .streamSessionId(sessionId)
-              .jobAttemptId(UUID.randomUUID())
-              .variantLabel(failedVariant)
-              .failure(TranscodeFailure.OUTPUT_MISMATCH)
-              .build());
-    }
+    playback.onTerminalTranscodeFailure(
+        terminalFailure(replacedId, "720p", TranscodeFailure.OUTPUT_MISMATCH));
+    var copyAloneId = snapshotOf(copy, command).currentFormatAttempt().streamSessionId();
+    playback.onTerminalTranscodeFailure(
+        terminalFailure(replacedId, "480p", TranscodeFailure.OUTPUT_MISMATCH));
 
-    assertThatTheHdrCopyPlaysOnAlone(snapshotOf(copy, command), sessionId);
-    assertThat(rig.lifecycle().playedVariantOf(sessionId)).contains("default");
-    assertThat(workers.isRunning(sessionId, "default")).isTrue();
-    assertThat(withdrawalsAfter("job_failure")).isEqualTo(1);
+    var afterTheSecond = snapshotOf(copy, command);
+    assertThat(afterTheSecond.currentFormatAttempt().streamSessionId()).isEqualTo(copyAloneId);
+    assertThat(afterTheSecond.decisions()).hasSize(2);
+    assertThatTheCopyAloneReplaced(afterTheSecond, replaced);
   }
 
-  // ADR 0044 continues a failed hardware encode in software in a new format attempt, which would
-  // end the copy. A lower variant's hardware encoder failure leaves the copy alone instead.
+  // ADR 0044 continues a failed hardware encode in software in a new format attempt that encodes
+  // every variant, which would end the copy. A lower variant's hardware encoder failure replaces
+  // the stream session with the copy alone instead.
   @Test
   @DisplayName(
-      "Should withdraw the lower variants and keep the HDR copy in its stream session when the"
-          + " hardware encoder of the requested lower variant fails")
-  void shouldWithdrawTheLowerVariantsAndKeepTheHdrCopyWhenALowerVariantsHardwareEncoderFails() {
+      "Should replace the stream session with the HDR copy alone when the hardware encoder of the"
+          + " requested lower variant fails")
+  void shouldReplaceTheStreamSessionWithTheHdrCopyAloneWhenALowerVariantsHardwareEncoderFails() {
     var command = startAuto(clientThatPlaysEveryRange());
     var copy = startAnHdr10CopyBesideLowerVariants(command);
-    var sessionId = sessionOf(copy).getSessionId();
-    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
+    var replaced = sessionOf(copy);
+    var replacedId = replaced.getSessionId();
+    rig.lifecycle().prepareRequestedVariant(replacedId, "720p", "720p/segment0.m4s");
 
-    workers.failHardwareEncoder(sessionId, "720p");
+    workers.failHardwareEncoder(replacedId, "720p");
     playback.onRequestedVariantHardwareEncoderFailed(
         RequestedVariantHardwareEncoderFailedEvent.builder()
-            .streamSessionId(sessionId)
+            .streamSessionId(replacedId)
             .variantLabel("720p")
             .build());
-    rig.lifecycle().prepareRequestedVariant(sessionId, "default", "segment0.m4s");
 
-    assertThatTheHdrCopyPlaysOnAlone(snapshotOf(copy, command), sessionId);
-    assertThat(workers.isRunning(sessionId, "default")).isTrue();
-    assertThat(withdrawalsAfter("hardware_encoder_failure")).isEqualTo(1);
+    assertThatTheCopyAloneReplaced(snapshotOf(copy, command), replaced);
+    assertThatTheReplacedStreamSessionEnded(replacedId);
   }
 
-  // The request that meets the failed hardware encoder withdraws the lower variants on its way out,
-  // so it ends as a request for a withdrawn variant does, with 404: the player moves to another
-  // variant at once instead of retrying the same one.
+  // The request that meets the failed hardware encoder replaces the stream session on its way out
+  // and ends as unrecoverable, as a request that meets ADR 0044's software continuation does. The
+  // player then finds the replacement in the playback status.
   @Test
   @DisplayName(
-      "Should end the request that meets a lower variant's failed hardware encoder as one for an"
-          + " ended stream session when the lower variants are withdrawn")
-  void shouldEndTheRequestThatMeetsALowerVariantsFailedHardwareEncoderAsOneForAnEndedSession() {
+      "Should replace the stream session with the HDR copy alone when a request meets a lower"
+          + " variant's failed hardware encoder")
+  void shouldReplaceTheStreamSessionWhenARequestMeetsALowerVariantsFailedHardwareEncoder() {
     var command = startAuto(clientThatPlaysEveryRange());
     var copy = startAnHdr10CopyBesideLowerVariants(command);
-    var sessionId = sessionOf(copy).getSessionId();
-    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
-    workers.failHardwareEncoder(sessionId, "720p");
+    var replaced = sessionOf(copy);
+    var replacedId = replaced.getSessionId();
+    rig.lifecycle().prepareRequestedVariant(replacedId, "720p", "720p/segment0.m4s");
+    workers.failHardwareEncoder(replacedId, "720p");
 
-    var lowerVariantSegment = rig.coordinator().deliver(sessionId, "720p", "720p/segment0.m4s");
+    var lowerVariantSegment = rig.coordinator().deliver(replacedId, "720p", "720p/segment0.m4s");
 
-    assertThat(lowerVariantSegment).isEqualTo(new SegmentDelivery.SessionEnded());
-    assertThatTheHdrCopyPlaysOnAlone(snapshotOf(copy, command), sessionId);
-    assertThat(withdrawalsAfter("hardware_encoder_failure")).isEqualTo(1);
+    assertThat(lowerVariantSegment).isEqualTo(new SegmentDelivery.Unrecoverable());
+    assertThatTheCopyAloneReplaced(snapshotOf(copy, command), replaced);
   }
 
   // ADR 0050: a lower variant fails for good when its job attempts fail on every worker that can
-  // run it, as when a failure repeats. The request that finds its recovery exhausted withdraws the
-  // lower variants and ends with 404, and the copy plays on.
+  // run it, as when a failure repeats. The request that finds its recovery exhausted replaces the
+  // stream session on its way out.
   @Test
   @DisplayName(
-      "Should withdraw the lower variants and end the request as one for an ended stream session"
-          + " when a lower variant's job attempt fails on every worker that can run it")
-  void shouldWithdrawTheLowerVariantsWhenALowerVariantsJobAttemptFailsOnEveryWorker() {
+      "Should replace the stream session with the HDR copy alone when a lower variant's job attempt"
+          + " fails on every worker that can run it")
+  void shouldReplaceTheStreamSessionWhenALowerVariantsJobAttemptFailsOnEveryWorker() {
     var command = startAuto(clientThatPlaysEveryRange());
     var copy = startAnHdr10CopyBesideLowerVariants(command);
-    var sessionId = sessionOf(copy).getSessionId();
-    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
-    workers.markDead(sessionId, "720p");
+    var replaced = sessionOf(copy);
+    var replacedId = replaced.getSessionId();
+    rig.lifecycle().prepareRequestedVariant(replacedId, "720p", "720p/segment0.m4s");
+    workers.markDead(replacedId, "720p");
     workers.refuseTarget(ExecutionTargetId.LOCAL);
 
-    var lowerVariantSegment = rig.coordinator().deliver(sessionId, "720p", "720p/segment0.m4s");
+    var lowerVariantSegment = rig.coordinator().deliver(replacedId, "720p", "720p/segment0.m4s");
 
-    assertThat(lowerVariantSegment).isEqualTo(new SegmentDelivery.SessionEnded());
-    assertThatTheHdrCopyPlaysOnAlone(snapshotOf(copy, command), sessionId);
-    assertThat(withdrawalsAfter("job_failure")).isEqualTo(1);
+    assertThat(lowerVariantSegment).isEqualTo(new SegmentDelivery.Unrecoverable());
+    assertThatTheCopyAloneReplaced(snapshotOf(copy, command), replaced);
   }
 
   // ADR 0052: the copy's own failure still moves Auto to an HDR encode in a new stream session, and
-  // only that encode's failure gives HDR up. Nothing is withdrawn, because the copy is replaced.
+  // only that encode's failure gives HDR up.
   @Test
   @DisplayName(
       "Should start an HDR encode in a new stream session when the player reports a format failure"
@@ -825,108 +794,110 @@ class LowerVariantsInTheCopysRangeTest {
               assertThat(decision.transcodeMode().copiesVideo()).isFalse();
               assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.hdr(VideoRange.PQ));
             });
-    assertThat(withdrawalsAfter("player_format_failure")).isZero();
   }
 
   // A lower variant's job can fail while the player still plays that variant's segments, so the
-  // player's report follows the withdrawal. Until the player receives a segment of the copy, the
-  // failure it reports is the lower variant's, and the copy plays on.
+  // player's report can follow the replacement. It names the replaced stream session, which no
+  // longer plays, so it changes nothing.
   @Test
   @DisplayName(
-      "Should keep the copy in its stream session when the player reports a format failure after a"
-          + " lower variant's job failure withdrew the lower variants and before it received the"
-          + " copy")
-  void shouldKeepTheCopyWhenThePlayerFailsAfterAJobFailureWithdrewTheLowerVariantsBeforeTheCopy() {
+      "Should keep the copy alone when the player reports a format failure on the stream session"
+          + " that a lower variant's job failure replaced")
+  void shouldKeepTheCopyAloneWhenThePlayerFailsOnTheStreamSessionThatALowerVariantReplaced() {
     var command = startAuto(clientThatPlaysEveryRange());
     var copy = startAnHdr10CopyBesideLowerVariants(command);
-    var sessionId = sessionOf(copy).getSessionId();
-    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
-    workers.failTerminally(sessionId, "720p", TranscodeFailure.OUTPUT_MISMATCH);
+    var replaced = sessionOf(copy);
+    var replacedId = replaced.getSessionId();
+    rig.lifecycle().prepareRequestedVariant(replacedId, "720p", "720p/segment0.m4s");
+    workers.failTerminally(replacedId, "720p", TranscodeFailure.OUTPUT_MISMATCH);
     playback.onTerminalTranscodeFailure(
-        TerminalTranscodeFailureEvent.builder()
-            .streamSessionId(sessionId)
-            .jobAttemptId(UUID.randomUUID())
-            .variantLabel("720p")
-            .failure(TranscodeFailure.OUTPUT_MISMATCH)
-            .build());
-    rig.lifecycle().prepareRequestedVariant(sessionId, "default", "segment1.m4s");
+        terminalFailure(replacedId, "720p", TranscodeFailure.OUTPUT_MISMATCH));
 
     var afterTheReport = rejectCurrentFormatAttempt(copy, command);
 
-    assertThatTheHdrCopyPlaysOnAlone(afterTheReport, sessionId);
-    assertThat(withdrawalsAfter("job_failure")).isEqualTo(1);
-    assertThat(withdrawalsAfter("player_format_failure")).isZero();
+    assertThatTheCopyAloneReplaced(afterTheReport, replaced);
   }
 
-  // Once the player receives the copy that the withdrawal left, it can play only the copy, so its
-  // next format failure is the copy's and takes ADR 0052's recovery.
+  // The copy alone fails as any copy does, so its failure takes ADR 0052's recovery: an HDR encode
+  // first, in a format attempt that counts.
   @Test
   @DisplayName(
-      "Should recover as a failed copy does when the player reports a format failure after it"
-          + " received the copy that the withdrawal left")
-  void shouldRecoverAsAFailedCopyDoesWhenThePlayerFailsAfterItReceivedTheCopyLeftByTheWithdrawal() {
+      "Should recover as a failed copy does when the player reports a format failure on the copy"
+          + " alone that replaced the stream session")
+  void shouldRecoverAsAFailedCopyDoesWhenThePlayerFailsOnTheCopyAloneThatReplacedTheSession() {
     var command = startAuto(clientThatPlaysEveryRange());
     var copy = startAnHdr10CopyBesideLowerVariants(command);
-    var copySessionId = sessionOf(copy).getSessionId();
-    rig.lifecycle().prepareRequestedVariant(copySessionId, "720p", "720p/segment0.m4s");
+    var replacedId = sessionOf(copy).getSessionId();
+    rig.lifecycle().prepareRequestedVariant(replacedId, "720p", "720p/segment0.m4s");
+    var copyAlone = rejectCurrentFormatAttempt(copy, command);
+    var copyAloneId = sessionOf(copyAlone).getSessionId();
+    rig.lifecycle().prepareRequestedVariant(copyAloneId, "default", "segment0.m4s");
 
-    var afterTheLowerVariant = rejectCurrentFormatAttempt(copy, command);
-    segments.addSegment(copySessionId, "segment0.m4s", new byte[] {1});
-    var copySegment = rig.coordinator().deliver(copySessionId, "default", "segment0.m4s");
-    var afterTheCopy = rejectCurrentFormatAttempt(afterTheLowerVariant, command);
+    var afterTheCopy = rejectCurrentFormatAttempt(copyAlone, command);
 
-    assertThat(copySegment).isInstanceOf(SegmentDelivery.Ready.class);
-
-    assertThat(afterTheLowerVariant.currentFormatAttempt().streamSessionId())
-        .isEqualTo(copySessionId);
-    assertThat(afterTheCopy.currentFormatAttempt().streamSessionId()).isNotEqualTo(copySessionId);
+    assertThat(afterTheCopy.currentFormatAttempt().streamSessionId()).isNotEqualTo(copyAloneId);
+    assertThat(afterTheCopy.formatAttemptCount()).isEqualTo(2);
     assertThat(sessionOf(afterTheCopy).getTranscodeDecision().videoEncodeFormat())
         .isEqualTo(EncodeFormat.hdr(VideoRange.PQ));
-    assertThat(withdrawalsAfter("player_format_failure")).isEqualTo(1);
+    assertThat(afterTheCopy.decisions().getLast().reasons())
+        .first()
+        .isEqualTo(DecisionReason.COPY_FAILED);
   }
 
-  // The withdrawal itself stops the lower variants, before the player asks the copy for anything.
-  // The initialization request starts 480p beside the 720p that the player plays.
+  // The replaced stream session ends with every job attempt in it. The initialization request
+  // starts 480p beside the 720p that the player plays.
   @Test
   @DisplayName(
-      "Should stop every running lower variant when the player's format failure withdraws the"
-          + " lower variants")
-  void shouldStopEveryRunningLowerVariantWhenThePlayersFormatFailureWithdrawsThem() {
+      "Should stop every running lower variant when the player's format failure on a lower variant"
+          + " replaces the stream session")
+  void shouldStopEveryRunningLowerVariantWhenThePlayersFailureOnALowerVariantReplacesTheSession() {
     var command = startAuto(clientThatPlaysEveryRange());
     var copy = startAnHdr10CopyBesideLowerVariants(command);
-    var sessionId = sessionOf(copy).getSessionId();
-    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
-    rig.lifecycle().prepareRequestedVariant(sessionId, "480p", "480p/init.mp4");
-    var runningBeforeTheFailure = runningVariants(sessionId);
+    var replacedId = sessionOf(copy).getSessionId();
+    rig.lifecycle().prepareRequestedVariant(replacedId, "720p", "720p/segment0.m4s");
+    rig.lifecycle().prepareRequestedVariant(replacedId, "480p", "480p/init.mp4");
+    var runningBeforeTheFailure = runningVariants(replacedId);
 
     rejectCurrentFormatAttempt(copy, command);
 
     assertThat(runningBeforeTheFailure).containsExactly("720p", "480p");
-    assertThat(runningVariants(sessionId)).isEmpty();
+    assertThat(runningVariants(replacedId)).isEmpty();
   }
 
-  // A stopped job attempt wakes the requests held on its variant. When the stop fails, the
-  // withdrawal still ends a held request at once instead of at its stall deadline, 16 s here.
+  // ADR 0052: after the client fails a Dolby Vision copy, only the copy with Dolby Vision stripped
+  // may follow, and it lists 10-bit PQ lower variants. When one of them fails, the copy alone that
+  // replaces it strips Dolby Vision too, instead of offering the copy that failed again.
   @Test
   @DisplayName(
-      "Should end a held request for a lower variant as one for an ended stream session at once"
-          + " when the withdrawal cannot stop that variant's job attempt")
-  void shouldEndAHeldLowerVariantRequestAtOnceWhenTheWithdrawalCannotStopItsJobAttempt()
-      throws Exception {
+      "Should strip Dolby Vision from the copy alone when a lower variant fails beside the copy"
+          + " that followed a failed Dolby Vision copy")
+  void shouldStripDolbyVisionFromTheCopyAloneWhenALowerVariantFailsAfterADolbyVisionCopyFailed() {
+    workers.setTargetEncoders(
+        ExecutionTargetId.LOCAL, List.of(x265(EVERY_ENCODE_FEATURE), encoder("h264", "libx264")));
+    probes.setDefaultProbe(dolbyVisionSource(DolbyVisionProfile.PROFILE_8_1));
     var command = startAuto(clientThatPlaysEveryRange());
-    var copy = startAnHdr10CopyBesideLowerVariants(command);
-    var sessionId = sessionOf(copy).getSessionId();
-    var held = heldRequestForTheFirstSegment(sessionId, "720p");
-    workers.failOnStopVariant(sessionId);
+    var dolbyVisionCopy = accepted(playback.start(command));
+    var stripped = rejectCurrentFormatAttempt(dolbyVisionCopy, command);
+    var replaced = sessionOf(stripped);
+    rig.lifecycle().prepareRequestedVariant(replaced.getSessionId(), "720p", "720p/segment0.m4s");
 
-    rejectCurrentFormatAttempt(copy, command);
+    var afterTheLowerVariant = rejectCurrentFormatAttempt(stripped, command);
 
-    assertThat(held.get(5, TimeUnit.SECONDS)).isEqualTo(new SegmentDelivery.SessionEnded());
-    assertThat(workers.isRunning(sessionId, "720p")).isTrue();
+    assertThat(replaced.getTranscodeDecision().videoBitstreamRewrites())
+        .contains(BitstreamRewrite.STRIP_DOLBY_VISION);
+    assertThat(replaced.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactly("720p", "480p", "360p");
+    var copyAlone = sessionOf(afterTheLowerVariant);
+    assertThat(copyAlone.getSessionId()).isNotEqualTo(replaced.getSessionId());
+    assertThat(copyAlone.getTranscodeDecision().plannedVideoOutput())
+        .isEqualTo(replaced.getTranscodeDecision().plannedVideoOutput());
+    assertThat(copyAlone.getVariants()).isEmpty();
+    assertThat(afterTheLowerVariant.formatAttemptCount()).isEqualTo(2);
   }
 
   // Recovery reads the failure that each variant's own decision repeats, so a lower variant's
-  // failure ends only that variant's recovery, whether or not a withdrawal follows it.
+  // failure ends only that variant's recovery.
   @Test
   @DisplayName(
       "Should end recovery for a lower variant and keep recovering the copy when only the lower"
@@ -948,13 +919,14 @@ class LowerVariantsInTheCopysRangeTest {
   }
 
   // The upload budget leaves the copy out of the playlist that the player read, so it plays the
-  // lower variants alone. Once they are withdrawn, the multivariant playlist lists the copy, and a
-  // request for the copy starts it.
+  // lower variants alone. The copy alone that replaces the stream session is created as any stream
+  // session is, so the budget sizes it again: the copy is its lowest variant, so it stays, and the
+  // budget's start rule starts it.
   @Test
   @DisplayName(
-      "Should list the copy alone and start it on its first request when a lower variant fails"
-          + " while the upload budget leaves the copy out")
-  void shouldListTheCopyAndStartItOnRequestWhenALowerVariantFailsWhileTheBudgetLeavesItOut() {
+      "Should create the copy alone through the upload budget when a lower variant fails while the"
+          + " budget leaves the copy out")
+  void shouldCreateTheCopyAloneThroughTheUploadBudgetWhenALowerVariantFailsWhileItLeavesItOut() {
     var settings = ServerSettingsFixture.defaultServerSettings();
     var budgeted = budgetedPlayback(settings);
     workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(encoder("h264", "libx264")));
@@ -965,23 +937,16 @@ class LowerVariantsInTheCopysRangeTest {
             AuthenticatedIdentityFixture.accountScopedBuilder().build(), Optional.of(11)));
     var command = startAuto(clientThatPlaysEveryRange());
     var second = accepted(budgeted.playback().start(command));
-    var sessionId = sessionOf(second).getSessionId();
+    var replacedId = sessionOf(second).getSessionId();
     var playlists = new HlsPlaylistService(PROPERTIES, budgeted.budget());
     var servedFirst = listedUris(playlists.generateMultivariantPlaylist(sessionOf(second), "t"));
-    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
+    rig.lifecycle().prepareRequestedVariant(replacedId, "720p", "720p/segment0.m4s");
 
-    workers.failTerminally(sessionId, "720p", TranscodeFailure.SEGMENT_CAP_EXCEEDED);
+    workers.failTerminally(replacedId, "720p", TranscodeFailure.SEGMENT_CAP_EXCEEDED);
     budgeted
         .playback()
         .onTerminalTranscodeFailure(
-            TerminalTranscodeFailureEvent.builder()
-                .streamSessionId(sessionId)
-                .jobAttemptId(UUID.randomUUID())
-                .variantLabel("720p")
-                .failure(TranscodeFailure.SEGMENT_CAP_EXCEEDED)
-                .build());
-    var copyRunningBeforeItsRequest = workers.isRunning(sessionId, "default");
-    rig.lifecycle().prepareRequestedVariant(sessionId, "default", "segment1.m4s");
+            terminalFailure(replacedId, "720p", TranscodeFailure.SEGMENT_CAP_EXCEEDED));
 
     var after =
         budgeted
@@ -992,14 +957,14 @@ class LowerVariantsInTheCopysRangeTest {
                     .identity(command.identity())
                     .build())
             .orElseThrow();
+    var copyAlone = sessionOf(after);
     assertThat(servedFirst)
         .containsExactly("720p/stream.m3u8?t=t", "480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
-    assertThat(after.currentFormatAttempt().streamSessionId()).isEqualTo(sessionId);
+    assertThat(copyAlone.getSessionId()).isNotEqualTo(replacedId);
     assertThat(after.formatAttemptCount()).isEqualTo(1);
-    assertThat(listedUris(playlists.generateMultivariantPlaylist(sessionOf(after), "t")))
+    assertThat(listedUris(playlists.generateMultivariantPlaylist(copyAlone, "t")))
         .containsExactly("stream.m3u8?t=t");
-    assertThat(copyRunningBeforeItsRequest).isFalse();
-    assertThat(workers.isRunning(sessionId, "default")).isTrue();
+    assertThat(workers.isRunning(copyAlone.getSessionId(), "default")).isTrue();
   }
 
   // ADR 0050 for an AV1 copy: a hardware AV1 encoder that writes every range runs beside H.265 and
@@ -1087,27 +1052,6 @@ class LowerVariantsInTheCopysRangeTest {
         .toList();
   }
 
-  // Requests the variant's first media segment on another thread and returns once the request has
-  // looked at its variant, found no segment and released the session mutex, so that only a wake or
-  // its stall deadline ends it.
-  private CompletableFuture<SegmentDelivery> heldRequestForTheFirstSegment(
-      UUID sessionId, String variantLabel) {
-    var looks = workers.livenessChecks(sessionId, variantLabel);
-    var delivery =
-        CompletableFuture.supplyAsync(
-            () ->
-                rig.coordinator().deliver(sessionId, variantLabel, variantLabel + "/segment0.m4s"),
-            requests);
-    workers.awaitLivenessCheckCount(sessionId, variantLabel, looks + 1);
-    var mutex = sessionMutex.getMutex(sessionId);
-    await()
-        .pollDelay(Duration.ZERO)
-        .pollInterval(Duration.ofMillis(1))
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> !mutex.isLocked());
-    return delivery;
-  }
-
   // A worker whose H.265 and H.264 encoders write every range, and an HDR10 source that Auto
   // copies above 720p, 480p and 360p in 10-bit PQ H.265.
   private PlaybackSessionSnapshot startAnHdr10CopyBesideLowerVariants(
@@ -1122,14 +1066,28 @@ class LowerVariantsInTheCopysRangeTest {
     return copy;
   }
 
-  // The playback session still plays its first format attempt: the copy's stream session, in PQ,
-  // with no lower variant listed and no job attempt in another range started.
-  private void assertThatTheHdrCopyPlaysOnAlone(PlaybackSessionSnapshot snapshot, UUID sessionId) {
-    assertThat(snapshot.currentFormatAttempt().streamSessionId()).isEqualTo(sessionId);
-    assertThat(snapshot.formatAttemptCount()).isEqualTo(1);
-    assertThat(snapshot.decisions()).hasSize(1);
+  // A stream session that lists the HDR copy alone replaces the copy's stream session: the same
+  // planned copy, in PQ, in the same playback choice and without spending a format attempt. Its
+  // decision names the lower variant's failure first, and no job attempt in another range started.
+  private void assertThatTheCopyAloneReplaced(
+      PlaybackSessionSnapshot snapshot, StreamSession replaced) {
+    var copyAlone = sessionOf(snapshot);
+    assertThat(copyAlone.getSessionId()).isNotEqualTo(replaced.getSessionId());
+    assertThat(copyAlone.getTranscodeDecision().plannedVideoOutput())
+        .isEqualTo(replaced.getTranscodeDecision().plannedVideoOutput());
+    assertThat(copyAlone.getVideoRange()).isEqualTo(VideoRange.PQ);
     assertThatTheCopyPlaysAlone(snapshot);
-    assertThat(sessionOf(snapshot).getVideoRange()).isEqualTo(VideoRange.PQ);
+    assertThat(snapshot.formatAttemptCount()).isEqualTo(1);
+    assertThat(snapshot.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(snapshot.formatChange()).isEmpty();
+    assertThat(snapshot.decisions())
+        .last()
+        .satisfies(
+            decision -> {
+              assertThat(decision.formatAttempt()).isEqualTo(2);
+              assertThat(decision.streamSessionId()).isEqualTo(copyAlone.getSessionId());
+              assertThat(decision.reasons()).first().isEqualTo(DecisionReason.LOWER_VARIANT_FAILED);
+            });
     assertThat(streamInfEntries(snapshot))
         .singleElement()
         .satisfies(
@@ -1144,6 +1102,26 @@ class LowerVariantsInTheCopysRangeTest {
                 assertThat(request.transcodeDecision().videoRange()).isEqualTo(VideoRange.PQ));
   }
 
+  // The replaced stream session ends as every replaced stream session does: its job attempts stop,
+  // and a request for the copy or a lower variant finds the stream session gone.
+  private void assertThatTheReplacedStreamSessionEnded(UUID replacedId) {
+    assertThat(runningVariants(replacedId)).isEmpty();
+    assertThat(rig.coordinator().deliver(replacedId, "default", "segment1.m4s"))
+        .isEqualTo(new SegmentDelivery.SessionEnded());
+    assertThat(rig.coordinator().deliver(replacedId, "720p", "720p/segment1.m4s"))
+        .isEqualTo(new SegmentDelivery.SessionEnded());
+  }
+
+  private static TerminalTranscodeFailureEvent terminalFailure(
+      UUID streamSessionId, String variantLabel, TranscodeFailure failure) {
+    return TerminalTranscodeFailureEvent.builder()
+        .streamSessionId(streamSessionId)
+        .jobAttemptId(UUID.randomUUID())
+        .variantLabel(variantLabel)
+        .failure(failure)
+        .build();
+  }
+
   private PlaybackSessionSnapshot snapshotOf(
       PlaybackSessionSnapshot snapshot, StartPlaybackSessionCommand command) {
     return playback
@@ -1153,20 +1131,6 @@ class LowerVariantsInTheCopysRangeTest {
                 .identity(command.identity())
                 .build())
         .orElseThrow();
-  }
-
-  // How often the stream sessions here withdrew their lower variants after this kind of failure.
-  private double withdrawalsAfter(String failure) {
-    var counter =
-        meters
-            .find("streamarr.streaming.lower_variant_withdrawals")
-            .tag("failure", failure)
-            .counter();
-    if (counter == null) {
-      return 0;
-    }
-
-    return counter.count();
   }
 
   private void assertThatTheCopyPlaysAlone(PlaybackSessionSnapshot copy) {
@@ -1338,7 +1302,6 @@ class LowerVariantsInTheCopysRangeTest {
         .segmentStore(segments)
         .properties(PROPERTIES)
         .runtimeRegistry(registry)
-        .sessionMutex(sessionMutex)
         .heldRequests(workers.heldSegmentRequests())
         .eventPublisher(this::dispatchToPlayback);
   }

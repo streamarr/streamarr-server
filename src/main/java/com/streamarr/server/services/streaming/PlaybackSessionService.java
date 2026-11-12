@@ -109,8 +109,16 @@ public class PlaybackSessionService implements AutoCloseable {
     @Builder.Default private List<VideoQuality> offeredChoices = List.of();
     // The format attempts that count against the budget. An audio switch's format attempt does
     // not (ADR 0043), nor does a software continuation after a hardware encoder failure (ADR 0044),
-    // so it differs from startedFormatAttempts, which numbers each decision.
+    // nor the copy alone after a lower variant fails (ADR 0050), so it differs from
+    // startedFormatAttempts, which numbers each decision.
     @Builder.Default private int formatAttemptCount = 1;
+
+    // The video operations under which the copy alone replaces the current format attempt after a
+    // lower variant fails: the current format attempt's, without the direct play that only the
+    // first one may use. The copy alone then copies as the current format attempt does.
+    @Builder.Default
+    private VideoFormatConstraint copyAloneConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
+
     @Builder.Default private int startedFormatAttempts = 1;
     private final Set<String> excludedEncodeCodecFamilies = new HashSet<>();
     private final Set<EncodeFormat> excludedEncodeFormats = new HashSet<>();
@@ -131,8 +139,9 @@ public class PlaybackSessionService implements AutoCloseable {
    * The format attempt that a reservation starts: its stream session and the video operations it
    * may use. It plays {@code choice}, or {@code choiceWhenEncoding} once it turns out to encode the
    * video. {@code softwareEncodeCodecFamily} names the codec family that it encodes in software
-   * after a hardware encoder failure. {@code spendsAFormatAttempt} says whether it counts against
-   * the maximum number of format attempts.
+   * after a hardware encoder failure. {@code lowerVariantsWithdrawn} lists a copy alone, without
+   * its lower variants (ADR 0050). {@code spendsAFormatAttempt} says whether it counts against the
+   * maximum number of format attempts.
    */
   @Builder
   private record ReservedFormatAttempt(
@@ -141,6 +150,7 @@ public class PlaybackSessionService implements AutoCloseable {
       @NonNull PlayingChoice choice,
       @NonNull PlayingChoice choiceWhenEncoding,
       @NonNull Optional<String> softwareEncodeCodecFamily,
+      boolean lowerVariantsWithdrawn,
       boolean spendsAFormatAttempt) {
 
     // Lombok builder defaults — its generated setters assign them
@@ -250,48 +260,46 @@ public class PlaybackSessionService implements AutoCloseable {
             });
   }
 
+  // The player's failure belongs to the variant that it plays. A lower variant's withdraws the
+  // lower variants; any other recovers.
   private void recoverFromPlayersFormatFailure(
       PlaybackSession playback, ReportPlaybackFormatFailureCommand command) {
     var failedId = command.streamSessionId();
     var playedVariant = streamingService.playedVariantOf(failedId);
-    if (playedVariant.isPresent()
-        && tryWithdrawLowerVariants(
-            LowerVariantFailureReport.builder()
-                .playback(playback)
-                .streamSessionId(failedId)
-                .variantLabel(playedVariant.get())
-                .failure(LowerVariantFailure.PLAYER_FORMAT_FAILURE)
-                .build())) {
-      return;
-    }
-
-    recover(playback, failedId, new PlaybackSessionFailure.FixedFormatFailed(command.reason()));
+    var failure = new PlaybackSessionFailure.FixedFormatFailed(command.reason());
+    var reservation =
+        locked(
+            playback,
+            () ->
+                playedVariant
+                    .flatMap(variant -> reserveTheCopyAlone(playback, failedId, variant))
+                    .or(() -> reserveRecovery(playback, failedId, failure)));
+    reservation.ifPresent(this::scheduleAfterChange);
   }
 
-  @Builder
-  private record LowerVariantFailureReport(
-      PlaybackSession playback,
-      UUID streamSessionId,
-      String variantLabel,
-      LowerVariantFailure failure) {}
-
-  // A failure of an encoded lower variant beside the copy that plays leaves the copy alone: the
-  // stream session withdraws its lower variants and the playback session keeps its format attempt,
-  // its range and its budget of format attempts (ADR 0050). Answers whether the failure was such a
-  // variant's, so that no recovery follows it. A failure of the copy itself is not.
-  private boolean tryWithdrawLowerVariants(LowerVariantFailureReport report) {
-    var failedBesideTheCopy =
-        locked(
-            report.playback(),
-            () ->
-                isLowerVariantBesideTheCurrentCopy(
-                    report.playback(), report.streamSessionId(), report.variantLabel()));
-    if (!failedBesideTheCopy) {
-      return false;
+  // A failure of an encoded lower variant beside the copy that plays withdraws the lower variants:
+  // a stream session that lists the same copy alone replaces the stream session (ADR 0050). It
+  // keeps the playback choice and the video operations, so the copy keeps its range and bit depth,
+  // and it spends no format attempt. A failure of the copy itself, or of a format attempt that no
+  // longer plays, reserves nothing here.
+  private Optional<FormatAttemptReservation> reserveTheCopyAlone(
+      PlaybackSession playback, UUID failedId, String variantLabel) {
+    if (!isLowerVariantBesideTheCurrentCopy(playback, failedId, variantLabel)
+        || endedNormally(playback)) {
+      return Optional.empty();
     }
 
-    streamingService.withdrawLowerVariants(report.streamSessionId(), report.failure());
-    return true;
+    playback.pendingAttemptCause = Optional.of(DecisionReason.LOWER_VARIANT_FAILED);
+    return Optional.of(
+        reserveNextFormatAttempt(
+            playback,
+            failedId,
+            ReservedFormatAttempt.builder()
+                .videoFormatConstraint(playback.copyAloneConstraint)
+                .choice(playback.choice)
+                .choiceWhenEncoding(playback.choice)
+                .lowerVariantsWithdrawn(true)
+                .spendsAFormatAttempt(false)));
   }
 
   private boolean isLowerVariantBesideTheCurrentCopy(
@@ -301,17 +309,18 @@ public class PlaybackSessionService implements AutoCloseable {
         && session.isLowerVariantBesideTheCopy(variantLabel);
   }
 
-  private boolean tryWithdrawLowerVariantsAfterJobFailure(
-      UUID failedId, String variantLabel, LowerVariantFailure failure) {
+  // Answers whether the failed job attempt was an encoded lower variant's beside the copy that
+  // plays, so that the failure's own recovery does not follow it.
+  private boolean tryWithdrawLowerVariantsAfterJobFailure(UUID failedId, String variantLabel) {
     var playback = streamOwners.get(failedId);
-    return playback != null
-        && tryWithdrawLowerVariants(
-            LowerVariantFailureReport.builder()
-                .playback(playback)
-                .streamSessionId(failedId)
-                .variantLabel(variantLabel)
-                .failure(failure)
-                .build());
+    if (playback == null
+        || !locked(
+            playback, () -> isLowerVariantBesideTheCurrentCopy(playback, failedId, variantLabel))) {
+      return false;
+    }
+
+    handleJobFailure(failedId, owner -> reserveTheCopyAlone(owner, failedId, variantLabel));
+    return true;
   }
 
   /**
@@ -698,13 +707,13 @@ public class PlaybackSessionService implements AutoCloseable {
    * Fails the playback session without another format attempt, which would fail the same way. A
    * segment over the cap on the segment list starts a new format attempt instead, as a failed copy
    * does, because that attempt's stream session encodes on the plain grid (ADR 0037). A failure of
-   * a lower variant beside a copy does neither: the copy plays on alone (ADR 0050).
+   * a lower variant beside a copy does neither: the copy alone replaces the stream session (ADR
+   * 0050).
    */
   @EventListener
   public void onTerminalTranscodeFailure(@NonNull TerminalTranscodeFailureEvent event) {
     var failedId = event.streamSessionId();
-    if (tryWithdrawLowerVariantsAfterJobFailure(
-        failedId, event.variantLabel(), LowerVariantFailure.JOB_FAILURE)) {
+    if (tryWithdrawLowerVariantsAfterJobFailure(failedId, event.variantLabel())) {
       return;
     }
 
@@ -838,14 +847,13 @@ public class PlaybackSessionService implements AutoCloseable {
    * Continues the requested variant's encode on the software encoder of the same codec family in a
    * new format attempt, which the client reopens at the same position (ADR 0044). It spends no
    * format attempt, and no worker with room for it ends the playback session. A lower variant
-   * beside a copy does not continue: the copy plays on alone (ADR 0050).
+   * beside a copy does not continue: the copy alone replaces the stream session (ADR 0050).
    */
   @EventListener
   public void onRequestedVariantHardwareEncoderFailed(
       @NonNull RequestedVariantHardwareEncoderFailedEvent event) {
     var failedId = event.streamSessionId();
-    if (tryWithdrawLowerVariantsAfterJobFailure(
-        failedId, event.variantLabel(), LowerVariantFailure.HARDWARE_ENCODER_FAILURE)) {
+    if (tryWithdrawLowerVariantsAfterJobFailure(failedId, event.variantLabel())) {
       return;
     }
 
@@ -853,14 +861,13 @@ public class PlaybackSessionService implements AutoCloseable {
   }
 
   /**
-   * A lower variant beside a copy whose recovery is exhausted has failed for good, so the stream
-   * session withdraws its lower variants and the copy plays on alone (ADR 0050). The exhausted
-   * recovery of any other variant changes nothing here.
+   * A lower variant beside a copy whose recovery is exhausted has failed for good, so the copy
+   * alone replaces the stream session (ADR 0050). The exhausted recovery of any other variant
+   * changes nothing here.
    */
   @EventListener
   public void onVariantRecoveryExhausted(@NonNull VariantRecoveryExhaustedEvent event) {
-    tryWithdrawLowerVariantsAfterJobFailure(
-        event.streamSessionId(), event.variantLabel(), LowerVariantFailure.JOB_FAILURE);
+    tryWithdrawLowerVariantsAfterJobFailure(event.streamSessionId(), event.variantLabel());
   }
 
   private Optional<FormatAttemptReservation> reserveSoftwareContinuation(
@@ -971,6 +978,7 @@ public class PlaybackSessionService implements AutoCloseable {
     var childId = UUID.randomUUID();
     var next = attempt.streamId(childId).build();
     playback.choice = next.choice();
+    playback.copyAloneConstraint = next.videoFormatConstraint();
     playback.lastAccessedAt = clock.instant();
     playback.current = new PlaybackFormatAttempt.Pending(childId);
     if (next.spendsAFormatAttempt()) {
@@ -1048,6 +1056,7 @@ public class PlaybackSessionService implements AutoCloseable {
               childCommand(work.playback(), streamId)
                   .videoFormatConstraint(next.videoFormatConstraint())
                   .softwareEncodeCodecFamily(next.softwareEncodeCodecFamily())
+                  .lowerVariantsWithdrawn(next.lowerVariantsWithdrawn())
                   .build());
       switch (outcome) {
         case Outcome.Accepted(var session) ->

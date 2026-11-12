@@ -304,6 +304,26 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.lowerVariantEncode()).isEmpty();
   }
 
+  // ADR 0050: after a lower variant fails, the stream session that replaces it lists the same copy
+  // alone, in the same range and bit depth.
+  @Test
+  @DisplayName(
+      "Should copy as before without lower variants when the lower variants beside the copy were"
+          + " withdrawn")
+  void shouldCopyAsBeforeWithoutLowerVariantsWhenTheLowerVariantsBesideTheCopyWereWithdrawn() {
+    var besideLowerVariants = service.decide(hdr10CopyBesideABusyPqEncoder().build()).orElseThrow();
+
+    var withdrawn =
+        service
+            .decide(hdr10CopyBesideABusyPqEncoder().lowerVariantsWithdrawn(true).build())
+            .orElseThrow();
+
+    assertThat(besideLowerVariants.lowerVariantEncode()).isPresent();
+    assertThat(withdrawn.lowerVariantEncode()).isEmpty();
+    assertThat(withdrawn)
+        .isEqualTo(besideLowerVariants.toBuilder().lowerVariantEncode(Optional.empty()).build());
+  }
+
   // An Auto request for a 10-bit HDR10 HEVC source from a client that plays PQ in HEVC and AV1.
   // The only free worker encodes H.264, and a busy worker's libx265 lists every encode feature.
   private TranscodeDecisionRequest.TranscodeDecisionRequestBuilder hdr10CopyBesideABusyPqEncoder() {

@@ -31,8 +31,8 @@ public class SegmentDeliveryCoordinator {
    * short copy's normal end waits until the stream session ends (ADR 0052). A request for a variant
    * whose hardware encoder failed ends as unrecoverable and continues the playback session on the
    * software encoder instead of starting or replacing the variant (ADR 0044). A request whose
-   * variant's recovery is exhausted ends as unrecoverable too. When either failure withdraws the
-   * lower variants beside a copy, the request ends as one for an ended stream session (ADR 0050).
+   * variant's recovery is exhausted ends as unrecoverable too. When either failure is a lower
+   * variant's beside a copy, the copy alone replaces the stream session (ADR 0050).
    */
   public SegmentDelivery deliver(UUID sessionId, String variantLabel, String segmentName) {
     var refusal = refusal(sessionId, segmentName);
@@ -118,7 +118,7 @@ public class SegmentDeliveryCoordinator {
             .streamSessionId(request.sessionId())
             .variantLabel(request.variantLabel())
             .build());
-    return endedOrUnrecoverable(request);
+    return unrecoverableDelivery(request.sessionId(), request.segmentName());
   }
 
   private SegmentDelivery exhausted(SegmentRequest request) {
@@ -127,17 +127,6 @@ public class SegmentDeliveryCoordinator {
             .streamSessionId(request.sessionId())
             .variantLabel(request.variantLabel())
             .build());
-    return endedOrUnrecoverable(request);
-  }
-
-  // The listeners of a failure run on this thread and can withdraw a lower variant beside a copy.
-  // A request for a withdrawn variant then ends as one for an ended stream session does, so the
-  // player moves to another variant instead of retrying this one (ADR 0050).
-  private SegmentDelivery endedOrUnrecoverable(SegmentRequest request) {
-    if (!producerLifecycle.offersVariant(request.sessionId(), request.variantLabel())) {
-      return new SegmentDelivery.SessionEnded();
-    }
-
     return unrecoverableDelivery(request.sessionId(), request.segmentName());
   }
 
