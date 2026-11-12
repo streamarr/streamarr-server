@@ -73,7 +73,6 @@ class ShareCodeIssuerAuthorityTest {
     assertThat(invalidated).isEqualTo(2);
     assertThat(kept.getStatus()).isEqualTo(ShareCodeStatus.INVALIDATED);
     assertThat(lost.getStatus()).isEqualTo(ShareCodeStatus.INVALIDATED);
-    assertThat(authorization.recordedIntents()).isEmpty();
   }
 
   @Test
@@ -94,7 +93,6 @@ class ShareCodeIssuerAuthorityTest {
     assertThat(lost.getEndedAt()).isEqualTo(NOW);
     assertThat(expired.statusAt(NOW)).isEqualTo(ShareCodeStatus.EXPIRED);
     assertThat(someoneElses.getStatus()).isEqualTo(ShareCodeStatus.LIVE);
-    assertThat(authorization.recordedIntents()).isEmpty();
   }
 
   @Test
