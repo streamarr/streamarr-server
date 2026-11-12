@@ -19,12 +19,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -515,6 +519,28 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
             Map.of());
 
     assertSyntaxErrorAtItsLineAndColumnWithout(response, code);
+  }
+
+  @ParameterizedTest
+  @MethodSource("invalidUnicodeEscapes")
+  @DisplayName("Should keep the code out of the answer when a lookup escapes it as invalid unicode")
+  void shouldKeepCodeOutOfAnswerWhenLookupEscapesItAsInvalidUnicode(String escape, String value)
+      throws Exception {
+    var response =
+        executeAllowingErrors(
+            authTestSupport.accountBearer(identity()),
+            """
+            mutation { lookUpShareCode(input: { code: "%s" }) { householdName } }
+            """
+                .formatted(escape),
+            Map.of());
+
+    assertSyntaxErrorAtItsLineAndColumnWithout(response, value);
+  }
+
+  static Stream<Arguments> invalidUnicodeEscapes() {
+    return Stream.of(
+        Arguments.of("\\u{48261379}", "48261379"), Arguments.of("\\uD800\\u4826", "4826"));
   }
 
   private static void assertSyntaxErrorAtItsLineAndColumnWithout(JsonNode response, String value) {
