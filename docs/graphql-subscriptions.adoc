@@ -347,7 +347,7 @@ After every reconnect, the client subscribes and queries again.
 == Notifications
 
 `notificationsChanged` delivers each committed change to the signed-in Account's Notifications.
-A change arrives when a Notification is made or updated in place, when a request resolves because its offer was accepted, declined, canceled, replaced, invalidated or expired, when the Account marks Notifications read, and when Notifications are dismissed.
+A change arrives when a Notification is made or updated in place, when a request resolves because its offer or its invitation to manage a Profile was accepted, declined, canceled, replaced, invalidated or expired, when the Account marks Notifications read, and when Notifications are dismissed.
 A change that rolls back never arrives.
 Each change carries `notifications`, one entry for each Notification that the change touched, and `unreadNotificationCount`, the Account's unread count after the change.
 Each entry carries `notificationId` and `edge`, the same edge that the `notifications` query returns, read when the server delivers the change.
@@ -373,8 +373,8 @@ The client reads `notifications` and `unreadNotificationCount` again after a rec
 
 === Expiry
 
-A request whose offer's time runs out reads as `EXPIRED` in the queries at once.
-Its change arrives when the server stores the expiry, every `AUTH_SHARING_EXPIRY_SWEEP_INTERVAL`, `1m` by default.
+A request whose offer's or invitation's time runs out reads as `EXPIRED` in the queries at once.
+Its change arrives when the server stores the expiry: every `AUTH_SHARING_EXPIRY_SWEEP_INTERVAL` for an offer and every `AUTH_MANAGERS_EXPIRY_SWEEP_INTERVAL` for an invitation, each `1m` by default.
 A decision or a withdrawal made before the expiry that the server stores after it still replaces `EXPIRED`, and its change arrives like any other resolution.
 
 === Building current state
