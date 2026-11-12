@@ -79,7 +79,8 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
     return encodeWithinBudget(choiceWhenEncodingAfterACopy(choice), formatAttemptCount);
   }
 
-  // Auto's recoveries are not announced. Original and a fixed quality stay selected.
+  // The stripped copy keeps the source's PQ or HLG base, so Auto announces nothing. Original and a
+  // fixed quality stay selected.
   private static PlayingChoice choiceWhenStrippingDolbyVision(PlayingChoice choice) {
     if (choice.playbackChoice() == VideoQuality.AUTO) {
       return choice;

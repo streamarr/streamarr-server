@@ -216,7 +216,8 @@ class HardwareEncoderFailureRangeTest {
 
   // In Auto an SDR picture that plays is better than an error, so the encode that cannot continue
   // in its range counts as failed: the next format attempt is 8-bit SDR and spends the budget, as
-  // after a format error during a PQ or HLG encode (ADR 0013).
+  // after a format error during a PQ or HLG encode (ADR 0013). The viewer sees the lost HDR range,
+  // so Auto names it.
   @ParameterizedTest(name = "{0}")
   @MethodSource("sourcesWhoseSoftwareEncoderCannotWriteTheFormat")
   @DisplayName(
@@ -236,7 +237,7 @@ class HardwareEncoderFailureRangeTest {
     assertThat(multivariantPlaylist(sdr)).doesNotContain("VIDEO-RANGE=");
     assertThat(sdr.formatAttemptCount()).isEqualTo(2);
     assertThat(sdr.playbackChoice()).isEqualTo(VideoQuality.AUTO);
-    assertThat(sdr.formatChange()).isEmpty();
+    assertThat(sdr.formatChange()).contains(PlaybackFormatChange.HDR_NOT_KEPT);
     assertThat(sdr.decisions()).extracting(PlaybackDecision::formatAttempt).containsExactly(1, 2);
     assertThat(sdr.decisions().getLast().reasons()).startsWith(DecisionReason.ENCODE_FAILED);
   }

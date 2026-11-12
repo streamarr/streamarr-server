@@ -2,12 +2,14 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
+import com.streamarr.server.domain.streaming.DynamicRangeChoice;
 import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.StreamDelivery;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.PlaybackSessionClosedException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -1295,6 +1297,36 @@ public class PlaybackSessionService implements AutoCloseable {
         && !session.getTranscodeDecision().transcodeMode().copiesVideo()) {
       playback.choice = choiceWhenEncoding;
     }
+
+    if (playback.choice.formatChange().isEmpty() && playsSdrWhereHdrWasKept(playback)) {
+      playback.choice =
+          new PlayingChoice(
+              playback.choice.playbackChoice(), Optional.of(PlaybackFormatChange.HDR_NOT_KEPT));
+    }
+  }
+
+  // The latest format attempt plays SDR of a PQ or HLG source, although the viewer chose HDR in a
+  // fixed quality or an earlier format attempt played PQ or HLG (ADR 0013).
+  private static boolean playsSdrWhereHdrWasKept(PlaybackSession playback) {
+    var video = playback.decisions.getLast().video();
+    if (video.output().videoRange() != VideoRange.SDR
+        || video.source().videoRange() == VideoRange.SDR) {
+      return false;
+    }
+
+    return viewerChoseHdr(playback) || earlierFormatAttemptPlayedHdr(playback);
+  }
+
+  private static boolean viewerChoseHdr(PlaybackSession playback) {
+    return ViewerLimits.of(playback.command.options())
+        .dynamicRangeChoice()
+        .filter(DynamicRangeChoice.HDR::equals)
+        .isPresent();
+  }
+
+  private static boolean earlierFormatAttemptPlayedHdr(PlaybackSession playback) {
+    return playback.decisions.subList(0, playback.decisions.size() - 1).stream()
+        .anyMatch(decision -> decision.video().output().videoRange() != VideoRange.SDR);
   }
 
   // Original that reaches an encode plays it in Auto (ADR 0052).

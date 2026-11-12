@@ -23,10 +23,13 @@ type PlaybackSession {
     """
     playbackChoice: VideoQuality!
     """
-    The latest change from the output that requestedChoice asked for to another output, which the client
-    tells the viewer about with a notice, and marks beside requestedChoice in its quality control. Null while
-    the playback session plays the output that requestedChoice asked for. In Auto it stays null: Auto's
-    recoveries are not announced. The fallback from direct play to the HLS copy never sets it.
+    The latest change from the output that requestedChoice asked for to another output. While it is set, the
+    client shows a caution on its quality control and explains the change in its quality picker. Null while
+    the playback session plays the output that requestedChoice asked for. Once set, it stays set until the
+    playback session ends. A later change can replace it. To play another playback choice, the client starts
+    a new playback session, and that playback session's formatChange starts null. When requestedChoice is
+    AUTO, only HDR_NOT_KEPT sets it: Auto's other recoveries do not change what the viewer sees, so they are
+    not announced. The fallback from direct play to the HLS copy never sets it.
     """
     formatChange: PlaybackFormatChange
     """
@@ -356,6 +359,14 @@ enum PlaybackFormatChange {
     DOLBY_VISION_STRIPPED
     "The viewer switched audio tracks during direct play and the server rules out the HLS copy. An encode plays."
     AUDIO_TRACK_SWITCHED
+    """
+    The source's HDR range was not kept, and SDR plays. The server sets it when a format attempt plays SDR of
+    a PQ or HLG source in one of two cases: the client sent dynamicRange HDR with a fixed quality, or an
+    earlier format attempt of the playback session played PQ or HLG. The server sets it only while no other
+    value is set, so a failed copy whose encode plays SDR stays COPY_FAILED. It clears as every value does:
+    when the playback session ends.
+    """
+    HDR_NOT_KEPT
 }
 
 union PlaybackFormatAttempt = PendingPlaybackFormatAttempt | ReadyPlaybackFormatAttempt | FailedPlaybackFormatAttempt

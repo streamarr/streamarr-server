@@ -24,6 +24,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
+import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.DolbyVisionOutput;
@@ -1193,6 +1194,46 @@ class PlaybackSessionServiceTest {
 
     assertThat(events.getEventsOfType(PlaybackSessionChangedEvent.class)).isEmpty();
     assertThat(streams.createdCommands).hasSize(2);
+  }
+
+  // Auto announces only the recovery that the viewer sees: SDR after a format attempt that played
+  // PQ. A recovery that keeps PQ stays unannounced (ADR 0013).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("autoRecoveriesAfterAPqEncode")
+  @DisplayName(
+      "Should name HDR_NOT_KEPT in Auto only when the format attempt after a PQ encode plays SDR")
+  void shouldNameHdrNotKeptInAutoOnlyWhenTheFormatAttemptAfterAPqEncodePlaysSdr(
+      EncodeFormat recovery, Optional<PlaybackFormatChange> expectedChange) {
+    streams.copiesTheSource = false;
+    streams.encodeFormat = EncodeFormat.hdr(VideoRange.PQ);
+    streams.sourceProbe =
+        defaultProbeBuilder()
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .dynamicRange(
+                            VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ))
+                        .build()))
+            .build();
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(2).build();
+    var command = startCommand().build();
+    var pq = accepted(playback.start(command));
+    streams.encodeFormat = recovery;
+
+    var recovered = playback.reportFormatFailure(report(pq, command).build()).orElseThrow();
+
+    assertThat(pq.formatChange()).isEmpty();
+    assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(recovered.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(recovered.formatChange()).isEqualTo(expectedChange);
+  }
+
+  static Stream<Arguments> autoRecoveriesAfterAPqEncode() {
+    return Stream.of(
+        Arguments.of(
+            Named.of("8-bit SDR", EncodeFormat.SDR_8_BIT),
+            Optional.of(PlaybackFormatChange.HDR_NOT_KEPT)),
+        Arguments.of(Named.of("PQ", EncodeFormat.hdr(VideoRange.PQ)), Optional.empty()));
   }
 
   @Test
