@@ -71,7 +71,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
         profileShareChanged {
           shareId
           share {
-            id status profileId householdId invalidationReason
+            id status profileId householdId invalidationReason offeredByReader
             profile { id name } visitor offeredByDisplayName household { id name }
           }
         }
@@ -195,6 +195,13 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
               // The offerer's name belongs to the target side, as in the share queries.
               assertThat(share.path("offeredByDisplayName").isNull()).isTrue();
             });
+    // Each subscriber is told whether it made the offer, the change that ends the share included.
+    assertThat(List.of(offeredToOwner, acceptedForOwner, endedForOwner))
+        .extracting(share -> share.path("offeredByReader").toString())
+        .containsOnly("true");
+    assertThat(List.of(offeredToHost, acceptedForHost, endedForHost))
+        .extracting(share -> share.path("offeredByReader").toString())
+        .containsOnly("false");
   }
 
   @Test

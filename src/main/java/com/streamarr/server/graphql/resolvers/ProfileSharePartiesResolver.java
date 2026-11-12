@@ -18,7 +18,10 @@ import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import org.dataloader.DataLoader;
 
-/** The parties a share names, each loaded for the reader who asks and null when hidden. */
+/**
+ * The parties a share names, each loaded for the reader who asks and null when hidden, and whether
+ * that reader made the offer.
+ */
 @DgsComponent
 @RequiredArgsConstructor
 public class ProfileSharePartiesResolver {
@@ -40,6 +43,15 @@ public class ProfileSharePartiesResolver {
     DataLoader<ReaderLoaderKey<ShareReference>, String> loader =
         dfe.getDataLoader(ShareOffererNameDataLoader.NAME);
     return loader.load(keyOf(dfe));
+  }
+
+  // Whether the reader made the offer is its own act, so every reader of the share is told, with
+  // no decision and nothing loaded; who else made it stays with offeredByDisplayName's readers.
+  @DgsData(parentType = "ProfileShare", field = "offeredByReader")
+  public boolean offeredByReader(DataFetchingEnvironment dfe) {
+    ProfileShareDetails share = dfe.getSource();
+    var reader = authorizationService.currentIdentity().accountId();
+    return share.parties().offeredBy().map(reader::equals).orElse(false);
   }
 
   @DgsData(parentType = "ProfileShare", field = "household")
