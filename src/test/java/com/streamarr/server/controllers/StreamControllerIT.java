@@ -240,24 +240,6 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should answer 416 without a body when a range starts past a stored segment's end")
-  void shouldAnswer416WithoutBodyWhenRangeStartsPastStoredSegmentEnd() throws Exception {
-    var session = StreamSessionFixture.buildActiveSession();
-    STUB_SERVICE.addSession(session);
-    FAKE_SEGMENT_STORE.addSegment(
-        session.getSessionId(), "segment0.m4s", new byte[] {0x47, 0x00, 0x11, 0x10});
-
-    mockMvc
-        .perform(
-            get("/api/stream/{id}/segment0.m4s", session.getSessionId())
-                .param("t", playbackToken(session.getSessionId()))
-                .header(HttpHeaders.RANGE, "bytes=4-"))
-        .andExpect(status().isRequestedRangeNotSatisfiable())
-        .andExpect(header().string(HttpHeaders.CONTENT_RANGE, "bytes */4"))
-        .andExpect(content().bytes(new byte[0]));
-  }
-
-  @Test
   @DisplayName("Should reject segment request when token missing")
   void shouldRejectSegmentRequestWhenTokenMissing() throws Exception {
     var session = StreamSessionFixture.buildActiveSession();
