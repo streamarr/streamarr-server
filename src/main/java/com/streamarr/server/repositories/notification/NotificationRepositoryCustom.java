@@ -59,12 +59,15 @@ public interface NotificationRepositoryCustom {
    * The rule of one unread news per recipient, kind and share, in one statement: stores new unread
    * news, or moves the recipient's unread news of the kind about the share to the event's time when
    * that is later, and holds it until the transaction ends. Two events at the same moment update
-   * one Notification.
+   * one Notification. News it moves keeps the side it was addressed to.
    */
   UnreadNews<ProfileShareFacts> upsertUnreadNews(
       NotificationDraft<NotificationKind, ProfileShareFacts> draft);
 
-  /** Stores the facts on a Notification that this transaction already holds. */
+  /**
+   * Stores the facts on a Notification that this transaction already holds, except the side it was
+   * addressed to, which nothing changes after it is written.
+   */
   void replaceFacts(UUID notificationId, ProfileShareFacts facts);
 
   /**

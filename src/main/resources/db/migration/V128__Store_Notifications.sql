@@ -7,6 +7,8 @@
 --
 -- A Notification stores one name only: the Profile's name at its latest event, for a reader who
 -- may no longer see the Profile. It stores no picture, no kind, no other name and never a code.
+-- It also stores the side of the share it was addressed to, which its guard reads: the side the
+-- kind tells, set when it is written and never changed, an update in place included.
 -- It is deleted with its recipient and with its share, and so with the share's Profile or
 -- Household; deleting the Account that made the offer deletes nothing.
 --
@@ -27,6 +29,8 @@ CREATE TYPE profile_share_answer AS ENUM ('ACCEPTED', 'REJECTED');
 
 CREATE TYPE profile_share_ended_by AS ENUM ('OFFERING_SIDE', 'HOUSEHOLD_SIDE', 'SERVER');
 
+CREATE TYPE profile_share_side AS ENUM ('OFFERING_SIDE', 'HOUSEHOLD_SIDE');
+
 CREATE TABLE notification
 (
     id                   UUID                     NOT NULL DEFAULT gen_random_uuid(),
@@ -43,12 +47,18 @@ CREATE TABLE notification
     share_ended_by       profile_share_ended_by,
     latest_event_at      TIMESTAMP WITH TIME ZONE NOT NULL,
     read_at              TIMESTAMP WITH TIME ZONE,
+    addressed_to         profile_share_side       NOT NULL,
     CONSTRAINT notification_pkey PRIMARY KEY (id),
     CONSTRAINT chk_notification_form CHECK ((kind = 'PROFILE_SHARE_OFFERED') = (form = 'REQUEST')),
     CONSTRAINT chk_notification_share_answer
         CHECK ((kind = 'PROFILE_SHARE_ANSWERED') = (share_answer IS NOT NULL)),
     CONSTRAINT chk_notification_share_ended_by
         CHECK ((kind = 'PROFILE_SHARE_ENDED') = (share_ended_by IS NOT NULL)),
+    -- Offer waiting tells the Household's side and Offer answered the offering side; Share ended
+    -- tells either.
+    CONSTRAINT chk_notification_addressed_to
+        CHECK ((kind <> 'PROFILE_SHARE_OFFERED' OR addressed_to = 'HOUSEHOLD_SIDE')
+            AND (kind <> 'PROFILE_SHARE_ANSWERED' OR addressed_to = 'OFFERING_SIDE')),
     CONSTRAINT fk_notification_share FOREIGN KEY (share_id)
         REFERENCES profile_household_share (id) ON DELETE CASCADE
 );

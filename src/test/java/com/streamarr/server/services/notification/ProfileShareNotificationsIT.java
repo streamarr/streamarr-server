@@ -1,6 +1,7 @@
 package com.streamarr.server.services.notification;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
@@ -13,6 +14,7 @@ import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
+import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
@@ -279,7 +281,9 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
               assertThat(notification.getFacts())
                   .isEqualTo(
                       ProfileShareFacts.ended(
-                          sam.profile().getName(), ProfileShareEndedBy.HOUSEHOLD_SIDE));
+                          sam.profile().getName(),
+                          ProfileShareEndedBy.HOUSEHOLD_SIDE,
+                          ProfileShareSide.OFFERING_SIDE));
             });
   }
 
@@ -293,8 +297,12 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
     assertThat(endingsAbout(share))
         .allSatisfy(
             notification ->
-                assertThat(notification.getFacts().endedBy())
-                    .contains(ProfileShareEndedBy.OFFERING_SIDE))
+                assertThat(notification.getFacts())
+                    .isEqualTo(
+                        ProfileShareFacts.ended(
+                            sam.profile().getName(),
+                            ProfileShareEndedBy.OFFERING_SIDE,
+                            ProfileShareSide.HOUSEHOLD_SIDE)))
         .extracting(Notification::getRecipientAccountId)
         .containsExactlyInAnyOrder(riverside.account().getId(), riversideAdmin.account().getId());
   }
@@ -316,7 +324,11 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
         .allSatisfy(
             notification ->
                 assertThat(notification.getFacts())
-                    .isEqualTo(ProfileShareFacts.ended("Ollie", ProfileShareEndedBy.OFFERING_SIDE)))
+                    .isEqualTo(
+                        ProfileShareFacts.ended(
+                            "Ollie",
+                            ProfileShareEndedBy.OFFERING_SIDE,
+                            ProfileShareSide.HOUSEHOLD_SIDE)))
         .extracting(Notification::getRecipientAccountId)
         .containsExactlyInAnyOrder(riverside.account().getId(), riversideAdmin.account().getId());
   }
@@ -333,8 +345,12 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
     assertThat(endingsAbout(share))
         .allSatisfy(
             notification ->
-                assertThat(notification.getFacts().endedBy())
-                    .contains(ProfileShareEndedBy.HOUSEHOLD_SIDE))
+                assertThat(notification.getFacts())
+                    .isEqualTo(
+                        ProfileShareFacts.ended(
+                            "Ollie",
+                            ProfileShareEndedBy.HOUSEHOLD_SIDE,
+                            ProfileShareSide.OFFERING_SIDE)))
         .extracting(Notification::getRecipientAccountId)
         .containsExactly(sam.account().getId());
   }
@@ -359,6 +375,28 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
         .extracting(Notification::getRecipientAccountId)
         .containsExactlyInAnyOrder(
             sam.account().getId(), riverside.account().getId(), riversideAdmin.account().getId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should give an Account on both sides one Share ended news, addressed to the Household's"
+          + " side, when a ServerAdmin ends the share")
+  void shouldGiveAnAccountOnBothSidesOneShareEndedNewsAddressedToTheHouseholdsSide() {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var ollie = steps.profileManagedBy("Ollie", sam, sam, riversideAdmin);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+
+    sharing.administrativelyEndProfileShare(
+        authTestSupport.freshIdentityOf(serverAdmin), share.getId(), "requested by Sam");
+
+    assertThat(endingsAbout(share))
+        .extracting(
+            Notification::getRecipientAccountId,
+            notification -> notification.getFacts().addressedTo())
+        .containsExactlyInAnyOrder(
+            tuple(sam.account().getId(), ProfileShareSide.OFFERING_SIDE),
+            tuple(riverside.account().getId(), ProfileShareSide.HOUSEHOLD_SIDE),
+            tuple(riversideAdmin.account().getId(), ProfileShareSide.HOUSEHOLD_SIDE));
   }
 
   @Test
@@ -397,15 +435,17 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertThat(endingsAbout(home))
-        .allSatisfy(
-            notification ->
-                assertThat(notification.getFacts())
-                    .isEqualTo(
-                        ProfileShareFacts.ended(
-                            ben.profile().getName(), ProfileShareEndedBy.SERVER)))
-        .extracting(Notification::getRecipientAccountId)
+        .extracting(Notification::getRecipientAccountId, Notification::getFacts)
         .containsExactlyInAnyOrder(
-            ben.account().getId(), riverside.account().getId(), riversideAdmin.account().getId());
+            tuple(
+                ben.account().getId(),
+                endedByServer(ben.profile(), ProfileShareSide.OFFERING_SIDE)),
+            tuple(
+                riverside.account().getId(),
+                endedByServer(ben.profile(), ProfileShareSide.HOUSEHOLD_SIDE)),
+            tuple(
+                riversideAdmin.account().getId(),
+                endedByServer(ben.profile(), ProfileShareSide.HOUSEHOLD_SIDE)));
   }
 
   @Test
@@ -434,13 +474,14 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
     var connected = connect(ollie, riverside);
 
     assertThat(endingsAbout(visit))
-        .allSatisfy(
-            notification ->
-                assertThat(notification.getFacts())
-                    .isEqualTo(ProfileShareFacts.ended("Ollie", ProfileShareEndedBy.SERVER)))
-        .extracting(Notification::getRecipientAccountId)
+        .extracting(Notification::getRecipientAccountId, Notification::getFacts)
         .containsExactlyInAnyOrder(
-            sam.account().getId(), riverside.account().getId(), riversideAdmin.account().getId());
+            tuple(sam.account().getId(), endedByServer(ollie, ProfileShareSide.OFFERING_SIDE)),
+            tuple(
+                riverside.account().getId(), endedByServer(ollie, ProfileShareSide.HOUSEHOLD_SIDE)),
+            tuple(
+                riversideAdmin.account().getId(),
+                endedByServer(ollie, ProfileShareSide.HOUSEHOLD_SIDE)));
     assertThat(notificationsOf(connected)).isEmpty();
     assertThat(resolutionOf(waiting)).contains(RequestResolution.WITHDRAWN);
     assertThat(notificationsAbout(waiting))
@@ -469,6 +510,10 @@ class ProfileShareNotificationsIT extends AbstractIntegrationTest {
                 assertThat(notification.getFacts()).isEqualTo(ProfileShareFacts.offered("Ollie")))
         .extracting(Notification::getRecipientAccountId)
         .containsExactlyInAnyOrder(riverside.account().getId(), riversideAdmin.account().getId());
+  }
+
+  private static ProfileShareFacts endedByServer(Profile profile, ProfileShareSide side) {
+    return ProfileShareFacts.ended(profile.getName(), ProfileShareEndedBy.SERVER, side);
   }
 
   private ProfileHouseholdShare shareOf(Profile profile, AuthTestSupport.TestIdentity household) {

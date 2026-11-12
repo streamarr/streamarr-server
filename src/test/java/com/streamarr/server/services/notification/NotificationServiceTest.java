@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.notification.Notification;
 import com.streamarr.server.domain.notification.NotificationForm;
 import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.domain.notification.SubjectNotification;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -98,6 +99,7 @@ class NotificationServiceTest {
             .form(NotificationForm.NEWS)
             .shareId(share.getId())
             .profileName("Kai")
+            .addressedTo(ProfileShareSide.OFFERING_SIDE)
             .latestEventAt(NOW.minus(age))
             .build());
   }
