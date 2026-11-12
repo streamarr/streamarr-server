@@ -539,29 +539,34 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     for (var verb :
         List.of(
             "acceptProfileShare", "rejectProfileShare", "cancelProfileShare", "endProfileShare")) {
-      var response =
-          graphql(
-                  authTestSupport.accountBearer(host),
-                  """
-                  mutation { %s(input: {shareId: "%s"}) { userErrors { __typename } } }
-                  """
-                      .formatted(verb, shareId))
-              .andExpect(status().isOk())
-              .andReturn()
-              .getResponse()
-              .getContentAsString();
-      answers.add(
-          objectMapper
-              .readTree(response)
-              .path("data")
-              .path(verb)
-              .path("userErrors")
-              .path(0)
-              .path("__typename")
-              .asString("FORBIDDEN"));
+      answers.add(answerOf(host, verb, shareId));
     }
 
     return answers;
+  }
+
+  /** What one verb on the share answers the caller: the type of its first error, or FORBIDDEN. */
+  private String answerOf(AuthTestSupport.TestIdentity caller, String verb, String shareId)
+      throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(caller),
+                """
+                mutation { %s(input: {shareId: "%s"}) { userErrors { __typename } } }
+                """
+                    .formatted(verb, shareId))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper
+        .readTree(response)
+        .path("data")
+        .path(verb)
+        .path("userErrors")
+        .path(0)
+        .path("__typename")
+        .asString("FORBIDDEN");
   }
 
   @Test
