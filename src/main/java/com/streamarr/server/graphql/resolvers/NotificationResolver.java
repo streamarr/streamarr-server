@@ -57,7 +57,9 @@ public class NotificationResolver {
           ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_RECEIVED.name(),
               "ProfileManagerInvitationReceivedNotification",
           ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_ANSWERED.name(),
-              "ProfileManagerInvitationAnsweredNotification");
+              "ProfileManagerInvitationAnsweredNotification",
+          ProfileManagementNotificationKinds.PROFILE_MANAGEMENT_REMOVED.name(),
+              "ProfileManagementRemovedNotification");
 
   private final NotificationService notificationService;
   private final AuthorizationService authorizationService;

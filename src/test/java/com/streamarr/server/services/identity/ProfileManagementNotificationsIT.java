@@ -19,12 +19,14 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.InvitationLifetime;
 import com.streamarr.server.services.auth.ManagerInvitationExpirySweeper;
 import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
+import com.streamarr.server.services.events.notification.ProfileManagementRemovedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnswer;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationReceivedSnapshot;
 import com.streamarr.server.services.identity.ProfileLifecycleService.TransferProfileCommand;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService.IssuedManagerInvitation;
 import com.streamarr.server.services.mutation.Outcome;
+import com.streamarr.server.services.notification.NotificationService;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.ManagerInvitationSteps;
@@ -60,6 +62,7 @@ class ProfileManagementNotificationsIT extends AbstractIntegrationTest {
 
   private static final String RECEIVED = "PROFILE_MANAGER_INVITATION_RECEIVED";
   private static final String ANSWERED = "PROFILE_MANAGER_INVITATION_ANSWERED";
+  private static final String REMOVED = "PROFILE_MANAGEMENT_REMOVED";
   private static final String INVITER_NAME = "Sam Rivers";
 
   @Autowired private ProfileManagerAdministrationService profileManagement;
@@ -75,6 +78,7 @@ class ProfileManagementNotificationsIT extends AbstractIntegrationTest {
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private InvitationLifetime invitationLifetime;
+  @Autowired private NotificationService notificationService;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private ProfileCastSupport cast;
   @Autowired private TransactionTemplate transactionTemplate;
@@ -135,6 +139,12 @@ class ProfileManagementNotificationsIT extends AbstractIntegrationTest {
     Ending(ProfileManagerInvitationStatus status) {
       this.status = status;
     }
+  }
+
+  /** Who removes another Account's direct management of a Profile. */
+  enum Remover {
+    PROFILES_OWN_ACCOUNT,
+    SERVER_ADMIN
   }
 
   @BeforeEach
@@ -486,6 +496,156 @@ class ProfileManagementNotificationsIT extends AbstractIntegrationTest {
         .satisfies(request -> assertThat(request.resolution()).isEmpty());
   }
 
+  @ParameterizedTest
+  @EnumSource(Remover.class)
+  @DisplayName(
+      "Should tell the removed manager the Profile's name when the Profile's own Account or a"
+          + " ServerAdmin removes it")
+  void shouldTellTheRemovedManagerTheProfilesNameWhenTheProfilesOwnAccountOrAServerAdminRemovesIt(
+      Remover remover) {
+    var olive = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    cast.rename(olive.profile(), "Olive");
+    cast.grant(mara, olive.profile());
+    var sol = serverAdmin();
+    var before = Instant.now().truncatedTo(ChronoUnit.MICROS);
+
+    var outcome =
+        switch (remover) {
+          case PROFILES_OWN_ACCOUNT ->
+              profileManagement.removeProfileManager(
+                  identityOf(olive), olive.profile().getId(), mara.account().getId());
+          case SERVER_ADMIN -> removeAdministratively(sol, olive.profile(), mara);
+        };
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.about(SubjectReference.profile(olive.profile().getId())))
+        .singleElement()
+        .satisfies(
+            told -> {
+              assertThat(told.recipient()).isEqualTo(accountOf(mara));
+              assertThat(told.kind()).isEqualTo(REMOVED);
+              assertThat(told.form()).isEqualTo("NEWS");
+              assertThat(told.snapshot())
+                  .isEqualTo(document(new ProfileManagementRemovedSnapshot("Olive")));
+              assertThat(told.latestEventAt()).isBetween(before, Instant.now());
+              assertThat(told.readAt()).isEmpty();
+            });
+    assertThat(rows.of(accountOf(olive))).isEmpty();
+    assertThat(rows.of(accountOf(sol))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should tell nobody when a manager relinquishes its own management")
+  void shouldTellNobodyWhenAManagerRelinquishesItsOwnManagement() {
+    cast.grant(mara, alex);
+
+    var outcome = profileManagement.relinquishProfileManagement(identityOf(mara), alex.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.about(SubjectReference.profile(alex.getId()))).isEmpty();
+    assertThat(rows.of(accountOf(mara))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should tell nobody when a ServerAdmin removes its own management")
+  void shouldTellNobodyWhenAServerAdminRemovesItsOwnManagement() {
+    var sol = serverAdmin();
+    cast.grant(sol, alex);
+
+    var outcome = removeAdministratively(sol, alex, sol);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.about(SubjectReference.profile(alex.getId()))).isEmpty();
+    assertThat(rows.of(accountOf(sol))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should tell nobody when the removal that would tell it rolls back")
+  void shouldTellNobodyWhenTheRemovalThatWouldTellItRollsBack() {
+    // Mara is the Kid Profile's only eligible manager, which its Household's rules check at commit.
+    var kit = cast.profileManagedBy(mara, ProfileFixture.kidProfileBuilder().name("Kit"));
+
+    var outcome = removeAdministratively(serverAdmin(), kit, mara);
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new ManagerRejections.EligibleManagerRequired()));
+    assertThat(rows.about(SubjectReference.profile(kit.getId()))).isEmpty();
+    assertThat(rows.of(accountOf(mara))).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep one unread Management removed with the second removal's time and name when it"
+          + " is removed, granted and removed again before it is read")
+  void
+      shouldKeepOneUnreadManagementRemovedWithTheSecondRemovalsTimeAndNameWhenItIsRemovedGrantedAndRemovedAgainBeforeItIsRead() {
+    var sol = serverAdmin();
+    cast.grant(mara, alex);
+    assertThat(removeAdministratively(sol, alex, mara)).isInstanceOf(Outcome.Accepted.class);
+    var first = onlyNotificationOf(mara);
+    cast.grant(mara, alex);
+    cast.rename(alex, "Alexandra");
+    var before = Instant.now().truncatedTo(ChronoUnit.MICROS);
+
+    var outcome = removeAdministratively(sol, alex, mara);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.of(accountOf(mara)))
+        .singleElement()
+        .satisfies(
+            told -> {
+              assertThat(told.id()).isEqualTo(first.id());
+              assertThat(told.kind()).isEqualTo(REMOVED);
+              assertThat(told.snapshot())
+                  .isEqualTo(document(new ProfileManagementRemovedSnapshot("Alexandra")));
+              assertThat(told.createdAt()).isEqualTo(first.createdAt());
+              assertThat(told.latestEventAt()).isBetween(before, Instant.now());
+              assertThat(told.readAt()).isEmpty();
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should make a new Management removed when the Account read the first before the next"
+          + " removal")
+  void shouldMakeANewManagementRemovedWhenTheAccountReadTheFirstBeforeTheNextRemoval() {
+    var sol = serverAdmin();
+    cast.grant(mara, alex);
+    assertThat(removeAdministratively(sol, alex, mara)).isInstanceOf(Outcome.Accepted.class);
+    var first = onlyNotificationOf(mara);
+    assertThat(notificationService.markNotificationsRead(identityOf(mara), List.of(first.id())))
+        .isEqualTo(Outcome.accepted(0));
+    cast.grant(mara, alex);
+
+    var outcome = removeAdministratively(sol, alex, mara);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.of(accountOf(mara)))
+        .satisfiesExactly(
+            read -> {
+              assertThat(read.id()).isEqualTo(first.id());
+              assertThat(read.readAt()).isPresent();
+            },
+            unread -> {
+              assertThat(unread.id()).isNotEqualTo(first.id());
+              assertThat(unread.kind()).isEqualTo(REMOVED);
+              assertThat(unread.readAt()).isEmpty();
+            });
+  }
+
+  @Test
+  @DisplayName("Should keep the name it was told when the Profile is renamed after the removal")
+  void shouldKeepTheNameItWasToldWhenTheProfileIsRenamedAfterTheRemoval() {
+    cast.grant(mara, alex);
+    assertThat(removeAdministratively(serverAdmin(), alex, mara))
+        .isInstanceOf(Outcome.Accepted.class);
+
+    cast.rename(alex, "Alexandra");
+
+    assertThat(onlyNotificationOf(mara).snapshot())
+        .isEqualTo(document(new ProfileManagementRemovedSnapshot("Alex")));
+  }
+
   private Outcome<?, ?> answer(
       TestIdentity invitee, IssuedManagerInvitation issued, ProfileManagerInvitationAnswer answer) {
     var invitationId = issued.invitation().getId();
@@ -615,6 +775,21 @@ class ProfileManagementNotificationsIT extends AbstractIntegrationTest {
         yield manager.account().getEmail();
       }
     };
+  }
+
+  private Outcome<?, ?> removeAdministratively(
+      TestIdentity serverAdmin, Profile profile, TestIdentity manager) {
+    return profileManagement.administrativelyRemoveProfileManager(
+        authTestSupport.freshIdentityOf(serverAdmin),
+        profile.getId(),
+        manager.account().getId(),
+        "no longer looks after " + profile.getName());
+  }
+
+  private Row onlyNotificationOf(TestIdentity recipient) {
+    var told = rows.of(accountOf(recipient));
+    assertThat(told).hasSize(1);
+    return told.getFirst();
   }
 
   // In the database alone, so the invitations the manager sent still wait when they are answered.

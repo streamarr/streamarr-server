@@ -191,6 +191,24 @@ type ProfileManagerInvitationAnsweredNotification implements Notification {
     answer: ProfileManagerInvitationAnswer!
 }
 
+"""
+The Profile's own Account or a ServerAdmin removed the recipient's direct management of a Profile.
+An Account that gives up its own management is not told. A later removal while it is unread
+replaces its latestEventAt and profileName and leaves it unread; once it is read, a later removal
+makes a new one.
+"""
+type ProfileManagementRemovedNotification implements Notification {
+    id: ID!
+    message: String!
+    createdAt: String!
+    latestEventAt: String!
+    unread: Boolean!
+    "The id of the Profile whose management was removed."
+    profileId: ID!
+    "The Profile's name at the latest removal. A later rename does not change it."
+    profileName: String!
+}
+
 enum ProfileManagerInvitationAnswer {
     ACCEPTED
     DECLINED

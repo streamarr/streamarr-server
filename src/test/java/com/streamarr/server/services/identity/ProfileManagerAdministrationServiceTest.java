@@ -100,6 +100,7 @@ class ProfileManagerAdministrationServiceTest {
         new LeavingManagerProposals(
             new ProfileManagerInvitationLifecycle(invitations, new CapturingEventPublisher()),
             new ProfileShareLifecycle(shares, new CapturingEventPublisher())),
+        new ProfileManagementNotifications(profiles, new CapturingEventPublisher()),
         audit,
         new OpaqueOneTimeCodes(),
         credentialAttempts.gate(clock),

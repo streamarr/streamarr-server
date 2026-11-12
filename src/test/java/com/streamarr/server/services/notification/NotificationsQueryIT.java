@@ -85,6 +85,7 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
               ... on ProfileManagerInvitationAnsweredNotification {
                 profileName invitationId inviteeAnswer: answer
               }
+              ... on ProfileManagementRemovedNotification { profileName profileId }
             }
           }
           pageInfo { hasNextPage endCursor }
@@ -295,6 +296,40 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.latestEventAt")
                 .value(decidedAt.toString()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should list the removal with the Profile's id and name when an Account's management is"
+          + " removed")
+  void shouldListTheRemovalWithTheProfilesIdAndNameWhenAnAccountsManagementIsRemoved()
+      throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam, riversideAdmin);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    assertThat(
+            profileManagement.administrativelyRemoveProfileManager(
+                authTestSupport.freshIdentityOf(serverAdmin),
+                kai.getId(),
+                riversideAdmin.account().getId(),
+                "no longer looks after Kai"))
+        .isInstanceOf(Outcome.Accepted.class);
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(1))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.__typename")
+                .value("ProfileManagementRemovedNotification"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.message")
+                .value("You no longer manage “Kai”."))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.profileId").value(kai.getId().toString()))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(true));
   }
 
   @Test

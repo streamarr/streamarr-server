@@ -5,6 +5,7 @@ import com.streamarr.server.domain.notification.RequestAnswer;
 import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.domain.notification.StoredNotification;
 import com.streamarr.server.domain.notification.SubjectReference;
+import com.streamarr.server.services.events.notification.ProfileManagementRemovedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationReceivedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
@@ -32,6 +33,7 @@ public record NotificationDetails(
     String resolvedAt,
     UUID shareId,
     UUID invitationId,
+    UUID profileId,
     String profileName,
     RequestAnswer answer,
     ProfileShareEndedBy endedBy) {
@@ -49,8 +51,8 @@ public record NotificationDetails(
             .resolution(notification.resolutionAt(now).orElse(null))
             .resolvedAt(notification.resolutionTimeAt(now).map(Instant::toString).orElse(null))
             .shareId(idOf(notification.subject(), SubjectReference.PROFILE_SHARE))
-            .invitationId(
-                idOf(notification.subject(), SubjectReference.PROFILE_MANAGER_INVITATION));
+            .invitationId(idOf(notification.subject(), SubjectReference.PROFILE_MANAGER_INVITATION))
+            .profileId(idOf(notification.subject(), SubjectReference.PROFILE));
     return switch (notification.snapshot()) {
       case ProfileShareOfferedSnapshot(var profileName, var answer) ->
           details.profileName(profileName).answer(answer.orElse(null)).build();
@@ -62,6 +64,8 @@ public record NotificationDetails(
           details.profileName(profileName).answer(answer.orElse(null)).build();
       case ProfileManagerInvitationAnsweredSnapshot(var profileName, var answer) ->
           details.profileName(profileName).answer(answer).build();
+      case ProfileManagementRemovedSnapshot(var profileName) ->
+          details.profileName(profileName).build();
       default -> details.build();
     };
   }

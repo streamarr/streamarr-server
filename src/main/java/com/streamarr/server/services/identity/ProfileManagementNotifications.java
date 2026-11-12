@@ -9,15 +9,20 @@ import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.events.auth.ProfileManagerInvitationChangedEvent;
 import com.streamarr.server.services.events.notification.ProfileManagementNotificationKinds;
+import com.streamarr.server.services.events.notification.ProfileManagementRemovedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnswer;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationReceivedSnapshot;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import lombok.Builder;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
@@ -25,8 +30,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Tells the Account that an invitation to manage a Profile names that it may accept it, settles
- * that request when the invitation stops waiting for it, and tells the inviter how the invited
- * Account answered (ADR 0063 §The Profile management kinds). It hears each invitation write inside
+ * that request when the invitation stops waiting for it, tells the inviter how the invited Account
+ * answered, and tells an Account that someone removed its management of a Profile (ADR 0063 §The
+ * Profile management kinds). It hears each invitation write, and is called by each removal, inside
  * the write's transaction, so what it tells commits or rolls back with the write. An invitation
  * names an Account only when that Account may accept it, which the invite reads and holds until it
  * commits, so never one of the Profile's managers, and only a manager invites, so the Account that
@@ -49,6 +55,26 @@ class ProfileManagementNotifications {
           ManagerInvitationAction.InvalidatedForItsAccount _ ->
           resolveRequest(change);
     }
+  }
+
+  /**
+   * Tells the Account whose direct management of a Profile someone else removed, with the Profile's
+   * name as the removal finds it. The caller holds the Profile's lock until the removal commits. A
+   * ServerAdmin that removes its own management acted itself, so it is not told.
+   */
+  void managementRemoved(ManagementRemoval removal) {
+    events.publishEvent(
+        TellNotificationEvent.builder()
+            .kind(ProfileManagementNotificationKinds.PROFILE_MANAGEMENT_REMOVED)
+            .subject(SubjectReference.profile(removal.profileId()))
+            .recipients(
+                Stream.of(removal.managerAccountId())
+                    .filter(manager -> !manager.equals(removal.removedBy()))
+                    .map(RecipientReference::account)
+                    .collect(Collectors.toSet()))
+            .snapshot(new ProfileManagementRemovedSnapshot(profileNameOf(removal.profileId())))
+            .at(removal.at())
+            .build());
   }
 
   // Every invitation is told, with the Profile's name read under the invite's lock on the Profile,
@@ -119,6 +145,14 @@ class ProfileManagementNotifications {
         .orElseThrow(
             () -> new IllegalStateException("The Profile %s does not exist".formatted(profileId)));
   }
+
+  /** One Account's direct management of a Profile, removed by an Account at an instant. */
+  @Builder
+  record ManagementRemoval(
+      @NonNull UUID profileId,
+      @NonNull UUID managerAccountId,
+      @NonNull UUID removedBy,
+      @NonNull Instant at) {}
 
   /** How an invitation's request resolves from the status a write after the issue left. */
   private record Settlement(
