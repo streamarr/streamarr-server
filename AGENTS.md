@@ -189,6 +189,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Resolvers depend on Services; Services depend on Repositories; Domain depends on nothing
 - Domain entities must NEVER import from services, repositories, or graphql packages
 - Services must NEVER import from the graphql package
+- Nothing in the `graphql` package, including data loaders and subscription listeners, may import from the repositories package; like controllers, GraphQL classes read and write through services
 - Repositories must NEVER import from the services package; a type that services and repositories both use, such as `Seek`, `LibraryOperation` or `StoredArtworkRequest`, lives in `domain`
 - `services.artwork` (artwork requests, steps, runs and image storage) must NEVER import from the root `services` package, whose catalog services request artwork
 - Nothing outside `config` may import from `config`, which wires the application and may import every layer. `@ConfigurationProperties` records and `CanonicalBaseUrl` live in `properties`, which imports nothing from the project. HTTP helpers that controllers and `config` share, such as `StreamarrBearerTokenResolver` and `AuthCookies`, live in `web`.

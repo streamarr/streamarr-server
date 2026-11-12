@@ -21,7 +21,7 @@ Arrows point from consumers to their dependencies.
 Repository implementations fulfill the contracts used by services.
 Services, repository contracts, and repository implementations share domain types.
 
-* *Protocol adapters* (GraphQL resolvers, REST controllers) delegate to services -- no business logic at the protocol layer
+* *Protocol adapters* (GraphQL resolvers, REST controllers) delegate to services -- no business logic at the protocol layer, and no dependency on repositories (enforced by ArchUnit)
 * *Services* orchestrate business operations -- protocol-agnostic (no `graphql.*` imports, enforced by ArchUnit)
 * *Repository contracts* expose data access and atomic operations needed by services
 * *Repository implementations* use JPA for CRUD and jOOQ for complex queries
