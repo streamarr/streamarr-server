@@ -62,8 +62,7 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
 
   private static final String SET_PROFILE_LANGUAGE_PREFERENCES =
       """
-      mutation { setProfileLanguagePreferences(input: {profileId: "%s", audioLanguages: [%s],
-          subtitleMode: OFF}) {
+      mutation { setProfileLanguagePreferences(input: {profileId: "%s", %s}) {
         languagePreferences { audioLanguages subtitleLanguage subtitleMode }
         userErrors { __typename ... on MutationError { message }
           ... on InputMutationError { inputPath }
@@ -315,6 +314,37 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should store the subtitle language and mode when a manager sets them")
+  void shouldStoreSubtitleLanguageAndModeWhenManagerSetsThem() throws Exception {
+    // A new Profile has no subtitle language and the FORCED mode, so both sent values are changes.
+    var theo = cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder());
+    var bearer = authTestSupport.accountBearer(smith);
+    var subtitledInGerman =
+        objectMapper.readTree(
+            """
+            {"audioLanguages": ["DE", "EN"], "subtitleLanguage": "DE", "subtitleMode": "ALWAYS"}
+            """);
+
+    var answer =
+        setPreferences(
+            bearer,
+            idOf(theo),
+            "audioLanguages: [DE, EN], subtitleLanguage: DE, subtitleMode: ALWAYS");
+
+    assertThat(answer.path("userErrors").values()).isEmpty();
+    assertThat(answer.path("languagePreferences")).as("the answer").isEqualTo(subtitledInGerman);
+    assertThat(profileAdministration(bearer, theo).path("languagePreferences"))
+        .as("the Profile's page")
+        .isEqualTo(subtitledInGerman);
+    assertThat(
+            data(authTestSupport.profileBearer(smith, theo), ME_LANGUAGE_PREFERENCES)
+                .path("me")
+                .path("languagePreferences"))
+        .as("a session that has the Profile selected")
+        .isEqualTo(subtitledInGerman);
+  }
+
+  @Test
   @DisplayName("Should forbid the change when a ServerAdmin reads the preferences without managing")
   void shouldForbidChangeWhenServerAdminReadsPreferencesWithoutManaging() throws Exception {
     assertForbidden(readingOf(Reader.SERVER_ADMIN_THAT_DOES_NOT_MANAGE_IT));
@@ -444,7 +474,7 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
               graphqlRequest(
                   reading.bearer(),
                   SET_PROFILE_LANGUAGE_PREFERENCES.formatted(
-                      idOf(reading.profile()), audioLanguages)))
+                      idOf(reading.profile()), withoutSubtitles(audioLanguages))))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.errors[0].extensions.code").value("FORBIDDEN"))
           .andExpect(jsonPath("$.data.setProfileLanguagePreferences").doesNotExist());
@@ -455,8 +485,17 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
 
   private JsonNode changePreferences(String bearer, String profileId, String audioLanguages)
       throws Exception {
-    return data(bearer, SET_PROFILE_LANGUAGE_PREFERENCES.formatted(profileId, audioLanguages))
+    return setPreferences(bearer, profileId, withoutSubtitles(audioLanguages));
+  }
+
+  private JsonNode setPreferences(String bearer, String profileId, String preferences)
+      throws Exception {
+    return data(bearer, SET_PROFILE_LANGUAGE_PREFERENCES.formatted(profileId, preferences))
         .path("setProfileLanguagePreferences");
+  }
+
+  private static String withoutSubtitles(String audioLanguages) {
+    return "audioLanguages: [%s], subtitleMode: OFF".formatted(audioLanguages);
   }
 
   private static void assertChanged(JsonNode preferences) {
