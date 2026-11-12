@@ -27,6 +27,7 @@ import com.streamarr.server.services.events.notification.ProfileShareOfferedSnap
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SubjectReference;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
+import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
@@ -73,6 +74,8 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
   @Autowired private AccountLifecycleService accountLifecycle;
   @Autowired private HouseholdDeletionService householdDeletion;
   @Autowired private ProfileManagerAdministrationService profileManagement;
+  @Autowired private ProfileAdministrationService profileAdministration;
+  @Autowired private ProfileLifecycleService profileLifecycle;
   @Autowired private CredentialIssuanceService credentialIssuance;
   @Autowired private AccountInvitationService accountInvitations;
   @Autowired private AccountInvitationRepository invitationRepository;
@@ -806,6 +809,79 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
 
     assertThat(outcome).isEqualTo(Outcome.accepted(lakeside.household().getId()));
     assertThat(endingsAbout(share)).isEmpty();
+  }
+
+  @ParameterizedTest
+  @EnumSource(ProfileDeletion.class)
+  @DisplayName(
+      "Should dismiss every Notification about a share for every recipient when its Profile is"
+          + " deleted")
+  void shouldDismissEveryNotificationAboutAShareForEveryRecipientWhenItsProfileIsDeleted(
+      ProfileDeletion deletion) {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var ollie = steps.unsharedProfileManagedBy("Ollie", sam, sam);
+    var share = steps.accept(riverside, steps.offer(sam, ollie, riverside));
+    sharing.endProfileShare(identityOf(riverside), share.getId());
+    var subject = SubjectReference.profileShare(share.getId());
+    assertThat(rows.about(subject))
+        .extracting(Row::kind)
+        .containsExactlyInAnyOrder(OFFERED, OFFERED, ANSWERED, ENDED);
+
+    Outcome<?, ?> outcome =
+        switch (deletion) {
+          case BY_ITS_SOLE_MANAGER ->
+              profileAdministration.deleteProfile(
+                  authTestSupport.freshIdentityOf(sam), ollie.getId());
+          case BY_A_SERVER_ADMIN ->
+              profileLifecycle.administrativelyDeleteProfile(
+                  authTestSupport.freshIdentityOf(serverAdmin), ollie.getId(), "a duplicate");
+          case WITH_ITS_HOUSEHOLD ->
+              householdDeletion.deleteLastAccountAndHousehold(
+                  authTestSupport.freshIdentityOf(serverAdmin),
+                  DeleteLastAccountAndHouseholdCommand.builder()
+                      .householdId(sam.household().getId())
+                      .reason("closing")
+                      .build());
+        };
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(profileRepository.findById(ollie.getId())).isEmpty();
+    assertThat(rows.about(subject)).isEmpty();
+  }
+
+  /** How a Profile is deleted: each path deletes its shares with it. */
+  enum ProfileDeletion {
+    BY_ITS_SOLE_MANAGER,
+    BY_A_SERVER_ADMIN,
+    WITH_ITS_HOUSEHOLD
+  }
+
+  @Test
+  @DisplayName(
+      "Should dismiss every Notification about the shares into a Household when the Household is"
+          + " deleted")
+  void shouldDismissEveryNotificationAboutTheSharesIntoAHouseholdWhenTheHouseholdIsDeleted() {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var lakeside = track(authTestSupport.createIdentity());
+    var accepted =
+        steps.accept(
+            lakeside, steps.offer(sam, steps.profileManagedBy("Ollie", sam, sam), lakeside));
+    var waiting = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), lakeside);
+    var elsewhere = steps.offer(sam, sam.profile(), riverside);
+
+    var outcome =
+        householdDeletion.transferLastAccountAndDeleteHousehold(
+            authTestSupport.freshIdentityOf(serverAdmin),
+            TransferLastAccountAndDeleteHouseholdCommand.builder()
+                .householdId(lakeside.household().getId())
+                .destinationHouseholdId(serverAdmin.household().getId())
+                .reason("closing")
+                .build());
+
+    assertThat(outcome).isEqualTo(Outcome.accepted(lakeside.household().getId()));
+    assertThat(rows.about(SubjectReference.profileShare(accepted.getId()))).isEmpty();
+    assertThat(rows.about(SubjectReference.profileShare(waiting.getId()))).isEmpty();
+    assertThat(requestsAbout(elsewhere)).hasSize(2);
   }
 
   private void assertWithdrawn(ProfileHouseholdShare offer) {

@@ -74,6 +74,24 @@ public final class ShareSteps {
   /** A Profile of the member's Household, available there, with the given direct managers. */
   public Profile profileManagedBy(
       String name, TestIdentity member, TestIdentity... directManagers) {
+    var profile = unsharedProfileManagedBy(name, member, directManagers);
+    transactions.executeWithoutResult(
+        _ ->
+            shares.saveAndFlush(
+                ProfileHouseholdShare.builder()
+                    .profileId(profile.getId())
+                    .householdId(member.household().getId())
+                    .status(ProfileShareStatus.ACTIVE)
+                    .build()));
+    return profile;
+  }
+
+  /**
+   * A Profile of the member's Household with the given direct managers and no share, not even into
+   * its own Household, so its sole manager may delete it while nothing shares it.
+   */
+  public Profile unsharedProfileManagedBy(
+      String name, TestIdentity member, TestIdentity... directManagers) {
     return transactions.execute(
         _ -> {
           var profile =
@@ -90,12 +108,6 @@ public final class ShareSteps {
                     .build());
           }
 
-          shares.saveAndFlush(
-              ProfileHouseholdShare.builder()
-                  .profileId(profile.getId())
-                  .householdId(member.household().getId())
-                  .status(ProfileShareStatus.ACTIVE)
-                  .build());
           return profile;
         });
   }

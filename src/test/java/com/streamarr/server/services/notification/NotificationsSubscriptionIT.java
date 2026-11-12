@@ -594,6 +594,34 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should deliver the dismissal with a null edge when a request's Profile is deleted")
+  void shouldDeliverTheDismissalWithANullEdgeWhenARequestsProfileIsDeleted() throws Exception {
+    var offer = steps.offer(sam, kai(), riverside);
+    var request = requestFor(riversideAdmin, offer);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+
+    var outcome =
+        profileLifecycle.administrativelyDeleteProfile(
+            authTestSupport.freshIdentityOf(serverAdmin), offer.getProfileId(), "a duplicate");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    // The deletion withdraws the offer on its way, and that change is read once the request is
+    // gone.
+    var withdrawn = nextChange(socket);
+    var dismissed = nextChange(socket);
+    assertThat(List.of(withdrawn, dismissed))
+        .allSatisfy(
+            change -> {
+              assertThat(onlyChange(change).path("notificationId").asString())
+                  .isEqualTo(request.id().toString());
+              assertThat(onlyChange(change).path("edge").isNull()).isTrue();
+              assertThat(change.path("unreadNotificationCount").asInt()).isZero();
+            });
+    assertThat(rows.of(accountOf(riversideAdmin))).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should deliver the request's expiry when the sweep stores the offer's expiry")
   void shouldDeliverTheRequestsExpiryWhenTheSweepStoresTheOffersExpiry() throws Exception {
     var offer = steps.offer(sam, kai(), riverside);
