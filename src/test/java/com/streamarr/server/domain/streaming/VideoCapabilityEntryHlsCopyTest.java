@@ -24,8 +24,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * ADR 0049's rule for an HLS stream copy: one video capability entry must accept every property of
  * the copy, and a probe version 5 outcome's unknown values fit as the ADR decides. The entry under
  * test plays HEVC Main up to level 5.1 and HEVC Main 10 up to level 4.1, at up to 10 bits, a
- * 1920×1080 picture in either orientation and 30 fps. The entry gives no codec tier, so a copy fits
- * in either tier.
+ * 1920×1080 picture in either orientation and 30 fps.
  */
 @Tag("UnitTest")
 @DisplayName("Video Capability Entry HLS Copy Tests")
