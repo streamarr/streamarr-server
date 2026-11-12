@@ -334,6 +334,15 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   }
 
   @Override
+  public List<ChangedShare> invalidatePendingByHouseholdId(
+      UUID householdId, String reason, Instant now) {
+    var intoHousehold = PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(householdId);
+    return concat(
+        materializeExpiredPending(intoHousehold, now),
+        invalidatePending(intoHousehold, reason, now));
+  }
+
+  @Override
   public List<ChangedShare> convertMembershipShareToVisitorShare(UUID profileId, UUID householdId) {
     return changed(
         dsl.update(PROFILE_HOUSEHOLD_SHARE)
