@@ -100,6 +100,72 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should withdraw and announce the invitation when a ServerAdmin transfers its Profile")
+  void shouldWithdrawAndAnnounceTheInvitationWhenAServerAdminTransfersItsProfile()
+      throws Exception {
+    var host = track(authTestSupport.createIdentity());
+    var alex = cast.profileManagedBy(sam, ProfileFixture.defaultProfileBuilder().name("Alex"));
+    var invitationId = invite(sam, alex.getId(), mara);
+
+    graphql(
+        authTestSupport.freshAccountBearer(serverAdmin),
+        """
+        mutation { transferProfile(input: {profileId: "%s", destinationHouseholdId: "%s",
+          profileManagerAccountId: "%s", reason: "moved out"}) {
+          profile { id } userErrors { __typename } } }
+        """
+            .formatted(alex.getId(), host.household().getId(), host.account().getId()),
+        "/data/transferProfile/userErrors");
+
+    assertWithdrawnAndAnnounced(invitationId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should withdraw and announce the invitation when its Profile is deleted with its"
+          + " Household")
+  void shouldWithdrawAndAnnounceTheInvitationWhenItsProfileIsDeletedWithItsHousehold()
+      throws Exception {
+    var kit = track(authTestSupport.createIdentity());
+    var alex = cast.profileManagedBy(kit, ProfileFixture.defaultProfileBuilder().name("Alex"));
+    var invitationId = invite(kit, alex.getId(), mara);
+
+    graphql(
+        authTestSupport.freshAccountBearer(serverAdmin),
+        """
+        mutation { transferLastAccountAndDeleteHousehold(input: {householdId: "%s",
+          destinationHouseholdId: "%s", reason: "moved out"}) {
+          deletedHouseholdId userErrors { __typename } } }
+        """
+            .formatted(kit.household().getId(), sam.household().getId()),
+        "/data/transferLastAccountAndDeleteHousehold/userErrors");
+
+    assertWithdrawnAndAnnounced(invitationId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should withdraw and announce the invitation when the Profile's own Account removes its"
+          + " inviter")
+  void shouldWithdrawAndAnnounceTheInvitationWhenTheProfilesOwnAccountRemovesItsInviter()
+      throws Exception {
+    cast.grant(sam, cam.profile());
+    var invitationId = invite(sam, cam.profile().getId(), mara);
+
+    graphql(
+        authTestSupport.freshAccountBearer(cam),
+        """
+        mutation { removeProfileManager(input: {profileId: "%s", accountId: "%s"}) {
+          profileId userErrors { __typename } } }
+        """
+            .formatted(cam.profile().getId(), sam.account().getId()),
+        "/data/removeProfileManager/userErrors");
+
+    assertWithdrawnAndAnnounced(invitationId);
+  }
+
+  @Test
+  @DisplayName(
       "Should invalidate the invitation for its Account alone when the Account it names is"
           + " deleted")
   void shouldInvalidateTheInvitationForItsAccountAloneWhenTheAccountItNamesIsDeleted()
@@ -278,6 +344,13 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
 
   /** Answers the response once it carries no errors and its user errors are empty. */
   private JsonNode graphql(String bearer, String query, String userErrors) throws Exception {
+    var answer = read(bearer, query);
+    assertThat(answer.at(userErrors)).as(userErrors).isEmpty();
+    return answer;
+  }
+
+  /** Answers the response once it carries no errors. */
+  private JsonNode read(String bearer, String query) throws Exception {
     var response =
         mockMvc
             .perform(graphqlRequest(bearer, query))
@@ -286,9 +359,7 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
             .andReturn()
             .getResponse()
             .getContentAsString();
-    var answer = objectMapper.readTree(response);
-    assertThat(answer.at(userErrors)).as(userErrors).isEmpty();
-    return answer;
+    return objectMapper.readTree(response);
   }
 
   private TestIdentity track(TestIdentity identity) {
