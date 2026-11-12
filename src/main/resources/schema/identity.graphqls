@@ -15,6 +15,7 @@ type Me {
     usableHouseholds(first: Int, after: String, last: Int, before: String): UsableHouseholdConnection!
     "The Profile picker of the context Household."
     selectableProfiles(first: Int, after: String, last: Int, before: String): SelectableProfileConnection!
+    "The Profile this session has selected, as the Profile picker shows it; null until it selects one."
     selectedProfile: SelectableProfile
     "The selected Profile's own language preferences; null without a selected Profile."
     languagePreferences: ProfileLanguagePreferences

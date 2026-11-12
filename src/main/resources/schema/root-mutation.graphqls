@@ -356,7 +356,7 @@ type Mutation {
     changeShareCodeLifetime(input: ChangeShareCodeLifetimeInput!): ChangeShareCodeLifetimePayload
     """
     Changes how long an invitation or an offer of a Profile made from now on waits for its answer.
-    Requires a ServerAdmin.
+    Requires a ServerAdmin; anyone else gets FORBIDDEN.
     """
     changeInvitationLifetime(input: ChangeInvitationLifetimeInput!): ChangeInvitationLifetimePayload
     """
