@@ -1,6 +1,8 @@
 package com.streamarr.server.services.identity;
 
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.StoredNotificationRows.document;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
@@ -18,6 +20,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
+import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SubjectReference;
@@ -27,15 +30,19 @@ import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.ControlledClockConfiguration;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import com.streamarr.server.support.ShareSteps;
 import com.streamarr.server.support.StoredNotificationRows;
 import com.streamarr.server.support.StoredNotificationRows.Row;
+import com.streamarr.server.support.TestFixtureWork;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,6 +53,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -122,6 +130,8 @@ class OfferExpiryNotificationsIT extends AbstractIntegrationTest {
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
   @Autowired private MeterRegistry meterRegistry;
+  @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private final List<TestIdentity> identities = new ArrayList<>();
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
@@ -276,6 +286,63 @@ class OfferExpiryNotificationsIT extends AbstractIntegrationTest {
     assertThat(nodeOf(expired).path("resolution").asString()).isEqualTo("EXPIRED");
     assertThat(expired.path("unreadNotificationCount").asInt()).isZero();
     assertMatchesAFreshQuery(expired, riversideAdmin);
+  }
+
+  /**
+   * The acceptance takes its instant a second before the offer's expiry and then waits behind the
+   * share's row, which the test holds, while the clock moves past the expiry. The request reads as
+   * expired while the acceptance waits; once it commits, the request is decided at the instant the
+   * acceptance took.
+   */
+  @Test
+  @DisplayName(
+      "Should resolve the requests as decided at the acceptance, and push the decision, when the"
+          + " acceptance waited past the offer's expiry")
+  void shouldResolveTheRequestsAsDecidedAtTheAcceptanceWhenTheAcceptanceWaitedPastTheExpiry()
+      throws Exception {
+    var offer = steps.offer(sam, kai(), riverside);
+    clock.advance(Duration.between(clock.instant(), stored(offer).getExpiresAt().minusSeconds(1)));
+    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
+    var shareRow =
+        RowLockTarget.builder()
+            .dataSource(dataSource)
+            .table("profile_household_share")
+            .rowId(offer.getId())
+            .build();
+
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
+        var share = lockRow(shareRow)) {
+      var acceptance = executor.submit(() -> steps.accept(riverside, offer));
+      awaitWaitersBehind(jdbcTemplate, share.backendPid(), 1);
+      runOut(offer);
+      mockMvc
+          .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("EXPIRED"));
+
+      share.release();
+      acceptance.get(10, TimeUnit.SECONDS);
+    }
+
+    var accepted = stored(offer);
+    assertThat(accepted.getStatus()).isEqualTo(ProfileShareStatus.ACTIVE);
+    assertThat(accepted.getDecidedAt()).isBefore(accepted.getExpiresAt());
+    assertThat(requestsAbout(offer))
+        .hasSize(2)
+        .allSatisfy(
+            request -> {
+              assertThat(request.resolution()).contains("DECIDED");
+              assertThat(request.resolvedAt()).contains(accepted.getDecidedAt());
+              assertThat(request.snapshot())
+                  .isEqualTo(
+                      document(
+                          new ProfileShareOfferedSnapshot(
+                              "Kai", Optional.of(ProfileShareAnswer.ACCEPTED))));
+            });
+    var decided = nextChange(socket);
+    assertThat(nodeOf(decided).path("resolution").asString()).isEqualTo("DECIDED");
+    assertMatchesAFreshQuery(decided, riversideAdmin);
   }
 
   private Profile kai() {
