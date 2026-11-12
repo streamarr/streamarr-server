@@ -126,7 +126,7 @@ public class PlaybackSessionService implements AutoCloseable {
     @Builder.Default private Optional<DecisionReason> pendingAttemptCause = Optional.empty();
   }
 
-  @Builder
+  @Builder(toBuilder = true)
   private record FormatAttemptReservation(
       PlaybackSession playback, UUID retiredStreamId, Optional<ReservedFormatAttempt> next) {}
 
@@ -134,20 +134,24 @@ public class PlaybackSessionService implements AutoCloseable {
    * The format attempt that a reservation starts: its stream session and the video operations it
    * may use. It plays {@code choice}, or {@code choiceWhenEncoding} once it turns out to encode the
    * video. {@code softwareContinuation} names the encode that it continues in software after a
-   * hardware encoder failure.
+   * hardware encoder failure. {@code rejectedContinuation} is the rejection of the software
+   * continuation that it follows, which ends playback when it finds no eligible video format.
    */
-  @Builder
+  @Builder(toBuilder = true)
   private record ReservedFormatAttempt(
       @NonNull UUID streamId,
       @NonNull VideoFormatConstraint videoFormatConstraint,
       @NonNull PlayingChoice choice,
       @NonNull PlayingChoice choiceWhenEncoding,
-      @NonNull Optional<SoftwareContinuation> softwareContinuation) {
+      @NonNull Optional<SoftwareContinuation> softwareContinuation,
+      @NonNull Optional<PlaybackSessionFailure.CreationRejected> rejectedContinuation) {
 
     // Lombok builder defaults — its generated setters assign them
     @SuppressWarnings("java:S9438")
     private static class ReservedFormatAttemptBuilder {
       private Optional<SoftwareContinuation> softwareContinuation = Optional.empty();
+      private Optional<PlaybackSessionFailure.CreationRejected> rejectedContinuation =
+          Optional.empty();
     }
   }
 
@@ -775,9 +779,10 @@ public class PlaybackSessionService implements AutoCloseable {
    * encode continues in 8-bit SDR when no software encoder on a worker with room writes 10 bits.
    * When none writes a PQ or HLG encode's range, or a 10-bit SDR encode finds no worker with room,
    * the encode has failed as after a format error: Auto gives the range or the 10 bits up within
-   * its budget, and a fixed quality ends playback (ADR 0013). An 8-bit SDR encode with no worker
-   * with room for it ends the playback session. Every later format attempt of the playback session
-   * encodes the codec family with the software encoder.
+   * its budget, and a fixed quality ends playback (ADR 0013). When Auto's next format attempt then
+   * finds no eligible video format, playback ends with the continuation's rejection. An 8-bit SDR
+   * encode with no worker with room for it ends the playback session. Every later format attempt of
+   * the playback session encodes the codec family with the software encoder.
    */
   @EventListener
   public void onRequestedVariantHardwareEncoderFailed(
@@ -998,8 +1003,19 @@ public class PlaybackSessionService implements AutoCloseable {
       return;
     }
 
-    failCurrent(playback, attempt.streamId(), rejection);
+    failCurrent(playback, attempt.streamId(), failureOf(attempt, rejection));
     streamingService.destroySession(attempt.streamId());
+  }
+
+  // The client plays the format that the rejected software continuation before this format
+  // attempt gave up, so the client's declaration is not why playback ends.
+  private static PlaybackSessionFailure.CreationRejected failureOf(
+      ReservedFormatAttempt attempt, PlaybackSessionFailure.CreationRejected rejection) {
+    if (!(rejection.reason() instanceof CreateStreamSessionRejection.NoEligibleVideoFormat)) {
+      return rejection;
+    }
+
+    return attempt.rejectedContinuation().orElse(rejection);
   }
 
   // A software continuation of a PQ, HLG or 10-bit SDR encode that could not start in that range
@@ -1023,9 +1039,21 @@ public class PlaybackSessionService implements AutoCloseable {
         new FailedFormatAttempt.Encode(
             continuation.get().codecFamily(), continuation.get().format());
     playback.startedFormatAttempts--;
-    return Optional.of(
+    var reservation =
         reserveAfterFailedAttempt(
-            playback, attempt.streamId(), new FailedFormatAttempt(rejection, failedEncode)));
+            playback, attempt.streamId(), new FailedFormatAttempt(rejection, failedEncode));
+    return Optional.of(followingTheRejectedContinuation(reservation, rejection));
+  }
+
+  private static FormatAttemptReservation followingTheRejectedContinuation(
+      FormatAttemptReservation reservation, PlaybackSessionFailure.CreationRejected rejection) {
+    var next =
+        reservation
+            .next()
+            .map(
+                attempt ->
+                    attempt.toBuilder().rejectedContinuation(Optional.of(rejection)).build());
+    return reservation.toBuilder().next(next).build();
   }
 
   private void failFormatAttempt(

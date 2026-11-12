@@ -460,7 +460,11 @@ class HardwareEncoderFailureRangeTest {
                 pqEncodeInAutoBuilder()
                     .hardwareAv1Features(NO_ENCODE_FEATURE)
                     .format(EncodeFormat.SDR_8_BIT)
-                    .build())));
+                    .build())),
+        Arguments.of(
+            Named.of(
+                "a PQ encode in Auto for a client that takes AV1 only in PQ",
+                pqEncodeInAutoBuilder().client(av1InPqAloneClient()).build())));
   }
 
   // The PQ encode in Auto of a client that declares AV1 alone, on a hardware AV1 encoder that
@@ -774,6 +778,13 @@ class HardwareEncoderFailureRangeTest {
                 av1EntryBuilder()
                     .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
                     .build()))
+        .build();
+  }
+
+  // Once PQ is given up, no format of AV1 is left for this client.
+  private static ClientCapabilityDeclaration av1InPqAloneClient() {
+    return defaultDeclarationBuilder()
+        .video(List.of(av1EntryBuilder().compatibleBases(List.of(CompatibleBase.PQ)).build()))
         .build();
   }
 

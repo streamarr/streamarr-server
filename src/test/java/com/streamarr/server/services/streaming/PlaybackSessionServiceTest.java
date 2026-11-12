@@ -1195,6 +1195,67 @@ class PlaybackSessionServiceTest {
     assertThat(streams.createdCommands).hasSize(2);
   }
 
+  // The client plays the PQ that Auto gave up after the rejected continuation, so its declaration
+  // is not why playback ends.
+  @Test
+  @DisplayName(
+      "Should end playback for the software continuation's lack of capacity when Auto's next format"
+          + " attempt finds no eligible video format")
+  void
+      shouldEndPlaybackForTheContinuationsLackOfCapacityWhenAutosNextAttemptFindsNoEligibleFormat() {
+    var lackOfCapacity = new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3);
+
+    var failed =
+        failAPqEncodeThatCannotContinue(
+            lackOfCapacity, new CreateStreamSessionRejection.NoEligibleVideoFormat());
+
+    assertThat(failed.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Failed.class,
+            attempt ->
+                assertThat(attempt.reason())
+                    .isEqualTo(new PlaybackSessionFailure.CreationRejected(lackOfCapacity)));
+    assertThat(streams.createdCommands).hasSize(3);
+  }
+
+  @Test
+  @DisplayName(
+      "Should end playback for the lack of capacity of Auto's next format attempt when the software"
+          + " continuation before it found no eligible video format")
+  void shouldEndPlaybackForTheNextAttemptsLackOfCapacityWhenTheContinuationFoundNoEligibleFormat() {
+    var lackOfCapacity = new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3);
+
+    var failed =
+        failAPqEncodeThatCannotContinue(
+            new CreateStreamSessionRejection.NoEligibleVideoFormat(), lackOfCapacity);
+
+    assertThat(failed.currentFormatAttempt())
+        .isInstanceOfSatisfying(
+            PlaybackFormatAttempt.Failed.class,
+            attempt ->
+                assertThat(attempt.reason())
+                    .isEqualTo(new PlaybackSessionFailure.CreationRejected(lackOfCapacity)));
+    assertThat(streams.createdCommands).hasSize(3);
+  }
+
+  // Auto's PQ encode loses its hardware encoder. The stream service rejects the software
+  // continuation, and then Auto's next format attempt, with these rejections.
+  private PlaybackSessionSnapshot failAPqEncodeThatCannotContinue(
+      CreateStreamSessionRejection continuationRejection,
+      CreateStreamSessionRejection nextAttemptRejection) {
+    streams.copiesTheSource = false;
+    streams.encodeFormat = EncodeFormat.hdr(VideoRange.PQ);
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+    streams.continuationRejection = continuationRejection;
+    streams.rejection = nextAttemptRejection;
+
+    service.onRequestedVariantHardwareEncoderFailed(
+        hardwareEncoderFailure(initial.currentFormatAttempt().streamSessionId()));
+
+    return service.access(request(initial, command)).orElseThrow();
+  }
+
   @Test
   @DisplayName(
       "Should ignore a hardware encoder failure when the failed format attempt copies the video")
@@ -3566,6 +3627,8 @@ class PlaybackSessionServiceTest {
     private Consumer<CreateStreamSessionCommand> duringNextCreation;
     private Consumer<CreateStreamSessionCommand> beforeNextCreation;
     private CreateStreamSessionRejection rejection;
+    // The rejection of a software continuation's stream session, in place of rejection.
+    private CreateStreamSessionRejection continuationRejection;
     private boolean failDestroy;
     private Runnable afterNextDestroy;
     private RuntimeException destroyFailure;
@@ -3592,8 +3655,13 @@ class PlaybackSessionServiceTest {
         callback.accept(command);
       }
 
-      if (rejection != null) {
-        return Outcome.rejected(rejection);
+      var refusal = rejection;
+      if (continuationRejection != null && command.softwareContinuation().isPresent()) {
+        refusal = continuationRejection;
+      }
+
+      if (refusal != null) {
+        return Outcome.rejected(refusal);
       }
 
       var session =
