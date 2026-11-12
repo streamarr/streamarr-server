@@ -42,8 +42,8 @@ import org.springframework.stereotype.Service;
 /**
  * Manages direct ProfileManagers through invitations or ServerAdmin overrides (ADR 0024). Overrides
  * require reauthentication. Removing a manager invalidates their outstanding invitations and share
- * offers. Code checks are journaled by invitation ID and return the same error for all invalid
- * codes.
+ * offers, and tells the removed Account. Code checks are journaled by invitation ID and return the
+ * same error for all invalid codes.
  */
 @Service
 @RequiredArgsConstructor
@@ -66,6 +66,7 @@ public class ProfileManagerAdministrationService {
   private final ProfileRepository profileRepository;
   private final UserAccountRepository userAccountRepository;
   private final LeavingManagerProposals leavingManagerProposals;
+  private final ProfileManagementNotifications managementNotifications;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final OpaqueOneTimeCodes opaqueCodes;
   private final CredentialAttemptGate credentialAttempts;
@@ -546,6 +547,13 @@ public class ProfileManagerAdministrationService {
     }
 
     var now = clock.instant();
+    managementNotifications.managementRemoved(
+        ProfileManagementNotifications.ManagementRemoval.builder()
+            .profileId(profileId)
+            .managerAccountId(managerAccountId)
+            .removedBy(identity.accountId())
+            .at(now)
+            .build());
     // An older invitation naming the removed Account could silently restore what was disputed.
     invitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
         profileId, managerAccountId, "removal disputes the authority", now);
