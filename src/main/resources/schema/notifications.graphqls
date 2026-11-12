@@ -179,7 +179,7 @@ input MarkNotificationsReadInput {
     is gone, is another Account's, is hidden by the guard or is already read is skipped, and the
     payload is the same as for an id that names nothing.
     """
-    ids: [ID!]!
+    notificationIds: [ID!]!
 }
 
 "The unread count after the Notifications were marked read, or why the server refused the mark."

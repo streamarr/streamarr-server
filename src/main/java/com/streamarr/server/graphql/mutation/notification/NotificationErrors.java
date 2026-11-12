@@ -8,7 +8,7 @@ import com.streamarr.server.services.serversettings.NotificationRetentionSetting
 /** The exhaustive mappings from service rejection to schema error type, one per union. */
 public final class NotificationErrors {
 
-  private static final String IDS = "ids";
+  private static final String NOTIFICATION_IDS = "notificationIds";
 
   private NotificationErrors() {}
 
@@ -17,14 +17,15 @@ public final class NotificationErrors {
     return switch (rejection) {
       case MarkNotificationsReadRejection.IdCountOutOfRange(var minimum, var maximum) ->
           new MarkNotificationsReadError.NotificationIdCountOutOfRangeError(
-              "Pass from %d to %d ids.".formatted(minimum, maximum), InputPath.of(IDS));
+              "Pass from %d to %d ids.".formatted(minimum, maximum),
+              InputPath.of(NOTIFICATION_IDS));
     };
   }
 
   /** The id at the index of the input's list is not an id. */
   public static MarkNotificationsReadError invalidNotificationId(int index) {
     return new MarkNotificationsReadError.InvalidIdError(
-        "Enter a valid ID.", InputPath.element(IDS, index));
+        "Enter a valid ID.", InputPath.element(NOTIFICATION_IDS, index));
   }
 
   public static ChangeNotificationRetentionError toChangeRetentionError(

@@ -103,7 +103,9 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   private static final String MARK =
       """
-      mutation { markNotificationsRead(input: {ids: [%s]}) { userErrors { __typename } } }
+      mutation {
+        markNotificationsRead(input: {notificationIds: [%s]}) { userErrors { __typename } }
+      }
       """;
 
   private static final ObjectMapper JSON = new ObjectMapper();
