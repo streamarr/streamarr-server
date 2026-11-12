@@ -145,14 +145,6 @@ public class SegmentDeliveryCoordinator {
     heldRequests.wakeSession(sessionId);
   }
 
-  /**
-   * Wakes the stream session's held requests after it withdrew variants, so a request for a
-   * withdrawn variant ends instead of waiting for a segment that no job attempt makes.
-   */
-  public void variantsWithdrawn(UUID sessionId) {
-    heldRequests.wakeSession(sessionId);
-  }
-
   private SegmentDelivery tryRead(UUID sessionId, String segmentName) {
     if (!segmentStore.segmentExists(sessionId, segmentName)) {
       return null;

@@ -42,8 +42,6 @@ public class HlsStreamingService implements StreamingService {
   private static final String CAPACITY_REFUSALS_METRIC = "streamarr.streaming.capacity_refusals";
   private static final String MISSING_ENCODER_SESSIONS_METRIC =
       "streamarr.streaming.missing_encoder_sessions";
-  private static final String LOWER_VARIANT_WITHDRAWALS_METRIC =
-      "streamarr.streaming.lower_variant_withdrawals";
 
   private final MediaFileRepository mediaFileRepository;
   private final TranscodeExecutor transcodeExecutor;
@@ -577,26 +575,6 @@ public class HlsStreamingService implements StreamingService {
   @Override
   public Optional<String> playedVariantOf(UUID sessionId) {
     return producerLifecycle.playedVariantOf(sessionId);
-  }
-
-  @Override
-  public void withdrawLowerVariants(UUID sessionId, LowerVariantFailure failure) {
-    if (!producerLifecycle.tryWithdrawLowerVariants(sessionId)) {
-      return;
-    }
-
-    deliveryCoordinator.variantsWithdrawn(sessionId);
-    Counter.builder(LOWER_VARIANT_WITHDRAWALS_METRIC)
-        .description(
-            "Stream sessions that withdrew the encoded lower variants beside their copy after one"
-                + " of them failed")
-        .tag("failure", failure.name().toLowerCase(Locale.ROOT))
-        .register(meterRegistry)
-        .increment();
-    log.info(
-        "Session {} withdrew its lower variants after a {} and plays its copy alone",
-        sessionId,
-        failure);
   }
 
   // Every encode runs as a variant of the ladder. A copy keeps the source and the session's audio,

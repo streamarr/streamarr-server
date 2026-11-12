@@ -4,7 +4,6 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
-import com.streamarr.server.services.streaming.LowerVariantFailure;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.time.Instant;
@@ -98,10 +97,5 @@ public final class FakeStreamingService implements StreamingService {
   @Override
   public Optional<String> playedVariantOf(UUID sessionId) {
     return Optional.empty();
-  }
-
-  @Override
-  public void withdrawLowerVariants(UUID sessionId, LowerVariantFailure failure) {
-    // No stream session here lists lower variants.
   }
 }

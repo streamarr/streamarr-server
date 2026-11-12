@@ -7,7 +7,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantB
 import static com.streamarr.server.fixtures.StreamSessionFixture.directPlaySessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
-import static com.streamarr.server.fixtures.StreamSessionFixture.remuxDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.withActiveVariantHandles;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -17,10 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.config.RemoteTranscodeProperties;
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.EncodeCodecProfile;
-import com.streamarr.server.domain.streaming.EncodeFormat;
 import com.streamarr.server.domain.streaming.EncoderPreset;
-import com.streamarr.server.domain.streaming.LowerVariantEncode;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -45,7 +41,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -476,71 +471,6 @@ class StreamControllerTest {
             get("/api/stream/{sessionId}/{variantLabel}/stream.m3u8", SESSION_ID, "360p")
                 .param("t", "unit-token"))
         .andExpect(status().isNotFound());
-  }
-
-  // ADR 0050: after a lower variant failed, the copy plays on alone. A player that still holds the
-  // earlier multivariant playlist finds nothing at a withdrawn variant, a stored segment included,
-  // which moves it to the copy.
-  @ParameterizedTest
-  @ValueSource(strings = {"720p/stream.m3u8", "720p/init.mp4", "720p/segment0.m4s"})
-  @DisplayName("Should return 404 for a lower variant when the copy withdrew its lower variants")
-  void shouldReturn404ForALowerVariantWhenTheCopyWithdrewItsLowerVariants(String path)
-      throws Exception {
-    var session = buildCopyBesideALowerVariant();
-    segmentStore.addSegment(SESSION_ID, "720p/segment0.m4s", new byte[] {0x47});
-    session.tryWithdrawLowerVariants();
-    streamingService.setSession(session);
-
-    mockMvc
-        .perform(get("/api/stream/{sessionId}/" + path, SESSION_ID).param("t", "unit-token"))
-        .andExpect(status().isNotFound());
-  }
-
-  @Test
-  @DisplayName(
-      "Should list the copy alone in the multivariant playlist when the copy withdrew its lower"
-          + " variants")
-  void shouldListTheCopyAloneInTheMultivariantPlaylistWhenTheCopyWithdrewItsLowerVariants()
-      throws Exception {
-    var session = buildCopyBesideALowerVariant();
-    session.tryWithdrawLowerVariants();
-    streamingService.setSession(session);
-
-    var playlist =
-        mockMvc
-            .perform(
-                get("/api/stream/{sessionId}/multivariant.m3u8", SESSION_ID)
-                    .param("t", "unit-token"))
-            .andExpect(status().isOk())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-
-    assertThat(playlist.lines().filter(line -> line.startsWith("#EXT-X-STREAM-INF:"))).hasSize(1);
-    assertThat(playlist).doesNotContain("720p/");
-  }
-
-  private StreamSession buildCopyBesideALowerVariant() {
-    var copy =
-        remuxDecision().toBuilder()
-            .lowerVariantEncode(
-                Optional.of(
-                    new LowerVariantEncode(EncodeCodecProfile.H264_HIGH, EncodeFormat.SDR_8_BIT)))
-            .build();
-    var session =
-        defaultSessionBuilder()
-            .sessionId(SESSION_ID)
-            .transcodeDecision(copy)
-            .variants(
-                List.of(
-                    defaultVariantBuilder()
-                        .width(1280)
-                        .height(720)
-                        .videoBitrate(3_000_000L)
-                        .label("720p")
-                        .build()))
-            .build();
-    return withActiveVariantHandles(session);
   }
 
   @Test

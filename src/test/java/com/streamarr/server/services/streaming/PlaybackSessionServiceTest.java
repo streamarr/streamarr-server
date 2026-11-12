@@ -3939,10 +3939,5 @@ class PlaybackSessionServiceTest {
     public Optional<String> playedVariantOf(UUID sessionId) {
       return Optional.ofNullable(playedVariants.get(sessionId));
     }
-
-    @Override
-    public void withdrawLowerVariants(UUID sessionId, LowerVariantFailure failure) {
-      throw new UnsupportedOperationException();
-    }
   }
 }

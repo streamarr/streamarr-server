@@ -8,7 +8,6 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.CreateStreamSessionRejection;
-import com.streamarr.server.services.streaming.LowerVariantFailure;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.VideoFormatConstraint;
@@ -121,10 +120,5 @@ public final class FakeCreatingStreamingService implements StreamingService {
   @Override
   public Optional<String> playedVariantOf(UUID sessionId) {
     return streams.playedVariantOf(sessionId);
-  }
-
-  @Override
-  public void withdrawLowerVariants(UUID sessionId, LowerVariantFailure failure) {
-    streams.withdrawLowerVariants(sessionId, failure);
   }
 }

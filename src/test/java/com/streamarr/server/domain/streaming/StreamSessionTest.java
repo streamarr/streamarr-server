@@ -127,8 +127,9 @@ class StreamSessionTest {
   }
 
   @Test
-  @DisplayName("Should offer the copy alone when a copy withdraws its lower variants")
-  void shouldOfferTheCopyAloneWhenACopyWithdrawsItsLowerVariants() {
+  @DisplayName(
+      "Should name only the encoded variants as lower variants when a copy sits beside them")
+  void shouldNameOnlyTheEncodedVariantsAsLowerVariantsWhenACopySitsBesideThem() {
     var copy =
         StreamSessionFixture.remuxDecision().toBuilder()
             .lowerVariantEncode(
@@ -137,43 +138,19 @@ class StreamSessionTest {
             .build();
     var session = abrSessionBuilder().transcodeDecision(copy).build();
 
-    var withdrew = session.tryWithdrawLowerVariants();
-
-    assertThat(withdrew).isTrue();
-    assertThat(session.getVariants()).isEmpty();
-    assertThat(session.offersVariant("720p")).isFalse();
-    assertThat(session.offersVariant(StreamSession.defaultVariant())).isTrue();
-    assertThat(session.firstListedVariant()).isEqualTo(StreamSession.defaultVariant());
     assertThat(session.isLowerVariantBesideTheCopy("720p")).isTrue();
     assertThat(session.isLowerVariantBesideTheCopy(StreamSession.defaultVariant())).isFalse();
-    assertThat(session.tryWithdrawLowerVariants()).isFalse();
   }
 
   @Test
-  @DisplayName("Should keep its ladder when a stream session that encodes is asked to withdraw")
-  void shouldKeepItsLadderWhenAStreamSessionThatEncodesIsAskedToWithdraw() {
+  @DisplayName("Should name no lower variant when the stream session encodes its whole ladder")
+  void shouldNameNoLowerVariantWhenTheStreamSessionEncodesItsWholeLadder() {
     var session =
         abrSessionBuilder()
             .transcodeDecision(StreamSessionFixture.fullTranscodeDecision("h264"))
             .build();
 
-    var withdrew = session.tryWithdrawLowerVariants();
-
-    assertThat(withdrew).isFalse();
-    assertThat(session.offersVariant("720p")).isTrue();
     assertThat(session.isLowerVariantBesideTheCopy("720p")).isFalse();
-  }
-
-  @Test
-  @DisplayName("Should withdraw nothing when a copy lists no lower variants")
-  void shouldWithdrawNothingWhenACopyListsNoLowerVariants() {
-    var session =
-        StreamSessionFixture.defaultSessionBuilder()
-            .transcodeDecision(StreamSessionFixture.remuxDecision())
-            .build();
-
-    assertThat(session.tryWithdrawLowerVariants()).isFalse();
-    assertThat(session.offersVariant(StreamSession.defaultVariant())).isTrue();
   }
 
   @Test

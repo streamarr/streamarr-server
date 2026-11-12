@@ -66,13 +66,7 @@ public class StreamSession {
   @Builder.Default
   private final Map<String, EncoderPreset> variantEncoderPresets = new ConcurrentHashMap<>();
 
-  @Getter(lombok.AccessLevel.NONE)
-  @Builder.Default
-  private final List<QualityVariant> variants = Collections.emptyList();
-
-  @Getter(lombok.AccessLevel.NONE)
-  @Builder.Default
-  private final AtomicBoolean lowerVariantsWithdrawn = new AtomicBoolean();
+  @Builder.Default private final List<QualityVariant> variants = Collections.emptyList();
 
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
@@ -206,33 +200,7 @@ public class StreamSession {
   }
 
   /**
-   * The variants of the stream session's ladder: every variant of an encode, and the encoded lower
-   * variants beside a copy (ADR 0050), which are gone once the stream session withdrew them.
-   */
-  public List<QualityVariant> getVariants() {
-    if (lowerVariantsWithdrawn.get()) {
-      return List.of();
-    }
-
-    return variants;
-  }
-
-  /**
-   * Withdraws the encoded lower variants beside the stream session's copy, which then is its one
-   * variant (ADR 0050). Answers whether this call withdrew them: a stream session without a copy or
-   * without lower variants keeps its variants.
-   */
-  public boolean tryWithdrawLowerVariants() {
-    if (!copiesVideo() || variants.isEmpty()) {
-      return false;
-    }
-
-    return lowerVariantsWithdrawn.compareAndSet(false, true);
-  }
-
-  /**
-   * Whether the label names an encoded lower variant beside the stream session's copy (ADR 0050),
-   * listed or withdrawn.
+   * Whether the label names an encoded lower variant beside the stream session's copy (ADR 0050).
    */
   public boolean isLowerVariantBesideTheCopy(@NonNull String variantLabel) {
     return copiesVideo()
@@ -248,7 +216,7 @@ public class StreamSession {
       return true;
     }
 
-    return getVariants().stream().anyMatch(variant -> variant.label().equals(variantLabel));
+    return variants.stream().anyMatch(variant -> variant.label().equals(variantLabel));
   }
 
   /**
