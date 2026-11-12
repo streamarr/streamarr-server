@@ -17,4 +17,11 @@ public interface NotificationRepository {
    * nothing. Two tells at the same moment update one Notification.
    */
   List<ChangedNotification> tellNews(TellNotificationEvent tell);
+
+  /**
+   * Makes a waiting request for each recipient, with the subject's expiry the tell carries. A
+   * request never updates in place: a recipient who already has the request about the subject gets
+   * no second one, and nothing of the first changes.
+   */
+  List<ChangedNotification> tellRequests(TellNotificationEvent tell);
 }

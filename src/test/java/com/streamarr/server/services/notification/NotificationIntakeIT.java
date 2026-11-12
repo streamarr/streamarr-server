@@ -13,6 +13,7 @@ import com.streamarr.server.domain.notification.ProfileShareAnswer;
 import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareEndedSnapshot;
+import com.streamarr.server.services.events.notification.ProfileShareOfferedSnapshot;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.events.notification.SubjectReference;
@@ -27,6 +28,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -59,6 +61,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class NotificationIntakeIT extends AbstractIntegrationTest {
 
   private static final Instant EVENT = Instant.now().truncatedTo(ChronoUnit.MICROS);
+  private static final Instant OFFER_EXPIRY = EVENT.plus(Duration.ofDays(7));
 
   @Autowired private ApplicationEventPublisher eventPublisher;
   @Autowired private ApplicationEvents applicationEvents;
@@ -293,6 +296,67 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
     assertThat(announced()).isEmpty();
   }
 
+  @Test
+  @DisplayName(
+      "Should make one waiting request for each recipient with its subject's expiry when a request"
+          + " is told")
+  void shouldMakeOneWaitingRequestForEachRecipientWithItsSubjectsExpiryWhenARequestIsTold() {
+    var snapshot = new ProfileShareOfferedSnapshot("Theo", Optional.empty());
+
+    tell(offered(snapshot, share).recipients(Set.of(sam, kai)).build());
+
+    assertThat(rows.about(share)).extracting(Row::recipient).containsExactlyInAnyOrder(sam, kai);
+    assertThat(rows.about(share))
+        .allSatisfy(
+            row -> {
+              assertThat(row.kind()).isEqualTo("PROFILE_SHARE_OFFERED");
+              assertThat(row.form()).isEqualTo("REQUEST");
+              assertThat(row.snapshot()).isEqualTo(document(snapshot));
+              assertThat(row.latestEventAt()).isEqualTo(EVENT);
+              assertThat(row.expiresAt()).contains(OFFER_EXPIRY);
+              assertThat(row.resolution()).isEmpty();
+              assertThat(row.resolvedAt()).isEmpty();
+              assertThat(row.readAt()).isEmpty();
+            });
+    assertThat(announced().getFirst().notifications())
+        .containsExactlyInAnyOrderElementsOf(changesOf(rows.about(share)));
+  }
+
+  @Test
+  @DisplayName("Should make no second request when the same request is told again")
+  void shouldMakeNoSecondRequestWhenTheSameRequestIsToldAgain() {
+    var snapshot = new ProfileShareOfferedSnapshot("Theo", Optional.empty());
+    tell(offered(snapshot, share).build());
+
+    tell(
+        offered(new ProfileShareOfferedSnapshot("Theo Brook", Optional.empty()), share)
+            .at(EVENT.plusSeconds(60))
+            .build());
+
+    assertThat(onlyRowOf(sam))
+        .satisfies(
+            row -> {
+              assertThat(row.snapshot()).isEqualTo(document(snapshot));
+              assertThat(row.latestEventAt()).isEqualTo(EVENT);
+            });
+    assertThat(announced()).hasSize(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should make a request for each subject when a newer proposal is told beside an older one")
+  void shouldMakeARequestForEachSubjectWhenANewerProposalIsToldBesideAnOlderOne() {
+    var newer = SubjectReference.profileShare(UUID.randomUUID());
+    tell(offered(new ProfileShareOfferedSnapshot("Theo", Optional.empty()), share).build());
+
+    tell(
+        offered(new ProfileShareOfferedSnapshot("Theo", Optional.empty()), newer)
+            .at(EVENT.plusSeconds(60))
+            .build());
+
+    assertThat(rows.of(sam)).extracting(Row::subject).containsExactly(share, newer);
+  }
+
   private void tell(TellNotificationEvent tell) {
     transactionTemplate.executeWithoutResult(_ -> eventPublisher.publishEvent(tell));
   }
@@ -305,6 +369,17 @@ class NotificationIntakeIT extends AbstractIntegrationTest {
         .recipients(Set.of(sam))
         .snapshot(snapshot)
         .at(EVENT);
+  }
+
+  private TellNotificationEvent.TellNotificationEventBuilder offered(
+      ProfileShareOfferedSnapshot snapshot, SubjectReference offer) {
+    return TellNotificationEvent.builder()
+        .kind(SharingNotificationKinds.PROFILE_SHARE_OFFERED)
+        .subject(offer)
+        .recipients(Set.of(sam))
+        .snapshot(snapshot)
+        .at(EVENT)
+        .subjectExpiresAt(Optional.of(OFFER_EXPIRY));
   }
 
   private TellNotificationEvent.TellNotificationEventBuilder ended(
