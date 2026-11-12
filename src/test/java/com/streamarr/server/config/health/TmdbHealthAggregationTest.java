@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.fakes.FakeHttpClient;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.properties.TmdbHealthProperties;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.NoOwnedFolder;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Clock;
@@ -74,6 +75,11 @@ class TmdbHealthAggregationTest {
     @Bean
     TranscodeExecutorHealthIndicator transcodeExecutorHealthIndicator() {
       return new TranscodeExecutorHealthIndicator(new FakeTranscodeExecutor());
+    }
+
+    @Bean
+    SegmentFolderHealthIndicator segmentFolderHealthIndicator() {
+      return new SegmentFolderHealthIndicator(new NoOwnedFolder());
     }
   }
 

@@ -3,6 +3,7 @@ package com.streamarr.server.config.health;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.NoOwnedFolder;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -76,6 +77,11 @@ class WorkerAvailabilityProbesTest {
     @Bean
     HealthIndicator tmdbHealthIndicator() {
       return () -> Health.up().build();
+    }
+
+    @Bean
+    SegmentFolderHealthIndicator segmentFolderHealthIndicator() {
+      return new SegmentFolderHealthIndicator(new NoOwnedFolder());
     }
   }
 }

@@ -54,7 +54,11 @@ class TranscodingHealthGroupTest {
                   HealthContributorRegistryAutoConfiguration.class,
                   HealthContributorAutoConfiguration.class,
                   HealthEndpointAutoConfiguration.class))
-          .withBean("tmdbHealthIndicator", HealthIndicator.class, () -> () -> Health.up().build());
+          .withBean("tmdbHealthIndicator", HealthIndicator.class, () -> () -> Health.up().build())
+          .withBean(
+              "segmentFolderHealthIndicator",
+              HealthIndicator.class,
+              () -> () -> Health.up().build());
 
   @Test
   @DisplayName("Should include the transcode executor alone when the transcoding group loads")
