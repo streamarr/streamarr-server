@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -764,17 +765,12 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
   void shouldFailDownloadWithoutWaitingForBodyToEndWhenItPassesTheDownloadLimit() throws Exception {
     var bodyEnd = new CountDownLatch(1);
     var host = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-    host.createContext("/endless.jpg", sendBytesThenHold(DOWNLOAD_LIMIT_BYTES + 1, bodyEnd));
+    host.createContext(
+        "/endless.jpg",
+        sendBytesThenHold(DOWNLOAD_LIMIT_BYTES + 1, new CountDownLatch(1), bodyEnd));
     host.start();
     try {
-      var hostImageService =
-          new TheMovieDatabaseHttpService(
-              "",
-              wireMock.baseUrl(),
-              "http://127.0.0.1:" + host.getAddress().getPort(),
-              tmdbClient,
-              objectMapper,
-              clock);
+      var hostImageService = hostImageService(host);
 
       assertThatThrownBy(
               () ->
@@ -789,13 +785,50 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should report the interrupt when the download is interrupted while reading the body")
+  void shouldReportTheInterruptWhenDownloadIsInterruptedWhileReadingTheBody() throws Exception {
+    var bodySent = new CountDownLatch(1);
+    var bodyEnd = new CountDownLatch(1);
+    var host = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    host.createContext("/stalled.jpg", sendBytesThenHold(DOWNLOAD_LIMIT_BYTES, bodySent, bodyEnd));
+    host.start();
+    try (var download =
+        BoundedTask.start(() -> hostImageService(host).downloadImage("/stalled.jpg"))) {
+      // The host's write returns only once the download has read most of the body, so the
+      // download now waits inside the body for the byte past the limit.
+      assertThat(bodySent.await(30, TimeUnit.SECONDS)).isTrue();
+
+      download.interrupt();
+
+      assertThatThrownBy(() -> download.await(Duration.ofSeconds(30)))
+          .isInstanceOf(InterruptedException.class);
+    } finally {
+      bodyEnd.countDown();
+      host.stop(0);
+    }
+  }
+
+  private TheMovieDatabaseHttpService hostImageService(HttpServer host) {
+    return new TheMovieDatabaseHttpService(
+        "",
+        wireMock.baseUrl(),
+        "http://127.0.0.1:" + host.getAddress().getPort(),
+        tmdbClient,
+        objectMapper,
+        clock);
+  }
+
   // Sends a chunked body of the given length and keeps it open until the latch opens, so a reader
   // that waits for the end of the body waits until then.
-  private static HttpHandler sendBytesThenHold(int length, CountDownLatch bodyEnd) {
+  private static HttpHandler sendBytesThenHold(
+      int length, CountDownLatch bodySent, CountDownLatch bodyEnd) {
     return exchange -> {
       exchange.sendResponseHeaders(200, 0);
       exchange.getResponseBody().write(new byte[length]);
       exchange.getResponseBody().flush();
+      bodySent.countDown();
       try {
         bodyEnd.await();
       } catch (InterruptedException _) {
@@ -822,6 +855,22 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
         .isInstanceOfSatisfying(
             ImageDownloadException.class,
             failure -> assertThat(failure.getStatusCode()).isEqualTo(200));
+  }
+
+  @Test
+  @DisplayName("Should report a network error when the body ends before its declared length")
+  void shouldReportANetworkErrorWhenBodyEndsBeforeItsDeclaredLength() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/cut-short.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Length", "1000")
+                    .withBody(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0})));
+
+    assertThatThrownBy(() -> service.downloadImage("/cut-short.jpg"))
+        .isInstanceOf(IOException.class)
+        .isNotInstanceOf(ImageDownloadException.class);
   }
 
   @Test

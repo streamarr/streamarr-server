@@ -169,17 +169,32 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
   }
 
   private static byte[] readImageBody(InputStream body, HttpHeaders headers, String pathFragment)
-      throws IOException {
+      throws IOException, InterruptedException {
     if (headers.firstValueAsLong("Content-Length").orElse(0) > MAX_IMAGE_BYTES) {
       throw ImageDownloadException.bodyOverLimit(pathFragment, MAX_IMAGE_BYTES);
     }
 
-    var image = body.readNBytes(MAX_IMAGE_BYTES + 1);
+    var image = readAtMost(body, MAX_IMAGE_BYTES + 1);
     if (image.length > MAX_IMAGE_BYTES) {
       throw ImageDownloadException.bodyOverLimit(pathFragment, MAX_IMAGE_BYTES);
     }
 
     return image;
+  }
+
+  // The response stream reports an interrupt as an IOException caused by InterruptedException,
+  // which a caller would take for a failed download rather than a stopped one.
+  private static byte[] readAtMost(InputStream body, int length)
+      throws IOException, InterruptedException {
+    try {
+      return body.readNBytes(length);
+    } catch (IOException e) {
+      if (e.getCause() instanceof InterruptedException interrupted) {
+        throw interrupted;
+      }
+
+      throw e;
+    }
   }
 
   public TmdbTvSeason getTvSeasonDetails(String seriesId, int seasonNumber)
