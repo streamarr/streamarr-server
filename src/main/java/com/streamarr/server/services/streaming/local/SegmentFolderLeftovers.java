@@ -2,12 +2,14 @@ package com.streamarr.server.services.streaming.local;
 
 import com.google.common.io.MoreFiles;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryIteratorException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Arrays;
 import java.util.regex.Pattern;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -61,13 +63,14 @@ public class SegmentFolderLeftovers {
     }
   }
 
+  // Compared as bytes, so that a mark which is not text reads as the mark of another folder.
   private boolean isMarked() throws IOException {
     return Files.isRegularFile(mark(), LinkOption.NOFOLLOW_LINKS)
-        && Files.readString(mark()).equals(markedFolder());
+        && Arrays.equals(Files.readAllBytes(mark()), markedFolder());
   }
 
-  private String markedFolder() throws IOException {
-    return segmentFolder.toRealPath().toString();
+  private byte[] markedFolder() throws IOException {
+    return segmentFolder.toRealPath().toString().getBytes(StandardCharsets.UTF_8);
   }
 
   private Path mark() {
@@ -86,7 +89,7 @@ public class SegmentFolderLeftovers {
   // write would overwrite the file that the link points to.
   private void writeMark() throws IOException {
     Files.deleteIfExists(mark());
-    Files.writeString(mark(), markedFolder(), StandardOpenOption.CREATE_NEW);
+    Files.write(mark(), markedFolder(), StandardOpenOption.CREATE_NEW);
   }
 
   private void deleteEachLeftover() throws IOException {
