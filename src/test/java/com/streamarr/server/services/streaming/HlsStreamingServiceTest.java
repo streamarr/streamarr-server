@@ -7980,6 +7980,47 @@ class HlsStreamingServiceTest {
     assertThat(session.getTranscodeDecision().softwareEncoder()).isTrue();
   }
 
+  // The decision after the stop reads the freed worker's encoders again, and the hardware encoder
+  // that failed earlier in the playback session stays out of them there too (ADR 0044).
+  @Test
+  @DisplayName(
+      "Should encode 8-bit SDR with the software encoder on a worker that a stopped left variant"
+          + " frees when its hardware encoder writes PQ but failed earlier in the playback session")
+  void
+      shouldEncode8BitSdrWithTheSoftwareEncoderOnAFreedWorkerWhenItsHardwareEncoderFailedEarlier() {
+    var left = keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy();
+    var switchingId = left.session().getSessionId();
+    transcodeExecutor.setTargetEncoders(
+        AV1_WORKER,
+        List.of(
+            WorkerVerifiedEncoder.builder()
+                .backend(av1Nvenc().backend())
+                .keyframeVerified(true)
+                .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                .build()));
+    transcodeExecutor.setTargetSoftwareEncoders(AV1_WORKER, List.of(libsvtav1()));
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .capabilityDeclaration(
+                        av1Declaration(List.of(CompatibleBase.SDR, CompatibleBase.PQ)))
+                    .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().videoEncodeFormat())
+        .isEqualTo(EncodeFormat.SDR_8_BIT);
+    assertThat(session.getTranscodeDecision().softwareEncoder()).isTrue();
+    var started = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(started.sessionId()).isEqualTo(session.getSessionId());
+    assertThat(
+            transcodeExecutor.runningExecutionTarget(started.sessionId(), started.variantLabel()))
+        .contains(AV1_WORKER);
+    assertThat(transcodeExecutor.isRunning(switchingId, "480p")).isFalse();
+  }
+
   // An SDR AV1 session keeps 480p as its left variant on the AV1 worker without PQ while it
   // switches to 1080p there, and another session fills the only worker whose AV1 encoder writes PQ.
   private LeftVariantOnAWorker keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy() {
