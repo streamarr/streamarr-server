@@ -162,8 +162,9 @@ class LocalSegmentStoreSoftLinkTest {
               placingSoftLinksAtFreeNamesDirectlyInside(
                   volume.getPath("/segments"), mediaFile, Integer.MAX_VALUE));
       var store = new LocalSegmentStore(linkingVolume.getPath("/segments"));
+      var sessionId = UUID.randomUUID();
 
-      assertThatThrownBy(() -> store.prepareSegment(UUID.randomUUID(), "segment0.m4s"))
+      assertThatThrownBy(() -> store.prepareSegment(sessionId, "segment0.m4s"))
           .isInstanceOf(UncheckedIOException.class);
 
       assertThat(mediaFile)
