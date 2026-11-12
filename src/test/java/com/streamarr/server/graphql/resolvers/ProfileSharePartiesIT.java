@@ -22,6 +22,7 @@ import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.ProfileCastSupport;
 import com.streamarr.server.support.StatementCount;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -46,8 +47,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Who sees the Profile, the offerer and the Household that a share names, and who is handed a
- * change of the share.
+ * Who sees the Profile, the offerer and the Household that a share names, whether its reader made
+ * the offer, and who is handed a change of the share.
  */
 @Tag("IntegrationTest")
 @DisplayName("Profile Share Parties Integration Tests")
@@ -59,12 +60,14 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
         profile { id name picture kind personalProfile restricted }
         visitor
         offeredByDisplayName
+        offeredByReader
         household { id name } } }
       """;
 
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private ProfileCastSupport cast;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
@@ -342,6 +345,7 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     assertThat(share.path("visitor").asBoolean()).isTrue();
     assertThat(share.path("offeredByDisplayName").asString())
         .isEqualTo(owner.account().getDisplayName());
+    assertThat(offeredByReader(share)).isFalse();
     assertThat(share.path("household").isNull()).isTrue();
   }
 
@@ -406,6 +410,185 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.householdShares.edges[0].node.household.name")
                 .value(owner.household().getName()));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(ProfileShareStatus.class)
+  @DisplayName("Should tell a manager it made the offer when it lists the Profile's shares")
+  void shouldTellManagerItMadeOfferWhenItListsTheProfilesShares(ProfileShareStatus status)
+      throws Exception {
+    var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
+    var shareId = shareAt(status, orphan);
+
+    var share = shareWithId(profileShares(owner, orphan, "[%s]".formatted(status)), shareId);
+
+    assertThat(share.path("status").asString()).isEqualTo(status.name());
+    assertThat(offeredByReader(share)).isTrue();
+    // The offerer's name is for the target Household's side, the offerer reading its own included.
+    assertThat(share.path("offeredByDisplayName").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell another manager it did not make the offer when it lists the Profile's shares")
+  void shouldTellOtherManagerItDidNotMakeOfferWhenItListsTheProfilesShares() throws Exception {
+    var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
+    var coManager = identity();
+    cast.grant(coManager, orphan);
+    var shareId = offer(owner, orphan, host);
+
+    var forCoManager = shareWithId(profileShares(coManager, orphan, "[PENDING]"), shareId);
+    var forOwner = shareWithId(profileShares(owner, orphan, "[PENDING]"), shareId);
+
+    assertThat(offeredByReader(forCoManager)).isFalse();
+    assertThat(offeredByReader(forOwner)).isTrue();
+    // ADR 0024 names the offerer to the target Household's HouseholdAdmins and ServerAdmins alone.
+    assertThat(forCoManager.path("offeredByDisplayName").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a self-managed Account it made the offer when it offers its own Profile")
+  void shouldTellSelfManagedAccountItMadeOfferWhenItOffersItsOwnProfile() throws Exception {
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
+              share { offeredByReader offeredByDisplayName } userErrors { __typename } } }
+            """
+                .formatted(owner.profile().getId(), authTestSupport.shareCodeFor(host)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.offerProfileShare.share.offeredByReader").value(true))
+        .andExpect(
+            jsonPath("$.data.offerProfileShare.share.offeredByDisplayName").value(nullValue()));
+
+    var forOwner = onlyShare(profileShares(owner, owner.profile(), "[PENDING]"));
+    var forHost = onlyShare(householdShares(host, host, "[PENDING]"));
+
+    assertThat(offeredByReader(forOwner)).isTrue();
+    assertThat(offeredByReader(forHost)).isFalse();
+    assertThat(forHost.path("offeredByDisplayName").asString())
+        .isEqualTo(owner.account().getDisplayName());
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a target HouseholdAdmin it made the offer when it offered the Profile as a"
+          + " manager")
+  void shouldTellTargetHouseholdAdminItMadeOfferWhenItOfferedAsManager() throws Exception {
+    var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
+    cast.grant(host, orphan);
+    var otherAdmin = cast.secondAdminOf(host);
+    var shareId = offer(host, orphan, host);
+
+    var forHost = shareWithId(householdShares(host, host, "[PENDING]"), shareId);
+    var forOtherAdmin = shareWithId(householdShares(otherAdmin, host, "[PENDING]"), shareId);
+    var forOwner = shareWithId(profileShares(owner, orphan, "[PENDING]"), shareId);
+
+    assertThat(offeredByReader(forHost)).isTrue();
+    assertThat(offeredByReader(forOtherAdmin)).isFalse();
+    assertThat(offeredByReader(forOwner)).isFalse();
+    assertThat(forOtherAdmin.path("offeredByDisplayName").asString())
+        .isEqualTo(host.account().getDisplayName());
+    assertThat(forOwner.path("offeredByDisplayName").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a ServerAdmin whether it made each offer when it lists a Household's shares")
+  void shouldTellServerAdminWhetherItMadeEachOfferWhenItListsHouseholdsShares() throws Exception {
+    var serverAdmin = adminIdentity();
+    var ownersOffer = offer(owner, managedProfile(ProfileFixture.defaultProfileBuilder()), host);
+    var otherOrphan = managedProfile(ProfileFixture.defaultProfileBuilder());
+    var serverAdminsOffer = offer(serverAdmin, otherOrphan, host);
+
+    var forServerAdmin = householdShares(serverAdmin, host, "[PENDING]");
+    var forManager = shareWithId(profileShares(owner, otherOrphan, "[PENDING]"), serverAdminsOffer);
+
+    assertThat(offeredByReader(shareWithId(forServerAdmin, serverAdminsOffer))).isTrue();
+    assertThat(offeredByReader(shareWithId(forServerAdmin, ownersOffer))).isFalse();
+    // The manager learns that it did not make the offer, and not who did.
+    assertThat(offeredByReader(forManager)).isFalse();
+    assertThat(forManager.path("offeredByDisplayName").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should tell no reader it made the share when the system made it")
+  void shouldTellNoReaderItMadeShareWhenSystemMadeIt() throws Exception {
+    var serverAdmin = adminIdentity();
+
+    var forOwner = onlyShare(householdShares(owner, owner, "[ACTIVE]"));
+    var forServerAdmin = onlyShare(householdShares(serverAdmin, owner, "[ACTIVE]"));
+
+    assertThat(forOwner.path("profile").path("id").asString())
+        .isEqualTo(owner.profile().getId().toString());
+    assertThat(offeredByReader(forOwner)).isFalse();
+    assertThat(offeredByReader(forServerAdmin)).isFalse();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(Outsider.class)
+  @DisplayName("Should show no offer when the reader may not read the shares")
+  void shouldShowNoOfferWhenReaderMayNotReadShares(Outsider outsider) throws Exception {
+    var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
+    offer(owner, orphan, host);
+
+    graphql(
+            bearerOf(outsider),
+            """
+            query {
+              profileShares(profileId: "%s", statuses: []) { edges { node { id offeredByReader } } }
+              householdShares(householdId: "%s", statuses: []) {
+                edges { node { id offeredByReader } } } }
+            """
+                .formatted(orphan.getId(), host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.profileShares.edges").isEmpty())
+        .andExpect(jsonPath("$.data.householdShares.edges").isEmpty());
+  }
+
+  /**
+   * A reader that may not read the offer's shares: a plain member, or the offerer or a target
+   * HouseholdAdmin that would read them but for its session or its Account.
+   */
+  enum Outsider {
+    MEMBER_OF_THE_TARGET_HOUSEHOLD,
+    OFFERER_ON_A_DEVICE_BOUND_SESSION,
+    TARGET_ADMIN_ON_A_DEVICE_BOUND_SESSION,
+    DISABLED_OFFERER,
+    DISABLED_TARGET_ADMIN
+  }
+
+  @Test
+  @DisplayName(
+      "Should read whether the reader made each offer in the same number of statements when the"
+          + " Profile has more shares")
+  void shouldReadWhetherReaderMadeEachOfferInSameNumberOfStatementsWhenProfileHasMoreShares()
+      throws Exception {
+    var orphan = managedProfile(ProfileFixture.defaultProfileBuilder());
+    var coManager = identity();
+    cast.grant(coManager, orphan);
+    offer(owner, orphan, host);
+    offer(coManager, orphan, identity());
+    var query =
+        """
+        query { profileShares(profileId: "%s", statuses: [PENDING]) {
+          edges { node { id offeredByReader } } } }
+        """
+            .formatted(orphan.getId());
+    query(owner, query, "profileShares");
+    var forTwoOffers = statementCount.statementsWhile(() -> query(owner, query, "profileShares"));
+
+    offer(owner, orphan, identity());
+    offer(coManager, orphan, identity());
+
+    assertThat(edges(query(owner, query, "profileShares")))
+        .extracting(ProfileSharePartiesIT::offeredByReader)
+        .containsExactlyInAnyOrder(true, true, false, false);
+    assertThat(statementCount.statementsWhile(() -> query(owner, query, "profileShares")))
+        .isEqualTo(forTwoOffers);
   }
 
   @Test
@@ -526,6 +709,29 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
     edges(connection)
         .forEach(node -> visitors.put(node.path("id").asString(), node.path("visitor").toString()));
     return visitors;
+  }
+
+  // A missing or null answer fails, so a false is the server's own.
+  private static boolean offeredByReader(JsonNode share) {
+    var made = share.path("offeredByReader");
+    assertThat(made.isBoolean()).as("offeredByReader of %s", share).isTrue();
+    return made.asBoolean();
+  }
+
+  private String bearerOf(Outsider outsider) {
+    return switch (outsider) {
+      case MEMBER_OF_THE_TARGET_HOUSEHOLD ->
+          authTestSupport.accountBearer(authTestSupport.createHouseholdMemberIdentity(host));
+      case OFFERER_ON_A_DEVICE_BOUND_SESSION -> authTestSupport.deviceBoundProfileBearer(owner);
+      case TARGET_ADMIN_ON_A_DEVICE_BOUND_SESSION -> authTestSupport.deviceBoundProfileBearer(host);
+      case DISABLED_OFFERER -> disabledBearer(owner);
+      case DISABLED_TARGET_ADMIN -> disabledBearer(host);
+    };
+  }
+
+  private String disabledBearer(AuthTestSupport.TestIdentity identity) {
+    cast.enable(identity, false);
+    return authTestSupport.accountBearer(identity);
   }
 
   private String activeShareId(Profile profile, AuthTestSupport.TestIdentity into) {
