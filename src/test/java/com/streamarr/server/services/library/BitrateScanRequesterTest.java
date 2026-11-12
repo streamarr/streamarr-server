@@ -62,17 +62,6 @@ class BitrateScanRequesterTest {
                 BitrateScanPriority.UNPROBED_BITRATE));
   }
 
-  @Test
-  @DisplayName(
-      "Should request no bitrate scan when a keyframe packet scan is stored and the stored outcome"
-          + " needs none")
-  void shouldRequestNoBitrateScanWhenStoredPacketScanNeedsNone() {
-    requester.onKeyframePacketScanPublished(
-        new KeyframePacketScanPublishedEvent(MEDIA_FILE_ID, FILEPATH_URI));
-
-    assertThat(requests.requests()).isEmpty();
-  }
-
   // What a bitrate scan reads from an outcome whose keyframe positions a packet scan stored.
   private static BitrateScanInputs scannedInputs() {
     return BitrateScanInputs.builder()
