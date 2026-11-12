@@ -83,6 +83,13 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
   }
 
   @Override
+  public Optional<UUID> lockSelfManagerId(UUID profileId) {
+    return findByPersonalProfileId(profileId)
+        .filter(_ -> unrestrictedPersonalProfile.test(profileId))
+        .map(UserAccount::getId);
+  }
+
+  @Override
   public Optional<AccountShareFacts> lockShareFacts(UUID accountId) {
     return findById(accountId)
         .map(
