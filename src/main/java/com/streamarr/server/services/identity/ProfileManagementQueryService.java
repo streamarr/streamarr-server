@@ -10,7 +10,6 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfileSafetyRule;
-import com.streamarr.server.services.identity.AdministrationQueryService.ProfileAdministrationDetails;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
@@ -36,18 +35,26 @@ public class ProfileManagementQueryService {
   private final ProfileRepository profileRepository;
 
   /**
-   * A page of the Profiles the Account manages, in every Household, by name, then ID. Empty for a
-   * device-bound session and for a disabled Account.
+   * A page of the Profiles the Account manages, in every Household, by name, then ID, each with
+   * whether it is available in the Household it belongs to. Empty for a device-bound session and
+   * for a disabled Account.
    */
   @Transactional(readOnly = true)
-  public ListPage<ProfileAdministrationDetails> managedProfiles(
+  public ListPage<ManagedProfileDetails> managedProfiles(
       AuthenticatedIdentity identity, PageRequest request) {
     if (!authorizationService.isAllowed(identity, new Intent.ViewManagedProfiles())) {
       return ListPage.empty();
     }
 
-    return administrationQueryService.profileAdministrationDetails(
-        Pager.page(managedProfilesList, identity.accountId(), request));
+    var page = Pager.page(managedProfilesList, identity.accountId(), request);
+    var available =
+        profileRepository.availableWhereTheyBelong(
+            page.rows().stream().map(row -> row.item().getId()).toList());
+    return administrationQueryService
+        .profileAdministrationDetails(page)
+        .map(
+            details ->
+                new ManagedProfileDetails(details, available.contains(details.profile().getId())));
   }
 
   /**
@@ -122,6 +129,7 @@ public class ProfileManagementQueryService {
                 new HouseholdProfileDetails(
                     details,
                     !householdId.equals(details.profile().getHouseholdId()),
-                    locked.contains(details.profile().getId())));
+                    locked.contains(details.profile().getId()),
+                    available.contains(details.profile().getId())));
   }
 }

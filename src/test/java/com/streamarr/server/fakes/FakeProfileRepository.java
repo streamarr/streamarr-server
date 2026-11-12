@@ -226,6 +226,17 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
+  public Set<UUID> availableWhereTheyBelong(Collection<UUID> profileIds) {
+    return profileIds.stream()
+        .flatMap(id -> findById(id).stream())
+        .filter(
+            profile ->
+                !availableAmong(profile.getHouseholdId(), List.of(profile.getId())).isEmpty())
+        .map(Profile::getId)
+        .collect(Collectors.toSet());
+  }
+
+  @Override
   public Set<UUID> availableAmong(UUID householdId, Collection<UUID> profileIds) {
     return findAvailableInHousehold(householdId).stream()
         .map(Profile::getId)

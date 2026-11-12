@@ -30,15 +30,26 @@ type ProfileAdministration {
     readerAuthority: ProfileAuthority
 }
 
-"A page of Profiles' administrative details."
-type ProfileAdministrationConnection {
-    edges: [ProfileAdministrationEdge!]!
+"One Profile an Account manages, in Household settings' list of them."
+type ManagedProfile {
+    "The Profile's administrative details, with the Household it belongs to."
+    profile: ProfileAdministration!
+    """
+    Whether the Profile is available in the Household it belongs to. Management outlasts the end of
+    its share there, so a Profile its manager can still open may not be.
+    """
+    available: Boolean!
+}
+
+"A page of the Profiles an Account manages."
+type ManagedProfileConnection {
+    edges: [ManagedProfileEdge!]!
     pageInfo: PageInfo!
 }
 
-"One Profile's administrative details and where it sits in its list."
-type ProfileAdministrationEdge {
-    node: ProfileAdministration!
+"One Profile an Account manages and where it sits in the list."
+type ManagedProfileEdge {
+    node: ManagedProfile!
     cursor: String!
 }
 
@@ -53,6 +64,12 @@ type HouseholdProfile {
     has a PIN. False while the Profile is not available here.
     """
     locked: Boolean!
+    """
+    Whether the Profile is available in this Household. False only for a Profile the reader manages
+    that belongs here after its share here ended; a HouseholdAdmin who does not manage it no longer
+    sees it in the list.
+    """
+    available: Boolean!
 }
 
 "A page of a Household's Profiles."

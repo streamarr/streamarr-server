@@ -40,6 +40,9 @@ public interface ProfileRepositoryCustom {
   /** Which of the Profiles are available in the Household. */
   Set<UUID> availableAmong(UUID householdId, Collection<UUID> profileIds);
 
+  /** Which of the Profiles are available in the Household each of them belongs to. */
+  Set<UUID> availableWhereTheyBelong(Collection<UUID> profileIds);
+
   /** The Kid Profiles actively shared into the Household, which decide its PIN safety rule. */
   List<Profile> findAvailableKidsInHousehold(UUID householdId);
 

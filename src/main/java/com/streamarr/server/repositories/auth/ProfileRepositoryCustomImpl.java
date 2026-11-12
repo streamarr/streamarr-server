@@ -330,6 +330,22 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
         .fetchSet(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID);
   }
 
+  @Override
+  public Set<UUID> availableWhereTheyBelong(Collection<UUID> profileIds) {
+    if (profileIds.isEmpty()) {
+      return Set.of();
+    }
+
+    return dsl.select(PROFILE.ID)
+        .from(PROFILE)
+        .join(PROFILE_HOUSEHOLD_SHARE)
+        .on(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(PROFILE.ID))
+        .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(PROFILE.HOUSEHOLD_ID))
+        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(DSL.inline(ProfileShareStatus.ACTIVE)))
+        .where(PROFILE.ID.in(profileIds))
+        .fetchSet(PROFILE.ID);
+  }
+
   private static Keyset<String> byName() {
     return Keyset.<String>builder().sortValue(lower(PROFILE.NAME)).itemId(PROFILE.ID).build();
   }
