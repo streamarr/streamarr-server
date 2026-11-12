@@ -6,6 +6,7 @@ import com.streamarr.server.domain.auth.ProfileAuthority;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.domain.auth.ProfileReaderRelation;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -120,7 +121,8 @@ public class ProfileLockPreviewService {
       case Decision.Allowed<ProfilePolicyTransition> _ -> true;
       case Decision.Denied<ProfilePolicyTransition>(var reason) ->
           reason == Decision.DenialReason.REAUTHENTICATION_REQUIRED;
-      case Decision.Failed<ProfilePolicyTransition> _ -> false;
+      case Decision.Failed<ProfilePolicyTransition> _ ->
+          throw new AuthorizationUnavailableException();
     };
   }
 
