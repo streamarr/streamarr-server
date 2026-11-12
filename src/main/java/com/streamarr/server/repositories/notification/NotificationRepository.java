@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.notification;
 
+import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.notification.events.ChangedNotification;
 import java.util.List;
@@ -24,4 +25,13 @@ public interface NotificationRepository {
    * no second one, and nothing of the first changes.
    */
   List<ChangedNotification> tellRequests(TellNotificationEvent tell);
+
+  /**
+   * Settles the requests of the kind about the subject that no event has resolved yet. The
+   * resolution's instant is compared with each request's stored expiry, never with the time it is
+   * handled: before the expiry, the request takes the resolution, its instant and a decision's
+   * answer; at or after it, the request expired, at its expiry. A request keeps its time and its
+   * read state.
+   */
+  List<ChangedNotification> resolve(ResolveRequestsEvent resolution);
 }

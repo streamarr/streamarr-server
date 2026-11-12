@@ -11,6 +11,9 @@ import tools.jackson.databind.json.JsonMapper;
  */
 final class SnapshotJson {
 
+  /** The name a request kind's snapshot gives the answer that decided it. */
+  static final String ANSWER = "answer";
+
   private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
   private SnapshotJson() {}
