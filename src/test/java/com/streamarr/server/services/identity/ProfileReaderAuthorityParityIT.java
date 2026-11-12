@@ -125,6 +125,8 @@ class ProfileReaderAuthorityParityIT extends AbstractIntegrationTest {
   /** Each kind of reader of a Profile's activity in ADR 0024's read table, and whether it may. */
   enum ActivityReader {
     MANAGER(true),
+    MANAGER_THAT_HAS_ITS_OWN_PROFILE_SELECTED(true),
+    MANAGER_THAT_HAS_IT_SELECTED(true),
     OWN_ACCOUNT_OF_AN_UNRESTRICTED_ADULT(true),
     OWN_ACCOUNT_OF_A_SUPERVISED_PROFILE(false),
     OWN_ACCOUNT_OF_A_SUPERVISED_PROFILE_THAT_HAS_IT_SELECTED(true),
@@ -172,6 +174,10 @@ class ProfileReaderAuthorityParityIT extends AbstractIntegrationTest {
   private ActivityReading arrange(ActivityReader kind) {
     return switch (kind) {
       case MANAGER -> new ActivityReading(authTestSupport.identityOf(smith), kid);
+      case MANAGER_THAT_HAS_ITS_OWN_PROFILE_SELECTED ->
+          new ActivityReading(authTestSupport.profileIdentityOf(smith, smith.profile()), kid);
+      case MANAGER_THAT_HAS_IT_SELECTED ->
+          new ActivityReading(authTestSupport.profileIdentityOf(smith, kid), kid);
       case OWN_ACCOUNT_OF_AN_UNRESTRICTED_ADULT ->
           new ActivityReading(authTestSupport.identityOf(smith), smith.profile());
       case OWN_ACCOUNT_OF_A_SUPERVISED_PROFILE -> {

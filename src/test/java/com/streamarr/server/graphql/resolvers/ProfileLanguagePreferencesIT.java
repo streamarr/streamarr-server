@@ -128,6 +128,8 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
   /** A reader that may read the Profile's preferences, and the Profile it reads. */
   enum Reader {
     DIRECT_MANAGER_THAT_HAS_NOT_SELECTED_IT,
+    MANAGER_THAT_HAS_ITS_OWN_PROFILE_SELECTED,
+    MANAGER_THAT_HAS_IT_SELECTED,
     SELF_MANAGED_ACCOUNT_READING_ITS_OWN_PROFILE,
     SERVER_ADMIN_THAT_DOES_NOT_MANAGE_IT,
     HOUSEHOLD_ADMIN_THAT_HAS_IT_SELECTED
@@ -151,6 +153,10 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
         cast.grant(cabin, kid);
         yield new Reading(authTestSupport.accountBearer(cabin), kid);
       }
+      case MANAGER_THAT_HAS_ITS_OWN_PROFILE_SELECTED ->
+          new Reading(authTestSupport.profileBearer(smith, smith.profile()), kid);
+      case MANAGER_THAT_HAS_IT_SELECTED ->
+          new Reading(authTestSupport.profileBearer(smith, kid), kid);
       case SELF_MANAGED_ACCOUNT_READING_ITS_OWN_PROFILE -> {
         store(smith.profile());
         yield new Reading(authTestSupport.accountBearer(smith), smith.profile());
@@ -286,10 +292,14 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
       value = Reader.class,
       names = {
         "DIRECT_MANAGER_THAT_HAS_NOT_SELECTED_IT",
+        "MANAGER_THAT_HAS_ITS_OWN_PROFILE_SELECTED",
+        "MANAGER_THAT_HAS_IT_SELECTED",
         "SELF_MANAGED_ACCOUNT_READING_ITS_OWN_PROFILE"
       })
-  @DisplayName("Should store the preferences when a manager changes a Profile it has not selected")
-  void shouldStorePreferencesWhenManagerChangesProfileItHasNotSelected(Reader manager)
+  @DisplayName(
+      "Should store the preferences when a manager changes them, whether or not it has the Profile"
+          + " selected")
+  void shouldStorePreferencesWhenManagerChangesThemWhetherOrNotItHasProfileSelected(Reader manager)
       throws Exception {
     var reading = readingOf(manager);
 
