@@ -52,6 +52,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -320,11 +321,13 @@ class HouseholdDeletionServiceTest {
         .filteredOn(ProfileShareChangedEvent::ended)
         .extracting(ProfileShareChangedEvent::share)
         .containsExactly(
-            new ChangedShare(
-                offer.getId(),
-                offer.getProfileId(),
-                doomed.getId(),
-                ProfileShareStatus.INVALIDATED));
+            ChangedShare.builder()
+                .shareId(offer.getId())
+                .profileId(offer.getProfileId())
+                .householdId(doomed.getId())
+                .status(ProfileShareStatus.INVALIDATED)
+                .expiresAt(Optional.of(NOW.plusSeconds(3600)))
+                .build());
   }
 
   @Test

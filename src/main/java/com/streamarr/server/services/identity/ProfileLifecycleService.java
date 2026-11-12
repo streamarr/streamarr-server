@@ -222,7 +222,8 @@ public class ProfileLifecycleService {
             .householdId(destinationHouseholdId)
             .status(ProfileShareStatus.ACTIVE)
             .decidedAt(now)
-            .build());
+            .build(),
+        now);
   }
 
   private void invalidateProfileBoundArtifacts(UUID profileId, String reason, Instant now) {

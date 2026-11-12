@@ -32,11 +32,12 @@ class ProfileShareEventListenerTest {
   void shouldPassEachShareChangeToEveryOperationWhenAShareChangeCommits() {
     var change =
         new ProfileShareChangedEvent(
-            new ChangedShare(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                ProfileShareStatus.PENDING),
+            ChangedShare.builder()
+                .shareId(UUID.randomUUID())
+                .profileId(UUID.randomUUID())
+                .householdId(UUID.randomUUID())
+                .status(ProfileShareStatus.PENDING)
+                .build(),
             true);
     var first = subscribe();
     var second = subscribe();

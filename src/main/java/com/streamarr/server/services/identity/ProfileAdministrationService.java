@@ -183,7 +183,8 @@ public class ProfileAdministrationService {
             .profileId(profile.getId())
             .householdId(command.householdId())
             .status(ProfileShareStatus.ACTIVE)
-            .build());
+            .build(),
+        clock.instant());
   }
 
   private Optional<ProfileRejections.CreateProfile> creationConstraintRejection(String constraint) {

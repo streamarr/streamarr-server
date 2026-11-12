@@ -40,7 +40,7 @@ class ProfileShareLifecycleTest {
   @Test
   @DisplayName("Should announce the new share when a share is created")
   void shouldAnnounceTheNewShareWhenAShareIsCreated() {
-    var created = lifecycle.create(pending(UUID.randomUUID()).build());
+    var created = lifecycle.create(pending(UUID.randomUUID()).build(), NOW);
 
     assertThat(announced()).containsExactly(ChangedShare.of(created));
   }
@@ -78,7 +78,7 @@ class ProfileShareLifecycleTest {
   @DisplayName(
       "Should announce the change of a live share when a share is created or an offer expires")
   void shouldAnnounceTheChangeOfALiveShareWhenAShareIsCreatedOrAnOfferExpires() {
-    var created = lifecycle.create(pending(UUID.randomUUID()).build());
+    var created = lifecycle.create(pending(UUID.randomUUID()).build(), NOW);
     var lapsed = shares.save(pending(UUID.randomUUID()).expiresAt(NOW.minusSeconds(1)).build());
 
     lifecycle.expireLapsedOffers(NOW);
@@ -150,6 +150,44 @@ class ProfileShareLifecycleTest {
             Map.entry(expiredAs(lapsed), true),
             Map.entry(ChangedShare.of(left), true),
             Map.entry(ChangedShare.of(ended), false));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("timedWrites")
+  @DisplayName(
+      "Should announce the write's instant, the offerer and the expiry when a share changes")
+  void shouldAnnounceTheWritesInstantTheOffererAndTheExpiryWhenAShareChanges(
+      String write,
+      ProfileShareStatus before,
+      BiConsumer<ProfileShareLifecycle, ProfileHouseholdShare> change) {
+    var offerer = UUID.randomUUID();
+    var share = shares.save(pending(offerer).status(before).build());
+
+    change.accept(lifecycle, share);
+
+    assertThat(events.getEventsOfType(ProfileShareChangedEvent.class))
+        .singleElement()
+        .satisfies(
+            announced -> {
+              assertThat(announced.changedAt()).contains(NOW);
+              assertThat(announced.share().offeredByAccountId()).contains(offerer);
+              assertThat(announced.share().expiresAt()).contains(share.getExpiresAt());
+            });
+  }
+
+  // Every write that took an instant, an offer included: a new offer made like the arranged one.
+  static Stream<Arguments> timedWrites() {
+    return Stream.concat(
+        singleShareWrites(),
+        Stream.of(
+            write(
+                "offer",
+                ProfileShareStatus.PENDING,
+                (lifecycle, share) -> {
+                  var offer =
+                      pending(share.getOfferedByAccountId()).expiresAt(share.getExpiresAt());
+                  lifecycle.create(offer.build(), NOW);
+                })));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -339,7 +377,7 @@ class ProfileShareLifecycleTest {
   @Test
   @DisplayName("Should announce an offer when a pending share is created")
   void shouldAnnounceAnOfferWhenAPendingShareIsCreated() {
-    lifecycle.create(pending(UUID.randomUUID()).build());
+    lifecycle.create(pending(UUID.randomUUID()).build(), NOW);
 
     assertThat(actions()).containsExactly(new ShareAction.Offered());
   }
@@ -347,7 +385,7 @@ class ProfileShareLifecycleTest {
   @Test
   @DisplayName("Should announce no action to tell when an active share is created")
   void shouldAnnounceNoActionToTellWhenAnActiveShareIsCreated() {
-    lifecycle.create(pending(UUID.randomUUID()).status(ProfileShareStatus.ACTIVE).build());
+    lifecycle.create(pending(UUID.randomUUID()).status(ProfileShareStatus.ACTIVE).build(), NOW);
 
     assertThat(actions()).containsExactly(new ShareAction.Other());
   }
@@ -490,8 +528,7 @@ class ProfileShareLifecycleTest {
   }
 
   private static ChangedShare expiredAs(ProfileHouseholdShare lapsed) {
-    return new ChangedShare(
-        lapsed.getId(), lapsed.getProfileId(), lapsed.getHouseholdId(), ProfileShareStatus.EXPIRED);
+    return ChangedShare.of(lapsed).toBuilder().status(ProfileShareStatus.EXPIRED).build();
   }
 
   private static ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> pending(UUID offerer) {
