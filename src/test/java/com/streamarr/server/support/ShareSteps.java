@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.fixtures.ProfileFixture;
@@ -99,6 +100,22 @@ public final class ShareSteps {
 
           return profile;
         });
+  }
+
+  /** The member, its Personal Profile made a Kid whose direct ProfileManager is the manager. */
+  public TestIdentity supervised(TestIdentity member, TestIdentity manager) {
+    transactions.executeWithoutResult(
+        _ -> {
+          managers.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(manager.account().getId())
+                  .profileId(member.profile().getId())
+                  .build());
+          var profile = profiles.findById(member.profile().getId()).orElseThrow();
+          profile.setKind(ProfileKind.KID);
+          profiles.saveAndFlush(profile);
+        });
+    return member;
   }
 
   /** The member, promoted to HouseholdAdmin of its Household. */

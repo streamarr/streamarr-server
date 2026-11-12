@@ -519,6 +519,21 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should tell the Account of a restricted Personal Profile nothing when an offer of its"
+          + " Profile is answered")
+  void shouldTellTheAccountOfARestrictedPersonalProfileNothingWhenAnOfferOfItsProfileIsAnswered() {
+    var kid = steps.supervised(track(authTestSupport.createHouseholdMemberIdentity(sam)), sam);
+    var offer = steps.offer(sam, kid.profile(), riverside);
+
+    var outcome = sharing.rejectProfileShare(identityOf(riversideAdmin), offer.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(answersAbout(offer)).extracting(Row::recipient).containsExactly(account(sam));
+    assertThat(rows.of(account(kid))).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
       "Should tell the Account that made the offer when a ServerAdmin offered for a Profile")
   void shouldTellTheAccountThatMadeTheOfferWhenAServerAdminOfferedForAProfile() {
     var serverAdmin = track(authTestSupport.createAdminIdentity());
