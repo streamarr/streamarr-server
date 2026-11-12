@@ -173,7 +173,10 @@ class ArtworkRequestServiceTest {
           named("a resized image that no encoder accepts", createSixteenBitGrayscalePngImage()),
           named(
               "an image with one row more than 8K's pixel count",
-              createBlackGrayscalePngImage(7680, 4321)));
+              createBlackGrayscalePngImage(7680, 4321)),
+          named(
+              "a 1 x 133 poster whose 500-pixel-wide variant has more than 8K's pixel count",
+              createBlackGrayscalePngImage(1, 133)));
     }
 
     @ParameterizedTest(name = "{0}")

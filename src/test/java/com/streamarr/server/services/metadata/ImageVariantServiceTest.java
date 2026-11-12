@@ -465,6 +465,17 @@ class ImageVariantServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject the image when resizing makes a variant with more than 8K's pixels")
+  void shouldRejectImageWhenResizingMakesAVariantWithMoreThan8KsPixels() {
+    // A backdrop's large variant is 1280 pixels wide, so 4 x 82 pixels grow to 1280 x 26240.
+    var imageData = createBlackGrayscalePngImage(4, 82);
+
+    assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.BACKDROP))
+        .isInstanceOf(ImageProcessingException.class)
+        .hasMessageContaining("1280x26240");
+  }
+
+  @Test
   @DisplayName("Should throw when no reader decodes the image data")
   void shouldThrowWhenNoReaderDecodesImageData() {
     var imageData = createTestImage(600, 900);

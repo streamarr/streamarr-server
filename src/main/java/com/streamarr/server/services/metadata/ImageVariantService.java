@@ -36,8 +36,9 @@ public class ImageVariantService {
   private static final int BLUR_HASH_COMPONENT_Y = 3;
   // A 4x3 BlurHash keeps only the lowest frequencies, which a 128-pixel copy still carries.
   private static final int BLUR_HASH_MAX_INPUT_EDGE = 128;
-  // The pixel count of 8K, 7680 x 4320. A few hundred compressed kilobytes can declare more pixels
-  // than the heap holds, and decoding allocates every declared pixel.
+  // The pixel count of 8K, 7680 x 4320, for the decoded image and for each resized variant. A few
+  // hundred compressed kilobytes can declare more pixels than the heap holds, and a narrow image
+  // grows when it is resized to a variant's width.
   private static final long MAX_PIXELS = 7680L * 4320;
 
   private static final List<ImageSize> RESIZABLE_SIZES =
@@ -136,6 +137,7 @@ public class ImageVariantService {
         throw new ImageProcessingException(
             "No width configuration for image size: " + size + " on image type: " + imageType);
       }
+      requireAtMostMaxPixels(targetWidth, heightAtWidth(sourceImage, targetWidth));
       if (transparent) {
         var resized = resizeIntoArgb(sourceImage, targetWidth);
         variants.add(
@@ -202,12 +204,17 @@ public class ImageVariantService {
     }
   }
 
-  private static void requireAtMostMaxPixels(int width, int height) {
-    if ((long) width * height > MAX_PIXELS) {
+  private static void requireAtMostMaxPixels(long width, long height) {
+    if (width * height > MAX_PIXELS) {
       throw new ImageProcessingException(
-          "Image of %dx%d pixels exceeds the limit of %d pixels."
+          "Image or variant of %dx%d pixels exceeds the limit of %d pixels."
               .formatted(width, height, MAX_PIXELS));
     }
+  }
+
+  // Resizing keeps the aspect ratio, so 1 x 8192 pixels resized to 300 wide become 300 x 2457600.
+  private static long heightAtWidth(BufferedImage image, int width) {
+    return (long) image.getHeight() * width / image.getWidth();
   }
 
   private BufferedImage resize(BufferedImage source, int targetWidth) {
