@@ -368,6 +368,7 @@ class HlsVariantSwitchSmokeTest {
             "the video frames that the player presents across its switches at 10 and 20 s: every"
                 + " source frame once, and none after the copy's last")
         .containsExactlyElementsOf(sourceFrames(playback.source()));
+    assertEverySourceAudioPacketPlaysOnce(playback);
   }
 
   static Stream<Named<SwitchedSource>> everySource() {
@@ -415,6 +416,7 @@ class HlsVariantSwitchSmokeTest {
                 + " source pictures of that segment is %s",
             smallestSourceChange)
         .allSatisfy(change -> assertThat(change).isLessThan(smallestSourceChange / 4));
+    assertEverySourceAudioPacketPlaysOnce(playback);
   }
 
   // A source without B-frames plays only from the copy. Its copy has no reorder delay to misplace,
@@ -427,9 +429,10 @@ class HlsVariantSwitchSmokeTest {
         Named.of("an HDR10 H.265 source with B-frames", HDR10_WITH_B_FRAMES));
   }
 
-  // What every switching player sees, whichever variant it ends on. The copy and the encode stay
-  // in the copy's codec family (ADR 0050), and each played segment opens on a keyframe and signals
-  // the source's range and bit depth.
+  // What every switching player sees before its frames, whichever variant it ends on. The copy and
+  // the encode stay in the copy's codec family (ADR 0050), and each played segment opens on a
+  // keyframe and signals the source's range and bit depth. The audio is checked after the frames,
+  // whose failure names the frame numbers that a switch lost or repeated.
   private static void assertSwitchedSegmentsPlayAsTheSource(SwitchingPlayback playback) {
     var source = playback.source();
     var copied = playback.playlists().get(Variant.COPIED);
@@ -481,6 +484,12 @@ class HlsVariantSwitchSmokeTest {
         .extracting(ReadMedia::decodedFrameCount)
         .as("each played segment decodes every frame it holds alone, so it opens on a keyframe")
         .containsExactlyElementsOf(played.stream().map(ReadMedia::heldFrameCount).toList());
+  }
+
+  private static void assertEverySourceAudioPacketPlaysOnce(SwitchingPlayback playback) {
+    var source = playback.source();
+    var played = playback.played();
+
     assertThat(played)
         .flatExtracting(file -> file.packets().dataHashesOf(AUDIO))
         .as("the audio packets that the player plays across its switches at 10 and 20 s")
