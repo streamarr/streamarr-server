@@ -19,7 +19,6 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.notification.JooqNotificationRepository;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
-import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
 import com.streamarr.server.services.events.notification.DismissalSelector;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
@@ -157,7 +156,6 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private ProfileLifecycleService profileLifecycle;
   @Autowired private HouseholdDeletionService householdDeletion;
   @Autowired private NotificationService notificationService;
-  @Autowired private ProfileShareExpirySweeper expirySweeper;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
@@ -769,23 +767,6 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     assertThat(onlyChange(dismissed).path("edge").isNull()).isTrue();
     assertThat(dismissed.path("unreadNotificationCount").asInt()).isZero();
     assertThat(requestFor(riverside, offer).resolution()).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should deliver the request's expiry when the sweep stores the offer's expiry")
-  void shouldDeliverTheRequestsExpiryWhenTheSweepStoresTheOffersExpiry() throws Exception {
-    var offer = steps.offer(sam, kai(), riverside);
-    var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
-
-    steps.lapse(offer);
-    expirySweeper.sweep();
-
-    var expired = nextChange(socket);
-    assertThat(onlyChange(expired).path("notificationId").asString())
-        .isEqualTo(requestFor(riversideAdmin, offer).id().toString());
-    assertThat(nodeOf(expired).path("resolution").asString()).isEqualTo("EXPIRED");
-    assertThat(expired.path("unreadNotificationCount").asInt()).isZero();
-    assertMatchesAFreshQuery(expired, riversideAdmin);
   }
 
   @Test

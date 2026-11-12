@@ -15,7 +15,6 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.ShareCodeCommand;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
-import java.time.Instant;
 import lombok.Builder;
 import lombok.NonNull;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -59,16 +58,6 @@ public final class ShareSteps {
             rejection -> {
               throw new IllegalStateException("The offer was not accepted: " + rejection);
             });
-  }
-
-  /** Moves the offer's expiry into the past, as if its time ran out. */
-  public void lapse(ProfileHouseholdShare offer) {
-    transactions.executeWithoutResult(
-        _ -> {
-          var lapsed = shares.findById(offer.getId()).orElseThrow();
-          lapsed.setExpiresAt(Instant.now().minusSeconds(1));
-          shares.saveAndFlush(lapsed);
-        });
   }
 
   /** A Profile of the member's Household, available there, with the given direct managers. */

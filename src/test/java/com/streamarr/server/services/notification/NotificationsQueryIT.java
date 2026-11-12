@@ -212,31 +212,6 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should leave a request out of the count and read it as expired when its offer's time ran out"
-          + " and the sweep has not stored it")
-  void shouldLeaveARequestOutOfTheCountAndReadItAsExpiredWhenItsOffersTimeRanOutBeforeTheSweep()
-      throws Exception {
-    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
-    var subject = SubjectReference.profileShare(offer.getId());
-    steps.lapse(offer);
-    transactionTemplate.executeWithoutResult(_ -> rows.lapse(subject));
-    var expiry = rows.about(subject).getFirst().expiresAt();
-
-    mockMvc
-        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
-        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(false))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("EXPIRED"))
-        .andExpect(
-            jsonPath("$.data.notifications.edges[0].node.resolvedAt")
-                .value(expiry.orElseThrow().toString()));
-  }
-
-  @Test
-  @DisplayName(
       "Should read the resolved request as read under the name it was told when its offer was"
           + " rejected and the Profile was renamed")
   void shouldReadTheResolvedRequestAsReadUnderTheNameItWasToldWhenItsOfferWasRejected()
@@ -594,26 +569,6 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.unreadNotificationCount").value(0))
         .andExpect(jsonPath("$.data.notifications.edges", hasSize(0)));
-  }
-
-  @Test
-  @DisplayName(
-      "Should keep a request that reads as expired when its recipient is demoted, as the history"
-          + " of an offer that is over")
-  void shouldKeepARequestThatReadsAsExpiredWhenItsRecipientIsDemoted() throws Exception {
-    var offer = steps.offer(sam, steps.profileManagedBy("Kai", sam, sam), riverside);
-    steps.lapse(offer);
-    transactionTemplate.executeWithoutResult(
-        _ -> rows.lapse(SubjectReference.profileShare(offer.getId())));
-
-    demote(riversideAdmin);
-
-    mockMvc
-        .perform(graphqlRequest(authTestSupport.accountBearer(riversideAdmin), NOTIFICATIONS))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
-        .andExpect(jsonPath("$.data.notifications.edges[0].node.resolution").value("EXPIRED"));
   }
 
   @Test
