@@ -73,7 +73,7 @@ public final class BitrateScansWaiting implements MeterBinder, SmartLifecycle {
 
   private void refresh() {
     try {
-      lastCount = count.getAsLong();
+      lastCount = (double) count.getAsLong();
     } catch (RuntimeException e) {
       lastCount = Double.NaN;
       log.debug("Counting the waiting bitrate scans failed.", e);
