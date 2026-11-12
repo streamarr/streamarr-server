@@ -139,8 +139,9 @@ class CedarAuthorizationDeciderTest {
   }
 
   @Test
-  @DisplayName("Should decide each read of a batch on the live row as it would alone")
-  void shouldDecideEachReadOfBatchOnLiveRowAsItWouldAlone() {
+  @DisplayName(
+      "Should decide each read on the live row as it would alone when reads are decided in a batch")
+  void shouldDecideEachReadOnLiveRowAsItWouldAloneWhenReadsAreDecidedInBatch() {
     var serverAdmin = identityFor(liveAccount(true, true));
     var disabled = identityFor(liveAccount(true, false));
     var unknown = identityFor(UUID.randomUUID());
