@@ -6,7 +6,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManager>
     implements ProfileManagerRepository {
@@ -36,9 +35,9 @@ public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManag
 
   @Override
   public Set<UUID> lockManagerIds(UUID profileId) {
-    return findByProfileId(profileId).stream()
-        .map(ProfileManager::getAccountId)
-        .collect(Collectors.toSet());
+    throw new UnsupportedOperationException(
+        "No unit test locks a Profile's managers yet: give the fake a contract test against the real repository"
+            + " before using it");
   }
 
   @Override
