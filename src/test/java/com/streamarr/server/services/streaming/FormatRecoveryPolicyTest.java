@@ -37,14 +37,14 @@ class FormatRecoveryPolicyTest {
     assertThatNullPointerException().isThrownBy(() -> policy.after(choice, null, 1));
   }
 
-  // SDR is better than no video, so a fixed quality gives the HDR range up when no stream session
-  // can continue its encode in software in that range (ADR 0013).
+  // SDR is better than no video, so a fixed quality encodes again when no stream session can
+  // continue its encode in software, and the failed format stays out of that encode (ADR 0013).
   @ParameterizedTest
-  @MethodSource("hdrFormats")
+  @MethodSource("formatsOfAnEncodeWithoutSoftwareContinuation")
   @DisplayName(
-      "Should encode the fixed quality again when no stream session can continue its HDR encode"
-          + " in software")
-  void shouldEncodeTheFixedQualityAgainWhenNoStreamSessionCanContinueItsHdrEncodeInSoftware(
+      "Should encode the fixed quality again when no stream session can continue its encode in"
+          + " software")
+  void shouldEncodeTheFixedQualityAgainWhenNoStreamSessionCanContinueItsEncodeInSoftware(
       EncodeFormat format) {
     var choice = PlayingChoice.requested(VideoQuality.HIGH_720P);
 
@@ -53,20 +53,11 @@ class FormatRecoveryPolicyTest {
     assertThat(next).isEqualTo(new NextFormatAttempt.Encode(choice));
   }
 
-  static Stream<EncodeFormat> hdrFormats() {
-    return Stream.of(EncodeFormat.hdr(VideoRange.PQ), EncodeFormat.hdr(VideoRange.HLG));
-  }
-
-  @Test
-  @DisplayName(
-      "Should end a fixed quality's playback when no stream session can continue its 10-bit SDR"
-          + " encode in software")
-  void shouldEndAFixedQualitysPlaybackWhenNoStreamSessionCanContinueIts10BitSdrEncode() {
-    var failed = continuationRejected(EncodeFormat.SDR_10_BIT);
-
-    var next = policy.after(PlayingChoice.requested(VideoQuality.HIGH_720P), failed, 1);
-
-    assertThat(next).isEqualTo(new NextFormatAttempt.Fail(failed.reason()));
+  // An 8-bit SDR encode has no format to give up, so its refused continuation ends playback without
+  // the policy (ADR 0044).
+  static Stream<EncodeFormat> formatsOfAnEncodeWithoutSoftwareContinuation() {
+    return Stream.of(
+        EncodeFormat.hdr(VideoRange.PQ), EncodeFormat.hdr(VideoRange.HLG), EncodeFormat.SDR_10_BIT);
   }
 
   // Only an encode that no software encoder could continue encodes again, whatever the reason of

@@ -448,6 +448,36 @@ class HardwareEncoderFailureRangeTest {
     assertThat(h264.formatAttemptCount()).isEqualTo(2);
   }
 
+  // Without a software AV1 encoder, a 10-bit SDR encode whose hardware AV1 encoder failed cannot
+  // continue in 8 bits either. SDR is better than no video, so Auto and a fixed quality encode
+  // again in H.264 within the budget (ADR 0013). The source's range stays, so nothing is named.
+  @ParameterizedTest(name = "in {0}")
+  @MethodSource("autoAndAFixedQuality")
+  @DisplayName(
+      "Should play 8-bit SDR in H.264 in a counted format attempt when the hardware AV1 encoder of"
+          + " a 10-bit SDR encode fails and no worker has a software AV1 encoder")
+  void shouldPlay8BitSdrInH264WhenThe10BitSdrEncodesHardwareAv1FailsAndNoWorkerHasSoftwareAv1(
+      StreamingOptions options) {
+    softwareEncodersOfTheFailingWorker = List.of(libx264());
+    workers.setTargetEncoders(FAILING_WORKER, List.of(av1Nvenc(EVERY_ENCODE_FEATURE), libx264()));
+    workers.setTargetSoftwareEncoders(FAILING_WORKER, softwareEncodersOfTheFailingWorker);
+    probes.setDefaultProbe(sourceOf(CompatibleBase.SDR));
+    var hardware = accepted(playback.start(start(options)));
+    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.AV1_MAIN);
+    assertThat(plannedEncode().bitDepth()).isEqualTo(10);
+
+    var h264 = failTheHardwareEncoderOf(hardware);
+
+    assertThat(encoderOfTheStartedEncode(h264)).contains(libx264());
+    assertThat(plannedEncode().codecProfile()).contains(EncodeCodecProfile.H264_HIGH);
+    assertThat(plannedEncode().bitDepth()).isEqualTo(8);
+    assertThat(sessionOf(h264).getVideoRange()).isEqualTo(VideoRange.SDR);
+    assertThat(h264.formatAttemptCount()).isEqualTo(2);
+    assertThat(h264.playbackChoice()).isEqualTo(options.quality());
+    assertThat(h264.formatChange()).isEmpty();
+    assertThat(h264.decisions().getLast().reasons()).startsWith(DecisionReason.ENCODE_FAILED);
+  }
+
   @Test
   @DisplayName(
       "Should end playback for its spent budget when the hardware encoder fails in Auto's last"
