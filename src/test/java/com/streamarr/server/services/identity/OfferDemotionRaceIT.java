@@ -122,10 +122,8 @@ class OfferDemotionRaceIT extends AbstractIntegrationTest {
       var offering = executor.submit(() -> steps.offer(sam, kai, riverside));
       await()
           .atMost(Duration.ofSeconds(10))
-          .until(
-              () ->
-                  offering.isDone()
-                      || waitersBehind(jdbcTemplate, codes.backendPid(), ANY_STATEMENT) == 2);
+          .until(() -> waitersBehind(jdbcTemplate, codes.backendPid(), ANY_STATEMENT) == 2);
+      assertThat(offering.isDone()).isFalse();
 
       codes.release();
       demotion.get(10, TimeUnit.SECONDS);
