@@ -733,6 +733,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
     assertThat(
             outcomes.stream()
                 .map(node -> node.at("/data/inviteProfileManager/issued/invitation/id").asString()))
+        .hasSize(2)
         .allSatisfy(id -> assertThat(id).isNotBlank())
         .doesNotHaveDuplicates();
     assertThat(invitationRepository.findAll())
