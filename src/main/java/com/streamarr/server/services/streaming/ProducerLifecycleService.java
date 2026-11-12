@@ -833,7 +833,8 @@ public class ProducerLifecycleService {
    * holds it as a started one does while the player plays a variant left out (ADR 0050). Answers
    * whether the job attempt of one of the listed variants runs afterward. A first variant whose job
    * attempt does not run, such as a suspended one, holds no place, and recovery rather than a start
-   * replaces it, so it answers false.
+   * replaces it, so it answers false. A first variant whose hardware encoder failed in this stream
+   * session never starts again, as on demand, so it answers false too.
    */
   public boolean startTopListedVariantUnlessOneRuns(
       StreamSession session, List<String> listedVariants) {
@@ -855,7 +856,8 @@ public class ProducerLifecycleService {
             return true;
           }
 
-          if (current.get().getVariantHandle(listedVariants.getFirst()).isPresent()) {
+          if (current.get().getVariantHandle(listedVariants.getFirst()).isPresent()
+              || transcodeExecutor.hasHardwareEncoderFailed(sessionId, listedVariants.getFirst())) {
             return false;
           }
 

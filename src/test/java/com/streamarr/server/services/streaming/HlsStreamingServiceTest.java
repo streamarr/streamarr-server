@@ -8260,6 +8260,55 @@ class HlsStreamingServiceTest {
     assertThat(withheldVariants()).isZero();
   }
 
+  @Test
+  @DisplayName(
+      "Should list the first-listed variant when the only variant that the upload budget keeps"
+          + " failed on its hardware encoder")
+  void shouldListTheFirstListedVariantWhenTheOnlyKeptVariantFailedOnItsHardwareEncoder() {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy, which keeps only 360p, whose hardware
+    // encoder failed in this stream session.
+    var session = playFirstListedEncodeAfterTheLowestVariantsHardwareEncoderFailed();
+
+    setInternetUploadMegabitsPerSecond(8);
+
+    assertThat(listedVariants(session)).first().isEqualTo("480p/stream.m3u8?t=t");
+    assertThat(withheldVariants()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should not start a variant again when its hardware encoder failed and the upload budget keeps"
+          + " only that variant in a served playlist")
+  void shouldNotStartAVariantAgainWhenItsHardwareEncoderFailedAndTheBudgetKeepsOnlyIt() {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy, which keeps only 360p.
+    var session = playFirstListedEncodeAfterTheLowestVariantsHardwareEncoderFailed();
+    setInternetUploadMegabitsPerSecond(8);
+
+    listedVariants(session);
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .filteredOn(started -> started.sessionId().equals(session.getSessionId()))
+        .extracting(TranscodeRequest::variantLabel)
+        .containsExactly("480p", "360p");
+  }
+
+  // The player plays the encode's first-listed 480p beside a copy that counts at its 5 Mb/s average
+  // once the upload budget is on. Its initialization request of 360p started 360p, whose hardware
+  // encoder failed while the player requested 480p, so 360p did not continue in software, and the
+  // player's next request of 480p stopped it.
+  private StreamSession playFirstListedEncodeAfterTheLowestVariantsHardwareEncoderFailed() {
+    var session = playFirstListedEncodeBesideAnActiveCopy();
+    var sessionId = session.getSessionId();
+    producerLifecycle.prepareRequestedVariant(sessionId, "360p", "360p/init.mp4");
+    transcodeExecutor.failHardwareEncoder(sessionId, "360p");
+    segmentStore.addSegment(sessionId, "480p/segment1.m4s", new byte[] {1});
+    assertThat(coordinator.deliver(sessionId, "480p", "480p/segment1.m4s"))
+        .isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(runtimeRegistry.findById(sessionId).orElseThrow().getVariantHandle("360p"))
+        .isEmpty();
+    return session;
+  }
+
   @ParameterizedTest(name = "container bitrate {0} b/s")
   @ValueSource(longs = {0, 10_000_000})
   @DisplayName(

@@ -602,6 +602,28 @@ class ProducerLifecycleServiceTest {
     assertThat(session.getVariantHandles()).containsOnlyKeys("480p", "1080p");
   }
 
+  // 360p started for an initialization request, its hardware encoder failed while the player
+  // requested 480p, and the player's media-segment request of 480p then removed its job attempt.
+  @Test
+  @DisplayName(
+      "Should start no variant for a served playlist when the top listed variant's hardware encoder"
+          + " failed")
+  void shouldStartNoVariantForAServedPlaylistWhenTheTopListedVariantsHardwareEncoderFailed() {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    lifecycle.prepareRequestedVariant(sessionId, "360p", "360p/init.mp4");
+    transcodeExecutor.failHardwareEncoder(sessionId, "360p");
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p");
+
+    var started = lifecycle.startTopListedVariantUnlessOneRuns(session, List.of("360p"));
+
+    assertThat(started).isFalse();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::variantLabel)
+        .containsExactly("480p", "360p");
+  }
+
   // The produced range describes the requested variant, so subscribers learn of a switch even when
   // the new variant's media segments are already stored and no producer starts.
   @Test
