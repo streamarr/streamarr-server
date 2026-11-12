@@ -55,7 +55,7 @@ class StreamingConfigSegmentFolderTest {
     try (var earlierProcessLock = config.segmentFolderLock()) {
       config.segmentFolderLeftovers(
           properties, mediaFolders(), earlierProcessLock, new SimpleMeterRegistry());
-      var storeOfEarlierProcess = config.segmentStore(properties);
+      var storeOfEarlierProcess = config.segmentStore(properties, earlierProcessLock);
       try (var stored = storeOfEarlierProcess.prepareSegment(sessionId, "720p/0.m4s", SEGMENT)) {
         stored.publish();
       }

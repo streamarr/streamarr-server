@@ -44,7 +44,7 @@ class LocalSegmentStoreTest {
 
   @BeforeEach
   void setUp() {
-    store = new LocalSegmentStore(tempDir);
+    store = new LocalSegmentStore(tempDir, new SegmentFolderLock());
   }
 
   @AfterEach
@@ -207,7 +207,8 @@ class LocalSegmentStoreTest {
   void shouldStoreFirstInitializationSegmentWhenSegmentVolumeCannotCreateHardLinks()
       throws IOException {
     try (var volume = volumeWithoutHardLinks()) {
-      var linklessStore = new LocalSegmentStore(volume.getPath("/segments"));
+      var linklessStore =
+          new LocalSegmentStore(volume.getPath("/segments"), new SegmentFolderLock());
       var sessionId = UUID.randomUUID();
       var initialization = "ftyp moov from encoder A".getBytes();
 
@@ -226,7 +227,8 @@ class LocalSegmentStoreTest {
   void shouldStoreExactlyOneInitializationSegmentWhenDifferingOnesRaceOnVolumeWithoutHardLinks()
       throws IOException {
     try (var volume = volumeWithoutHardLinks()) {
-      assertExactlyOneContenderStoredPerRace(new LocalSegmentStore(volume.getPath("/segments")));
+      assertExactlyOneContenderStoredPerRace(
+          new LocalSegmentStore(volume.getPath("/segments"), new SegmentFolderLock()));
     }
   }
 

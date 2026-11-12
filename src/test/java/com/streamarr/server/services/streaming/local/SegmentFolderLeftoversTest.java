@@ -85,7 +85,7 @@ class SegmentFolderLeftoversTest {
     var created = segmentFolder.resolve("server").resolve("segments");
     startOf(created);
     var sessionId = UUID.randomUUID();
-    new LocalSegmentStore(created).getOutputDirectory(sessionId);
+    new LocalSegmentStore(created, new SegmentFolderLock()).getOutputDirectory(sessionId);
 
     startOf(created);
 
@@ -479,7 +479,7 @@ class SegmentFolderLeftoversTest {
     var library = outside.resolve("segments2");
     startOf(segments);
     var sessionId = UUID.randomUUID();
-    new LocalSegmentStore(segments).getOutputDirectory(sessionId);
+    new LocalSegmentStore(segments, new SegmentFolderLock()).getOutputDirectory(sessionId);
 
     var outcome = startOf(leftoversOf(segments).mediaFolders(() -> List.of(library)));
 
@@ -599,13 +599,15 @@ class SegmentFolderLeftoversTest {
   }
 
   private LocalSegmentStore earlierStore() {
-    return new LocalSegmentStore(segmentFolder);
+    return new LocalSegmentStore(segmentFolder, new SegmentFolderLock());
   }
 
   // A file in a stream session's directory that a store wrote, which a start that deletes would
   // remove with the directory.
   private static Path deletableFileIn(Path folder) throws IOException {
-    var directory = new LocalSegmentStore(folder).getOutputDirectory(UUID.randomUUID());
+    var directory =
+        new LocalSegmentStore(folder, new SegmentFolderLock())
+            .getOutputDirectory(UUID.randomUUID());
     return Files.write(directory.resolve("movie.mkv"), MEDIA);
   }
 

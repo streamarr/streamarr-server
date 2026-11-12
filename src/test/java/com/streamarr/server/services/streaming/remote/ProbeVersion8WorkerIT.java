@@ -58,6 +58,7 @@ import com.streamarr.server.services.library.ProbeExecutionResult;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import com.streamarr.server.support.security.WithProfileContext;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
@@ -117,7 +118,8 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
   void shouldReturnEachChapterThroughGraphQlAndSeekToItsStartWhenTheWorkerProbesAChapteredFile(
       String filename) throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
 
     try (var server = server(segmentStore);
         var worker = workerBuilder(server, mediaRoot).build()) {
@@ -153,7 +155,8 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
   void shouldFailOnlyTheOversizedProbeAndKeepPlayingWhenAProbeResultExceedsTheSessionMessageLimit()
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
 
     try (var server = server(segmentStore);
         var worker = workerBuilder(server, mediaRoot).availableSlots(2).build()) {
@@ -196,7 +199,10 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
           throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
 
-    try (var server = server(new LocalSegmentStore(tempDir.resolve("server-segments")));
+    try (var server =
+            server(
+                new LocalSegmentStore(
+                    tempDir.resolve("server-segments"), new SegmentFolderLock()));
         var worker = workerBuilder(server, mediaRoot).build()) {
       server.start();
       worker.start();
@@ -251,7 +257,10 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
     assertThat(fixture).isNotNull();
     var source = Files.copy(Path.of(fixture.toURI()), mediaRoot.resolve("statistics-tags.mkv"));
 
-    try (var server = server(new LocalSegmentStore(tempDir.resolve("server-segments")));
+    try (var server =
+            server(
+                new LocalSegmentStore(
+                    tempDir.resolve("server-segments"), new SegmentFolderLock()));
         var worker = workerBuilder(server, mediaRoot).build()) {
       server.start();
       worker.start();
@@ -287,7 +296,10 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
           throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
 
-    try (var server = server(new LocalSegmentStore(tempDir.resolve("server-segments")));
+    try (var server =
+            server(
+                new LocalSegmentStore(
+                    tempDir.resolve("server-segments"), new SegmentFolderLock()));
         var worker = workerBuilder(server, mediaRoot).build()) {
       server.start();
       worker.start();
@@ -330,7 +342,10 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
 
-    try (var server = server(new LocalSegmentStore(tempDir.resolve("server-segments")));
+    try (var server =
+            server(
+                new LocalSegmentStore(
+                    tempDir.resolve("server-segments"), new SegmentFolderLock()));
         var worker = workerBuilder(server, mediaRoot).build()) {
       server.start();
       worker.start();

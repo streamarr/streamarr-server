@@ -30,6 +30,7 @@ import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
@@ -92,7 +93,8 @@ class HevcEncodeSmokeTest {
   void setUp() throws Exception {
     sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
     segmentStore =
-        new LocalSegmentStore(Files.createDirectory(temporaryDirectory.resolve("segments")));
+        new LocalSegmentStore(
+            Files.createDirectory(temporaryDirectory.resolve("segments")), new SegmentFolderLock());
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)

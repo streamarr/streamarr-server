@@ -30,7 +30,7 @@ class LocalSegmentStoreSoftLinkTest {
           + " links to it")
   void shouldKeepAFolderOutsideTheSegmentFolderWhenADeletedStreamSessionsDirectoryLinksToIt()
       throws IOException {
-    var store = new LocalSegmentStore(segmentFolder);
+    var store = new LocalSegmentStore(segmentFolder, new SegmentFolderLock());
     var sessionId = UUID.randomUUID();
     var sessionDirectory = store.getOutputDirectory(sessionId);
     var outsideFile = Files.write(outside.resolve("movie.mkv"), "media".getBytes());
@@ -58,7 +58,7 @@ class LocalSegmentStoreSoftLinkTest {
     try (var fileSystem = Jimfs.newFileSystem(withoutSecureDirectoryStreams)) {
       var folder = fileSystem.getPath("/segments");
 
-      assertThatThrownBy(() -> new LocalSegmentStore(folder))
+      assertThatThrownBy(() -> new LocalSegmentStore(folder, new SegmentFolderLock()))
           .isInstanceOf(UnsupportedSegmentFolderException.class)
           .hasMessageContaining("/segments");
     }
@@ -70,7 +70,7 @@ class LocalSegmentStoreSoftLinkTest {
     var regularFile = Files.createFile(outside.resolve("not-a-folder"));
     var folder = regularFile.resolve("segments");
 
-    assertThatThrownBy(() -> new LocalSegmentStore(folder))
+    assertThatThrownBy(() -> new LocalSegmentStore(folder, new SegmentFolderLock()))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessageContaining(folder.toString());
   }

@@ -51,6 +51,7 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.TranscodeDecisionRequest;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -178,7 +179,8 @@ class RemotePlaybackIT {
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = copyTestClip(mediaRoot.resolve("movie.mkv"));
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
     var streamSessionId = UUID.randomUUID();
 
     try (var server = server(segmentStore);
@@ -312,7 +314,8 @@ class RemotePlaybackIT {
 
   private Map<TranscodeRequest, List<String>> launchedCommands(
       Path mediaRoot, List<TranscodeRequest> requests) throws Exception {
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
 
     try (var server = server(segmentStore);
         var worker =
@@ -347,7 +350,8 @@ class RemotePlaybackIT {
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = copyTestClip(mediaRoot.resolve(UNICODE_KEY));
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
 
     try (var server = server(segmentStore);
         var worker = workerBuilder(server, mediaRoot).build()) {
@@ -569,7 +573,8 @@ class RemotePlaybackIT {
   void shouldFailProbeForRetryWhenWorkerReadsFilenamesUnderAsciiLocale() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("Café Meridian (2006).mkv"), "test media");
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
 
     try (var server = server(segmentStore);
         var worker = workerBuilder(server, mediaRoot).filenameLocale("POSIX").build()) {
@@ -592,7 +597,8 @@ class RemotePlaybackIT {
   @DisplayName("Should diagnose the locale when the worker starts under an ASCII locale")
   void shouldDiagnoseLocaleWhenWorkerStartsUnderAsciiLocale() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
 
     try (var server = server(segmentStore);
         var worker = workerBuilder(server, mediaRoot).filenameLocale("POSIX").build()) {
@@ -610,7 +616,8 @@ class RemotePlaybackIT {
   void shouldRefuseRemoteTranscodeWhenNoWorkerIsConnected() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
 
     try (var server = server(segmentStore)) {
       server.start();
@@ -630,7 +637,8 @@ class RemotePlaybackIT {
   void shouldRejectMediaOutsideConfiguredSourceNamespaceWhenUsingRemoteWorker() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var outsideFile = Files.writeString(tempDir.resolve("outside.mkv"), "test media");
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
 
     try (var server = server(segmentStore)) {
       server.start();
@@ -686,7 +694,8 @@ class RemotePlaybackIT {
   void shouldRefuseDispatchWhenNoWorkerConnectionCanRunTheVariant() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
 
     try (var server = server(segmentStore)) {
       server.start();
@@ -913,7 +922,7 @@ class RemotePlaybackIT {
     private final Map<String, CompletableFuture<Void>> publications = new ConcurrentHashMap<>();
 
     private PublishingSegmentStore(Path baseDir) {
-      super(baseDir);
+      super(baseDir, new SegmentFolderLock());
     }
 
     private CompletableFuture<Void> publication(String segmentName) {
@@ -943,7 +952,7 @@ class RemotePlaybackIT {
     private final CountDownLatch requestedWhileMissing = new CountDownLatch(1);
 
     private FirstRequestSegmentStore(Path baseDir) {
-      super(baseDir);
+      super(baseDir, new SegmentFolderLock());
     }
 
     @Override

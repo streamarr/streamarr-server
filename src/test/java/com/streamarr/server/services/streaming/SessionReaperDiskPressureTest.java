@@ -20,6 +20,7 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -52,7 +53,7 @@ class SessionReaperDiskPressureTest {
 
   @BeforeEach
   void setUp() {
-    segmentStore = new LocalSegmentStore(segmentFolder);
+    segmentStore = new LocalSegmentStore(segmentFolder, new SegmentFolderLock());
     var properties =
         StreamingProperties.builder()
             .targetSegmentDuration(Duration.ofSeconds(6))

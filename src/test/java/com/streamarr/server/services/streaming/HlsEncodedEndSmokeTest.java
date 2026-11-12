@@ -25,6 +25,7 @@ import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -76,7 +77,8 @@ class HlsEncodedEndSmokeTest {
   @BeforeEach
   void setUp() throws Exception {
     sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
-    segmentStore = new LocalSegmentStore(temporaryDirectory.resolve("segments"));
+    segmentStore =
+        new LocalSegmentStore(temporaryDirectory.resolve("segments"), new SegmentFolderLock());
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)

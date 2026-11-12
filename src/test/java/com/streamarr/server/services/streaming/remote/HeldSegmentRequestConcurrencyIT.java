@@ -31,6 +31,7 @@ import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.WorkerVideoCopySupport;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import com.streamarr.server.services.streaming.remote.PausingSegmentStore.PublicationPause;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -111,7 +112,9 @@ class HeldSegmentRequestConcurrencyIT {
 
   @BeforeEach
   void setUp() throws Exception {
-    segmentStore = new PausingSegmentStore(new LocalSegmentStore(tempDir.resolve("segments")));
+    segmentStore =
+        new PausingSegmentStore(
+            new LocalSegmentStore(tempDir.resolve("segments"), new SegmentFolderLock()));
     server =
         WorkerSessionServer.builder()
             .eventPublisher(new CapturingEventPublisher())

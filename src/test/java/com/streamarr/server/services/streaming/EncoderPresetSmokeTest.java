@@ -23,6 +23,7 @@ import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -83,7 +84,8 @@ class EncoderPresetSmokeTest {
     assertThat(TEST_VIDEO).isRegularFile();
     var sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
     testVideo = Files.copy(TEST_VIDEO, sourceRoot.resolve(TEST_VIDEO.getFileName()));
-    segmentStore = new LocalSegmentStore(temporaryDirectory.resolve("segments"));
+    segmentStore =
+        new LocalSegmentStore(temporaryDirectory.resolve("segments"), new SegmentFolderLock());
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)

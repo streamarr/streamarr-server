@@ -51,6 +51,7 @@ import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
@@ -95,7 +96,7 @@ class WorkerPlaybackRecoveryIT {
   @BeforeEach
   void startWorker() throws Exception {
     sourceRoot = Files.createDirectory(tempDir.resolve("media"));
-    segments = new LocalSegmentStore(tempDir.resolve("segments"));
+    segments = new LocalSegmentStore(tempDir.resolve("segments"), new SegmentFolderLock());
     server =
         WorkerSessionServer.builder()
             .configuration(serverConfigurationBuilder().build())

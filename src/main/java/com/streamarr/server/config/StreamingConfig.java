@@ -115,8 +115,8 @@ public class StreamingConfig {
   // After the delete, so the folder holds nothing of a running store while the delete runs.
   @Bean
   @DependsOn("segmentFolderLeftovers")
-  public LocalSegmentStore segmentStore(StreamingProperties properties) {
-    return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
+  public LocalSegmentStore segmentStore(StreamingProperties properties, SegmentFolderLock lock) {
+    return new LocalSegmentStore(Path.of(properties.segmentBasePath()), lock);
   }
 
   @Bean

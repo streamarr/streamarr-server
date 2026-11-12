@@ -90,7 +90,7 @@ class SegmentFolderLeftoversIT extends AbstractIntegrationTest {
   private static void leaveAStreamSessionAsAnEarlierProcess() throws IOException {
     startOnTheSegmentFolder();
     try (var stored =
-        new LocalSegmentStore(SEGMENT_FOLDER)
+        new LocalSegmentStore(SEGMENT_FOLDER, new SegmentFolderLock())
             .prepareSegment(EARLIER_SESSION_ID, "0.m4s", SEGMENT)) {
       stored.publish();
     }

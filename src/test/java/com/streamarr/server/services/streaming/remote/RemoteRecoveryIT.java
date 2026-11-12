@@ -31,6 +31,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
@@ -70,7 +71,8 @@ class RemoteRecoveryIT {
       throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
     var streamSessionId = UUID.randomUUID();
 
     try (var server = server(segmentStore)) {
@@ -127,7 +129,8 @@ class RemoteRecoveryIT {
   void shouldSurfaceTerminalOutcomeWhenEveryWorkerAttemptFails() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
     var streamSessionId = UUID.randomUUID();
 
     try (var server = server(segmentStore);
@@ -171,7 +174,8 @@ class RemoteRecoveryIT {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile =
         Files.write(mediaRoot.resolve("movie.mp4"), RecordedStream.START_AT_ZERO.bytes());
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
     var meterRegistry = new SimpleMeterRegistry();
     var streamSessionId = UUID.randomUUID();
     var initialAttempt = initialAttempt(streamSessionId, mediaFile, mode);
@@ -238,7 +242,8 @@ class RemoteRecoveryIT {
           throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
     var meterRegistry = new SimpleMeterRegistry();
     var streamSessionId = UUID.randomUUID();
     var initialAttempt = initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX);

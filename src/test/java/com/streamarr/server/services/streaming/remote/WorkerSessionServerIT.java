@@ -42,6 +42,7 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
@@ -1298,7 +1299,7 @@ class WorkerSessionServerIT {
       "Should end the replacement attempt and keep the stored segments when its initialization segment differs")
   void shouldEndReplacementAttemptAndKeepStoredSegmentsWhenItsInitializationSegmentDiffers(
       @TempDir Path segments) throws Exception {
-    var segmentStore = new LocalSegmentStore(segments);
+    var segmentStore = new LocalSegmentStore(segments, new SegmentFolderLock());
     var meterRegistry = new SimpleMeterRegistry();
     var storedInitialization = "ftyp moov from encoder A".getBytes();
     var firstMediaSegment = "moof mdat of segment 0".getBytes();

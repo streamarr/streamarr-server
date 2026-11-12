@@ -32,6 +32,7 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import com.streamarr.server.support.OutcomeTestSupport;
@@ -71,7 +72,7 @@ class HlsStreamingSmokeTest {
     var sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
     testVideo = sourceRoot.resolve("synthetic-h264-aac.mp4");
     segmentBaseDir = Files.createDirectory(temporaryDirectory.resolve("segments"));
-    segmentStore = new LocalSegmentStore(segmentBaseDir);
+    segmentStore = new LocalSegmentStore(segmentBaseDir, new SegmentFolderLock());
 
     workerFixture =
         WorkerStreamingSmokeFixture.builder()

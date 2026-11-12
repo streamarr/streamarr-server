@@ -32,6 +32,7 @@ import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.TranscodeDecisionRequest;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
@@ -77,7 +78,8 @@ class CopiedTrackAudioStepIT {
   @BeforeAll
   static void startServerAndWorker() throws Exception {
     mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    segmentStore =
+        new LocalSegmentStore(tempDir.resolve("server-segments"), new SegmentFolderLock());
     server =
         WorkerSessionServer.builder()
             .eventPublisher(new CapturingEventPublisher())

@@ -20,6 +20,7 @@ import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.RemoteTranscodeExecutor;
 import java.nio.file.Files;
@@ -66,7 +67,7 @@ class HlsRecoveryContinuitySmokeTest {
     var sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
     testVideo = Files.copy(TEST_VIDEO, sourceRoot.resolve(TEST_VIDEO.getFileName()));
     var segmentBaseDir = Files.createDirectory(temporaryDirectory.resolve("segments"));
-    segmentStore = new LocalSegmentStore(segmentBaseDir.resolve("server"));
+    segmentStore = new LocalSegmentStore(segmentBaseDir.resolve("server"), new SegmentFolderLock());
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)

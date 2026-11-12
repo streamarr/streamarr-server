@@ -19,6 +19,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -28,15 +29,17 @@ public class LocalSegmentStore implements SegmentStore {
   static final String SESSION_MARK_NAME = ".streamarr-stream-session";
 
   private final Path baseDir;
+  private final SegmentFolderLock lock;
   private final ConcurrentHashMap<UUID, Path> sessionDirs = new ConcurrentHashMap<>();
   private final MutexFactory<Path> initializationSegmentLocks = new MutexFactory<>();
 
-  public LocalSegmentStore(Path baseDir) {
+  public LocalSegmentStore(Path baseDir, @NonNull SegmentFolderLock lock) {
     if (!deletesWithoutFollowingSoftLinks(baseDir)) {
       throw new UnsupportedSegmentFolderException(baseDir);
     }
 
     this.baseDir = baseDir;
+    this.lock = lock;
   }
 
   // MoreFiles.deleteRecursively deletes nothing on a file system without secure directory streams.
