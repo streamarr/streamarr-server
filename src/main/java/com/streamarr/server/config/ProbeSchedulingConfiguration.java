@@ -25,9 +25,7 @@ import com.streamarr.server.services.library.ProbeExecution;
 import com.streamarr.server.services.library.ProbeTaskCompletion;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.ProbeCapacitySource;
-import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.binder.MeterBinder;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
@@ -177,19 +175,18 @@ public class ProbeSchedulingConfiguration {
 
   /** Reports how many bitrate scans wait in the keyframe packet scan table (ADR 0054). */
   @Bean
-  public MeterBinder bitrateScansWaitingMeter(DSLContext dsl) {
-    return registry ->
-        Gauge.builder(
-                "streamarr.probes.bitrate_scans_waiting",
-                dsl,
-                context ->
-                    context.fetchCount(
-                        DSL.table(DSL.name(KeyframePacketScanScheduler.TABLE_NAME)),
-                        DSL.field(DSL.name("task_name"), String.class)
-                            .eq(BitrateScanTask.NAME)
-                            .and(DSL.field(DSL.name("picked"), Boolean.class).isFalse())))
-            .description("Bitrate scans that wait in the scan table for their next chunk")
-            .register(registry);
+  public BitrateScansWaiting bitrateScansWaiting(
+      DSLContext dsl, BitrateScansWaitingProperties properties) {
+    return BitrateScansWaiting.builder()
+        .count(
+            () ->
+                dsl.fetchCount(
+                    DSL.table(DSL.name(KeyframePacketScanScheduler.TABLE_NAME)),
+                    DSL.field(DSL.name("task_name"), String.class)
+                        .eq(BitrateScanTask.NAME)
+                        .and(DSL.field(DSL.name("picked"), Boolean.class).isFalse())))
+        .refreshInterval(properties.refreshInterval())
+        .build();
   }
 
   /**

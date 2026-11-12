@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.streamarr.server.config.ArtworkPrioritySchedulers;
+import com.streamarr.server.config.BitrateScansWaiting;
 import com.streamarr.server.config.BoundedConnectionPoolClose;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.config.LibraryOperationScheduler;
@@ -199,8 +200,9 @@ class ServerShutdownIT extends AbstractIntegrationTest {
   // phase's timeout. A lifecycle in another phase stops only after that wait.
   @Test
   @DisplayName(
-      "Should stop the background schedulers and the scheduled tasks in the web server's graceful"
-          + " shutdown phase, and bound the connection pool's close, when the server stops")
+      "Should stop the background schedulers, the scheduled tasks and the waiting bitrate scans'"
+          + " count in the web server's graceful shutdown phase, and bound the connection pool's"
+          + " close, when the server stops")
   void shouldStopTheBackgroundWorkInTheWebServersGracefulShutdownPhaseWhenTheServerStops() {
     var server = startServer();
 
@@ -211,7 +213,8 @@ class ServerShutdownIT extends AbstractIntegrationTest {
                     ArtworkPrioritySchedulers.class,
                     KeyframePacketScanScheduler.class,
                     ProbeSchedulerStop.class,
-                    SimpleAsyncTaskScheduler.class)
+                    SimpleAsyncTaskScheduler.class,
+                    BitrateScansWaiting.class)
                 .map(lifecycle -> server.getBean(lifecycle).getPhase()))
         .containsOnly(webServerPhase);
     assertThat(server.getBeansOfType(BoundedConnectionPoolClose.class)).hasSize(1);

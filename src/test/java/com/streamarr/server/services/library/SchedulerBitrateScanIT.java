@@ -7,11 +7,13 @@ import static com.streamarr.server.jooq.generated.tables.MediaFileBitrateScanChu
 import static com.streamarr.server.jooq.generated.tables.MediaFileStreamMeasurement.MEDIA_FILE_STREAM_MEASUREMENT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.serializer.Serializer;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
+import com.streamarr.server.config.BitrateScansWaitingProperties;
 import com.streamarr.server.config.KeyframePacketScanScheduler;
 import com.streamarr.server.config.ProbeSchedulingConfiguration;
 import com.streamarr.server.config.ProbeSchedulingProperties;
@@ -159,15 +161,25 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
   @Test
   @DisplayName("Should report each waiting bitrate scan when scans wait in the scan table")
   void shouldReportEachWaitingBitrateScanWhenScansWaitInTheScanTable() throws Exception {
-    var waiting = new SimpleMeterRegistry();
-    new ProbeSchedulingConfiguration().bitrateScansWaitingMeter(dsl).bindTo(waiting);
+    var registry = new SimpleMeterRegistry();
+    var waiting =
+        new ProbeSchedulingConfiguration()
+            .bitrateScansWaiting(dsl, new BitrateScansWaitingProperties(Duration.ofMillis(50)));
+    waiting.bindTo(registry);
     var files = requestUnchangedFiles(3);
 
     probe(copyableOutcome(OptionalLong.empty())).execute(files.get(0), ProbePriority.BACKGROUND);
     probe(copyableOutcome(OptionalLong.empty())).execute(files.get(1), ProbePriority.BACKGROUND);
     probe(packetScanRequired()).execute(files.get(2), ProbePriority.BACKGROUND);
 
-    assertThat(waiting.get("streamarr.probes.bitrate_scans_waiting").gauge().value()).isEqualTo(2);
+    waiting.start();
+    try {
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .until(() -> registry.get("streamarr.probes.bitrate_scans_waiting").gauge().value() == 2);
+    } finally {
+      waiting.stop();
+    }
   }
 
   @Test

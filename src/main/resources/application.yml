@@ -280,6 +280,11 @@ probe:
   busy-worker-retry-delay: ${PROBE_BUSY_WORKER_RETRY_DELAY:5s}
   # How often a scan that waits for its probes checks their stored results.
   result-check-interval: ${PROBE_RESULT_CHECK_INTERVAL:2s}
+  # How often the server counts the bitrate scans that wait in the scan table. The
+  # streamarr.probes.bitrate_scans_waiting gauge reports the last count, so no metrics publish
+  # waits for the database. The default follows the OTLP publish step.
+  bitrate-scans-waiting:
+    refresh-interval: ${PROBE_BITRATE_SCANS_WAITING_REFRESH_INTERVAL:${management.otlp.metrics.export.step:1m}}
 
 library:
   # Scans and refreshes run as library operations on their own db-scheduler with its own table.
