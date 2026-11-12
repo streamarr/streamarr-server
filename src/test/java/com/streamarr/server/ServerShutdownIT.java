@@ -200,16 +200,7 @@ class ServerShutdownIT extends AbstractIntegrationTest {
 
   private static void requestHeldWork(ConfigurableApplicationContext server, HeldWork held)
       throws IOException {
-    server
-        .getBean(ProbeTaskRequests.class)
-        .request(
-            ProbeTaskRequest.builder()
-                .mediaFileId(held.probed().getId())
-                .libraryId(held.probed().getLibraryId())
-                .filepathUri(held.probed().getFilepathUri())
-                .snapshot(snapshotOf(held.probed()))
-                .probeVersion(ProbeVersion.CURRENT)
-                .build());
+    requestProbe(server, held.probed());
     server
         .getBean(KeyframePacketScanRequests.class)
         .request(
@@ -217,6 +208,20 @@ class ServerShutdownIT extends AbstractIntegrationTest {
                 .mediaFileId(held.scanned().getId())
                 .filepathUri(held.scanned().getFilepathUri())
                 .snapshot(snapshotOf(held.scanned()))
+                .probeVersion(ProbeVersion.CURRENT)
+                .build());
+  }
+
+  private static void requestProbe(ConfigurableApplicationContext server, MediaFile file)
+      throws IOException {
+    server
+        .getBean(ProbeTaskRequests.class)
+        .request(
+            ProbeTaskRequest.builder()
+                .mediaFileId(file.getId())
+                .libraryId(file.getLibraryId())
+                .filepathUri(file.getFilepathUri())
+                .snapshot(snapshotOf(file))
                 .probeVersion(ProbeVersion.CURRENT)
                 .build());
   }
