@@ -32,7 +32,7 @@ class HouseholdProfilesIT extends AbstractIntegrationTest {
   private static final String HOUSEHOLD_PROFILES =
       """
       query { householdProfiles(householdId: "%s") {
-        edges { node { visitor locked
+        edges { node { visitor locked available
           profile { id name kind pinConfigured readerAuthority household { id name } } } } } }
       """;
 
@@ -119,6 +119,24 @@ class HouseholdProfilesIT extends AbstractIntegrationTest {
     assertThat(householdProfiles(member, cabin))
         .extracting(row -> row.path("profile").path("id").asString())
         .containsExactly(idOf(mara));
+  }
+
+  @Test
+  @DisplayName(
+      "Should say a Profile it manages is not available there when a HouseholdAdmin reads its"
+          + " Household")
+  void shouldSayAProfileItManagesIsNotAvailableThereWhenAHouseholdAdminReadsItsHousehold()
+      throws Exception {
+    var alex = cast.profileManagedBy(smith, ProfileFixture.defaultProfileBuilder().name("Alex"));
+    var mara =
+        cast.unavailableProfileManagedBy(
+            smith, ProfileFixture.defaultProfileBuilder().name("Mara"));
+
+    var rows = householdProfiles(smith, smith);
+
+    assertThat(rowOf(rows, alex).path("available").asBoolean()).isTrue();
+    assertThat(rowOf(rows, mara).path("available").asBoolean()).isFalse();
+    assertThat(rowOf(rows, mara).path("locked").asBoolean()).isFalse();
   }
 
   @Test

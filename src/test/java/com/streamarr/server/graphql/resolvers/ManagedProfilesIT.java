@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -31,7 +32,8 @@ class ManagedProfilesIT extends AbstractIntegrationTest {
   private static final String MANAGED_PROFILES =
       """
       query { me { managedProfiles {
-        edges { node { id name kind linked readerAuthority household { id name } } } } } }
+        edges { node { available
+          profile { id name kind linked readerAuthority household { id name } } } } } } }
       """;
 
   @Autowired private MockMvc mockMvc;
@@ -87,6 +89,27 @@ class ManagedProfilesIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should say whether each Profile is available where it belongs when its manager reads them")
+  void shouldSayWhetherEachProfileIsAvailableWhereItBelongsWhenItsManagerReadsThem()
+      throws Exception {
+    var alex = cast.profileManagedBy(sam, ProfileFixture.kidProfileBuilder().name("Alex"));
+    var mara =
+        cast.unavailableProfileManagedBy(sam, ProfileFixture.defaultProfileBuilder().name("Mara"));
+
+    var rows = managedRows(authTestSupport.accountBearer(sam));
+
+    assertThat(rows)
+        .extracting(
+            row -> row.path("profile").path("id").asString(),
+            row -> row.path("available").asBoolean())
+        .containsExactlyInAnyOrder(
+            tuple(sam.profile().getId().toString(), true),
+            tuple(alex.getId().toString(), true),
+            tuple(mara.getId().toString(), false));
+  }
+
+  @Test
   @DisplayName("Should list nothing when the Account's own Personal Profile is supervised")
   void shouldListNothingWhenTheAccountsOwnPersonalProfileIsSupervised() throws Exception {
     var supervised = cast.supervisedMemberOf(sam);
@@ -127,6 +150,10 @@ class ManagedProfilesIT extends AbstractIntegrationTest {
   }
 
   private List<JsonNode> managedProfiles(String bearer) throws Exception {
+    return managedRows(bearer).stream().map(row -> row.path("profile")).toList();
+  }
+
+  private List<JsonNode> managedRows(String bearer) throws Exception {
     var body =
         mockMvc
             .perform(graphqlRequest(bearer, MANAGED_PROFILES))

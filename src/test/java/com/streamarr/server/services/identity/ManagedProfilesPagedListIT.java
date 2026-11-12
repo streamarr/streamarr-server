@@ -5,7 +5,6 @@ import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileRepository;
-import com.streamarr.server.services.identity.AdministrationQueryService.ProfileAdministrationDetails;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.support.AuthTestSupport;
@@ -24,7 +23,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Tag("IntegrationTest")
 @DisplayName("Managed Profile paging")
 class ManagedProfilesPagedListIT
-    extends PagedListContract<ProfileAdministrationDetails, ManagedProfilesPagedListIT.Scope> {
+    extends PagedListContract<ManagedProfileDetails, ManagedProfilesPagedListIT.Scope> {
 
   private static final UUID LOWEST_ID = new UUID(0, 0);
 
@@ -74,13 +73,13 @@ class ManagedProfilesPagedListIT
   }
 
   @Override
-  protected ListPage<ProfileAdministrationDetails> page(Scope scope, PageRequest request) {
+  protected ListPage<ManagedProfileDetails> page(Scope scope, PageRequest request) {
     return profileManagementQuery.managedProfiles(auth.identityOf(scope.manager()), request);
   }
 
   @Override
-  protected UUID idOf(ProfileAdministrationDetails details) {
-    return details.profile().getId();
+  protected UUID idOf(ManagedProfileDetails details) {
+    return details.administration().profile().getId();
   }
 
   @Override

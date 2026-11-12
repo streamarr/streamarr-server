@@ -11,7 +11,7 @@ import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.HouseholdProfile;
-import com.streamarr.server.graphql.dto.ProfileAdministration;
+import com.streamarr.server.graphql.dto.ManagedProfile;
 import com.streamarr.server.graphql.dto.ProfileLockPreview;
 import com.streamarr.server.graphql.dto.ProfileManagerDetails;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -39,12 +39,11 @@ public class ProfileManagementResolver {
   private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsData(parentType = "Me", field = "managedProfiles")
-  public Connection<ProfileAdministration> managedProfiles(DataFetchingEnvironment dfe) {
+  public Connection<ManagedProfile> managedProfiles(DataFetchingEnvironment dfe) {
     var identity = authorizationService.currentIdentity();
     var list = new ListIdentity("managed-profiles", identity.accountId());
     var page = profileManagementQueryService.managedProfiles(identity, pageRequest(list, dfe));
-    return relayConnectionAdapter.toConnection(
-        page, list, details -> ProfileAdministration.from(details.profile(), details.linked()));
+    return relayConnectionAdapter.toConnection(page, list, ManagedProfile::from);
   }
 
   @DgsQuery
