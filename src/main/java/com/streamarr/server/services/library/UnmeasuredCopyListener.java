@@ -81,24 +81,25 @@ public class UnmeasuredCopyListener implements AutoCloseable {
   // failed: the server shut down before the raise got its row or its connection.
   private String raise(UUID mediaFileId) {
     try {
-      var raised =
-          raiseStatements.call(
+      return raiseStatements
+          .call(
               () ->
                   priorities.tryRaisePriority(
-                      mediaFileId, BitrateScanPriority.COPIED_BY_STREAM_SESSION));
-      if (raised.isEmpty()) {
-        return "cancelled";
-      }
-
-      if (raised.get()) {
-        return "moved";
-      }
-
-      return "unchanged";
+                      mediaFileId, BitrateScanPriority.COPIED_BY_STREAM_SESSION))
+          .map(UnmeasuredCopyListener::outcomeOfRaise)
+          .orElse("cancelled");
     } catch (RuntimeException failure) {
       log.warn("Could not move the bitrate scan of media file {} forward", mediaFileId, failure);
       return "failed";
     }
+  }
+
+  private static String outcomeOfRaise(boolean moved) {
+    if (moved) {
+      return "moved";
+    }
+
+    return "unchanged";
   }
 
   private void count(String outcome) {
