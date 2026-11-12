@@ -158,13 +158,12 @@ class SegmentFolderLeftoversTest {
       mark.write(ByteBuffer.wrap(new byte[1]), Integer.MAX_VALUE);
     }
 
-    new SegmentFolderLeftovers(segmentFolder).delete();
-    var sessionId = UUID.randomUUID();
-    earlierStore().getOutputDirectory(sessionId);
+    startOf(segmentFolder);
+    var session = leftSessionIn(segmentFolder);
 
-    new SegmentFolderLeftovers(segmentFolder).delete();
+    startOf(segmentFolder);
 
-    assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
+    assertThat(session).doesNotExist();
   }
 
   @Test
@@ -209,15 +208,13 @@ class SegmentFolderLeftoversTest {
       throws IOException {
     var markedFolder = segmentFolder.resolve("a");
     var folderWithTheCopiedMark = segmentFolder.resolve("b");
-    new SegmentFolderLeftovers(markedFolder).delete();
-    var directoryNamedLikeASession =
-        Files.createDirectories(folderWithTheCopiedMark.resolve(UUID.randomUUID().toString()));
-    var fileInThatDirectory =
-        Files.write(directoryNamedLikeASession.resolve("movie.mkv"), "media".getBytes());
+    startOf(markedFolder);
+    var fileInThatDirectory = deletableFileIn(folderWithTheCopiedMark);
     Files.copy(markedFolder.resolve(MARK_NAME), folderWithTheCopiedMark.resolve(MARK_NAME));
 
-    new SegmentFolderLeftovers(folderWithTheCopiedMark).delete();
+    var outcome = startOf(folderWithTheCopiedMark);
 
+    assertThat(outcome).isEqualTo(new Refused(SegmentFolderRefusal.UNMARKED_FOLDER));
     assertThat(fileInThatDirectory).exists();
   }
 
