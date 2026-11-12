@@ -2,10 +2,12 @@ package com.streamarr.server.repositories.notification;
 
 import static com.streamarr.server.jooq.generated.tables.Notification.NOTIFICATION;
 import static org.jooq.impl.DSL.cast;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.function;
 import static org.jooq.impl.DSL.greatest;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.jsonbGetAttributeAsText;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
@@ -19,6 +21,7 @@ import com.streamarr.server.jooq.generated.enums.RequestResolution;
 import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
 import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.services.events.notification.DismissalSelector;
+import com.streamarr.server.services.events.notification.NewsUpdate;
 import com.streamarr.server.services.events.notification.NotificationKind;
 import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
@@ -76,9 +79,7 @@ public class JooqNotificationRepository implements NotificationRepository {
         .where(
             NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).and(NOTIFICATION.READ_AT.isNull()))
         .doUpdate()
-        .set(
-            NOTIFICATION.SNAPSHOT,
-            when(laterOrSame, excluded(NOTIFICATION.SNAPSHOT)).otherwise(NOTIFICATION.SNAPSHOT))
+        .set(NOTIFICATION.SNAPSHOT, updatedSnapshot(tell.kind().newsUpdate(), laterOrSame))
         .set(
             NOTIFICATION.LATEST_EVENT_AT,
             greatest(NOTIFICATION.LATEST_EVENT_AT, excluded(NOTIFICATION.LATEST_EVENT_AT)))
@@ -315,6 +316,43 @@ public class JooqNotificationRepository implements NotificationRepository {
         NOTIFICATION.SNAPSHOT,
         val(new String[] {SnapshotJson.ANSWER}, SQLDataType.CLOB.array()),
         function("to_jsonb", SQLDataType.JSONB, cast(val(answer), SQLDataType.CLOB)));
+  }
+
+  // The later event's snapshot, or the stored one when the arriving event is the earlier; a kind
+  // that adds figures then adds the arriving event's figures to the stored ones, either way.
+  private static Field<JSONB> updatedSnapshot(NewsUpdate update, Condition laterOrSame) {
+    var later = when(laterOrSame, excluded(NOTIFICATION.SNAPSHOT)).otherwise(NOTIFICATION.SNAPSHOT);
+    return switch (update) {
+      case NewsUpdate.Replace _ -> later;
+      case NewsUpdate.AddFigures(var figures) -> withFiguresAdded(later, figures);
+    };
+  }
+
+  private static Field<JSONB> withFiguresAdded(Field<JSONB> snapshot, Set<String> figures) {
+    var added = snapshot;
+    for (var figure : figures.stream().sorted().toList()) {
+      added = withFigureAdded(added, figure);
+    }
+
+    return added;
+  }
+
+  private static Field<JSONB> withFigureAdded(Field<JSONB> snapshot, String figure) {
+    var sum =
+        figureOf(NOTIFICATION.SNAPSHOT, figure)
+            .plus(figureOf(excluded(NOTIFICATION.SNAPSHOT), figure));
+    return function(
+        "jsonb_set",
+        SQLDataType.JSONB,
+        snapshot,
+        val(new String[] {figure}, SQLDataType.CLOB.array()),
+        function("to_jsonb", SQLDataType.JSONB, sum));
+  }
+
+  // A figure that a snapshot lacks counts as zero.
+  private static Field<Long> figureOf(Field<JSONB> snapshot, String figure) {
+    return coalesce(
+        cast(jsonbGetAttributeAsText(snapshot, figure), SQLDataType.BIGINT), inline(0L));
   }
 
   private InsertValuesStep9<
