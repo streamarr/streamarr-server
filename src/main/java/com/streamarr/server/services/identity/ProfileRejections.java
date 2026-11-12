@@ -23,10 +23,19 @@ public final class ProfileRejections {
           ProfileManagerNotEligible,
           MaximumAllowedRatingAgeInvalid {}
 
-  public sealed interface RenameProfile
-      permits ProfileNotFound, ProfileNameRequired, ProfileNameTaken {}
+  /** How an ordinary edit refuses a caller that may not make it. */
+  public sealed interface EditRefusal
+      extends RenameProfile,
+          SetProfilePicture,
+          SetProfilePin,
+          RemoveProfilePin,
+          SetProfileLanguagePreferences
+      permits ProfileNotFound {}
 
-  public sealed interface SetProfilePicture permits ProfileNotFound {}
+  public sealed interface RenameProfile
+      permits EditRefusal, ProfileNameRequired, ProfileNameTaken {}
+
+  public sealed interface SetProfilePicture permits EditRefusal {}
 
   public sealed interface ChangeProfilePolicy
       permits ProfileNotFound,
@@ -36,9 +45,9 @@ public final class ProfileRejections {
           HostingHouseholdLacksEligibleAdmin,
           MaximumAllowedRatingAgeInvalid {}
 
-  public sealed interface SetProfilePin permits ProfileNotFound, PinMalformed {}
+  public sealed interface SetProfilePin permits EditRefusal, PinMalformed {}
 
-  public sealed interface RemoveProfilePin permits ProfileNotFound, WouldLockProfile {}
+  public sealed interface RemoveProfilePin permits EditRefusal, WouldLockProfile {}
 
   public sealed interface AdministrativelyResetProfilePin
       permits ProfileNotFound, PinMalformed, ReasonRequired, ReauthenticationRequired {}
@@ -47,17 +56,10 @@ public final class ProfileRejections {
       permits ProfileNotFound, ProfileNotDeletable, ReauthenticationRequired {}
 
   public sealed interface SetProfileLanguagePreferences
-      permits ProfileNotFound, PreferredAudioLanguagesRefused {}
+      permits EditRefusal, PreferredAudioLanguagesRefused {}
 
   public record ProfileNotFound()
-      implements RenameProfile,
-          SetProfilePicture,
-          ChangeProfilePolicy,
-          SetProfilePin,
-          RemoveProfilePin,
-          AdministrativelyResetProfilePin,
-          DeleteProfile,
-          SetProfileLanguagePreferences {}
+      implements EditRefusal, ChangeProfilePolicy, AdministrativelyResetProfilePin, DeleteProfile {}
 
   /** The Profile may not keep the audio languages, for the reason the language rule gives. */
   public record PreferredAudioLanguagesRefused(@NonNull SetLanguagePreferencesRejection reason)
