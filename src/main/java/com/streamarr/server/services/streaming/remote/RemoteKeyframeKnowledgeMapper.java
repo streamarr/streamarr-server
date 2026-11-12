@@ -127,6 +127,8 @@ final class RemoteKeyframeKnowledgeMapper {
       case KEYFRAMES_UNAVAILABLE_REASON_KEYFRAME_WITHOUT_TIMESTAMP ->
           KeyframesUnavailableReason.KEYFRAME_WITHOUT_TIMESTAMP;
       case KEYFRAMES_UNAVAILABLE_REASON_NO_KEYFRAMES -> KeyframesUnavailableReason.NO_KEYFRAMES;
+      case KEYFRAMES_UNAVAILABLE_REASON_TOO_MANY_KEYFRAMES ->
+          KeyframesUnavailableReason.TOO_MANY_KEYFRAMES;
       case KEYFRAMES_UNAVAILABLE_REASON_UNSPECIFIED, UNRECOGNIZED ->
           throw violation("Worker probe keyframes unavailable reason is unspecified");
     };

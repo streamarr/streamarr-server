@@ -88,14 +88,17 @@ import org.junit.jupiter.api.Test;
 class TranscodeWorkerContractTest {
   @Test
   @DisplayName(
-      "Should expose one reverse worker session and one segment upload stream when validating the protocol")
-  void shouldExposeOneReverseWorkerSessionAndOneSegmentUploadStreamWhenValidatingProtocol() {
+      "Should expose only the worker session, segment upload and probe report calls when"
+          + " validating the protocol")
+  void shouldExposeOnlyTheWorkerSessionSegmentUploadAndProbeReportCallsWhenValidatingProtocol() {
     var service = TranscodeWorkerServiceGrpc.getServiceDescriptor();
 
-    assertThat(service.getMethods()).hasSize(2);
+    assertThat(service.getMethods()).hasSize(3);
     assertThat(TranscodeWorkerServiceGrpc.getEstablishWorkerSessionMethod().getType())
         .isEqualTo(MethodType.BIDI_STREAMING);
     assertThat(TranscodeWorkerServiceGrpc.getUploadSegmentMethod().getType())
+        .isEqualTo(MethodType.CLIENT_STREAMING);
+    assertThat(TranscodeWorkerServiceGrpc.getReportProbeAttemptMethod().getType())
         .isEqualTo(MethodType.CLIENT_STREAMING);
   }
 

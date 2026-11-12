@@ -9,5 +9,7 @@ public enum KeyframesUnavailableReason {
   /** A packet scan ended in a terminal media error, although the probe had read the source. */
   PACKET_SCAN_MEDIA_ERROR,
   /** Every packet scan of the source timed out or reported no keyframe result. */
-  PACKET_SCAN_FAILED
+  PACKET_SCAN_FAILED,
+  /** The chosen video stream holds more keyframes than the server's keyframe limit (ADR 0062). */
+  TOO_MANY_KEYFRAMES
 }
