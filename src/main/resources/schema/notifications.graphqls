@@ -182,8 +182,9 @@ type ProfileManagerInvitationAnsweredNotification implements Notification {
     latestEventAt: String!
     unread: Boolean!
     """
-    The id of the ProfileManager invitation, for managerInvitation(invitationId:), which answers
-    null once the recipient no longer manages the Profile.
+    The id of the ProfileManager invitation, for managerInvitation(invitationId:). It answers by
+    the invitation's own read rule, so it may answer null once the recipient no longer manages the
+    Profile.
     """
     invitationId: ID!
     "The Profile's name when the invitation was answered. A later rename does not change it."
