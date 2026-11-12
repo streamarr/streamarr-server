@@ -115,6 +115,7 @@ These metrics report the same facts:
 * `streamarr.probes.running` reports the probes of each kind that run on a worker. It carries the same tags.
 * `streamarr.probes.background_capacity_control` is `1` for each worker. Its `control` tag is `adaptive`, or `fixed` when `TRANSCODE_WORKER_PROBE_CAPACITY` sets the capacity.
 * `streamarr.probes.waiting` reports the probes that running scans still wait for. A probe waits unclaimed while no worker has a free unit for it.
+* `streamarr.probes.bitrate_scans_waiting` reports the bitrate scans that wait in the scan table for their next chunk, as the server last counted them. The server counts them every `PROBE_BITRATE_SCANS_WAITING_REFRESH_INTERVAL`, by default once per metrics publish step, so a metrics publish never waits for the database. The gauge reports `NaN` until the first count ends, after a count fails, for example while PostgreSQL is down, and once the last count is older than two refresh intervals, as while a count waits for a PostgreSQL that stopped answering.
 * `streamarr.probes.deferred` counts the probes that the server deferred after it claimed them. Its `reason` tag is `workers_busy`, `no_compatible_worker`, or `no_connected_worker` when no worker could take the probe at dispatch, and `no_free_capacity` when the worker refused the probe because it had just lowered the probe's capacity.
 * `streamarr.probes.keyframe_packet_scan_failures` counts the keyframe packet scans that ran without a usable result. Its `reason` tag is `timed_out`, `no_keyframe_result`, or `contract_violation` when the worker's reply broke the worker contract.
 * `streamarr.playback.probe_queue_latency` records queue latency for a claimed probe, from its earliest still-waiting playback request until execution starts. It includes scheduler polling, any remaining quiet period or retry backoff, and capacity waits, so a nonzero value alone does not establish capacity exhaustion. Requests that stop waiting before execution starts contribute no sample.
@@ -319,6 +320,29 @@ kubectl apply -f /tmp/streamarr-deployment.yaml
 ----
 
 To encode on NVIDIA GPUs in worker pods, see <<_kubernetes_gpus>>.
+
+== Stopping the server
+
+The server stops within about 10 s of SIGTERM.
+Compose and the example Kubernetes manifest give it 15 s.
+
+. The server interrupts the metrics publish in flight, and its last publish gets at most 1 s.
+No metrics publish reads the database.
+. It answers each segment request that it holds with `503 Service Unavailable`.
+The web player then asks for the playback status; a dropped connection would end its playback.
+. It stops its background schedulers, its scheduled tasks and its web server together, and waits at most 5 s for all of them (`spring.lifecycle.timeout-per-shutdown-phase`).
+A running probe, keyframe packet scan, bitrate scan, library operation or artwork step gets 3 s to end (`db-scheduler.shutdown-max-wait`), then the server interrupts it.
+The server releases each execution that the interrupt cut off without counting a failure, so it runs as soon as a server starts again.
+. It then closes its playback sessions, its subscription deliveries and its database connections, and waits at most 1 s for each.
+It ends the downloads of its TMDB clients without waiting.
+
+A web request that the 5 s do not end, such as a stream session request that waits for a probe, holds the web server's stop to the end of the 5 s, and Tomcat then waits 2 s more for it.
+With PostgreSQL stopped or not answering, the slowest measured stop took about 9 s.
+
+If the platform kills the server before it stops, its running executions run again once a server finds them dead, about 60 s later.
+
+Compose stops the worker before the server, because the worker shares the server's network.
+A probe that the worker was running then ends as a temporary failure: the server stores it and retries the probe after a backoff of a few seconds.
 
 == GPU encoding
 

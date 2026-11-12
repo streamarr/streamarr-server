@@ -324,11 +324,13 @@ public final class WorkerSessionServer
   /**
    * Starts the server's shutdown. Spring publishes the event before it stops the schedulers whose
    * probe threads then stop waiting, so each probe that they cancel tells its worker that the
-   * server is shutting down. A probe that reaches its timeout still carries the timeout reason.
+   * server is shutting down. A probe that reaches its timeout still carries the timeout reason. The
+   * held segment requests end as cancelled, before the web server waits for its requests to end.
    */
   @Override
   public void onApplicationEvent(ContextClosedEvent event) {
     workerConnections.beginShutdown();
+    heldSegmentRequests.wakeEveryRequestForShutdown();
   }
 
   @Override

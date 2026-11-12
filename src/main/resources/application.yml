@@ -40,6 +40,13 @@ spring:
     virtual:
       enabled: true
 
+  # A shutdown stops the db-schedulers, the scheduled tasks and the web server's graceful shutdown
+  # at once and waits for all of them together for this long. Running db-scheduler executions get
+  # the shorter db-scheduler.shutdown-max-wait, then their interrupt. The deployments give the
+  # server 15 s to stop.
+  lifecycle:
+    timeout-per-shutdown-phase: 5s
+
   # GraphQL over HTTP runs as an asynchronous request. Without this setting, Tomcat ends such a
   # request after its own default of 30 s. createStreamSession waits up to
   # streaming.probe-wait-limit within this time.
@@ -261,7 +268,9 @@ db-scheduler:
   missed-heartbeats-limit: 4
   immediate-execution-enabled: true
   delay-startup-until-context-ready: true
-  shutdown-max-wait: 30s
+  # Each scheduler lets its running executions end for this long when the server shuts down, then
+  # interrupts them. An interrupted execution is released and runs again when a server starts.
+  shutdown-max-wait: 3s
 
 # A probe that finds no compatible worker free when it is dispatched stays pending and runs again
 # after this delay, without counting as a failure. This happens when a worker lowers a capacity or
@@ -271,6 +280,11 @@ probe:
   busy-worker-retry-delay: ${PROBE_BUSY_WORKER_RETRY_DELAY:5s}
   # How often a scan that waits for its probes checks their stored results.
   result-check-interval: ${PROBE_RESULT_CHECK_INTERVAL:2s}
+  # How often the server counts the bitrate scans that wait in the scan table. The
+  # streamarr.probes.bitrate_scans_waiting gauge reports the last count, so no metrics publish
+  # waits for the database. The default follows the OTLP publish step.
+  bitrate-scans-waiting:
+    refresh-interval: ${PROBE_BITRATE_SCANS_WAITING_REFRESH_INTERVAL:${management.otlp.metrics.export.step:1m}}
 
 library:
   # Scans and refreshes run as library operations on their own db-scheduler with its own table.
@@ -278,7 +292,6 @@ library:
   # status and wait for a thread.
   operation-scheduling:
     threads: ${LIBRARY_OPERATION_THREADS:8}
-    shutdown-drain-timeout: ${LIBRARY_OPERATION_SHUTDOWN_DRAIN_TIMEOUT:30s}
   watcher:
     stabilization-period-seconds: ${LIBRARY_WATCHER_STABILIZATION_PERIOD:30}
     poll-interval-seconds: ${LIBRARY_WATCHER_POLL_INTERVAL:5}

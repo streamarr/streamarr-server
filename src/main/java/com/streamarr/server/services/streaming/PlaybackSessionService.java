@@ -38,6 +38,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -52,6 +53,7 @@ public class PlaybackSessionService implements AutoCloseable {
   // Original that reaches an encode plays it in Auto (ADR 0052).
   private static final PlayingChoice AUTO_AFTER_AN_AUDIO_TRACK_SWITCH =
       new PlayingChoice(VideoQuality.AUTO, Optional.of(PlaybackFormatChange.AUDIO_TRACK_SWITCHED));
+  private static final Duration CLOSE_BOUND = Duration.ofSeconds(1);
   private final StreamingService streamingService;
   private final PlaybackAuthorityGate authorityGate;
   private final Executor executor;
@@ -562,7 +564,20 @@ public class PlaybackSessionService implements AutoCloseable {
     try {
       closeAll();
     } finally {
-      ownedExecutor.ifPresent(ExecutorService::close);
+      ownedExecutor.ifPresent(PlaybackSessionService::stopFormatAttemptStarts);
+    }
+  }
+
+  // A start waits for its probe and its worker, so close interrupts the starts instead of waiting
+  // for them. A start that ignores its interrupt stops holding the close after the bound.
+  private static void stopFormatAttemptStarts(ExecutorService starts) {
+    starts.shutdownNow();
+    try {
+      if (!starts.awaitTermination(CLOSE_BOUND.toMillis(), TimeUnit.MILLISECONDS)) {
+        log.warn("A format attempt start still ran {} after its interrupt", CLOSE_BOUND);
+      }
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
     }
   }
 

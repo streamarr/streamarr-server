@@ -2,15 +2,10 @@ package com.streamarr.server.config;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.SchedulerClient;
-import com.github.kagkarlsson.scheduler.SchedulerName;
-import com.github.kagkarlsson.scheduler.TaskResolver;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerConfigurationSupport;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerCustomizer;
 import com.github.kagkarlsson.scheduler.boot.config.DbSchedulerProperties;
 import com.github.kagkarlsson.scheduler.event.SchedulerListener;
-import com.github.kagkarlsson.scheduler.event.SchedulerListeners;
-import com.github.kagkarlsson.scheduler.jdbc.AutodetectJdbcCustomization;
-import com.github.kagkarlsson.scheduler.jdbc.JdbcTaskRepository;
 import com.github.kagkarlsson.scheduler.stats.StatsRegistry;
 import com.github.kagkarlsson.scheduler.task.Task;
 import com.streamarr.server.domain.task.BitrateScanTaskRequest;
@@ -96,16 +91,13 @@ public final class KeyframePacketScanScheduler
     var transactionalDataSource = new SchedulerTransactionDataSource(dataSource);
     var serializer = customizer.serializer().orElseThrow();
     var scanTasks =
-        new JdbcTaskRepository(
-            transactionalDataSource,
-            false,
-            new AutodetectJdbcCustomization(dataSource),
-            TABLE_NAME,
-            new TaskResolver(SchedulerListeners.NOOP, clock::instant, List.of()),
-            new SchedulerName.Fixed("keyframe-scan-completion"),
-            serializer,
-            false,
-            clock::instant);
+        SchedulerTables.taskRepository()
+            .dataSource(dataSource)
+            .tableName(TABLE_NAME)
+            .name("keyframe-scan-completion")
+            .serializer(serializer)
+            .clock(clock)
+            .build();
     var completion =
         KeyframePacketScanCompletion.builder()
             .outcomes(outcomes)
@@ -145,7 +137,7 @@ public final class KeyframePacketScanScheduler
                 dataSource,
                 List.of(task, bitrateScanTask),
                 schedulerListeners,
-                List.of());
+                List.of(new ReleaseAtShutdown(scanTasks)));
     return new KeyframePacketScanScheduler(
         new Tasks(task, bitrateScanTask), client, newScheduler, clock, autoStartup);
   }
@@ -197,6 +189,11 @@ public final class KeyframePacketScanScheduler
   }
 
   @Override
+  public void stop(@NonNull Runnable callback) {
+    BackgroundWorkStop.onItsOwnThread("keyframe-packet-scan-scheduler-stop", this::stop, callback);
+  }
+
+  @Override
   public synchronized boolean isRunning() {
     return running != null;
   }
@@ -204,6 +201,11 @@ public final class KeyframePacketScanScheduler
   @Override
   public boolean isAutoStartup() {
     return autoStartup;
+  }
+
+  @Override
+  public int getPhase() {
+    return BackgroundWorkStop.PHASE;
   }
 
   private record Tasks(

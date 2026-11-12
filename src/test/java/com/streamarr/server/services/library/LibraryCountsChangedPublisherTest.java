@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -105,6 +106,18 @@ class LibraryCountsChangedPublisherTest {
     assertThat(pushes())
         .containsExactlyInAnyOrder(
             new LibraryCountsChangedEvent(first), new LibraryCountsChangedEvent(second));
+  }
+
+  // Background work still commits while the server stops; its subscribers end with the server.
+  @Test
+  @DisplayName(
+      "Should drop the push without failing when the server already stopped its task scheduler")
+  void shouldDropThePushWithoutFailingWhenTheServerAlreadyStoppedItsTaskScheduler() {
+    var libraryId = UUID.randomUUID();
+    scheduler.stop();
+
+    assertThatNoException().isThrownBy(() -> publisher.onItemChanged(added(libraryId)));
+    assertThat(pushes()).isEmpty();
   }
 
   private List<LibraryCountsChangedEvent> pushes() {

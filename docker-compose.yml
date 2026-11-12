@@ -13,8 +13,10 @@ services:
   streamarr-server:
     image: ${STREAMARR_SERVER_IMAGE:-streamarr/streamarr-server:0.0.11-SNAPSHOT} # x-release-please-version
     restart: always
-    # Outlasts the 30 s shutdown drain of library operations.
-    stop_grace_period: 45s
+    # The server stops within about 10 s: its background work and its web server within 5 s, then
+    # bounded closes of its sessions and connections. See "Stopping the server" in
+    # docs/distributed-transcoding.adoc.
+    stop_grace_period: 15s
     ports:
       - "8080:8080"
     environment:

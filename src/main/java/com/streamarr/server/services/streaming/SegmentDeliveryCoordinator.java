@@ -29,7 +29,8 @@ public class SegmentDeliveryCoordinator {
    * newest media-segment request's variant stops the variant that the player left. A request past a
    * short copy's normal end waits until the stream session ends (ADR 0052). A request for a variant
    * whose hardware encoder failed ends as unrecoverable and continues the playback session on the
-   * software encoder instead of starting or replacing the variant (ADR 0044).
+   * software encoder instead of starting or replacing the variant (ADR 0044). Once the server shuts
+   * down, a held request ends as cancelled.
    */
   public SegmentDelivery deliver(UUID sessionId, String variantLabel, String segmentName) {
     var refusal = refusal(sessionId, segmentName);
@@ -46,7 +47,7 @@ public class SegmentDeliveryCoordinator {
         }
 
         producerLifecycle.segmentRequestWaits(request);
-        if (!tryAwait(wake, request)) {
+        if (!tryAwait(wake, request) || heldRequests.isShuttingDown()) {
           return new SegmentDelivery.Cancelled();
         }
       }

@@ -44,6 +44,9 @@ public sealed interface SegmentDelivery {
    */
   record Unrecoverable() implements SegmentDelivery {}
 
-  /** The waiting thread was interrupted (server lifecycle); the request maps to 503. */
+  /**
+   * The server shuts down, or the waiting thread was interrupted; the request maps to 503, which a
+   * player retries, while a dropped connection ends its playback.
+   */
   record Cancelled() implements SegmentDelivery {}
 }

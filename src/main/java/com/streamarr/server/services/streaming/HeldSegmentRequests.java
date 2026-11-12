@@ -13,13 +13,15 @@ import lombok.NonNull;
 /**
  * Wakes the segment requests that the server holds until their segment is stored. A held request
  * takes its variant's next wake before it looks for its segment, so a segment stored or a job
- * attempt ended while it looks still wakes it.
+ * attempt ended while it looks still wakes it. Once the server shuts down, every wake fires as it
+ * is taken.
  */
 public final class HeldSegmentRequests {
 
   private static final String HELD_REQUESTS_METRIC = "streamarr.streaming.held_segment_requests";
 
   private final ConcurrentHashMap<VariantKey, VariantWake> nextWakes = new ConcurrentHashMap<>();
+  private volatile boolean shuttingDown;
 
   public HeldSegmentRequests(@NonNull MeterRegistry meterRegistry) {
     Gauge.builder(HELD_REQUESTS_METRIC, this, HeldSegmentRequests::heldRequestCount)
@@ -33,7 +35,28 @@ public final class HeldSegmentRequests {
    */
   public Wake nextWake(UUID sessionId, String variantLabel) {
     var key = new VariantKey(sessionId, variantLabel);
-    return new Wake(key, nextWakes.compute(key, (_, current) -> withOneMoreHolder(current)));
+    var wake = new Wake(key, nextWakes.compute(key, (_, current) -> withOneMoreHolder(current)));
+    // The shutdown marks itself before it fires the wakes, so a wake taken while it fires them is
+    // fired either by the shutdown or here.
+    if (shuttingDown) {
+      fire(key);
+    }
+
+    return wake;
+  }
+
+  /**
+   * Wakes every held request because the server shuts down, and every request that is held later at
+   * once.
+   */
+  public void wakeEveryRequestForShutdown() {
+    shuttingDown = true;
+    nextWakes.keySet().stream().toList().forEach(this::fire);
+  }
+
+  /** Whether the server shuts down, so a held request ends instead of waiting again. */
+  public boolean isShuttingDown() {
+    return shuttingDown;
   }
 
   /** Whether a segment request of the variant holds its next wake: a player waits on it. */

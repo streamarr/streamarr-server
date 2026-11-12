@@ -1,8 +1,15 @@
 package com.streamarr.server.config.observability;
 
 import static com.streamarr.server.config.observability.OtlpExports.attribute;
+import static com.streamarr.server.config.observability.OtlpExports.metricsNamed;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.config.BitrateScansWaiting;
+import com.streamarr.server.config.BitrateScansWaitingProperties;
+import com.streamarr.server.config.ProbeSchedulingConfiguration;
+import com.streamarr.server.support.BoundedTask;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.registry.otlp.OtlpConfig;
 import io.micrometer.registry.otlp.OtlpMeterRegistry;
@@ -13,10 +20,15 @@ import io.opentelemetry.instrumentation.spring.autoconfigure.OpenTelemetryAutoCo
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.sdk.autoconfigure.spi.ResourceProvider;
 import io.opentelemetry.sdk.resources.Resource;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.jooq.SQLDialect;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -36,6 +48,8 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 @DisplayName("Metric Export Configuration Tests")
 class MetricExportConfigurationTest {
 
+  private static final String BITRATE_SCANS_WAITING = "streamarr.probes.bitrate_scans_waiting";
+
   private static final ApplicationContextRunner CONTEXT_RUNNER =
       new ApplicationContextRunner()
           .withInitializer(new ConfigDataApplicationContextInitializer())
@@ -46,7 +60,9 @@ class MetricExportConfigurationTest {
                   SimpleMetricsExportAutoConfiguration.class,
                   OpenTelemetryAutoConfiguration.class))
           .withUserConfiguration(
-              OtlpMetricsEndpointConfiguration.class, OtlpMetricsResourceConfiguration.class)
+              OtlpMetricsEndpointConfiguration.class,
+              OtlpMetricsResourceConfiguration.class,
+              OtlpMetricsShutdownConfiguration.class)
           // The starter's SDK builds its resource; its span and log exporters stay quiet here.
           .withPropertyValues("otel.traces.exporter=none", "otel.logs.exporter=none");
 
@@ -258,6 +274,78 @@ class MetricExportConfigurationTest {
                                 "management.opentelemetry.map-environment-variables",
                                 Boolean.class))
                     .isFalse());
+  }
+
+  // Spring Boot closes the meter registries as soon as the context closes, before the server stops
+  // anything else, and the OTLP registry publishes once more as it closes. The silent store accepts
+  // the connection and never answers.
+  @Test
+  @DisplayName("Should close within two seconds when the metrics store does not answer")
+  void shouldCloseWithinTwoSecondsWhenTheMetricsStoreDoesNotAnswer() throws Exception {
+    try (var silentStore = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
+      CONTEXT_RUNNER
+          .withPropertyValues(
+              "spring.profiles.active=observability",
+              "otel.exporter.otlp.endpoint=http://127.0.0.1:" + silentStore.getLocalPort())
+          .run(
+              context -> {
+                context
+                    .getBean(OtlpMeterRegistry.class)
+                    .counter("metric_export_test.shutdown")
+                    .increment();
+
+                BoundedTask.runWithin(Duration.ofSeconds(2), context::close);
+
+                assertThat(context.isActive()).isFalse();
+              });
+    }
+  }
+
+  // PostgreSQL is stopped, so the pool waits its connection timeout, 30 s by default, for a
+  // connection. The registry's close publishes once more and reads every gauge before it sends.
+  @Test
+  @DisplayName(
+      "Should close within two seconds and publish that no count has ended when the waiting"
+          + " bitrate scans' database is stopped")
+  void shouldCloseWithinTwoSecondsAndPublishNoCountWhenTheWaitingScansDatabaseIsStopped()
+      throws Exception {
+    var sent = new CopyOnWriteArrayList<ExportMetricsServiceRequest>();
+    OtlpMetricsSender store =
+        request -> sent.add(ExportMetricsServiceRequest.parseFrom(request.getMetricsData()));
+    try (var stoppedDatabase = stoppedDatabasePool()) {
+      var bitrateScansWaiting =
+          new ProbeSchedulingConfiguration()
+              .bitrateScansWaiting(
+                  DSL.using(stoppedDatabase, SQLDialect.POSTGRES),
+                  new BitrateScansWaitingProperties(null),
+                  System::nanoTime);
+      CONTEXT_RUNNER
+          .withBean(BitrateScansWaiting.class, () -> bitrateScansWaiting)
+          .withBean(OtlpMetricsSender.class, () -> store)
+          .withPropertyValues("spring.profiles.active=observability")
+          .run(
+              context -> {
+                BoundedTask.runWithin(Duration.ofSeconds(2), context::close);
+
+                assertThat(context.isActive()).isFalse();
+                assertThat(metricsNamed(sent.getLast(), BITRATE_SCANS_WAITING))
+                    .singleElement()
+                    .extracting(metric -> metric.getGauge().getDataPoints(0).getAsDouble())
+                    .isEqualTo(Double.NaN);
+              });
+    }
+  }
+
+  private static HikariDataSource stoppedDatabasePool() throws IOException {
+    int stoppedPort;
+    try (var released = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
+      stoppedPort = released.getLocalPort();
+    }
+
+    var config = new HikariConfig();
+    config.setJdbcUrl("jdbc:postgresql://127.0.0.1:" + stoppedPort + "/streamarr");
+    config.setInitializationFailTimeout(-1);
+    return new HikariDataSource(config);
   }
 
   // Registered before the auto-configurations, so the meter registry is built before the SDK.

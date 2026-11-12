@@ -93,8 +93,10 @@ spec:
         app.kubernetes.io/component: control-plane
     spec:
       serviceAccountName: streamarr-server
-      # Outlasts the 30 s shutdown drain of library operations.
-      terminationGracePeriodSeconds: 45
+      # The server stops within about 10 s: its background work and its web server within 5 s,
+      # then bounded closes of its sessions and connections. See "Stopping the server" in
+      # docs/distributed-transcoding.adoc.
+      terminationGracePeriodSeconds: 15
       containers:
         - name: server
           # Replace with the release you are deploying; :latest breaks rollback.

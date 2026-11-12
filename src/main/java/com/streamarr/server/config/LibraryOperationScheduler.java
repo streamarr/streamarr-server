@@ -71,10 +71,19 @@ public final class LibraryOperationScheduler implements LibraryOperationScheduli
       List<SchedulerListener> listeners,
       boolean autoStartup) {
     var task = LibraryOperationTaskDefinition.create(execution, clock);
+    var serializer = customizer.serializer().orElseThrow();
     var client =
         SchedulerClient.Builder.create(new SchedulerTransactionDataSource(dataSource), task)
             .tableName(TABLE_NAME)
-            .serializer(customizer.serializer().orElseThrow())
+            .serializer(serializer)
+            .build();
+    var operationTasks =
+        SchedulerTables.taskRepository()
+            .dataSource(dataSource)
+            .tableName(TABLE_NAME)
+            .name("library-operation-release")
+            .serializer(serializer)
+            .clock(clock)
             .build();
     schedulerProperties.setTableName(TABLE_NAME);
     schedulerProperties.setThreads(threads);
@@ -89,7 +98,7 @@ public final class LibraryOperationScheduler implements LibraryOperationScheduli
                 dataSource,
                 List.of(task),
                 schedulerListeners,
-                List.of());
+                List.of(new ReleaseAtShutdown(operationTasks)));
     return new LibraryOperationScheduler(task, client, newScheduler, clock, autoStartup);
   }
 
@@ -163,6 +172,11 @@ public final class LibraryOperationScheduler implements LibraryOperationScheduli
   }
 
   @Override
+  public void stop(@NonNull Runnable callback) {
+    BackgroundWorkStop.onItsOwnThread("library-operation-scheduler-stop", this::stop, callback);
+  }
+
+  @Override
   public synchronized boolean isRunning() {
     return running != null;
   }
@@ -170,5 +184,10 @@ public final class LibraryOperationScheduler implements LibraryOperationScheduli
   @Override
   public boolean isAutoStartup() {
     return autoStartup;
+  }
+
+  @Override
+  public int getPhase() {
+    return BackgroundWorkStop.PHASE;
   }
 }

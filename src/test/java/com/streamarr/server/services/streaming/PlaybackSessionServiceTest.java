@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
+import com.google.common.util.concurrent.Uninterruptibles;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.DecisionReason;
@@ -64,6 +65,7 @@ import com.streamarr.server.services.streaming.events.RequestedVariantChangedEve
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
+import com.streamarr.server.support.BoundedTask;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
@@ -3028,6 +3030,113 @@ class PlaybackSessionServiceTest {
     assertThatThrownBy(() -> service.start(start))
         .isInstanceOf(PlaybackSessionClosedException.class);
     assertThat(streams.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should interrupt a format attempt that still starts when the service closes")
+  void shouldInterruptAFormatAttemptThatStillStartsWhenTheServiceCloses() throws Exception {
+    var starting = new CountDownLatch(1);
+    var interrupted = new CountDownLatch(1);
+    var playback =
+        playbackWithAFormatAttemptStarting(() -> waitUntilInterrupted(starting, interrupted));
+    assertThat(starting.await(5, TimeUnit.SECONDS)).isTrue();
+
+    BoundedTask.runWithin(Duration.ofSeconds(5), playback::close);
+
+    assertThat(interrupted.getCount()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should return from the close while a format attempt still starts when the start ignores its"
+          + " interrupt")
+  void shouldReturnFromTheCloseWhileAFormatAttemptStillStartsWhenTheStartIgnoresItsInterrupt()
+      throws Exception {
+    var start = new StartThatIgnoresItsInterrupt();
+    var playback = playbackWithAFormatAttemptStarting(start::run);
+    start.awaitStarting();
+
+    try {
+      BoundedTask.runWithin(Duration.ofSeconds(5), playback::close);
+
+      assertThat(start.ended.getCount()).as("The close did not wait for the start").isOne();
+    } finally {
+      start.release();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the closing thread's interrupt when that thread is interrupted while a format"
+          + " attempt still starts")
+  void shouldKeepTheClosingThreadsInterruptWhenItIsInterruptedWhileAFormatAttemptStillStarts()
+      throws Exception {
+    var start = new StartThatIgnoresItsInterrupt();
+    var playback = playbackWithAFormatAttemptStarting(start::run);
+    start.awaitStarting();
+
+    try (var closing =
+        BoundedTask.start(
+            () -> {
+              Thread.currentThread().interrupt();
+              playback.close();
+              return Thread.currentThread().isInterrupted();
+            })) {
+      assertThat(closing.await(Duration.ofSeconds(5))).as("The close keeps the interrupt").isTrue();
+    } finally {
+      start.release();
+    }
+  }
+
+  // Starts a playback whose format then fails, so a replacement format attempt starts in the
+  // service's own executor and runs {@code start} before it creates its stream.
+  private PlaybackSessionService playbackWithAFormatAttemptStarting(Runnable start) {
+    var playback =
+        PlaybackSessionService.builder()
+            .eventPublisher(_ -> {})
+            .streamingService(streams)
+            .authorityGate(authority)
+            .maximumFormatAttempts(2)
+            .clock(clock)
+            .build();
+    var command = startCommand().build();
+    var initial = accepted(playback.start(command));
+    streams.beforeNextCreation = _ -> start.run();
+    playback.reportFormatFailure(report(initial, command).build()).orElseThrow();
+    return playback;
+  }
+
+  // A format attempt's start that waits for its probe or its worker, which only its interrupt ends.
+  private static void waitUntilInterrupted(CountDownLatch starting, CountDownLatch interrupted) {
+    starting.countDown();
+    try {
+      new CountDownLatch(1).await();
+    } catch (InterruptedException _) {
+      interrupted.countDown();
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  /** A format attempt's start that waits through any interrupt until the test releases it. */
+  private static final class StartThatIgnoresItsInterrupt {
+
+    private final CountDownLatch starting = new CountDownLatch(1);
+    private final CountDownLatch released = new CountDownLatch(1);
+    private final CountDownLatch ended = new CountDownLatch(1);
+
+    void run() {
+      starting.countDown();
+      Uninterruptibles.awaitUninterruptibly(released);
+      ended.countDown();
+    }
+
+    void awaitStarting() throws InterruptedException {
+      assertThat(starting.await(5, TimeUnit.SECONDS)).isTrue();
+    }
+
+    void release() {
+      released.countDown();
+    }
   }
 
   @Test
