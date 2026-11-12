@@ -119,7 +119,7 @@ class ProfileSharingServiceTest {
     service =
         new ProfileSharingService(
             authorization,
-            new ProfileAuthorityExplanation(authorization, profiles),
+            new ProfileAuthorityExplanation(authorization, profiles, accounts),
             shares,
             new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
             profiles,

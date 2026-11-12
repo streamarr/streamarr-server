@@ -64,9 +64,9 @@ public final class ProfileRejections {
 
   /**
    * Only the Profile's managers may do this, and the caller, who still reads the Profile as a
-   * HouseholdAdmin where it is available, does not manage it; the reason says what it is to the
-   * Profile now (ADR 0024 §HouseholdAdmin). It goes only to a caller that may read the Profile, so
-   * it tells nothing that caller could not read.
+   * HouseholdAdmin where it is available, or as the one its session's token says it was, does not
+   * manage it; the reason says what it is to the Profile now (ADR 0024 §HouseholdAdmin). It goes
+   * only to a caller that may read the Profile, so it tells nothing that caller could not read.
    */
   public record ManagersOnly(@NonNull ManagersOnlyReason reason)
       implements EditRefusal,
@@ -80,7 +80,12 @@ public final class ProfileRejections {
     /** It supervises the restricted Profile there, and supervision does not cover this. */
     NOT_MANAGER,
     /** The Profile is unrestricted, so it administers the Profile there without supervising it. */
-    NOT_RESTRICTED
+    NOT_RESTRICTED,
+    /**
+     * Its session's token was issued while it was a HouseholdAdmin there, and it no longer is, so
+     * it reads the Profile only until that token is renewed (ADR 0024 §Stateless JWT snapshots).
+     */
+    NOT_HOUSEHOLD_ADMIN
   }
 
   /** The Profile may not keep the audio languages, for the reason the language rule gives. */
