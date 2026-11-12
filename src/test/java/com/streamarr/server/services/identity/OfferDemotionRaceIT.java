@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -165,6 +166,56 @@ class OfferDemotionRaceIT extends AbstractIntegrationTest {
 
     assertThat(waitingRequests(offer, riversideAdmin)).isEmpty();
     assertThat(waitingRequests(offer, riverside)).hasSize(1);
+  }
+
+  /**
+   * The offer spends a code that the demoted Account issued and then waits on the target
+   * Household's row, which its new share takes a key share of; the demotion then changes the role
+   * and invalidates the Account's codes. An offer that held the code and then waited for the
+   * Account would deadlock with it.
+   */
+  @Test
+  @DisplayName(
+      "Should leave no waiting request when the offer spent the demoted Account's own code")
+  void shouldLeaveNoWaitingRequestWhenTheOfferSpentTheDemotedAccountsOwnCode() throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam);
+    var code = authTestSupport.shareCodeFor(riversideAdmin);
+    var targetHousehold =
+        RowLockTarget.builder()
+            .dataSource(dataSource)
+            .table("household")
+            .rowId(riverside.household().getId())
+            .build();
+
+    ProfileHouseholdShare offer;
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
+        var household = lockRow(targetHousehold)) {
+      var offering = executor.submit(() -> offer(kai, code));
+      awaitWaitersBehind(jdbcTemplate, household.backendPid(), 1);
+      var demotion = executor.submit(() -> demote(riversideAdmin));
+      awaitWaitersBehind(jdbcTemplate, household.backendPid(), 2);
+
+      household.release();
+      offer = offering.get(10, TimeUnit.SECONDS);
+      demotion.get(10, TimeUnit.SECONDS);
+    }
+
+    assertThat(waitingRequests(offer, riversideAdmin)).isEmpty();
+    assertThat(waitingRequests(offer, riverside)).hasSize(1);
+  }
+
+  /** Sam offers the Profile to Riverside with the code. */
+  private ProfileHouseholdShare offer(Profile profile, String code) {
+    return sharing
+        .offerProfileShare(
+            authTestSupport.identityOf(sam),
+            profile.getId(),
+            ShareCodeCommand.builder().code(code).ipAddress(ShareSteps.IP_ADDRESS).build())
+        .fold(
+            share -> share,
+            rejection -> {
+              throw new IllegalStateException("The offer was refused: " + rejection);
+            });
   }
 
   private Outcome<?, ?> demote(TestIdentity householdAdmin) {
