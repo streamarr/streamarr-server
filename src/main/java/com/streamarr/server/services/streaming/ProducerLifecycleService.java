@@ -100,6 +100,11 @@ public class ProducerLifecycleService {
   // another stream session's left variant (ADR 0019).
   private final ConcurrentHashMap<UUID, String> variantsStartedForTheirPlayer =
       new ConcurrentHashMap<>();
+  // The lower variant that each stream session's player played when the stream session withdrew
+  // its lower variants, until the player receives a media segment of the copy. The player can
+  // still fail on that variant's segments in its buffer (ADR 0050).
+  private final ConcurrentHashMap<UUID, String> variantsPlayedAtWithdrawal =
+      new ConcurrentHashMap<>();
   private final TranscodeLimit transcodeLimit = new TranscodeLimit();
 
   public enum RecoveryResult {
@@ -355,6 +360,7 @@ public class ProducerLifecycleService {
           copyReclaims.keySet().removeIf(key -> key.sessionId().equals(sessionId));
           variantsStartedForTheirPlaylist.remove(sessionId);
           variantsStartedForTheirPlayer.remove(sessionId);
+          variantsPlayedAtWithdrawal.remove(sessionId);
         });
     seekPriority.forgetSession(sessionId);
   }
@@ -1158,17 +1164,23 @@ public class ProducerLifecycleService {
   /**
    * The variant that the player plays: the one whose segment it received last; before it received
    * one, the variant of its newest media-segment request; and before it requested one, the variant
-   * that the stream session started for its playlist. Empty when none is known.
+   * that the stream session started for its playlist. After the stream session withdrew its lower
+   * variants, it is the lower variant that the player played then, until the player receives a
+   * media segment of the copy. Empty when none is known.
    */
   public Optional<String> playedVariantOf(UUID sessionId) {
     // Read without the session mutex, in the reverse of the order that
     // rememberNewestMediaSegmentRequest writes: a first media-segment request is published before
-    // it clears the playlist's variant, so a read that races it still sees one of the two.
+    // it clears the playlist's variant, so a read that races it still sees one of the two. A
+    // withdrawal publishes the played lower variant before it clears the others, so it is read
+    // last.
     var startedForPlaylist = Optional.ofNullable(variantsStartedForTheirPlaylist.get(sessionId));
     var requested =
         Optional.ofNullable(newestMediaSegmentRequests.get(sessionId))
             .map(SegmentRequest::variantLabel);
-    return Optional.ofNullable(playingVariants.get(sessionId))
+    var playing = Optional.ofNullable(playingVariants.get(sessionId));
+    return Optional.ofNullable(variantsPlayedAtWithdrawal.get(sessionId))
+        .or(() -> playing)
         .or(() -> requested)
         .or(() -> startedForPlaylist);
   }
@@ -1188,6 +1200,9 @@ public class ProducerLifecycleService {
       return false;
     }
 
+    playedVariantOf(sessionId)
+        .filter(played -> !played.equals(StreamSession.defaultVariant()))
+        .ifPresent(played -> variantsPlayedAtWithdrawal.put(sessionId, played));
     forgetVariantsOtherThanTheCopy(sessionId);
     try {
       doStopVideoVariantsExcept(session, Set.of(StreamSession.defaultVariant()));
@@ -1204,8 +1219,9 @@ public class ProducerLifecycleService {
     return true;
   }
 
-  // From here on the copy is the one variant that the player can request, so nothing that names
-  // another variant may answer as the played variant or keep a left variant running.
+  // From here on the copy is the one variant that the player can request, so no request of another
+  // variant may position, recover or keep a left variant running. Only the lower variant played at
+  // the withdrawal still answers as the played variant.
   private void forgetVariantsOtherThanTheCopy(UUID sessionId) {
     var copy = StreamSession.defaultVariant();
     recoveryStates
@@ -1362,6 +1378,9 @@ public class ProducerLifecycleService {
     }
 
     playingVariants.put(delivered.sessionId(), delivered.variantLabel());
+    // After a withdrawal only the copy is offered, so this delivery is the copy's. It is published
+    // as the played variant first, for playedVariantOf's unlocked read.
+    variantsPlayedAtWithdrawal.remove(delivered.sessionId());
     sessionsKeepingLeftVariant.remove(delivered.sessionId());
     var kept = requestedAndPlaylistStartedVariants(delivered);
     List<String> stopped;

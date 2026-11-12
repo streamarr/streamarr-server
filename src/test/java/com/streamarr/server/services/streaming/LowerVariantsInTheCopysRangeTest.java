@@ -784,20 +784,54 @@ class LowerVariantsInTheCopysRangeTest {
     assertThat(withdrawalsAfter("player_format_failure")).isZero();
   }
 
-  // Once the lower variants are gone the player can play only the copy, so its next format failure
-  // is the copy's and takes ADR 0052's recovery.
+  // A lower variant's job can fail while the player still plays that variant's segments, so the
+  // player's report follows the withdrawal. Until the player receives a segment of the copy, the
+  // failure it reports is the lower variant's, and the copy plays on.
   @Test
   @DisplayName(
-      "Should recover as a failed copy does when the player reports another format failure after"
-          + " the lower variants were withdrawn")
-  void shouldRecoverAsAFailedCopyDoesWhenThePlayerFailsAgainAfterTheLowerVariantsWereWithdrawn() {
+      "Should keep the copy in its stream session when the player reports a format failure after a"
+          + " lower variant's job failure withdrew the lower variants and before it received the"
+          + " copy")
+  void shouldKeepTheCopyWhenThePlayerFailsAfterAJobFailureWithdrewTheLowerVariantsBeforeTheCopy() {
+    var command = startAuto(clientThatPlaysEveryRange());
+    var copy = startAnHdr10CopyBesideLowerVariants(command);
+    var sessionId = sessionOf(copy).getSessionId();
+    rig.lifecycle().prepareRequestedVariant(sessionId, "720p", "720p/segment0.m4s");
+    workers.failTerminally(sessionId, "720p", TranscodeFailure.OUTPUT_MISMATCH);
+    playback.onTerminalTranscodeFailure(
+        TerminalTranscodeFailureEvent.builder()
+            .streamSessionId(sessionId)
+            .jobAttemptId(UUID.randomUUID())
+            .variantLabel("720p")
+            .failure(TranscodeFailure.OUTPUT_MISMATCH)
+            .build());
+    rig.lifecycle().prepareRequestedVariant(sessionId, "default", "segment1.m4s");
+
+    var afterTheReport = rejectCurrentFormatAttempt(copy, command);
+
+    assertThatTheHdrCopyPlaysOnAlone(afterTheReport, sessionId);
+    assertThat(withdrawalsAfter("job_failure")).isEqualTo(1);
+    assertThat(withdrawalsAfter("player_format_failure")).isZero();
+  }
+
+  // Once the player receives the copy that the withdrawal left, it can play only the copy, so its
+  // next format failure is the copy's and takes ADR 0052's recovery.
+  @Test
+  @DisplayName(
+      "Should recover as a failed copy does when the player reports a format failure after it"
+          + " received the copy that the withdrawal left")
+  void shouldRecoverAsAFailedCopyDoesWhenThePlayerFailsAfterItReceivedTheCopyLeftByTheWithdrawal() {
     var command = startAuto(clientThatPlaysEveryRange());
     var copy = startAnHdr10CopyBesideLowerVariants(command);
     var copySessionId = sessionOf(copy).getSessionId();
     rig.lifecycle().prepareRequestedVariant(copySessionId, "720p", "720p/segment0.m4s");
 
     var afterTheLowerVariant = rejectCurrentFormatAttempt(copy, command);
+    segments.addSegment(copySessionId, "segment0.m4s", new byte[] {1});
+    var copySegment = rig.coordinator().deliver(copySessionId, "default", "segment0.m4s");
     var afterTheCopy = rejectCurrentFormatAttempt(afterTheLowerVariant, command);
+
+    assertThat(copySegment).isInstanceOf(SegmentDelivery.Ready.class);
 
     assertThat(afterTheLowerVariant.currentFormatAttempt().streamSessionId())
         .isEqualTo(copySessionId);

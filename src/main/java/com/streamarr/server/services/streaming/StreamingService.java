@@ -36,8 +36,9 @@ public interface StreamingService {
   /**
    * The variant of the stream session that the player plays: the one whose segment it received
    * last; before it received one, the variant of its newest media-segment request; and before it
-   * requested one, the variant that the stream session started for its playlist. Empty when none is
-   * known or once the stream session is gone.
+   * requested one, the variant that the stream session started for its playlist. After a withdrawal
+   * of the lower variants, the lower variant that the player played then, until it receives a media
+   * segment of the copy. Empty when none is known or once the stream session is gone.
    */
   Optional<String> playedVariantOf(UUID sessionId);
 
