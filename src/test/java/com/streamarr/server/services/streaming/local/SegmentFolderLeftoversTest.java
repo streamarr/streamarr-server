@@ -103,6 +103,20 @@ class SegmentFolderLeftoversTest {
     assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
   }
 
+  // Bytes that are no UTF-8 text cannot be read as a folder's path.
+  @Test
+  @DisplayName("Should delete leftovers when the folder held only a mark that is not text")
+  void shouldDeleteLeftoversWhenTheFolderHeldOnlyAMarkThatIsNotText() throws IOException {
+    Files.write(segmentFolder.resolve(MARK_NAME), new byte[] {(byte) 0xC3, 0x28});
+    new SegmentFolderLeftovers(segmentFolder).delete();
+    var sessionId = UUID.randomUUID();
+    earlierStore().getOutputDirectory(sessionId);
+
+    new SegmentFolderLeftovers(segmentFolder).delete();
+
+    assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
+  }
+
   @Test
   @DisplayName(
       "Should keep the file that a soft link in the mark's place points to when it marks the"
