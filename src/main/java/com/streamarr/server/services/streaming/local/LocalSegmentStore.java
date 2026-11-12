@@ -10,6 +10,7 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
@@ -25,7 +26,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class LocalSegmentStore implements SegmentStore {
 
-  // The mark in each stream session's directory that shows a later start that a store created it.
+  // The mark in a stream session's directory, and in each folder that the store creates in it, that
+  // shows a later start that a store created the folder.
   static final String SESSION_MARK_NAME = ".streamarr-stream-session";
 
   private final Path baseDir;
@@ -94,10 +96,10 @@ public class LocalSegmentStore implements SegmentStore {
 
     @Override
     public SegmentPublication publish() {
-      getOutputDirectory(sessionId);
+      var sessionDir = getOutputDirectory(sessionId);
       var segmentPath = resolveSegmentPath(sessionId, segmentName);
       try {
-        Files.createDirectories(segmentPath.getParent());
+        createMarkedFolders(sessionDir, segmentPath.getParent());
         if (SegmentNames.isInitSegment(segmentName)) {
           return publishInitialization(segmentPath);
         }
@@ -140,7 +142,7 @@ public class LocalSegmentStore implements SegmentStore {
     var variantDir = sessionDir.resolve(variantLabel);
 
     try {
-      Files.createDirectories(variantDir);
+      createMarkedFolders(sessionDir, variantDir);
       return variantDir;
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to create variant directory", e);
@@ -198,12 +200,32 @@ public class LocalSegmentStore implements SegmentStore {
     }
   }
 
+  // Creates and marks each missing folder between the stream session's directory and the folder.
+  private static void createMarkedFolders(Path sessionDir, Path folder) throws IOException {
+    var created = sessionDir;
+    for (var name : sessionDir.relativize(folder)) {
+      created = created.resolve(name);
+      createMarkedFolder(created);
+    }
+  }
+
+  // The store marks only a folder that it creates. A folder that is already there may be a file
+  // system mounted there, whose files no start may delete.
   private static void createMarkedFolder(Path folder) throws IOException {
-    Files.createDirectories(folder);
+    try {
+      Files.createDirectory(folder);
+    } catch (FileAlreadyExistsException e) {
+      if (Files.isDirectory(folder)) {
+        return;
+      }
+
+      throw e;
+    }
+
     Files.write(
         folder.resolve(SESSION_MARK_NAME),
         new byte[0],
-        StandardOpenOption.CREATE,
+        StandardOpenOption.CREATE_NEW,
         StandardOpenOption.WRITE,
         LinkOption.NOFOLLOW_LINKS);
   }

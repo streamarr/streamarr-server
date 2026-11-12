@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
+import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Deleted;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Refused;
 import java.io.IOException;
@@ -302,6 +303,149 @@ class SegmentFolderLeftoversTest {
 
     assertThat(file).hasBinaryContent(MEDIA);
     assertThat(outcome).isEqualTo(new Deleted(0, 0));
+  }
+
+  // A file system mounted on a folder in a stream session's directory shows its own files there,
+  // and no mark of the server's, also when it was mounted after the start read the mount table.
+  @Test
+  @DisplayName(
+      "Should keep a folder and its files whole when the folder lies in a leftover stream session's"
+          + " directory without the server's mark")
+  void shouldKeepAFolderAndItsFilesWholeWhenTheFolderLiesInALeftoverWithoutTheServersMark()
+      throws IOException {
+    startOf(segmentFolder);
+    var folder = folderWithoutTheServersMarkIn(leftSessionIn(segmentFolder));
+    var movie = Files.write(folder.resolve("movie.mkv"), MEDIA);
+
+    startOf(segmentFolder);
+
+    assertThat(movie).hasBinaryContent(MEDIA);
+    assertThat(entriesOf(folder)).containsExactly(movie);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a leftover stream session's directory as remaining when a folder in it carries"
+          + " no mark of the server's")
+  void shouldCountALeftoverAsRemainingWhenAFolderInItCarriesNoMarkOfTheServers()
+      throws IOException {
+    startOf(segmentFolder);
+    leftSessionIn(segmentFolder);
+    var keptSession = leftSessionIn(segmentFolder);
+    Files.write(folderWithoutTheServersMarkIn(keptSession).resolve("movie.mkv"), MEDIA);
+
+    var outcome = startOf(segmentFolder);
+
+    assertThat(outcome).isEqualTo(new Deleted(1, 1));
+    assertThat(keptSession).isDirectory();
+  }
+
+  // The stream session's mark stays, so each later start finds and reports the directory again.
+  @Test
+  @DisplayName(
+      "Should report a leftover stream session's directory again at the next start when a folder in"
+          + " it carries no mark of the server's")
+  void shouldReportALeftoverAgainAtTheNextStartWhenAFolderInItCarriesNoMarkOfTheServers()
+      throws IOException {
+    startOf(segmentFolder);
+    var folder = folderWithoutTheServersMarkIn(leftSessionIn(segmentFolder));
+    Files.write(folder.resolve("movie.mkv"), MEDIA);
+    startOf(segmentFolder);
+
+    var outcome = startOf(segmentFolder);
+
+    assertThat(outcome).isEqualTo(new Deleted(0, 1));
+  }
+
+  @Test
+  @DisplayName(
+      "Should delete the store's segments beside a folder without the server's mark when both lie in"
+          + " a leftover stream session's directory")
+  void shouldDeleteTheStoresSegmentsBesideAFolderWithoutTheServersMarkInALeftover()
+      throws IOException {
+    startOf(segmentFolder);
+    var sessionId = UUID.randomUUID();
+    leftByAnEndedProcess(store -> published(store, sessionId, "0.m4s"));
+    var session = segmentFolder.resolve(sessionId.toString());
+    var movie = Files.write(folderWithoutTheServersMarkIn(session).resolve("movie.mkv"), MEDIA);
+
+    startOf(segmentFolder);
+
+    assertThat(session.resolve("0.m4s")).doesNotExist();
+    assertThat(movie).hasBinaryContent(MEDIA);
+  }
+
+  @Test
+  @DisplayName(
+      "Should delete a leftover stream session's directory whole when the store created every"
+          + " folder in it at each depth")
+  void shouldDeleteALeftoverWholeWhenTheStoreCreatedEveryFolderInItAtEachDepth() {
+    startOf(segmentFolder);
+    var sessionId = UUID.randomUUID();
+    leftByAnEndedProcess(
+        store -> {
+          published(store, sessionId, "720p/0.m4s");
+          return published(store, sessionId, "720p/parts/0.m4s");
+        });
+
+    var outcome = startOf(segmentFolder);
+
+    assertThat(outcome).isEqualTo(new Deleted(1, 0));
+    assertThat(segmentFolder.resolve(sessionId.toString())).doesNotExist();
+  }
+
+  // A folder that the store finds in place may be a file system mounted there before its write.
+  @Test
+  @DisplayName(
+      "Should keep a folder's files when the store wrote a segment into the folder but did not"
+          + " create it")
+  void shouldKeepAFoldersFilesWhenTheStoreWroteASegmentIntoTheFolderButDidNotCreateIt() {
+    startOf(segmentFolder);
+    var sessionId = UUID.randomUUID();
+    var movie =
+        leftByAnEndedProcess(
+            store -> {
+              var session = store.getOutputDirectory(sessionId);
+              var library =
+                  Files.write(folderWithoutTheServersMarkIn(session).resolve("movie.mkv"), MEDIA);
+              published(store, sessionId, "v0/0.m4s");
+              return library;
+            });
+
+    startOf(segmentFolder);
+
+    assertThat(movie).hasBinaryContent(MEDIA);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a folder in a leftover stream session's directory when a soft link holds its"
+          + " mark's place")
+  void shouldKeepAFolderInALeftoverWhenASoftLinkHoldsItsMarksPlace() throws IOException {
+    startOf(segmentFolder);
+    var folder = folderWithoutTheServersMarkIn(leftSessionIn(segmentFolder));
+    var movie = Files.write(folder.resolve("movie.mkv"), MEDIA);
+    var outsideMark = Files.createFile(outside.resolve(SESSION_MARK_NAME));
+    Files.createSymbolicLink(folder.resolve(SESSION_MARK_NAME), outsideMark);
+
+    startOf(segmentFolder);
+
+    assertThat(movie).hasBinaryContent(MEDIA);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a folder in a leftover stream session's directory when a folder holds its mark's"
+          + " place")
+  void shouldKeepAFolderInALeftoverWhenAFolderHoldsItsMarksPlace() throws IOException {
+    startOf(segmentFolder);
+    var folder = folderWithoutTheServersMarkIn(leftSessionIn(segmentFolder));
+    var movie = Files.write(folder.resolve("movie.mkv"), MEDIA);
+    Files.createDirectory(folder.resolve(SESSION_MARK_NAME));
+
+    startOf(segmentFolder);
+
+    assertThat(movie).hasBinaryContent(MEDIA);
   }
 
   @Test
@@ -1329,6 +1473,19 @@ class SegmentFolderLeftoversTest {
 
   private static Path leftSessionIn(Path folder) {
     return leftByAnEndedProcess(folder, store -> store.getOutputDirectory(UUID.randomUUID()));
+  }
+
+  private static SegmentPublication published(
+      LocalSegmentStore store, UUID sessionId, String segmentName) {
+    try (var stored = store.prepareSegment(sessionId, segmentName, SEGMENT)) {
+      return stored.publish();
+    }
+  }
+
+  // A folder in a stream session's directory that no store created. A file system mounted on a
+  // folder there shows the same: its own root, which carries no mark of the server's.
+  private static Path folderWithoutTheServersMarkIn(Path sessionDirectory) throws IOException {
+    return Files.createDirectory(sessionDirectory.resolve("v0"));
   }
 
   // A file in a stream session's directory that a store wrote, which a start that deletes would

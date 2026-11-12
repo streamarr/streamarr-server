@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.local;
 
 import com.streamarr.server.exceptions.UnknownFolderLocationException;
+import com.streamarr.server.exceptions.UnmarkedFolderException;
 import com.streamarr.server.exceptions.UnsupportedSegmentFolderException;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Deleted;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Refused;
@@ -67,10 +68,12 @@ public class SegmentFolderLeftovers {
    * show where the folders lie.
    *
    * <p>It deletes only in a folder that carries its mark, and it marks only a folder that holds no
-   * other entry. There it deletes a stream session's directory only when a store marked the
-   * directory as its own. A folder that held something else first therefore keeps everything. The
-   * mark holds the path of the folder that it marks, so a mark that was copied into another folder
-   * marks nothing there. It never throws: what it cannot delete stays.
+   * other entry. There it enters a stream session's directory, and each folder in it, only when a
+   * store marked that folder as its own. A folder without the store's mark stays whole, and so does
+   * the stream session's directory that holds it, which the outcome counts as remaining. A folder
+   * that held something else first therefore keeps everything. The mark holds the path of the
+   * folder that it marks, so a mark that was copied into another folder marks nothing there. It
+   * never throws: what it cannot delete stays.
    *
    * <p>It marks the folder and deletes only while it holds the folder's lock alone, so only while
    * no other running server process has written into the folder.
@@ -398,6 +401,10 @@ public class SegmentFolderLeftovers {
     return Leftover.DELETED;
   }
 
+  // The store marks each folder that it creates. The mark is read through the handle that deletes
+  // the folder's entries. A file system mounted on the folder shows its own root through that
+  // handle, which carries no mark, and a mount made once the handle is open does not change what
+  // the handle reaches.
   private static boolean isMarkedByAStore(SecureDirectoryStream<Path> directory, Path name)
       throws IOException {
     return isRegularFile(directory, storeMark(name));
@@ -436,7 +443,8 @@ public class SegmentFolderLeftovers {
     }
   }
 
-  // Deletes a soft link itself, never what it points to.
+  // Deletes a soft link itself, never what it points to. A folder without the store's mark stays
+  // whole, and so does the stream session's directory that holds it.
   private static void delete(SecureDirectoryStream<Path> directory, Path name) throws IOException {
     if (!attributesOf(directory, name).isDirectory()) {
       directory.deleteFile(name);
@@ -444,7 +452,11 @@ public class SegmentFolderLeftovers {
     }
 
     try (var subdirectory = directory.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS)) {
-      deleteEach(subdirectory, namesIn(subdirectory));
+      if (!isMarkedByAStore(subdirectory, name)) {
+        throw new UnmarkedFolderException(name);
+      }
+
+      deleteEntriesThenMark(subdirectory, name);
     }
 
     directory.deleteDirectory(name);

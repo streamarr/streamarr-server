@@ -145,7 +145,13 @@ A server process that ends without stopping leaves its stream sessions' director
 Set `STREAMING_SEGMENT_BASE_PATH` to a folder that only this server uses, and the server deletes those leftovers at its next start.
 Name a folder that is empty or does not exist yet. The server marks it with a `.streamarr-segment-folder` file and deletes leftovers only beside that mark, so it deletes nothing from a folder that held something else first.
 Keep the segment folder on a fast local disk, and never inside a library.
-Beside the mark it deletes a stream session's directory only when the directory holds the `.streamarr-stream-session` file that the server writes when it creates the directory, and it deletes the server's unfinished uploads.
+The server writes a `.streamarr-stream-session` file into each folder that it creates for a stream session, at every depth.
+Beside the segment folder's mark, a start enters a stream session's folder only when the folder holds that file.
+The start reads the file through the same open handle that it deletes through.
+In such a folder the start deletes the files and soft links, then the `.streamarr-stream-session` file, then the folder.
+The start leaves a folder without that file whole, and it keeps the stream session's directory that holds the folder as a remaining leftover.
+A file system mounted on a folder shows its own files there, without the server's file. So the start deletes nothing on that file system, even when the file system was mounted while the start ran.
+The start also deletes the server's unfinished uploads.
 A server process holds a lock of the `.streamarr-segment-folder.lock` file in the folder from its first write there until it ends. A start marks the folder and deletes leftovers only while no other running server process holds that lock, so it deletes nothing that a running server process wrote, whatever that process's own start did. Give each server process a folder of its own.
 Renaming a running server's segment folder is not supported.
 After a rename, a soft link at the folder's old path leads the server's later writes into another folder that this server has not locked, and another server process's start there can delete them.
@@ -154,7 +160,7 @@ The server deletes nothing in the root directory `/`, the home folder of the ser
 The mount table cannot show two setups, and the server accepts a segment folder that lies in a library in either setup.
 In the first, the library and the segment folder lie on two network mounts of one remote folder that the table shows as two separate file systems.
 In the second, the library lies on an overlay mount, which shows the files of a lower and an upper folder as one file system of its own, and the segment folder lies in the upper folder.
-In both setups the server's marks and lock still limit what the server deletes.
+In both setups the start still deletes files only in folders that the server created and marked. The start leaves every other folder whole.
 When it refuses the folder or keeps a leftover, the `segment-folder` health group reports `DEGRADED` until the server starts again, and the counter `streamarr.streaming.segment_folder_leftover_deletes` counts the start under the refusal's name.
 Compose sets the folder to `/tmp/streamarr-server/segments` inside the server's container, which keeps its files when the server restarts.
 The example Kubernetes manifest sets none: it mounts no volume for segments, and Kubernetes restarts a container with a new file system.
