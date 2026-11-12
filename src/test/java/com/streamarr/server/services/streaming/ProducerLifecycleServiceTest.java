@@ -606,9 +606,9 @@ class ProducerLifecycleServiceTest {
   // requested 480p, and the player's media-segment request of 480p then removed its job attempt.
   @Test
   @DisplayName(
-      "Should start no variant for a served playlist when the top listed variant's hardware encoder"
+      "Should start no variant for a served playlist when every listed variant's hardware encoder"
           + " failed")
-  void shouldStartNoVariantForAServedPlaylistWhenTheTopListedVariantsHardwareEncoderFailed() {
+  void shouldStartNoVariantForAServedPlaylistWhenEveryListedVariantsHardwareEncoderFailed() {
     var session = startedLadderSession();
     var sessionId = session.getSessionId();
     lifecycle.prepareRequestedVariant(sessionId, "360p", "360p/init.mp4");
@@ -622,6 +622,28 @@ class ProducerLifecycleServiceTest {
     assertThat(transcodeExecutor.getStartedRequests())
         .extracting(TranscodeRequest::variantLabel)
         .containsExactly("480p", "360p");
+  }
+
+  // 720p started for an initialization request, its hardware encoder failed while the player
+  // requested 480p, and the player's media-segment request of 480p then removed its job attempt.
+  @Test
+  @DisplayName(
+      "Should start the next listed variant for a served playlist when the top listed variant's"
+          + " hardware encoder failed")
+  void shouldStartTheNextListedVariantForAServedPlaylistWhenTheTopListedVariantsEncoderFailed() {
+    var session = startedLadderSession();
+    var sessionId = session.getSessionId();
+    lifecycle.prepareRequestedVariant(sessionId, "720p", "720p/init.mp4");
+    transcodeExecutor.failHardwareEncoder(sessionId, "720p");
+    lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
+    assertThat(session.getVariantHandles()).containsOnlyKeys("480p");
+
+    var started = lifecycle.startTopListedVariantUnlessOneRuns(session, List.of("720p", "360p"));
+
+    assertThat(started).isTrue();
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::variantLabel)
+        .containsExactly("480p", "720p", "360p");
   }
 
   // The produced range describes the requested variant, so subscribers learn of a switch even when

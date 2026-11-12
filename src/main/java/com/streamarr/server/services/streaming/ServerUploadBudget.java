@@ -73,9 +73,10 @@ public class ServerUploadBudget implements UploadBudget {
   /**
    * Counts each variant that it leaves out, once per served playlist. When it leaves out the
    * first-listed variant and no variant that stays has a job attempt, the top variant that stays
-   * starts before the playlist is served, so no other stream session can take its place under the
-   * transcode limit before the player requests it. When that variant cannot start, the playlist
-   * stays whole.
+   * and whose hardware encoder has not failed starts before the playlist is served, so no other
+   * stream session can take its place under the transcode limit before the player requests it. When
+   * that variant cannot start, or every variant that stays failed on its hardware encoder, the
+   * playlist stays whole.
    */
   @Override
   public Set<String> withholdFromPlaylist(StreamSession session) {
