@@ -30,6 +30,7 @@ class SegmentFolderLeftoversTest {
   private static final byte[] SEGMENT = "segment".getBytes();
   private static final byte[] MEDIA = "media".getBytes();
   private static final String MARK_NAME = ".streamarr-segment-folder";
+  private static final String SESSION_MARK_NAME = ".streamarr-stream-session";
 
   @TempDir Path segmentFolder;
   @TempDir Path outside;
@@ -92,9 +93,8 @@ class SegmentFolderLeftoversTest {
   @Test
   @DisplayName("Should keep everything when the folder held other entries before a store used it")
   void shouldKeepEverythingWhenTheFolderHeldOtherEntriesBeforeAStoreUsedIt() throws IOException {
-    var directoryNamedLikeASession =
-        Files.createDirectory(segmentFolder.resolve(UUID.randomUUID().toString()));
-    var fileInThatDirectory = Files.write(directoryNamedLikeASession.resolve("movie.mkv"), MEDIA);
+    var fileInThatDirectory = deletableFileIn(segmentFolder);
+    var directoryNamedLikeASession = fileInThatDirectory.getParent();
     var fileNamedLikeAnUpload = Files.write(segmentFolder.resolve(".upload-1.tmp"), MEDIA);
 
     startOf(segmentFolder);
@@ -188,9 +188,7 @@ class SegmentFolderLeftoversTest {
       throws IOException {
     var otherSegmentFolder = outside.resolve("segments");
     startOf(otherSegmentFolder);
-    var directoryNamedLikeASession =
-        Files.createDirectory(segmentFolder.resolve(UUID.randomUUID().toString()));
-    var fileInThatDirectory = Files.write(directoryNamedLikeASession.resolve("movie.mkv"), MEDIA);
+    var fileInThatDirectory = deletableFileIn(segmentFolder);
     Files.copy(otherSegmentFolder.resolve(MARK_NAME), segmentFolder.resolve(MARK_NAME));
 
     startOf(segmentFolder);
@@ -226,9 +224,7 @@ class SegmentFolderLeftoversTest {
     var markOutsideTheFolder =
         Files.move(segmentFolder.resolve(MARK_NAME), outside.resolve(MARK_NAME));
     Files.createSymbolicLink(segmentFolder.resolve(MARK_NAME), markOutsideTheFolder);
-    var directoryNamedLikeASession =
-        Files.createDirectory(segmentFolder.resolve(UUID.randomUUID().toString()));
-    var fileInThatDirectory = Files.write(directoryNamedLikeASession.resolve("movie.mkv"), MEDIA);
+    var fileInThatDirectory = deletableFileIn(segmentFolder);
 
     startOf(segmentFolder);
 
@@ -262,6 +258,39 @@ class SegmentFolderLeftoversTest {
     assertThat(linkNamedLikeASession).isSymbolicLink();
     assertThat(linkNamedLikeAnUpload).isSymbolicLink();
     assertThat(outsideFile).exists();
+    assertThat(outcome).isEqualTo(new Deleted(0, 0));
+  }
+
+  // Only a store's mark in the directory shows that a store created it: anything can take the name.
+  @Test
+  @DisplayName(
+      "Should keep a directory named like a stream session's when no store marked it as one")
+  void shouldKeepADirectoryNamedLikeAStreamSessionsWhenNoStoreMarkedItAsOne() throws IOException {
+    startOf(segmentFolder);
+    var directory = Files.createDirectory(segmentFolder.resolve(UUID.randomUUID().toString()));
+    var file = Files.write(directory.resolve("movie.mkv"), MEDIA);
+
+    var outcome = startOf(segmentFolder);
+
+    assertThat(file).hasBinaryContent(MEDIA);
+    assertThat(outcome).isEqualTo(new Deleted(0, 0));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a directory named like a stream session's when a soft link holds its mark's"
+          + " place")
+  void shouldKeepADirectoryNamedLikeAStreamSessionsWhenASoftLinkHoldsItsMarksPlace()
+      throws IOException {
+    startOf(segmentFolder);
+    var directory = Files.createDirectory(segmentFolder.resolve(UUID.randomUUID().toString()));
+    var file = Files.write(directory.resolve("movie.mkv"), MEDIA);
+    var outsideMark = Files.createFile(outside.resolve(SESSION_MARK_NAME));
+    Files.createSymbolicLink(directory.resolve(SESSION_MARK_NAME), outsideMark);
+
+    var outcome = startOf(segmentFolder);
+
+    assertThat(file).hasBinaryContent(MEDIA);
     assertThat(outcome).isEqualTo(new Deleted(0, 0));
   }
 

@@ -11,9 +11,11 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.SecureDirectoryStream;
+import java.nio.file.StandardOpenOption;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,6 +23,9 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class LocalSegmentStore implements SegmentStore {
+
+  // The mark in each stream session's directory that shows a later start that a store created it.
+  static final String SESSION_MARK_NAME = ".streamarr-stream-session";
 
   private final Path baseDir;
   private final ConcurrentHashMap<UUID, Path> sessionDirs = new ConcurrentHashMap<>();
@@ -186,6 +191,12 @@ public class LocalSegmentStore implements SegmentStore {
 
     try {
       Files.createDirectories(dir);
+      Files.write(
+          dir.resolve(SESSION_MARK_NAME),
+          new byte[0],
+          StandardOpenOption.CREATE,
+          StandardOpenOption.WRITE,
+          LinkOption.NOFOLLOW_LINKS);
       return dir;
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to create session directory", e);

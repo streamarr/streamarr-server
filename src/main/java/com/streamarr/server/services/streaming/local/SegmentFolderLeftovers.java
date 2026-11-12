@@ -56,9 +56,10 @@ public class SegmentFolderLeftovers {
    * refuses every folder when the media folders cannot be read.
    *
    * <p>It deletes only in a folder that carries its mark, and it marks only a folder that holds no
-   * other entry. A folder that held something else first therefore keeps everything. The mark holds
-   * the path of the folder that it marks, so a mark that was copied into another folder marks
-   * nothing there. It never throws: what it cannot delete stays.
+   * other entry. There it deletes a stream session's directory only when a store marked the
+   * directory as its own. A folder that held something else first therefore keeps everything. The
+   * mark holds the path of the folder that it marks, so a mark that was copied into another folder
+   * marks nothing there. It never throws: what it cannot delete stays.
    */
   public SegmentFolderLeftoversOutcome delete() {
     try {
@@ -202,7 +203,10 @@ public class SegmentFolderLeftovers {
       // A soft link is neither a directory nor a regular file here, so it stays.
       var attributes =
           Files.readAttributes(entry, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-      if (attributes.isDirectory() && SESSION_DIRECTORY_NAME.matcher(name).matches()) {
+      if (attributes.isDirectory()
+          && SESSION_DIRECTORY_NAME.matcher(name).matches()
+          && Files.isRegularFile(
+              entry.resolve(LocalSegmentStore.SESSION_MARK_NAME), LinkOption.NOFOLLOW_LINKS)) {
         return deleteDirectory(entry);
       }
 
