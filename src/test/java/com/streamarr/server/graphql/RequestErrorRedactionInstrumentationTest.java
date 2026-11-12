@@ -12,6 +12,7 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.SchemaParser;
+import graphql.validation.ValidationError;
 import java.lang.management.ManagementFactory;
 import java.util.Locale;
 import java.util.Map;
@@ -46,6 +47,7 @@ class RequestErrorRedactionInstrumentationTest {
       GraphQL.newGraphQL(schema)
           .instrumentation(new RequestErrorRedactionInstrumentation())
           .build();
+  private final GraphQL unredacted = GraphQL.newGraphQL(schema).build();
 
   @ParameterizedTest
   @MethodSource("rejectedValues")
@@ -57,6 +59,23 @@ class RequestErrorRedactionInstrumentationTest {
     assertThat(error.getErrorType()).isEqualTo(ErrorType.ValidationError);
     assertThat(error.getMessage()).contains(named);
     assertThat(error.toSpecification().toString()).doesNotContain(value);
+  }
+
+  @ParameterizedTest
+  @MethodSource("valuesRedactedInPlaceOrTooLongToQuote")
+  @DisplayName("Should keep the location and query path when validation rejects a value")
+  void shouldKeepLocationAndQueryPathWhenValidationRejectsValue(String document) {
+    var rejected = (ValidationError) unredacted.execute(document).getErrors().getFirst();
+
+    var error = singleError(ExecutionInput.newExecutionInput(document).build());
+
+    assertThat(error)
+        .isInstanceOfSatisfying(
+            ValidationError.class,
+            redacted -> {
+              assertThat(redacted.getLocations()).isNotEmpty().isEqualTo(rejected.getLocations());
+              assertThat(redacted.getQueryPath()).isNotEmpty().isEqualTo(rejected.getQueryPath());
+            });
   }
 
   @Test
@@ -147,8 +166,6 @@ class RequestErrorRedactionInstrumentationTest {
   @MethodSource("deeplyNestedValues")
   @DisplayName("Should redact at a cost in line with the request's size when a value nests deeply")
   void shouldRedactAtCostInLineWithRequestSizeWhenValueNestsDeeply(String document, String named) {
-    var unredacted = GraphQL.newGraphQL(schema).build();
-
     var redactionCost =
         allocatedAnswering(graphQL, document) - allocatedAnswering(unredacted, document);
 
@@ -194,6 +211,13 @@ class RequestErrorRedactionInstrumentationTest {
                 .formatted(CODE),
             CODE,
             "'LookUpInput'"));
+  }
+
+  // A value the message quotes as 'REDACTED', and one too long to quote at all.
+  static Stream<String> valuesRedactedInPlaceOrTooLongToQuote() {
+    return Stream.of(
+        "{ lookUp(input: {id: \"1\", code: 4826}) }",
+        "{ lookUp(input: {id: \"1\", code: %s}) }".formatted(nested(CODE.repeat(2_000), 1)));
   }
 
   static Stream<Arguments> deeplyNestedValues() {
