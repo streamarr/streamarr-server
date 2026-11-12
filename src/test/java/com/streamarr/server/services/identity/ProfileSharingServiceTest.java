@@ -922,6 +922,42 @@ class ProfileSharingServiceTest {
 
   @Test
   @DisplayName(
+      "Should give nothing to the Household's HouseholdAdmin when a live share's removal is"
+          + " delivered after its Household was deleted")
+  void shouldGiveNothingToHouseholdAdminWhenRemovalArrivesAfterItsHouseholdWasDeleted() {
+    var share = activeShare();
+    var removal = removalOf(share);
+    shares.deleteById(share.getId());
+    households.deleteById(household.getId());
+    followChangesAndAdministerHouseholdOnly();
+
+    assertThat(service.shareChange(identity(), removal)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should give the removal to a reader of the Household's share history when it is delivered"
+          + " after the Household was deleted")
+  void shouldGiveRemovalToShareHistoryReaderWhenItArrivesAfterTheHouseholdWasDeleted() {
+    var share = activeShare();
+    var removal = removalOf(share);
+    shares.deleteById(share.getId());
+    households.deleteById(household.getId());
+    authorization.decideUnitWith(
+        intent ->
+            switch (intent) {
+              case Intent.ViewProfileShareChanges _ -> allowed();
+              case Intent.ViewHouseholdAdministration _ -> allowed();
+              case Intent.ViewHouseholdShareHistory _ -> allowed();
+              default -> denied();
+            });
+
+    assertThat(service.shareChange(identity(), removal))
+        .hasValueSatisfying(change -> assertThat(change.share()).isEmpty());
+  }
+
+  @Test
+  @DisplayName(
       "Should give the share as it stands with the change that ends it when the reader also reads"
           + " it from the Profile's side or the Household's share history")
   void shouldGiveShareAsItStandsWithChangeThatEndsItWhenReaderAlsoReadsItFromProfileOrHistory() {
