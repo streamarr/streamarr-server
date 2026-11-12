@@ -281,8 +281,7 @@ class ProfileLanguagePreferencesIT extends AbstractIntegrationTest {
     store(cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder()));
 
     var rows = managedProfiles(smith);
-    assertThat(rows).hasSize(5);
-    assertThat(rows).allSatisfy(row -> assertStored(row.path("languagePreferences")));
+    assertThat(rows).hasSize(5).allSatisfy(row -> assertStored(row.path("languagePreferences")));
     assertThat(statementCount.statementsWhile(() -> managedProfiles(smith)))
         .isEqualTo(forThreeProfiles);
   }
