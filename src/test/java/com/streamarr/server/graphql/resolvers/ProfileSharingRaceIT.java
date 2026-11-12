@@ -312,8 +312,10 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
   // ---- Share termination versus direct management removal.
 
   @Test
-  @DisplayName("Should not end a share after the actor's direct management is removed")
-  void shouldNotEndShareAfterActorsDirectManagementIsRemoved() throws Exception {
+  @DisplayName(
+      "Should not end a share after the actor's direct management is removed when the removal"
+          + " races the end")
+  void shouldNotEndShareAfterActorsDirectManagementIsRemovedWhenRemovalRacesEnd() throws Exception {
     var orphan = managedOrphan();
     var shareId = offerAsOwner(orphan, host);
     accept(host, shareId);

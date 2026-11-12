@@ -1018,8 +1018,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should forbid an unrelated ServerAdmin from ordinarily ending a share")
-  void shouldForbidUnrelatedServerAdminFromOrdinarilyEndingShare() throws Exception {
+  @DisplayName("Should forbid ending a share when an unrelated ServerAdmin ends it ordinarily")
+  void shouldForbidEndingShareWhenUnrelatedServerAdminEndsItOrdinarily() throws Exception {
     var orphan = managedOrphan();
     var shareId = offer(orphan, host);
     graphql(

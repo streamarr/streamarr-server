@@ -49,7 +49,7 @@ class CredentialCodePropertiesTest {
   }
 
   @Test
-  @DisplayName("Should reject a share code lifetime shorter than five minutes")
+  @DisplayName("Should reject a share code lifetime when it is shorter than five minutes")
   void shouldRejectShareCodeLifetimeWhenShorterThanFiveMinutes() {
     var properties = validProperties().shareCodeTtl(Duration.ofMinutes(5).minusNanos(1)).build();
 
