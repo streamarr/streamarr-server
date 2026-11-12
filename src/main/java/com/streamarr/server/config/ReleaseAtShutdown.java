@@ -6,18 +6,24 @@ import com.github.kagkarlsson.scheduler.event.ExecutionInterceptor;
 import com.github.kagkarlsson.scheduler.task.CompletionHandler;
 import com.github.kagkarlsson.scheduler.task.ExecutionContext;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
+import java.io.InterruptedIOException;
+import java.nio.channels.ClosedByInterruptException;
 import java.util.List;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 
 /**
  * Releases an execution that its scheduler's shutdown cut off, so the next server claims it at once
- * instead of waiting until db-scheduler finds it dead. A failure while the scheduler stops is taken
- * as the stop's doing: the release keeps the execution's due time, data and failure count, so the
- * interrupt counts as no failure of the job and starts no backoff (ADR 0032). A release that cannot
- * reach the database leaves the execution picked, and db-scheduler runs it again once it finds it
- * dead.
+ * instead of waiting until db-scheduler finds it dead. An execution that the shutdown's interrupt
+ * fails is released, and so is one whose completion fails while the scheduler stops. A release
+ * keeps the execution's due time, data and failure count, so the interrupt counts as no failure of
+ * the job and starts no backoff. Any other failure goes to the task's own failure handler. A
+ * release that cannot reach the database leaves the execution picked, and db-scheduler runs it
+ * again once it finds it dead.
  */
+@Slf4j
 @RequiredArgsConstructor
 public final class ReleaseAtShutdown implements ExecutionInterceptor {
 
@@ -27,21 +33,66 @@ public final class ReleaseAtShutdown implements ExecutionInterceptor {
   @Override
   public CompletionHandler<?> execute(
       TaskInstance<?> taskInstance, ExecutionContext executionContext, ExecutionChain chain) {
+    CompletionHandler<?> completion;
     try {
-      return chain.proceed(taskInstance, executionContext);
+      completion = chain.proceed(taskInstance, executionContext);
     } catch (RuntimeException failure) {
-      if (!executionContext.getSchedulerState().isShuttingDown()) {
+      if (!isShuttingDown(executionContext) || !isCausedByAnInterrupt(failure)) {
         throw failure;
       }
 
       return (_, _) -> release(executionContext);
     }
+
+    return releasedIfItFailsAtShutdown(completion, executionContext);
   }
 
-  // The connection pool refuses a connection to an interrupted thread, so the release clears the
-  // shutdown's interrupt before it writes.
+  // db-scheduler runs the completion after the task returned, outside this interceptor, so the
+  // shutdown's interrupt can arrive between the two.
+  private <T> CompletionHandler<T> releasedIfItFailsAtShutdown(
+      CompletionHandler<T> completion, ExecutionContext executionContext) {
+    return (complete, operations) -> {
+      if (!isShuttingDown(executionContext)) {
+        completion.complete(complete, operations);
+        return;
+      }
+
+      clearTheShutdownsInterrupt();
+      try {
+        completion.complete(complete, operations);
+      } catch (RuntimeException failure) {
+        log.warn(
+            "Releasing {}, whose completion failed while its scheduler shut down",
+            executionContext.getExecution(),
+            failure);
+        release(executionContext);
+      }
+    };
+  }
+
   private void release(ExecutionContext executionContext) {
-    Thread.interrupted();
+    clearTheShutdownsInterrupt();
     tasks.unpickPickedBatch(List.of(executionContext.getExecution()));
+  }
+
+  private static boolean isShuttingDown(ExecutionContext executionContext) {
+    return executionContext.getSchedulerState().isShuttingDown();
+  }
+
+  // The interrupt either stays on the thread, as after a socket read on a virtual thread, or
+  // travels as a cause, as when the connection pool stops waiting for a connection.
+  private static boolean isCausedByAnInterrupt(RuntimeException failure) {
+    return Thread.currentThread().isInterrupted()
+        || ExceptionUtils.getThrowableList(failure).stream()
+            .anyMatch(
+                cause ->
+                    cause instanceof InterruptedException
+                        || cause instanceof InterruptedIOException
+                        || cause instanceof ClosedByInterruptException);
+  }
+
+  // The connection pool refuses a connection to an interrupted thread.
+  private static void clearTheShutdownsInterrupt() {
+    Thread.interrupted();
   }
 }
