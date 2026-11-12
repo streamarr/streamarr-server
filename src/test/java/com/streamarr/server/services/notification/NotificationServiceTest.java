@@ -12,8 +12,8 @@ import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.domain.notification.SubjectNotification;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
-import com.streamarr.server.fakes.FakeNotificationRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeShareNotificationRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -42,7 +42,8 @@ class NotificationServiceTest {
   private static final UUID HIDDEN_HOUSEHOLD = UUID.randomUUID();
 
   private final AuthenticatedIdentity identity = defaultIdentityBuilder().build();
-  private final FakeNotificationRepository notifications = new FakeNotificationRepository();
+  private final FakeShareNotificationRepository notifications =
+      new FakeShareNotificationRepository();
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
   private final FakeAuthorizationService authorization = new FakeAuthorizationService(identity);

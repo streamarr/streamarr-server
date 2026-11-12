@@ -8,7 +8,7 @@ import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.domain.pagination.SortValueKind;
-import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import com.streamarr.server.services.pagination.PagedList;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,7 +32,7 @@ public class NotificationsList implements PagedList<SubjectNotification, UUID> {
   public static final ListOrder NEWEST_FIRST =
       ListOrder.builder().valueKind(SortValueKind.INSTANT).direction(SortDirection.DESC).build();
 
-  private final NotificationRepository notificationRepository;
+  private final ShareNotificationRepository notificationRepository;
   private final NotificationReads notificationReads;
 
   @Override

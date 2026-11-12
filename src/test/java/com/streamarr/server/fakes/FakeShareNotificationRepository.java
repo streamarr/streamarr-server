@@ -11,7 +11,7 @@ import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.domain.pagination.SortValue;
-import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Comparator;
@@ -27,8 +27,8 @@ import org.apache.commons.lang3.NotImplementedException;
  * rule could show, which leaves the guard to decide each, and treats no recipient as disabled; the
  * reads and writes that need the share are left to the database.
  */
-public class FakeNotificationRepository extends FakeJpaRepository<Notification>
-    implements NotificationRepository {
+public class FakeShareNotificationRepository extends FakeJpaRepository<Notification>
+    implements ShareNotificationRepository {
 
   @Override
   public <S extends Notification> S save(S notification) {

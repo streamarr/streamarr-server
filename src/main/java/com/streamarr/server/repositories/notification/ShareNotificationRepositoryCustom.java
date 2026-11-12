@@ -19,7 +19,7 @@ import java.util.UUID;
  * unread count and its live changes leave out the Notifications that no read rule of their subject
  * could let the recipient see; the guard decides the rest.
  */
-public interface NotificationRepositoryCustom {
+public interface ShareNotificationRepositoryCustom {
 
   /**
    * Up to the seek's limit of the recipient's Notifications beyond its position that the guard

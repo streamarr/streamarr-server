@@ -6,5 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface NotificationRepository
-    extends JpaRepository<Notification, UUID>, NotificationRepositoryCustom {}
+public interface ShareNotificationRepository
+    extends JpaRepository<Notification, UUID>, ShareNotificationRepositoryCustom {}

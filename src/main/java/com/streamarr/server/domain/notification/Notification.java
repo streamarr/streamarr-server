@@ -24,7 +24,7 @@ import org.hibernate.type.SqlTypes;
  * stored: it is read from the share ({@link RequestResolution}).
  */
 @Entity
-@Table(name = "notification")
+@Table(name = "share_notification")
 @Getter
 @Setter
 @SuperBuilder(toBuilder = true)

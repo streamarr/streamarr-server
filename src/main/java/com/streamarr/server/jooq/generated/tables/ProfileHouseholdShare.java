@@ -9,8 +9,8 @@ import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
-import com.streamarr.server.jooq.generated.tables.Notification.NotificationPath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
+import com.streamarr.server.jooq.generated.tables.ShareNotification.ShareNotificationPath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
 import com.streamarr.server.jooq.generated.tables.records.ProfileHouseholdShareRecord;
 
@@ -258,17 +258,17 @@ public class ProfileHouseholdShare extends TableImpl<ProfileHouseholdShareRecord
         return _profile;
     }
 
-    private transient NotificationPath _notification;
+    private transient ShareNotificationPath _shareNotification;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.notification</code> table
+     * <code>public.share_notification</code> table
      */
-    public NotificationPath notification() {
-        if (_notification == null)
-            _notification = new NotificationPath(this, null, Keys.NOTIFICATION__FK_NOTIFICATION_SHARE.getInverseKey());
+    public ShareNotificationPath shareNotification() {
+        if (_shareNotification == null)
+            _shareNotification = new ShareNotificationPath(this, null, Keys.SHARE_NOTIFICATION__FK_SHARE_NOTIFICATION_SHARE.getInverseKey());
 
-        return _notification;
+        return _shareNotification;
     }
 
     @Override

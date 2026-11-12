@@ -8,7 +8,7 @@ import com.streamarr.server.domain.notification.ProfileShareEndedBy;
 import com.streamarr.server.domain.notification.ProfileShareFacts;
 import com.streamarr.server.domain.notification.ProfileShareSide;
 import com.streamarr.server.domain.notification.ShareSides;
-import com.streamarr.server.repositories.notification.NotificationRepository;
+import com.streamarr.server.repositories.notification.ShareNotificationRepository;
 import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.notification.events.NotificationsReadEvent;
 import com.streamarr.server.services.notification.events.ReadNotification;
@@ -33,13 +33,13 @@ import org.springframework.stereotype.Component;
 @Component
 class ProfileShareNotifications {
 
-  private final NotificationRepository notificationRepository;
+  private final ShareNotificationRepository notificationRepository;
   private final NotificationWriter<NotificationKind, ProfileShareFacts> writer;
   private final ApplicationEventPublisher events;
   private final Clock clock;
 
   ProfileShareNotifications(
-      NotificationRepository notificationRepository,
+      ShareNotificationRepository notificationRepository,
       ApplicationEventPublisher events,
       Clock clock) {
     this.notificationRepository = notificationRepository;
