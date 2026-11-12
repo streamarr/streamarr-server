@@ -30,10 +30,11 @@ public class ManagerInvitationPartiesResolver {
     DataLoader<ManagerInvitationParties, ManagerInvitationNames> loader =
         dfe.getDataLoader(ManagerInvitationNamesDataLoader.NAME);
     return loader.load(
-        new ManagerInvitationParties(
-            Optional.ofNullable(invitation.profileId()),
-            invitation.profileName(),
-            Optional.ofNullable(invitation.inviterAccountId()),
-            invitation.inviterDisplayName()));
+        ManagerInvitationParties.builder()
+            .profileId(Optional.ofNullable(invitation.profileId()))
+            .storedProfileName(invitation.profileName())
+            .inviterAccountId(Optional.ofNullable(invitation.inviterAccountId()))
+            .storedInviterDisplayName(invitation.inviterDisplayName())
+            .build());
   }
 }

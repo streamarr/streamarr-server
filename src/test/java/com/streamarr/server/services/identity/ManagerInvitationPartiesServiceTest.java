@@ -30,24 +30,50 @@ class ManagerInvitationPartiesServiceTest {
     var sam =
         accounts.save(AccountFixture.defaultAccountBuilder().displayName("Sam Smith").build());
     var parties =
-        new ManagerInvitationParties(
-            Optional.of(alex.getId()), "Alex", Optional.of(sam.getId()), "Sam");
+        ManagerInvitationParties.builder()
+            .profileId(Optional.of(alex.getId()))
+            .storedProfileName("Alex")
+            .inviterAccountId(Optional.of(sam.getId()))
+            .storedInviterDisplayName("Sam")
+            .build();
 
     assertThat(service.currentNames(Set.of(parties)))
         .containsExactlyEntriesOf(
-            Map.of(parties, new ManagerInvitationNames("Alex Smith", "Sam Smith")));
+            Map.of(
+                parties,
+                ManagerInvitationNames.builder()
+                    .profileName("Alex Smith")
+                    .inviterDisplayName("Sam Smith")
+                    .build()));
   }
 
   @Test
   @DisplayName("Should show the stored names when the Profile and inviter are deleted")
   void shouldShowTheStoredNamesWhenTheProfileAndInviterAreDeleted() {
-    var cleared = new ManagerInvitationParties(Optional.empty(), "Alex", Optional.empty(), "Sam");
+    var cleared =
+        ManagerInvitationParties.builder()
+            .profileId(Optional.empty())
+            .storedProfileName("Alex")
+            .inviterAccountId(Optional.empty())
+            .storedInviterDisplayName("Sam")
+            .build();
     var vanished =
-        new ManagerInvitationParties(
-            Optional.of(UUID.randomUUID()), "Cabin Kid", Optional.of(UUID.randomUUID()), "Mara");
+        ManagerInvitationParties.builder()
+            .profileId(Optional.of(UUID.randomUUID()))
+            .storedProfileName("Cabin Kid")
+            .inviterAccountId(Optional.of(UUID.randomUUID()))
+            .storedInviterDisplayName("Mara")
+            .build();
 
     assertThat(service.currentNames(Set.of(cleared, vanished)))
-        .containsEntry(cleared, new ManagerInvitationNames("Alex", "Sam"))
-        .containsEntry(vanished, new ManagerInvitationNames("Cabin Kid", "Mara"));
+        .containsEntry(
+            cleared,
+            ManagerInvitationNames.builder().profileName("Alex").inviterDisplayName("Sam").build())
+        .containsEntry(
+            vanished,
+            ManagerInvitationNames.builder()
+                .profileName("Cabin Kid")
+                .inviterDisplayName("Mara")
+                .build());
   }
 }
