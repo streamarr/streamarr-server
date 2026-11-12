@@ -32,19 +32,21 @@ public interface MediaFileContainerInfoRepositoryCustom {
 
   /**
    * Stores what a packet scan learned on the outcome that owes the scan, under the media file lock,
-   * in place of the positions that the outcome kept from an earlier scan. Stores each scanned
-   * stream end (ADR 0037) and the scan's stream measurement (ADR 0054). A failed scan
-   * ({@link KeyframesUnavailableReason#isFailedPacketScan}) ends the owed scan while keeping the
-   * earlier positions. Returns {@code false} without writing unless the stored outcome still owes
-   * a packet scan for the publication's source snapshot and probe version.
+   * in place of any positions that the outcome kept from an earlier scan. A {@link
+   * KeyframesUnavailableReason#PACKET_SCAN_MEDIA_ERROR} replaces them too: bytes that an earlier
+   * scan read and that no longer decode have changed under an unchanged size and modified time.
+   * Stores each scanned stream end (ADR 0037) and the scan's stream measurement (ADR 0054).
+   * Returns {@code false} without writing unless the stored outcome still owes a packet scan for
+   * the publication's source snapshot and probe version.
    */
   boolean publishKeyframePacketScan(KeyframePacketScanPublication publication);
 
   /**
    * Stores that every packet scan of these inputs failed, so no further scan runs. Positions that
-   * the outcome kept from an earlier scan stand. An outcome without them stores unavailable
-   * keyframes. Returns {@code false} without writing unless the stored outcome still owes a packet
-   * scan for these inputs.
+   * the outcome kept from an earlier scan stand, because failed scans say nothing about the bytes
+   * that the earlier scan read. An outcome without them stores unavailable keyframes. Returns
+   * {@code false} without writing unless the stored outcome still owes a packet scan for these
+   * inputs.
    */
   boolean publishKeyframePacketScanFailure(UUID mediaFileId, ProbeInputs inputs);
 

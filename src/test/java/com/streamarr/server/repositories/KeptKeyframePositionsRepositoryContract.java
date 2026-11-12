@@ -215,23 +215,24 @@ public interface KeptKeyframePositionsRepositoryContract {
 
   @Test
   @DisplayName(
-      "Should let the kept positions stand when the owed packet scan ends in a media error")
-  default void shouldLetKeptPositionsStandWhenOwedPacketScanEndsInMediaError() {
+      "Should replace the kept positions with the media error when the owed packet scan ends in"
+          + " one")
+  default void shouldReplaceKeptPositionsWithMediaErrorWhenOwedPacketScanEndsInOne() {
     var mediaFileId = createMediaFile();
     storeOutcomeKeepingScannedPositions(mediaFileId);
+    var mediaError =
+        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR);
 
     var published =
         repository()
             .publishKeyframePacketScan(
                 packetScanBuilder(mediaFileId)
                     .probeVersion(ProbeVersion.CURRENT)
-                    .keyframes(
-                        new KeyframeKnowledge.Unavailable(
-                            KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR))
+                    .keyframes(mediaError)
                     .build());
 
     assertThat(published).isTrue();
-    assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(scanned());
+    assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(mediaError);
     assertThat(repository().owesKeyframePacketScan(mediaFileId)).isFalse();
   }
 

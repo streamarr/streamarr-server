@@ -11,17 +11,5 @@ public enum KeyframesUnavailableReason {
   /** Every packet scan of the source timed out or reported no keyframe result. */
   PACKET_SCAN_FAILED,
   /** The chosen video stream holds more keyframes than the server's keyframe limit (ADR 0062). */
-  TOO_MANY_KEYFRAMES;
-
-
-  /**
-   * Whether a packet scan failed, so that it says nothing about the stream's keyframes. The other
-   * reasons say what a probe or a packet scan read in the stream.
-   */
-  public boolean isFailedPacketScan() {
-    return switch (this) {
-      case PACKET_SCAN_MEDIA_ERROR, PACKET_SCAN_FAILED -> true;
-      case KEYFRAME_WITHOUT_TIMESTAMP, NO_KEYFRAMES, TOO_MANY_KEYFRAMES -> false;
-    };
-  }
+  TOO_MANY_KEYFRAMES
 }
