@@ -4,6 +4,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.NetworkRoute;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
@@ -12,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -109,6 +111,25 @@ public class ServerUploadBudget implements UploadBudget {
         .orElseThrow();
   }
 
+  @Override
+  public boolean isALoneAutoCopyOverTheShare(StreamSession session) {
+    if (!isALoneAutoCopy(session)) {
+      return false;
+    }
+
+    var remaining = remainingShare(session);
+    return remaining.isPresent()
+        && average(session, StreamSession.defaultVariant()) > remaining.getAsLong();
+  }
+
+  // An HLS stream session without variants copies the video without lower variants, since every
+  // encode lists its ladder. Original stays exempt, and a copy beside lower variants plays through
+  // them when it does not fit.
+  private static boolean isALoneAutoCopy(StreamSession session) {
+    return session.getVariants().isEmpty()
+        && ViewerLimits.of(session.getOptions()).quality() == VideoQuality.AUTO;
+  }
+
   /**
    * A stream session that its client reached over the local network never counts, whether or not
    * the budget is on, so that reason comes first.
@@ -128,16 +149,15 @@ public class ServerUploadBudget implements UploadBudget {
    * over the internet upload, so the budget leaves its playlist whole.
    */
   private Set<String> variantsWithheldFrom(StreamSession session) {
-    var share = serverSettings.uploadBudget().streamShareBitsPerSecond();
-    if (share.isEmpty() || session.getNetworkRoute() == NetworkRoute.LOCAL_NETWORK) {
+    var remaining = remainingShare(session);
+    if (remaining.isEmpty()) {
       return Set.of();
     }
 
-    var remaining = share.getAsLong() - countedBeside(session);
     var averages = listedVariantAverages(session);
     var withheld =
         averages.entrySet().stream()
-            .filter(variant -> variant.getValue() > remaining)
+            .filter(variant -> variant.getValue() > remaining.getAsLong())
             .map(Map.Entry::getKey)
             .collect(Collectors.toSet());
     if (withheld.isEmpty()) {
@@ -159,6 +179,17 @@ public class ServerUploadBudget implements UploadBudget {
     }
 
     return withheld;
+  }
+
+  // The streams' share less what the other counted stream sessions send. Empty while the budget is
+  // off, and for a stream session that its client reached over the local network.
+  private OptionalLong remainingShare(StreamSession session) {
+    var share = serverSettings.uploadBudget().streamShareBitsPerSecond();
+    if (share.isEmpty() || session.getNetworkRoute() == NetworkRoute.LOCAL_NETWORK) {
+      return OptionalLong.empty();
+    }
+
+    return OptionalLong.of(share.getAsLong() - countedBeside(session));
   }
 
   // Each listed variant's average bitrate, in the order that the playlist lists them.

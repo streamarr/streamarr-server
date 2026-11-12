@@ -900,6 +900,30 @@ class TranscodeDecisionReasonTest {
             DecisionReason.AUDIO_CODEC_NOT_DECLARED);
   }
 
+  // The upload budget is why the video is encoded, so it is a video reason (ADR 0050).
+  @Test
+  @DisplayName(
+      "Should name the upload budget after the direct-play refusals and before the audio's reason"
+          + " when an encode-only decision replaces a copy over the upload budget")
+  void shouldNameTheUploadBudgetBeforeTheAudiosReasonWhenItReplacesACopyOverTheUploadBudget() {
+    var source = Source.builder().audioCodec("flac").build().probe();
+    var request =
+        request(source, defaultDeclarationBuilder().build())
+            .directPlayRefusals(List.of(DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED))
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .copyAboveUploadBudget(true)
+            .build();
+
+    var decision = decide(request);
+
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.reasons())
+        .containsExactly(
+            DecisionReason.DIRECT_PLAY_CONTAINER_NOT_DECLARED,
+            DecisionReason.BITRATE_ABOVE_UPLOAD_BUDGET,
+            DecisionReason.AUDIO_CODEC_NOT_DECLARED);
+  }
+
   @Test
   @DisplayName("Should name a reason once when direct play and the copy both refuse for it")
   void shouldNameAReasonOnceWhenDirectPlayAndTheCopyBothRefuseForIt() {

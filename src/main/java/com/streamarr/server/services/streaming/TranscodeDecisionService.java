@@ -364,7 +364,8 @@ public class TranscodeDecisionService {
   // capability entry accepts its encoded variant in a codec that a verified encoder encodes. Such a
   // copy takes the first step that fits, or else keeps the session's audio, because a lower step
   // would not bring it within the maximum either. A format attempt that must encode names no
-  // reason here: the playback session names the failure that led to it.
+  // reason here: the playback session names the failure that led to it. A copy that the upload
+  // budget turns into an encode names the budget (ADR 0050).
   private VideoCopyChoice videoCopy(TranscodeDecisionRequest request, AudioDecision sessionAudio) {
     var encodeOnly = request.videoFormatConstraint() == VideoFormatConstraint.ENCODE_ONLY;
     var choice = copyChoice(request, sessionAudio, !encodeOnly);
@@ -374,8 +375,16 @@ public class TranscodeDecisionService {
 
     return switch (choice) {
       case VideoCopyChoice.Refused refused -> refused;
-      case VideoCopyChoice.Copied _ -> new VideoCopyChoice.Refused(List.of());
+      case VideoCopyChoice.Copied _ -> new VideoCopyChoice.Refused(uploadBudgetReason(request));
     };
+  }
+
+  private static List<DecisionReason> uploadBudgetReason(TranscodeDecisionRequest request) {
+    if (!request.copyAboveUploadBudget()) {
+      return List.of();
+    }
+
+    return List.of(DecisionReason.BITRATE_ABOVE_UPLOAD_BUDGET);
   }
 
   // Only a decision that may copy counts its keyframe refusals: an encode-only decision checks

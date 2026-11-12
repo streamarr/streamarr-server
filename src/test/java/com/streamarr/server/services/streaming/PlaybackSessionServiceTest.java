@@ -639,6 +639,30 @@ class PlaybackSessionServiceTest {
         service.access(request(initial, command)).orElseThrow(), initial);
   }
 
+  // Only the copy alone leaves the failed lower variant's encode out. Its own failure recovers as a
+  // failed copy does, and that format attempt may encode H.264 again: for a client that plays H.264
+  // alone, it is the only encode left.
+  @Test
+  @DisplayName(
+      "Should let the format attempt after the copy alone encode the failed lower variant's codec"
+          + " family when the copy alone fails")
+  void shouldLetTheFormatAttemptAfterTheCopyAloneEncodeTheFailedFamilyWhenTheCopyAloneFails() {
+    streams.lowerVariantCodecProfile = Optional.of(EncodeCodecProfile.H264_HIGH);
+    var command = startCommand().options(qualityOptions(VideoQuality.AUTO)).build();
+    var initial = accepted(service.start(command));
+    streams.playedVariants.put(initial.currentFormatAttempt().streamSessionId(), "720p");
+    var copyAlone = service.reportFormatFailure(report(initial, command).build()).orElseThrow();
+    streams.playedVariants.put(
+        copyAlone.currentFormatAttempt().streamSessionId(), StreamSession.defaultVariant());
+
+    var recovered = service.reportFormatFailure(report(copyAlone, command).build()).orElseThrow();
+
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(streams.createdCommands)
+        .extracting(CreateStreamSessionCommand::excludedEncodeCodecFamilies)
+        .containsExactly(Set.of(), Set.of("h264"), Set.of());
+  }
+
   // The copy's exhausted recovery answers its segment request as unrecoverable, as on main, and
   // replaces nothing.
   @Test
@@ -1370,7 +1394,8 @@ class PlaybackSessionServiceTest {
 
   // The copy alone replaced the stream session that the snapshot played: it was created under the
   // first format attempt's video operations without direct play, in the same playback choice and
-  // without the lower variants. It spends no format attempt, and its decision names the lower
+  // without the lower variants. It never offers the lower variants' failed 8-bit SDR H.264 encode,
+  // so H.264 is out of its encodes. It spends no format attempt, and its decision names the lower
   // variant's failure first. The replaced stream session is gone.
   private void assertThatTheCopyAloneReplaced(
       PlaybackSessionSnapshot after, PlaybackSessionSnapshot before) {
@@ -1383,7 +1408,7 @@ class PlaybackSessionServiceTest {
               assertThat(copyAlone.videoFormatConstraint())
                   .isEqualTo(VideoFormatConstraint.COPY_OR_ENCODE);
               assertThat(copyAlone.options().quality()).isEqualTo(VideoQuality.AUTO);
-              assertThat(copyAlone.excludedEncodeCodecFamilies()).isEmpty();
+              assertThat(copyAlone.excludedEncodeCodecFamilies()).containsExactly("h264");
               assertThat(copyAlone.excludedEncodeFormats()).isEmpty();
               assertThat(after.currentFormatAttempt().streamSessionId())
                   .isEqualTo(copyAlone.streamSessionId());

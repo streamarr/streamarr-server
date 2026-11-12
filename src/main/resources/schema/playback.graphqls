@@ -233,6 +233,11 @@ enum DecisionReason {
     PICTURE_ABOVE_VIEWER_LIMIT
     "A copy costs more than the client's maximum bitrate beside every audio step."
     BITRATE_ABOVE_VIEWER_LIMIT
+    """
+    An Auto copy without lower variants averages more than the server's upload budget leaves beside the other
+    streams that count against it, so the server encodes the video, and the budget sizes the encode's ladder.
+    """
+    BITRATE_ABOVE_UPLOAD_BUDGET
     "The source is interlaced. HLS delivery needs progressive video, and direct play of an interlaced file is unmeasured."
     SOURCE_INTERLACED
     "The source's HDR base was probed before the probe described its codec profile."

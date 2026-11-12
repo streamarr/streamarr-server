@@ -52,6 +52,12 @@ public enum DecisionReason {
   /** A copy costs more than the viewer's maximum bitrate beside every audio step. */
   BITRATE_ABOVE_VIEWER_LIMIT,
   /**
+   * An Auto copy without lower variants averages more than the upload budget's share leaves beside
+   * the other counted stream sessions, so the server encodes the video, and the budget sizes the
+   * encode's ladder (ADR 0050).
+   */
+  BITRATE_ABOVE_UPLOAD_BUDGET,
+  /**
    * The source is interlaced. HLS delivery needs progressive video, and no player's direct play of
    * an interlaced file was measured.
    */

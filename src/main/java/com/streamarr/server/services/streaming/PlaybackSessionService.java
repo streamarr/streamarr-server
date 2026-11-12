@@ -139,8 +139,10 @@ public class PlaybackSessionService implements AutoCloseable {
    * The format attempt that a reservation starts: its stream session and the video operations it
    * may use. It plays {@code choice}, or {@code choiceWhenEncoding} once it turns out to encode the
    * video. {@code softwareEncodeCodecFamily} names the codec family that it encodes in software
-   * after a hardware encoder failure. {@code lowerVariantsWithdrawn} lists a copy alone, without
-   * its lower variants (ADR 0050). {@code spendsAFormatAttempt} says whether it counts against the
+   * after a hardware encoder failure. {@code excludedEncodes} names the encodes that this format
+   * attempt does not offer, beside those that failed earlier in the playback session; a later
+   * format attempt may offer them. {@code lowerVariantsWithdrawn} lists a copy alone, without its
+   * lower variants (ADR 0050). {@code spendsAFormatAttempt} says whether it counts against the
    * maximum number of format attempts.
    */
   @Builder
@@ -150,6 +152,7 @@ public class PlaybackSessionService implements AutoCloseable {
       @NonNull PlayingChoice choice,
       @NonNull PlayingChoice choiceWhenEncoding,
       @NonNull Optional<String> softwareEncodeCodecFamily,
+      @NonNull Set<FailedFormatAttempt.Encode> excludedEncodes,
       boolean lowerVariantsWithdrawn,
       boolean spendsAFormatAttempt) {
 
@@ -157,6 +160,7 @@ public class PlaybackSessionService implements AutoCloseable {
     @SuppressWarnings("java:S9438")
     private static class ReservedFormatAttemptBuilder {
       private Optional<String> softwareEncodeCodecFamily = Optional.empty();
+      private Set<FailedFormatAttempt.Encode> excludedEncodes = Set.of();
       private boolean spendsAFormatAttempt = true;
     }
   }
@@ -280,12 +284,14 @@ public class PlaybackSessionService implements AutoCloseable {
   // A failure of an encoded lower variant beside the copy that plays withdraws the lower variants:
   // a stream session that lists the same copy alone replaces the stream session (ADR 0050). It
   // keeps the playback choice and the video operations, so the copy keeps its range and bit depth,
-  // and it spends no format attempt. A failure of the copy itself, or of a format attempt that no
-  // longer plays, reserves nothing here.
+  // and it spends no format attempt. The replacement exists so that playback goes on, so it never
+  // offers the lower variant's failed encode: when the upload budget decides it again as an encode,
+  // that encode is another one, or the copy stays. A failure of the copy itself, or of a format
+  // attempt that no longer plays, reserves nothing here.
   private Optional<FormatAttemptReservation> reserveTheCopyAlone(
       PlaybackSession playback, UUID failedId, String variantLabel) {
-    if (!isLowerVariantBesideTheCurrentCopy(playback, failedId, variantLabel)
-        || endedNormally(playback)) {
+    var failedEncode = lowerVariantEncodeBesideTheCurrentCopy(playback, failedId, variantLabel);
+    if (failedEncode.isEmpty() || endedNormally(playback)) {
       return Optional.empty();
     }
 
@@ -298,15 +304,24 @@ public class PlaybackSessionService implements AutoCloseable {
                 .videoFormatConstraint(playback.copyAloneConstraint)
                 .choice(playback.choice)
                 .choiceWhenEncoding(playback.choice)
+                .excludedEncodes(Set.of(failedEncode.orElseThrow()))
                 .lowerVariantsWithdrawn(true)
                 .spendsAFormatAttempt(false)));
   }
 
-  private boolean isLowerVariantBesideTheCurrentCopy(
+  // The variant's encode, when the variant is an encoded lower variant beside the copy that the
+  // current format attempt plays.
+  private Optional<FailedFormatAttempt.Encode> lowerVariantEncodeBesideTheCurrentCopy(
       PlaybackSession playback, UUID streamId, String variantLabel) {
-    return isCurrentAttempt(playback, streamId)
-        && playback.current instanceof PlaybackFormatAttempt.Ready(var session)
-        && session.isLowerVariantBesideTheCopy(variantLabel);
+    if (!isCurrentAttempt(playback, streamId)
+        || !(playback.current instanceof PlaybackFormatAttempt.Ready(var session))
+        || !session.isLowerVariantBesideTheCopy(variantLabel)) {
+      return Optional.empty();
+    }
+
+    var decision = session.decisionOf(variantLabel);
+    return Optional.of(
+        new FailedFormatAttempt.Encode(decision.videoCodecFamily(), decision.videoEncodeFormat()));
   }
 
   // Answers whether the failed job attempt was an encoded lower variant's beside the copy that
@@ -315,7 +330,10 @@ public class PlaybackSessionService implements AutoCloseable {
     var playback = streamOwners.get(failedId);
     if (playback == null
         || !locked(
-            playback, () -> isLowerVariantBesideTheCurrentCopy(playback, failedId, variantLabel))) {
+            playback,
+            () ->
+                lowerVariantEncodeBesideTheCurrentCopy(playback, failedId, variantLabel)
+                    .isPresent())) {
       return false;
     }
 
@@ -797,8 +815,10 @@ public class PlaybackSessionService implements AutoCloseable {
     }
 
     var failed = failedAttempt(playback, fixedFailure);
-    if (failed.output() instanceof FailedFormatAttempt.Encode(var codecFamily, var format)) {
-      excludeFailedEncode(playback, codecFamily, format);
+    // A failed encode stays out of every later format attempt.
+    if (failed.output() instanceof FailedFormatAttempt.Encode encode) {
+      excludeFailedEncode(
+          encode, playback.excludedEncodeCodecFamilies, playback.excludedEncodeFormats);
     }
 
     return switch (recoveryPolicy.after(playback.choice, failed, playback.formatAttemptCount)) {
@@ -893,17 +913,19 @@ public class PlaybackSessionService implements AutoCloseable {
                 .spendsAFormatAttempt(false)));
   }
 
-  // A failed HDR or 10-bit encode keeps its format out of every later format attempt, in every
-  // codec family, so Auto gives HDR up for SDR (#397) and can still try the codec family in 8-bit
-  // SDR. A failed 8-bit SDR encode keeps its codec family out.
+  // A failed HDR or 10-bit encode keeps its format out, in every codec family, so Auto gives HDR up
+  // for SDR (#397) and can still try the codec family in 8-bit SDR. A failed 8-bit SDR encode keeps
+  // its codec family out.
   private static void excludeFailedEncode(
-      PlaybackSession playback, String codecFamily, EncodeFormat format) {
-    if (format.equals(EncodeFormat.SDR_8_BIT)) {
-      playback.excludedEncodeCodecFamilies.add(codecFamily);
+      FailedFormatAttempt.Encode failed,
+      Set<String> excludedCodecFamilies,
+      Set<EncodeFormat> excludedFormats) {
+    if (failed.format().equals(EncodeFormat.SDR_8_BIT)) {
+      excludedCodecFamilies.add(failed.codecFamily());
       return;
     }
 
-    playback.excludedEncodeFormats.add(format);
+    excludedFormats.add(failed.format());
   }
 
   private static DecisionReason causeOf(FailedFormatAttempt failed) {
@@ -1053,7 +1075,7 @@ public class PlaybackSessionService implements AutoCloseable {
       var streamId = next.streamId();
       var outcome =
           streamingService.createSession(
-              childCommand(work.playback(), streamId)
+              childCommand(work.playback(), streamId, next.excludedEncodes())
                   .videoFormatConstraint(next.videoFormatConstraint())
                   .softwareEncodeCodecFamily(next.softwareEncodeCodecFamily())
                   .lowerVariantsWithdrawn(next.lowerVariantsWithdrawn())
@@ -1114,11 +1136,22 @@ public class PlaybackSessionService implements AutoCloseable {
 
   private CreateStreamSessionCommand.CreateStreamSessionCommandBuilder childCommand(
       PlaybackSession playback, UUID streamId) {
+    return childCommand(playback, streamId, Set.of());
+  }
+
+  // The format attempt's command excludes every encode that failed in the playback session, and the
+  // encodes that this format attempt alone does not offer.
+  private CreateStreamSessionCommand.CreateStreamSessionCommandBuilder childCommand(
+      PlaybackSession playback, UUID streamId, Set<FailedFormatAttempt.Encode> excludedEncodes) {
     return locked(
         playback,
         () -> {
           // The retired format attempt can take a report until it is destroyed, just before this.
           forgetTheStartPositionOncePlaybackMoved(playback);
+          var excludedCodecFamilies = new HashSet<>(playback.excludedEncodeCodecFamilies);
+          var excludedFormats = new HashSet<>(playback.excludedEncodeFormats);
+          excludedEncodes.forEach(
+              encode -> excludeFailedEncode(encode, excludedCodecFamilies, excludedFormats));
           return CreateStreamSessionCommand.builder()
               .streamSessionId(streamId)
               .mediaFileId(playback.command.mediaFileId())
@@ -1129,8 +1162,8 @@ public class PlaybackSessionService implements AutoCloseable {
                       .build())
               .capabilityDeclaration(playback.command.capabilityDeclaration())
               .networkRoute(playback.command.networkRoute())
-              .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
-              .excludedEncodeFormats(Set.copyOf(playback.excludedEncodeFormats))
+              .excludedEncodeCodecFamilies(excludedCodecFamilies)
+              .excludedEncodeFormats(excludedFormats)
               .startPosition(playback.startPosition)
               .audioTrackPosition(playback.audioTrackPosition);
         });

@@ -148,7 +148,6 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(refuseForLackOfCapacity(CapacityRefusal.NO_CONNECTED_WORKER));
     }
 
-    var authority = command.identity().playbackAuthority();
     var mediaFileId = command.mediaFileId();
     var options = command.options();
     var request =
@@ -187,6 +186,15 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var admission = admission(request, decisionWithSessionAudio);
+    var admitted =
+        newSession(command, mediaFile, probe)
+            .transcodeDecision(admission.decision())
+            .variants(admission.variants())
+            .build();
+    if (uploadBudget.isALoneAutoCopyOverTheShare(admitted)) {
+      admission = encodeAdmittedNow(request).orElse(admission);
+    }
+
     var sessionId = command.streamSessionId();
     var refusal = capacityRefusalFor(admission.decision());
     // A left variant only serves its own player's switch back, so it never keeps a new stream
@@ -203,21 +211,10 @@ public class HlsStreamingService implements StreamingService {
 
     var decision = admission.decision();
     var variants = admission.variants();
-    var now = Instant.now();
-
     var session =
-        StreamSession.builder()
-            .sessionId(sessionId)
-            .mediaFileId(mediaFileId)
-            .authority(authority)
-            .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
-            .mediaProbe(probe)
+        newSession(command, mediaFile, probe)
             .transcodeDecision(decision)
-            .options(options)
             .variants(variants)
-            .startPosition(command.startPosition().orElse(null))
-            .createdAt(now)
-            .networkRoute(command.networkRoute())
             .build();
     startAtTheStartSegment(session);
 
@@ -263,6 +260,12 @@ public class HlsStreamingService implements StreamingService {
   // or segments.
   private static StreamSession.StreamSessionBuilder directPlaySession(
       CreateStreamSessionCommand command, MediaFile mediaFile, MediaProbe probe) {
+    return newSession(command, mediaFile, probe).delivery(StreamDelivery.DIRECT_PLAY);
+  }
+
+  // What the command gives every stream session, whatever it delivers.
+  private static StreamSession.StreamSessionBuilder newSession(
+      CreateStreamSessionCommand command, MediaFile mediaFile, MediaProbe probe) {
     return StreamSession.builder()
         .sessionId(command.streamSessionId())
         .mediaFileId(command.mediaFileId())
@@ -272,8 +275,7 @@ public class HlsStreamingService implements StreamingService {
         .options(command.options())
         .startPosition(command.startPosition().orElse(null))
         .networkRoute(command.networkRoute())
-        .createdAt(Instant.now())
-        .delivery(StreamDelivery.DIRECT_PLAY);
+        .createdAt(Instant.now());
   }
 
   // The decision that a stream session starts with, and the variants of its ladder.
@@ -295,6 +297,24 @@ public class HlsStreamingService implements StreamingService {
         .decide(freeNow)
         .filter(decision -> encodeRejection(freeNow, decision).isEmpty())
         .map(decision -> admission(freeNow, decision));
+  }
+
+  // An Auto copy without lower variants that does not fit the upload budget is decided again as an
+  // encode, whose ladder the budget can size. The budget never refuses playback, so the copy stays
+  // when no encode can start now. The encode keeps the copy's HDR whenever the client plays an HDR
+  // encode that a worker writes: an SDR encode's lowest variant costs as much, so giving HDR up
+  // would not bring the stream within the share. The encode names the budget as its reason.
+  private Optional<Admission> encodeAdmittedNow(TranscodeDecisionRequest request) {
+    var encodeOnly =
+        request.toBuilder()
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .copyAboveUploadBudget(true)
+            .build();
+    return transcodeDecisionService
+        .decide(encodeOnly)
+        .filter(decision -> encodeRejection(encodeOnly, decision).isEmpty())
+        .filter(decision -> capacityRefusalFor(decision).isEmpty())
+        .map(decision -> admission(encodeOnly, decision));
   }
 
   // Why no worker can run the decision's encode, whatever slots are free.

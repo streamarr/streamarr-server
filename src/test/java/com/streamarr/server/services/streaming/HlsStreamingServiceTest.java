@@ -97,6 +97,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
@@ -7807,22 +7808,358 @@ class HlsStreamingServiceTest {
     assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
   }
 
-  @ParameterizedTest
-  @EnumSource(
-      value = VideoQuality.class,
-      names = {"AUTO", "ORIGINAL"})
-  @DisplayName("Should still copy the video when the upload budget leaves no room for the copy")
-  void shouldStillCopyTheVideoWhenTheUploadBudgetLeavesNoRoomForTheCopy(VideoQuality quality) {
+  @Test
+  @DisplayName(
+      "Should still copy the video beside its lower variants when the upload budget leaves no room"
+          + " for an Auto copy")
+  void shouldStillCopyTheVideoBesideItsLowerVariantsWhenTheBudgetLeavesNoRoomForAnAutoCopy() {
     createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
     setInternetUploadMegabitsPerSecond(1);
 
-    var session =
-        createSession(
-            seedMediaFile().getId(),
-            UUID.randomUUID(),
-            StreamingOptions.builder().quality(quality).build());
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactly("720p", "480p", "360p");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("autoCopiesWithoutLowerVariants")
+  @DisplayName(
+      "Should encode the video when an Auto copy without lower variants exceeds what the upload"
+          + " budget leaves beside the other counted stream sessions")
+  void shouldEncodeTheVideoWhenAnAutoCopyWithoutLowerVariantsExceedsTheBudgetsRemainingShare(
+      LoneCopy lone) {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, less than this
+    // copy's 5 Mb/s average. The encode's playlist then keeps only 360p (0.925 Mb/s average), and
+    // creating the stream session starts it.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session = createLoneCopySession(lone, VideoQuality.AUTO);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isFalse();
+    assertThat(listedVariants(session)).containsExactly("360p/stream.m3u8?t=t");
+    assertThat(transcodeExecutor.getStartedRequests())
+        .filteredOn(started -> started.sessionId().equals(session.getSessionId()))
+        .extracting(TranscodeRequest::variantLabel)
+        .containsExactly("360p");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("autoCopiesWithoutLowerVariants")
+  @DisplayName(
+      "Should copy the video alone when an Auto copy without lower variants fits what the upload"
+          + " budget leaves beside the other counted stream sessions")
+  void shouldCopyTheVideoAloneWhenAnAutoCopyWithoutLowerVariantsFitsTheBudgetsRemainingShare(
+      LoneCopy lone) {
+    // 80% of 20 Mb/s leaves 11 Mb/s beside the active copy's 5 Mb/s average, room for this
+    // copy's 5 Mb/s average.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(20);
+
+    var session = createLoneCopySession(lone, VideoQuality.AUTO);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getVariants()).isEmpty();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("autoCopiesWithoutLowerVariants")
+  @DisplayName(
+      "Should copy the video in Original when its copy exceeds what the upload budget leaves beside"
+          + " the other counted stream sessions")
+  void shouldCopyTheVideoInOriginalWhenItsCopyExceedsTheBudgetsRemainingShare(LoneCopy lone) {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, less than this
+    // copy's 5 Mb/s average, as in Auto above.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session = createLoneCopySession(lone, VideoQuality.ORIGINAL);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(listedVariants(session)).containsExactly("stream.m3u8?t=t");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("autoCopiesWithoutLowerVariants")
+  @DisplayName(
+      "Should copy the video alone when an Auto copy without lower variants that its client reached"
+          + " over the local network exceeds what the upload budget leaves for counted streams")
+  void shouldCopyTheVideoAloneWhenALocalNetworkAutoCopyWithoutLowerVariantsExceedsTheShare(
+      LoneCopy lone) {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, less than this
+    // copy's 5 Mb/s average, but a stream session on the local network never counts (ADR 0050).
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session =
+        accepted(
+            service.createSession(
+                loneCopyCommand(lone)
+                    .options(defaultOptions())
+                    .networkRoute(NetworkRoute.LOCAL_NETWORK)
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getVariants()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should copy the video alone when an Auto copy without lower variants equals what the upload"
+          + " budget leaves beside the other counted stream sessions")
+  void shouldCopyTheVideoAloneWhenAnAutoCopyWithoutLowerVariantsEqualsTheBudgetsRemainingShare() {
+    // 80% of 10 Mb/s leaves 3 Mb/s beside the active copy's 5 Mb/s average, exactly this copy's
+    // 3 Mb/s average. Only a copy that exceeds what is left is decided again.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(10);
+    var lone =
+        new LoneCopy(
+            "a 3 Mb/s HDR10 copy",
+            hdr10HevcProbe().toBuilder().bitrate(3_000_000).build(),
+            pqDeclaration());
+
+    var session = createLoneCopySession(lone, VideoQuality.AUTO);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getVariants()).isEmpty();
+  }
+
+  // Workers encode only at a known output frame rate, so a source without one has no encode to
+  // replace its copy, and the budget never refuses playback (#446).
+  @Test
+  @DisplayName(
+      "Should copy the video alone when an Auto copy of a source without a frame rate exceeds the"
+          + " upload budget's remaining share")
+  void shouldCopyTheVideoAloneWhenAnAutoCopyWithoutAFrameRateExceedsTheBudgetsRemainingShare() {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, less than this
+    // copy's 5 Mb/s average.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+    probeResults.setDefaultProbe(defaultProbeBuilder().framerate(OptionalDouble.empty()).build());
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getVariants()).isEmpty();
+  }
+
+  // The budget never refuses playback, so an encode that could start only by stopping another
+  // stream session's left variant does not replace the copy.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("autoCopiesWithoutLowerVariants")
+  @DisplayName(
+      "Should copy the video alone and keep another stream session's left variant when an Auto copy"
+          + " without lower variants exceeds the upload budget's remaining share and no encode can"
+          + " start now")
+  void shouldCopyAloneAndKeepALeftVariantWhenALoneAutoCopyExceedsTheShareAndNoEncodeCanStart(
+      LoneCopy lone) throws Exception {
+    // The switching encode keeps 480p beside 1080p, and another encode starts 480p, so they take
+    // every place under the transcode limit of 3. Counted at 1080p (5.125 Mb/s average) and 480p
+    // (1.625 Mb/s), they leave nothing of 80% of 8 Mb/s for this copy's 5 Mb/s average.
+    var switching = createEncodeSession();
+    var switchingId = switching.getSessionId();
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
+    createEncodeSession();
+    setInternetUploadMegabitsPerSecond(8);
+    assertThat(producerLifecycle.freeConfiguredTranscodeSlots()).isZero();
+
+    var session = createLoneCopySession(lone, VideoQuality.AUTO);
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("autoCopiesWithoutLowerVariants")
+  @DisplayName(
+      "Should name the upload budget as the reason when it turns an Auto copy without lower"
+          + " variants into an encode")
+  void shouldNameTheUploadBudgetAsTheReasonWhenItTurnsAnAutoCopyWithoutLowerVariantsIntoAnEncode(
+      LoneCopy lone) {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, less than this
+    // copy's 5 Mb/s average.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session = createLoneCopySession(lone, VideoQuality.AUTO);
+
+    assertThat(session.getTranscodeDecision().reasons())
+        .containsExactly(DecisionReason.BITRATE_ABOVE_UPLOAD_BUDGET);
+  }
+
+  // The budget's encode keeps the copy's PQ when the client plays an HDR encode that a worker's
+  // encoder writes. The Dolby Vision copy stays alone beside an H.265 encoder that writes PQ,
+  // because no encode writes Dolby Vision, and the HDR10 H.265 copy stays alone beside an AV1
+  // encoder that writes PQ, because its lower variants keep its codec family (ADR 0050).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("loneCopiesBesideAnHdrEncode")
+  @DisplayName(
+      "Should keep the copy's HDR when the upload budget turns an Auto copy without lower variants"
+          + " into an encode and an HDR encode that the client plays fits the remaining share")
+  void shouldKeepTheCopysHdrWhenTheBudgetEncodesALoneAutoCopyAndAnHdrEncodeFitsTheShare(
+      LoneCopyBesideAnHdrEncode lone) {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, less than this
+    // copy's 5 Mb/s average. The HDR encode's 360p (0.925 Mb/s average) fits it.
+    transcodeExecutor.setTargetEncoders(ExecutionTargetId.LOCAL, lone.encoders());
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session = createLoneCopySession(lone.copy(), VideoQuality.AUTO);
+
+    var decision = session.getTranscodeDecision();
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.videoCodecFamily()).isEqualTo(lone.encodeCodecFamily());
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.hdr(VideoRange.PQ));
+    assertThat(listedVariants(session)).containsExactly("360p/stream.m3u8?t=t");
+  }
+
+  static Stream<LoneCopyBesideAnHdrEncode> loneCopiesBesideAnHdrEncode() {
+    return Stream.of(
+        new LoneCopyBesideAnHdrEncode(dolbyVisionCopy(), List.of(libx264(), writingPq(libx265()))),
+        new LoneCopyBesideAnHdrEncode(
+            new LoneCopy(
+                "an HDR10 H.265 copy beside an AV1 encoder that writes PQ",
+                hdr10HevcProbe(),
+                declarationBuilderFor(H264)
+                    .video(
+                        List.of(
+                            h264EntryBuilder().build(),
+                            hevcEntryBuilder()
+                                .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                                .build(),
+                            av1EntryBuilder()
+                                .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                                .build()))
+                    .build()),
+            List.of(libx264(), writingPq(libsvtav1()))));
+  }
+
+  // Giving HDR up would not bring the stream within the share: an SDR encode's 360p costs the same
+  // 800 kb/s of video in every codec profile, and the budget keeps the lowest variant either way.
+  @Test
+  @DisplayName(
+      "Should keep the copy's HDR at the encode's lowest variant when the upload budget turns an"
+          + " Auto copy without lower variants into an encode and no variant fits the share")
+  void shouldKeepTheCopysHdrAtTheLowestVariantWhenNoVariantOfTheBudgetsEncodeFitsTheShare() {
+    // 80% of 7 Mb/s leaves 0.6 Mb/s beside the active copy's 5 Mb/s average, less than the HDR
+    // encode's 360p (0.925 Mb/s average).
+    transcodeExecutor.setTargetEncoders(
+        ExecutionTargetId.LOCAL, List.of(libx264(), writingPq(libx265())));
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(7);
+
+    var session = createLoneCopySession(dolbyVisionCopy(), VideoQuality.AUTO);
+
+    var decision = session.getTranscodeDecision();
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.hdr(VideoRange.PQ));
+    assertThat(listedVariants(session)).containsExactly("360p/stream.m3u8?t=t");
+  }
+
+  // No worker's encoder writes PQ here, so the client has no HDR encode to play, and the budget's
+  // encode gives HDR up.
+  @Test
+  @DisplayName(
+      "Should encode 8-bit SDR when the upload budget turns an HDR10 Auto copy without lower"
+          + " variants into an encode and no worker's encoder writes PQ")
+  void shouldEncodeEightBitSdrWhenTheBudgetEncodesALoneHdrCopyAndNoEncoderWritesPq() {
+    // 80% of 8 Mb/s leaves 1.4 Mb/s beside the active copy's 5 Mb/s average, less than this
+    // copy's 5 Mb/s average.
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    setInternetUploadMegabitsPerSecond(8);
+
+    var session = createLoneCopySession(hdr10Copy(), VideoQuality.AUTO);
+
+    var decision = session.getTranscodeDecision();
+    assertThat(decision.transcodeMode().copiesVideo()).isFalse();
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.SDR_8_BIT);
+  }
+
+  /** A lone copy, the encoders that the worker lists beside it, and the HDR encode's family. */
+  private record LoneCopyBesideAnHdrEncode(LoneCopy copy, List<WorkerVerifiedEncoder> encoders) {
+
+    String encodeCodecFamily() {
+      return encoders.getLast().backend().codecFamily();
+    }
+
+    @Override
+    public String toString() {
+      return copy.toString();
+    }
+  }
+
+  private static WorkerVerifiedEncoder writingPq(WorkerVerifiedEncoder encoder) {
+    return WorkerVerifiedEncoder.builder()
+        .backend(encoder.backend())
+        .keyframeVerified(encoder.keyframeVerified())
+        .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+        .build();
+  }
+
+  // Two copies of a 5 Mb/s HDR10 source that Auto lists without lower variants: no verified
+  // encoder writes H.265 in PQ here, and no encode writes Dolby Vision (ADR 0013).
+  static Stream<LoneCopy> autoCopiesWithoutLowerVariants() {
+    return Stream.of(hdr10Copy(), dolbyVisionCopy());
+  }
+
+  private static LoneCopy hdr10Copy() {
+    return new LoneCopy("an HDR10 copy", hdr10HevcProbe(), pqDeclaration());
+  }
+
+  private static LoneCopy dolbyVisionCopy() {
+    return new LoneCopy(
+        "a copy that the playlist describes as Dolby Vision",
+        profile81HevcProbe(),
+        declarationBuilderFor(H264)
+            .video(
+                List.of(
+                    h264EntryBuilder().build(),
+                    hevcEntryBuilder()
+                        .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
+                        .dolbyVisionProfiles(
+                            List.of(
+                                DolbyVisionProfileCapability.builder()
+                                    .profile(DolbyVisionProfile.PROFILE_8_1)
+                                    .maxLevel(6)
+                                    .build()))
+                        .build()))
+            .build());
+  }
+
+  private record LoneCopy(String name, MediaProbe source, ClientCapabilityDeclaration declaration) {
+
+    @Override
+    public String toString() {
+      return name;
+    }
+  }
+
+  private StreamSession createLoneCopySession(LoneCopy lone, VideoQuality quality) {
+    return accepted(
+        service.createSession(
+            loneCopyCommand(lone)
+                .options(StreamingOptions.builder().quality(quality).build())
+                .build()));
+  }
+
+  // The lone copy's source and declaration, on workers that can copy its video.
+  private CreateStreamSessionCommand.CreateStreamSessionCommandBuilder loneCopyCommand(
+      LoneCopy lone) {
+    probeResults.setDefaultProbe(lone.source());
+    transcodeExecutor.setVideoCopySupportByWorker(
+        List.of(
+            WorkerVideoCopySupport.builder()
+                .plannedOutput(true)
+                .bitstreamRewrites(Set.of(BitstreamRewrite.values()))
+                .build()));
+    return createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+        .capabilityDeclaration(lone.declaration());
   }
 
   @Test
