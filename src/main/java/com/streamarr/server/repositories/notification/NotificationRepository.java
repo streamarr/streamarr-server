@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.notification;
 
 import com.streamarr.server.services.events.notification.DismissalSelector;
+import com.streamarr.server.services.events.notification.RecipientReference;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import com.streamarr.server.services.notification.events.ChangedNotification;
@@ -38,4 +39,7 @@ public interface NotificationRepository {
 
   /** Deletes the Notifications the selector selects, for every recipient it names or all. */
   List<ChangedNotification> dismiss(DismissalSelector selector);
+
+  /** Deletes every Notification of the recipient. */
+  void deleteOfRecipient(RecipientReference recipient);
 }
