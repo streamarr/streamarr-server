@@ -366,6 +366,27 @@ class RemoteVariantJobMapperTest {
   }
 
   @Test
+  @DisplayName(
+      "Should send the stored keyframe's seek position beside the time that its read must show a"
+          + " picture by when an encoded attempt carries both")
+  void shouldSendTheStoredSeekPositionBesideTheReadTimeWhenAnEncodedAttemptCarriesBoth() {
+    var request =
+        encodeAttempt("h264")
+            .startSequenceNumber(3)
+            .keyframeSeekPosition(Optional.of(Duration.ofMillis(16_250)))
+            .readFromLastKeyframePresentingAtOrBefore(Optional.of(Duration.ofMillis(17_500)))
+            .build();
+
+    var execution = mapper.map(request).getExecution();
+
+    assertThat(execution.getSeekPosition().getSeconds()).isEqualTo(16);
+    assertThat(execution.getSeekPosition().getNanos()).isEqualTo(250_000_000);
+    assertThat(execution.getReadFromLastKeyframePresentingAtOrBefore().getSeconds()).isEqualTo(17);
+    assertThat(execution.getReadFromLastKeyframePresentingAtOrBefore().getNanos())
+        .isEqualTo(500_000_000);
+  }
+
+  @Test
   @DisplayName("Should leave the seek position unset when an attempt carries no keyframe seek")
   void shouldLeaveTheSeekPositionUnsetWhenAnAttemptCarriesNoKeyframeSeek() {
     var execution = mapper.map(copyAttempt().build()).getExecution();

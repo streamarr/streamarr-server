@@ -2582,17 +2582,20 @@ class ProducerLifecycleServiceTest {
         new KeyframeKnowledge.NotReported());
   }
 
+  // The worker keeps the stored keyframe's seek position when the read from it shows a picture by
+  // 599.5 s, 0.5 s before segment 100's start.
   @Test
   @DisplayName(
-      "Should send no keyframe search time when a relocated attempt encodes a source whose"
-          + " keyframes are known")
-  void shouldSendNoKeyframeSearchTimeWhenARelocatedAttemptEncodesASourceWhoseKeyframesAreKnown() {
+      "Should send the stored keyframe's seek position and the time that its read must show a"
+          + " picture by when a relocated attempt encodes a source whose keyframes are known")
+  void shouldSendTheStoredSeekPositionAndTheReadTimeWhenARelocatedAttemptEncodesKnownKeyframes() {
     var session = startedEncodedSession(MATROSKA, keyframesDecoding84MillisBeforeTheyPresent());
 
     var request = relocatedRequest(session, 100);
 
     assertThat(request.keyframeSeekPosition()).isPresent();
-    assertThat(request.readFromLastKeyframePresentingAtOrBefore()).isEmpty();
+    assertThat(request.readFromLastKeyframePresentingAtOrBefore())
+        .hasValue(Duration.ofMillis(599_500));
   }
 
   @Test

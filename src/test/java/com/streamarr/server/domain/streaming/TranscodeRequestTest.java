@@ -60,16 +60,19 @@ class TranscodeRequestTest {
 
   @Test
   @DisplayName(
-      "Should refuse an attempt that both seeks to a keyframe position and searches for its"
-          + " keyframe")
-  void shouldRefuseAnAttemptThatBothSeeksToAKeyframePositionAndSearchesForItsKeyframe() {
-    var builder =
+      "Should keep the stored keyframe's seek position beside the keyframe read time when an"
+          + " encoded attempt carries both")
+  void shouldKeepTheStoredKeyframesSeekPositionBesideTheKeyframeReadTimeWhenAnAttemptCarriesBoth() {
+    var request =
         requestWithoutEncoderPreset()
             .encoderPreset(EncoderPreset.FAST)
             .keyframeSeekPosition(Optional.of(Duration.ofSeconds(12)))
-            .readFromLastKeyframePresentingAtOrBefore(Optional.of(Duration.ofMillis(17_500)));
+            .readFromLastKeyframePresentingAtOrBefore(Optional.of(Duration.ofMillis(17_500)))
+            .build();
 
-    assertThatThrownBy(builder::build).isInstanceOf(IllegalArgumentException.class);
+    assertThat(request.keyframeSeekPosition()).hasValue(Duration.ofSeconds(12));
+    assertThat(request.readFromLastKeyframePresentingAtOrBefore())
+        .hasValue(Duration.ofMillis(17_500));
   }
 
   @Test

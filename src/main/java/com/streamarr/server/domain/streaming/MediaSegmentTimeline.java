@@ -31,10 +31,11 @@ public sealed interface MediaSegmentTimeline {
   Optional<Duration> keyframeSeekPosition(int index);
 
   /**
-   * The time at or before which the source keyframe presents that an encoded job attempt starting
-   * at this segment reads from, when the worker must find that keyframe in the source because the
-   * source's keyframes are not stored; empty when the attempt starts at segment 0 or seeks to a
-   * stored keyframe (ADR 0037, seek).
+   * The time, on the attempt's own timeline, at or before which the source keyframe presents that
+   * an encoded job attempt starting at this segment reads from, and by which its read must show a
+   * picture: the worker checks the read from a stored keyframe's seek position against it, or finds
+   * the keyframe in the source when its keyframes are not stored. Empty for an attempt that starts
+   * at segment 0 and for a stream copy (ADR 0037, seek).
    */
   Optional<Duration> lastKeyframeReadTime(int index);
 
@@ -288,7 +289,7 @@ public sealed interface MediaSegmentTimeline {
 
     @Override
     public Optional<Duration> lastKeyframeReadTime(int index) {
-      return Optional.empty();
+      return grid.lastKeyframeReadTime(index);
     }
 
     // Rounding up keeps out a keyframe that presents a fraction of a nanosecond after the time.
