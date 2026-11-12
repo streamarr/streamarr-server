@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static com.streamarr.server.support.ServerSettingsTestSupport.limitShareCodes;
@@ -13,9 +14,11 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import com.streamarr.server.support.TestFixtureWork;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
@@ -30,13 +33,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * A Household holds at most the server's limit of live share codes, so of two issues that find room
  * for one more code, exactly one issues it (ADR 0024 §Share codes). The race is held at the
- * Household's row: both issues wait behind it and are released together.
+ * Household's row: both issues wait behind it and are released together. An issue holds the
+ * Household only against other issues, so a write that references the Household goes on beside it.
  */
 @Tag("IntegrationTest")
 @DisplayName("Share Code Limit Race Integration Tests")
 class ShareCodeLimitRaceIT extends AbstractIntegrationTest {
 
   private static final String WAITING_ON_HOUSEHOLD = "%household%";
+  private static final String INSERTING_SHARE_CODE = "%insert into%share_code%";
 
   @Autowired private ShareCodeService shareCodeService;
   @Autowired private ShareCodeRepository shareCodeRepository;
@@ -94,6 +99,55 @@ class ShareCodeLimitRaceIT extends AbstractIntegrationTest {
         .filteredOn(shareCode -> shareCode.getHouseholdId().equals(host.household().getId()))
         .filteredOn(shareCode -> shareCode.isLiveAt(Instant.now()))
         .hasSize(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should let a write that references the Household go on when an issue holds the Household")
+  void shouldLetAWriteThatReferencesTheHouseholdGoOnWhenAnIssueHoldsTheHousehold()
+      throws Exception {
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
+        var shareCodeTable = dataSource.getConnection()) {
+      shareCodeTable.setAutoCommit(false);
+      try (var statement = shareCodeTable.createStatement()) {
+        // SHARE lets the issue lock the Household and count its codes, then parks its insert.
+        statement.execute("LOCK TABLE share_code IN SHARE MODE");
+      }
+
+      var holderPid = backendPid(shareCodeTable);
+      var issue = executor.submit(this::issue);
+      try {
+        await()
+            .atMost(Duration.ofSeconds(10))
+            .until(() -> waitersBehind(jdbcTemplate, holderPid, INSERTING_SHARE_CODE) == 1);
+
+        assertThat(lockHouseholdAsAReferencingInsertDoes()).isEqualTo(host.household().getId());
+      } finally {
+        shareCodeTable.rollback();
+      }
+
+      issue.get(10, TimeUnit.SECONDS);
+    }
+  }
+
+  // An insert that references the Household takes this lock on its row to check its foreign key.
+  // The timeout turns a wait behind the issue into a failure.
+  private UUID lockHouseholdAsAReferencingInsertDoes() throws SQLException {
+    try (var connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      try (var timeout = connection.createStatement();
+          var lock =
+              connection.prepareStatement("SELECT id FROM household WHERE id = ? FOR KEY SHARE")) {
+        timeout.execute("SET LOCAL lock_timeout = '2s'");
+        lock.setObject(1, host.household().getId());
+        try (var rows = lock.executeQuery()) {
+          assertThat(rows.next()).isTrue();
+          return rows.getObject(1, UUID.class);
+        }
+      } finally {
+        connection.rollback();
+      }
+    }
   }
 
   private Outcome<NewShareCode, ShareCodeRejections.Issue> issue() {
