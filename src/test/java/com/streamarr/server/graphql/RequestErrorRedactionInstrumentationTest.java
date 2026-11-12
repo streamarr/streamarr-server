@@ -79,6 +79,36 @@ class RequestErrorRedactionInstrumentationTest {
     assertSyntaxErrorAtItsLineAndColumnWithout(error, CODE, CODE.replace("-", ""));
   }
 
+  @ParameterizedTest
+  @MethodSource("invalidUnicodeEscapes")
+  @DisplayName(
+      "Should keep the line and column without the escape when a string holds invalid unicode")
+  void shouldKeepLineAndColumnWithoutEscapeWhenStringHoldsInvalidUnicode(
+      String escape, String value) {
+    var error =
+        singleError(
+            ExecutionInput.newExecutionInput(
+                    "{ lookUp(input: {id: \"1\", code: \"%s\"}) }".formatted(escape))
+                .build());
+
+    assertSyntaxErrorAtItsLineAndColumnWithout(error, value);
+  }
+
+  @Test
+  @DisplayName("Should keep the escape out of a syntax error when the request asks for German")
+  void shouldKeepEscapeOutOfSyntaxErrorWhenRequestAsksForGerman() {
+    var error =
+        singleError(
+            ExecutionInput.newExecutionInput("{ lookUp(input: {code: \"\\u{48261379}\"}) }")
+                .locale(Locale.GERMAN)
+                .build());
+
+    var location = error.getLocations().getFirst();
+    assertThat(error.getMessage())
+        .contains("Zeile %d Spalte %d".formatted(location.getLine(), location.getColumn()))
+        .doesNotContain("48261379");
+  }
+
   @Test
   @DisplayName("Should keep the value out of a syntax error when the request asks for German")
   void shouldKeepValueOutOfSyntaxErrorWhenRequestAsksForGerman() {
@@ -150,12 +180,21 @@ class RequestErrorRedactionInstrumentationTest {
         "{ lookUp(input: {id: \"1\", code: \"x\"}) } %s".formatted(CODE.replace("-", "")));
   }
 
+  static Stream<Arguments> invalidUnicodeEscapes() {
+    return Stream.of(
+        Arguments.of("\\u{48261379}", "48261379"),
+        Arguments.of("\\uD800\\u4826", "4826"),
+        Arguments.of("\\uD8BC", "D8BC"),
+        Arguments.of("\\uDCBF", "DCBF"));
+  }
+
   private GraphQLError singleError(ExecutionInput input) {
     var errors = graphQL.execute(input).getErrors();
     assertThat(errors).hasSize(1);
     return errors.getFirst();
   }
 
+  // As the answer carries the error, and as a log line or a later instrumentation prints it.
   private static void assertSyntaxErrorAtItsLineAndColumnWithout(
       GraphQLError error, String... values) {
     var location = error.getLocations().getFirst();
@@ -163,5 +202,6 @@ class RequestErrorRedactionInstrumentationTest {
     assertThat(error.getMessage())
         .contains("line %d column %d".formatted(location.getLine(), location.getColumn()));
     assertThat(error.toSpecification().toString()).doesNotContain(values);
+    assertThat(error.toString()).doesNotContain(values);
   }
 }

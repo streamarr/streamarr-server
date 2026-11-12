@@ -1,8 +1,11 @@
 package com.streamarr.server.graphql;
 
+import graphql.ErrorType;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQLError;
+import graphql.GraphqlErrorBuilder;
+import graphql.InvalidSyntaxError;
 import graphql.ParseAndValidate;
 import graphql.execution.instrumentation.InstrumentationState;
 import graphql.execution.instrumentation.SimplePerformantInstrumentation;
@@ -34,11 +37,12 @@ import org.springframework.stereotype.Component;
  * Keeps request values out of the errors graphql-java raises before any data fetcher runs, for a
  * document that does not parse or does not pass validation. Their messages quote what the request
  * wrote, and that may be a credential: a share code, an invitation code, a PIN. A syntax error
- * keeps its line and column and leaves out the token the parser stopped at. Every value written
- * under the node a validation error points at becomes {@code 'REDACTED'} in its message, so the
- * message still names the argument and what is wrong with it. It runs first, so that every
- * instrumentation after it, among them DGS's, which turns these errors into typed errors that keep
- * the message, reads the redacted message.
+ * keeps its line and column and leaves out the token the parser stopped at, in its message and
+ * beside it, and the line that token stood on. Every value written under the node a validation
+ * error points at becomes {@code 'REDACTED'} in its message, so the message still names the
+ * argument and what is wrong with it. It runs first, so that every instrumentation after it, among
+ * them DGS's, which turns these errors into typed errors that keep the message, reads the redacted
+ * message.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -68,30 +72,59 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
       ExecutionResult executionResult,
       InstrumentationExecutionParameters parameters,
       InstrumentationState state) {
-    var locations =
-        executionResult.getErrors().stream()
-            .filter(ValidationError.class::isInstance)
-            .flatMap(error -> error.getLocations().stream())
-            .collect(Collectors.toSet());
-    if (locations.isEmpty()) {
+    if (executionResult.getErrors().isEmpty()) {
       return CompletableFuture.completedFuture(executionResult);
     }
 
-    // A document that failed validation parsed first, so it parses again the same way.
-    var document = ParseAndValidate.parse(parameters.getExecutionInput()).getDocument();
-    var quotedValues = quotedValuesAt(document, locations);
+    var quotedValues = quotedValuesAt(executionResult, parameters);
     var errors =
         executionResult.getErrors().stream().map(error -> redacted(error, quotedValues)).toList();
     return CompletableFuture.completedFuture(
         executionResult.transform(builder -> builder.errors(errors)));
   }
 
-  private static GraphQLError redacted(
-      GraphQLError error, Map<SourceLocation, List<String>> quotedValues) {
-    if (!(error instanceof ValidationError rejected)) {
-      return error;
+  private static Map<SourceLocation, List<String>> quotedValuesAt(
+      ExecutionResult executionResult, InstrumentationExecutionParameters parameters) {
+    var locations =
+        executionResult.getErrors().stream()
+            .filter(ValidationError.class::isInstance)
+            .flatMap(error -> error.getLocations().stream())
+            .collect(Collectors.toSet());
+    if (locations.isEmpty()) {
+      return Map.of();
     }
 
+    // A document that failed validation parsed first, so it parses again the same way.
+    var document = ParseAndValidate.parse(parameters.getExecutionInput()).getDocument();
+    return quotedValuesAt(document, locations);
+  }
+
+  private static GraphQLError redacted(
+      GraphQLError error, Map<SourceLocation, List<String>> quotedValues) {
+    return switch (error) {
+      case ValidationError rejected -> withoutQuotedValues(rejected, quotedValues);
+      case InvalidSyntaxError unparsed -> withoutOffendingToken(unparsed);
+      default -> error;
+    };
+  }
+
+  // An invalid unicode escape quotes itself in the message whatever the parser options say, and a
+  // syntax error may carry the token the parser stopped at and a preview of its line beside the
+  // message.
+  private static GraphQLError withoutOffendingToken(InvalidSyntaxError unparsed) {
+    var message =
+        Optional.ofNullable(unparsed.getOffendingToken())
+            .map(token -> unparsed.getMessage().replace("'" + token + "'", REDACTED))
+            .orElseGet(unparsed::getMessage);
+    return GraphqlErrorBuilder.newError()
+        .errorType(ErrorType.InvalidSyntax)
+        .message(message)
+        .locations(unparsed.getLocations())
+        .build();
+  }
+
+  private static GraphQLError withoutQuotedValues(
+      ValidationError rejected, Map<SourceLocation, List<String>> quotedValues) {
     // Longest first, so that a value is replaced whole before any value written inside it.
     var replaced =
         rejected.getLocations().stream()
