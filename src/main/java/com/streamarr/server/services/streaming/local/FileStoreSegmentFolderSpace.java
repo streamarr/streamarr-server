@@ -24,8 +24,8 @@ public class FileStoreSegmentFolderSpace implements SegmentFolderSpace {
     }
   }
 
-  // The segment store creates the folder with its first segment, inside the nearest existing
-  // folder, so that folder's file system is the one the segments will fill.
+  // The segment store creates a missing folder inside the nearest existing folder, so that
+  // folder's file system is the one the segments will fill.
   private Path nearestExistingFolder() {
     var folder = segmentFolder.toAbsolutePath();
     while (!Files.exists(folder)) {
