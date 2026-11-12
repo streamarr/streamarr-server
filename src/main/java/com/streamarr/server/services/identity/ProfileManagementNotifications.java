@@ -11,10 +11,12 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.events.auth.ProfileManagerInvitationChangedEvent;
 import com.streamarr.server.services.events.notification.ProfileManagementNotificationKinds;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnswer;
+import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationReceivedSnapshot;
 import com.streamarr.server.services.events.notification.ResolveRequestsEvent;
 import com.streamarr.server.services.events.notification.TellNotificationEvent;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -22,11 +24,12 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Tells the Account that an invitation to manage a Profile names that it may accept it, and settles
- * that request when the invitation stops waiting for it (ADR 0063 §The Profile management kinds).
- * It hears each invitation write inside the write's transaction, so what it tells commits or rolls
- * back with the write. An invitation names an Account only when that Account may accept it, which
- * the invite reads and holds until it commits, and only a manager invites, so the Account that
+ * Tells the Account that an invitation to manage a Profile names that it may accept it, settles
+ * that request when the invitation stops waiting for it, and tells the inviter how the invited
+ * Account answered (ADR 0063 §The Profile management kinds). It hears each invitation write inside
+ * the write's transaction, so what it tells commits or rolls back with the write. An invitation
+ * names an Account only when that Account may accept it, which the invite reads and holds until it
+ * commits, so never one of the Profile's managers, and only a manager invites, so the Account that
  * acted is never the one told.
  */
 @Component
@@ -40,8 +43,8 @@ class ProfileManagementNotifications {
   public void onProfileManagerInvitationChanged(ProfileManagerInvitationChangedEvent change) {
     switch (change.action()) {
       case ManagerInvitationAction.Issued() -> tellReceived(change);
-      case ManagerInvitationAction.Answered _,
-          ManagerInvitationAction.Canceled _,
+      case ManagerInvitationAction.Answered _ -> answer(change);
+      case ManagerInvitationAction.Canceled _,
           ManagerInvitationAction.StoppedWaiting _,
           ManagerInvitationAction.InvalidatedForItsAccount _ ->
           resolveRequest(change);
@@ -81,6 +84,30 @@ class ProfileManagementNotifications {
             .subject(SubjectReference.profileManagerInvitation(invitation.invitationId()))
             .resolution(settled.resolution())
             .answer(settled.answer().<RequestAnswer>map(answer -> answer))
+            .at(change.changedAt())
+            .build());
+  }
+
+  // The answer settles the request and tells the Account that issued the invitation, which still
+  // manages the Profile: a manager who leaves it invalidates the invitations it sent while they
+  // wait, and an acceptance that finds the inviter gone invalidates the invitation instead.
+  private void answer(ProfileManagerInvitationChangedEvent change) {
+    resolveRequest(change);
+    Settlement.of(change.invitation().status())
+        .answer()
+        .ifPresent(answer -> tellAnswer(change, answer));
+  }
+
+  private void tellAnswer(
+      ProfileManagerInvitationChangedEvent change, ProfileManagerInvitationAnswer answer) {
+    var invitation = change.invitation();
+    events.publishEvent(
+        TellNotificationEvent.builder()
+            .kind(ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_ANSWERED)
+            .subject(SubjectReference.profileManagerInvitation(invitation.invitationId()))
+            .recipients(Set.of(RecipientReference.account(invitation.inviterAccountId())))
+            .snapshot(
+                new ProfileManagerInvitationAnsweredSnapshot(profileNameOf(invitation), answer))
             .at(change.changedAt())
             .build());
   }

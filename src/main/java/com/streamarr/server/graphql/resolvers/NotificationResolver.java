@@ -55,7 +55,9 @@ public class NotificationResolver {
               "ProfileShareAnsweredNotification",
           SharingNotificationKinds.PROFILE_SHARE_ENDED.name(), "ProfileShareEndedNotification",
           ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_RECEIVED.name(),
-              "ProfileManagerInvitationReceivedNotification");
+              "ProfileManagerInvitationReceivedNotification",
+          ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_ANSWERED.name(),
+              "ProfileManagerInvitationAnsweredNotification");
 
   private final NotificationService notificationService;
   private final AuthorizationService authorizationService;

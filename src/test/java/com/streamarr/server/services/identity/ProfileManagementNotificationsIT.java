@@ -12,6 +12,7 @@ import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -19,6 +20,7 @@ import com.streamarr.server.services.auth.InvitationLifetime;
 import com.streamarr.server.services.auth.ManagerInvitationExpirySweeper;
 import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnswer;
+import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileManagerInvitationReceivedSnapshot;
 import com.streamarr.server.services.identity.ProfileLifecycleService.TransferProfileCommand;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService.IssuedManagerInvitation;
@@ -57,6 +59,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class ProfileManagementNotificationsIT extends AbstractIntegrationTest {
 
   private static final String RECEIVED = "PROFILE_MANAGER_INVITATION_RECEIVED";
+  private static final String ANSWERED = "PROFILE_MANAGER_INVITATION_ANSWERED";
   private static final String INVITER_NAME = "Sam Rivers";
 
   @Autowired private ProfileManagerAdministrationService profileManagement;
@@ -70,6 +73,7 @@ class ProfileManagementNotificationsIT extends AbstractIntegrationTest {
   @Autowired private ManagerInvitationExpirySweeper expirySweeper;
   @Autowired private ProfileManagerInvitationLifecycle invitationLifecycle;
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
+  @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private InvitationLifetime invitationLifetime;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private ProfileCastSupport cast;
@@ -386,6 +390,102 @@ class ProfileManagementNotificationsIT extends AbstractIntegrationTest {
     assertThat(rows.of(accountOf(cam))).isEmpty();
   }
 
+  @ParameterizedTest
+  @EnumSource(ProfileManagerInvitationAnswer.class)
+  @DisplayName("Should tell the inviter when the invited Account accepts or declines")
+  void shouldTellTheInviterWhenTheInvitedAccountAcceptsOrDeclines(
+      ProfileManagerInvitationAnswer answer) {
+    var cam = coManagerOf(alex);
+    var issued = steps.invite(sam, alex, mara.account().getEmail());
+
+    var outcome = answer(mara, issued, answer);
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var decidedAt = stored(issued).getDecidedAt();
+    assertThat(answersAbout(issued))
+        .singleElement()
+        .satisfies(
+            told -> {
+              assertThat(told.recipient()).isEqualTo(accountOf(sam));
+              assertThat(told.form()).isEqualTo("NEWS");
+              assertThat(told.snapshot())
+                  .isEqualTo(
+                      document(new ProfileManagerInvitationAnsweredSnapshot("Alex", answer)));
+              assertThat(told.latestEventAt()).isEqualTo(decidedAt);
+              assertThat(told.readAt()).isEmpty();
+            });
+    assertThat(rows.of(accountOf(mara))).extracting(Row::kind).containsExactly(RECEIVED);
+    assertThat(rows.of(accountOf(cam))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should tell nobody when the acceptance finds the inviter no longer managing")
+  void shouldTellNobodyWhenTheAcceptanceFindsTheInviterNoLongerManaging() {
+    var cam = coManagerOf(alex);
+    var issued = steps.invite(cam, alex, mara.account().getEmail());
+    revokeLeavingItsInvitationsWaiting(cam, alex);
+
+    var outcome = answer(mara, issued, ProfileManagerInvitationAnswer.ACCEPTED);
+
+    assertThat(outcome).isEqualTo(Outcome.rejected(new ManagerRejections.InvitationNotPending()));
+    var invalidated = stored(issued);
+    assertThat(invalidated.getStatus()).isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertWithdrawnAt(issued, invalidated.getDecidedAt());
+    assertThat(answersAbout(issued)).isEmpty();
+    assertThat(rows.of(accountOf(cam))).isEmpty();
+    assertThat(rows.of(accountOf(sam))).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the answer and its Profile's name when the inviter stops managing the Profile")
+  void shouldKeepTheAnswerAndItsProfileNameWhenTheInviterStopsManagingTheProfile() {
+    var cam = coManagerOf(alex);
+    var issued = steps.invite(cam, alex, mara.account().getEmail());
+    assertThat(answer(mara, issued, ProfileManagerInvitationAnswer.DECLINED))
+        .isInstanceOf(Outcome.Accepted.class);
+
+    var outcome = profileManagement.relinquishProfileManagement(identityOf(cam), alex.getId());
+    cast.rename(alex, "Alexandra");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.of(accountOf(cam)))
+        .singleElement()
+        .satisfies(
+            told -> {
+              assertThat(told.kind()).isEqualTo(ANSWERED);
+              assertThat(told.snapshot())
+                  .isEqualTo(
+                      document(
+                          new ProfileManagerInvitationAnsweredSnapshot(
+                              "Alex", ProfileManagerInvitationAnswer.DECLINED)));
+              assertThat(told.readAt()).isEmpty();
+            });
+  }
+
+  @Test
+  @DisplayName("Should make no Notification when the acceptance that would make it rolls back")
+  void shouldMakeNoNotificationWhenTheAcceptanceThatWouldMakeItRollsBack() {
+    var issued = steps.invite(sam, alex, mara.account().getEmail());
+
+    var accepted =
+        transactionTemplate.execute(
+            status -> {
+              var changed =
+                  invitationLifecycle.tryAcceptPending(
+                      issued.invitation().getId(), mara.account().getId(), Instant.now());
+              status.setRollbackOnly();
+              return changed;
+            });
+
+    assertThat(accepted).isTrue();
+    assertThat(stored(issued).getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
+    assertThat(rows.of(accountOf(sam))).isEmpty();
+    assertThat(requestsAbout(issued))
+        .singleElement()
+        .satisfies(request -> assertThat(request.resolution()).isEmpty());
+  }
+
   private Outcome<?, ?> answer(
       TestIdentity invitee, IssuedManagerInvitation issued, ProfileManagerInvitationAnswer answer) {
     var invitationId = issued.invitation().getId();
@@ -517,11 +617,29 @@ class ProfileManagementNotificationsIT extends AbstractIntegrationTest {
     };
   }
 
+  // In the database alone, so the invitations the manager sent still wait when they are answered.
+  private void revokeLeavingItsInvitationsWaiting(TestIdentity manager, Profile profile) {
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            assertThat(
+                    profileManagerRepository.tryRevokeDirectManagement(
+                        manager.account().getId(), profile.getId()))
+                .isTrue());
+  }
+
   private List<Row> requestsAbout(IssuedManagerInvitation issued) {
+    return aboutOfKind(issued, RECEIVED);
+  }
+
+  private List<Row> answersAbout(IssuedManagerInvitation issued) {
+    return aboutOfKind(issued, ANSWERED);
+  }
+
+  private List<Row> aboutOfKind(IssuedManagerInvitation issued, String kind) {
     return rows
         .about(SubjectReference.profileManagerInvitation(issued.invitation().getId()))
         .stream()
-        .filter(row -> row.kind().equals(RECEIVED))
+        .filter(row -> row.kind().equals(kind))
         .toList();
   }
 

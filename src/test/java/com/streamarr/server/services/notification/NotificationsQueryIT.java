@@ -63,8 +63,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Notifications Query Integration Tests")
 class NotificationsQueryIT extends AbstractIntegrationTest {
 
-  // An offer's answer is nullable and an answer's is not, and an invitation's answer is of another
-  // enum, so each takes its own name.
+  // An offer's answer is nullable and an answer's is not, and an invitation's answers are of
+  // another enum, so each takes its own name.
   private static final String NOTIFICATIONS =
       """
       query {
@@ -81,6 +81,9 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
               ... on ProfileShareEndedNotification { profileName shareId endedBy }
               ... on ProfileManagerInvitationReceivedNotification {
                 profileName invitationId invitationAnswer: answer
+              }
+              ... on ProfileManagerInvitationAnsweredNotification {
+                profileName invitationId inviteeAnswer: answer
               }
             }
           }
@@ -254,6 +257,44 @@ class NotificationsQueryIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.notifications.edges[0].node.message")
                 .value("The invitation to manage “Kai” was accepted."));
+  }
+
+  @Test
+  @DisplayName(
+      "Should list the answer with its invitation's id, the Profile's name and the answer when the"
+          + " inviter is told")
+  void shouldListTheAnswerWithItsInvitationIdTheProfilesNameAndTheAnswerWhenTheInviterIsTold()
+      throws Exception {
+    var kai = steps.profileManagedBy("Kai", sam, sam);
+    var invitationId =
+        invitationSteps.invite(sam, kai, riversideAdmin.account().getEmail()).invitation().getId();
+    assertThat(
+            profileManagement.declineManagerInvitation(
+                authTestSupport.identityOf(riversideAdmin), invitationId))
+        .isInstanceOf(Outcome.Accepted.class);
+    var decidedAt = invitationRepository.findById(invitationId).orElseThrow().getDecidedAt();
+
+    mockMvc
+        .perform(graphqlRequest(authTestSupport.accountBearer(sam), NOTIFICATIONS))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.unreadNotificationCount").value(1))
+        .andExpect(jsonPath("$.data.notifications.edges", hasSize(1)))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.__typename")
+                .value("ProfileManagerInvitationAnsweredNotification"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.message")
+                .value("Your invitation to manage “Kai” was declined."))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.profileName").value("Kai"))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.invitationId")
+                .value(invitationId.toString()))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.inviteeAnswer").value("DECLINED"))
+        .andExpect(jsonPath("$.data.notifications.edges[0].node.unread").value(true))
+        .andExpect(
+            jsonPath("$.data.notifications.edges[0].node.latestEventAt")
+                .value(decidedAt.toString()));
   }
 
   @Test

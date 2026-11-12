@@ -170,6 +170,27 @@ type ProfileManagerInvitationReceivedNotification implements RequestNotification
     answer: ProfileManagerInvitationAnswer
 }
 
+"""
+The invited Account accepted or declined an invitation to manage a Profile that the recipient
+issued. Recipient: the Account that issued the invitation, which still managed the Profile; the
+Account that answered is never told. Its latestEventAt is when the invitation was answered.
+"""
+type ProfileManagerInvitationAnsweredNotification implements Notification {
+    id: ID!
+    message: String!
+    createdAt: String!
+    latestEventAt: String!
+    unread: Boolean!
+    """
+    The id of the ProfileManager invitation, for managerInvitation(invitationId:), which answers
+    null once the recipient no longer manages the Profile.
+    """
+    invitationId: ID!
+    "The Profile's name when the invitation was answered. A later rename does not change it."
+    profileName: String!
+    answer: ProfileManagerInvitationAnswer!
+}
+
 enum ProfileManagerInvitationAnswer {
     ACCEPTED
     DECLINED
