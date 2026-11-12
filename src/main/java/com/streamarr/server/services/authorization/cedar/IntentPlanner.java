@@ -206,12 +206,6 @@ final class IntentPlanner {
       case Intent.MarkNotificationsRead _ ->
           unitPlan(
               AuthorizationCheck.onAccount(Action.MARK_NOTIFICATIONS_READ, identity.accountId()));
-      case Intent.ViewProfileShareNotification notification ->
-          unitPlan(
-              AuthorizationCheck.profileShareNotification(
-                  notification.householdId(),
-                  notification.shareLive(),
-                  notification.addressedToHouseholdSide()));
     };
   }
 
