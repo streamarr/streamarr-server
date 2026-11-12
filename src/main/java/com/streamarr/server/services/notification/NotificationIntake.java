@@ -29,7 +29,11 @@ public class NotificationIntake {
   @EventListener
   @Transactional(propagation = Propagation.MANDATORY)
   public void onTell(TellNotificationEvent tell) {
-    announce(notificationRepository.tellNews(tell));
+    announce(
+        switch (tell.kind().form()) {
+          case NEWS -> notificationRepository.tellNews(tell);
+          case REQUEST -> notificationRepository.tellRequests(tell);
+        });
   }
 
   private void announce(List<ChangedNotification> changed) {

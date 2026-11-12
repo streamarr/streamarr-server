@@ -17,7 +17,8 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.jooq.InsertValuesStep8;
+import org.jooq.Field;
+import org.jooq.InsertValuesStep9;
 import org.jooq.JSONB;
 import org.jooq.Record3;
 import org.springframework.stereotype.Repository;
@@ -26,18 +27,23 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class JooqNotificationRepository implements NotificationRepository {
 
+  // The unique indexes over each recipient's Notifications of a kind about a subject: one unread
+  // news, and one request.
+  private static final List<Field<?>> RECIPIENT_KIND_AND_SUBJECT =
+      List.of(
+          NOTIFICATION.RECIPIENT_TYPE,
+          NOTIFICATION.RECIPIENT_ID,
+          NOTIFICATION.KIND,
+          NOTIFICATION.SUBJECT_TYPE,
+          NOTIFICATION.SUBJECT_ID);
+
   private final DSLContext dsl;
 
   @Override
   public List<ChangedNotification> tellNews(TellNotificationEvent tell) {
     var laterOrSame = excluded(NOTIFICATION.LATEST_EVENT_AT).ge(NOTIFICATION.LATEST_EVENT_AT);
     return rowsFor(tell)
-        .onConflict(
-            NOTIFICATION.RECIPIENT_TYPE,
-            NOTIFICATION.RECIPIENT_ID,
-            NOTIFICATION.KIND,
-            NOTIFICATION.SUBJECT_TYPE,
-            NOTIFICATION.SUBJECT_ID)
+        .onConflict(RECIPIENT_KIND_AND_SUBJECT)
         .where(
             NOTIFICATION.FORM.eq(inline(NotificationForm.NEWS)).and(NOTIFICATION.READ_AT.isNull()))
         .doUpdate()
@@ -51,7 +57,17 @@ public class JooqNotificationRepository implements NotificationRepository {
         .fetch(JooqNotificationRepository::changed);
   }
 
-  private InsertValuesStep8<
+  @Override
+  public List<ChangedNotification> tellRequests(TellNotificationEvent tell) {
+    return rowsFor(tell)
+        .onConflict(RECIPIENT_KIND_AND_SUBJECT)
+        .where(NOTIFICATION.FORM.eq(inline(NotificationForm.REQUEST)))
+        .doNothing()
+        .returningResult(NOTIFICATION.ID, NOTIFICATION.RECIPIENT_TYPE, NOTIFICATION.RECIPIENT_ID)
+        .fetch(JooqNotificationRepository::changed);
+  }
+
+  private InsertValuesStep9<
           NotificationRecord,
           String,
           UUID,
@@ -60,6 +76,7 @@ public class JooqNotificationRepository implements NotificationRepository {
           String,
           UUID,
           JSONB,
+          OffsetDateTime,
           OffsetDateTime>
       rowsFor(TellNotificationEvent tell) {
     var insert =
@@ -72,11 +89,13 @@ public class JooqNotificationRepository implements NotificationRepository {
             NOTIFICATION.SUBJECT_TYPE,
             NOTIFICATION.SUBJECT_ID,
             NOTIFICATION.SNAPSHOT,
-            NOTIFICATION.LATEST_EVENT_AT);
+            NOTIFICATION.LATEST_EVENT_AT,
+            NOTIFICATION.EXPIRES_AT);
     var kind = tell.kind();
     var form = NotificationForm.valueOf(kind.form().name());
     var snapshot = SnapshotJson.write(tell.snapshot());
     var at = tell.at().atOffset(ZoneOffset.UTC);
+    var expiresAt = tell.subjectExpiresAt().map(expiry -> expiry.atOffset(ZoneOffset.UTC));
     for (var recipient : tell.recipients()) {
       insert =
           insert.values(
@@ -87,7 +106,8 @@ public class JooqNotificationRepository implements NotificationRepository {
               tell.subject().type(),
               tell.subject().id(),
               snapshot,
-              at);
+              at,
+              expiresAt.orElse(null));
     }
 
     return insert;
