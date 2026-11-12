@@ -52,6 +52,28 @@ class ProbeReportLimitsTest {
   }
 
   @Test
+  @DisplayName(
+      "Should refuse a result length limit when it is shorter than the 48 KiB of a result's titles"
+          + " and chapters")
+  void shouldRefuseResultLengthLimitWhenItIsShorterThan48KibibytesOfResultsTitlesAndChapters() {
+    var limits = ProbeReportLimits.builder().resultLengthLimitBytes(48L * 1024 - 1);
+
+    assertThatIllegalArgumentException()
+        .isThrownBy(limits::build)
+        .withMessage("Worker probe report result length limit must be at least 49152 bytes");
+  }
+
+  @Test
+  @DisplayName(
+      "Should accept a result length limit when it equals the 48 KiB of a result's titles and"
+          + " chapters")
+  void shouldAcceptResultLengthLimitWhenItEquals48KibibytesOfResultsTitlesAndChapters() {
+    var limits = ProbeReportLimits.builder().resultLengthLimitBytes(48L * 1024).build();
+
+    assertThat(limits.resultLengthLimitBytes()).isEqualTo(48L * 1024);
+  }
+
+  @Test
   @DisplayName("Should accept a result length limit when it equals the probe report length limit")
   void shouldAcceptResultLengthLimitWhenItEqualsProbeReportLengthLimit() {
     var limits =

@@ -213,7 +213,7 @@ A worker reports the keyframes of a file with more keyframes as unavailable, and
 A worker leaves a larger measurement out of a probe.
 The server sizes each bitrate scan chunk so that its keyframes, each measured in every measured stream, stay within the limit.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_LENGTH_LIMIT` sets `probe_report_length_limit_bytes`, the length of the longest probe report. It defaults to `16MB` and must be at least `128KB`, the limit of one message.
-`STREAMING_WORKER_SESSION_PROBE_REPORT_RESULT_LENGTH_LIMIT` sets `probe_result_length_limit_bytes`, the length of the longest encoded result in one probe report. It defaults to `128KB` and must be at most the length limit.
+`STREAMING_WORKER_SESSION_PROBE_REPORT_RESULT_LENGTH_LIMIT` sets `probe_result_length_limit_bytes`, the length of the longest encoded result in one probe report. It defaults to `128KB`. It must be at least `48KB`, the 16,384 encoded bytes of a result's titles and handler names and the 32,768 of its chapters, and at most the length limit.
 It bounds the heap that decoding a result takes, which can be many times the result's length because every small entry of the result decodes to an object.
 A worker fails a probe whose result is longer with `PROBE_FAILURE_RESULT_TOO_LARGE`.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT` bounds how long the server waits for a message that it asked for on a report call. It defaults to `30s`.
@@ -225,7 +225,7 @@ The server reserves the length that the first message states before it reads any
 While a probe report does not fit the budget, the server reads no message of its report call.
 The waiting probe reports of playback probes get room before the waiting probe reports of other probes, and within each of the two groups the probe reports get room in the order in which they asked.
 The server never refuses a report call for lack of room.
-The server refuses to start when a limit or the idle timeout is not positive, when the length limit is below `128KB`, when the result length limit is above the length limit, or when the memory budget is below the length limit.
+The server refuses to start when a limit or the idle timeout is not positive, when the length limit is below `128KB`, when the result length limit is below `48KB` or above the length limit, or when the memory budget is below the length limit.
 
 The first message of a report call names the worker session, the worker and the probe attempt, and states the length of the probe report.
 The server reads the report call only when that message names a probe attempt that the worker's live session runs and that no other report call reports. It refuses any other report call with `PERMISSION_DENIED`, or with `ALREADY_EXISTS` when another report call already reports the attempt.

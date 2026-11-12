@@ -163,6 +163,25 @@ class WorkerSessionConfigurationTest {
 
   @Test
   @DisplayName(
+      "Should reject a probe report result length limit below 48KB when starting the listener")
+  void shouldRejectProbeReportResultLengthLimitBelow48KilobytesWhenStartingListener() {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.port=0",
+            "streaming.worker-session.probe-report.result-length-limit=49151B")
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessage(
+                      "Worker probe report result length limit must be at least 49152 bytes");
+            });
+  }
+
+  @Test
+  @DisplayName(
       "Should reject a probe report result length limit above the length limit when starting the"
           + " listener")
   void shouldRejectProbeReportResultLengthLimitAboveLengthLimitWhenStartingListener() {

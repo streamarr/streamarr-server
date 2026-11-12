@@ -38,6 +38,14 @@ public record ProbeReportLimits(
   // The server reads a probe report's bytes into one array before it decodes them.
   private static final long LONGEST_LENGTH_LIMIT_BYTES = Integer.MAX_VALUE;
 
+  // A worker leaves out a result's titles and handler names beyond 16,384 encoded bytes, and its
+  // chapters beyond 32,768 (ADR 0032). A shorter result length limit would refuse a result that
+  // keeps both caps.
+  private static final long LONGEST_TITLES_AND_HANDLER_NAMES_BYTES = 16_384;
+  private static final long LONGEST_CHAPTERS_BYTES = 32_768;
+  private static final long SHORTEST_RESULT_LENGTH_LIMIT_BYTES =
+      LONGEST_TITLES_AND_HANDLER_NAMES_BYTES + LONGEST_CHAPTERS_BYTES;
+
   public ProbeReportLimits {
     requirePositive(keyframeLimit, "keyframe limit");
     requirePositive(measuredKeyframeIntervalLimit, "measured keyframe interval limit");
@@ -59,6 +67,12 @@ public record ProbeReportLimits(
       throw new IllegalArgumentException(
           "Worker probe report length limit must be at most %d bytes"
               .formatted(LONGEST_LENGTH_LIMIT_BYTES));
+    }
+
+    if (resultLengthLimitBytes < SHORTEST_RESULT_LENGTH_LIMIT_BYTES) {
+      throw new IllegalArgumentException(
+          "Worker probe report result length limit must be at least %d bytes"
+              .formatted(SHORTEST_RESULT_LENGTH_LIMIT_BYTES));
     }
 
     // A result longer than the probe report that holds it could never arrive.

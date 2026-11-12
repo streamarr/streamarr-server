@@ -194,8 +194,8 @@ streaming:
       measured-keyframe-interval-limit: ${STREAMING_WORKER_SESSION_PROBE_REPORT_MEASURED_KEYFRAME_INTERVAL_LIMIT:1000000}
       # The length of the longest probe report. It must be at least 128KB, the limit of one message.
       length-limit: ${STREAMING_WORKER_SESSION_PROBE_REPORT_LENGTH_LIMIT:16MB}
-      # The length of the longest encoded result in one probe report. It must be at most the length
-      # limit.
+      # The length of the longest encoded result in one probe report. It must be at least 48KB, the
+      # most that a result's titles, handler names and chapters take, and at most the length limit.
       result-length-limit: ${STREAMING_WORKER_SESSION_PROBE_REPORT_RESULT_LENGTH_LIMIT:128KB}
       # The server ends a report call when it asked for a message and none arrives in this time.
       idle-timeout: ${STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT:30s}
