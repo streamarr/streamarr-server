@@ -47,6 +47,8 @@ class ManagerInvitationExpirySweeperIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    // The sweep expires every lapsed invitation in the database, not only this test's.
+    invitationRepository.deleteAll();
     sam = authTestSupport.createIdentity();
     mara = authTestSupport.createIdentity();
     alex = cast.profileManagedBy(sam, ProfileFixture.defaultProfileBuilder().name("Alex"));
