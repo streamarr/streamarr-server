@@ -19,8 +19,9 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * Reads one report call: the metadata that names the probe attempt, then the bytes of the encoded
- * probe report, one message at a time. At the half-close it checks the report, completes the probe
- * attempt and answers once.
+ * probe report, one message at a time. It counts the report's fields as each message arrives and
+ * ends the call at the first message that breaks a limit. At the half-close it decodes the report,
+ * checks it, completes the probe attempt and answers once.
  *
  * <p>The monitor orders gRPC's callbacks with an end of the probe attempt that the call did not
  * cause, the grant of room in the memory budget and the idle timeout, which arrive on other
@@ -41,6 +42,7 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
   private long reportLengthBytes;
   private ByteString received = ByteString.EMPTY;
   // Unset until the metadata states a length that the server may read.
+  private ProbeReportFieldCounter fields;
   private ProbeReportMemoryBudget.Reservation room;
   // Runs while the server has asked for a message that has not arrived. Unset otherwise, so the
   // time that the report waits for room never counts.
@@ -155,6 +157,7 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
     }
 
     reportLengthBytes = statedLength;
+    fields = new ProbeReportFieldCounter(limits, statedLength);
     // The server reads no byte of the report before the whole report has room.
     room =
         memoryBudget.reserve(
@@ -184,6 +187,12 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
       return;
     }
 
+    var broken = fields.read(data);
+    if (broken.isPresent()) {
+      breakContract(broken.get().description());
+      return;
+    }
+
     received = received.concat(data);
     // Also after the last byte: a further message breaks the contract, and the idle timeout then
     // bounds the wait for the half-close, which needs no request.
@@ -204,6 +213,12 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
 
     if (received.size() < reportLengthBytes) {
       breakContract("Worker probe report holds fewer bytes than it stated");
+      return;
+    }
+
+    var broken = fields.end();
+    if (broken.isPresent()) {
+      breakContract(broken.get().description());
       return;
     }
 

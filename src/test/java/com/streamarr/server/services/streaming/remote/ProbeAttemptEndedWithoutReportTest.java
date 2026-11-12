@@ -6,7 +6,6 @@ import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.google.protobuf.ByteString;
 import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration.WorkerSessionServerConfigurationBuilder;
@@ -109,8 +108,9 @@ class ProbeAttemptEndedWithoutReportTest {
     var worker = workerWithOneBackgroundUnit();
     var probe = worker.dispatch();
     var call = worker.openReportCall();
-    call.sendMetadata(worker.metadata(probe.request()).setReportLengthBytes(8));
-    call.sendData(ByteString.copyFrom(new byte[] {1, 2, 3}));
+    var bytes = invalidMedia(probe.request()).build().toByteString();
+    call.sendMetadata(worker.metadata(probe.request()).setReportLengthBytes(bytes.size()));
+    call.sendData(bytes.substring(0, 3));
     var requestedBeforeTheEvent = call.requestedMessages();
 
     worker.endWithoutReport(probe.request());

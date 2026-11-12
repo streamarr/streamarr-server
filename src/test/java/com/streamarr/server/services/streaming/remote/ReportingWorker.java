@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
@@ -11,7 +12,9 @@ import com.streamarr.transcode.v1.ProbeAttemptEndedWithoutReport;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeFailure;
+import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import com.streamarr.transcode.v1.Uuid;
@@ -191,6 +194,34 @@ final class ReportingWorker {
                 .setProbeAttemptId(request.getProbeAttemptId())
                 .setProbeVersion(request.getProbeVersion())
                 .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA));
+  }
+
+  /**
+   * A probe report whose result takes exactly this many encoded bytes. The result names a container
+   * format of the length that makes up the rest.
+   */
+  static ProbeAttemptReport.Builder reportWithResultOfLength(
+      ProbeRequest request, int resultLength) {
+    var formatLength = resultLength - resultWithFormat(request, "").getSerializedSize();
+    var result = resultWithFormat(request, "x".repeat(formatLength));
+    // A longer length of the format, or of a message around it, takes another byte.
+    while (result.getSerializedSize() > resultLength) {
+      formatLength--;
+      result = resultWithFormat(request, "x".repeat(formatLength));
+    }
+
+    assertThat(result.getSerializedSize()).isEqualTo(resultLength);
+    return ProbeAttemptReport.newBuilder().setResult(result);
+  }
+
+  private static ProbeAttemptResult resultWithFormat(ProbeRequest request, String format) {
+    return ProbeAttemptResult.newBuilder()
+        .setProbeAttemptId(request.getProbeAttemptId())
+        .setProbeVersion(request.getProbeVersion())
+        .setMedia(
+            ProbeMediaInfo.newBuilder()
+                .setContainer(ProbeContainerInfo.newBuilder().setFormat(format)))
+        .build();
   }
 
   /** Adds this many keyframes to the report, each 90,000 ticks after the one before. */

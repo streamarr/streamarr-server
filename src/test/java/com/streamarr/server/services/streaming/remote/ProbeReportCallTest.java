@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.services.streaming.remote.ReportingWorker.intervals;
 import static com.streamarr.server.services.streaming.remote.ReportingWorker.invalidMedia;
+import static com.streamarr.server.services.streaming.remote.ReportingWorker.reportWithResultOfLength;
 import static com.streamarr.server.services.streaming.remote.ReportingWorker.withKeyframes;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -426,6 +427,15 @@ class ProbeReportCallTest {
               call.sendMetadata(metadata.setReportLengthBytes(bytes.size()));
               call.sendData(bytes);
               call.halfClose();
+            }),
+        violation(
+            "a result whose bytes do not decode as a result",
+            (call, metadata, request) -> {
+              // The result's one byte starts a tag that it does not end.
+              var bytes = ByteString.copyFrom(new byte[] {0x0a, 0x01, (byte) 0x80});
+              call.sendMetadata(metadata.setReportLengthBytes(bytes.size()));
+              call.sendData(bytes);
+              call.halfClose();
             }));
   }
 
@@ -516,6 +526,7 @@ class ProbeReportCallTest {
                 .keyframeLimit(5)
                 .measuredKeyframeIntervalLimit(7)
                 .lengthLimitBytes(200_000)
+                .resultLengthLimitBytes(1_000)
                 .build());
     var stated = worker.commands().getFirst().getSessionAccepted();
     var atTheLimit = worker.dispatch();
@@ -544,6 +555,19 @@ class ProbeReportCallTest {
         var call = worker.openReportCall();
         call.sendMetadata(worker.metadata(request).setReportLengthBytes(amount));
         return call;
+      }
+    },
+    RESULT_LENGTH {
+      @Override
+      long statedIn(WorkerSessionAccepted accepted) {
+        return accepted.getProbeResultLengthLimitBytes();
+      }
+
+      @Override
+      ReportCall report(ReportingWorker worker, ProbeRequest request, long amount)
+          throws Exception {
+        return worker.report(
+            request, reportWithResultOfLength(request, Math.toIntExact(amount)).build());
       }
     },
     KEYFRAMES {
@@ -664,8 +688,9 @@ class ProbeReportCallTest {
       @Override
       void send(ReportCall call, ProbeAttemptReportMetadata.Builder metadata, ProbeRequest request)
           throws Exception {
-        call.sendMetadata(metadata.setReportLengthBytes(8));
-        call.sendData(ByteString.copyFrom(new byte[] {1, 2, 3}));
+        var bytes = invalidMedia(request).build().toByteString();
+        call.sendMetadata(metadata.setReportLengthBytes(bytes.size()));
+        call.sendData(bytes.substring(0, 3));
       }
     },
     AFTER_EVERY_BYTE {
