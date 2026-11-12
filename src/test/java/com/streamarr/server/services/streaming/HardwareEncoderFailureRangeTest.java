@@ -71,8 +71,9 @@ import org.junit.jupiter.params.provider.MethodSource;
  * The range and bit depth of an encode after its hardware encoder fails during a stream (ADR 0044),
  * through the real transcode decision, stream session and playlist. The encode continues on a
  * software encoder of the codec family in the same range and bit depth when one on a worker with a
- * free slot writes them. Otherwise Auto gives the range or the 10 bits up as it does after a format
- * error during the encode, and a fixed quality ends playback (ADR 0013).
+ * free slot writes them. Otherwise a 10-bit SDR encode continues there in 8 bits, which keeps its
+ * range. A PQ or HLG encode never continues in SDR: Auto gives the range up as it does after a
+ * format error during the encode, and a fixed quality ends playback (ADR 0013).
  */
 @Tag("UnitTest")
 @DisplayName("Hardware Encoder Failure Range Tests")
@@ -162,7 +163,7 @@ class HardwareEncoderFailureRangeTest {
   @MethodSource("fixedQualitiesWhoseSoftwareEncoderCannotWriteTheFormat")
   @DisplayName(
       "Should end playback without starting another encode when the hardware encoder of a fixed"
-          + " quality fails and no software encoder writes the encode's range and bit depth")
+          + " quality fails and no software encoder writes the encode's PQ or HLG range")
   void shouldEndPlaybackWithoutAnotherEncodeWhenAFixedQualitysSoftwareEncoderCannotWriteTheFormat(
       MediaProbe source, Set<VideoEncodeFeature> softwareFeatures, StreamingOptions options) {
     connectTheFailingWorker(softwareFeatures);
@@ -206,12 +207,6 @@ class HardwareEncoderFailureRangeTest {
             options(hd, DynamicRangeChoice.HDR)),
         Arguments.of(
             Named.of(
-                "a 10-bit SDR source, a software encoder that writes 8 bits",
-                sourceOf(CompatibleBase.SDR)),
-            NO_ENCODE_FEATURE,
-            options(hd, null)),
-        Arguments.of(
-            Named.of(
                 "a Dolby Vision profile 5 source, a software encoder that writes PQ without the"
                     + " reshape",
                 profile5Source()),
@@ -221,13 +216,12 @@ class HardwareEncoderFailureRangeTest {
 
   // In Auto an SDR picture that plays is better than an error, so the encode that cannot continue
   // in its range counts as failed: the next format attempt is 8-bit SDR and spends the budget, as
-  // after a format error during a PQ, HLG or 10-bit SDR encode (ADR 0013).
+  // after a format error during a PQ or HLG encode (ADR 0013).
   @ParameterizedTest(name = "{0}")
   @MethodSource("sourcesWhoseSoftwareEncoderCannotWriteTheFormat")
   @DisplayName(
       "Should play 8-bit SDR in a format attempt that counts against the budget when the hardware"
-          + " encoder fails in Auto and no software encoder writes the encode's range and bit"
-          + " depth")
+          + " encoder fails in Auto and no software encoder writes the encode's PQ or HLG range")
   void shouldPlay8BitSdrInACountedFormatAttemptWhenAutosSoftwareEncoderCannotWriteTheFormat(
       MediaProbe source, Set<VideoEncodeFeature> softwareFeatures) {
     connectTheFailingWorker(softwareFeatures);
@@ -261,15 +255,68 @@ class HardwareEncoderFailureRangeTest {
             TEN_BIT_AND_PQ),
         Arguments.of(
             Named.of(
-                "a 10-bit SDR source, a software encoder that writes 8 bits",
-                sourceOf(CompatibleBase.SDR)),
-            NO_ENCODE_FEATURE),
-        Arguments.of(
-            Named.of(
                 "a Dolby Vision profile 5 source, a software encoder that writes PQ without the"
                     + " reshape",
                 profile5Source()),
             TEN_BIT_AND_PQ));
+  }
+
+  // 8-bit SDR keeps the range of a 10-bit SDR encode, so the encode continues in 8 bits as a
+  // software continuation does: in Auto and in a fixed quality, and without spending a format
+  // attempt (ADR 0013).
+  @ParameterizedTest(name = "in {0}")
+  @MethodSource("autoAndAFixedQuality")
+  @DisplayName(
+      "Should continue in 8-bit SDR on the software encoder when the hardware encoder of a 10-bit"
+          + " SDR encode fails and no software encoder writes 10 bits")
+  void shouldContinueIn8BitSdrWhenNoSoftwareEncoderWritesThe10BitsOfA10BitSdrEncode(
+      StreamingOptions options) {
+    connectTheFailingWorker(NO_ENCODE_FEATURE);
+    probes.setDefaultProbe(sourceOf(CompatibleBase.SDR));
+    var hardware = accepted(playback.start(start(options)));
+    var hardwarePlan = plannedEncode();
+    assertThat(hardwarePlan.bitDepth()).isEqualTo(10);
+
+    var software = failTheHardwareEncoderOf(hardware);
+
+    assertThat(lastStartedDecision().softwareEncoder()).isTrue();
+    assertThat(plannedEncode().codecProfile()).isEqualTo(hardwarePlan.codecProfile());
+    assertThat(plannedEncode().bitDepth()).isEqualTo(8);
+    assertThat(plannedEncode().dynamicRange()).isEqualTo(VideoDynamicRange.SDR);
+    assertThat(sessionOf(software).getVideoRange()).isEqualTo(VideoRange.SDR);
+    assertThat(software.formatAttemptCount()).isEqualTo(1);
+    assertThat(software.playbackChoice()).isEqualTo(options.quality());
+    assertThat(software.formatChange()).isEmpty();
+    assertThat(software.decisions().getLast().reasons())
+        .startsWith(DecisionReason.HARDWARE_ENCODER_FAILED);
+  }
+
+  static Stream<Arguments> autoAndAFixedQuality() {
+    return Stream.of(
+        Arguments.of(Named.of("Auto", options(VideoQuality.AUTO, null))),
+        Arguments.of(Named.of("1080p", options(VideoQuality.FULL_HD_1080P, null))));
+  }
+
+  // Only a software encoder on a worker that can take the encode now keeps the 10 bits.
+  @Test
+  @DisplayName(
+      "Should continue in 8-bit SDR on the failed worker in a fixed quality when the only software"
+          + " encoder that writes 10 bits runs on a worker without a free slot")
+  void shouldContinueIn8BitSdrOnTheFailedWorkerWhenThe10BitSoftwareEncodersWorkerIsFull() {
+    connectTheFailingWorker(NO_ENCODE_FEATURE);
+    connectAnotherWorker(EVERY_ENCODE_FEATURE);
+    workers.limitJobSlots(OTHER_WORKER, 0);
+    probes.setDefaultProbe(sourceOf(CompatibleBase.SDR));
+    var hardware = accepted(playback.start(start(options(VideoQuality.FULL_HD_1080P, null))));
+    assertThat(plannedEncode().bitDepth()).isEqualTo(10);
+
+    var software = failTheHardwareEncoderOf(hardware);
+
+    assertThat(lastStartedDecision().softwareEncoder()).isTrue();
+    assertThat(plannedEncode().bitDepth()).isEqualTo(8);
+    assertThat(workerOfTheStartedEncode()).contains(FAILING_WORKER);
+    assertThat(sessionOf(software).getVideoRange()).isEqualTo(VideoRange.SDR);
+    assertThat(software.formatAttemptCount()).isEqualTo(1);
   }
 
   // The range that Auto gave up stays out of every later format attempt of the playback session,

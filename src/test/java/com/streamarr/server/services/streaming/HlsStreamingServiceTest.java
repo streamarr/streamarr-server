@@ -7902,6 +7902,49 @@ class HlsStreamingServiceTest {
     assertThat(left.switched().get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
+  // 8-bit SDR keeps the range of a 10-bit SDR encode (ADR 0013), so the left variant on the worker
+  // without 10 bits makes room for the software continuation, as it does for an ordinary encode.
+  @Test
+  @DisplayName(
+      "Should stop a left variant on a worker without 10 bits and continue there in 8-bit SDR when"
+          + " a 10-bit SDR encode continues in software and the only worker whose software encoder"
+          + " writes 10 bits is busy")
+  void shouldContinueA10BitSdrEncodeIn8BitSdrWhereItStopsALeftVariantOnAWorkerWithout10Bits() {
+    var left = keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy();
+    var switchingId = left.session().getSessionId();
+    transcodeExecutor.setTargetSoftwareEncoders(AV1_WORKER, List.of(libsvtav1()));
+    transcodeExecutor.setTargetSoftwareEncoders(
+        new ExecutionTargetId("pq-worker"),
+        List.of(
+            WorkerVerifiedEncoder.builder()
+                .backend(libsvtav1().backend())
+                .keyframeVerified(true)
+                .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                .build()));
+    probeResults.setDefaultProbe(
+        hevcMain10Probe(
+            new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent())));
+
+    var continued =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .capabilityDeclaration(av1Declaration(List.of(CompatibleBase.SDR)))
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .softwareContinuation(
+                        Optional.of(new SoftwareContinuation("av1", EncodeFormat.SDR_10_BIT)))
+                    .build()));
+
+    var started = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(started.sessionId()).isEqualTo(continued.getSessionId());
+    assertThat(started.transcodeDecision().videoEncodeFormat()).isEqualTo(EncodeFormat.SDR_8_BIT);
+    assertThat(started.transcodeDecision().softwareEncoder()).isTrue();
+    assertThat(
+            transcodeExecutor.runningExecutionTarget(started.sessionId(), started.variantLabel()))
+        .contains(AV1_WORKER);
+    assertThat(transcodeExecutor.isRunning(switchingId, "480p")).isFalse();
+  }
+
   // An SDR AV1 session keeps 480p as its left variant on the AV1 worker without PQ while it
   // switches to 1080p there, and another session fills the only worker whose AV1 encoder writes PQ.
   private LeftVariantOnAWorker keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy() {

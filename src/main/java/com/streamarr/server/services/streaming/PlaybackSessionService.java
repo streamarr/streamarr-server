@@ -767,11 +767,12 @@ public class PlaybackSessionService implements AutoCloseable {
   /**
    * Continues the requested variant's encode on the software encoder of the same codec family in a
    * new format attempt, which the client reopens at the same position (ADR 0044). The encode keeps
-   * its range and bit depth, and a continuation that starts spends no format attempt. When no
-   * software encoder on a worker with room writes a 10-bit or HDR encode's format, the encode has
-   * failed as after a format error: Auto gives the range or the 10 bits up within its budget, and a
-   * fixed quality ends playback (ADR 0013). An 8-bit SDR encode with no worker with room for it
-   * ends the playback session.
+   * its range and bit depth, and a continuation that starts spends no format attempt. A 10-bit SDR
+   * encode continues in 8-bit SDR when no software encoder on a worker with room writes 10 bits.
+   * When none writes a PQ or HLG encode's range, or a 10-bit SDR encode finds no worker with room,
+   * the encode has failed as after a format error: Auto gives the range or the 10 bits up within
+   * its budget, and a fixed quality ends playback (ADR 0013). An 8-bit SDR encode with no worker
+   * with room for it ends the playback session.
    */
   @EventListener
   public void onRequestedVariantHardwareEncoderFailed(
@@ -995,11 +996,11 @@ public class PlaybackSessionService implements AutoCloseable {
     streamingService.destroySession(attempt.streamId());
   }
 
-  // A software continuation of a PQ, HLG or 10-bit SDR encode that could not start never continues
-  // in another range or bit depth. Its encode has failed, so what follows is what follows a format
-  // error during that encode. The continuation made no decision, so a format attempt that follows
-  // takes its number. An 8-bit SDR encode has no range to give up, so its rejected continuation
-  // ends playback (ADR 0044).
+  // A software continuation of a PQ, HLG or 10-bit SDR encode that could not start in that range
+  // means that its encode has failed, so what follows is what follows a format error during that
+  // encode. The continuation made no decision, so a format attempt that follows takes its number.
+  // An 8-bit SDR encode has no range to give up, so its rejected continuation ends playback (ADR
+  // 0044).
   private Optional<FormatAttemptReservation> reserveAfterContinuationRejected(
       PlaybackSession playback,
       ReservedFormatAttempt attempt,
