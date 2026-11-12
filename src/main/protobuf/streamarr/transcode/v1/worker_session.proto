@@ -793,7 +793,8 @@ message JobAttemptStopped {
   Uuid job_attempt_id = 1;
 }
 
-// This message reports how far a running attempt's output has reached. The
+// This message reports how far a running attempt's output has reached, and how
+// much of the source the attempt has read where its output cannot grow. The
 // worker sends it at most once a second, and only when a value has grown. The
 // worker sends none after the attempt ends (ADR 0037, segment list).
 message JobAttemptProgress {
@@ -807,6 +808,12 @@ message JobAttemptProgress {
   // video's last keyframe. This field counts the source bytes that the search
   // has read. It stays 0 when the attempt runs no search.
   uint64 keyframe_search_bytes_read = 3;
+  // The bytes that the attempt's FFmpeg process has read. An attempt that reads
+  // its encoded audio from an input of its own writes nothing while that input
+  // reads on past the audio's last packet; this count grows while it reads. It
+  // stays 0 for every other attempt and on a worker host that counts no bytes
+  // read for a process (ADR 0037, segment list).
+  uint64 ffmpeg_bytes_read = 4;
 }
 
 // The worker sends this message whenever the encoders that it offers change,
