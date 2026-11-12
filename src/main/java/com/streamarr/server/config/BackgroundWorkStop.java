@@ -5,7 +5,7 @@ import java.util.List;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import lombok.NonNull;
-import org.springframework.boot.web.server.context.WebServerGracefulShutdownLifecycle;
+import org.springframework.boot.web.server.context.WebServerApplicationContext;
 
 /**
  * Stops the server's background work in the phase of the web server's graceful shutdown. Each
@@ -16,7 +16,7 @@ import org.springframework.boot.web.server.context.WebServerGracefulShutdownLife
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class BackgroundWorkStop {
 
-  public static final int PHASE = WebServerGracefulShutdownLifecycle.SMART_LIFECYCLE_PHASE;
+  public static final int PHASE = WebServerApplicationContext.GRACEFUL_SHUTDOWN_PHASE;
 
   /** Runs {@code stop} on a thread of its own and then the lifecycle processor's callback. */
   public static void onItsOwnThread(

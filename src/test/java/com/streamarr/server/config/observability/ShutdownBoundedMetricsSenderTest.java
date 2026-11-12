@@ -75,7 +75,7 @@ class ShutdownBoundedMetricsSenderTest {
   // The registry sends a publish in batches, and the batches share the one second.
   @Test
   @DisplayName("Should send no more batches once the second has passed when the server stops")
-  void shouldSendNoMoreBatchesOnceTheSecondHasPassedWhenTheServerStops() throws Exception {
+  void shouldSendNoMoreBatchesOnceTheSecondHasPassedWhenTheServerStops() {
     var sends = new AtomicInteger();
     var sender =
         new ShutdownBoundedMetricsSender(

@@ -342,8 +342,13 @@ class TmdbHttpClientConfigurationTest {
 
     var output = connection.getOutputStream();
     output.write(
-        ("HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nCache-Control: max-age=60\r\n"
-                + "Content-Length: 2048\r\n\r\n")
+        """
+        HTTP/1.1 200 OK\r
+        Content-Type: image/jpeg\r
+        Cache-Control: max-age=60\r
+        Content-Length: 2048\r
+        \r
+        """
             .getBytes(StandardCharsets.US_ASCII));
     output.write(new byte[1024]);
     output.flush();

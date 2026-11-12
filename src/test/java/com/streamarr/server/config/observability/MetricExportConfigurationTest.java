@@ -284,6 +284,8 @@ class MetricExportConfigurationTest {
                     .increment();
 
                 BoundedTask.runWithin(Duration.ofSeconds(2), context::close);
+
+                assertThat(context.isActive()).isFalse();
               });
     }
   }

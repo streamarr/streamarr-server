@@ -19,6 +19,8 @@ import org.springframework.core.Ordered;
 @Configuration(proxyBeanMethods = false)
 class OtlpMetricsShutdownConfiguration {
 
+  private OtlpMetricsShutdownConfiguration() {}
+
   @Bean
   static MetricsSendersAtShutdown metricsSendersAtShutdown() {
     return new MetricsSendersAtShutdown();

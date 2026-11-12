@@ -88,14 +88,15 @@ class BoundedConnectionPoolCloseTest {
     configuration.setMinimumIdle(1);
     // The pool starts without a connection and opens one in the background.
     configuration.setInitializationFailTimeout(-1);
-    configuration.setMetricsTrackerFactory(
-        (_, _) ->
-            new IMetricsTracker() {
-              @Override
-              public void close() {
-                poolCloseEnded.countDown();
-              }
-            });
+    configuration.setMetricsTrackerFactory((_, _) -> new PoolCloseSignal(poolCloseEnded));
     return new HikariDataSource(configuration);
+  }
+
+  // Every method of the tracker has a default, so it cannot be a lambda.
+  private record PoolCloseSignal(CountDownLatch poolCloseEnded) implements IMetricsTracker {
+    @Override
+    public void close() {
+      poolCloseEnded.countDown();
+    }
   }
 }
