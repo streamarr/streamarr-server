@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.notification;
 
 import static com.streamarr.server.jooq.generated.tables.Notification.NOTIFICATION;
+import static org.jooq.impl.DSL.arrayGet;
 import static org.jooq.impl.DSL.cast;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.excluded;
@@ -11,6 +12,7 @@ import static org.jooq.impl.DSL.jsonbGetAttributeAsText;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.unnest;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
@@ -42,7 +44,7 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
-import org.jooq.InsertValuesStep10;
+import org.jooq.InsertOnDuplicateStep;
 import org.jooq.JSONB;
 import org.jooq.Record3;
 import org.jooq.impl.SQLDataType;
@@ -356,22 +358,19 @@ public class JooqNotificationRepository implements NotificationRepository {
   }
 
   // The tell's event is a new Notification's first and latest event; an update in place moves only
-  // the latest.
-  private InsertValuesStep10<
-          NotificationRecord,
-          String,
-          UUID,
-          String,
-          NotificationForm,
-          String,
-          UUID,
-          JSONB,
-          OffsetDateTime,
-          OffsetDateTime,
-          OffsetDateTime>
-      rowsFor(NotificationTell tell) {
-    var insert =
-        dsl.insertInto(
+  // the latest. The recipients arrive as one table, each id beside its place in the list, whose
+  // type is at the same place, so a tell runs one statement whatever its recipients, none included.
+  private InsertOnDuplicateStep<NotificationRecord> rowsFor(NotificationTell tell) {
+    var recipients = List.copyOf(tell.recipients());
+    var told =
+        unnest(recipients.stream().map(RecipientReference::id).toArray(UUID[]::new))
+            .withOrdinality()
+            .as("told", "recipient_id", "position");
+    var types = val(recipients.stream().map(RecipientReference::type).toArray(String[]::new));
+    var kind = tell.kind();
+    var at = tell.at().atOffset(ZoneOffset.UTC);
+    var expiresAt = tell.subjectExpiresAt().map(expiry -> expiry.atOffset(ZoneOffset.UTC));
+    return dsl.insertInto(
             NOTIFICATION,
             NOTIFICATION.RECIPIENT_TYPE,
             NOTIFICATION.RECIPIENT_ID,
@@ -382,28 +381,20 @@ public class JooqNotificationRepository implements NotificationRepository {
             NOTIFICATION.SNAPSHOT,
             NOTIFICATION.FIRST_EVENT_AT,
             NOTIFICATION.LATEST_EVENT_AT,
-            NOTIFICATION.EXPIRES_AT);
-    var kind = tell.kind();
-    var form = NotificationForm.valueOf(kind.form().name());
-    var snapshot = SnapshotJson.write(tell.snapshot());
-    var at = tell.at().atOffset(ZoneOffset.UTC);
-    var expiresAt = tell.subjectExpiresAt().map(expiry -> expiry.atOffset(ZoneOffset.UTC));
-    for (var recipient : tell.recipients()) {
-      insert =
-          insert.values(
-              recipient.type(),
-              recipient.id(),
-              kind.name(),
-              form,
-              tell.subject().type(),
-              tell.subject().id(),
-              snapshot,
-              at,
-              at,
-              expiresAt.orElse(null));
-    }
-
-    return insert;
+            NOTIFICATION.EXPIRES_AT)
+        .select(
+            select(
+                    arrayGet(types, told.field("position", Integer.class)),
+                    told.field("recipient_id", UUID.class),
+                    val(kind.name(), NOTIFICATION.KIND),
+                    val(NotificationForm.valueOf(kind.form().name()), NOTIFICATION.FORM),
+                    val(tell.subject().type(), NOTIFICATION.SUBJECT_TYPE),
+                    val(tell.subject().id(), NOTIFICATION.SUBJECT_ID),
+                    val(SnapshotJson.write(tell.snapshot()), NOTIFICATION.SNAPSHOT),
+                    val(at, NOTIFICATION.FIRST_EVENT_AT),
+                    val(at, NOTIFICATION.LATEST_EVENT_AT),
+                    val(expiresAt.orElse(null), NOTIFICATION.EXPIRES_AT))
+                .from(told));
   }
 
   private static ChangedNotification changed(Record3<UUID, String, UUID> row) {
