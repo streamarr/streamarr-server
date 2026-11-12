@@ -363,8 +363,8 @@ enum PlaybackFormatChange {
     The source's HDR range was not kept, and SDR plays. The server sets it when a format attempt plays SDR of
     a PQ or HLG source in one of two cases: the client sent dynamicRange HDR with a fixed quality, or an
     earlier format attempt of the playback session played PQ or HLG. The server sets it only while no other
-    value is set, so a failed copy whose encode plays SDR stays COPY_FAILED. It clears as every value does:
-    when the playback session ends.
+    value is set, so in Original or a fixed quality a failed copy whose encode plays SDR stays COPY_FAILED.
+    It clears as every value does: when the playback session ends.
     """
     HDR_NOT_KEPT
 }
