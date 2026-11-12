@@ -451,7 +451,11 @@ class KeyframePacketScanExecutionTest {
   }
 
   private static Stream<KeyframeKnowledge> keyframesThatNoPacketScanReports() {
-    return Stream.of(packetScanRequired(), new KeyframeKnowledge.NotReported());
+    return Stream.of(
+        packetScanRequired(),
+        new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+            KeyframePacketScanReason.NO_CONTAINER_INDEX, SCANNED_POSITIONS),
+        new KeyframeKnowledge.NotReported());
   }
 
   private KeyframePacketScanExecution execution() {
