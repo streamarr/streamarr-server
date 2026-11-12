@@ -797,8 +797,10 @@ public class PlaybackSessionService implements AutoCloseable {
     }
 
     var failed = failedAttempt(playback, fixedFailure);
-    if (failed.output() instanceof FailedFormatAttempt.Encode(var codecFamily, var format)) {
-      excludeFailedEncode(playback, codecFamily, format);
+    // A failed encode stays out of every later format attempt.
+    if (failed.output() instanceof FailedFormatAttempt.Encode encode) {
+      excludeFailedEncode(
+          encode, playback.excludedEncodeCodecFamilies, playback.excludedEncodeFormats);
     }
 
     return switch (recoveryPolicy.after(playback.choice, failed, playback.formatAttemptCount)) {
@@ -893,17 +895,19 @@ public class PlaybackSessionService implements AutoCloseable {
                 .spendsAFormatAttempt(false)));
   }
 
-  // A failed HDR or 10-bit encode keeps its format out of every later format attempt, in every
-  // codec family, so Auto gives HDR up for SDR (#397) and can still try the codec family in 8-bit
-  // SDR. A failed 8-bit SDR encode keeps its codec family out.
+  // A failed HDR or 10-bit encode keeps its format out, in every codec family, so Auto gives HDR up
+  // for SDR (#397) and can still try the codec family in 8-bit SDR. A failed 8-bit SDR encode keeps
+  // its codec family out.
   private static void excludeFailedEncode(
-      PlaybackSession playback, String codecFamily, EncodeFormat format) {
-    if (format.equals(EncodeFormat.SDR_8_BIT)) {
-      playback.excludedEncodeCodecFamilies.add(codecFamily);
+      FailedFormatAttempt.Encode failed,
+      Set<String> excludedCodecFamilies,
+      Set<EncodeFormat> excludedFormats) {
+    if (failed.format().equals(EncodeFormat.SDR_8_BIT)) {
+      excludedCodecFamilies.add(failed.codecFamily());
       return;
     }
 
-    playback.excludedEncodeFormats.add(format);
+    excludedFormats.add(failed.format());
   }
 
   private static DecisionReason causeOf(FailedFormatAttempt failed) {
