@@ -62,10 +62,9 @@ public class DeviceAdministrationService {
         AuthorizationRefusal.from(
             authorizationService.decide(
                 identity, new Intent.RevokeDeviceRegistration(registrationId)),
-            new AuthorizationRefusal.Response<>(
+            AuthorizationRefusal.Response.hiddenUnless(
                 () -> mayViewRegistration(identity, registrationId),
-                DeviceRejections.RegistrationNotFound::new,
-                Optional.empty()));
+                DeviceRejections.RegistrationNotFound::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -98,10 +97,9 @@ public class DeviceAdministrationService {
     Optional<DeviceRejections.Block> refusal =
         AuthorizationRefusal.from(
             authorizationService.decide(identity, new Intent.BlockEsn(householdId)),
-            new AuthorizationRefusal.Response<>(
+            AuthorizationRefusal.Response.hiddenUnless(
                 () -> mayViewDevices(identity, householdId),
-                DeviceRejections.HouseholdNotFound::new,
-                Optional.empty()));
+                DeviceRejections.HouseholdNotFound::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -136,12 +134,12 @@ public class DeviceAdministrationService {
     Optional<DeviceRejections.BlockServerWide> refusal =
         AuthorizationRefusal.from(
             authorizationService.decide(identity, new Intent.BlockEsnServerWide()),
-            new AuthorizationRefusal.Response<>(
-                () -> false,
-                () -> {
-                  throw new AccessDeniedException("Not allowed.");
-                },
-                Optional.of(DeviceRejections.ReauthenticationRequired::new)));
+            AuthorizationRefusal.Response.<DeviceRejections.BlockServerWide>hiddenUnless(
+                    () -> false,
+                    () -> {
+                      throw new AccessDeniedException("Not allowed.");
+                    })
+                .reauthenticatedAs(DeviceRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -169,10 +167,9 @@ public class DeviceAdministrationService {
     Optional<DeviceRejections.Unblock> refusal =
         AuthorizationRefusal.from(
             authorizationService.decide(identity, new Intent.UnblockEsn(householdId)),
-            new AuthorizationRefusal.Response<>(
+            AuthorizationRefusal.Response.hiddenUnless(
                 () -> mayViewDevices(identity, householdId),
-                DeviceRejections.HouseholdNotFound::new,
-                Optional.empty()));
+                DeviceRejections.HouseholdNotFound::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }

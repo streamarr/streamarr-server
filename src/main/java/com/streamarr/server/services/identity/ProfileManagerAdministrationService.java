@@ -32,7 +32,6 @@ import java.time.Clock;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.NonNull;
@@ -161,9 +160,8 @@ public class ProfileManagerAdministrationService {
     return refusalOf(
         identity,
         new Intent.InviteProfileManager(profileId),
-        () -> mayViewProfile(identity, profileId),
-        ManagerRejections.ProfileNotFound::new,
-        Optional.empty());
+        AuthorizationRefusal.Response.hiddenUnless(
+            () -> mayViewProfile(identity, profileId), ManagerRejections.ProfileNotFound::new));
   }
 
   public Outcome<ProfileManagerInvitation, ManagerRejections.Cancel> cancelManagerInvitation(
@@ -172,9 +170,9 @@ public class ProfileManagerAdministrationService {
         refusalOf(
             identity,
             new Intent.CancelManagerInvitation(invitationId),
-            () -> mayViewInvitation(identity, invitationId),
-            ManagerRejections.ManagerInvitationNotFound::new,
-            Optional.empty());
+            AuthorizationRefusal.Response.hiddenUnless(
+                () -> mayViewInvitation(identity, invitationId),
+                ManagerRejections.ManagerInvitationNotFound::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -332,9 +330,8 @@ public class ProfileManagerAdministrationService {
         refusalOf(
             identity,
             new Intent.RelinquishProfileManagement(profileId),
-            () -> mayViewProfile(identity, profileId),
-            ManagerRejections.ProfileNotFound::new,
-            Optional.empty());
+            AuthorizationRefusal.Response.hiddenUnless(
+                () -> mayViewProfile(identity, profileId), ManagerRejections.ProfileNotFound::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -363,9 +360,8 @@ public class ProfileManagerAdministrationService {
         refusalOf(
             identity,
             new Intent.RemoveProfileManager(profileId),
-            () -> mayViewProfile(identity, profileId),
-            ManagerRejections.ProfileNotFound::new,
-            Optional.empty());
+            AuthorizationRefusal.Response.hiddenUnless(
+                () -> mayViewProfile(identity, profileId), ManagerRejections.ProfileNotFound::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -390,9 +386,10 @@ public class ProfileManagerAdministrationService {
         refusalOf(
             identity,
             new Intent.AdministrativelyGrantProfileManager(profileId),
-            () -> mayViewProfile(identity, profileId),
-            ManagerRejections.ProfileNotFound::new,
-            Optional.of(ManagerRejections.ReauthenticationRequired::new));
+            AuthorizationRefusal.Response.<ManagerRejections.AdministrativelyGrant>hiddenUnless(
+                    () -> mayViewProfile(identity, profileId),
+                    ManagerRejections.ProfileNotFound::new)
+                .reauthenticatedAs(ManagerRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -443,9 +440,10 @@ public class ProfileManagerAdministrationService {
         refusalOf(
             identity,
             new Intent.AdministrativelyRemoveProfileManager(profileId),
-            () -> mayViewProfile(identity, profileId),
-            ManagerRejections.ProfileNotFound::new,
-            Optional.of(ManagerRejections.ReauthenticationRequired::new));
+            AuthorizationRefusal.Response.<ManagerRejections.AdministrativelyRemove>hiddenUnless(
+                    () -> mayViewProfile(identity, profileId),
+                    ManagerRejections.ProfileNotFound::new)
+                .reauthenticatedAs(ManagerRejections.ReauthenticationRequired::new));
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -671,12 +669,8 @@ public class ProfileManagerAdministrationService {
   private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity,
       Intent.UnitIntent intent,
-      BooleanSupplier mayView,
-      Supplier<? extends R> denied,
-      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
-    return AuthorizationRefusal.from(
-        authorizationService.decide(identity, intent),
-        new AuthorizationRefusal.Response<>(mayView, denied, reauthenticationRequired));
+      AuthorizationRefusal.Response<R> response) {
+    return AuthorizationRefusal.from(authorizationService.decide(identity, intent), response);
   }
 
   /** The invitation is visible to its parties and to whoever may view the Profile's admin. */
