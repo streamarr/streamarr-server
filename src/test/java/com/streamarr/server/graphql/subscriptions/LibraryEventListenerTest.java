@@ -7,12 +7,13 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.fakes.FakeLibraryRepository;
-import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.graphql.dto.RemovedLibrary;
+import com.streamarr.server.properties.SubscriptionProperties;
 import com.streamarr.server.services.events.library.LibraryAddedEvent;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.events.library.LibraryStatusChangedEvent;
+import com.streamarr.server.services.library.LibraryQueryService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
@@ -44,8 +45,7 @@ class LibraryEventListenerTest {
           Schedulers.immediate(),
           new SubscriptionProperties(64, 32, DataSize.ofMegabytes(1), Duration.ofSeconds(10)));
   private final LibraryEventListener listener =
-      new LibraryEventListener(
-          libraryRepository, broadcasters, meterRegistry, new FakeTransactionManager());
+      new LibraryEventListener(libraryQueries(libraryRepository), broadcasters, meterRegistry);
 
   @Test
   @DisplayName("Should broadcast the current library when its status changes")
@@ -92,8 +92,7 @@ class LibraryEventListenerTest {
       throws Exception {
     var pausingRepository = new FirstReadPausingLibraryRepository();
     var orderedListener =
-        new LibraryEventListener(
-            pausingRepository, broadcasters, meterRegistry, new FakeTransactionManager());
+        new LibraryEventListener(libraryQueries(pausingRepository), broadcasters, meterRegistry);
     var library = pausingRepository.save(LibraryFixtureCreator.buildFakeLibrary());
     var delivered = collect(broadcasters.getStatusChanges());
     var event = new LibraryStatusChangedEvent(library.getId());
@@ -160,10 +159,7 @@ class LibraryEventListenerTest {
   void shouldCountPublicationFailureWithoutThrowingWhenLibraryCannotBeLoaded() {
     var failingListener =
         new LibraryEventListener(
-            new UnavailableLibraryRepository(),
-            broadcasters,
-            meterRegistry,
-            new FakeTransactionManager());
+            libraryQueries(new UnavailableLibraryRepository()), broadcasters, meterRegistry);
 
     assertThatCode(
             () ->
@@ -178,6 +174,10 @@ class LibraryEventListenerTest {
                 .counter()
                 .count())
         .isEqualTo(1);
+  }
+
+  private static LibraryQueryService libraryQueries(FakeLibraryRepository libraries) {
+    return LibraryQueryService.builder().libraries(libraries).build();
   }
 
   private static <T> List<T> collect(SubscriptionBroadcaster<T> broadcaster) {

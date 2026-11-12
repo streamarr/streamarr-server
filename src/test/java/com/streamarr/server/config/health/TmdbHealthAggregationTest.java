@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fakes.FakeHttpClient;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.properties.TmdbHealthProperties;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Clock;

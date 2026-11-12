@@ -1,11 +1,11 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.SkippedFile;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
+import com.streamarr.server.domain.pagination.SortValue;
 import com.streamarr.server.repositories.SkippedFileRepository;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
-import com.streamarr.server.services.pagination.SortValue;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;

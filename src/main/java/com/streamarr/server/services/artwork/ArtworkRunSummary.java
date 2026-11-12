@@ -1,0 +1,13 @@
+package com.streamarr.server.services.artwork;
+
+import java.time.Duration;
+import lombok.Builder;
+import lombok.NonNull;
+
+/**
+ * The primary artwork of one finished run. {@code elapsed} runs from the run's first request until
+ * the wait found every awaited result recorded.
+ */
+@Builder
+public record ArtworkRunSummary(
+    @NonNull String description, @NonNull FinishedImageCounts counts, @NonNull Duration elapsed) {}

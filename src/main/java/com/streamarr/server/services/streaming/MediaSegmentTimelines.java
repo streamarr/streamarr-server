@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.DemuxerSeekTime;
 import com.streamarr.server.domain.streaming.ExactSegmentStarts;
 import com.streamarr.server.domain.streaming.KeyframePositions;
@@ -8,6 +7,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.properties.StreamingProperties;
 import java.util.Optional;
 
 /**

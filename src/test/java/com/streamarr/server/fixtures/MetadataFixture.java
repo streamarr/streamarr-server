@@ -1,8 +1,8 @@
 package com.streamarr.server.fixtures;
 
+import com.streamarr.server.domain.media.ImageSource;
 import com.streamarr.server.services.metadata.MetadataFetchOutcome;
 import com.streamarr.server.services.metadata.MetadataResult;
-import com.streamarr.server.services.metadata.events.ImageSource;
 import java.util.List;
 import java.util.Map;
 

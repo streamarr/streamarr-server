@@ -1,7 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -9,8 +8,8 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.fakes.FakeAuthorizationDecider;
-import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.RatingService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.util.Map;
@@ -38,7 +37,7 @@ class RatingResolversTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private UserAccountRepository userAccountRepository;
-  @MockitoBean private RatingRepository ratingRepository;
+  @MockitoBean private RatingService ratingService;
 
   @Test
   @DisplayName("Should return rating when valid ID provided")
@@ -48,7 +47,7 @@ class RatingResolversTest {
     rating.setId(ratingId);
     AuditFieldSetter.setCreatedBy(rating, UUID.randomUUID());
 
-    when(ratingRepository.findById(ratingId)).thenReturn(Optional.of(rating));
+    when(ratingService.findById(ratingId)).thenReturn(Optional.of(rating));
 
     String source =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -66,7 +65,7 @@ class RatingResolversTest {
     var rating = Rating.builder().source("TMDB").value("7.5").build();
     rating.setId(ratingId);
 
-    when(ratingRepository.findById(ratingId)).thenReturn(Optional.of(rating));
+    when(ratingService.findById(ratingId)).thenReturn(Optional.of(rating));
 
     var result =
         dgsQueryExecutor.execute(
@@ -84,7 +83,7 @@ class RatingResolversTest {
     var savedRating = Rating.builder().source("IMDb").value("8.5").build();
     savedRating.setId(UUID.randomUUID());
 
-    when(ratingRepository.save(any(Rating.class))).thenReturn(savedRating);
+    when(ratingService.addRating("IMDb", "8.5")).thenReturn(savedRating);
 
     String source =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -106,7 +105,7 @@ class RatingResolversTest {
   void shouldRejectARatingAuthorWhenTheClientSuppliesOne() {
     var savedRating = Rating.builder().source("IMDb").value("8.5").build();
     savedRating.setId(UUID.randomUUID());
-    when(ratingRepository.save(any(Rating.class))).thenReturn(savedRating);
+    when(ratingService.addRating("IMDb", "8.5")).thenReturn(savedRating);
 
     var result =
         dgsQueryExecutor.execute(

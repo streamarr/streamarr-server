@@ -1,10 +1,10 @@
 package com.streamarr.server.graphql.cursor;
 
 import com.google.common.hash.Hashing;
+import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationOptions;
-import com.streamarr.server.services.pagination.Position;
 import graphql.relay.ConnectionCursor;
 import graphql.relay.DefaultConnectionCursor;
 import java.nio.charset.StandardCharsets;

@@ -1,8 +1,8 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.AccountInvitation;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;

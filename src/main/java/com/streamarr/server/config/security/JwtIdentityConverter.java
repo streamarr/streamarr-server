@@ -1,6 +1,7 @@
 package com.streamarr.server.config.security;
 
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.StreamarrAuthenticationToken;
 import java.util.List;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;

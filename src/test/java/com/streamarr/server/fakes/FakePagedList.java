@@ -1,14 +1,14 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.services.pagination.ListOrder;
+import com.streamarr.server.domain.pagination.ListOrder;
+import com.streamarr.server.domain.pagination.PaginationDirection;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
+import com.streamarr.server.domain.pagination.SortDirection;
+import com.streamarr.server.domain.pagination.SortValue;
+import com.streamarr.server.domain.pagination.SortValueKind;
 import com.streamarr.server.services.pagination.PagedList;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
-import com.streamarr.server.services.pagination.SortDirection;
-import com.streamarr.server.services.pagination.SortValue;
-import com.streamarr.server.services.pagination.SortValueKind;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

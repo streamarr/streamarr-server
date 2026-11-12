@@ -6,7 +6,6 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.d
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
@@ -22,6 +21,7 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.properties.StreamingProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;

@@ -1,6 +1,6 @@
 package com.streamarr.server.graphql.transport;
 
-import com.streamarr.server.config.security.StreamarrAuthenticationToken;
+import com.streamarr.server.services.auth.StreamarrAuthenticationToken;
 import java.util.Map;
 import java.util.Optional;
 import org.springframework.http.HttpStatus;

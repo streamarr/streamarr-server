@@ -6,9 +6,9 @@ import static com.streamarr.server.jooq.generated.tables.SkippedFile.SKIPPED_FIL
 
 import com.streamarr.server.domain.SkippedFile;
 import com.streamarr.server.domain.SkippedFileReason;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.tables.records.SkippedFileRecord;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

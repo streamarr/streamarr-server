@@ -11,9 +11,11 @@ import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.fixtures.ProbeFixture;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -334,6 +336,21 @@ class VideoCopyBandwidthTest {
     assertThatNullPointerException()
         .isThrownBy(() -> VideoCopyBandwidth.peakBandwidth(source, audio, null))
         .withMessageContaining("playlist");
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse to count a copied audio track when the source or the timeline is missing")
+  void shouldRefuseToCountACopiedAudioTrackWhenTheSourceOrTheTimelineIsMissing() {
+    var source = defaultProbeBuilder().build();
+    var timeline = new MediaSegmentTimeline.PlainGrid(Duration.ofSeconds(9), Duration.ofSeconds(6));
+
+    assertThatNullPointerException()
+        .isThrownBy(() -> VideoCopyBandwidth.copiedAudioBitrate(null, timeline))
+        .withMessageContaining("source");
+    assertThatNullPointerException()
+        .isThrownBy(() -> VideoCopyBandwidth.copiedAudioBitrate(source, null))
+        .withMessageContaining("timeline");
   }
 
   /**

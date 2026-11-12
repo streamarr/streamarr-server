@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.CompletedJobAttempt;
 import com.streamarr.server.domain.streaming.EncoderPreset;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
@@ -15,6 +14,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;

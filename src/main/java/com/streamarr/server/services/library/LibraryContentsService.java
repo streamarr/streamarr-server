@@ -2,6 +2,8 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.pagination.MediaFilter;
+import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -9,8 +11,6 @@ import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.events.library.LibraryItemChangedEvent;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.Row;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;

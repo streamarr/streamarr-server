@@ -2,10 +2,10 @@ package com.streamarr.server.graphql.transport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.CanonicalBaseUrl;
 import com.streamarr.server.fakes.FakeTaskScheduler;
 import com.streamarr.server.fakes.MutableClock;
-import com.streamarr.server.graphql.subscriptions.SubscriptionProperties;
+import com.streamarr.server.properties.CanonicalBaseUrl;
+import com.streamarr.server.properties.SubscriptionProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;

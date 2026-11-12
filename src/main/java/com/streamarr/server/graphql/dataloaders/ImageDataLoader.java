@@ -5,7 +5,7 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.graphql.dto.ImageDto;
 import com.streamarr.server.graphql.dto.ImageVariantDto;
-import com.streamarr.server.repositories.media.ImageRepository;
+import com.streamarr.server.services.artwork.ImageService;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +20,7 @@ import org.dataloader.MappedBatchLoader;
 @RequiredArgsConstructor
 public class ImageDataLoader implements MappedBatchLoader<ImageLoaderKey, List<ImageDto>> {
 
-  private final ImageRepository imageRepository;
+  private final ImageService imageService;
 
   @Override
   public CompletionStage<Map<ImageLoaderKey, List<ImageDto>>> load(Set<ImageLoaderKey> keys) {
@@ -36,7 +36,7 @@ public class ImageDataLoader implements MappedBatchLoader<ImageLoaderKey, List<I
       var entityType = entry.getKey();
       var entityIds = entry.getValue().stream().map(ImageLoaderKey::entityId).toList();
 
-      var images = imageRepository.findByEntityTypeAndEntityIdIn(entityType, entityIds);
+      var images = imageService.findByEntities(entityIds, entityType);
 
       var imagesByEntity = images.stream().collect(Collectors.groupingBy(Image::getEntityId));
 

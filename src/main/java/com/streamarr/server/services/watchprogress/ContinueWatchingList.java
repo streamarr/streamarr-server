@@ -1,17 +1,17 @@
 package com.streamarr.server.services.watchprogress;
 
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.pagination.ListOrder;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
+import com.streamarr.server.domain.pagination.SortDirection;
+import com.streamarr.server.domain.pagination.SortValue;
+import com.streamarr.server.domain.pagination.SortValueKind;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.ContinueWatchingRepository;
-import com.streamarr.server.services.pagination.ListOrder;
 import com.streamarr.server.services.pagination.PagedList;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
-import com.streamarr.server.services.pagination.SortDirection;
-import com.streamarr.server.services.pagination.SortValue;
-import com.streamarr.server.services.pagination.SortValueKind;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;

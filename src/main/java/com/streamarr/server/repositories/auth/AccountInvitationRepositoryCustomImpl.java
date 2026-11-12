@@ -3,11 +3,11 @@ package com.streamarr.server.repositories.auth;
 import static com.streamarr.server.jooq.generated.tables.AccountInvitation.ACCOUNT_INVITATION;
 
 import com.streamarr.server.domain.auth.AccountInvitation;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.enums.AccountInvitationStatus;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.OffsetDateTime;

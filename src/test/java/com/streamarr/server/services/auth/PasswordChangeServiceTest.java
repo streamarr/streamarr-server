@@ -3,7 +3,6 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
@@ -18,6 +17,7 @@ import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
+import com.streamarr.server.properties.AuthTokenProperties;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;

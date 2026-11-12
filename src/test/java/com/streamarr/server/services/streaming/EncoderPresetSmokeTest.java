@@ -8,7 +8,6 @@ import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.EncoderPresetChoice;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -20,6 +19,7 @@ import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
+import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;

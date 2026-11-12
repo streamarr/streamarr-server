@@ -3,6 +3,7 @@ package com.streamarr.server.config.health;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fakes.FakeHttpClient;
+import com.streamarr.server.properties.TmdbHealthProperties;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.time.Clock;

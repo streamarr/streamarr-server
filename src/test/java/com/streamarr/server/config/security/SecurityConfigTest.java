@@ -8,7 +8,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.streamarr.server.properties.AuthTokenProperties;
 import com.streamarr.server.services.auth.TokenScope;
+import com.streamarr.server.web.AuthCookiePolicy;
+import com.streamarr.server.web.AuthCookies;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.DispatcherType;

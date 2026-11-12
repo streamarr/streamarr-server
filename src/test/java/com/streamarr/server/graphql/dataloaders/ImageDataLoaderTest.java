@@ -3,12 +3,18 @@ package com.streamarr.server.graphql.dataloaders;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.domain.media.AmbientColors;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeItemResultRepository;
+import com.streamarr.server.properties.ImageProperties;
+import com.streamarr.server.services.artwork.ImageService;
+import com.streamarr.server.services.metadata.ImageVariantService;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -27,7 +33,15 @@ class ImageDataLoaderTest {
   @BeforeEach
   void setUp() {
     imageRepository = new FakeImageRepository();
-    dataLoader = new ImageDataLoader(imageRepository);
+    dataLoader =
+        new ImageDataLoader(
+            new ImageService(
+                imageRepository,
+                new ImageVariantService(),
+                new ImageProperties("/data/images"),
+                Jimfs.newFileSystem(Configuration.unix()),
+                new FakeItemResultRepository(),
+                _ -> {}));
   }
 
   @Test

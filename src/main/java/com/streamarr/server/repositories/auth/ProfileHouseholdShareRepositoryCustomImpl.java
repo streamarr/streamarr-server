@@ -6,11 +6,11 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.OffsetDateTime;

@@ -5,11 +5,11 @@ import static com.streamarr.server.jooq.generated.tables.WatchHistory.WATCH_HIST
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.row;
 
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
 import java.util.Collection;

@@ -9,6 +9,7 @@ import static com.tngtech.archunit.core.domain.properties.CanBeAnnotated.Predica
 import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.name;
 import static com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.With.owner;
 import static com.tngtech.archunit.core.domain.properties.HasParameterTypes.Predicates.rawParameterTypes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
@@ -34,7 +35,9 @@ import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.RuntimeSt
 import com.streamarr.server.architecturefixture.WorkerBoundaryFixtures.WorkerDependency;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.controllers.architecturefixture.DirectControllerAccountPasswordMatchFixture;
+import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.graphql.architecturefixture.PasswordEncodingResolverFixture;
+import com.streamarr.server.properties.architecturefixture.DomainDependentPropertiesFixture;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.CreditService;
@@ -115,6 +118,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -223,6 +227,18 @@ class ArchitectureTest {
           .dependOnClassesThat()
           .resideInAPackage("..repositories..")
           .as("Controllers must not depend on repositories");
+
+  @ArchTest
+  static final ArchRule graphqlMustNotDependOnRepositories =
+      noClasses()
+          .that()
+          .resideInAPackage("com.streamarr.server.graphql..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("com.streamarr.server.repositories..")
+          .as(
+              "GraphQL classes must not depend on repositories; they read and write through"
+                  + " services");
 
   @ArchTest
   static final ArchRule servicesMustNotDependOnGraphql =
@@ -346,15 +362,71 @@ class ArchitectureTest {
                   + " services that call them; shared helpers belong in a package both may depend"
                   + " on");
 
+  // The catalog services in the root services package request artwork, so a dependency back from
+  // artwork to them puts the two in a cycle.
   @ArchTest
-  static final ArchRule authRepositoriesMustNotDependOnAuthServices =
+  static final ArchRule artworkMustNotDependOnCatalogServices =
       noClasses()
           .that()
-          .resideInAPackage("..repositories.auth..")
+          .resideInAPackage("com.streamarr.server.services.artwork..")
           .should()
           .dependOnClassesThat()
-          .resideInAPackage("..services.auth..")
-          .as("Auth repositories must remain below auth services in the dependency direction");
+          .resideInAPackage(SERVICES_PACKAGE)
+          .as(
+              "Artwork services must remain below the catalog services in the root services"
+                  + " package that request artwork");
+
+  @ArchTest
+  static final ArchRule repositoriesMustNotDependOnServices =
+      noClasses()
+          .that()
+          .resideInAPackage("com.streamarr.server.repositories..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("com.streamarr.server.services..")
+          .as(
+              "Repositories must remain below services in the dependency direction; the types"
+                  + " both use belong in domain");
+
+  // Config wires the application and may depend on every layer, so a dependency back into config
+  // from any other package puts the two in a cycle.
+  @ArchTest
+  static final ArchRule classesOutsideConfigMustNotDependOnConfig =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("com.streamarr.server.config..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("com.streamarr.server.config..")
+          .as(
+              "Classes outside config must not depend on config, which wires the application from"
+                  + " above every layer; configuration properties belong in properties");
+
+  @ArchTest
+  static final ArchRule configurationPropertiesMustResideInProperties =
+      classes()
+          .that()
+          .areAnnotatedWith(ConfigurationProperties.class)
+          .should()
+          .resideInAPackage("com.streamarr.server.properties..")
+          .as(
+              "Types that bind configuration must reside in properties, the package that every"
+                  + " layer may import");
+
+  @ArchTest
+  static final ArchRule propertiesMustNotDependOnOtherProjectPackages =
+      noClasses()
+          .that()
+          .resideInAPackage("com.streamarr.server.properties..")
+          .should()
+          .dependOnClassesThat(
+              resideInAPackage("com.streamarr.server..")
+                  .and(
+                      DescribedPredicate.not(
+                          resideInAPackage("com.streamarr.server.properties.."))))
+          .as(
+              "Properties must not depend on any other project package, because every layer"
+                  + " imports them");
 
   @ArchTest
   static final ArchRule repositoryMethodsMustNotUseQueryAnnotations =
@@ -693,6 +765,24 @@ class ArchitectureTest {
                     .contains(ReactiveServiceFixture.class.getName(), Flux.class.getName()));
   }
 
+  @Test
+  @DisplayName("Should reject a project dependency when a properties type uses a domain type")
+  void shouldRejectProjectDependencyWhenPropertiesTypeUsesDomainType() {
+    var properties = new ClassFileImporter().importClasses(DomainDependentPropertiesFixture.class);
+
+    assertThat(
+            propertiesMustNotDependOnOtherProjectPackages
+                .evaluate(properties)
+                .getFailureReport()
+                .getDetails())
+        .anySatisfy(
+            detail ->
+                assertThat(detail)
+                    .contains(
+                        DomainDependentPropertiesFixture.class.getName(),
+                        ImageSize.class.getName()));
+  }
+
   @ParameterizedTest
   @ValueSource(classes = ProcessBuilderLaunch.class)
   @DisplayName("Should reject ProcessBuilder dependencies when server code launches a process")
@@ -759,6 +849,7 @@ class ArchitectureTest {
         .that()
         .resideInAnyPackage(
             "com.streamarr.server.services",
+            "com.streamarr.server.services.artwork..",
             "com.streamarr.server.services.concurrency..",
             "com.streamarr.server.services.library..",
             "com.streamarr.server.config..")

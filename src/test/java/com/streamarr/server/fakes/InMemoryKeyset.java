@@ -1,13 +1,13 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
-import com.streamarr.server.services.pagination.AbsentValuePlacement;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.Position;
-import com.streamarr.server.services.pagination.Row;
-import com.streamarr.server.services.pagination.Seek;
-import com.streamarr.server.services.pagination.SortDirection;
-import com.streamarr.server.services.pagination.SortValue;
+import com.streamarr.server.domain.pagination.AbsentValuePlacement;
+import com.streamarr.server.domain.pagination.PaginationDirection;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.domain.pagination.Seek;
+import com.streamarr.server.domain.pagination.SortDirection;
+import com.streamarr.server.domain.pagination.SortValue;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;

@@ -1,6 +1,10 @@
 package com.streamarr.server.config.security;
 
+import com.streamarr.server.properties.AuthTokenProperties;
 import com.streamarr.server.services.auth.TokenScope;
+import com.streamarr.server.web.AuthCookiePolicy;
+import com.streamarr.server.web.SecurityRequestMatchers;
+import com.streamarr.server.web.StreamarrBearerTokenResolver;
 import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
