@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -59,9 +60,9 @@ class HouseholdProfilesIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should list every available Profile with its lock and visitors when a HouseholdAdmin reads"
-          + " its Household")
-  void shouldListEveryAvailableProfileWithItsLockAndVisitorsWhenAHouseholdAdminReadsItsHousehold()
+      "Should list every available Profile, and the unavailable ones it manages, with its visitors"
+          + " when a HouseholdAdmin reads its Household")
+  void shouldListEveryAvailableProfileWithItsVisitorsWhenAHouseholdAdminReadsItsHousehold()
       throws Exception {
     var alex = cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder().name("Alex"));
     var mara = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Mara"));
@@ -76,27 +77,37 @@ class HouseholdProfilesIT extends AbstractIntegrationTest {
 
     assertThat(rows)
         .extracting(row -> row.path("profile").path("id").asString())
+        .as("the available Profiles, and Theo, unavailable but managed by the reader")
         .containsExactlyInAnyOrder(
             idOf(alex), idOf(mara), idOf(otherAdmin.profile()), idOf(smith.profile()), idOf(theo));
     assertThat(rows)
-        .extracting(row -> row.path("profile").path("name").asString().toLowerCase())
-        .isSorted();
-    var alexRow = rowOf(rows, alex);
-    assertThat(alexRow.path("visitor").asBoolean()).isFalse();
-    assertThat(alexRow.path("locked").asBoolean()).isFalse();
-    assertThat(alexRow.path("profile").path("readerAuthority").asString()).isEqualTo("MANAGES");
-    var maraRow = rowOf(rows, mara);
-    assertThat(maraRow.path("visitor").asBoolean()).isTrue();
-    assertThat(maraRow.path("locked").asBoolean()).isTrue();
-    assertThat(maraRow.path("profile").path("household").isNull()).isTrue();
-    assertThat(maraRow.path("profile").path("readerAuthority").isNull()).isTrue();
-    var ownRow = rowOf(rows, smith.profile());
-    assertThat(ownRow.path("locked").asBoolean()).isTrue();
-    assertThat(ownRow.path("profile").path("household").path("name").asString())
-        .isEqualTo(smith.household().getName());
-    var theoRow = rowOf(rows, theo);
-    assertThat(theoRow.path("visitor").asBoolean()).isFalse();
-    assertThat(theoRow.path("locked").asBoolean()).isFalse();
+        .filteredOn(row -> row.path("visitor").asBoolean())
+        .extracting(row -> row.path("profile").path("id").asString())
+        .as("the visitors: Mara alone belongs to another Household")
+        .containsExactly(idOf(mara));
+  }
+
+  @Test
+  @DisplayName(
+      "Should lock every available Adult without a PIN when a Kid is available in the Household")
+  void shouldLockEveryAvailableAdultWithoutAPinWhenAKidIsAvailableInTheHousehold()
+      throws Exception {
+    var alex = cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder().name("Alex"));
+    var mara = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Mara"));
+    cast.makeAvailable(mara, smith);
+    var theo =
+        cast.unavailableProfileManagedBy(
+            smith, ProfileFixture.defaultProfileBuilder().name("Theo"));
+
+    assertThat(householdProfiles(smith, smith))
+        .extracting(
+            row -> row.path("profile").path("id").asString(), row -> row.path("locked").asBoolean())
+        .as("locked: the Adults without a PIN while Kid Alex is available, never unavailable Theo")
+        .containsExactlyInAnyOrder(
+            tuple(idOf(alex), false),
+            tuple(idOf(mara), true),
+            tuple(idOf(smith.profile()), true),
+            tuple(idOf(theo), false));
   }
 
   @Test

@@ -1312,28 +1312,45 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName("Should refuse who manages a Profile when a HouseholdAdmin only supervises it")
+    void shouldRefuseWhoManagesAProfileWhenAHouseholdAdminOnlySupervisesIt() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      shares.share(kid.getId(), account.getHouseholdId(), false);
+
+      assertThat(decide(atHome(), new Intent.ViewProfileManagers(kid.getId())))
+          .as("supervising HouseholdAdmin")
+          .isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName(
-        "Should let a manager or a ServerAdmin see who manages a Profile when the session is not"
-            + " device-bound")
-    void shouldLetAManagerOrAServerAdminSeeWhoManagesAProfileWhenTheSessionIsNotDeviceBound() {
+        "Should let a manager see who manages a Profile only when the session is not device-bound")
+    void shouldLetAManagerSeeWhoManagesAProfileOnlyWhenTheSessionIsNotDeviceBound() {
       var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
       var view = new Intent.ViewProfileManagers(kid.getId());
-      shares.share(kid.getId(), account.getHouseholdId(), false);
-      assertThat(decide(atHome(), view)).as("supervising HouseholdAdmin").isEqualTo(DENIED);
-
       managers.save(
           ProfileManager.builder().accountId(account.getId()).profileId(kid.getId()).build());
-      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
-      assertThat(decide(onDevice(atHome()), view)).isEqualTo(DENIED);
-      managers.deleteAll();
 
+      assertThat(decide(atHome(), view)).as("manager at home").isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), view)).as("manager on a device").isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should let a ServerAdmin see who manages a Profile only when the session is not"
+            + " device-bound and the Account is enabled")
+    void
+        shouldLetAServerAdminSeeWhoManagesAProfileOnlyWhenTheSessionIsNotDeviceBoundAndTheAccountIsEnabled() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      var view = new Intent.ViewProfileManagers(kid.getId());
       account.setServerAdmin(true);
       accounts.save(account);
-      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
-      assertThat(decide(onDevice(atHome()), view)).isEqualTo(DENIED);
+
+      assertThat(decide(atHome(), view)).as("ServerAdmin at home").isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), view)).as("ServerAdmin on a device").isEqualTo(DENIED);
       account.setEnabled(false);
       accounts.save(account);
-      assertThat(decide(atHome(), view)).isEqualTo(DENIED);
+      assertThat(decide(atHome(), view)).as("disabled ServerAdmin").isEqualTo(DENIED);
     }
 
     @Test
