@@ -185,10 +185,11 @@ public class AccountAdministrationService {
   }
 
   // The demotion holds the Account's row, so an offer that read the role first has committed its
-  // request, and one that reads it later no longer tells the Account.
+  // request, and one that reads it later no longer tells the Account. The Household is read past
+  // the copy loaded before the demotion, which a move committed in between leaves stale.
   private void dismissRequestsOfFormerHouseholdAdmin(UUID accountId, Instant now) {
     userAccountRepository
-        .findById(accountId)
+        .findByIdAndReloadFromDatabase(accountId)
         .ifPresent(
             account ->
                 notificationDismissals.householdAdminRoleLost(
