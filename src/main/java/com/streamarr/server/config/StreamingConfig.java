@@ -36,6 +36,7 @@ import com.streamarr.server.services.streaming.local.SegmentFolderLeftovers;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Deleted;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.NoOwnedFolder;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
@@ -72,10 +73,13 @@ public class StreamingConfig {
    */
   @Bean
   public SegmentFolderLeftoversOutcome segmentFolderLeftovers(
-      StreamingProperties properties, MediaFolders mediaFolders, MeterRegistry meterRegistry) {
+      StreamingProperties properties,
+      MediaFolders mediaFolders,
+      SegmentFolderLock lock,
+      MeterRegistry meterRegistry) {
     var deletes = new AtomicReference<SegmentFolderLeftoversOutcome>();
     SystemWork.runAsSystemActor(
-        () -> deletes.set(deleteSegmentFolderLeftovers(properties, mediaFolders)));
+        () -> deletes.set(deleteSegmentFolderLeftovers(properties, mediaFolders, lock)));
     var outcome = deletes.get();
     meterRegistry.counter(LEFTOVER_DELETES_METRIC, "outcome", outcome.metricTag()).increment();
     if (outcome instanceof Deleted(var deleted, var remaining)) {
@@ -87,7 +91,7 @@ public class StreamingConfig {
   }
 
   private static SegmentFolderLeftoversOutcome deleteSegmentFolderLeftovers(
-      StreamingProperties properties, MediaFolders mediaFolders) {
+      StreamingProperties properties, MediaFolders mediaFolders, SegmentFolderLock lock) {
     var segmentFolder = properties.ownedSegmentFolder();
     if (segmentFolder.isEmpty()) {
       return new NoOwnedFolder();
@@ -97,8 +101,15 @@ public class StreamingConfig {
         .segmentFolder(segmentFolder.get())
         .homeFolder(Path.of(System.getProperty("user.home")))
         .mediaFolders(mediaFolders::all)
+        .lock(lock)
         .build()
         .delete();
+  }
+
+  // Closed when the server stops, after the segment store has deleted its stream sessions.
+  @Bean
+  public SegmentFolderLock segmentFolderLock() {
+    return new SegmentFolderLock();
   }
 
   // After the delete, so the folder holds nothing of a running store while the delete runs.

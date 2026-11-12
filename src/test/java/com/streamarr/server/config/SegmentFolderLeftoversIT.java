@@ -9,6 +9,10 @@ import com.google.common.io.MoreFiles;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.local.SegmentFolderLeftovers;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftoversOutcome.Refused;
+import com.streamarr.server.services.streaming.local.SegmentFolderLock;
+import com.streamarr.server.services.streaming.local.SegmentFolderRefusal;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -41,7 +45,7 @@ class SegmentFolderLeftoversIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @DynamicPropertySource
-  static void segmentFolderOfAnEarlierProcess(DynamicPropertyRegistry registry) {
+  static void segmentFolderOfAnEarlierProcess(DynamicPropertyRegistry registry) throws IOException {
     leaveAStreamSessionAsAnEarlierProcess();
     registry.add("streaming.segment-base-path", SEGMENT_FOLDER::toString);
   }
@@ -65,25 +69,26 @@ class SegmentFolderLeftoversIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep a stream session that the server created after it started")
-  void shouldKeepAStreamSessionThatTheServerCreatedAfterItStarted() {
+  @DisplayName(
+      "Should keep a stream session that the server created after it started when another server"
+          + " process starts on its folder")
+  void
+      shouldKeepAStreamSessionThatTheServerCreatedAfterItStartedWhenAnotherServerProcessStartsOnItsFolder()
+          throws IOException {
     var sessionId = UUID.randomUUID();
-
     try (var stored = segmentStore.prepareSegment(sessionId, "720p/0.m4s", SEGMENT)) {
       stored.publish();
     }
 
+    var otherStart = startOnTheSegmentFolder();
+
+    assertThat(otherStart).isEqualTo(new Refused(SegmentFolderRefusal.IN_USE));
     assertThat(segmentStore.segmentExists(sessionId, "720p/0.m4s")).isTrue();
     assertThat(SEGMENT_FOLDER.resolve(sessionId.toString())).isDirectory();
   }
 
-  private static void leaveAStreamSessionAsAnEarlierProcess() {
-    SegmentFolderLeftovers.builder()
-        .segmentFolder(SEGMENT_FOLDER)
-        .homeFolder(TEMPORARY_FOLDER.resolve("home"))
-        .mediaFolders(List::of)
-        .build()
-        .delete();
+  private static void leaveAStreamSessionAsAnEarlierProcess() throws IOException {
+    startOnTheSegmentFolder();
     try (var stored =
         new LocalSegmentStore(SEGMENT_FOLDER)
             .prepareSegment(EARLIER_SESSION_ID, "0.m4s", SEGMENT)) {
@@ -91,6 +96,19 @@ class SegmentFolderLeftoversIT extends AbstractIntegrationTest {
     }
 
     assertThat(SEGMENT_FOLDER.resolve(EARLIER_SESSION_ID.toString())).isDirectory();
+  }
+
+  // The start of a server process that ends right after it, which releases its lock of the folder.
+  private static SegmentFolderLeftoversOutcome startOnTheSegmentFolder() throws IOException {
+    try (var lock = new SegmentFolderLock()) {
+      return SegmentFolderLeftovers.builder()
+          .segmentFolder(SEGMENT_FOLDER)
+          .homeFolder(TEMPORARY_FOLDER.resolve("home"))
+          .mediaFolders(List::of)
+          .lock(lock)
+          .build()
+          .delete();
+    }
   }
 
   private static Path createTemporaryFolder() {

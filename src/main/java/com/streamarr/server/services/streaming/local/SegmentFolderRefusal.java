@@ -14,7 +14,9 @@ public enum SegmentFolderRefusal {
   UNKNOWN_MEDIA_FOLDERS,
   /** The folder held other entries before a segment store used it, so it carries no mark. */
   UNMARKED_FOLDER,
-  /** The folder could not be created, read or marked. */
+  /** Another server process that is running uses the folder. */
+  IN_USE,
+  /** The folder could not be created, read, marked or locked. */
   UNREADABLE_FOLDER;
 
   public String metricTag() {

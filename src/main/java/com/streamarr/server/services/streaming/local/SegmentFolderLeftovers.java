@@ -47,6 +47,9 @@ public class SegmentFolderLeftovers {
   // The media root and every library's folder, read when the delete runs.
   @NonNull private final Supplier<List<Path>> mediaFolders;
 
+  // Held by this server process until it ends, once the folder carries the mark.
+  @NonNull private final SegmentFolderLock lock;
+
   /**
    * Deletes the leftovers. Call it before the folder's segment store exists, so that the folder
    * holds nothing of a running store.
@@ -60,6 +63,10 @@ public class SegmentFolderLeftovers {
    * directory as its own. A folder that held something else first therefore keeps everything. The
    * mark holds the path of the folder that it marks, so a mark that was copied into another folder
    * marks nothing there. It never throws: what it cannot delete stays.
+   *
+   * <p>It deletes only while no other server process holds the folder's lock, and it leaves this
+   * process holding the lock shared, so that a later start deletes nothing of this process's stream
+   * sessions.
    */
   public SegmentFolderLeftoversOutcome delete() {
     try {
@@ -69,16 +76,16 @@ public class SegmentFolderLeftovers {
       }
 
       Files.createDirectories(segmentFolder);
-      if (isMarked()) {
-        return deleteEachLeftover();
+      if (!tryMark()) {
+        return refused(SegmentFolderRefusal.UNMARKED_FOLDER);
       }
 
-      if (holdsNoOtherEntry()) {
-        writeMark();
-        return new Deleted(0, 0);
+      var deleted = lock.whileAlone(segmentFolder, this::deleteEachLeftover);
+      if (deleted.isEmpty()) {
+        return refused(SegmentFolderRefusal.IN_USE);
       }
 
-      return refused(SegmentFolderRefusal.UNMARKED_FOLDER);
+      return deleted.get();
     } catch (IOException | RuntimeException e) {
       log.warn("Failed to delete the leftovers in the segment folder {}", segmentFolder, e);
       return new Refused(SegmentFolderRefusal.UNREADABLE_FOLDER);
@@ -140,6 +147,20 @@ public class SegmentFolderLeftovers {
     return existing.toRealPath().resolve(existing.relativize(absolute)).normalize();
   }
 
+  // Marks a folder that holds no other entry. Returns whether the folder carries its mark.
+  private boolean tryMark() throws IOException {
+    if (isMarked()) {
+      return true;
+    }
+
+    if (!holdsNoOtherEntry()) {
+      return false;
+    }
+
+    writeMark();
+    return true;
+  }
+
   // Compared as bytes, so that a mark which is not text reads as the mark of another folder. A
   // mark of another size is not read, so that no mark is too large to read.
   private boolean isMarked() throws IOException {
@@ -160,10 +181,13 @@ public class SegmentFolderLeftovers {
     return segmentFolder.resolve(MARK_NAME);
   }
 
-  // A mark alone claims nothing for another owner: an earlier process may have ended while it
-  // wrote the mark.
+  // A mark and a lock alone claim nothing for another owner: an earlier process may have ended
+  // while it wrote the mark.
   private boolean holdsNoOtherEntry() throws IOException {
-    try (var others = Files.newDirectoryStream(segmentFolder, entry -> !entry.equals(mark()))) {
+    var lockFile = segmentFolder.resolve(SegmentFolderLock.NAME);
+    try (var others =
+        Files.newDirectoryStream(
+            segmentFolder, entry -> !entry.equals(mark()) && !entry.equals(lockFile))) {
       return !others.iterator().hasNext();
     }
   }
