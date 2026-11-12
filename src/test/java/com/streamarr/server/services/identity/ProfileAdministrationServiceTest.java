@@ -1058,8 +1058,9 @@ class ProfileAdministrationServiceTest {
 
   @Test
   @DisplayName(
-      "Should invalidate pending manager invitations when the recipient becomes restricted")
-  void shouldInvalidatePendingManagerInvitationsWhenRecipientBecomesRestricted() {
+      "Should invalidate pending manager invitations for the recipient alone when it becomes"
+          + " restricted")
+  void shouldInvalidatePendingManagerInvitationsForTheRecipientAloneWhenItBecomesRestricted() {
     var member = accounts.save(AccountFixture.defaultAccountBuilder().build());
     var personal =
         profiles.save(
@@ -1093,9 +1094,12 @@ class ProfileAdministrationServiceTest {
                     ProfilePolicyTransition.Classification.RESTRICT_SOVEREIGN_ADULT)));
     service.setProfileContentCeiling(identity(), personal.getId(), 12);
 
-    // Eligibility ends with the restriction: no pending proposal may outlive it.
-    assertThat(managerInvitations.findById(invitation.getId()).orElseThrow().getStatus())
+    // Eligibility ends with the restriction: the recipient can no longer answer, while to the
+    // Profile's managers the invitation still waits (ADR 0024 §Invitations).
+    var stored = managerInvitations.findById(invitation.getId()).orElseThrow();
+    assertThat(stored.statusToItsAccountAt(Instant.now()))
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(stored.statusAt(Instant.now())).isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 
   @Test

@@ -660,8 +660,8 @@ class ProfileManagerAdministrationServiceTest {
             identity(), orphan.getId(), recipient.getId(), "support");
     assertThat(granted).isInstanceOf(Outcome.Accepted.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isTrue();
-    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow())
+        .satisfies(ProfileManagerAdministrationServiceTest::invalidatedForItsAccountAlone);
     assertThat(audit.entries())
         .singleElement()
         .satisfies(
@@ -702,8 +702,8 @@ class ProfileManagerAdministrationServiceTest {
             identity(), orphan.getId(), recipient.getId(), "abuse");
     assertThat(removed).isInstanceOf(Outcome.Accepted.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
-    assertThat(invitations.findById(restorable.getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(invitations.findById(restorable.getId()).orElseThrow())
+        .satisfies(ProfileManagerAdministrationServiceTest::invalidatedForItsAccountAlone);
     assertThat(shares.findById(offered.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileShareStatus.INVALIDATED);
     assertThat(shares.findById(offered.getId()).orElseThrow().getLastModifiedOn()).isEqualTo(NOW);
@@ -769,8 +769,8 @@ class ProfileManagerAdministrationServiceTest {
     assertThat(removed).isInstanceOf(Outcome.Accepted.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), personal.getId()))
         .isFalse();
-    assertThat(invitations.findById(restorable.getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(invitations.findById(restorable.getId()).orElseThrow())
+        .satisfies(ProfileManagerAdministrationServiceTest::invalidatedForItsAccountAlone);
     assertThat(invitations.findById(proposed.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(shares.findById(offered.getId()).orElseThrow().getStatus())
@@ -968,5 +968,12 @@ class ProfileManagerAdministrationServiceTest {
       case Outcome.Accepted<?, ?> accepted ->
           throw new AssertionError("expected a rejection but got " + accepted);
     };
+  }
+
+  // Its Account can no longer answer it; to the Profile's managers it still waits (ADR 0024).
+  private static void invalidatedForItsAccountAlone(ProfileManagerInvitation invitation) {
+    assertThat(invitation.statusToItsAccountAt(NOW))
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(invitation.statusAt(NOW)).isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 }

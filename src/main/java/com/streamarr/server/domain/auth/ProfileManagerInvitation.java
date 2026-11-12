@@ -54,17 +54,38 @@ public class ProfileManagerInvitation extends BaseAuditableEntity<ProfileManager
 
   private String invalidationReason;
 
+  /**
+   * When the server invalidated the invitation because of what became of its invited Account. The
+   * status keeps what the Profile's ProfileManagers read, to whom the invitation still waits.
+   */
+  private Instant recipientInvalidatedAt;
+
+  private String recipientInvalidationReason;
+
   private String publicId;
 
   private byte[] secretDigest;
 
-  /** Expiry is a predicate at read time: a stale PENDING row projects as EXPIRED. */
+  /**
+   * The status as the Profile's ProfileManagers read it (ADR 0024 §Invitations): an invitation
+   * invalidated because of what became of its invited Account still waits to them. Expiry is a
+   * predicate at read time: a stale PENDING row projects as EXPIRED.
+   */
   public ProfileManagerInvitationStatus statusAt(Instant now) {
     if (status == ProfileManagerInvitationStatus.PENDING && !expiresAt.isAfter(now)) {
       return ProfileManagerInvitationStatus.EXPIRED;
     }
 
     return status;
+  }
+
+  /** The status as its invited Account and ServerAdmin read it, who see every invalidation. */
+  public ProfileManagerInvitationStatus statusToItsAccountAt(Instant now) {
+    if (recipientInvalidatedAt != null) {
+      return ProfileManagerInvitationStatus.INVALIDATED;
+    }
+
+    return statusAt(now);
   }
 
   @Override

@@ -21,7 +21,14 @@ public record ManagerInvitationDetails(
     ProfileManagerInvitationStatus status,
     String expiresAt) {
 
+  /** The invitation as the Profile's managers read it. */
   public static ManagerInvitationDetails from(ProfileManagerInvitation invitation, Instant now) {
+    return from(invitation, invitation.statusAt(now));
+  }
+
+  /** The invitation with the status that its reader reads. */
+  public static ManagerInvitationDetails from(
+      ProfileManagerInvitation invitation, ProfileManagerInvitationStatus status) {
     return ManagerInvitationDetails.builder()
         .id(invitation.getId())
         .profileId(invitation.getProfileId())
@@ -29,7 +36,7 @@ public record ManagerInvitationDetails(
         .inviterAccountId(invitation.getInviterAccountId())
         .inviterDisplayName(invitation.getInviterDisplayName())
         .recipientEmail(invitation.getRecipientEmail())
-        .status(invitation.statusAt(now))
+        .status(status)
         .expiresAt(invitation.getExpiresAt().toString())
         .build();
   }

@@ -96,13 +96,16 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should withdraw and announce the invitation when the Account it names is deleted")
-  void shouldWithdrawAndAnnounceTheInvitationWhenTheAccountItNamesIsDeleted() throws Exception {
+  @DisplayName(
+      "Should invalidate the invitation for its Account alone when the Account it names is"
+          + " deleted")
+  void shouldInvalidateTheInvitationForItsAccountAloneWhenTheAccountItNamesIsDeleted()
+      throws Exception {
     var invitationId = invite(cam, cam.profile().getId(), mara);
 
     deleteAccount(mara);
 
-    assertWithdrawnAndAnnounced(invitationId);
+    assertInvalidatedForItsAccountAlone(invitationId);
   }
 
   @Test
@@ -147,9 +150,9 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should withdraw and announce the invitation when a ServerAdmin grants its named Account"
-          + " management")
-  void shouldWithdrawAndAnnounceTheInvitationWhenAServerAdminGrantsItsNamedAccountManagement()
+      "Should invalidate the invitation for its Account alone when a ServerAdmin grants that"
+          + " Account management")
+  void shouldInvalidateTheInvitationForItsAccountAloneWhenAServerAdminGrantsThatAccountManagement()
       throws Exception {
     var alex = cast.profileManagedBy(sam, ProfileFixture.defaultProfileBuilder().name("Alex"));
     var invitationId = invite(sam, alex.getId(), mara);
@@ -163,7 +166,7 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
             .formatted(alex.getId(), mara.account().getId()),
         "/data/administrativelyGrantProfileManager/userErrors");
 
-    assertWithdrawnAndAnnounced(invitationId);
+    assertInvalidatedForItsAccountAlone(invitationId);
   }
 
   @Test
@@ -196,6 +199,22 @@ class ManagerInvitationCascadeIT extends AbstractIntegrationTest {
         .extracting(ProfileManagerInvitationChangedEvent::action)
         .containsExactly(
             new ManagerInvitationAction.Issued(), new ManagerInvitationAction.StoppedWaiting());
+  }
+
+  // To the Profile's managers it still waits (ADR 0024 §Invitations).
+  private void assertInvalidatedForItsAccountAlone(UUID invitationId) {
+    assertThat(invitationRepository.findById(invitationId).orElseThrow())
+        .satisfies(
+            invitation -> {
+              assertThat(invitation.getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
+              assertThat(invitation.getRecipientInvalidatedAt()).isNotNull();
+            });
+    assertThat(events.stream(ProfileManagerInvitationChangedEvent.class))
+        .filteredOn(event -> event.invitation().invitationId().equals(invitationId))
+        .extracting(ProfileManagerInvitationChangedEvent::action)
+        .containsExactly(
+            new ManagerInvitationAction.Issued(),
+            new ManagerInvitationAction.InvalidatedForItsAccount());
   }
 
   private UUID invite(TestIdentity inviter, UUID profileId, TestIdentity invitee) throws Exception {

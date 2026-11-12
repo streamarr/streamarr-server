@@ -24,4 +24,11 @@ public sealed interface ManagerInvitationAction {
    * no longer be answered, or stored that its time ran out. Nobody is told anything new.
    */
   record StoppedWaiting() implements ManagerInvitationAction {}
+
+  /**
+   * The server invalidated the invitation because of what became of its invited Account. It still
+   * waits to the Profile's ProfileManagers, who are never told (ADR 0024 §Invitations); only the
+   * invited Account's request stops waiting.
+   */
+  record InvalidatedForItsAccount() implements ManagerInvitationAction {}
 }

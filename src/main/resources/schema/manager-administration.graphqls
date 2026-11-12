@@ -58,7 +58,12 @@ type ManagerInvitationDetails {
     inviterDisplayName: String!
     "The address the inviter typed, without the spaces around it and with its case kept."
     recipientEmail: String!
-    "A pending invitation whose time has run out reads as EXPIRED."
+    """
+    The status as the reader reads it. A pending invitation whose time has run out reads as
+    EXPIRED. One that the server invalidated because of what became of the Account it names reads
+    as INVALIDATED to that Account and to ServerAdmins, and as still waiting to the Profile's
+    managers, as an invitation that no Account can answer does.
+    """
     status: ProfileManagerInvitationStatus!
     "When the invitation stops waiting for an answer, as an ISO-8601 instant."
     expiresAt: String!
