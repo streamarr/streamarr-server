@@ -26,7 +26,15 @@ public final class BoundedFileInputStream extends InputStream {
   @Override
   public int read() throws IOException {
     var single = new byte[1];
-    return read(single, 0, 1) > 0 ? Byte.toUnsignedInt(single[0]) : -1;
+    if (!tryReadByteInto(single)) {
+      return -1;
+    }
+
+    return Byte.toUnsignedInt(single[0]);
+  }
+
+  private boolean tryReadByteInto(byte[] single) throws IOException {
+    return read(single, 0, 1) > 0;
   }
 
   @Override
