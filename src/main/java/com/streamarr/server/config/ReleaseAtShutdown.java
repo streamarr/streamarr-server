@@ -7,6 +7,7 @@ import com.github.kagkarlsson.scheduler.task.CompletionHandler;
 import com.github.kagkarlsson.scheduler.task.ExecutionContext;
 import com.github.kagkarlsson.scheduler.task.TaskInstance;
 import java.io.InterruptedIOException;
+import java.net.SocketTimeoutException;
 import java.nio.channels.ClosedByInterruptException;
 import java.util.List;
 import lombok.NonNull;
@@ -86,11 +87,16 @@ public final class ReleaseAtShutdown implements ExecutionInterceptor {
   private static boolean isCausedByAnInterrupt(RuntimeException failure) {
     return Thread.currentThread().isInterrupted()
         || ExceptionUtils.getThrowableList(failure).stream()
-            .anyMatch(
-                cause ->
-                    cause instanceof InterruptedException
-                        || cause instanceof InterruptedIOException
-                        || cause instanceof ClosedByInterruptException);
+            .anyMatch(ReleaseAtShutdown::isAnInterrupt);
+  }
+
+  // A socket read that times out ends in an InterruptedIOException too, with no interrupt.
+  private static boolean isAnInterrupt(Throwable cause) {
+    return switch (cause) {
+      case SocketTimeoutException _ -> false;
+      case InterruptedException _, InterruptedIOException _, ClosedByInterruptException _ -> true;
+      default -> false;
+    };
   }
 
   // The connection pool refuses a connection to an interrupted thread.

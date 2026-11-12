@@ -16,6 +16,7 @@ import com.github.kagkarlsson.scheduler.task.ExecutionOperations;
 import com.github.kagkarlsson.scheduler.task.helper.Tasks;
 import com.streamarr.server.fakes.FakeTaskRepository;
 import java.io.InterruptedIOException;
+import java.net.SocketTimeoutException;
 import java.nio.channels.ClosedByInterruptException;
 import java.time.Instant;
 import java.util.List;
@@ -196,7 +197,12 @@ class ReleaseAtShutdownTest {
   static Stream<Named<RuntimeException>> failuresTheShutdownDidNotCause() {
     return Stream.of(
         Named.of(
-            "a failure of the task's own", new IllegalStateException("The source file is gone")));
+            "a failure of the task's own", new IllegalStateException("The source file is gone")),
+        Named.of(
+            "a socket read that timed out",
+            new IllegalStateException(
+                "The database did not answer in time",
+                new SocketTimeoutException("Read timed out"))));
   }
 
   // Saves the execution's end as a database write does: the connection pool refuses a connection
