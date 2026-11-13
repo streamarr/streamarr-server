@@ -2,12 +2,14 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.exceptions.ProbeTaskSchedulingException;
+import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -35,6 +37,7 @@ class FileEventProcessor {
   private final LibraryManagementService libraryManagementService;
   private final IgnoredFileValidator ignoredFileValidator;
   private final Supplier<ExecutorService> executors;
+  private final Sleeper sleeper;
 
   private final ConcurrentHashMap<Path, InFlightTask> inFlightChecks = new ConcurrentHashMap<>();
   private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
@@ -48,11 +51,13 @@ class FileEventProcessor {
       FileStabilityChecker fileStabilityChecker,
       LibraryManagementService libraryManagementService,
       IgnoredFileValidator ignoredFileValidator,
-      Supplier<ExecutorService> executors) {
+      Supplier<ExecutorService> executors,
+      Sleeper sleeper) {
     this.fileStabilityChecker = fileStabilityChecker;
     this.libraryManagementService = libraryManagementService;
     this.ignoredFileValidator = ignoredFileValidator;
     this.executors = executors;
+    this.sleeper = sleeper;
     this.executor = executors.get();
   }
 
@@ -150,7 +155,7 @@ class FileEventProcessor {
     // path.
     var backOff = new ExponentialBackOff().start();
     while (!Thread.currentThread().isInterrupted() && !tryProcessStableFile(path, libraryId)) {
-      Thread.sleep(backOff.nextBackOff());
+      sleeper.sleep(Duration.ofMillis(backOff.nextBackOff()));
     }
   }
 

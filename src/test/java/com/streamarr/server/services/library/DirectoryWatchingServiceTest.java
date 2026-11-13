@@ -7,6 +7,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.properties.LibraryScanProperties;
@@ -48,7 +49,8 @@ class DirectoryWatchingServiceTest {
             fakeLibraryRepository,
             path -> true,
             null,
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)));
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new CountingSleeper());
   }
 
   @AfterEach
@@ -241,7 +243,8 @@ class DirectoryWatchingServiceTest {
         fakeLibraryRepository,
         path -> true,
         null,
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null))) {
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        new CountingSleeper()) {
       @Override
       public void setup(List<Library> libraries) throws IOException {
         throw new IOException("simulated failure");
@@ -255,7 +258,8 @@ class DirectoryWatchingServiceTest {
         fakeLibraryRepository,
         path -> true,
         null,
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null))) {
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        new CountingSleeper()) {
       @Override
       public void setup(List<Library> libraries) throws IOException {
         setupStarted.countDown();

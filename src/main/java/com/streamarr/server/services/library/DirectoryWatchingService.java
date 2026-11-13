@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
@@ -37,7 +38,8 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
       LibraryRepository libraryRepository,
       FileStabilityChecker fileStabilityChecker,
       LibraryManagementService libraryManagementService,
-      IgnoredFileValidator ignoredFileValidator) {
+      IgnoredFileValidator ignoredFileValidator,
+      Sleeper sleeper) {
     this.libraryRepository = libraryRepository;
     this.fileEventProcessor =
         FileEventProcessor.builder()
@@ -45,6 +47,7 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
             .libraryManagementService(libraryManagementService)
             .ignoredFileValidator(ignoredFileValidator)
             .executors(() -> SystemWork.newExecutorRunningAsSystemActor("file-watcher-"))
+            .sleeper(sleeper)
             .build();
   }
 

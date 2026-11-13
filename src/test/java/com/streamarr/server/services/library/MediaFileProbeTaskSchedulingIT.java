@@ -26,6 +26,7 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.ProbeTaskRequests;
@@ -65,6 +66,7 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private ProbeTaskRequests probeTaskRequests;
   @Autowired private IgnoredFileValidator ignoredFileValidator;
+  @Autowired private Sleeper sleeper;
   @Autowired private SchedulerClient client;
 
   private Library library;
@@ -161,7 +163,7 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
       throws Exception {
     var watcher =
         new DirectoryWatchingService(
-            libraries, _ -> true, libraryManagementService, ignoredFileValidator);
+            libraries, _ -> true, libraryManagementService, ignoredFileValidator, sleeper);
     try {
       watcher.addDirectory(directory);
       try (var _ = rejectProbeTaskRequests()) {
