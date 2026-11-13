@@ -102,6 +102,7 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
         GraphQlTransportWsTestClient.connectWithBearer(
             port, authTestSupport.profileBearerExpiringAt(admin, expiresAt))) {
       expiring.subscribe("status", STATUS_SUBSCRIPTION);
+      activeSubscriptions.awaitCount(STATUS_FIELD, 1);
       assertThat(expiring.awaitClosure().statusCode()).isEqualTo(4100);
     }
 
