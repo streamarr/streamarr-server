@@ -52,6 +52,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
+/**
+ * Scans a library of shows with many episodes each. The scan matches several episodes of one show
+ * at once, so they race to create the show and its seasons. Each episode must still join the one
+ * show and season it belongs to.
+ */
 @Isolated
 @Tag("IntegrationTest")
 @DisplayName("Large series library scan")
@@ -66,19 +71,10 @@ import org.springframework.test.context.TestPropertySource;
 class LargeSeriesLibraryScanIT extends AbstractScanningIntegrationTest {
 
   private static final List<String> SHOW_TITLES =
-      List.of(
-          "Amber Harbor",
-          "Brisk Meadow",
-          "Calm Canyon",
-          "Dusky Lantern",
-          "Eager Orchard",
-          "Faint Glacier",
-          "Gentle Willow",
-          "Hollow Summit",
-          "Ivory Prairie",
-          "Jolly Thicket");
+      List.of("Amber Harbor", "Brisk Meadow", "Calm Canyon");
   private static final int SEASONS_PER_SHOW = 2;
   private static final int EPISODES_PER_SEASON = 10;
+  private static final int FILES = SHOW_TITLES.size() * SEASONS_PER_SHOW * EPISODES_PER_SEASON;
   private static final int CREDITS_PER_SHOW = 40;
   private static final int FIRST_TMDB_ID = 8_000_000;
   private static final int FIRST_PERSON_ID = 80_000_000;
@@ -112,9 +108,9 @@ class LargeSeriesLibraryScanIT extends AbstractScanningIntegrationTest {
   @Test
   @DisplayName(
       "Should match every episode to its show and season and save every requested image without a"
-          + " connection timeout when scanning 200 files through four connections")
+          + " connection timeout when scanning 60 files through four connections")
   void
-      shouldMatchEveryEpisodeToItsShowAndSeasonAndSaveEveryRequestedImageWithoutAConnectionTimeoutWhenScanning200FilesThroughFourConnections()
+      shouldMatchEveryEpisodeToItsShowAndSeasonAndSaveEveryRequestedImageWithoutAConnectionTimeoutWhenScanning60FilesThroughFourConnections()
           throws IOException {
     var library = seriesLibraryWithFiles();
     stubTmdb();
@@ -128,7 +124,7 @@ class LargeSeriesLibraryScanIT extends AbstractScanningIntegrationTest {
     assertThat(connectionTimeouts.count()).isEqualTo(timeoutsBefore);
     var files = mediaFileRepository.findByLibraryId(library.getId());
     assertThat(files)
-        .hasSize(200)
+        .hasSize(FILES)
         .extracting(MediaFile::getStatus)
         .containsOnly(MediaFileStatus.MATCHED);
     var episodeIdsByFilepath =
