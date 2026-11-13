@@ -45,6 +45,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.Builder;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -81,6 +82,10 @@ class RemoteRecoveryIT {
   private static WorkerSessionServer sharedServer;
   private static WorkerContainerFixture sharedWorker;
 
+  // Teardown stops this test's stream session on the shared server, so a job that the test leaves
+  // running when it fails holds no slot into the next test.
+  private UUID sharedStreamSessionId;
+
   @BeforeAll
   static void startSharedServerAndWorker() throws Exception {
     sharedMediaRoot = Files.createDirectory(sharedTempDir.resolve("media"));
@@ -100,6 +105,13 @@ class RemoteRecoveryIT {
 
     if (sharedServer != null) {
       sharedServer.close();
+    }
+  }
+
+  @AfterEach
+  void stopSharedStreamSession() {
+    if (sharedStreamSessionId != null) {
+      sharedServer.stopStreamSession(sharedStreamSessionId);
     }
   }
 
@@ -178,7 +190,7 @@ class RemoteRecoveryIT {
                 .heldRequests(sharedServer.heldSegmentRequests())
                 .executor(executor)
                 .build());
-    prepareSharedWorker("exit 73\n");
+    prepareSharedWorker(streamSessionId, "exit 73\n");
 
     var handle = executor.start(rig.configuration().initialAttempt());
     rig.session().setHandle(handle);
@@ -218,6 +230,7 @@ class RemoteRecoveryIT {
                 .build());
     var worker =
         prepareSharedWorker(
+            streamSessionId,
             killableThenReplacedScript(initialAttempt.attemptId(), RecordedStream.START_AT_ZERO));
     var mismatchesBefore = initializationSegmentMismatches(sharedMeterRegistry);
     startThenKillInitialAttempt(rig, List.of(worker));
@@ -330,9 +343,10 @@ class RemoteRecoveryIT {
             WorkerContainerFixture.emitRecordedStream(replacementRecording));
   }
 
-  // An encode of an earlier test can still hold the shared worker's one slot, which this test's
-  // encode needs.
-  private static WorkerContainerFixture prepareSharedWorker(String ffmpegScript) {
+  // Each test starts with the shared worker's one slot free, as on a worker of its own. Stopping an
+  // earlier test's stream session freed any slot that its job held.
+  private WorkerContainerFixture prepareSharedWorker(UUID streamSessionId, String ffmpegScript) {
+    sharedStreamSessionId = streamSessionId;
     await()
         .atMost(10, TimeUnit.SECONDS)
         .until(() -> sharedServer.availableSlots(SOURCE_NAMESPACE_ID) == 1);
