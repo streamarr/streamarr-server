@@ -40,7 +40,7 @@ class MetricExportToTheMetricsEndpointIT extends AbstractObservabilityProfileInt
   @Test
   @DisplayName("Should export metrics only to the metrics endpoint when one is set")
   void shouldExportMetricsOnlyToTheMetricsEndpointWhenOneIsSet() throws Exception {
-    exportOfTheServersMetersCollectedAfter(METRICS_COLLECTOR.metricExports().position());
+    firstExportOfTheReadyServer();
 
     assertThat(SHARED_COLLECTOR.metricExports().all()).isEmpty();
   }
@@ -48,7 +48,7 @@ class MetricExportToTheMetricsEndpointIT extends AbstractObservabilityProfileInt
   @Test
   @DisplayName("Should send only the metrics headers to the metrics endpoint when both are set")
   void shouldSendOnlyTheMetricsHeadersToTheMetricsEndpointWhenBothAreSet() throws Exception {
-    exportOfTheServersMetersCollectedAfter(METRICS_COLLECTOR.metricExports().position());
+    firstExportOfTheReadyServer();
 
     assertThat(METRICS_COLLECTOR.requestHeaderNames())
         .contains(METRICS_HEADER)
