@@ -114,6 +114,9 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
 
       socket.close();
       activeSubscriptions.awaitCount(COUNTS_FIELD, 0);
+      assertThat(PostgresLockTestSupport.blockingPids(observer, readerPid))
+          .as("the operation ended while the delivery's read still waited on the library lock")
+          .contains(held.backendPid());
       var settledState = awaitBackendIdleOrGone(observer, readerPid);
 
       assertThat(settledState)

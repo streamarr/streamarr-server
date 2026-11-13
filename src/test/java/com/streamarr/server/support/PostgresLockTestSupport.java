@@ -7,6 +7,8 @@ import com.streamarr.server.domain.media.ImageSize;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -168,6 +170,22 @@ public final class PostgresLockTestSupport {
         }
 
         return Optional.ofNullable(result.getString(1));
+      }
+    }
+  }
+
+  /** The backends whose locks {@code backendPid} waits for; empty when it waits for none. */
+  public static List<Integer> blockingPids(Connection observer, int backendPid)
+      throws SQLException {
+    try (var statement = observer.prepareStatement("SELECT unnest(pg_blocking_pids(?))")) {
+      statement.setInt(1, backendPid);
+      try (var result = statement.executeQuery()) {
+        var blockers = new ArrayList<Integer>();
+        while (result.next()) {
+          blockers.add(result.getInt(1));
+        }
+
+        return blockers;
       }
     }
   }
