@@ -275,11 +275,21 @@ class RemoteVariantJobMapperTest {
         .isEqualTo(holdsLastFrame);
     assertThat(job.getDecision().getAudio().getPadWithSilenceToAdvertisedEnd())
         .isEqualTo(padsWithSilence);
-    var carriesEnd = holdsLastFrame || padsWithSilence;
-    var execution = job.getExecution();
-    assertThat(execution.hasAdvertisedEnd()).isEqualTo(carriesEnd);
-    assertThat(execution.getAdvertisedEnd().getSeconds()).isEqualTo(carriesEnd ? 60 : 0);
-    assertThat(execution.getAdvertisedEnd().getNanos()).isEqualTo(carriesEnd ? 18_000_000 : 0);
+  }
+
+  // The advertised end also ends a copy's last listed segment: the worker counts that segment as
+  // full when its video ends within one video frame of that end (ADR 0060).
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(TranscodeMode.class)
+  @DisplayName("Should send the advertised end with every job when the attempt carries one")
+  void shouldSendTheAdvertisedEndWithEveryJobWhenTheAttemptCarriesOne(TranscodeMode mode) {
+    var request = attemptIn(mode).advertisedEnd(Optional.of(Duration.ofMillis(60_018))).build();
+
+    var execution = mapper.map(request).getExecution();
+
+    assertThat(execution.hasAdvertisedEnd()).isTrue();
+    assertThat(execution.getAdvertisedEnd().getSeconds()).isEqualTo(60);
+    assertThat(execution.getAdvertisedEnd().getNanos()).isEqualTo(18_000_000);
   }
 
   @Test

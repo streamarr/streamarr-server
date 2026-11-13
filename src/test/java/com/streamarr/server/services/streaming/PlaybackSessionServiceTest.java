@@ -86,6 +86,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Named;
@@ -1011,9 +1012,10 @@ class PlaybackSessionServiceTest {
     var initial = accepted(service.start(command));
 
     service.onTerminalTranscodeFailure(
-        terminalFailure(
-            initial.currentFormatAttempt().streamSessionId(),
-            TranscodeFailure.SEGMENT_CAP_EXCEEDED));
+        terminalFailureBuilder(initial.currentFormatAttempt().streamSessionId())
+            .failure(TranscodeFailure.SEGMENT_CAP_EXCEEDED)
+            .copiedVideo(true)
+            .build());
 
     assertThatTheFixedQualityPlaysAnEncodeAfterItsCopyFailed(
         service.access(request(initial, command)).orElseThrow(), quality);
@@ -1060,6 +1062,245 @@ class PlaybackSessionServiceTest {
     var current = service.access(request(snapshot, command)).orElseThrow();
     assertThat(current.formatAttemptCount()).isEqualTo(2);
     assertThat(current.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = VideoQuality.class,
+      names = {"AUTO", "HIGH_720P"})
+  @DisplayName("Should encode the audio without excluding video when copied audio runs short")
+  void shouldEncodeTheAudioWithoutExcludingVideoWhenCopiedAudioRunsShort(VideoQuality quality) {
+    streams.copiesTheSource = false;
+    var command = startCommand().options(qualityOptions(quality)).build();
+    var initial = accepted(service.start(command));
+
+    service.onTerminalTranscodeFailure(
+        copiedAudioRanShortBesideEncodedVideo(initial.currentFormatAttempt().streamSessionId()));
+
+    var recovered = service.access(request(initial, command)).orElseThrow();
+    assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.playbackChoice()).isEqualTo(quality);
+    assertThat(recovered.formatChange()).isEmpty();
+    assertThat(streams.createdCommands.getLast())
+        .satisfies(
+            next -> {
+              assertThat(next.audioFormatConstraint()).isEqualTo(AudioFormatConstraint.ENCODE_ONLY);
+              assertThat(next.videoFormatConstraint()).isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+              assertThat(next.excludedEncodeCodecFamilies()).isEmpty();
+              assertThat(next.excludedEncodeFormats()).isEmpty();
+            });
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should change Original only if video must encode when copied audio runs short")
+  void shouldChangeOriginalOnlyIfVideoMustEncodeWhenCopiedAudioRunsShort(boolean videoMustEncode) {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var initial = accepted(service.start(command));
+    streams.copiesTheSource = !videoMustEncode;
+
+    service.onTerminalTranscodeFailure(
+        copiedAudioRanShortBesideCopiedVideo(initial.currentFormatAttempt().streamSessionId()));
+
+    var recovered = service.access(request(initial, command)).orElseThrow();
+    assertThat(recovered.playbackChoice())
+        .isEqualTo(videoMustEncode ? VideoQuality.AUTO : VideoQuality.ORIGINAL);
+    assertThat(streams.createdCommands.getLast().videoFormatConstraint())
+        .isEqualTo(VideoFormatConstraint.COPY_OR_ENCODE);
+    assertThat(streams.createdCommands.getLast().audioFormatConstraint())
+        .isEqualTo(AudioFormatConstraint.ENCODE_ONLY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the pending video's encode constraint when copied audio fails before creation returns")
+  void shouldKeepThePendingVideosEncodeConstraintWhenCopiedAudioFailsBeforeCreationReturns() {
+    var work = new ConcurrentLinkedQueue<Runnable>();
+    var playback = serviceRunning(work::add).maximumFormatAttempts(3).build();
+    var command = startCommand().build();
+    var initial = accepted(playback.start(command));
+    streams.duringNextCreation =
+        child ->
+            playback.onTerminalTranscodeFailure(
+                copiedAudioRanShortBesideEncodedVideo(child.streamSessionId()));
+
+    playback.onVideoCopyOutputMismatch(
+        new VideoCopyOutputMismatchEvent(
+            initial.currentFormatAttempt().streamSessionId(), UUID.randomUUID(), "default"));
+    drain(work);
+
+    assertThat(streams.createdCommands.getLast().videoFormatConstraint())
+        .isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+    assertThat(streams.createdCommands.getLast().audioFormatConstraint())
+        .isEqualTo(AudioFormatConstraint.ENCODE_ONLY);
+    assertThat(playback.access(request(initial, command)).orElseThrow().formatAttemptCount())
+        .isEqualTo(3);
+  }
+
+  // ADR 0060: an encoded video stays encoded in the playback choice that its encode plays. A
+  // worker can report the failure while start still creates the stream session, before the
+  // playback session has read that stream session's decision.
+  @ParameterizedTest
+  @CsvSource({"AUTO, AUTO,", "HIGH_720P, HIGH_720P,", "ORIGINAL, AUTO, STARTED_WITH_ENCODE"})
+  @DisplayName(
+      "Should play the choice of the first encode without a copy failure when its copied audio"
+          + " runs short before creation returns")
+  void shouldPlayTheChoiceOfTheFirstEncodeWithoutACopyFailureWhenItsCopiedAudioRunsShortEarly(
+      VideoQuality requested, VideoQuality played, PlaybackFormatChange formatChange) {
+    streams.copiesTheSource = false;
+    streams.duringNextCreation =
+        child ->
+            service.onTerminalTranscodeFailure(
+                copiedAudioRanShortBesideEncodedVideo(child.streamSessionId()));
+    var command = startCommand().options(qualityOptions(requested)).build();
+
+    var recovered = accepted(service.start(command));
+
+    assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.playbackChoice()).isEqualTo(played);
+    assertThat(recovered.formatChange()).isEqualTo(Optional.ofNullable(formatChange));
+    assertThat(streams.createdCommands.getLast())
+        .satisfies(
+            next -> {
+              assertThat(next.options().quality()).isEqualTo(played);
+              assertThat(next.audioFormatConstraint()).isEqualTo(AudioFormatConstraint.ENCODE_ONLY);
+              assertThat(next.videoFormatConstraint()).isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+            });
+  }
+
+  // The format attempt after a failed direct play may copy or encode, and its encode plays in Auto
+  // because direct play failed.
+  @Test
+  @DisplayName(
+      "Should keep the pending encode's own format change when its copied audio runs short before"
+          + " creation returns")
+  void shouldKeepThePendingEncodesOwnFormatChangeWhenItsCopiedAudioRunsShortEarly() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(3).build();
+    streams.coversTheSourceForDirectPlay = true;
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = accepted(playback.start(command));
+    streams.copiesTheSource = false;
+    streams.duringNextCreation =
+        child ->
+            playback.onTerminalTranscodeFailure(
+                copiedAudioRanShortBesideEncodedVideo(child.streamSessionId()));
+
+    var recovered = playback.reportFormatFailure(report(directPlay, command).build()).orElseThrow();
+
+    assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(recovered.formatAttemptCount()).isEqualTo(3);
+    assertThat(recovered.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(recovered.formatChange()).contains(PlaybackFormatChange.DIRECT_PLAY_FAILED);
+    assertThat(streams.createdCommands.getLast().videoFormatConstraint())
+        .isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+  }
+
+  // An audio track switch that reaches an encode names the switch, and the audio encode after it
+  // changes nothing that the viewer chose.
+  @Test
+  @DisplayName(
+      "Should keep the audio track switch change when copied audio runs short beside the encode"
+          + " that the switch reached")
+  void shouldKeepTheAudioTrackSwitchChangeWhenCopiedAudioRunsShortBesideTheSwitchsEncode() {
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var directPlay = startDirectPlayOfTwoAudioTracks(service, command);
+    streams.copiesTheSource = false;
+    var switched = accepted(service.switchAudioTrack(audioSwitch(directPlay, command, 1)));
+
+    service.onTerminalTranscodeFailure(
+        copiedAudioRanShortBesideEncodedVideo(switched.currentFormatAttempt().streamSessionId()));
+
+    var recovered = service.access(request(switched, command)).orElseThrow();
+    assertThat(recovered.currentFormatAttempt()).isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(recovered.playbackChoice()).isEqualTo(VideoQuality.AUTO);
+    assertThat(recovered.formatChange()).contains(PlaybackFormatChange.AUDIO_TRACK_SWITCHED);
+    assertThat(streams.createdCommands.getLast().videoFormatConstraint())
+        .isEqualTo(VideoFormatConstraint.ENCODE_ONLY);
+  }
+
+  // A copy that fails before creation returns may still copy beside the audio encode.
+  @Test
+  @DisplayName(
+      "Should let the video stay copied when a copy's copied audio runs short before creation"
+          + " returns")
+  void shouldLetTheVideoStayCopiedWhenACopysCopiedAudioRunsShortBeforeCreationReturns() {
+    streams.duringNextCreation =
+        child ->
+            service.onTerminalTranscodeFailure(
+                copiedAudioRanShortBesideCopiedVideo(child.streamSessionId()));
+    var command = startCommand().options(qualityOptions(VideoQuality.HIGH_720P)).build();
+
+    var recovered = accepted(service.start(command));
+
+    assertThat(recovered.playbackChoice()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(recovered.formatChange()).isEmpty();
+    assertThat(recovered.formatAttemptCount()).isEqualTo(2);
+    assertThat(streams.createdCommands.getLast().videoFormatConstraint())
+        .isEqualTo(VideoFormatConstraint.COPY_OR_ENCODE);
+    assertThat(streams.createdCommands.getLast().audioFormatConstraint())
+        .isEqualTo(AudioFormatConstraint.ENCODE_ONLY);
+  }
+
+  @Test
+  @DisplayName("Should ignore duplicate reports when a short audio copy already recovered")
+  void shouldIgnoreDuplicateReportsWhenAShortAudioCopyAlreadyRecovered() {
+    var command = startCommand().build();
+    var initial = accepted(service.start(command));
+    var failure =
+        copiedAudioRanShortBesideCopiedVideo(initial.currentFormatAttempt().streamSessionId());
+
+    service.onTerminalTranscodeFailure(failure);
+    service.onTerminalTranscodeFailure(failure);
+
+    assertThat(service.access(request(initial, command)).orElseThrow().currentFormatAttempt())
+        .isInstanceOf(PlaybackFormatAttempt.Ready.class);
+    assertThat(streams.createdCommands).hasSize(2);
+  }
+
+  @ParameterizedTest(name = "{0} reports")
+  @ValueSource(ints = {1, 2})
+  @DisplayName("Should stop at the format budget when copied audio runs short")
+  void shouldStopAtTheFormatBudgetWhenCopiedAudioRunsShort(int reports) {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(1).build();
+    var command = startCommand().build();
+    var initial = accepted(playback.start(command));
+    var failure =
+        copiedAudioRanShortBesideCopiedVideo(initial.currentFormatAttempt().streamSessionId());
+
+    IntStream.range(0, reports).forEach(_ -> playback.onTerminalTranscodeFailure(failure));
+
+    var failed = playback.access(request(initial, command)).orElseThrow();
+    assertThat(failed.currentFormatAttempt())
+        .isEqualTo(
+            new PlaybackFormatAttempt.Failed(
+                initial.currentFormatAttempt().streamSessionId(),
+                new PlaybackSessionFailure.AttemptsExhausted()));
+    assertThat(failed.formatAttemptCount()).isOne();
+    assertThat(streams.createdCommands).hasSize(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep encoding the audio when a later format attempt follows copied audio that ran"
+          + " short")
+  void shouldKeepEncodingTheAudioWhenALaterFormatAttemptFollowsCopiedAudioThatRanShort() {
+    var playback = serviceRunning(Runnable::run).maximumFormatAttempts(3).build();
+    var command = startCommand().options(qualityOptions(VideoQuality.ORIGINAL)).build();
+    var initial = accepted(playback.start(command));
+    playback.onTerminalTranscodeFailure(
+        copiedAudioRanShortBesideCopiedVideo(initial.currentFormatAttempt().streamSessionId()));
+    var second = playback.access(request(initial, command)).orElseThrow();
+
+    playback.onVideoCopyOutputMismatch(
+        new VideoCopyOutputMismatchEvent(
+            second.currentFormatAttempt().streamSessionId(), UUID.randomUUID(), "default"));
+
+    assertThat(streams.createdCommands).hasSize(3);
+    assertThat(streams.createdCommands.getLast().audioFormatConstraint())
+        .isEqualTo(AudioFormatConstraint.ENCODE_ONLY);
   }
 
   // ADR 0044: the requested variant whose hardware encoder fails continues on the software encoder
@@ -1176,14 +1417,33 @@ class PlaybackSessionServiceTest {
     assertThat(streams.getAllSessions()).isEmpty();
   }
 
+  // A failure that ends playback whether its job copied the video or encoded it.
   private static TerminalTranscodeFailureEvent terminalFailure(
       UUID streamSessionId, TranscodeFailure failure) {
+    return terminalFailureBuilder(streamSessionId).failure(failure).copiedVideo(false).build();
+  }
+
+  private static TerminalTranscodeFailureEvent copiedAudioRanShortBesideCopiedVideo(
+      UUID streamSessionId) {
+    return copiedAudioRanShortBuilder(streamSessionId).copiedVideo(true).build();
+  }
+
+  private static TerminalTranscodeFailureEvent copiedAudioRanShortBesideEncodedVideo(
+      UUID streamSessionId) {
+    return copiedAudioRanShortBuilder(streamSessionId).copiedVideo(false).build();
+  }
+
+  private static TerminalTranscodeFailureEvent.TerminalTranscodeFailureEventBuilder
+      copiedAudioRanShortBuilder(UUID streamSessionId) {
+    return terminalFailureBuilder(streamSessionId).failure(TranscodeFailure.COPIED_AUDIO_RAN_SHORT);
+  }
+
+  private static TerminalTranscodeFailureEvent.TerminalTranscodeFailureEventBuilder
+      terminalFailureBuilder(UUID streamSessionId) {
     return TerminalTranscodeFailureEvent.builder()
         .streamSessionId(streamSessionId)
         .jobAttemptId(UUID.randomUUID())
-        .variantLabel("default")
-        .failure(failure)
-        .build();
+        .variantLabel("default");
   }
 
   private static PlaybackSessionFailure playbackFailureOf(TranscodeFailure failure) {
@@ -1191,6 +1451,7 @@ class PlaybackSessionServiceTest {
       case OUTPUT_MISMATCH -> new PlaybackSessionFailure.OutputMismatch();
       case INVALID_SPECIFICATION -> new PlaybackSessionFailure.InvalidSpecification();
       case SEGMENT_CAP_EXCEEDED -> new PlaybackSessionFailure.OutputMismatch();
+      case COPIED_AUDIO_RAN_SHORT -> throw new AssertionError("A short audio copy is recoverable");
       case DOLBY_VISION_CONVERSION_FAILED ->
           new PlaybackSessionFailure.DolbyVisionConversionFailed();
     };
@@ -2658,7 +2919,13 @@ class PlaybackSessionServiceTest {
                 "invalid specification",
                 (playback, streamId) ->
                     playback.onTerminalTranscodeFailure(
-                        terminalFailure(streamId, TranscodeFailure.INVALID_SPECIFICATION)))));
+                        terminalFailure(streamId, TranscodeFailure.INVALID_SPECIFICATION)))),
+        Arguments.of(
+            Named.<BiConsumer<PlaybackSessionService, UUID>>of(
+                "copied audio that ran short",
+                (playback, streamId) ->
+                    playback.onTerminalTranscodeFailure(
+                        copiedAudioRanShortBesideCopiedVideo(streamId)))));
   }
 
   private static StreamSession endNormally(PlaybackSessionSnapshot snapshot) {

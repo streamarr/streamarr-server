@@ -28,6 +28,7 @@ public record CreateStreamSessionCommand(
     @NonNull StreamingOptions options,
     @NonNull ClientCapabilityDeclaration capabilityDeclaration,
     @NonNull VideoFormatConstraint videoFormatConstraint,
+    @NonNull AudioFormatConstraint audioFormatConstraint,
     @NonNull Set<String> excludedEncodeCodecFamilies,
     @NonNull Set<EncodeFormat> excludedEncodeFormats,
     @NonNull Optional<Duration> startPosition,
@@ -42,6 +43,7 @@ public record CreateStreamSessionCommand(
   @SuppressWarnings("java:S9438")
   public static class CreateStreamSessionCommandBuilder {
     private VideoFormatConstraint videoFormatConstraint = VideoFormatConstraint.COPY_OR_ENCODE;
+    private AudioFormatConstraint audioFormatConstraint = AudioFormatConstraint.COPY_OR_ENCODE;
     private Set<String> excludedEncodeCodecFamilies = Set.of();
     private Set<EncodeFormat> excludedEncodeFormats = Set.of();
     private Optional<Duration> startPosition = Optional.empty();
@@ -56,6 +58,7 @@ public record CreateStreamSessionCommand(
           options,
           capabilityDeclaration,
           videoFormatConstraint,
+          audioFormatConstraint,
           excludedEncodeCodecFamilies,
           excludedEncodeFormats,
           startPosition,

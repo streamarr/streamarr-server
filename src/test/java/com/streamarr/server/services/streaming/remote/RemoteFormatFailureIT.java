@@ -337,7 +337,11 @@ class RemoteFormatFailureIT {
           .isEqualTo(
               copiesVideo
                   ? List.of()
-                  : List.of(terminalEventFor(job, TranscodeFailure.OUTPUT_MISMATCH)));
+                  : List.of(
+                      terminalEventBuilderFor(job)
+                          .failure(TranscodeFailure.OUTPUT_MISMATCH)
+                          .copiedVideo(false)
+                          .build()));
     }
   }
 
@@ -373,7 +377,10 @@ class RemoteFormatFailureIT {
               copiesVideo
                   ? List.of()
                   : List.of(
-                      terminalEventFor(job, TranscodeFailure.DOLBY_VISION_CONVERSION_FAILED)));
+                      terminalEventBuilderFor(job)
+                          .failure(TranscodeFailure.DOLBY_VISION_CONVERSION_FAILED)
+                          .copiedVideo(false)
+                          .build()));
     }
   }
 
@@ -405,7 +412,11 @@ class RemoteFormatFailureIT {
       assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
           .contains(TranscodeFailure.SEGMENT_CAP_EXCEEDED);
       assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
-          .containsExactly(terminalEventFor(job, TranscodeFailure.SEGMENT_CAP_EXCEEDED));
+          .containsExactly(
+              terminalEventBuilderFor(job)
+                  .failure(TranscodeFailure.SEGMENT_CAP_EXCEEDED)
+                  .copiedVideo(true)
+                  .build());
       assertThat(rig.deliver()).isInstanceOf(SegmentDelivery.Unrecoverable.class);
       assertThat(worker.jobs).hasSize(1);
     }
@@ -442,6 +453,38 @@ class RemoteFormatFailureIT {
     }
   }
 
+  // ADR 0060: another attempt of the same decision copies the same short audio, so the failure
+  // ends the job and playback recovers with an audio encode. The recovery keeps an encoded video
+  // encoded, so the event says which the job did.
+  @ParameterizedTest
+  @CsvSource({"REMUX,true", "VIDEO_TRANSCODE,false"})
+  @DisplayName(
+      "Should treat copied audio that ran short as terminal, saying whether the job copied the"
+          + " video, when the job copies or encodes video")
+  void shouldTreatCopiedAudioThatRanShortAsTerminalWhenTheJobCopiesOrEncodesVideo(
+      TranscodeMode mode, boolean copiesVideo) throws Exception {
+    var events = new CapturingEventPublisher();
+    try (var rig = new FailureRig(events);
+        var worker = new TestWorker(rig.server)) {
+      rig.executor.start(rig.requestBuilder().transcodeDecision(rig.decision(mode)).build());
+      var job = worker.nextJob();
+      worker.fail(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_COPIED_AUDIO_RAN_SHORT);
+      worker.awaitProcessed(rig.server);
+
+      assertThat(rig.executor.terminalFailure(rig.session.getSessionId()))
+          .contains(TranscodeFailure.COPIED_AUDIO_RAN_SHORT);
+      assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
+      assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
+          .containsExactly(
+              terminalEventBuilderFor(job)
+                  .failure(TranscodeFailure.COPIED_AUDIO_RAN_SHORT)
+                  .copiedVideo(copiesVideo)
+                  .build());
+      assertThat(rig.deliver()).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+      assertThat(worker.jobs).hasSize(1);
+    }
+  }
+
   @ParameterizedTest
   @EnumSource(
       value = TranscodeMode.class,
@@ -461,7 +504,11 @@ class RemoteFormatFailureIT {
           .contains(TranscodeFailure.INVALID_SPECIFICATION);
       assertThat(events.getEventsOfType(VideoCopyOutputMismatchEvent.class)).isEmpty();
       assertThat(events.getEventsOfType(TerminalTranscodeFailureEvent.class))
-          .containsExactly(terminalEventFor(job, TranscodeFailure.INVALID_SPECIFICATION));
+          .containsExactly(
+              terminalEventBuilderFor(job)
+                  .failure(TranscodeFailure.INVALID_SPECIFICATION)
+                  .copiedVideo(mode.copiesVideo())
+                  .build());
     }
   }
 
@@ -535,14 +582,12 @@ class RemoteFormatFailureIT {
         .build();
   }
 
-  private static TerminalTranscodeFailureEvent terminalEventFor(
-      VariantJob job, TranscodeFailure failure) {
+  private static TerminalTranscodeFailureEvent.TerminalTranscodeFailureEventBuilder
+      terminalEventBuilderFor(VariantJob job) {
     return TerminalTranscodeFailureEvent.builder()
         .streamSessionId(fromProto(job.getStreamSessionId()))
         .jobAttemptId(fromProto(job.getJobAttemptId()))
-        .variantLabel(job.getVariant().getVariantLabel())
-        .failure(failure)
-        .build();
+        .variantLabel(job.getVariant().getVariantLabel());
   }
 
   private static VideoCopyOutputMismatchEvent eventFor(VariantJob job) {

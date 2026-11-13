@@ -132,8 +132,8 @@ public enum DecisionReason {
    */
   VIDEO_ENDS_EARLY,
   /**
-   * The session's audio ends at least one target segment duration before another stream of the
-   * source, so the encode pads it with silence to the end (ADR 0037, early ends).
+   * The source's audio ends early, or its copied output ran short beside video, so an audio encode
+   * pads it with silence to the end (ADRs 0037 and 0060).
    */
   AUDIO_ENDS_EARLY,
   /** The probe's facts name no single source container that a declaration can list. */

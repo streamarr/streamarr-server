@@ -6,6 +6,8 @@ package com.streamarr.server.domain.streaming;
  */
 public enum TranscodeFailure {
   OUTPUT_MISMATCH,
+  /** The required copied audio ended before a segment whose video continues. */
+  COPIED_AUDIO_RAN_SHORT,
   INVALID_SPECIFICATION,
   /**
    * A segment on the stream session's segment list exceeded the segment cap. Every attempt on the

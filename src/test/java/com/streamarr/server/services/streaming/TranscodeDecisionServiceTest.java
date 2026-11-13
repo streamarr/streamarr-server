@@ -224,6 +224,27 @@ class TranscodeDecisionServiceTest {
         .hasMessageContaining("capabilityDeclaration");
   }
 
+  @Test
+  @DisplayName(
+      "Should decide no audio when the format attempt requires an audio encode and the source has"
+          + " no audio")
+  void shouldDecideNoAudioWhenTheFormatAttemptRequiresAnAudioEncodeAndTheSourceHasNoAudio() {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("h264", null))
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .audioFormatConstraint(AudioFormatConstraint.ENCODE_ONLY)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.NONE);
+    assertThat(decision.reasons()).doesNotContain(DecisionReason.AUDIO_ENDS_EARLY);
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("excludedEncodeFamilies")
   @DisplayName("Should choose only untried encodes when previous codec families are excluded")

@@ -90,7 +90,7 @@ record FormatRecoveryPolicy(int maximumFormatAttempts) {
   }
 
   // Original's encode plays in Auto, and a fixed quality's encode keeps the fixed quality.
-  private static PlayingChoice choiceWhenEncodingAfterACopy(PlayingChoice choice) {
+  static PlayingChoice choiceWhenEncodingAfterACopy(PlayingChoice choice) {
     return switch (choice.playbackChoice()) {
       case AUTO -> choice;
       case ORIGINAL -> AUTO_AFTER_A_FAILED_COPY;
