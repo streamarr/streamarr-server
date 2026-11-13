@@ -8,6 +8,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -146,6 +147,27 @@ public final class PostgresLockTestSupport {
       try (var result = statement.executeQuery()) {
         assertThat(result.next()).isTrue();
         return result.getString(1);
+      }
+    }
+  }
+
+  /**
+   * The {@code pg_stat_activity} state of {@code backendPid}, or empty once it has disconnected.
+   * Read it through a connection the caller holds, not one borrowed from the pool: the pool can
+   * lend the observed backend's own connection, and a backend reads its own state as active.
+   */
+  public static Optional<String> backendState(Connection observer, int backendPid)
+      throws SQLException {
+    clearActivitySnapshot(observer);
+    try (var statement =
+        observer.prepareStatement("SELECT state FROM pg_stat_activity WHERE pid = ?")) {
+      statement.setInt(1, backendPid);
+      try (var result = statement.executeQuery()) {
+        if (!result.next()) {
+          return Optional.empty();
+        }
+
+        return Optional.ofNullable(result.getString(1));
       }
     }
   }

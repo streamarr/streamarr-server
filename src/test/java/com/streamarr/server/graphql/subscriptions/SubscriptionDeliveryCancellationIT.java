@@ -34,7 +34,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.jdbc.core.JdbcTemplate;
 import reactor.core.scheduler.Scheduler;
 
 /**
@@ -71,7 +70,6 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MeterRegistry meterRegistry;
   @Autowired private DataSource dataSource;
-  @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private Scheduler graphQlSubscriptionDeliveryScheduler;
 
   private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
@@ -116,12 +114,12 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
 
       socket.close();
       activeSubscriptions.awaitCount(COUNTS_FIELD, 0);
-      var settledState = awaitBackendIdleOrGone(readerPid);
+      var settledState = awaitBackendIdleOrGone(observer, readerPid);
 
       assertThat(settledState)
           .as("the lock bound ends the cancelled read, and its pooled connection survives, idle")
           .contains("idle");
-      assertThat(backendState(readerPid))
+      assertThat(PostgresLockTestSupport.backendState(observer, readerPid))
           .as("the delivery's pooled connection is still open after it settled")
           .isPresent();
       assertThat(PostgresLockTestSupport.waitersBehind(observer, held.backendPid(), "%"))
@@ -294,18 +292,12 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
   // A cancelled delivery sends the subscriber nothing, so only its backend shows that the read
   // ended: the backend is idle again, or gone with the connection. The state is returned from the
   // wait, because the pool may lend the connection out again before a second read.
-  private Optional<String> awaitBackendIdleOrGone(int backendPid) {
+  private static Optional<String> awaitBackendIdleOrGone(Connection observer, int backendPid) {
     return await()
         .atMost(LOCK_BOUND.plus(SETTLE_MARGIN))
         .until(
-            () -> backendState(backendPid), state -> state.filter(not("idle"::equals)).isEmpty());
-  }
-
-  private Optional<String> backendState(int backendPid) {
-    return jdbcTemplate
-        .queryForList("SELECT state FROM pg_stat_activity WHERE pid = ?", String.class, backendPid)
-        .stream()
-        .findFirst();
+            () -> PostgresLockTestSupport.backendState(observer, backendPid),
+            state -> state.filter(not("idle"::equals)).isEmpty());
   }
 
   private static void terminateBackend(Connection observer, int backendPid) throws SQLException {
