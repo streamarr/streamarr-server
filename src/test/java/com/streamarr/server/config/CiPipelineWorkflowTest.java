@@ -28,6 +28,13 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.platform.engine.discovery.ClassNameFilter;
+import org.junit.platform.engine.discovery.DiscoverySelectors;
+import org.junit.platform.engine.support.descriptor.ClassSource;
+import org.junit.platform.launcher.EngineFilter;
+import org.junit.platform.launcher.TagFilter;
+import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
+import org.junit.platform.launcher.core.LauncherFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
 import org.yaml.snakeyaml.Yaml;
@@ -42,7 +49,9 @@ class CiPipelineWorkflowTest {
   private static final String BUILD_AND_TEST = "Build and test";
   private static final String PROMETHEUS_COMPOSE_INPUTS =
       "Detect changes to the Prometheus Compose test's inputs";
-  private static final String WITHOUT_PROMETHEUS_COMPOSE_TEST = "-Dgroups=!PrometheusComposeTest";
+  private static final String PROMETHEUS_COMPOSE_TAG = "PrometheusComposeTest";
+  private static final String WITHOUT_PROMETHEUS_COMPOSE_TEST =
+      "-Dgroups=!" + PROMETHEUS_COMPOSE_TAG;
   private static final String NOT_A_PROMETHEUS_COMPOSE_INPUT =
       "src/main/java/com/streamarr/server/services/library/LibraryManagementService.java";
   private static final String PULL_REQUEST = "refs/pull/389/merge";
@@ -306,7 +315,7 @@ class CiPipelineWorkflowTest {
   @DisplayName("Should run the Prometheus Compose test when a developer build verifies")
   void shouldRunThePrometheusComposeTestWhenADeveloperBuildVerifies() throws Exception {
     assertThat(Files.readAllLines(Path.of("pom.xml")))
-        .filteredOn(line -> line.contains("PrometheusComposeTest"))
+        .filteredOn(line -> line.contains(PROMETHEUS_COMPOSE_TAG))
         .as("Maven configuration that names the Prometheus Compose test's tag")
         .isEmpty();
   }
@@ -321,6 +330,38 @@ class CiPipelineWorkflowTest {
         .filteredOn(Predicate.not(CiPipelineWorkflowTest::matchesACheckedInFile))
         .as("input patterns that match no checked-in file")
         .isEmpty();
+  }
+
+  // The tag's inputs in ci.yml list what this one class depends on. Another class with the tag
+  // would skip pull request CI even when what it depends on changes.
+  @Test
+  @DisplayName(
+      "Should leave out only the Compose metrics export test when CI excludes the Prometheus"
+          + " Compose tag")
+  void shouldLeaveOutOnlyTheComposeMetricsExportTestWhenCiExcludesThePrometheusComposeTag() {
+    var request =
+        LauncherDiscoveryRequestBuilder.request()
+            .selectors(DiscoverySelectors.selectPackage("com.streamarr"))
+            .filters(
+                EngineFilter.includeEngines("junit-jupiter"),
+                ClassNameFilter.includeClassNamePatterns(".*IT"),
+                TagFilter.includeTags(PROMETHEUS_COMPOSE_TAG))
+            .build();
+
+    var plan = LauncherFactory.create().discover(request);
+
+    var testClasses =
+        plan.getRoots().stream()
+            .flatMap(engine -> plan.getChildren(engine).stream())
+            .flatMap(testClass -> testClass.getSource().stream())
+            .filter(ClassSource.class::isInstance)
+            .map(ClassSource.class::cast)
+            .map(ClassSource::getJavaClass)
+            .map(Class::getSimpleName)
+            .toList();
+    assertThat(testClasses)
+        .as("integration test classes carrying the %s tag", PROMETHEUS_COMPOSE_TAG)
+        .containsExactly("ComposeMetricsExportIT");
   }
 
   private static ApplicationJob.ApplicationJobBuilder integrationJob(String shard) {
