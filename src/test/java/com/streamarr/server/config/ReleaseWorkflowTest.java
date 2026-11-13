@@ -10,10 +10,36 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.Yaml;
+import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
 @DisplayName("Release Workflow Tests")
 class ReleaseWorkflowTest {
+
+  @Test
+  @DisplayName("Should create a tagged draft when a stable release PR is merged")
+  void shouldCreateTaggedDraftWhenStableReleasePrIsMerged() throws Exception {
+    var configuration =
+        new ObjectMapper()
+            .readTree(Files.readString(Path.of("release-please-config.json")))
+            .path("packages")
+            .path(".");
+
+    assertThat(configuration.path("draft").asBoolean()).isTrue();
+    assertThat(configuration.path("force-tag-creation").asBoolean()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should start image publication when a stable draft is published")
+  void shouldStartImagePublicationWhenStableDraftIsPublished() throws Exception {
+    Map<Object, Object> workflow =
+        new Yaml().load(Files.readString(Path.of(".github/workflows/publish-release.yml")));
+    // YAML 1.1 resolves GitHub's unquoted "on" key as the boolean true.
+    var triggers = map(workflow.get(true));
+
+    assertThat(triggers).containsOnlyKeys("release", "workflow_dispatch");
+    assertThat(map(triggers.get("release"))).containsOnly(Map.entry("types", List.of("released")));
+  }
 
   @Test
   @DisplayName("Should use the shared release workflow when maintaining releases")
