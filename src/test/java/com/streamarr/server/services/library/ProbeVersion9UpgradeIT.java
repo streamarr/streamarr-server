@@ -1,7 +1,5 @@
 package com.streamarr.server.services.library;
 
-import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
-import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -9,8 +7,6 @@ import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
-import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.domain.task.ProbeState;
@@ -168,16 +164,7 @@ class ProbeVersion9UpgradeIT extends AbstractProbeUpgradeIntegrationTest {
   }
 
   private Duration playedDuration(UUID mediaFileId) {
-    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
-    var session =
-        accepted(
-            streaming.createSession(
-                createStreamSessionCommand(mediaFileId, UUID.randomUUID(), options)));
-    try {
-      return session.getMediaProbe().duration();
-    } finally {
-      streaming.destroySession(session.getSessionId());
-    }
+    return playedProbe(mediaFileId).duration();
   }
 
   @TestConfiguration(proxyBeanMethods = false)
