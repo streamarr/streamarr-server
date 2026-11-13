@@ -42,6 +42,15 @@ public class ShareCodeRepositoryCustomImpl implements ShareCodeRepositoryCustom 
   }
 
   @Override
+  public void lockById(UUID shareCodeId) {
+    dsl.select(SHARE_CODE.ID)
+        .from(SHARE_CODE)
+        .where(SHARE_CODE.ID.eq(shareCodeId))
+        .forUpdate()
+        .execute();
+  }
+
+  @Override
   public boolean trySpend(UUID shareCodeId, Instant now) {
     return endLive(shareCodeId, ShareCodeStatus.SPENT, now);
   }

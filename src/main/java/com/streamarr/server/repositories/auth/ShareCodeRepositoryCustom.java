@@ -22,6 +22,12 @@ public interface ShareCodeRepositoryCustom {
    */
   Optional<UUID> tryInsert(ShareCode unsaved);
 
+  /**
+   * Holds the code's row until the transaction ends, after any transaction that holds it has ended;
+   * does nothing when there is no such code.
+   */
+  void lockById(UUID shareCodeId);
+
   /** Spends a live code on the offer it admits; false when it was not live. */
   boolean trySpend(UUID shareCodeId, Instant now);
 

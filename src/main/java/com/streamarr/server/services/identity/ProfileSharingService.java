@@ -116,6 +116,9 @@ public class ProfileSharingService {
         rejection -> {
           throw new MutationRejection(rejection);
         });
+    // The time is read once the offer holds the code, so a code that expires while another
+    // transaction holds it is refused.
+    shareCodeRepository.lockById(shareCode.getId());
     var now = clock.instant();
     // The code may have been spent, withdrawn or invalidated since it was presented.
     if (!shareCodeRepository.trySpend(shareCode.getId(), now)) {
