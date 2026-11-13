@@ -39,6 +39,7 @@ class CiPipelineWorkflowTest {
   private static final String SONAR_ANALYSIS =
       "Analyze coverage and require the SonarCloud quality gate";
   private static final String SMOKE_TESTS = "Run HLS smoke tests";
+  private static final String BUILD_AND_TEST = "Build and test";
   private static final String PROMETHEUS_COMPOSE_INPUTS =
       "Detect changes to the Prometheus Compose test's inputs";
   private static final String WITHOUT_PROMETHEUS_COMPOSE_TEST = "-Dgroups=!PrometheusComposeTest";
@@ -354,7 +355,7 @@ class CiPipelineWorkflowTest {
         Map.of(
             "steps." + detection.get("id") + ".outputs.changed",
             prometheusComposeInputsChanged(job));
-    var run = step("application", "Build and test").get("run").toString();
+    var run = step("application", BUILD_AND_TEST).get("run").toString();
     var command = render(renderConditionalArgument(run, outputs), context);
 
     var result = runBash(command.replace("./mvnw", "'" + argumentCapturingMaven() + "'"));
@@ -363,9 +364,14 @@ class CiPipelineWorkflowTest {
     return result.output().lines().toList();
   }
 
-  // GitHub leaves the outputs of a skipped step empty. For these patterns the paths filter matches
-  // as Java's glob does: * within one folder and ** across folders.
+  // GitHub renders the output of a step that was skipped or has not run yet as empty. For these
+  // patterns the paths filter matches as Java's glob does: * within one folder, ** across folders.
   private String prometheusComposeInputsChanged(ApplicationJob job) throws Exception {
+    var steps = stepNames("application");
+    if (steps.indexOf(PROMETHEUS_COMPOSE_INPUTS) > steps.indexOf(BUILD_AND_TEST)) {
+      return "";
+    }
+
     var condition = step("application", PROMETHEUS_COMPOSE_INPUTS).get("if").toString();
     if (!holds(condition, Map.of("matrix.suite", job.suite(), "github.ref", job.ref()))) {
       return "";
