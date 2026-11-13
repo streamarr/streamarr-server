@@ -99,6 +99,9 @@ class CiPipelineWorkflowTest {
     var xpath = XPathFactory.newInstance().newXPath();
     var failsafe = "/build/plugins/plugin[artifactId='maven-failsafe-plugin']/configuration";
     var ci = "/project/profiles/profile[id='ci-integration']" + failsafe;
+    var developerForkCounts =
+        "count(/project/properties/forkCount"
+            + " | /project/build//plugin[artifactId='maven-failsafe-plugin']//forkCount)";
 
     assertThat(xpath.evaluate(ci + "/forkCount", pom)).as("CI forks").isEqualTo("2");
     assertThat(xpath.evaluate(ci + "/reuseForks", pom))
@@ -109,9 +112,9 @@ class CiPipelineWorkflowTest {
                 ci + "/systemPropertyVariables/" + IntegrationTestFork.NUMBER_PROPERTY, pom))
         .as("fork number placeholder that Maven leaves for Failsafe")
         .isEqualTo("$${surefire.forkNumber}");
-    assertThat(xpath.evaluate("/project" + failsafe + "/forkCount", pom))
-        .as("forks of a developer's build")
-        .isEmpty();
+    assertThat(xpath.evaluate(developerForkCounts, pom))
+        .as("fork counts that a developer's build sets")
+        .isEqualTo("0");
   }
 
   @Test
