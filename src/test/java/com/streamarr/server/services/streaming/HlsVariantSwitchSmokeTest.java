@@ -832,8 +832,11 @@ class HlsVariantSwitchSmokeTest {
       return packets.codecsOf(VIDEO);
     }
 
+    // FFmpeg's hashes leave out a picture whose time comes before the previous picture's time.
+    // The numbered pictures keep that picture, so the assertion on each frame's picture names the
+    // misplaced picture.
     long decodedFrameCount() {
-      return pictures.size();
+      return numberedPictures.size();
     }
 
     long heldFrameCount() {
