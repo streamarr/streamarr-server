@@ -699,6 +699,17 @@ class MediaProbeTest {
                             scannedEnd(0, 10_000), scannedEnd(1, 10_000), scannedEnd(2, 16_000)))
                     .withSessionAudioTrackAt(1)),
             true),
+        // The container's 16.2 s stands as the media end, because it runs less than 1 s past the
+        // later scanned end of the two delivered streams. The other track ends at 16.1 s.
+        Arguments.of(
+            Named.of(
+                "a scan read the ends of both delivered streams, and a track that the session"
+                    + " does not play ends one margin after the video",
+                probeLasting(Duration.ofMillis(16_200), video(), audio(1), audio(2))
+                    .withLearnedEndTimes(
+                        List.of(
+                            scannedEnd(0, 10_000), scannedEnd(1, 15_500), scannedEnd(2, 16_100)))),
+            false),
         Arguments.of(
             Named.of(
                 "a file without audio whose second video stream ends one margin after the video,"
@@ -771,6 +782,15 @@ class MediaProbeTest {
                     .withLearnedEndTimes(
                         List.of(
                             scannedEnd(0, 10_000), scannedEnd(1, 10_000), scannedEnd(2, 16_000)))),
+            false),
+        Arguments.of(
+            Named.of(
+                "a scan read the ends of both delivered streams, and a track that the session"
+                    + " does not play ends one margin after the session's audio",
+                probeLasting(Duration.ofMillis(16_200), video(), audio(1), audio(2))
+                    .withLearnedEndTimes(
+                        List.of(
+                            scannedEnd(0, 15_500), scannedEnd(1, 10_000), scannedEnd(2, 16_100)))),
             false),
         Arguments.of(
             Named.of(
