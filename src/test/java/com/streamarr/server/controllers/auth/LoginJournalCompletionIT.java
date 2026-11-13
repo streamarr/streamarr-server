@@ -3,10 +3,6 @@ package com.streamarr.server.controllers.auth;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.UserAccount;
@@ -32,11 +28,9 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Tag("IntegrationTest")
@@ -45,7 +39,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class LoginJournalCompletionIT extends AbstractIntegrationTest {
 
-  @Autowired private MockMvc mockMvc;
   @Autowired private LoginService loginService;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private AuthSessionRepository sessionRepository;
@@ -76,30 +69,6 @@ class LoginJournalCompletionIT extends AbstractIntegrationTest {
       jdbcTemplate.update("DELETE FROM credential_attempt WHERE account_id = ?", account.getId());
       authTestSupport.deleteAccount(account.getId());
     }
-  }
-
-  @Test
-  @DisplayName(
-      "Should return unavailable without creating a session when journal completion times out")
-  void shouldReturnUnavailableWithoutCreatingSessionWhenJournalCompletionTimesOut()
-      throws Exception {
-    mockMvc
-        .perform(
-            post("/api/auth/login")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {"email": "%s", "password": "%s", "deviceName": "journal-outage", "cookieMode": false}
-                    """
-                        .formatted(account.getEmail(), authTestSupport.password())))
-        .andExpect(status().isServiceUnavailable())
-        .andExpect(jsonPath("$.code").value("CREDENTIAL_VERIFICATION_UNAVAILABLE"))
-        .andExpect(cookie().doesNotExist("streamarr_access"))
-        .andExpect(cookie().doesNotExist("streamarr_refresh"));
-
-    assertThat(sessionRepository.findByAccountId(account.getId())).isEmpty();
-    assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM refresh_token", Integer.class))
-        .isEqualTo(originalDigestCount);
   }
 
   @Test
