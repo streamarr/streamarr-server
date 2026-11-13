@@ -549,18 +549,24 @@ public class ProfileSharingService {
    */
   public ListPage<ProfileHouseholdShare> householdShares(
       AuthenticatedIdentity identity, HouseholdSharesScope household, PageRequest request) {
+    return readableScope(identity, household)
+        .map(readable -> Pager.page(householdSharesList, readable, request))
+        .orElseGet(ListPage::empty);
+  }
+
+  // The part of the scope that the reader may list: all of it for a reader of the Household's
+  // share history, its live shares for the Household's HouseholdAdmins, and nothing for others.
+  private Optional<HouseholdSharesScope> readableScope(
+      AuthenticatedIdentity identity, HouseholdSharesScope household) {
     if (!mayViewHousehold(identity, household.householdId())) {
-      return ListPage.empty();
+      return Optional.empty();
     }
 
     if (mayViewHouseholdShareHistory(identity, household.householdId())) {
-      return Pager.page(householdSharesList, household, request);
+      return Optional.of(household);
     }
 
-    return household
-        .keptToLive()
-        .map(live -> Pager.page(householdSharesList, live, request))
-        .orElseGet(ListPage::empty);
+    return household.keptToLive();
   }
 
   /**
