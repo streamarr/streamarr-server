@@ -59,7 +59,7 @@ public class ProfileSharePartiesService {
     var shown =
         authority.shownByEitherSide(
             shares.stream().filter(share -> existing.containsKey(share.profileId())).toList(),
-            authority::targetSide);
+            ProfileSharePartiesService::targetSide);
     var personal = personalProfileIds(shown);
 
     var profiles = new HashMap<ShareReference, SharedProfile>();
@@ -90,7 +90,7 @@ public class ProfileSharePartiesService {
     var shown =
         authority.shownBy(
             shares.stream().filter(share -> share.offeredBy().isPresent()).toList(),
-            authority::targetSide);
+            ProfileSharePartiesService::targetSide);
     var offererIds =
         shown.stream().flatMap(share -> share.offeredBy().stream()).collect(Collectors.toSet());
     var names =
@@ -112,7 +112,7 @@ public class ProfileSharePartiesService {
   public Map<ShareReference, Household> households(
       AuthenticatedIdentity reader, Set<ShareReference> shares) {
     var authority = new BatchAuthority(reader, shares, profilesById(shares).keySet());
-    var shown = authority.shownByEitherSide(shares, authority::historySide);
+    var shown = authority.shownByEitherSide(shares, ProfileSharePartiesService::historySide);
     var loaded =
         householdRepository.findAllById(distinct(shown, ShareReference::householdId)).stream()
             .collect(Collectors.toMap(Household::getId, Function.identity()));
@@ -122,6 +122,18 @@ public class ProfileSharePartiesService {
         .filter(share -> loaded.containsKey(share.householdId()))
         .forEach(share -> households.put(share, loaded.get(share.householdId())));
     return households;
+  }
+
+  // What the target Household's side asks to see the share's Profile and offerer: its
+  // HouseholdAdmins while the share is live, and afterwards only a reader of its share history.
+  private static Optional<Intent.UnitIntent> targetSide(ShareReference share) {
+    return share.live()
+        ? Optional.of(new Intent.ViewHouseholdAdministration(share.householdId()))
+        : historySide(share);
+  }
+
+  private static Optional<Intent.UnitIntent> historySide(ShareReference share) {
+    return Optional.of(new Intent.ViewHouseholdShareHistory(share.householdId()));
   }
 
   private Map<UUID, Profile> profilesById(Set<ShareReference> shares) {
@@ -163,20 +175,6 @@ public class ProfileSharePartiesService {
       this.householdSideFirst =
           distinct(shares, ShareReference::householdId).size()
               <= distinct(shares, ShareReference::profileId).size();
-    }
-
-    /**
-     * What the target Household's side asks to see the share's Profile and offerer: its
-     * HouseholdAdmins while the share is live, and afterwards only a reader of its share history.
-     */
-    Optional<Intent.UnitIntent> targetSide(ShareReference share) {
-      return share.live()
-          ? Optional.of(new Intent.ViewHouseholdAdministration(share.householdId()))
-          : historySide(share);
-    }
-
-    Optional<Intent.UnitIntent> historySide(ShareReference share) {
-      return Optional.of(new Intent.ViewHouseholdShareHistory(share.householdId()));
     }
 
     /** The shares the given side of the target Household shows, or the Profile's side does. */
