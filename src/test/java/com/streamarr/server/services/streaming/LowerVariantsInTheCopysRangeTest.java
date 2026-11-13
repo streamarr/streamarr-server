@@ -75,6 +75,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -927,14 +928,8 @@ class LowerVariantsInTheCopysRangeTest {
       "Should create the copy alone through the upload budget when a lower variant fails while the"
           + " budget leaves the copy out")
   void shouldCreateTheCopyAloneThroughTheUploadBudgetWhenALowerVariantFailsWhileItLeavesItOut() {
-    var settings = ServerSettingsFixture.defaultServerSettings();
-    var budgeted = budgetedPlayback(settings);
-    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(encoder("h264", "libx264")));
-    probes.setDefaultProbe(defaultProbeBuilder().audioChannels(OptionalInt.of(2)).build());
-    accepted(budgeted.playback().start(startAuto(clientThatPlaysEveryRange())));
-    accepted(
-        settings.changeUploadBudget(
-            AuthenticatedIdentityFixture.accountScopedBuilder().build(), Optional.of(11)));
+    var budgeted = budgetedPlayback(budgetedRig().build());
+    startAPlaybackThatLeavesNoRoomForTheNextCopy(budgeted);
     var command = startAuto(clientThatPlaysEveryRange());
     var second = accepted(budgeted.playback().start(command));
     var replacedId = sessionOf(second).getSessionId();
@@ -948,15 +943,7 @@ class LowerVariantsInTheCopysRangeTest {
         .onTerminalTranscodeFailure(
             terminalFailure(replacedId, "720p", TranscodeFailure.SEGMENT_CAP_EXCEEDED));
 
-    var after =
-        budgeted
-            .playback()
-            .access(
-                PlaybackSessionRequest.builder()
-                    .playbackSessionId(second.playbackSessionId())
-                    .identity(command.identity())
-                    .build())
-            .orElseThrow();
+    var after = budgeted.snapshotOf(second, command);
     var copyAlone = sessionOf(after);
     assertThat(servedFirst)
         .containsExactly("720p/stream.m3u8?t=t", "480p/stream.m3u8?t=t", "360p/stream.m3u8?t=t");
@@ -1024,22 +1011,67 @@ class LowerVariantsInTheCopysRangeTest {
     }
   }
 
-  private record BudgetedPlayback(PlaybackSessionService playback, ServerUploadBudget budget) {}
+  private record BudgetedPlayback(
+      PlaybackSessionService playback, ServerUploadBudget budget, ServerSettingsService settings) {
 
-  // A playback service whose stream sessions the upload budget of these settings sizes (#796).
-  private BudgetedPlayback budgetedPlayback(ServerSettingsService settings) {
-    var registry = new FakeRuntimeStreamSessionRegistry();
+    PlaybackSessionSnapshot snapshotOf(
+        PlaybackSessionSnapshot snapshot, StartPlaybackSessionCommand command) {
+      return playback
+          .access(
+              PlaybackSessionRequest.builder()
+                  .playbackSessionId(snapshot.playbackSessionId())
+                  .identity(command.identity())
+                  .build())
+          .orElseThrow();
+    }
+  }
+
+  // The settings whose upload budget sizes the stream sessions, the registry that holds them and
+  // the executor that starts each later format attempt.
+  @Builder
+  private record BudgetedRig(
+      @NonNull ServerSettingsService settings,
+      @NonNull FakeRuntimeStreamSessionRegistry registry,
+      @NonNull Executor formatAttempts) {}
+
+  private static BudgetedRig.BudgetedRigBuilder budgetedRig() {
+    return BudgetedRig.builder()
+        .settings(ServerSettingsFixture.defaultServerSettings())
+        .registry(new FakeRuntimeStreamSessionRegistry())
+        .formatAttempts(Runnable::run);
+  }
+
+  // A playback service whose stream sessions the upload budget sizes (#796).
+  private BudgetedPlayback budgetedPlayback(BudgetedRig budgeted) {
+    var settings = budgeted.settings();
+    var registry = budgeted.registry();
     rig = rigBuilder(registry).serverSettings(settings).build();
     var budget = new ServerUploadBudget(settings, registry, rig.lifecycle(), PROPERTIES, meters);
-    var budgeted =
+    var service =
         PlaybackSessionService.builder()
             .eventPublisher(_ -> {})
             .streamingService(streamingBuilder(registry).uploadBudget(budget).build())
             .authorityGate(new FakePlaybackAuthorityGate())
-            .executor(Runnable::run)
+            .executor(budgeted.formatAttempts())
             .maximumFormatAttempts(4)
             .build();
-    return new BudgetedPlayback(budgeted, budget);
+    return new BudgetedPlayback(service, budget, settings);
+  }
+
+  // An H.264 source that Auto copies above 720p, 480p and 360p, and a first playback whose copy
+  // leaves room under an 11 Mb/s upload budget for the next playback's lower variants but not for
+  // its copy.
+  private PlaybackSessionSnapshot startAPlaybackThatLeavesNoRoomForTheNextCopy(
+      BudgetedPlayback budgeted) {
+    workers.setTargetEncoders(ExecutionTargetId.LOCAL, List.of(encoder("h264", "libx264")));
+    probes.setDefaultProbe(defaultProbeBuilder().audioChannels(OptionalInt.of(2)).build());
+    var first = accepted(budgeted.playback().start(startAuto(clientThatPlaysEveryRange())));
+    accepted(
+        budgeted
+            .settings()
+            .changeUploadBudget(
+                AuthenticatedIdentityFixture.accountScopedBuilder().build(), Optional.of(11)));
+    return first;
   }
 
   private static List<String> listedUris(String multivariantPlaylist) {
