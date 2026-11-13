@@ -66,9 +66,11 @@ final class ProbeReportFieldCounter {
   // of one byte in a list takes up to 20 bytes while the decoder grows the list, so a smaller
   // multiple would refuse valid probe reports.
   private static final long DECODED_BYTES_PER_BYTE_OF_ROOM = 24;
-  // A probe report of a few hundred bytes decodes to many times its length, because each message
-  // of its result decodes to an object.
-  private static final long SMALLEST_ROOM_BYTES = 16L * 1024;
+  // A short probe report can still hold a result's titles, handler names and chapters at their
+  // caps, which decode to more than the multiple of their length, because each chapter and each
+  // stream decodes to objects.
+  private static final long SMALLEST_ROOM_BYTES =
+      ProbeReportLimits.SHORTEST_RESULT_LENGTH_LIMIT_BYTES;
   // The most heap that protobuf-java's decoder takes, measured on the contract's messages, while it
   // decodes and after: for a message, for each field that its type declares, and for each repeated
   // field's list. Each bound is at least 1.4 times the heap measured on a 64-bit JVM, which also

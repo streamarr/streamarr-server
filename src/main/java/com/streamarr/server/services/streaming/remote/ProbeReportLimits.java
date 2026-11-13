@@ -43,7 +43,7 @@ public record ProbeReportLimits(
   // keeps both caps.
   private static final long LONGEST_TITLES_AND_HANDLER_NAMES_BYTES = 16_384;
   private static final long LONGEST_CHAPTERS_BYTES = 32_768;
-  private static final long SHORTEST_RESULT_LENGTH_LIMIT_BYTES =
+  static final long SHORTEST_RESULT_LENGTH_LIMIT_BYTES =
       LONGEST_TITLES_AND_HANDLER_NAMES_BYTES + LONGEST_CHAPTERS_BYTES;
 
   public ProbeReportLimits {

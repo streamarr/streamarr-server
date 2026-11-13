@@ -8,10 +8,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedOutputStream;
+import com.google.protobuf.Duration;
 import com.google.protobuf.WireFormat;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeChapter;
+import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.StreamMeasurementIntervals;
@@ -369,6 +372,28 @@ class ProbeReportCallLimitsTest {
         return report
             .addAllKeyframePresentationTimeDeltas(deltas)
             .addAllKeyframeDecodeTimeDeltas(deltas);
+      }
+    },
+    // A worker leaves out chapters beyond 32,768 encoded bytes (ADR 0032). Each of these chapters
+    // takes 10 bytes: a start and an end below 128 seconds, and no title.
+    UNTITLED_CHAPTERS_AT_THE_CHAPTER_CAP {
+      @Override
+      ProbeAttemptReport.Builder report(ProbeAttemptReport.Builder report) {
+        var container = ProbeContainerInfo.newBuilder();
+        for (var chapter = 0; chapter < 3_276; chapter++) {
+          var start = 1 + chapter % 100;
+          container.addChapters(
+              ProbeChapter.newBuilder()
+                  .setStartTime(Duration.newBuilder().setSeconds(start))
+                  .setEndTime(Duration.newBuilder().setSeconds(start + 1L)));
+        }
+
+        assertThat(container.build().getChaptersList())
+            .as("chapters within the cap")
+            .extracting(ProbeChapter::getSerializedSize)
+            .containsOnly(8);
+        report.getResultBuilder().setMedia(ProbeMediaInfo.newBuilder().setContainer(container));
+        return report;
       }
     },
     ONE_BYTE_INTERVALS_AT_THE_INTERVAL_LIMIT {
