@@ -428,9 +428,9 @@ public record MediaProbe(
    * than {@link #LEAST_HEADER_OVERSTATEMENT} past the later scanned end. Where no scan read them,
    * the media end is the container's duration, and the rule counts the end that the probe states
    * for every stream of the file, so the video ends early only when another stream's stated end
-   * also lies that far past it. A copy that runs short after every stream's end ends playback there
-   * normally (ADR 0052), so the time between the last stream's end and the container's duration
-   * never needs an encode. A stream whose end time the probe does not state never ends early.
+   * also lies that far past it. A container's duration that runs past every stream's end therefore
+   * never makes a stream end early by itself. A stream whose end time the probe does not state
+   * never ends early.
    */
   public boolean videoEndsEarly(@NonNull Duration margin) {
     return endsEarly(chosenVideoStream(), margin);

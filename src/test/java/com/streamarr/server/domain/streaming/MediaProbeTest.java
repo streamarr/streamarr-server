@@ -644,8 +644,9 @@ class MediaProbeTest {
   }
 
   // The margin is one 6 s segment (ADR 0037, early ends). Every media playlist of the session runs
-  // to its media end, and a copy that runs short after every stream's end ends playback there
-  // normally (ADR 0052), so a stream ends early only when both of those ends lie past it.
+  // to its media end, and a container's duration that runs past every stream's end never makes a
+  // stream end early by itself, so a stream ends early only when the media end and another
+  // stream's end both lie past it.
   @ParameterizedTest(name = "{0}")
   @MethodSource("videoEnds")
   @DisplayName(
