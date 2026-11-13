@@ -65,6 +65,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -290,8 +291,7 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
           throws Exception {
     var fixture = getClass().getResource("/matroska-statistics/statistics-tags.mkv");
     assertThat(fixture).isNotNull();
-    var source =
-        Files.copy(Path.of(fixture.toURI()), mediaDirectory().resolve("statistics-tags.mkv"));
+    var source = copyIntoMediaDirectory(Path.of(fixture.toURI()));
     var file = createMediaFile(source);
 
     var result =
@@ -375,8 +375,17 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
                     .containsExactly(tuple("video", Optional.of(new Fraction(24, 1)))));
   }
 
+  // The worker reads the source root as another user, and the fixture makes the root readable to
+  // it only when the worker starts. A directory or copied file that a test adds later is made
+  // readable here, whatever the umask.
   private static Path mediaDirectory() throws IOException {
-    return Files.createDirectory(mediaRoot.resolve(UUID.randomUUID().toString()));
+    var directory = Files.createDirectory(mediaRoot.resolve(UUID.randomUUID().toString()));
+    return Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwxr-xr-x"));
+  }
+
+  private static Path copyIntoMediaDirectory(Path fixture) throws IOException {
+    var copy = Files.copy(fixture, mediaDirectory().resolve(fixture.getFileName()));
+    return Files.setPosixFilePermissions(copy, PosixFilePermissions.fromString("rw-r--r--"));
   }
 
   // Each seek encodes from the media segment that holds the chapter's start. The chapters start on
