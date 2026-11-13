@@ -2,6 +2,8 @@ package com.streamarr.server.config.observability;
 
 import static com.streamarr.server.config.observability.OtlpExports.carryingMeter;
 import static com.streamarr.server.config.observability.OtlpExports.fromMicrometer;
+import static com.streamarr.server.config.observability.OtlpExports.metricsNamed;
+import static com.streamarr.server.config.observability.OtlpExports.stringValue;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -12,7 +14,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -42,6 +47,9 @@ abstract class AbstractObservabilityProfileIntegrationTest extends AbstractInteg
    */
   static final String READY_METER = "application.ready.time";
 
+  /** A meter the server tags with a worker's id, and removes when that worker disconnects. */
+  static final String PRODUCTION_SPEED_METER = "streamarr.streaming.production_speed";
+
   @Autowired private AutoConfiguredOpenTelemetrySdk openTelemetrySdk;
 
   @DynamicPropertySource
@@ -66,6 +74,15 @@ abstract class AbstractObservabilityProfileIntegrationTest extends AbstractInteg
     variables.put("OTEL_EXPORTER_OTLP_ENDPOINT", collector.endpoint());
     variables.put("OTEL_SERVICE_NAME", SERVICE_NAME);
     return variables;
+  }
+
+  /** The worker ids that the export's production speed data points carry. */
+  static Set<String> workersOf(ExportMetricsServiceRequest export) {
+    return metricsNamed(export, PRODUCTION_SPEED_METER).stream()
+        .flatMap(metric -> metric.getHistogram().getDataPointsList().stream())
+        .map(point -> stringValue(point.getAttributesList(), "worker"))
+        .flatMap(Optional::stream)
+        .collect(Collectors.toSet());
   }
 
   abstract RecordingOtlpCollector collector();

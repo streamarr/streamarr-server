@@ -1,20 +1,15 @@
 package com.streamarr.server.config.observability;
 
 import static com.streamarr.server.config.observability.OtlpExports.MICROMETER;
-import static com.streamarr.server.config.observability.OtlpExports.metricsNamed;
 import static com.streamarr.server.config.observability.OtlpExports.scopesExporting;
-import static com.streamarr.server.config.observability.OtlpExports.stringValue;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.metrics.ObservableDoubleGauge;
-import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +30,6 @@ import org.springframework.test.context.ContextConfiguration;
 class MetricExportWithSdkExporterIT extends AbstractObservabilityProfileIntegrationTest {
 
   private static final String OPENTELEMETRY_SDK = "opentelemetry";
-  private static final String PRODUCTION_SPEED_METER = "streamarr.streaming.production_speed";
 
   private static final RecordingOtlpCollector COLLECTOR = RecordingOtlpCollector.start(EXPORT_WAIT);
 
@@ -93,7 +87,7 @@ class MetricExportWithSdkExporterIT extends AbstractObservabilityProfileIntegrat
         .extracting(OtlpExports::exporter)
         .contains(Optional.of(MICROMETER), Optional.of(OPENTELEMETRY_SDK));
     assertThat(afterRemoval)
-        .flatMap(MetricExportWithSdkExporterIT::workersOf)
+        .flatMap(AbstractObservabilityProfileIntegrationTest::workersOf)
         .doesNotContain(worker);
   }
 
@@ -108,14 +102,6 @@ class MetricExportWithSdkExporterIT extends AbstractObservabilityProfileIntegrat
     assertThat(scopesExporting(exports, name -> name.startsWith("jvm.")))
         .hasSize(1)
         .isEqualTo(scopesExporting(exports, STARTUP_METER::equals));
-  }
-
-  private static Set<String> workersOf(ExportMetricsServiceRequest export) {
-    return metricsNamed(export, PRODUCTION_SPEED_METER).stream()
-        .flatMap(metric -> metric.getHistogram().getDataPointsList().stream())
-        .map(point -> stringValue(point.getAttributesList(), "worker"))
-        .flatMap(Optional::stream)
-        .collect(Collectors.toSet());
   }
 
   static class DeploymentVariables
