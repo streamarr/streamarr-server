@@ -43,7 +43,6 @@ public class UnmeasuredCopyListener implements AutoCloseable {
   // One raise per file runs at a time: a second one would wait for the same row to write the same
   // priority.
   private final Set<UUID> filesWithARunningRaise = ConcurrentHashMap.newKeySet();
-  private volatile boolean raisesCancelled;
 
   @EventListener
   public void onUnmeasuredCopyStarted(UnmeasuredCopyStartedEvent event) {
@@ -76,14 +75,14 @@ public class UnmeasuredCopyListener implements AutoCloseable {
   }
 
   // Nothing waits for this thread, so the count is the only outcome of a raise that fails, for
-  // whatever reason. A scan that cannot move keeps its place. A raise that close interrupted is not
-  // failed: the server shut down before the raise got its row or its connection.
+  // whatever reason. A scan that cannot move keeps its place. A raise that fails after close shut
+  // the executor down counts as cancelled, because close ends a raise by interrupting it.
   private String raise(UUID mediaFileId) {
     try {
       return outcomeOfRaise(
           priorities.tryRaisePriority(mediaFileId, BitrateScanPriority.COPIED_BY_STREAM_SESSION));
     } catch (RuntimeException failure) {
-      if (raisesCancelled) {
+      if (raises.isShutdown()) {
         return "cancelled";
       }
 
@@ -114,7 +113,6 @@ public class UnmeasuredCopyListener implements AutoCloseable {
    */
   @Override
   public void close() {
-    raisesCancelled = true;
     raises.shutdownNow();
     try {
       if (!raises.awaitTermination(CLOSE_BOUND.toMillis(), TimeUnit.MILLISECONDS)) {
