@@ -191,12 +191,14 @@ class MeshMediaHandlerIT {
 
     @AfterAll
     static void stopStandaloneWorker() throws Exception {
-      if (standaloneWorker != null) {
-        standaloneWorker.close();
-      }
-
-      if (standaloneWorkerRig != null) {
-        standaloneWorkerRig.close();
+      try {
+        if (standaloneWorker != null) {
+          standaloneWorker.close();
+        }
+      } finally {
+        if (standaloneWorkerRig != null) {
+          standaloneWorkerRig.close();
+        }
       }
     }
 
