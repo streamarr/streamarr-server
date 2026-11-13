@@ -5,8 +5,6 @@ import static org.assertj.core.api.Assertions.within;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import io.micrometer.core.instrument.DistributionSummary;
-import io.micrometer.core.instrument.MeterRegistry;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.logs.LoggerProvider;
 import java.io.IOException;
@@ -21,8 +19,6 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterAll;
@@ -57,15 +53,12 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
   // The Compose documentation promises an export every 10 seconds.
   private static final double EXPORT_STEP_SECONDS = 10;
   private static final double EXPORT_STEP_TOLERANCE_SECONDS = 2;
-  // Shorter than one export step, so a larger gap means a later export left the meter out.
-  private static final double LATER_EXPORT_GAP_SECONDS = EXPORT_STEP_SECONDS / 2;
   private static final String PROBES_WAITING = "__name__=\"streamarr_probes_waiting\"";
   private static final String SERVICE = "streamarr-server";
 
   private static final GenericContainer<?> PROMETHEUS = startPrometheus();
   private static final HttpClient HTTP = HttpClient.newHttpClient();
 
-  @Autowired private MeterRegistry meterRegistry;
   @Autowired private OpenTelemetry openTelemetry;
 
   @AfterAll
@@ -118,41 +111,6 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
         .isSameAs(LoggerProvider.noop());
   }
 
-  @Test
-  @DisplayName("Should stop storing a meter in Prometheus when it is removed from the registry")
-  void shouldStopStoringAMeterInPrometheusWhenItIsRemovedFromTheRegistry() {
-    var worker = UUID.randomUUID().toString();
-    var productionSpeed =
-        DistributionSummary.builder("streamarr.streaming.production_speed")
-            .tag("worker", worker)
-            .register(meterRegistry);
-    productionSpeed.record(2.5);
-    var workerMatchers =
-        "__name__=~\"streamarr_streaming_production_speed.*\", worker=\"" + worker + "\"";
-
-    await()
-        .atMost(STORAGE_WAIT)
-        .untilAsserted(() -> assertThat(latestSampleSeconds(workerMatchers)).isPresent());
-
-    meterRegistry.remove(productionSpeed);
-
-    await()
-        .atMost(STORAGE_WAIT)
-        .untilAsserted(
-            () ->
-                assertThat(latestSampleSeconds(PROBES_WAITING))
-                    .get()
-                    .satisfies(
-                        latestExport ->
-                            assertThat(
-                                    latestExport
-                                        - latestSampleSeconds(workerMatchers).orElseThrow())
-                                .as(
-                                    "seconds from the removed meter's newest sample to the newest"
-                                        + " export of streamarr_probes_waiting")
-                                .isGreaterThan(LATER_EXPORT_GAP_SECONDS)));
-  }
-
   private static List<String> storedMetricNames() {
     var selector = "{job=\"" + SERVICE + "\"}";
     return query("/api/v1/label/__name__/values?match[]=" + encode(selector))
@@ -161,10 +119,6 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
         .stream()
         .map(JsonNode::asString)
         .toList();
-  }
-
-  private static Optional<Double> latestSampleSeconds(String matchers) {
-    return sampleSeconds(matchers).stream().max(Double::compare);
   }
 
   // A range selector returns the stored samples with their own timestamps.

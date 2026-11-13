@@ -15,6 +15,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.support.AuthTestSupport;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
@@ -58,6 +60,7 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private MeterRegistry meterRegistry;
 
   @AfterAll
   static void stopCollector() {
@@ -104,6 +107,29 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
         .flatMap(ExportMetricsServiceRequest::getResourceMetricsList)
         .extracting(resource -> attribute(resource.getResource(), "telemetry.sdk.name"))
         .containsOnly(Optional.of(MICROMETER));
+  }
+
+  // Compose sends its metrics as this context does: through Micrometer's registry alone.
+  @Test
+  @DisplayName("Should stop exporting a meter when it is removed from the registry")
+  void shouldStopExportingAMeterWhenItIsRemovedFromTheRegistry() throws Exception {
+    var worker = UUID.randomUUID().toString();
+    var productionSpeed =
+        DistributionSummary.builder(PRODUCTION_SPEED_METER)
+            .tag("worker", worker)
+            .register(meterRegistry);
+    productionSpeed.record(2.5);
+    var beforeRemoval =
+        exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position());
+    assertThat(workersOf(beforeRemoval)).contains(worker);
+
+    meterRegistry.remove(productionSpeed);
+    var afterRemoval = exportsCollectedAfter(COLLECTOR.metricExports().position());
+
+    assertThat(afterRemoval)
+        .flatMap(AbstractObservabilityProfileIntegrationTest::workersOf)
+        .as("workers of the production speed meter in the exports collected after its removal")
+        .doesNotContain(worker);
   }
 
   @Test
