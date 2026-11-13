@@ -63,22 +63,26 @@ final class ProbeReportFieldCounter {
   private static final int FEWEST_BYTES_OF_A_STREAM_IN_THE_RESULT = 2;
   // A probe report decodes to at most this many times its room in the memory budget, so the probe
   // reports that the server reads at once decode to at most this many times the budget. A number
-  // of one byte in a list takes up to twelve bytes once decoded, so a smaller multiple would refuse
-  // valid probe reports.
-  private static final long DECODED_BYTES_PER_BYTE_OF_ROOM = 16;
+  // of one byte in a list takes up to 20 bytes while the decoder grows the list, so a smaller
+  // multiple would refuse valid probe reports.
+  private static final long DECODED_BYTES_PER_BYTE_OF_ROOM = 24;
   // A probe report of a few hundred bytes decodes to many times its length, because each message
   // of its result decodes to an object.
   private static final long SMALLEST_ROOM_BYTES = 16L * 1024;
-  // The most heap that protobuf-java's decoder takes, measured on the contract's messages: for a
-  // message, for each field that its type declares, and for each repeated field's list. Each
-  // bound is at least 1.4 times the heap measured on a 64-bit JVM.
+  // The most heap that protobuf-java's decoder takes, measured on the contract's messages, while it
+  // decodes and after: for a message, for each field that its type declares, and for each repeated
+  // field's list. Each bound is at least 1.4 times the heap measured on a 64-bit JVM, which also
+  // covers the builders of the messages that the decoder has not finished.
   private static final long MESSAGE_BYTES = 64;
   private static final long FIELD_BYTES = 8;
   private static final long LIST_BYTES = 128;
-  // A number in a list, with room for the list's growth.
-  private static final long NUMBER_BYTES = 12;
-  // A text or bytes field, beside two bytes for each byte of its length.
+  // A number of up to 8 bytes in a list that holds room for half as many again. While the list
+  // grows, its old array and its new array both hold the number.
+  private static final long NUMBER_BYTES = 20;
+  // A text or bytes field: its string, and the bytes and characters that the decoder copies the
+  // text into on the way.
   private static final long TEXT_BYTES = 48;
+  private static final long TEXT_BYTES_PER_BYTE = 5;
   private static final Descriptor REPORT = ProbeAttemptReport.getDescriptor();
   private static final Descriptor MEASURED_STREAM = StreamMeasurementIntervals.getDescriptor();
   private static final FieldDescriptor RESULT =
@@ -343,7 +347,7 @@ final class ProbeReportFieldCounter {
           yield Step.MESSAGE;
         }
         case STRING, BYTE_STRING -> {
-          addDecodedBytes(TEXT_BYTES + 2L * length);
+          addDecodedBytes(TEXT_BYTES + TEXT_BYTES_PER_BYTE * length);
           yield Step.SKIP;
         }
         // A packed run of varints: the contract declares no repeated field of a fixed width.

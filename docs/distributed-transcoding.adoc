@@ -222,7 +222,7 @@ The time that a probe report waits for the memory budget does not count, and no 
 `STREAMING_WORKER_SESSION_PROBE_REPORT_MEMORY_BUDGET` bounds the bytes of probe reports that the server reads at once. It defaults to `64MB` and must be at least the length limit.
 This budget is separate from the 512 MiB of declared segment payload.
 Before the server reads any byte of a probe report, it reserves room in the budget: the length that the first message states, and at least 16 KiB. It releases the room when the report call ends.
-A probe report may decode to at most 16 times its room, so the probe reports that the server reads at once decode to at most 16 times the budget: 1 GiB of heap at the default budget.
+A probe report may take at most 24 times its room in heap while the server decodes it and after, so the probe reports that the server reads at once take at most 24 times the budget: 1.5 GiB of heap at the default budget.
 While a probe report does not fit the budget, the server reads no message of its report call.
 The waiting probe reports of playback probes get room before the waiting probe reports of other probes, and within each of the two groups the probe reports get room in the order in which they asked.
 The server never refuses a report call for lack of room.
@@ -232,8 +232,8 @@ The first message of a report call names the worker session, the worker and the 
 The server reads the report call only when that message names a probe attempt that the worker's live session runs and that no other report call reports. It refuses any other report call with `PERMISSION_DENIED`, or with `ALREADY_EXISTS` when another report call already reports the attempt.
 The server reads one message at a time and reads the fields of the probe report as they arrive, without decoding them.
 It ends the report call at the first message after which the result is longer than the result length limit, the keyframes exceed the keyframe limit, the measured keyframe intervals exceed their limit, or the measured streams outnumber half the result length limit in bytes, or after which the bytes break the protobuf wire format or hold a field in a wire type that the field cannot have, and frees the probe report's room in the budget at once.
-It also ends the report call at the first message after which the probe report would decode to more than 16 times its room.
-The server adds up a fixed bound of heap for each message, list, number and text of the probe report, so the call ends before the server decodes any of it. Each bound is at least the heap that the decoder took in a measurement.
+It also ends the report call at the first message after which the probe report would take more than 24 times its room in heap.
+The server adds up a fixed bound of heap for each message, list, number and text of the probe report, so the call ends before the server decodes any of it. Each bound is at least the heap that the decoder took in a measurement, also while the decoder grows a list or copies a text.
 The server reads the result's fields by the same rules as the other fields.
 Every measured stream must also appear in the result, where a stream takes at least two bytes.
 The server skips a field that the worker contract does not declare, at any level of the probe report, after checking its encoding, and discards such fields at every level when it decodes the probe report, so a worker that still sends a field that a later contract removed keeps working.
