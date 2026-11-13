@@ -223,10 +223,7 @@ public class HlsStreamingService implements StreamingService {
 
     try {
       runtimeRegistry.save(session);
-      // When the upload budget leaves out the first-listed variant, the top variant that it keeps
-      // starts instead, so the stream session holds the transcode place that admission found
-      // until the player reads its playlist (ADR 0050).
-      session = producerLifecycle.startListedVariant(session, uploadBudget.topKeptVariant(session));
+      session = startTheTopVariantThatStays(session);
     } catch (TranscodeLimitReachedException _) {
       // Another start took the last place under the transcode limit after this admission, so no
       // job attempt of this stream session was dispatched.
@@ -245,6 +242,13 @@ public class HlsStreamingService implements StreamingService {
         variants.size());
 
     return Outcome.accepted(session);
+  }
+
+  // When the upload budget leaves out the first-listed variant, the top variant that it keeps
+  // starts instead, so the stream session holds the transcode place that admission found until the
+  // player reads its playlist (ADR 0050).
+  private StreamSession startTheTopVariantThatStays(StreamSession session) {
+    return producerLifecycle.startListedVariant(session, uploadBudget.topKeptVariant(session));
   }
 
   // The first-listed variant's first job attempt starts at the segment that holds the start
