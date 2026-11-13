@@ -1,5 +1,6 @@
 package com.streamarr.server.controllers.auth;
 
+import static com.streamarr.server.support.PostgresLockTestSupport.cancelOnceBlocked;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -18,6 +19,8 @@ import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.sql.SQLException;
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +58,7 @@ class LoginJournalCompletionIT extends AbstractIntegrationTest {
 
   private UserAccount account;
   private HeldRowLock journalLock;
+  private CompletableFuture<Void> journalCompletionCancelled;
   private int originalDigestCount;
 
   @BeforeEach
@@ -76,13 +80,17 @@ class LoginJournalCompletionIT extends AbstractIntegrationTest {
       jdbcTemplate.update("DELETE FROM credential_attempt WHERE account_id = ?", account.getId());
       authTestSupport.deleteAccount(account.getId());
     }
+
+    if (journalCompletionCancelled != null) {
+      assertThat(journalCompletionCancelled)
+          .as("the journal completion waited on the locked row and was cancelled")
+          .succeedsWithin(Duration.ofSeconds(10));
+    }
   }
 
   @Test
-  @DisplayName(
-      "Should return unavailable without creating a session when journal completion times out")
-  void shouldReturnUnavailableWithoutCreatingSessionWhenJournalCompletionTimesOut()
-      throws Exception {
+  @DisplayName("Should return unavailable without creating a session when journal completion fails")
+  void shouldReturnUnavailableWithoutCreatingSessionWhenJournalCompletionFails() throws Exception {
     mockMvc
         .perform(
             post("/api/auth/login")
@@ -157,6 +165,9 @@ class LoginJournalCompletionIT extends AbstractIntegrationTest {
     } catch (SQLException failure) {
       throw new AssertionError("Could not lock the reserved credential attempt", failure);
     }
+
+    journalCompletionCancelled =
+        cancelOnceBlocked(dataSource, journalLock.backendPid(), "%credential_attempt%");
   }
 
   @TestConfiguration(proxyBeanMethods = false)
