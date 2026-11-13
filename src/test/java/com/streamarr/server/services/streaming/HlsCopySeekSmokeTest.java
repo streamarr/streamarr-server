@@ -215,6 +215,7 @@ class HlsCopySeekSmokeTest {
                     .properties(properties)
                     .build())
             .build();
+    workerFixture.creditUploadsTo(producerLifecycle);
     progressListener = new JobAttemptProgressListener(producerLifecycle);
     coordinator =
         SegmentDeliveryCoordinator.builder()

@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
@@ -18,8 +19,9 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
   private final WorkerSessionServer workerSessions;
   private final WorkerContainerFixture worker;
   private final LocalSegmentStore segmentStore;
+  private volatile MediaSegmentPublicationListener uploadCredits;
 
-  // The event publisher defaults to one that only captures, so no listener reacts.
+  // The event publisher defaults to one that only captures, so no listener of the rig reacts.
   @Builder
   private WorkerStreamingSmokeFixture(
       Path sourceRoot,
@@ -27,10 +29,10 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
       String ffmpegScript,
       ApplicationEventPublisher eventPublisher) {
     this.segmentStore = segmentStore;
+    var rigEvents = Optional.ofNullable(eventPublisher).orElseGet(CapturingEventPublisher::new);
     workerSessions =
         WorkerSessionServer.builder()
-            .eventPublisher(
-                Optional.ofNullable(eventPublisher).orElseGet(CapturingEventPublisher::new))
+            .eventPublisher(event -> publish(event, rigEvents))
             .configuration(
                 WorkerSessionServerConfiguration.builder().address("127.0.0.1").port(0).build())
             .segmentStore(segmentStore)
@@ -49,6 +51,22 @@ final class WorkerStreamingSmokeFixture implements AutoCloseable {
   void start() throws Exception {
     workerSessions.start();
     worker.start();
+  }
+
+  // As the application does, credit each media segment that a worker's upload stores to the job
+  // attempt that uploaded it. The relocation rule counts only that credited output, so a rig
+  // without the credit relocates where the application waits.
+  void creditUploadsTo(ProducerLifecycleService lifecycle) {
+    uploadCredits = new MediaSegmentPublicationListener(lifecycle);
+  }
+
+  private void publish(Object event, ApplicationEventPublisher rigEvents) {
+    var credits = uploadCredits;
+    if (credits != null && event instanceof MediaSegmentPublishedEvent published) {
+      credits.onMediaSegmentPublished(published);
+    }
+
+    rigEvents.publishEvent(event);
   }
 
   WorkerSessionServer workerSessions() {
