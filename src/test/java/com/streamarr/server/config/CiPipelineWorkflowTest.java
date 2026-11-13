@@ -257,9 +257,9 @@ class CiPipelineWorkflowTest {
       "Should detect Prometheus Compose input changes with the pinned paths filter when jobs run")
   void shouldDetectPrometheusComposeInputChangesWithThePinnedPathsFilterWhenJobsRun()
       throws Exception {
-    assertThat(step("application", PROMETHEUS_COMPOSE_INPUTS).get("uses"))
-        .as("paths filter of the Prometheus Compose test's inputs")
-        .isEqualTo(step("changes", "Filter changed paths").get("uses"));
+    assertThat(step("application", PROMETHEUS_COMPOSE_INPUTS))
+        .as("step that detects changes to the Prometheus Compose test's inputs")
+        .containsEntry("uses", step("changes", "Filter changed paths").get("uses"));
   }
 
   @ParameterizedTest
