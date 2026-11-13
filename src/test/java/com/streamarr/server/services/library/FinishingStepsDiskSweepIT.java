@@ -1,10 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
-import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
@@ -27,7 +24,8 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
-import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
@@ -37,16 +35,16 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Finishing Steps Disk Sweep Integration Tests")
-@SpringBootTest(properties = "DATABASE_IDLE_IN_TRANSACTION_TIMEOUT=2s")
 class FinishingStepsDiskSweepIT extends AbstractIntegrationTest {
+
+  private static final DatabaseResourcesHeld NOTHING_HELD = new DatabaseResourcesHeld(false, false);
 
   @Autowired private LibraryOperationRepository libraryOperations;
   @Autowired private LibraryRepository libraryRepository;
@@ -57,12 +55,12 @@ class FinishingStepsDiskSweepIT extends AbstractIntegrationTest {
   @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DataSource dataSource;
-  @Autowired private JdbcTemplate jdbcTemplate;
 
   @TempDir Path libraryPath;
 
   private final CountDownLatch sweepParked = new CountDownLatch(1);
   private final CountDownLatch releaseSweep = new CountDownLatch(1);
+  private final List<DatabaseResourcesHeld> heldAtAccessChecks = new CopyOnWriteArrayList<>();
 
   private Library library;
   private LibraryOperationFinishingStepsRunner runner;
@@ -79,6 +77,7 @@ class FinishingStepsDiskSweepIT extends AbstractIntegrationTest {
         ThrowingFileSystemWrapper.runningBeforeEachAccessCheck(
             FileSystems.getDefault(),
             _ -> {
+              heldAtAccessChecks.add(DatabaseResourcesHeld.onThisThread(dataSource));
               sweepParked.countDown();
               awaitLatch(releaseSweep);
             });
@@ -96,9 +95,8 @@ class FinishingStepsDiskSweepIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should remove the missing media files when the disk sweep outlasts the idle transaction"
-          + " bound")
-  void shouldRemoveTheMissingMediaFilesWhenTheDiskSweepOutlastsTheIdleTransactionBound()
+      "Should hold no transaction or database connection when the disk sweep checks the files")
+  void shouldHoldNoTransactionOrDatabaseConnectionWhenTheDiskSweepChecksTheFiles()
       throws Exception {
     var missing = saveMissingMediaFile();
     var scan = storeScan();
@@ -109,7 +107,9 @@ class FinishingStepsDiskSweepIT extends AbstractIntegrationTest {
               () -> runner.runFinishingSteps(scan, LibraryOperationConclusion.FINISHED));
       try {
         awaitLatch(sweepParked);
-        awaitTheIdleTransactionBound();
+        assertThat(heldAtAccessChecks)
+            .as("what the sweep's thread holds of the database while it checks a file")
+            .containsExactly(NOTHING_HELD);
       } finally {
         releaseSweep.countDown();
       }
@@ -143,19 +143,6 @@ class FinishingStepsDiskSweepIT extends AbstractIntegrationTest {
     }
   }
 
-  // PostgreSQL's own timer is the clock: a transaction opened now and left idle is ended once the
-  // idle transaction bound has passed.
-  private void awaitTheIdleTransactionBound() throws SQLException {
-    try (var idle = dataSource.getConnection()) {
-      idle.setAutoCommit(false);
-      var idlePid = backendPid(idle);
-
-      await().atMost(Duration.ofSeconds(10)).until(() -> !isBackendConnected(idlePid));
-
-      assertThatThrownBy(() -> backendPid(idle)).isInstanceOf(SQLException.class);
-    }
-  }
-
   private void lockOperationRowWithoutWaiting(LibraryOperation operation) throws SQLException {
     try (var contender = dataSource.getConnection()) {
       contender.setAutoCommit(false);
@@ -170,12 +157,6 @@ class FinishingStepsDiskSweepIT extends AbstractIntegrationTest {
         contender.rollback();
       }
     }
-  }
-
-  private boolean isBackendConnected(int pid) {
-    return Boolean.TRUE.equals(
-        jdbcTemplate.queryForObject(
-            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid = ?)", Boolean.class, pid));
   }
 
   private LibraryOperation storeScan() {
@@ -196,5 +177,16 @@ class FinishingStepsDiskSweepIT extends AbstractIntegrationTest {
             .filename(path.getFileName().toString())
             .status(MediaFileStatus.MATCHED)
             .build());
+  }
+
+  // Spring binds a transaction's connection to the thread under its data source. A sweep holding
+  // either while the disk answers would idle in a transaction or keep a pooled connection.
+  private record DatabaseResourcesHeld(boolean transaction, boolean connection) {
+
+    static DatabaseResourcesHeld onThisThread(DataSource dataSource) {
+      return new DatabaseResourcesHeld(
+          TransactionSynchronizationManager.isActualTransactionActive(),
+          TransactionSynchronizationManager.hasResource(dataSource));
+    }
   }
 }
