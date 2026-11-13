@@ -855,12 +855,16 @@ public class ProducerLifecycleService {
 
           var started = startedForThePlaylist(current.get(), listedVariants.getFirst());
           if (started) {
-            variantsStartedForTheirPlaylist.put(sessionId, listedVariants.getFirst());
-            variantsStartedForTheirPlayer.put(sessionId, listedVariants.getFirst());
+            treatAsStartedByThePlaylist(sessionId, listedVariants.getFirst());
           }
 
           return started;
         });
+  }
+
+  private void treatAsStartedByThePlaylist(UUID sessionId, String variantLabel) {
+    variantsStartedForTheirPlaylist.put(sessionId, variantLabel);
+    variantsStartedForTheirPlayer.put(sessionId, variantLabel);
   }
 
   // A listed variant that runs while the player plays a variant that the playlist leaves out, as
