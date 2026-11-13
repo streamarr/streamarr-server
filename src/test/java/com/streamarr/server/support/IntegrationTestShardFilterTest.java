@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
-import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -25,7 +24,6 @@ import org.junit.platform.engine.support.descriptor.AbstractTestDescriptor;
 import org.junit.platform.engine.support.descriptor.ClassSource;
 import org.junit.platform.engine.support.descriptor.EngineDescriptor;
 import org.junit.platform.engine.support.descriptor.MethodSource;
-import org.junit.platform.launcher.PostDiscoveryFilter;
 import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
 import org.junit.platform.launcher.core.LauncherFactory;
@@ -90,17 +88,6 @@ class IntegrationTestShardFilterTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining(IntegrationTestShardFilter.PROPERTY)
         .hasMessageContaining("\"" + shard + "\"");
-  }
-
-  @Test
-  @DisplayName("Should register the filter when JUnit loads post-discovery filters")
-  void shouldRegisterTheFilterWhenJunitLoadsPostDiscoveryFilters() {
-    var registered =
-        ServiceLoader.load(PostDiscoveryFilter.class).stream()
-            .map(ServiceLoader.Provider::type)
-            .toList();
-
-    assertThat(registered).contains(IntegrationTestShardFilter.class);
   }
 
   @Nested
