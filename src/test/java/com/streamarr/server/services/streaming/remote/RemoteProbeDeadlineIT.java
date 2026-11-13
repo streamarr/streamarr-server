@@ -39,7 +39,7 @@ class RemoteProbeDeadlineIT {
     var source = getClass().getResource("/BigBuckBunny_320x180_10s.mp4");
     assertThat(source).isNotNull();
     Files.copy(Path.of(source.toURI()), mediaRoot.resolve("next.mp4"));
-    var configuration = serverConfigurationBuilder().probeTimeout(Duration.ofSeconds(2)).build();
+    var configuration = serverConfigurationBuilder().probeTimeout(Duration.ofSeconds(1)).build();
     try (var calls = Executors.newVirtualThreadPerTaskExecutor();
         var server =
             WorkerSessionServer.builder()
