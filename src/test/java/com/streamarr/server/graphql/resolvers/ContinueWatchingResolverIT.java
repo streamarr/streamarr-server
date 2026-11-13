@@ -27,18 +27,15 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.support.AuditColumnFixtures;
 import com.streamarr.server.support.AuthTestSupport;
-import jakarta.persistence.EntityManagerFactory;
+import com.streamarr.server.support.HibernateWorkCounter;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.hibernate.SessionFactory;
-import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -64,7 +61,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private AuditColumnFixtures auditColumns;
-  @Autowired private EntityManagerFactory entityManagerFactory;
+  @Autowired private HibernateWorkCounter hibernateWork;
 
   private static final String SEASONS_AND_SERIES_QUERY =
       "{ continueWatching(first: 12) { edges { node { ... on Episode { id season"
@@ -208,9 +205,9 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
     createEpisodeWithProgress();
 
     var librariesLoaded =
-        countedWhileExecuting(
-            SEASONS_AND_SERIES_QUERY,
-            statistics -> statistics.getEntityStatistics(Library.class.getName()).getLoadCount());
+        hibernateWork
+            .countAs(identity, () -> execute(SEASONS_AND_SERIES_QUERY))
+            .loaded(Library.class);
 
     assertThat(librariesLoaded).as("libraries loaded while Continue Watching resolves").isZero();
   }
@@ -393,24 +390,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
   }
 
   private long statementsPreparedBy(String query) throws Exception {
-    return countedWhileExecuting(query, Statistics::getPrepareStatementCount);
-  }
-
-  // Hibernate statistics are global, so the count holds only while no other test uses the context.
-  private long countedWhileExecuting(String query, ToLongFunction<Statistics> count)
-      throws Exception {
-    var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
-    var previouslyEnabled = statistics.isStatisticsEnabled();
-    statistics.setStatisticsEnabled(true);
-    statistics.clear();
-
-    try {
-      execute(query);
-      return count.applyAsLong(statistics);
-    } finally {
-      statistics.clear();
-      statistics.setStatisticsEnabled(previouslyEnabled);
-    }
+    return hibernateWork.countAs(identity, () -> execute(query)).preparedStatements();
   }
 
   private JsonNode execute(String query) throws Exception {
