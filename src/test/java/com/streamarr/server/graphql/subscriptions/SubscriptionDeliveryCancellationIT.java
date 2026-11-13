@@ -1,38 +1,33 @@
 package com.streamarr.server.graphql.subscriptions;
 
 import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
-import static java.util.function.Predicate.not;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.library.LibraryAdministrationService;
-import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import com.streamarr.server.support.PostgresLockTestSupport;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.TestPropertySource;
 import reactor.core.scheduler.Scheduler;
 
-/** A short lock bound lets a test keep the lock until the bound ends the read. */
+/**
+ * Each test ends its delivery's lock wait itself, so the class runs under the default lock bound. A
+ * test that waits for the bound to end the read belongs in {@link SubscriptionDeliveryLockBoundIT}.
+ */
 @Tag("IntegrationTest")
 @DisplayName("Subscription Delivery Cancellation Integration Tests")
-@TestPropertySource(properties = "DATABASE_LOCK_TIMEOUT=1s")
 class SubscriptionDeliveryCancellationIT extends AbstractSubscriptionDeliveryLockIntegrationTest {
 
-  private static final Duration LOCK_BOUND = Duration.ofSeconds(1);
   private static final Duration SETTLE_MARGIN = Duration.ofSeconds(10);
 
-  private static final String COUNTS_FIELD = "libraryCountsChanged";
   private static final String STATUS_FIELD = "libraryStatusChanged";
   // administration checks the subscriber's live ServerAdmin authority on every delivery.
   private static final String STATUS_SUBSCRIPTION =
@@ -44,47 +39,7 @@ class SubscriptionDeliveryCancellationIT extends AbstractSubscriptionDeliveryLoc
 
   @Autowired private LibraryAdministrationService libraryAdministration;
   @Autowired private LibraryBroadcasters libraryBroadcasters;
-  @Autowired private LibraryContentsBroadcasters contentsBroadcasters;
   @Autowired private Scheduler graphQlSubscriptionDeliveryScheduler;
-
-  @Test
-  @DisplayName(
-      "Should return the database connection of a cancelled delivery's read to the pool within the lock bound when the lock outlives the disconnect")
-  void shouldReturnConnectionOfCancelledDeliverysReadWithinLockBoundWhenLockOutlivesDisconnect()
-      throws SQLException {
-    var socket = connect();
-    socket.subscribe(
-        "counts",
-        "subscription { libraryCountsChanged(libraryId: \"%s\") { id } }"
-            .formatted(library.getId()));
-    awaitFirstCountsDelivery(socket);
-    try (var held = lockLibraryTable();
-        var observer = dataSource.getConnection()) {
-      contentsBroadcasters.getCounts().broadcast(library.getId(), library.getId());
-      var readerPid =
-          PostgresLockTestSupport.awaitBlockedBackendPid(observer, held.backendPid(), null);
-      assertThat(PostgresLockTestSupport.waitersBehind(observer, held.backendPid(), "%"))
-          .as("only the delivery's read waits on the library lock")
-          .isEqualTo(1);
-
-      socket.close();
-      activeSubscriptions.awaitCount(COUNTS_FIELD, 0);
-      assertThat(PostgresLockTestSupport.blockingPids(observer, readerPid))
-          .as("the operation ended while the delivery's read still waited on the library lock")
-          .contains(held.backendPid());
-      var settledState = awaitBackendIdleOrGone(observer, readerPid);
-
-      assertThat(settledState)
-          .as("the lock bound ends the cancelled read, and its pooled connection survives, idle")
-          .contains("idle");
-      assertThat(PostgresLockTestSupport.backendState(observer, readerPid))
-          .as("the delivery's pooled connection is still open after it settled")
-          .isPresent();
-      assertThat(PostgresLockTestSupport.waitersBehind(observer, held.backendPid(), "%"))
-          .as("nothing waits on the library lock that is still held")
-          .isZero();
-    }
-  }
 
   @Test
   @DisplayName(
@@ -180,14 +135,6 @@ class SubscriptionDeliveryCancellationIT extends AbstractSubscriptionDeliveryLoc
         .build();
   }
 
-  private void awaitFirstCountsDelivery(GraphQlTransportWsTestClient socket) {
-    activeSubscriptions.awaitCount(COUNTS_FIELD, 1);
-    contentsBroadcasters.getCounts().broadcast(library.getId(), library.getId());
-    // The registration's own library read runs before this delivery reaches the socket, so it
-    // cannot wait on the lock taken next.
-    assertThat(socket.nextMessageFor("counts").path("type").asString()).isEqualTo("next");
-  }
-
   private String viewLibraryAdministrationDecision(AuthenticatedIdentity identity) {
     try {
       libraryAdministration.requireViewLibraryAdministration(identity);
@@ -199,10 +146,6 @@ class SubscriptionDeliveryCancellationIT extends AbstractSubscriptionDeliveryLoc
 
   private HeldTableLock lockUserAccountTable() throws SQLException {
     return lockTable("user_account");
-  }
-
-  private HeldTableLock lockLibraryTable() throws SQLException {
-    return lockTable("library");
   }
 
   private static int awaitBlockedAuthorityRead(Connection observer, HeldTableLock held) {
@@ -223,17 +166,6 @@ class SubscriptionDeliveryCancellationIT extends AbstractSubscriptionDeliveryLoc
     return meterRegistry.find(FAIL_CLOSED_METRIC).counters().stream()
         .mapToDouble(Counter::count)
         .sum();
-  }
-
-  // A cancelled delivery sends the subscriber nothing, so only its backend shows that the read
-  // ended: the backend is idle again, or gone with the connection. The state is returned from the
-  // wait, because the pool may lend the connection out again before a second read.
-  private static Optional<String> awaitBackendIdleOrGone(Connection observer, int backendPid) {
-    return await()
-        .atMost(LOCK_BOUND.plus(SETTLE_MARGIN))
-        .until(
-            () -> PostgresLockTestSupport.backendState(observer, backendPid),
-            state -> state.filter(not("idle"::equals)).isEmpty());
   }
 
   private static void terminateBackend(Connection observer, int backendPid) throws SQLException {
