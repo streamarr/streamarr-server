@@ -1,7 +1,6 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.task.BitrateScanPriority;
-import com.streamarr.server.repositories.CancellableDatabaseWork;
 import com.streamarr.server.repositories.media.BitrateScanPriorityRepository;
 import com.streamarr.server.services.audit.SystemWork;
 import com.streamarr.server.services.events.library.UnmeasuredCopyStartedEvent;
@@ -41,10 +40,10 @@ public class UnmeasuredCopyListener implements AutoCloseable {
   // scan's row lock, and waiting there would hold back the playback request.
   private final ExecutorService raises =
       SystemWork.newExecutorRunningAsSystemActor("bitrate-scan-raise-");
-  private final CancellableDatabaseWork raiseStatements = new CancellableDatabaseWork();
   // One raise per file runs at a time: a second one would wait for the same row to write the same
   // priority.
   private final Set<UUID> filesWithARunningRaise = ConcurrentHashMap.newKeySet();
+  private volatile boolean raisesCancelled;
 
   @EventListener
   public void onUnmeasuredCopyStarted(UnmeasuredCopyStartedEvent event) {
@@ -77,18 +76,17 @@ public class UnmeasuredCopyListener implements AutoCloseable {
   }
 
   // Nothing waits for this thread, so the count is the only outcome of a raise that fails, for
-  // whatever reason. A scan that cannot move keeps its place. A raise that close cancelled is not
+  // whatever reason. A scan that cannot move keeps its place. A raise that close interrupted is not
   // failed: the server shut down before the raise got its row or its connection.
   private String raise(UUID mediaFileId) {
     try {
-      return raiseStatements
-          .call(
-              () ->
-                  priorities.tryRaisePriority(
-                      mediaFileId, BitrateScanPriority.COPIED_BY_STREAM_SESSION))
-          .map(UnmeasuredCopyListener::outcomeOfRaise)
-          .orElse("cancelled");
+      return outcomeOfRaise(
+          priorities.tryRaisePriority(mediaFileId, BitrateScanPriority.COPIED_BY_STREAM_SESSION));
     } catch (RuntimeException failure) {
+      if (raisesCancelled) {
+        return "cancelled";
+      }
+
       log.warn("Could not move the bitrate scan of media file {} forward", mediaFileId, failure);
       return "failed";
     }
@@ -107,21 +105,20 @@ public class UnmeasuredCopyListener implements AutoCloseable {
   }
 
   /**
-   * Cancels every raise already started, so a shutdown never waits for a scan's row or for a pooled
-   * connection, and returns once they have ended or after one second. A later unmeasured copy moves
-   * no scan.
+   * Interrupts every raise already started, so a shutdown never waits for a scan's row or for a
+   * pooled connection, and returns once they have ended or after one second. A later unmeasured
+   * copy moves no scan.
+   *
+   * <p>An interrupted raise counts as cancelled. PostgreSQL does not notice the interrupt while it
+   * waits for the scan's row, so that raise can still move the scan once the row is free.
    */
   @Override
   public void close() {
-    raises.shutdown();
-    var cancelled = raiseStatements.cancel();
-    if (cancelled > 0) {
-      log.info("Raises of bitrate scans cancelled at shutdown: {}", cancelled);
-    }
-
+    raisesCancelled = true;
+    raises.shutdownNow();
     try {
       if (!raises.awaitTermination(CLOSE_BOUND.toMillis(), TimeUnit.MILLISECONDS)) {
-        log.warn("A raise of a bitrate scan still ran {} after its cancel", CLOSE_BOUND);
+        log.warn("A raise of a bitrate scan still ran {} after its interrupt", CLOSE_BOUND);
       }
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
