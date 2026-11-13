@@ -72,9 +72,7 @@ class CiPipelineWorkflowTest {
             "verify",
             "-Pci-" + suite,
             "-Dcheckstyle.skip=" + suite.equals("integration"));
-    var factory = DocumentBuilderFactory.newInstance();
-    factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-    var pom = factory.newDocumentBuilder().parse(Path.of("pom.xml").toFile());
+    var pom = pom();
     var xpath = XPathFactory.newInstance().newXPath();
     var profile = "/project/profiles/profile[id='ci-" + suite + "']";
     assertThat(xpath.evaluate(profile + "/properties/jacoco.aggregate.skip", pom))
