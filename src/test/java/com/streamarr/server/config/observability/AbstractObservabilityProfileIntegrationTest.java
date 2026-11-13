@@ -3,9 +3,11 @@ package com.streamarr.server.config.observability;
 import static com.streamarr.server.config.observability.OtlpExports.MICROMETER;
 import static com.streamarr.server.config.observability.OtlpExports.carryingMeter;
 import static com.streamarr.server.config.observability.OtlpExports.fromMicrometer;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
+import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -13,13 +15,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Tag;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 
 /**
  * Runs the server under the {@code observability} profile against a {@link RecordingOtlpCollector}
@@ -28,6 +31,14 @@ import org.springframework.test.context.DynamicPropertySource;
  */
 @Tag("IntegrationTest")
 @ActiveProfiles("observability")
+// Inline properties, unlike @DynamicPropertySource ones, let a subclass set its own step.
+@TestPropertySource(
+    properties = {
+      "otel.metric.export.interval=100",
+      "otel.bsp.schedule.delay=100",
+      "otel.blrp.schedule.delay=100",
+      "management.otlp.metrics.export.step=1s"
+    })
 abstract class AbstractObservabilityProfileIntegrationTest extends AbstractIntegrationTest {
 
   static final Duration EXPORT_WAIT = Duration.ofSeconds(30);
@@ -36,13 +47,13 @@ abstract class AbstractObservabilityProfileIntegrationTest extends AbstractInteg
   /** A meter the server registers at startup: an export carrying it exports the server's meters. */
   static final String STARTUP_METER = "streamarr.probes.waiting";
 
-  @DynamicPropertySource
-  static void exportOften(DynamicPropertyRegistry registry) {
-    registry.add("otel.metric.export.interval", () -> "100");
-    registry.add("otel.bsp.schedule.delay", () -> "100");
-    registry.add("otel.blrp.schedule.delay", () -> "100");
-    registry.add("management.otlp.metrics.export.step", () -> "1s");
-  }
+  /**
+   * A meter Spring Boot registers once the server is ready. The meters that binders such as the
+   * connection pool's add are registered before it, so an export carrying it carries them too.
+   */
+  static final String READY_METER = "application.ready.time";
+
+  @Autowired private AutoConfiguredOpenTelemetrySdk openTelemetrySdk;
 
   static void setDeploymentVariables(
       ConfigurableApplicationContext context, Map<String, Object> variables) {
@@ -87,6 +98,33 @@ abstract class AbstractObservabilityProfileIntegrationTest extends AbstractInteg
   ExportMetricsServiceRequest exportOfTheServersMetersCollectedAfter(int position)
       throws InterruptedException {
     return carryingMeter(fromMicrometer(exportsCollectedAfter(position)), STARTUP_METER).getFirst();
+  }
+
+  /**
+   * Waits for, and returns, the first export of the server's meters that Micrometer collected once
+   * the server was ready. It arrives within one step of that, so only a context's first test waits.
+   * The registry fixes the resource, the endpoint and the headers of its exports when the server
+   * starts, so this export carries the same ones as every later export.
+   */
+  ExportMetricsServiceRequest firstExportOfTheReadyServer() throws InterruptedException {
+    var exports =
+        collector()
+            .metricExports()
+            .awaitAfter(
+                0, received -> !carryingMeter(fromMicrometer(received), READY_METER).isEmpty());
+    return carryingMeter(fromMicrometer(exports), READY_METER).getFirst();
+  }
+
+  /**
+   * Has each metric reader of the OpenTelemetry SDK collect and export what the SDK holds, and
+   * returns once the collector has received those exports.
+   */
+  void flushTheSdksMetrics() {
+    var flush = openTelemetrySdk.getOpenTelemetrySdk().getSdkMeterProvider().forceFlush();
+
+    assertThat(flush.join(EXPORT_WAIT.toMillis(), TimeUnit.MILLISECONDS).isSuccess())
+        .as("The OpenTelemetry SDK flushed its metrics")
+        .isTrue();
   }
 
   private boolean eachAwaitedExporterSentTwice(List<ExportMetricsServiceRequest> received) {

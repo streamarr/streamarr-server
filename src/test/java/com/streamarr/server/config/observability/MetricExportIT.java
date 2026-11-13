@@ -38,6 +38,7 @@ import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -47,6 +48,10 @@ import tools.jackson.databind.json.JsonMapper;
 @DisplayName("Metric Export Integration Tests")
 @ContextConfiguration(initializers = MetricExportIT.DeploymentVariables.class)
 @Import(MetricExportIT.AsyncResponseController.class)
+// An exemplar reaches only the export that Micrometer publishes in the step after its request's.
+// That publish runs up to 80 % into the step. Below 500 ms, a publish delayed by tens of
+// milliseconds would fall into the following step and drop the exemplar.
+@TestPropertySource(properties = "management.otlp.metrics.export.step=500ms")
 class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
 
   private static final String POOL_METER = "hikaricp.connections.active";
@@ -74,7 +79,7 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
       "Should export the server's meters under the deployment variables when the profile is active")
   void shouldExportTheServersMetersUnderTheDeploymentVariablesWhenTheProfileIsActive()
       throws Exception {
-    var export = exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position());
+    var export = firstExportOfTheReadyServer();
 
     assertThat(metricNames(export)).contains(POOL_METER);
     assertThat(export.getResourceMetricsList())
@@ -96,8 +101,9 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
     // The request gives the SDK's HTTP server histogram a measurement to export.
     mockMvc.perform(get("/actuator/health"));
 
-    // An SDK exporter, reading every 100 ms, would send many exports within two registry steps.
-    exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position());
+    // A reader that OTEL_METRICS_EXPORTER turned on would export it before the flush returns.
+    flushTheSdksMetrics();
+    firstExportOfTheReadyServer();
 
     assertThat(COLLECTOR.metricExports().all())
         .flatMap(ExportMetricsServiceRequest::getResourceMetricsList)
@@ -188,10 +194,7 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
   @DisplayName("Should export metrics under the resource of the spans when a request is served")
   void shouldExportMetricsUnderTheResourceOfTheSpansWhenARequestIsServed() throws Exception {
     var spanResource = spanResourceOfARequest();
-    var metricResource =
-        exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position())
-            .getResourceMetrics(0)
-            .getResource();
+    var metricResource = firstExportOfTheReadyServer().getResourceMetrics(0).getResource();
 
     // telemetry.* names the SDK that sent the export, which differs by design. Micrometer sends
     // every attribute as a string, so the span attributes are compared in their string form.
@@ -206,10 +209,7 @@ class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
   void shouldExportSpansAndMetricsWithoutTheProcessCommandLineWhenARequestIsServed()
       throws Exception {
     var spanResource = spanResourceOfARequest();
-    var metricResource =
-        exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position())
-            .getResourceMetrics(0)
-            .getResource();
+    var metricResource = firstExportOfTheReadyServer().getResourceMetrics(0).getResource();
 
     // A command line can carry credentials, such as a -D system property naming a token.
     assertThat(List.of(spanResource, metricResource))
