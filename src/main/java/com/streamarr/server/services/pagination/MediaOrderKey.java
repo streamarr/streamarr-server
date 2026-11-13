@@ -1,67 +1,37 @@
 package com.streamarr.server.services.pagination;
 
-import com.streamarr.server.domain.pagination.OrderMediaBy;
-import com.streamarr.server.domain.pagination.SortDirection;
-import java.io.ByteArrayOutputStream;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
+import com.streamarr.server.domain.pagination.ListOrder;
+import com.streamarr.server.domain.pagination.Position;
+import com.streamarr.server.domain.pagination.SortValue;
+import com.streamarr.server.domain.pagination.SortValueKind;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.Arrays;
-import java.util.HexFormat;
 
 public final class MediaOrderKey {
   private MediaOrderKey() {}
 
   public static String encode(MediaOrder order) {
-    var bytes = new ByteArrayOutputStream();
-    bytes.writeBytes(valueBytes(order));
-    bytes.writeBytes(
-        ByteBuffer.allocate(16)
-            .putLong(order.itemId().getMostSignificantBits())
-            .putLong(order.itemId().getLeastSignificantBits())
-            .array());
-    var payload = bytes.toByteArray();
-    if (order.direction() == SortDirection.DESC) {
-      for (int i = 0; i < payload.length; i++) {
-        payload[i] = (byte) ~payload[i];
-      }
-    }
-
-    var nullsFirst =
-        order.direction() == SortDirection.DESC
-            && (order.by() == OrderMediaBy.TITLE || order.by() == OrderMediaBy.ADDED);
-    var prefix = (order.value() == null) == nullsFirst ? "0" : "1";
-    return "1:" + prefix + HexFormat.of().formatHex(payload);
+    var by = order.by();
+    return OrderKey.encode(
+        ListOrder.builder()
+            .valueKind(by.getValueKind())
+            .direction(order.direction())
+            .absentValues(by.getAbsentValues())
+            .build(),
+        new Position(sortValue(by.getValueKind(), order.value()), order.itemId()));
   }
 
-  private static byte[] valueBytes(MediaOrder order) {
-    if (order.value() == null) {
-      return new byte[0];
+  private static SortValue sortValue(SortValueKind kind, Object value) {
+    if (value == null) {
+      return new SortValue.Absent();
     }
 
-    var value = order.value().toString();
-    return switch (order.by()) {
-      case TITLE -> terminatedTitle(value);
-      case RUNTIME -> number(Long.parseLong(value));
-      case RELEASE_DATE -> number(LocalDate.parse(value).toEpochDay());
-      case ADDED, LAST_WATCHED -> timestamp(Instant.parse(value));
+    var text = value.toString();
+    return switch (kind) {
+      case TEXT -> new SortValue.OfText(text);
+      case INSTANT -> new SortValue.OfInstant(Instant.parse(text));
+      case DATE -> new SortValue.OfDate(LocalDate.parse(text));
+      case NUMBER -> new SortValue.OfNumber(Long.parseLong(text));
     };
-  }
-
-  private static byte[] terminatedTitle(String value) {
-    var bytes = value.getBytes(StandardCharsets.UTF_8);
-    return Arrays.copyOf(bytes, bytes.length + 1);
-  }
-
-  private static byte[] number(long value) {
-    return ByteBuffer.allocate(8).putLong(value ^ Long.MIN_VALUE).array();
-  }
-
-  private static byte[] timestamp(Instant value) {
-    return ByteBuffer.allocate(12)
-        .putLong(value.getEpochSecond() ^ Long.MIN_VALUE)
-        .putInt(value.getNano())
-        .array();
   }
 }
