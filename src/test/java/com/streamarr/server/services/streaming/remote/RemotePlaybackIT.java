@@ -102,8 +102,9 @@ class RemotePlaybackIT {
   private static final String UNICODE_KEY =
       "東京 Café’s 🎬 %2F ..%2F dir/Ame\u0301lie’s 100%23 #1 한국 𝄞 (2001).mkv";
 
-  // Tests that give FFmpeg the same scripted body share one worker and the server it connects to.
-  private static final Map<String, SharedWorker> SHARED_WORKERS = new HashMap<>();
+  // Tests that start the worker with the same configuration share one worker and the server it
+  // connects to.
+  private static final Map<WorkerConfiguration, SharedWorker> SHARED_WORKERS = new HashMap<>();
 
   @TempDir static Path sharedWorkersDir;
 
@@ -549,18 +550,12 @@ class RemotePlaybackIT {
   @Test
   @DisplayName("Should diagnose the locale when the worker starts under an ASCII locale")
   void shouldDiagnoseLocaleWhenWorkerStartsUnderAsciiLocale() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var worker =
+        sharedWorker(WorkerConfiguration.builder().filenameLocale("POSIX").build()).worker();
 
-    try (var server = server(segmentStore);
-        var worker = workerBuilder(server, mediaRoot).filenameLocale("POSIX").build()) {
-      server.start();
-      worker.start();
-
-      assertThat(worker.logs())
-          .contains("rather than UTF-8")
-          .contains("the effective locale is LC_ALL=POSIX");
-    }
+    assertThat(worker.logs())
+        .contains("rather than UTF-8")
+        .contains("the effective locale is LC_ALL=POSIX");
   }
 
   @Test
@@ -601,13 +596,17 @@ class RemotePlaybackIT {
     }
   }
 
-  // With an empty scripted body, the worker runs FFmpeg as it launched it.
+  // Without a scripted body, the worker runs FFmpeg as it launched it.
   private static SharedWorker sharedWorker() throws IOException {
-    return sharedWorker("");
+    return sharedWorker(WorkerConfiguration.builder().build());
   }
 
   private static SharedWorker sharedWorker(String ffmpegScript) throws IOException {
-    var started = SHARED_WORKERS.get(ffmpegScript);
+    return sharedWorker(WorkerConfiguration.builder().ffmpegScript(ffmpegScript).build());
+  }
+
+  private static SharedWorker sharedWorker(WorkerConfiguration configuration) throws IOException {
+    var started = SHARED_WORKERS.get(configuration);
     if (started != null) {
       return started;
     }
@@ -623,11 +622,15 @@ class RemotePlaybackIT {
             .segmentStore(segmentStore)
             .meterRegistry(meterRegistry)
             .server(server)
-            .worker(workerBuilder(server, mediaRoot).ffmpegScript(ffmpegScript).build())
+            .worker(
+                workerBuilder(server, mediaRoot)
+                    .ffmpegScript(configuration.ffmpegScript())
+                    .filenameLocale(configuration.filenameLocale())
+                    .build())
             .streamSessionIds(new HashSet<>())
             .build();
     shared.start();
-    SHARED_WORKERS.put(ffmpegScript, shared);
+    SHARED_WORKERS.put(configuration, shared);
     return shared;
   }
 
@@ -911,6 +914,9 @@ class RemotePlaybackIT {
         .streamSessionId(streamSessionId)
         .build();
   }
+
+  @Builder
+  private record WorkerConfiguration(String ffmpegScript, String filenameLocale) {}
 
   @Builder
   private record SharedWorker(
