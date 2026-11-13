@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import com.google.common.io.Closer;
 import com.google.common.primitives.Bytes;
 import com.streamarr.server.controllers.StreamController;
 import com.streamarr.server.domain.media.ProbeVersion;
@@ -52,6 +53,7 @@ import com.streamarr.server.services.streaming.TranscodeDecisionRequest;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -59,11 +61,13 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -113,9 +117,11 @@ class RemotePlaybackIT {
   }
 
   @AfterAll
-  static void closeSharedWorkers() {
-    SHARED_WORKERS.values().forEach(SharedWorker::close);
-    SHARED_WORKERS.clear();
+  static void closeSharedWorkers() throws IOException {
+    try (var closer = Closer.create()) {
+      SHARED_WORKERS.values().forEach(closer::register);
+      SHARED_WORKERS.clear();
+    }
   }
 
   @Test
@@ -131,7 +137,7 @@ class RemotePlaybackIT {
     var server = shared.server();
     var worker = shared.worker();
     var mediaFile = copyTestClip(mediaRoot.resolve("movie.mkv"));
-    var streamSessionId = UUID.randomUUID();
+    var streamSessionId = shared.newStreamSessionId();
     var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
     var probe =
         new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot)
@@ -201,7 +207,7 @@ class RemotePlaybackIT {
     var mediaRoot = shared.mediaRoot();
     var segmentStore = shared.segmentStore();
     var mediaFile = copyTestClip(mediaRoot.resolve("movie.mkv"));
-    var streamSessionId = UUID.randomUUID();
+    var streamSessionId = shared.newStreamSessionId();
     var executor = new RemoteTranscodeExecutor(shared.server(), SOURCE_NAMESPACE_ID, mediaRoot);
 
     executor.start(transcodeRequest(streamSessionId, mediaFile));
@@ -226,7 +232,7 @@ class RemotePlaybackIT {
     var server = shared.server();
     var worker = shared.worker();
     var mediaFile = copyTestClip(mediaRoot.resolve("movie.mkv"));
-    var streamSessionId = UUID.randomUUID();
+    var streamSessionId = shared.newStreamSessionId();
     segmentStore.holdPublicationUntilASegmentIsFoundMissing(streamSessionId);
     var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
     var playback =
@@ -261,7 +267,7 @@ class RemotePlaybackIT {
         supportedTranscodeDecisions().stream()
             .map(
                 decision ->
-                    executableRequestBuilder(mediaFile)
+                    executableRequestBuilder(shared, mediaFile)
                         .framerate(OptionalDouble.of(23.976))
                         .transcodeDecision(decision)
                         .build())
@@ -284,7 +290,7 @@ class RemotePlaybackIT {
             .filter(decision -> streamCopyModes.contains(decision.transcodeMode()))
             .map(
                 decision ->
-                    executableRequestBuilder(mediaFile)
+                    executableRequestBuilder(shared, mediaFile)
                         .framerate(OptionalDouble.empty())
                         .transcodeDecision(decision)
                         .build())
@@ -297,9 +303,10 @@ class RemotePlaybackIT {
         (request, command) -> assertCommandPreservesDecision(command, request.transcodeDecision()));
   }
 
-  private TranscodeRequest.TranscodeRequestBuilder executableRequestBuilder(Path mediaFile) {
+  private TranscodeRequest.TranscodeRequestBuilder executableRequestBuilder(
+      SharedWorker shared, Path mediaFile) {
     return TranscodeRequest.builder()
-        .sessionId(UUID.randomUUID())
+        .sessionId(shared.newStreamSessionId())
         .sourcePath(mediaFile)
         .targetSegmentDuration(4)
         .width(1920)
@@ -365,7 +372,7 @@ class RemotePlaybackIT {
     var mediaRoot = shared.mediaRoot();
     var segmentStore = shared.segmentStore();
     var mediaFile = copyTestClip(mediaRoot.resolve(UNICODE_KEY));
-    var streamSessionId = UUID.randomUUID();
+    var streamSessionId = shared.newStreamSessionId();
     var executor = new RemoteTranscodeExecutor(shared.server(), SOURCE_NAMESPACE_ID, mediaRoot);
     executor.start(transcodeRequest(streamSessionId, mediaFile));
 
@@ -385,7 +392,7 @@ class RemotePlaybackIT {
     var segmentStore = shared.segmentStore();
     var server = shared.server();
     var worker = shared.worker();
-    var streamSessionId = UUID.randomUUID();
+    var streamSessionId = shared.newStreamSessionId();
     var encoderBackendMismatches =
         shared.meterRegistry().get("streamarr.streaming.encoder_backend_mismatches").counter();
     var encoderBackendMismatchesBefore = encoderBackendMismatches.count();
@@ -477,7 +484,7 @@ class RemotePlaybackIT {
     var segmentStore = shared.segmentStore();
     var server = shared.server();
     var worker = shared.worker();
-    var streamSessionId = UUID.randomUUID();
+    var streamSessionId = shared.newStreamSessionId();
     var mediaFile =
         worker.generateMedia(
             mediaRoot.resolve("eight-kilohertz-mp3.mkv"),
@@ -605,8 +612,7 @@ class RemotePlaybackIT {
       return started;
     }
 
-    var directory =
-        Files.createDirectory(sharedWorkersDir.resolve("worker-" + SHARED_WORKERS.size()));
+    var directory = Files.createTempDirectory(sharedWorkersDir, "worker-");
     var mediaRoot = Files.createDirectory(directory.resolve("media"));
     var segmentStore = new PublishingSegmentStore(directory.resolve("server-segments"));
     var meterRegistry = new SimpleMeterRegistry();
@@ -618,10 +624,10 @@ class RemotePlaybackIT {
             .meterRegistry(meterRegistry)
             .server(server)
             .worker(workerBuilder(server, mediaRoot).ffmpegScript(ffmpegScript).build())
+            .streamSessionIds(new HashSet<>())
             .build();
+    shared.start();
     SHARED_WORKERS.put(ffmpegScript, shared);
-    server.start();
-    shared.worker().start();
     return shared;
   }
 
@@ -912,12 +918,36 @@ class RemotePlaybackIT {
       PublishingSegmentStore segmentStore,
       SimpleMeterRegistry meterRegistry,
       WorkerSessionServer server,
-      WorkerContainerFixture worker)
-      implements AutoCloseable {
+      WorkerContainerFixture worker,
+      Set<UUID> streamSessionIds)
+      implements Closeable {
 
-    // A job attempt of an earlier test must not hold the worker's one slot into the next test, and
-    // its media must not stay under the source root.
+    // A pair that fails to start is closed here, so sharedWorker keeps only pairs that started.
+    private void start() throws IOException {
+      var started = false;
+      try {
+        server.start();
+        worker.start();
+        started = true;
+      } finally {
+        if (!started) {
+          close();
+        }
+      }
+    }
+
+    // reset() stops every job attempt that a test starts for this stream session.
+    private UUID newStreamSessionId() {
+      var streamSessionId = UUID.randomUUID();
+      streamSessionIds.add(streamSessionId);
+      return streamSessionId;
+    }
+
+    // Once stopped, a job attempt of an earlier test can neither upload nor hold the worker's one
+    // slot in the next test. A copy holds no slot, so the slot wait cannot see a running one.
     private void reset() throws IOException {
+      streamSessionIds.forEach(server::destroyStreamSession);
+      streamSessionIds.clear();
       await()
           .pollDelay(Duration.ZERO)
           .atMost(Duration.ofSeconds(30))
@@ -926,9 +956,11 @@ class RemotePlaybackIT {
     }
 
     @Override
-    public void close() {
-      worker.close();
-      server.close();
+    public void close() throws IOException {
+      try (var closer = Closer.create()) {
+        closer.register(server::close);
+        closer.register(worker::close);
+      }
     }
   }
 
