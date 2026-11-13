@@ -26,9 +26,11 @@ public final class ShareErrors {
     return switch (rejection) {
       case ShareRejections.ShareNotFound _ -> shareNotFound();
       case ShareRejections.ShareNotPending _ -> shareNotPending();
-      case ShareRejections.OfferInvalidated(var reason) ->
+      // The stored reason is written for the Profile's managers, who read it on the Sharing page.
+      case ShareRejections.OfferInvalidated _ ->
           new OfferInvalidatedError(
-              "This offer was withdrawn (%s) and can no longer be accepted.".formatted(reason),
+              "That share invitation was withdrawn and can no longer be accepted. Reload the page"
+                  + " to see the share invitations that are still waiting.",
               InputPath.of(SHARE_ID));
       case ShareRejections.NoEligibleAdmin _ ->
           new RestrictedProfileRequiresHouseholdAdminError(
@@ -78,7 +80,10 @@ public final class ShareErrors {
   }
 
   private static ShareNotPendingError shareNotPending() {
-    return new ShareNotPendingError("That offer is not pending.", InputPath.of(SHARE_ID));
+    return new ShareNotPendingError(
+        "That share invitation is no longer waiting for an answer. Reload the page to see what"
+            + " changed.",
+        InputPath.of(SHARE_ID));
   }
 
   private static ShareNotActiveError shareNotActive() {

@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.mutation.sharing;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.streamarr.server.services.identity.ShareRejections;
@@ -49,6 +50,46 @@ class ShareErrorsTest {
               .assertThat(ShareErrors.toAcceptError(new ShareRejections.NameConflict()))
               .isExactlyInstanceOf(ShareNameConflictError.class);
         });
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the person to reload when Accept, Decline or Cancel finds the share invitation"
+          + " no longer waiting")
+  void shouldTellThePersonToReloadWhenShareInvitationIsNoLongerWaiting() {
+    var expected =
+        "That share invitation is no longer waiting for an answer. Reload the page to see what"
+            + " changed.";
+
+    assertSoftly(
+        softly -> {
+          softly
+              .assertThat(
+                  ShareErrors.toAcceptError(new ShareRejections.ShareNotPending()).message())
+              .isEqualTo(expected);
+          softly
+              .assertThat(
+                  ShareErrors.toRejectError(new ShareRejections.ShareNotPending()).message())
+              .isEqualTo(expected);
+          softly
+              .assertThat(
+                  ShareErrors.toCancelError(new ShareRejections.ShareNotPending()).message())
+              .isEqualTo(expected);
+        });
+  }
+
+  @Test
+  @DisplayName(
+      "Should say the share invitation was withdrawn without the stored reason when Accept finds"
+          + " it withdrawn")
+  void shouldSayShareInvitationWasWithdrawnWithoutStoredReasonWhenAcceptFindsItWithdrawn() {
+    var error =
+        ShareErrors.toAcceptError(new ShareRejections.OfferInvalidated("offering manager deleted"));
+
+    assertThat(error.message())
+        .isEqualTo(
+            "That share invitation was withdrawn and can no longer be accepted. Reload the page"
+                + " to see the share invitations that are still waiting.");
   }
 
   @Test
