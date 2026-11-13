@@ -192,17 +192,6 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
         node.getChildren().stream().flatMap(RequestErrorRedactionInstrumentation::nodes));
   }
 
-  private static Stream<String> literal(Value<?> value) {
-    return switch (value) {
-      case StringValue string -> Stream.of(string.getValue());
-      case IntValue integer -> Stream.of(integer.getValue().toString());
-      case FloatValue decimal -> Stream.of(decimal.getValue().toString());
-      case BooleanValue bool -> Stream.of(String.valueOf(bool.isValue()));
-      case EnumValue enumValue -> Stream.of(enumValue.getName());
-      default -> Stream.empty();
-    };
-  }
-
   // A value prints every value inside it again, so printing each value of a literal nested n deep
   // prints that literal n times over. Values are quoted innermost first, under one limit for the
   // whole request, so that a value is printed only once all the values inside it fit.
@@ -231,6 +220,17 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
       left -= quotes.stream().mapToLong(String::length).sum();
       quoted.addAll(quotes);
       return left >= 0;
+    }
+
+    private static Stream<String> literal(Value<?> value) {
+      return switch (value) {
+        case StringValue string -> Stream.of(string.getValue());
+        case IntValue integer -> Stream.of(integer.getValue().toString());
+        case FloatValue decimal -> Stream.of(decimal.getValue().toString());
+        case BooleanValue bool -> Stream.of(String.valueOf(bool.isValue()));
+        case EnumValue enumValue -> Stream.of(enumValue.getName());
+        default -> Stream.empty();
+      };
     }
   }
 }
