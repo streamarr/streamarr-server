@@ -9,6 +9,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    # PostgreSQL 18 keeps its data below /var/lib/postgresql. The named volume keeps the database
+    # when `docker compose down` removes the container; `docker compose down -v` deletes it.
+    volumes:
+      - postgres-data:/var/lib/postgresql
 
   streamarr-server:
     image: ${STREAMARR_SERVER_IMAGE:-streamarr/streamarr-server:0.0.11-SNAPSHOT} # x-release-please-version
@@ -95,4 +99,5 @@ services:
       - observability
 
 volumes:
+  postgres-data:
   prometheus-data:

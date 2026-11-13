@@ -263,6 +263,10 @@ The worker uses its own Spring Boot image and normal entrypoint.
 The server image contains neither the worker application nor FFmpeg.
 To encode on an NVIDIA GPU, see <<_gpu_encoding>>.
 
+PostgreSQL keeps the database in the `postgres-data` volume.
+Compose's `down` command keeps the volume, so the next `up` starts with the same library, and the server runs the work that the stop interrupted.
+Compose's `down -v` command deletes the database and the stored metrics.
+
 Compose also runs Prometheus, which stores the server's metrics.
 Every 10 seconds, the server's Micrometer meter registry sends every meter to the OTLP receiver of Prometheus.
 A meter that the server removes, such as one tagged with the UUID of a worker that disconnected, gets no new samples.
