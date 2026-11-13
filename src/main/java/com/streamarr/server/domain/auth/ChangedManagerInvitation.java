@@ -29,9 +29,4 @@ public record ChangedManagerInvitation(
         .expiresAt(invitation.getExpiresAt())
         .build();
   }
-
-  /** An invitation that names no Account, unless the builder names one. */
-  public static class ChangedManagerInvitationBuilder {
-    private Optional<UUID> recipientAccountId = Optional.empty();
-  }
 }
