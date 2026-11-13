@@ -45,6 +45,12 @@ public class ProfileHouseholdShareRepositoryCustomImpl
           PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID,
           PROFILE_HOUSEHOLD_SHARE.STATUS);
 
+  private static final Keyset<OffsetDateTime> BY_CREATION =
+      Keyset.<OffsetDateTime>builder()
+          .sortValue(PROFILE_HOUSEHOLD_SHARE.CREATED_ON)
+          .itemId(PROFILE_HOUSEHOLD_SHARE.ID)
+          .build();
+
   private final DSLContext dsl;
   private final EntityManager entityManager;
 
@@ -155,13 +161,15 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   @Override
   public List<Row<ProfileHouseholdShare>> rowsIntoHousehold(
       HouseholdShareFilter filter, Seek seek) {
-    return rowsBeyond(
-        PROFILE_HOUSEHOLD_SHARE
-            .HOUSEHOLD_ID
-            .eq(filter.householdId())
-            .and(keptBy(filter.statuses()))
-            .and(filter.visitorsOnly() ? ofVisitor() : DSL.noCondition()),
-        seek);
+    return rowsBeyond(intoHousehold(filter), seek);
+  }
+
+  private static Condition intoHousehold(HouseholdShareFilter filter) {
+    return PROFILE_HOUSEHOLD_SHARE
+        .HOUSEHOLD_ID
+        .eq(filter.householdId())
+        .and(keptBy(filter.statuses()))
+        .and(filter.visitorsOnly() ? ofVisitor() : DSL.noCondition());
   }
 
   /** A share of a Profile that belongs to another Household than the one the share is into. */
@@ -211,17 +219,18 @@ public class ProfileHouseholdShareRepositoryCustomImpl
   @Override
   public List<Row<ProfileHouseholdShare>> rowsOfProfile(
       UUID profileId, ShareStatusFilter filter, Seek seek) {
-    return rowsBeyond(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId).and(keptBy(filter)), seek);
+    return rowsBeyond(ofProfile(profileId, filter), seek);
+  }
+
+  private static Condition ofProfile(UUID profileId, ShareStatusFilter filter) {
+    return PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId).and(keptBy(filter));
   }
 
   private List<Row<ProfileHouseholdShare>> rowsBeyond(Condition scope, Seek seek) {
-    var keyset =
-        Keyset.<OffsetDateTime>builder()
-            .sortValue(PROFILE_HOUSEHOLD_SHARE.CREATED_ON)
-            .itemId(PROFILE_HOUSEHOLD_SHARE.ID)
-            .build();
-    var query = keyset.rowsBeyond(keyset.selectFrom(dsl, PROFILE_HOUSEHOLD_SHARE), scope, seek);
-    return JooqQueryHelper.nativeRows(entityManager, query, ProfileHouseholdShare.class, keyset);
+    var query =
+        BY_CREATION.rowsBeyond(BY_CREATION.selectFrom(dsl, PROFILE_HOUSEHOLD_SHARE), scope, seek);
+    return JooqQueryHelper.nativeRows(
+        entityManager, query, ProfileHouseholdShare.class, BY_CREATION);
   }
 
   @Override
