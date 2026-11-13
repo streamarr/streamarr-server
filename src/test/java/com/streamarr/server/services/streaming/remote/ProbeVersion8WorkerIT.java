@@ -152,12 +152,25 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
     }
   }
 
-  // No job attempt of an earlier test may hold a slot of the shared worker into the next test.
+  // A stop frees its slot at once, so the slot count is final when a test ends. A probe that a test
+  // stopped waiting for keeps its probe unit until the worker confirms the cancellation, or until
+  // the server drops the worker after its 5 s cancellation timeout.
   @BeforeEach
-  void awaitEveryWorkerSlotFree() {
+  void requireTheSharedWorkerConnectedAndIdle() {
     await()
-        .atMost(Duration.ofSeconds(30))
-        .until(() -> server.availableSlots(SOURCE_NAMESPACE_ID) == WORKER_SLOTS);
+        .alias("the probes that earlier tests stopped waiting for have ended on the shared worker")
+        .pollDelay(Duration.ZERO)
+        .atMost(Duration.ofSeconds(10))
+        .until(
+            () ->
+                server.probeCapacity(SOURCE_NAMESPACE_ID, ProbeVersion.CURRENT).runningProbes()
+                    == 0);
+    assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID))
+        .as("the shared worker kept its session through the earlier tests")
+        .isTrue();
+    assertThat(server.availableSlots(SOURCE_NAMESPACE_ID))
+        .as("the shared worker's free slots after the earlier tests")
+        .isEqualTo(WORKER_SLOTS);
   }
 
   @ParameterizedTest
