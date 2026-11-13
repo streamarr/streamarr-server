@@ -41,6 +41,9 @@ class TmdbHttpClientConfigurationTest {
 
   private static final Duration PROBE_TIMEOUT = Duration.ofMillis(200);
   private static final Duration LOCAL_SERVER_TIMEOUT = Duration.ofSeconds(2);
+  // Longer than the 2 s ceiling of the backoff the client uses when no Retry-After arrives, so a
+  // client that ignored the header would retry too early.
+  private static final Duration RETRY_AFTER = Duration.ofSeconds(3);
 
   private final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
 
@@ -156,13 +159,16 @@ class TmdbHttpClientConfigurationTest {
   void shouldNotRetryBeforeTheDelayTmdbAsksForWhenItAnswersTooManyRequests() throws Exception {
     wireMock.stubFor(
         get("/movie/3")
-            .inScenario("rate limited for a second")
+            .inScenario("rate limited with a delay")
             .whenScenarioStateIs(STARTED)
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "1"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", String.valueOf(RETRY_AFTER.toSeconds())))
             .willSetStateTo("retried"));
     wireMock.stubFor(
         get("/movie/3")
-            .inScenario("rate limited for a second")
+            .inScenario("rate limited with a delay")
             .whenScenarioStateIs("retried")
             .willReturn(aResponse().withStatus(200)));
     var request =
@@ -188,7 +194,7 @@ class TmdbHttpClientConfigurationTest {
     assertThat(arrivals).hasSize(2);
     assertThat(Duration.between(arrivals.getFirst(), arrivals.getLast()))
         .as("wait between the 429 and its retry")
-        .isGreaterThanOrEqualTo(Duration.ofSeconds(1));
+        .isGreaterThanOrEqualTo(RETRY_AFTER);
   }
 
   @Test
