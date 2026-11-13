@@ -368,18 +368,18 @@ public class TranscodeDecisionService {
           new VideoCopyChoice.Refused(List.of(DecisionReason.NO_WORKER_DELIVERS_COPY));
       case PlanChoice.Accepted _
           when VideoCopyBandwidth.exceedsSegmentCap(source, audio, playlist) ->
-          segmentCapRefusal(countsRefusals);
+          segmentCapRefusal(StreamCopyRefusal.EXCEEDS_SEGMENT_CAP, countsRefusals);
       case PlanChoice.Accepted(var plan, var reasons) ->
           new VideoCopyChoice.Copied(audio, plan, reasons);
     };
   }
 
-  private VideoCopyChoice segmentCapRefusal(boolean countsRefusals) {
+  private VideoCopyChoice segmentCapRefusal(StreamCopyRefusal refusal, boolean countsRefusals) {
     if (countsRefusals) {
-      countStreamCopyRefusal(StreamCopyRefusal.EXCEEDS_SEGMENT_CAP);
+      countStreamCopyRefusal(refusal);
     }
 
-    return new VideoCopyChoice.Refused(List.of(StreamCopyRefusal.EXCEEDS_SEGMENT_CAP.reason()));
+    return new VideoCopyChoice.Refused(List.of(refusal.reason()));
   }
 
   // A copy that the viewer's limits refuse may also be one that the source or the declaration
