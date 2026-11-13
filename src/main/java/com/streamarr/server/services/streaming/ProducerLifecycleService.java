@@ -1143,6 +1143,11 @@ public class ProducerLifecycleService {
         && newest.variantLabel().equals(request.variantLabel());
   }
 
+  private boolean isVariantOfNewestMediaSegmentRequest(UUID sessionId, String variantLabel) {
+    var newest = newestMediaSegmentRequests.get(sessionId);
+    return newest != null && newest.variantLabel().equals(variantLabel);
+  }
+
   private boolean isNewViewersRequestOfTheVariantStartedForThePlayer(SegmentRequest request) {
     return !newestMediaSegmentRequests.containsKey(request.sessionId())
         && request.variantLabel().equals(variantsStartedForTheirPlayer.get(request.sessionId()));
@@ -1442,13 +1447,17 @@ public class ProducerLifecycleService {
   }
 
   // Stops the variant that a served playlist started when it is another variant and its stop
-  // frees what the start lacks (ADR 0050). Answers whether it stopped it.
+  // frees what the start lacks (ADR 0050). Answers whether it stopped it. A served playlist keeps
+  // the running variant of the player's newest media-segment request when the player sent that
+  // request before the playlist. The player then plays that variant or switches to that variant,
+  // so the variant keeps running.
   private boolean stopPlaylistStartedVariantToMakeRoom(
       StreamSession session, String variantLabel, SlotShortage shortage) {
     var sessionId = session.getSessionId();
     var started = variantsStartedForTheirPlaylist.get(sessionId);
     if (started == null
         || started.equals(variantLabel)
+        || isVariantOfNewestMediaSegmentRequest(sessionId, started)
         || !freesTakenSlots(session, started, shortage)) {
       return false;
     }

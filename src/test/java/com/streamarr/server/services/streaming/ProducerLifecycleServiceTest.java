@@ -724,6 +724,29 @@ class ProducerLifecycleServiceTest {
         .containsExactly(running.getSessionId());
   }
 
+  @Test
+  @DisplayName(
+      "Should keep the variant that the player switches to running when another variant's request finds no place and a served playlist kept that variant")
+  void shouldKeepTheVariantThePlayerSwitchesToWhenAnotherVariantFindsNoPlaceAfterAPlaylistKeptIt() {
+    // Under a transcode limit of 2, the player plays 480p and requests a 360p segment, which
+    // starts 360p in the last place. A served playlist that lists only 360p keeps the running 360p
+    // before its segment reaches the player. The player's 720p initialization request then finds
+    // no place.
+    var limited = lifecycleWith(new MutexFactory<>(), 2);
+    var session = defaultLadderSessionBuilder().build();
+    var sessionId = session.getSessionId();
+    runtimeRegistry.save(session);
+    limited.startListedVariant(session, session.firstListedVariant());
+    limited.completeVariantSwitch(
+        limited.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s"));
+    limited.prepareRequestedVariant(sessionId, "360p", "360p/segment1.m4s");
+    assertThat(limited.startTopListedVariantUnlessOneRuns(session, List.of("360p"))).isTrue();
+
+    limited.prepareRequestedVariant(sessionId, "720p", "720p/init.mp4");
+
+    assertThat(transcodeExecutor.isRunning(sessionId, "360p")).isTrue();
+  }
+
   private ProducerLifecycleService lifecycleWith(
       MutexFactory<UUID> sessionMutex, int maxConcurrentTranscodes) {
     return StreamingRigFixture.streamingRigBuilder()

@@ -8037,6 +8037,33 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
+      "Should keep the played variant running when the player asks for another variant's"
+          + " initialization segment after it switched to the running variant that a playlist"
+          + " served again lists first")
+  void shouldKeepThePlayedVariantWhenAnotherVariantsInitFollowsASwitchToTheRunningKeptVariant() {
+    // The player plays 480p and requests a 360p segment, which starts 360p in the last place under
+    // the transcode limit of 3, beside 480p and an encode over the local network. A playlist served
+    // again then leaves 480p out and lists the running 360p first. The player receives its 360p
+    // segment, so 480p stops, and a second encode over the local network takes 480p's place. From
+    // the playlist it read before the budget was on, the player then asks for 720p.
+    var session = playFirstListedEncodeBesideAnActiveCopy();
+    var sessionId = session.getSessionId();
+    accepted(service.createSession(localNetworkEncode()));
+    var switchDown =
+        producerLifecycle.prepareRequestedVariant(sessionId, "360p", "360p/segment1.m4s");
+    setInternetUploadMegabitsPerSecond(8);
+    assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+    producerLifecycle.completeVariantSwitch(switchDown);
+    accepted(service.createSession(localNetworkEncode()));
+    storeFirstSegmentsAsEachLadderVariantStarts();
+
+    coordinator.deliver(sessionId, "720p", "720p/init.mp4");
+
+    assertThat(transcodeExecutor.isRunning(sessionId, "360p")).isTrue();
+  }
+
+  @Test
+  @DisplayName(
       "Should list the first-listed variant when the top kept variant has a job attempt that does"
           + " not run as the playlist is served")
   void shouldListTheFirstListedVariantWhenTheTopKeptVariantHasAJobAttemptThatDoesNotRun() {
