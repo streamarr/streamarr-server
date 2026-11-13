@@ -85,8 +85,12 @@ class RemoteProbeDeadlineIT {
           .atMost(5, TimeUnit.SECONDS)
           .untilAsserted(
               () -> {
-                assertThat(worker.probeRunning()).isFalse();
-                assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+                assertThat(worker.probeRunning())
+                    .as("the worker must stop the hung native probe")
+                    .isFalse();
+                assertThat(server.availableSlots(SOURCE_NAMESPACE_ID))
+                    .as("the worker must stay connected with its free slot")
+                    .isEqualTo(1);
               });
 
       var outcome = service.probe(request("next.mp4"));
