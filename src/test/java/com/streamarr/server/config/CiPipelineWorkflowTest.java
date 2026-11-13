@@ -2,6 +2,7 @@ package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.AbstractIntegrationTest;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.w3c.dom.Document;
 import org.yaml.snakeyaml.Yaml;
 
 @Tag("UnitTest")
@@ -87,6 +89,29 @@ class CiPipelineWorkflowTest {
     assertThat(
             xpath.evaluate(
                 plugins + "[artifactId='maven-failsafe-plugin']/configuration/skipTests", pom))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should run the integration tests in two numbered forks only when CI runs them")
+  void shouldRunIntegrationTestsInTwoNumberedForksOnlyWhenCiRunsThem() throws Exception {
+    var pom = pom();
+    var xpath = XPathFactory.newInstance().newXPath();
+    var failsafe = "/build/plugins/plugin[artifactId='maven-failsafe-plugin']/configuration";
+    var ci = "/project/profiles/profile[id='ci-integration']" + failsafe;
+
+    assertThat(xpath.evaluate(ci + "/forkCount", pom)).as("CI forks").isEqualTo("2");
+    assertThat(xpath.evaluate(ci + "/reuseForks", pom))
+        .as("each CI fork runs class after class")
+        .isEqualTo("true");
+    assertThat(
+            xpath.evaluate(
+                ci + "/systemPropertyVariables/" + AbstractIntegrationTest.FORK_NUMBER_PROPERTY,
+                pom))
+        .as("fork number placeholder that Maven leaves for Failsafe")
+        .isEqualTo("$${surefire.forkNumber}");
+    assertThat(xpath.evaluate("/project" + failsafe + "/forkCount", pom))
+        .as("forks of a developer's build")
         .isEmpty();
   }
 
@@ -346,6 +371,12 @@ class CiPipelineWorkflowTest {
     assertThat(capture.toFile().setExecutable(true)).isTrue();
 
     return capture;
+  }
+
+  private static Document pom() throws Exception {
+    var factory = DocumentBuilderFactory.newInstance();
+    factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+    return factory.newDocumentBuilder().parse(Path.of("pom.xml").toFile());
   }
 
   private static String substituteContext(String expression, Map<String, String> context) {
