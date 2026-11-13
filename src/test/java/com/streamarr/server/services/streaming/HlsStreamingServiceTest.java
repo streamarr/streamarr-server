@@ -7969,21 +7969,25 @@ class HlsStreamingServiceTest {
       "Should replace a variant's dead job attempt in the place of the variant that a playlist"
           + " served again started when the player asks for its initialization segment again")
   void shouldReplaceADeadJobAttemptInThePlaceOfThePlaylistsVariantWhenThePlayerRetriesInit() {
-    // The workers have 3 job slots, and the active copy and the played 480p take two. From the
-    // playlist it read before the budget was on, the player asks for 720p, whose job attempt ends
-    // before writing its initialization segment. The playlist served again starts 360p in the
-    // free slot, so 720p's replacement can run only in 360p's place.
-    transcodeExecutor.limitJobSlots(3);
+    // The workers have 2 job slots. The played 480p takes one, and the active copy takes none.
+    // From the playlist it read before the budget was on, the player asks for 720p, whose job
+    // attempt ends before writing its initialization segment. The playlist served again starts
+    // 360p in the free slot, so 720p's replacement can run only in 360p's place.
+    transcodeExecutor.limitJobSlots(2);
     var session = playFirstListedEncodeBesideAnActiveCopy();
     var sessionId = session.getSessionId();
     producerLifecycle.prepareRequestedVariant(sessionId, "720p", "720p/init.mp4");
     transcodeExecutor.stopVariant(sessionId, "720p");
     setInternetUploadMegabitsPerSecond(8);
     assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+    assertThat(transcodeExecutor.availableSlots()).isZero();
     storeFirstSegmentsAsEachLadderVariantStarts();
 
-    assertThat(coordinator.deliver(sessionId, "720p", "720p/init.mp4"))
-        .isInstanceOf(SegmentDelivery.Ready.class);
+    var delivery = coordinator.deliver(sessionId, "720p", "720p/init.mp4");
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(transcodeExecutor.isRunning(sessionId, "360p")).isFalse();
+    assertThat(transcodeExecutor.isRunning(sessionId, "480p")).isTrue();
   }
 
   @Test
