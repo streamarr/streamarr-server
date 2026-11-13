@@ -30,13 +30,13 @@ class StreamingConfigSegmentFolderTest {
         StreamingProperties.builder().segmentBasePath(segmentFolder.toString()).build();
     var sessionId = UUID.randomUUID();
     var storeOfEarlierProcess = config.segmentStore(properties);
-    try (var stored = storeOfEarlierProcess.prepareSegment(sessionId, "720p/0.m4s")) {
+    try (var stored = storeOfEarlierProcess.prepareSegment(sessionId, "720p/segment0.m4s")) {
       stored.append(ByteBuffer.wrap(SEGMENT));
       stored.publish();
     }
 
     // Still open: the process ended before it published or discarded the upload.
-    try (var unpublished = storeOfEarlierProcess.prepareSegment(sessionId, "720p/1.m4s")) {
+    try (var unpublished = storeOfEarlierProcess.prepareSegment(sessionId, "720p/segment1.m4s")) {
       unpublished.append(ByteBuffer.wrap(SEGMENT));
       config.segmentStore(properties);
 

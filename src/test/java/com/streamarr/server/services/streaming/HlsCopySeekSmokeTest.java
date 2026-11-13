@@ -168,13 +168,14 @@ class HlsCopySeekSmokeTest {
   private WorkerStreamingSmokeFixture workerFixture;
   private volatile JobAttemptProgressListener progressListener;
   private Path sourceRoot;
+  private Path segmentFolder;
   @TempDir private Path temporaryDirectory;
 
   @BeforeEach
   void setUp() throws Exception {
     sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
-    segmentStore =
-        new LocalSegmentStore(Files.createDirectory(temporaryDirectory.resolve("segments")));
+    segmentFolder = Files.createDirectory(temporaryDirectory.resolve("segments"));
+    segmentStore = new LocalSegmentStore(segmentFolder);
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)
@@ -542,9 +543,9 @@ class HlsCopySeekSmokeTest {
             () ->
                 !transcodeExecutor.isRunning(
                     session.getSessionId(), StreamSession.defaultVariant()));
-    var outputDirectory = segmentStore.getOutputDirectory(session.getSessionId());
+    var sessionFolder = segmentFolder.resolve(session.getSessionId().toString());
     for (var index = firstMissingIndex; index < segmentCount; index++) {
-      Files.deleteIfExists(outputDirectory.resolve(SegmentNames.mediaSegmentName(index)));
+      Files.deleteIfExists(sessionFolder.resolve(SegmentNames.mediaSegmentName(index)));
     }
   }
 
