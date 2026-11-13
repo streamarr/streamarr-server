@@ -22,13 +22,41 @@ public class StatementCount {
     void run() throws Exception;
   }
 
-  // Both counts are global, so the count holds only while no other test uses the context.
-  // The session reaper also reads the server settings every few seconds on its own thread, so a
-  // run can count one statement that is not the request's; the fewest over a few runs is its own.
+  /** What a test sets up, uncounted, before each counted run of its request. */
+  @FunctionalInterface
+  public interface Arrangement<T> {
+    T arrange() throws Exception;
+  }
+
+  /** Something a test does with what it arranged, whose statements it counts. */
+  @FunctionalInterface
+  public interface ArrangedRequest<T> {
+    void run(T arranged) throws Exception;
+  }
+
+  /**
+   * The fewest statements that one of a few runs of the request took. Every run must find what the
+   * first run found. A request that changes what the next run finds, such as a write, arranges each
+   * run with {@link #statementsWhile(Arrangement, ArrangedRequest)} instead.
+   */
   public long statementsWhile(Request request) throws Exception {
+    return statementsWhile(() -> request, Request::run);
+  }
+
+  /**
+   * The fewest statements that one of a few runs of the request took. Before each run, the
+   * arrangement sets up what that run gets, and the arrangement's statements are not counted.
+   */
+  public <T> long statementsWhile(Arrangement<T> arrangement, ArrangedRequest<T> request)
+      throws Exception {
+    // Both counts are global, so the count holds only while no other test uses the context.
+    // The session reaper also reads the server settings every few seconds on its own thread, so
+    // a run can count one statement that is not the request's. The fewest over a few runs is the
+    // request's own.
     var fewest = Long.MAX_VALUE;
     for (var run = 0; run < COUNTED_RUNS; run++) {
-      fewest = Math.min(fewest, statementsOfOneRun(request));
+      var arranged = arrangement.arrange();
+      fewest = Math.min(fewest, statementsOfOneRun(() -> request.run(arranged)));
     }
 
     return fewest;

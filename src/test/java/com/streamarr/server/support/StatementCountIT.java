@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.util.ArrayDeque;
+import java.util.List;
 import java.util.UUID;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +41,31 @@ class StatementCountIT extends AbstractIntegrationTest {
     assertThat(
             statementCount.statementsWhile(
                 () -> profileRepository.findAvailableInHousehold(UUID.randomUUID())))
+        .isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should count only the request when an arrangement runs a statement before each run")
+  void shouldCountOnlyTheRequestWhenAnArrangementRunsAStatementBeforeEachRun() throws Exception {
+    assertThat(
+            statementCount.statementsWhile(
+                () -> dsl.selectOne().fetch(), _ -> dsl.selectOne().fetch()))
+        .isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count every run from a fresh arrangement when the request uses up what it was given")
+  void shouldCountEveryRunFromAFreshArrangementWhenTheRequestUsesUpWhatItWasGiven()
+      throws Exception {
+    assertThat(
+            statementCount.statementsWhile(
+                () -> new ArrayDeque<>(List.of("unused")),
+                unused -> {
+                  if (unused.poll() != null) {
+                    dsl.selectOne().fetch();
+                  }
+                }))
         .isEqualTo(1);
   }
 }
