@@ -22,10 +22,10 @@ import org.springframework.test.context.TestPropertySource;
  */
 @Tag("IntegrationTest")
 @DisplayName("Subscription Delivery Lock Bound Integration Tests")
-@TestPropertySource(properties = "DATABASE_LOCK_TIMEOUT=1s")
+@TestPropertySource(properties = "DATABASE_LOCK_TIMEOUT=2s")
 class SubscriptionDeliveryLockBoundIT extends AbstractSubscriptionDeliveryLockIntegrationTest {
 
-  private static final Duration LOCK_BOUND = Duration.ofSeconds(1);
+  private static final Duration LOCK_BOUND = Duration.ofSeconds(2);
   private static final Duration SETTLE_MARGIN = Duration.ofSeconds(10);
   private static final String COUNTS_FIELD = "libraryCountsChanged";
 
