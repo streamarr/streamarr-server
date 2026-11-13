@@ -20,8 +20,11 @@ import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Value;
 import graphql.parser.ParserOptions;
+import graphql.schema.CoercingParseValueException;
 import graphql.validation.ValidationError;
+import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -38,15 +41,19 @@ import org.springframework.stereotype.Component;
 
 /**
  * Keeps request values out of the errors graphql-java raises before any data fetcher runs, for a
- * document that does not parse or does not pass validation. Their messages quote what the request
- * wrote, and that may be a credential: a share code, an invitation code, a PIN. A syntax error
- * keeps its line and column and leaves out the token the parser stopped at, in its message and
- * beside it, and the line that token stood on. Every value written under the node a validation
- * error points at becomes {@code 'REDACTED'} in its message, so the message still names the
- * argument and what is wrong with it. When those values would print too long to look for, the
- * message names only the kind of error and the path to its field, and the error keeps its location.
- * It runs first, so that every instrumentation after it, among them DGS's, which turns these errors
- * into typed errors that keep the message, reads the redacted message.
+ * document that does not parse or does not pass validation, and for a variable whose type refuses
+ * the value the request supplies. Their messages quote what the request wrote, and that may be a
+ * credential: a share code, an invitation code, a PIN. A syntax error keeps its line and column and
+ * leaves out the token the parser stopped at, in its message and beside it, and the line that token
+ * stood on. Every value written under the node a validation error points at becomes {@code
+ * 'REDACTED'} in its message, so the message still names the argument and what is wrong with it.
+ * When those values would print too long to look for, the message names only the kind of error and
+ * the path to its field, and the error keeps its location. Every value the request supplies for its
+ * variables becomes {@code 'REDACTED'} in the message of a refused variable, so the message still
+ * names the variable and what is wrong with it. When those values would print too long to look for,
+ * the message says only that a variable has an invalid value, and the error keeps the location of
+ * the variable. It runs first, so that every instrumentation after it, among them DGS's, which
+ * turns these errors into typed errors that keep the message, reads the redacted message.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -84,8 +91,11 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
     }
 
     var descriptions = descriptionsWithoutValues(executionResult, parameters);
+    var variables = parameters.getExecutionInput().getVariables();
     var errors =
-        executionResult.getErrors().stream().map(error -> redacted(error, descriptions)).toList();
+        executionResult.getErrors().stream()
+            .map(error -> redacted(error, descriptions, variables))
+            .toList();
     return CompletableFuture.completedFuture(
         executionResult.transform(builder -> builder.errors(errors)));
   }
@@ -115,12 +125,40 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
   }
 
   private static GraphQLError redacted(
-      GraphQLError error, Function<ValidationError, String> descriptions) {
+      GraphQLError error,
+      Function<ValidationError, String> descriptions,
+      Map<String, Object> variables) {
     return switch (error) {
       case ValidationError rejected -> described(rejected, descriptions.apply(rejected));
       case InvalidSyntaxError unparsed -> withoutOffendingToken(unparsed);
+      case CoercingParseValueException refused -> withoutSuppliedValues(refused, variables);
       default -> error;
     };
+  }
+
+  // graphql-java reads the values a request supplies for its variables once the document passes
+  // validation. It stops at the first value that a scalar or an enum refuses, and its message
+  // quotes that value.
+  private static GraphQLError withoutSuppliedValues(
+      CoercingParseValueException refused, Map<String, Object> variables) {
+    var quoting = new Quoting();
+    var quoted = new ArrayList<String>();
+    for (var value : variables.values()) {
+      if (!quoting.quoteSupplied(value, quoted)) {
+        return refusedWith(
+            refused, "A variable has an invalid value: the supplied values are too long to quote");
+      }
+    }
+
+    return refusedWith(refused, withoutQuotes(refused.getMessage(), quoted));
+  }
+
+  private static GraphQLError refusedWith(CoercingParseValueException refused, String message) {
+    return CoercingParseValueException.newCoercingParseValueException()
+        .message(message)
+        .sourceLocations(refused.getLocations())
+        .extensions(refused.getExtensions())
+        .build();
   }
 
   // An invalid unicode escape quotes itself in the message whatever the parser options say, and a
@@ -199,9 +237,10 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
         node.getChildren().stream().flatMap(RequestErrorRedactionInstrumentation::nodes));
   }
 
-  // A value prints every value inside it again, so printing each value of a literal nested n deep
-  // prints that literal n times over. Values are quoted innermost first, under one limit for the
-  // whole request, so that a value is printed only once all the values inside it fit.
+  // A value prints every value inside it again, so printing each value of a literal or a supplied
+  // value nested n deep prints that value n times over. Values are quoted innermost first, under
+  // one limit for the whole request, so that a value is printed only once all the values inside it
+  // fit.
   private static final class Quoting {
 
     private long left = QUOTED_LENGTH_LIMIT;
@@ -221,6 +260,35 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
       // graphql-java quotes a rejected value as its syntax node, and a scalar's own message may
       // quote its literal text.
       return quoteEach(Stream.concat(Stream.of(value.toString()), literal(value)), quoted);
+    }
+
+    // Whether a value the request supplies, and every value inside it, fit within the limit.
+    private boolean quoteSupplied(Object value, List<String> quoted) {
+      for (var inner : inside(value)) {
+        if (!quoteSupplied(inner, quoted)) {
+          return false;
+        }
+      }
+
+      // An enum quotes the value it refuses as text, and an Int quotes a number as the integer it
+      // reads.
+      return quoteEach(Stream.concat(Stream.of(String.valueOf(value)), integral(value)), quoted);
+    }
+
+    private static Collection<?> inside(Object value) {
+      return switch (value) {
+        case Map<?, ?> map -> map.values();
+        case Collection<?> values -> values;
+        case null, default -> List.of();
+      };
+    }
+
+    private static Stream<String> integral(Object value) {
+      return switch (value) {
+        case Double number when Double.isFinite(number) ->
+            Stream.of(BigDecimal.valueOf(number).stripTrailingZeros().toPlainString());
+        case null, default -> Stream.empty();
+      };
     }
 
     // Whether the texts, each quoted, still fit within the limit.

@@ -14,8 +14,10 @@ import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.SchemaParser;
 import graphql.validation.ValidationError;
 import java.lang.management.ManagementFactory;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -177,6 +179,48 @@ class RequestErrorRedactionInstrumentationTest {
     assertThat(redactionCost).isLessThan(64L * document.length() + (8L << 20));
   }
 
+  @ParameterizedTest
+  @MethodSource("refusedVariableValues")
+  @DisplayName("Should name what is wrong without the value when a variable's value is refused")
+  void shouldNameWhatIsWrongWithoutValueWhenVariableValueIsRefused(
+      Map<String, Object> variables, String value, String named) {
+    var error = singleError(withVariables(variables));
+
+    assertThat(error.getMessage()).contains(named);
+    assertThat(error.toSpecification().toString()).doesNotContain(value);
+    assertThat(error.toString()).doesNotContain(value);
+  }
+
+  @ParameterizedTest
+  @MethodSource("variableValuesRedactedInPlaceOrTooLongToQuote")
+  @DisplayName("Should keep the location and classification when a variable's value is refused")
+  void shouldKeepLocationAndClassificationWhenVariableValueIsRefused(Object mode) {
+    var refused = unredacted.execute(withVariables(Map.of("mode", mode))).getErrors().getFirst();
+
+    var error = singleError(withVariables(Map.of("mode", mode)));
+
+    assertThat(error.getErrorType()).isEqualTo(ErrorType.ValidationError);
+    assertThat(error.getLocations()).isNotEmpty().isEqualTo(refused.getLocations());
+  }
+
+  @Test
+  @DisplayName(
+      "Should redact at a cost in line with the request's size when a variable's value nests deeply")
+  void shouldRedactAtCostInLineWithRequestSizeWhenVariableValueNestsDeeply() {
+    var mode = nestedList(CODE.repeat(11_000), 150);
+    var size = String.valueOf(mode).length();
+
+    var redactionCost =
+        allocatedAnswering(graphQL, () -> withVariables(Map.of("mode", mode)))
+            - allocatedAnswering(unredacted, () -> withVariables(Map.of("mode", mode)));
+
+    var error = singleError(withVariables(Map.of("mode", mode)));
+    assertThat(error.getMessage()).contains("too long to quote");
+    assertThat(error.toSpecification().toString()).doesNotContain(CODE);
+    // A few megabytes at most for quoting the values the request supplies.
+    assertThat(redactionCost).isLessThan(64L * size + (8L << 20));
+  }
+
   @Test
   @DisplayName("Should answer as before when the document passes validation")
   void shouldAnswerAsBeforeWhenDocumentPassesValidation() {
@@ -237,9 +281,40 @@ class RequestErrorRedactionInstrumentationTest {
             "{ lookUp(input: {id: \"1\", code: %s}) }".formatted(nested(CODE, 200)), "WrongType"));
   }
 
+  // graphql-java's Int reads 1e11, which JSON gives as a Double, as the integer 100000000000.
+  static Stream<Arguments> refusedVariableValues() {
+    return Stream.of(
+        Arguments.of(Map.of("mode", CODE), CODE, "'mode'"),
+        Arguments.of(Map.of("mode", Map.of("code", CODE)), CODE, "'mode'"),
+        Arguments.of(Map.of("mode", nestedList(CODE, 3)), CODE, "'mode'"),
+        Arguments.of(Map.of("mode", CODE.repeat(2_000)), CODE, "too long to quote"),
+        Arguments.of(Map.of("first", 99_999_999_999L), "99999999999", "'first'"),
+        Arguments.of(Map.of("first", 1e11), "100000000000", "'first'"));
+  }
+
+  static Stream<Object> variableValuesRedactedInPlaceOrTooLongToQuote() {
+    return Stream.of(CODE, CODE.repeat(2_000));
+  }
+
   // Each list holds the next, down to the code.
   private static String nested(String code, int depth) {
     return "[".repeat(depth) + "\"" + code + "\"" + "]".repeat(depth);
+  }
+
+  private static Object nestedList(String code, int depth) {
+    Object value = code;
+    for (var level = 0; level < depth; level++) {
+      value = List.of(value);
+    }
+
+    return value;
+  }
+
+  private static ExecutionInput withVariables(Map<String, Object> variables) {
+    return ExecutionInput.newExecutionInput(
+            "query ($first: Int, $mode: Mode) { page(first: $first, mode: $mode) }")
+        .variables(variables)
+        .build();
   }
 
   static Stream<String> unparsableDocuments() {
@@ -267,10 +342,14 @@ class RequestErrorRedactionInstrumentationTest {
 
   // The memory one answer takes, once a first answer has loaded what answering needs.
   private static long allocatedAnswering(GraphQL engine, String document) {
+    return allocatedAnswering(engine, () -> ExecutionInput.newExecutionInput(document).build());
+  }
+
+  private static long allocatedAnswering(GraphQL engine, Supplier<ExecutionInput> input) {
     var threads = (ThreadMXBean) ManagementFactory.getThreadMXBean();
-    engine.execute(document);
+    engine.execute(input.get());
     var before = threads.getCurrentThreadAllocatedBytes();
-    engine.execute(document);
+    engine.execute(input.get());
     return threads.getCurrentThreadAllocatedBytes() - before;
   }
 

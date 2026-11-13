@@ -505,6 +505,28 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should keep the code out of the answer when a share status variable holds the code")
+  void shouldKeepCodeOutOfAnswerWhenShareStatusVariableHoldsCode() throws Exception {
+    var code = issuedCode(issue(authTestSupport.accountBearer(host), host.household().getId()));
+
+    var response =
+        executeAllowingErrors(
+            authTestSupport.accountBearer(host),
+            """
+            query ($householdId: ID!, $statuses: [ProfileShareStatus!]) {
+              householdShares(householdId: $householdId, statuses: $statuses) { edges { cursor } }
+            }
+            """,
+            Map.of("householdId", host.household().getId().toString(), "statuses", List.of(code)));
+
+    var error = errors(response);
+    assertThat(error.path("message").asString()).contains("statuses");
+    assertThat(error.path("extensions").path("classification").asString())
+        .isEqualTo("ValidationError");
+    assertThat(response.toString()).doesNotContain(code);
+  }
+
+  @Test
   @DisplayName("Should keep the code out of the answer when a lookup leaves the code unterminated")
   void shouldKeepCodeOutOfAnswerWhenLookupLeavesCodeUnterminated() throws Exception {
     var code = issuedCode(issue(authTestSupport.accountBearer(host), host.household().getId()));
