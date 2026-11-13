@@ -17,6 +17,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -128,11 +129,12 @@ class UnmeasuredCopyListenerTest {
     var alreadyMovingWhileTheRaiseWaited = countOf("already_moving");
     heldRaise.finish();
     meters.awaitCounted("moved");
+    // A second raise would still run on its own thread. Close returns once every raise has ended.
+    listener.close();
 
     assertThat(alreadyMovingWhileTheRaiseWaited).isOne();
     assertThat(countOf("moved")).isOne();
-    // A second raise would have found the scan already moved.
-    assertThat(countOf("unchanged")).isZero();
+    assertThat(heldRaise.raisesOfTheHeldFile).hasValue(1);
   }
 
   @Test
@@ -325,6 +327,7 @@ class UnmeasuredCopyListenerTest {
     private final CountDownLatch started = new CountDownLatch(1);
     private final CountDownLatch finish = new CountDownLatch(1);
     private final CountDownLatch raisedAnotherFile = new CountDownLatch(1);
+    private final AtomicInteger raisesOfTheHeldFile = new AtomicInteger();
 
     private HeldRaise(UUID heldFile) {
       this.heldFile = heldFile;
@@ -333,6 +336,7 @@ class UnmeasuredCopyListenerTest {
     @Override
     public boolean tryRaisePriority(UUID file, BitrateScanPriority priority) {
       if (file.equals(heldFile)) {
+        raisesOfTheHeldFile.incrementAndGet();
         started.countDown();
         awaitLatch(finish);
         return raiseWaitingScan(file, priority);
