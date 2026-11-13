@@ -84,8 +84,8 @@ class CiPipelineWorkflowTest {
     "integration, -Dci.integration.shard=1",
     "integration, -Dci.integration.shard=2"
   })
-  @DisplayName("Should select complementary Maven profiles for parallel application jobs")
-  void shouldSelectComplementaryMavenProfilesForParallelApplicationJobs(
+  @DisplayName("Should select complementary Maven profiles when application jobs run in parallel")
+  void shouldSelectComplementaryMavenProfilesWhenApplicationJobsRunInParallel(
       String suite, String shardArgument) throws Exception {
     var arguments = buildAndTestMavenArguments(suite, shardArgument);
 
