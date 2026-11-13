@@ -70,7 +70,8 @@ class CiPipelineWorkflowTest {
             "--batch-mode",
             "verify",
             "-Pci-" + suite,
-            "-Dcheckstyle.skip=" + suite.equals("integration"));
+            "-Dcheckstyle.skip=" + suite.equals("integration"),
+            "-Dspotless.check.skip=" + suite.equals("integration"));
     var factory = DocumentBuilderFactory.newInstance();
     factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
     var pom = factory.newDocumentBuilder().parse(Path.of("pom.xml").toFile());

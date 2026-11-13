@@ -121,6 +121,7 @@ jobs:
         run: >-
           ./mvnw --batch-mode verify -Pci-${{ matrix.suite }}
           -Dcheckstyle.skip=${{ matrix.suite == 'integration' }}
+          -Dspotless.check.skip=${{ matrix.suite == 'integration' }}
 
       - name: Fingerprint compiled classes
         run: python3 .github/actions/coverage.py fingerprint ${{ matrix.suite }}
