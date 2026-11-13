@@ -16,6 +16,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
@@ -52,6 +53,7 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -99,6 +101,9 @@ class TranscodeDecisionServiceTest {
   // EXTINF duration (ADR 0037). Over 64 s, twice 8,388,608 bit/s comes to 134,217,728 bytes, the
   // 128 MiB segment cap.
   private static final long BITRATE_AT_THE_SEGMENT_CAP = 8_388_608L;
+
+  // 74 s at 8,388,608 bit/s.
+  private static final long FILE_BYTES_AT_THE_SEGMENT_CAP = 77_594_624L;
 
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
@@ -701,6 +706,53 @@ class TranscodeDecisionServiceTest {
     var decision = decideForAnH264Client(source);
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  // The probe knows neither the copied video's bitrate nor the container bitrate, so the file's
+  // size over its 74 s duration stands in for the container bitrate. One byte over 77,594,624
+  // bytes rounds that rate up to 8,388,609 bit/s.
+  @Test
+  @DisplayName(
+      "Should encode the video from the start when the probe knows no bitrate and the file's size"
+          + " puts a segment's estimate over the segment cap")
+  void
+      shouldEncodeTheVideoFromTheStartWhenTheProbeKnowsNoBitrateAndTheFilesSizePutsAnEstimateOverTheSegmentCap() {
+    var source =
+        unmeasuredSourceWithA64SecondSegment(null)
+            .bitrate(0)
+            .sourceSnapshot(Optional.of(snapshotOf(FILE_BYTES_AT_THE_SEGMENT_CAP + 1)))
+            .build();
+
+    var decision = decideForAnH264Client(source);
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(
+            meterRegistry
+                .counter(STREAM_COPY_REFUSALS, "reason", "estimate_exceeds_segment_cap")
+                .count())
+        .isEqualTo(1.0);
+  }
+
+  // 77,594,624 bytes over 74 s is 8,388,608 bit/s, at which the 64 s segment's estimate equals the
+  // segment cap.
+  @Test
+  @DisplayName(
+      "Should copy the video when the probe knows no bitrate and the file's size puts a segment's"
+          + " estimate at the segment cap")
+  void shouldCopyTheVideoWhenTheProbeKnowsNoBitrateAndTheFilesSizePutsAnEstimateAtTheSegmentCap() {
+    var source =
+        unmeasuredSourceWithA64SecondSegment(null)
+            .bitrate(0)
+            .sourceSnapshot(Optional.of(snapshotOf(FILE_BYTES_AT_THE_SEGMENT_CAP)))
+            .build();
+
+    var decision = decideForAnH264Client(source);
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  private static SourceFileSnapshot snapshotOf(long size) {
+    return new SourceFileSnapshot(size, Instant.EPOCH);
   }
 
   /**
