@@ -63,8 +63,7 @@ import org.springframework.test.context.TestPropertySource;
 @TestPropertySource(
     properties = {
       // HikariCP replaces a timeout below 250 ms with its 30 s default.
-      "spring.datasource.hikari.connection-timeout=1000",
-      "tmdb.api.requests-per-second=10000"
+      "spring.datasource.hikari.connection-timeout=1000"
     })
 class LargeMovieLibraryScanIT extends AbstractScanningIntegrationTest {
 

@@ -7,12 +7,12 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 
 import com.github.mizosoft.methanol.HttpCache;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.exceptions.ImageDownloadException;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
+import com.streamarr.server.services.metadata.tmdb.TmdbSearchResult;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.support.BoundedTask;
@@ -27,10 +27,12 @@ import java.net.http.HttpTimeoutException;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -48,8 +50,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
   private static final int DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 
   @DynamicPropertySource
-  static void configureRateLimitAndTimeout(DynamicPropertyRegistry registry) {
-    registry.add("tmdb.api.requests-per-second", () -> "1000");
+  static void configureRequestTimeout(DynamicPropertyRegistry registry) {
     registry.add("tmdb.api.request-timeout-seconds", () -> "2");
   }
 
@@ -1023,72 +1024,81 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should complete concurrent requests when intermittently rate limited")
   void shouldCompleteConcurrentRequestsWhenIntermittentlyRateLimited() throws Exception {
-    var rateLimitStub =
-        wireMock.stubFor(
-            get(urlPathEqualTo("/search/movie"))
-                .atPriority(1)
-                .willReturn(
-                    aResponse()
-                        .withStatus(429)
-                        .withHeader("Retry-After", "1")
-                        .withHeader("Content-Type", "application/json")
-                        .withBody(
-                            """
+    var titles = IntStream.rangeClosed(1, 20).mapToObj(caller -> "Caller " + caller).toList();
+    titles.forEach(this::stubSearchRateLimitedOnce);
+
+    var futures = new ArrayList<Future<TmdbSearchResults>>();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (var title : titles) {
+        var parserResult = VideoFileParserResult.builder().title(title).build();
+        futures.add(executor.submit(() -> service.searchForMovie(parserResult)));
+      }
+    }
+
+    var servedStatuses =
+        wireMock.getAllServeEvents().stream()
+            .map(event -> event.getResponse().getStatus())
+            .toList();
+    assertThat(Collections.frequency(servedStatuses, 429))
+        .as("every caller is rate limited once before it is answered")
+        .isEqualTo(titles.size());
+    for (var caller = 0; caller < titles.size(); caller++) {
+      assertThat(futures.get(caller).get().getResults())
+          .extracting(TmdbSearchResult::getTitle)
+          .containsExactly(titles.get(caller));
+    }
+  }
+
+  // A scenario per title rate limits every concurrent caller exactly once, whatever the order in
+  // which their requests arrive.
+  private void stubSearchRateLimitedOnce(String title) {
+    var scenario = "Rate limited " + title;
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .withQueryParam("query", equalTo(title))
+            .inScenario(scenario)
+            .whenScenarioStateIs(STARTED)
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
                         {"status_message":"Your request count is over the allowed limit.","status_code":25}
-                        """)));
+                        """))
+            .willSetStateTo("Recovered"));
 
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
-            .atPriority(10)
+            .withQueryParam("query", equalTo(title))
+            .inScenario(scenario)
+            .whenScenarioStateIs("Recovered")
             .willReturn(
                 aResponse()
                     .withStatus(200)
                     .withHeader("Content-Type", "application/json")
                     .withBody(
                         """
-                    {
-                      "page": 1,
-                      "results": [
                         {
-                          "id": 1,
-                          "title": "Recovered",
-                          "adult": false,
-                          "popularity": 1.0,
-                          "vote_count": 0,
-                          "vote_average": 0,
-                          "video": false
+                          "page": 1,
+                          "results": [
+                            {
+                              "id": 1,
+                              "title": "%s",
+                              "adult": false,
+                              "popularity": 1.0,
+                              "vote_count": 0,
+                              "vote_average": 0,
+                              "video": false
+                            }
+                          ],
+                          "total_results": 1,
+                          "total_pages": 1
                         }
-                      ],
-                      "total_results": 1,
-                      "total_pages": 1
-                    }
-                    """)));
-
-    var futures = new ArrayList<Future<TmdbSearchResults>>();
-
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < 20; i++) {
-        futures.add(
-            executor.submit(
-                () -> {
-                  var parserResult =
-                      VideoFileParserResult.builder().title("Test").year("2020").build();
-                  return service.searchForMovie(parserResult);
-                }));
-      }
-
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(() -> assertThat(wireMock.getServeEvents().getRequests()).isNotEmpty());
-
-      wireMock.removeStubMapping(rateLimitStub);
-    }
-
-    for (var future : futures) {
-      var results = future.get();
-      assertThat(results.getResults()).hasSize(1);
-      assertThat(results.getResults().getFirst().getTitle()).isEqualTo("Recovered");
-    }
+                        """
+                            .formatted(title))));
   }
 
   @Test
