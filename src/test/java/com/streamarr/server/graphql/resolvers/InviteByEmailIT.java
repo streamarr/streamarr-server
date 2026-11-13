@@ -190,6 +190,20 @@ class InviteByEmailIT extends AbstractIntegrationTest {
     assertThat(forAddress).isEqualTo(forNobody);
   }
 
+  @ParameterizedTest
+  @EnumSource(Invitee.class)
+  @DisplayName(
+      "Should replace an invitation in as many statements as for an address nobody has when the"
+          + " address is any other")
+  void shouldReplaceAnInvitationInAsManyStatementsAsForAnAddressNobodyHasWhenTheAddressIsAnyOther(
+      Invitee invitee) throws Exception {
+    var forNobody =
+        statementCount.statementsWhile(() -> invitedOnce(Invitee.NO_ACCOUNT), this::invite);
+    var forAddress = statementCount.statementsWhile(() -> invitedOnce(invitee), this::invite);
+
+    assertThat(forAddress).isEqualTo(forNobody);
+  }
+
   @Test
   @DisplayName(
       "Should replace the pending invitation when the same address is invited again in another"
@@ -403,6 +417,13 @@ class InviteByEmailIT extends AbstractIntegrationTest {
   private String uninvited(Invitee invitee) {
     invitationRepository.deleteAll();
     return addressOf(invitee);
+  }
+
+  /** An address of the invitee's kind, while the one stored invitation asks it to manage Alex. */
+  private String invitedOnce(Invitee invitee) throws Exception {
+    var address = uninvited(invitee);
+    assertThat(invite(address).at(invitationPath("status")).asString()).isEqualTo("PENDING");
+    return address;
   }
 
   private TestIdentity holderOf(String address) {
