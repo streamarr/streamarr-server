@@ -76,7 +76,9 @@ class MetricExportWithSdkExporterIT extends AbstractObservabilityProfileIntegrat
     productionSpeed.record(2.5);
     var beforeRemoval =
         exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position());
-    assertThat(workersOf(beforeRemoval)).contains(worker);
+    assertThat(workersOf(beforeRemoval))
+        .as("workers of the production speed meter in the export collected before its removal")
+        .contains(worker);
 
     meterRegistry.remove(productionSpeed);
     var removalPosition = COLLECTOR.metricExports().position();
