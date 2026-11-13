@@ -123,12 +123,32 @@ jobs:
           distribution: 'zulu'
           cache: maven
 
+      # The Prometheus Compose test checks that the Compose file's Prometheus stores the server's
+      # export. Pull requests that change none of its inputs leave it out; main always runs it.
+      - name: Detect changes to the Prometheus Compose test's inputs
+        id: prometheus_compose_inputs
+        if: matrix.suite == 'integration' && github.ref != 'refs/heads/main'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            changed:
+              - '.github/workflows/ci.yml'
+              - 'docker-compose.yml'
+              - 'pom.xml'
+              - 'src/main/resources/application*.yml'
+              - 'src/test/resources/application*.yml'
+              - 'src/main/java/com/streamarr/server/config/observability/**'
+              - 'src/main/java/com/streamarr/server/services/library/ScanProbesWaiting.java'
+              - 'src/test/java/com/streamarr/server/config/observability/ComposeMetricsExportIT.java'
+              - 'src/test/java/com/streamarr/server/config/observability/ComposeFile.java'
+
       - name: Build and test
         run: >-
           ./mvnw --batch-mode verify -Pci-${{ matrix.suite }}
           -Dcheckstyle.skip=${{ matrix.suite == 'integration' }}
           -Dspotless.check.skip=${{ matrix.suite == 'integration' }}
           ${{ matrix.shard && format('-Dci.integration.shard={0}', matrix.shard) }}
+          ${{ steps.prometheus_compose_inputs.outputs.changed == 'false' && '-Dgroups=!PrometheusComposeTest' || '' }}
 
       - name: Fingerprint compiled classes
         run: python3 .github/actions/coverage.py fingerprint ${{ matrix.suite }} ${{ matrix.shard }}
