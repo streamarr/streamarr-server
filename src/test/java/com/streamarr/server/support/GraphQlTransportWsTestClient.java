@@ -130,6 +130,15 @@ public final class GraphQlTransportWsTestClient implements AutoCloseable {
     send(Map.of("type", "complete", "id", operationId));
   }
 
+  /**
+   * Pings the server and waits for its {@code pong}. The server handles one connection's messages
+   * one at a time, in order, so the pong shows it has finished handling every message sent before.
+   */
+  public void awaitSentMessagesHandled() {
+    send(Map.of("type", "ping"));
+    assertThat(nextMessage().path("type").asString()).isEqualTo("pong");
+  }
+
   /** The next connection-level message, such as {@code connection_ack}, failing after a bound. */
   public JsonNode nextMessage() {
     return poll(listener.connectionMessages);
