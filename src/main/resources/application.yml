@@ -121,7 +121,7 @@ tmdb:
     base-url: ${TMDB_API_BASE_URL:https://api.themoviedb.org/3}
     token: ${TMDB_API_TOKEN:}
     cache-size-mb: ${TMDB_API_CACHE_SIZE_MB:200}
-    requests-per-second: ${TMDB_API_REQUESTS_PER_SECOND:35}
+    requests-per-second: ${TMDB_API_REQUESTS_PER_SECOND:40}
     request-timeout-seconds: ${TMDB_API_REQUEST_TIMEOUT_SECONDS:30}
   health:
     probe-timeout: ${TMDB_HEALTH_PROBE_TIMEOUT:2s}
