@@ -233,7 +233,7 @@ class SessionReaperDiskPressureTest {
         .extracting(StreamSession::getSessionId)
         .containsExactly(idle);
     assertThat(segmentFolder.resolve(expired.toString())).doesNotExist();
-    assertThat(meters.counter("streamarr.streaming.disk_space_read_failures").count()).isEqualTo(1);
+    assertThat(containedFailures("disk_space_read")).isEqualTo(1);
   }
 
   private SessionReaper reaperReading(SegmentFolderSpace space) {
@@ -259,7 +259,11 @@ class SessionReaperDiskPressureTest {
         .extracting(StreamSession::getSessionId)
         .containsExactly(newest);
     assertThat(segmentFolder.resolve(oldest.toString())).doesNotExist();
-    assertThat(meters.counter("streamarr.streaming.retention_read_failures").count()).isEqualTo(1);
+    assertThat(containedFailures("retention_read")).isEqualTo(1);
+  }
+
+  private double containedFailures(String operation) {
+    return meters.counter("streamarr.streaming.contained_failures", "operation", operation).count();
   }
 
   private SessionReaper.SessionReaperBuilder reaperBuilderReading(SegmentFolderSpace space) {

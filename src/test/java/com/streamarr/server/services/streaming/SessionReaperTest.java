@@ -319,7 +319,11 @@ class SessionReaperTest {
 
     assertThat(idle.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
     assertThat(streamingService.accessSession(playbackRequest(old))).isPresent();
-    assertThat(meters.counter("streamarr.streaming.retention_read_failures").count()).isEqualTo(1);
+    assertThat(
+            meters
+                .counter("streamarr.streaming.contained_failures", "operation", "retention_read")
+                .count())
+        .isEqualTo(1);
   }
 
   @Test

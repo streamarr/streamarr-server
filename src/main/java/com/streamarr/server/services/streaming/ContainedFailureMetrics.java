@@ -5,37 +5,32 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.NonNull;
 import org.springframework.stereotype.Component;
 
-/** Counts the failures that streaming catches and carries on from. */
+/**
+ * Counts the failures that streaming catches and carries on from, under one metric name. The {@code
+ * operation} label names the operation that failed.
+ */
 @Component
 public class ContainedFailureMetrics {
 
-  private static final String LEARNED_STREAM_END_STORE_FAILURES =
-      "streamarr.streaming.learned_stream_end_store_failures";
-  private static final String SEGMENT_UPLOAD_DISCARD_FAILURES =
-      "streamarr.streaming.segment_upload_discard_failures";
-  private static final String RETENTION_READ_FAILURES =
-      "streamarr.streaming.retention_read_failures";
-  private static final String DISK_SPACE_READ_FAILURES =
-      "streamarr.streaming.disk_space_read_failures";
+  private static final String CONTAINED_FAILURES = "streamarr.streaming.contained_failures";
 
-  private final MeterRegistry meterRegistry;
   private final Counter learnedStreamEndStoreFailures;
   private final Counter segmentUploadDiscardFailures;
+  private final Counter retentionReadFailures;
+  private final Counter diskSpaceReadFailures;
 
   public ContainedFailureMetrics(@NonNull MeterRegistry meterRegistry) {
-    this.meterRegistry = meterRegistry;
-    learnedStreamEndStoreFailures =
-        Counter.builder(LEARNED_STREAM_END_STORE_FAILURES)
-            .description(
-                "Stream end times that a completed job attempt reported but the database did not"
-                    + " store")
-            .register(meterRegistry);
-    segmentUploadDiscardFailures =
-        Counter.builder(SEGMENT_UPLOAD_DISCARD_FAILURES)
-            .description(
-                "Ended segment uploads whose temporary file could not be deleted from the segment"
-                    + " folder")
-            .register(meterRegistry);
+    learnedStreamEndStoreFailures = failuresOf("learned_stream_end_store", meterRegistry);
+    segmentUploadDiscardFailures = failuresOf("segment_upload_discard", meterRegistry);
+    retentionReadFailures = failuresOf("retention_read", meterRegistry);
+    diskSpaceReadFailures = failuresOf("disk_space_read", meterRegistry);
+  }
+
+  private static Counter failuresOf(String operation, MeterRegistry meterRegistry) {
+    return Counter.builder(CONTAINED_FAILURES)
+        .description("Failures that streaming caught and carried on from, by the failed operation")
+        .tag("operation", operation)
+        .register(meterRegistry);
   }
 
   /** The database did not store a stream end time that a completed job attempt reported. */
@@ -50,11 +45,11 @@ public class ContainedFailureMetrics {
 
   /** The idle segment retention could not be read. */
   void countRetentionReadFailure() {
-    meterRegistry.counter(RETENTION_READ_FAILURES).increment();
+    retentionReadFailures.increment();
   }
 
   /** The free space of the segment folder could not be read. */
   void countDiskSpaceReadFailure() {
-    meterRegistry.counter(DISK_SPACE_READ_FAILURES).increment();
+    diskSpaceReadFailures.increment();
   }
 }

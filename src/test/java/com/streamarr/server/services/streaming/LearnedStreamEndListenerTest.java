@@ -174,8 +174,7 @@ class LearnedStreamEndListenerTest {
               withoutDatabase.close();
             })
         .doesNotThrowAnyException();
-    assertThat(meterRegistry.get("streamarr.streaming.learned_stream_end_store_failures").counter())
-        .satisfies(failures -> assertThat(failures.count()).isEqualTo(1));
+    assertThat(storeFailures()).isEqualTo(1);
   }
 
   @Test
@@ -442,7 +441,9 @@ class LearnedStreamEndListenerTest {
   }
 
   private double storeFailures() {
-    return meterRegistry.counter("streamarr.streaming.learned_stream_end_store_failures").count();
+    return meterRegistry
+        .counter("streamarr.streaming.contained_failures", "operation", "learned_stream_end_store")
+        .count();
   }
 
   private static SourceFileSnapshot snapshotOf(Path file) throws IOException {
