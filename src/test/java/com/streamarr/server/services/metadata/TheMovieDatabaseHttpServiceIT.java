@@ -48,8 +48,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
   private static final int DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 
   @DynamicPropertySource
-  static void configureRateLimitAndTimeout(DynamicPropertyRegistry registry) {
-    registry.add("tmdb.api.requests-per-second", () -> "1000");
+  static void configureRequestTimeout(DynamicPropertyRegistry registry) {
     registry.add("tmdb.api.request-timeout-seconds", () -> "2");
   }
 
