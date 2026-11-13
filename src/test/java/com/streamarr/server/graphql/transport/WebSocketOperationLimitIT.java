@@ -80,7 +80,7 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
       activeSubscriptions.awaitCount(STATUS_FIELD, MAX_OPERATIONS_PER_CONNECTION - 1);
       socket.subscribe("replacement", STATUS_SUBSCRIPTION);
 
-      activeSubscriptions.awaitCount(STATUS_FIELD, MAX_OPERATIONS_PER_CONNECTION);
+      assertActiveOperationsReach(MAX_OPERATIONS_PER_CONNECTION);
     }
   }
 
@@ -93,7 +93,7 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
       activeSubscriptions.awaitCount(STATUS_FIELD, 2);
     }
 
-    activeSubscriptions.awaitCount(STATUS_FIELD, 0);
+    assertActiveOperationsReach(0);
   }
 
   @Test
@@ -105,8 +105,12 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
 
       fresh.subscribe("status", STATUS_SUBSCRIPTION);
 
-      activeSubscriptions.awaitCount(STATUS_FIELD, MAX_OPERATIONS_PER_CONNECTION + 1);
+      assertActiveOperationsReach(MAX_OPERATIONS_PER_CONNECTION + 1);
     }
+  }
+
+  private void assertActiveOperationsReach(int expected) {
+    activeSubscriptions.awaitCount(STATUS_FIELD, expected);
   }
 
   private void subscribeUpToLimit(GraphQlTransportWsTestClient socket) {
