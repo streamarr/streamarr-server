@@ -8001,6 +8001,53 @@ class HlsStreamingServiceTest {
 
   @Test
   @DisplayName(
+      "Should stop another stream session's left variant to replace the dead job attempt of the"
+          + " running variant that a playlist served again keeps when a new viewer asks for its"
+          + " initialization segment again")
+  void shouldStopAnotherSessionsLeftVariantToReplaceTheKeptVariantWhenANewViewerRetriesItsInit()
+      throws Exception {
+    // The workers have 3 job slots, and the transcode limit of 10 leaves a place for every job
+    // attempt. Creation starts the first-listed 480p. Before any media segment, the player asks
+    // for 360p's initialization segment, which starts 360p. The playlist served again lists only
+    // 360p and starts nothing, as 360p runs. 360p's job attempt then ends before writing that
+    // segment. Another stream session takes both free slots: its player plays 480p, then switches
+    // to 1080p and keeps 480p as its left variant. That stream session's client reached the
+    // server over the local network, so the budget leaves its playlist whole.
+    service =
+        serviceWith(
+            transcodeExecutor,
+            runtimeRegistry,
+            streamingPropertiesBuilder().maxConcurrentTranscodes(10).build());
+    transcodeExecutor.limitJobSlots(3);
+    createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    var session = createEncodeSession();
+    var sessionId = session.getSessionId();
+    producerLifecycle.prepareRequestedVariant(sessionId, "360p", "360p/init.mp4");
+    setInternetUploadMegabitsPerSecond(8);
+    assertThat(listedVariants(session)).first().isEqualTo("360p/stream.m3u8?t=t");
+    transcodeExecutor.markDead(sessionId, "360p");
+    var switchingId =
+        accepted(
+                service.createSession(
+                    createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                        .networkRoute(NetworkRoute.LOCAL_NETWORK)
+                        .build()))
+            .getSessionId();
+    var switched = switchFrom480pTo1080pKeeping480pAsTheLeftVariant(switchingId);
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+    storeFirstSegmentsAsEachLadderVariantStarts();
+
+    var delivery = coordinator.deliver(sessionId, "360p", "360p/init.mp4");
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(transcodeExecutor.isRunning(switchingId, "480p")).isFalse();
+    assertThat(transcodeExecutor.isRunning(switchingId, "1080p")).isTrue();
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  @Test
+  @DisplayName(
       "Should start the variant whose initialization segment the player requests in the place of"
           + " the variant that a playlist served again started")
   void shouldStartTheRequestedInitializationVariantInThePlaceOfARefetchedPlaylistsVariant() {

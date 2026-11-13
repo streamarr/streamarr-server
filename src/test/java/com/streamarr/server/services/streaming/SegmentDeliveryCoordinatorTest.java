@@ -2492,6 +2492,35 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName(
+      "Should stop another stream session's left variant to replace the dead job attempt of the running variant that a served playlist keeps when a new viewer's initialization request finds no free worker job slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToReplaceTheDeadJobAttemptOfTheRunningVariantThatAServedPlaylistKeepsWhenANewViewersInitializationRequestFindsNoFreeWorkerJobSlot()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(4);
+    var switching = switchingLadderSession();
+    var newViewer = sessionStartedForItsPlayerAt("480p");
+    var newViewerId = newViewer.getSessionId();
+    // The player's initialization request starts 360p. The upload budget turned on after
+    // creation, so the served playlist leads with 360p and keeps it running.
+    lifecycle.prepareRequestedVariant(newViewerId, "360p", "360p/init.mp4");
+    assertThat(lifecycle.startTopListedVariantUnlessOneRuns(newViewer, List.of("360p"))).isTrue();
+    transcodeExecutor.markDead(newViewerId, "360p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(newViewerId, "360p", "360p/init.mp4");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(newViewer)).containsExactlyInAnyOrder("480p", "360p");
+    upload(newViewerId, "360p/init.mp4", new byte[] {0x66});
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
       "Should keep another stream session's left variant when an initialization request replaces the started variant after the player's first media-segment request")
   void
       shouldKeepAnotherStreamSessionsLeftVariantWhenAnInitializationRequestReplacesTheStartedVariantAfterThePlayersFirstMediaSegmentRequest()

@@ -95,8 +95,9 @@ public class ProducerLifecycleService {
       new ConcurrentHashMap<>();
   // The variant that each stream session started for its player: the first-listed variant, or the
   // top variant that stays when the upload budget leaves it out, whether creation or a served
-  // playlist started it. Until the player's first media-segment request, any request of it may stop
-  // another stream session's left variant (ADR 0019).
+  // playlist started it. A running variant that a served playlist keeps counts as started by that
+  // playlist. Until the player's first media-segment request, any request of it may stop another
+  // stream session's left variant (ADR 0019).
   private final ConcurrentHashMap<UUID, String> variantsStartedForTheirPlayer =
       new ConcurrentHashMap<>();
   private final TranscodeLimit transcodeLimit = new TranscodeLimit();
@@ -868,15 +869,16 @@ public class ProducerLifecycleService {
   }
 
   // A listed variant that runs while the player plays a variant that the playlist leaves out, as
-  // one that an initialization request started does, holds the playlist's place like a variant
-  // that the playlist started.
+  // one that an initialization request started does, counts as the variant that the playlist
+  // started (ADR 0050). It holds the playlist's place, and it is the variant that the stream
+  // session started for its player (ADR 0019).
   private void keepForThePlaylist(UUID sessionId, String runningVariant, List<String> listed) {
     var played = playingVariants.get(sessionId);
     if (played != null && listed.contains(played)) {
       return;
     }
 
-    variantsStartedForTheirPlaylist.put(sessionId, runningVariant);
+    treatAsStartedByThePlaylist(sessionId, runningVariant);
   }
 
   private boolean startedForThePlaylist(StreamSession session, String variantLabel) {
