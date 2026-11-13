@@ -136,6 +136,7 @@ class IntegrationTestShardFilterTest {
       var filters = everyShardOf(2);
 
       assertThat(filters)
+          .hasSize(2)
           .allSatisfy(
               filter ->
                   assertThatThrownBy(() -> filter.apply(test))
