@@ -34,6 +34,7 @@ import com.streamarr.server.fixtures.PlaybackSessionFixture;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.UploadBudgetFixture;
+import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture.ProbedPackets;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -135,14 +136,16 @@ class HlsVariantSwitchSmokeTest {
           "max_average");
 
   // 854x480 noise at 24 fps keeps the copy's bitrate above the 360p variant's, so Auto lists that
-  // variant beside the copy. The tone lasts as long as the picture, and its last AAC frame ends
-  // after the last picture does.
+  // variant beside the copy. Bars across the top of each picture show its frame number, which a
+  // 360p encode keeps although it loses the noise. The tone lasts as long as the picture, and its
+  // last AAC frame ends after the last picture does.
   private static final List<String> NOISY_480P_PICTURE_AND_TONE =
       List.of(
           "-f",
           "lavfi",
           "-i",
-          "testsrc2=size=854x480:duration=23:rate=24,noise=alls=40:allf=t",
+          "testsrc2=size=854x480:duration=23:rate=24,noise=alls=40:allf=t,"
+              + WorkerContainerFixture.frameNumberBars(),
           "-f",
           "lavfi",
           "-i",
@@ -361,13 +364,18 @@ class HlsVariantSwitchSmokeTest {
   void shouldPresentEverySourceFrameAndAudioPacketOnceWhenAPlayerSwitchesAndEndsOnTheCopy(
       SwitchedSource switched) throws Exception {
     var playback = playSwitching(switched, FROM_THE_COPY);
+    var sourceFrames = sourceFrames(playback.source());
 
     assertSwitchedSegmentsPlayAsTheSource(playback);
     assertThat(presentedFrames(playback.played()))
         .as(
             "the video frames that the player presents across its switches at 10 and 20 s: every"
                 + " source frame once, and none after the copy's last")
-        .containsExactlyElementsOf(sourceFrames(playback.source()));
+        .containsExactlyElementsOf(sourceFrames);
+    assertThat(playback.played())
+        .flatExtracting(ReadMedia::frameNumbers)
+        .as("the source picture that each of those frames shows: every source picture once")
+        .containsExactlyElementsOf(sourceFrames);
     assertEverySourceAudioPacketPlaysOnce(playback);
   }
 
@@ -393,9 +401,9 @@ class HlsVariantSwitchSmokeTest {
     var heldFrames = framesFrom(sourceFrames.size(), playback.advertisedEnd());
 
     // The source's noise differs in every picture, and a held frame shows the last picture again.
-    // The encode is lossy, so the repeated picture still changes a little: against the pinned
-    // worker, by about a twelfth of the smallest change between two source pictures of the last
-    // segment, in 8-bit H.264 and in 10-bit H.265.
+    // The encode is lossy, so the repeated picture still changes a little. Against the pinned
+    // worker, a held frame changed by 0.01 where the smallest change between two source pictures of
+    // the last segment was 4.7 (8-bit H.264), and by 0.30 where it was 21.6 (10-bit H.265).
     var lastPictureChanges =
         workerFixture.worker().lumaChangeFromPreviousFrame(playback.played().getLast().path());
     var firstHeld = lastPictureChanges.size() - heldFrames.size();
@@ -410,6 +418,13 @@ class HlsVariantSwitchSmokeTest {
             "the video frames that the player presents across its switches at 10 and 20 s: every"
                 + " source frame once, then the frames that the encoded last segment holds")
         .containsExactlyElementsOf(concat(sourceFrames, heldFrames));
+    assertThat(playback.played())
+        .flatExtracting(ReadMedia::frameNumbers)
+        .as(
+            "the source picture that each of those frames shows: every source picture once, then"
+                + " the last source picture in each held frame")
+        .containsExactlyElementsOf(
+            concat(sourceFrames, Collections.nCopies(heldFrames.size(), sourceFrames.getLast())));
     assertThat(lastPictureChanges.subList(firstHeld, lastPictureChanges.size()))
         .as(
             "each held frame repeats the picture before it, where the smallest change between two"
@@ -431,14 +446,19 @@ class HlsVariantSwitchSmokeTest {
 
   // What every switching player sees before its frames, whichever variant it ends on. The copy and
   // the encode stay in the copy's codec family (ADR 0050), and each played segment opens on a
-  // keyframe and signals the source's range and bit depth. The audio is checked after the frames,
-  // whose failure names the frame numbers that a switch lost or repeated.
+  // keyframe and signals the source's range and bit depth. Each source picture shows its own frame
+  // number, so the numbers that the played pictures show name the source pictures. The audio is
+  // checked after the frames, whose failure names the frame numbers that a switch lost or
+  // repeated.
   private static void assertSwitchedSegmentsPlayAsTheSource(SwitchingPlayback playback) {
     var source = playback.source();
     var copied = playback.playlists().get(Variant.COPIED);
     var encoded = playback.playlists().get(Variant.ENCODED);
     var played = playback.played();
 
+    assertThat(source.frameNumbers())
+        .as("the frame number that each source picture shows, in presentation order")
+        .containsExactlyElementsOf(sourceFrames(source));
     assertThat(
             playback
                 .session()
@@ -701,16 +721,17 @@ class HlsVariantSwitchSmokeTest {
   }
 
   // What a player decodes from one file, read once with the worker image's FFmpeg: the hash of
-  // each picture, the file's codecs and packets, and how its first frame signals its range and bit
-  // depth. A copy can repackage a keyframe's sample, as the worker's Annex B filter does for H.265
-  // from Matroska, so the pictures are compared and not the video packets. Decoding is exact, and
-  // the noise makes every picture differ.
+  // each picture and the frame number that it shows, the file's codecs and packets, and how its
+  // first frame signals its range and bit depth. A copy can repackage a keyframe's sample, as the
+  // worker's Annex B filter does for H.265 from Matroska, so the pictures are compared and not the
+  // video packets. Decoding is exact, and the noise makes every picture differ.
   private ReadMedia read(Path media) throws Exception {
     var worker = workerFixture.worker();
     var firstFrame = worker.firstVideoFrame(media);
     return ReadMedia.builder()
         .path(media)
         .pictures(worker.decodedVideoFrameHashes(media))
+        .frameNumbers(worker.decodedFrameNumbers(media))
         .packets(worker.probedPackets(media))
         .rangeSignalling(
             RANGE_SIGNALLING.stream()
@@ -777,6 +798,7 @@ class HlsVariantSwitchSmokeTest {
   private record ReadMedia(
       Path path,
       List<String> pictures,
+      List<Long> frameNumbers,
       ProbedPackets packets,
       Map<String, String> rangeSignalling) {
 

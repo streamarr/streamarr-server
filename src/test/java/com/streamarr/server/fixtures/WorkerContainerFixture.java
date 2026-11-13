@@ -1,6 +1,7 @@
 package com.streamarr.server.fixtures;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +36,14 @@ public final class WorkerContainerFixture implements AutoCloseable {
   // The frame metadata key that FFmpeg's signalstats filter writes.
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   private static final String LUMA_CHANGE = "lavfi.signalstats.YDIF";
+
+  // A picture's frame number in binary, least significant bit on the left, as bars across the top
+  // eighth of the picture: a white bar is 1 and a black bar is 0. The reader averages the upper
+  // half of each bar to one luma sample. Scaling and lossy encoding leave that average far from the
+  // middle grey.
+  private static final int FRAME_NUMBER_BARS = 10;
+  private static final int MIDDLE_GREY = 128;
+  private static final int SMALLEST_DISTANCE_FROM_GREY = 64;
 
   private final WorkerSessionServer workerSessions;
   private final UUID sourceNamespaceId;
@@ -494,6 +504,76 @@ public final class WorkerContainerFixture implements AutoCloseable {
         .filter(line -> !line.isBlank() && !line.startsWith("#"))
         .map(line -> line.substring(line.lastIndexOf(',') + 1).trim())
         .toList();
+  }
+
+  /**
+   * A filter chain that draws each picture's frame number, counted from 0 and below 1024, as black
+   * and white bars across the top eighth of the picture. Append it to the filter graph of a
+   * generated source, and read the numbers back with {@link #decodedFrameNumbers}.
+   */
+  public static String frameNumberBars() {
+    var bars = new StringBuilder("drawbox=x=0:y=0:w=iw:h=ih/8:color=black:t=fill");
+    for (var bit = 0; bit < FRAME_NUMBER_BARS; bit++) {
+      bars.append(
+          ",drawbox=x=%d*iw/%d:y=0:w=iw/%d:h=ih/8:color=white:t=fill:enable='mod(floor(n/%d),2)'"
+              .formatted(bit, FRAME_NUMBER_BARS, FRAME_NUMBER_BARS, 1 << bit));
+    }
+
+    return bars.toString();
+  }
+
+  /**
+   * The frame number that each picture decoded from the media's first video stream shows in its
+   * {@link #frameNumberBars}, in presentation order. Each bar must read as clearly black or white.
+   */
+  public List<Long> decodedFrameNumbers(Path media) throws Exception {
+    var input = "/tmp/numbers-" + UUID.randomUUID() + ".mp4";
+    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
+    var decode =
+        container.execInContainer(
+            "/cnb/lifecycle/launcher",
+            "ffmpeg",
+            "-v",
+            "error",
+            "-xerror",
+            "-i",
+            input,
+            "-map",
+            "0:v:0",
+            "-vf",
+            "format=gray,crop=iw:ih/16:0:0,scale=%d:1:flags=area".formatted(FRAME_NUMBER_BARS),
+            "-fps_mode",
+            "passthrough",
+            "-f",
+            "rawvideo",
+            input + ".bars");
+    assertThat(decode.getExitCode()).as("Decode video: %s", decode.getStderr()).isZero();
+    var bars = Files.createTempFile("frame-number-bars", ".gray");
+    try {
+      container.copyFileFromContainer(input + ".bars", bars.toString());
+      var levels = Files.readAllBytes(bars);
+      assertThat(levels.length % FRAME_NUMBER_BARS).as("the bars of each picture").isZero();
+      return IntStream.range(0, levels.length / FRAME_NUMBER_BARS)
+          .mapToObj(picture -> frameNumberOf(levels, picture))
+          .toList();
+    } finally {
+      Files.deleteIfExists(bars);
+    }
+  }
+
+  private static long frameNumberOf(byte[] levels, int picture) {
+    var number = 0L;
+    for (var bit = 0; bit < FRAME_NUMBER_BARS; bit++) {
+      var level = Byte.toUnsignedInt(levels[picture * FRAME_NUMBER_BARS + bit]);
+      assertThat(level)
+          .as("the luma of bar %d of picture %d, black or white", bit, picture)
+          .isNotCloseTo(MIDDLE_GREY, within(SMALLEST_DISTANCE_FROM_GREY));
+      if (level > MIDDLE_GREY) {
+        number |= 1L << bit;
+      }
+    }
+
+    return number;
   }
 
   /**
