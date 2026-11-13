@@ -197,15 +197,23 @@ class CiCoverageWorkflowTest {
     assertThat(result.exitCode()).as(result.output()).isNotZero();
   }
 
-  @Test
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "",
+        "<ci.integration.shards/>",
+        "<ci.integration.shards>0</ci.integration.shards>",
+        "<ci.integration.shards>two</ci.integration.shards>"
+      })
   @DisplayName("Should reject coverage inputs when the build names no integration shards")
-  void shouldRejectCoverageInputsWhenTheBuildNamesNoIntegrationShards() throws Exception {
+  void shouldRejectCoverageInputsWhenTheBuildNamesNoIntegrationShards(String shards)
+      throws Exception {
     coverageInputs();
     var pom = workspace.resolve("pom.xml");
     Files.writeString(
         pom,
         Files.readString(pom)
-            .replaceAll("<ci\\.integration\\.shards>[^<]*+</ci\\.integration\\.shards>", ""));
+            .replaceAll("<ci\\.integration\\.shards>[^<]*+</ci\\.integration\\.shards>", shards));
 
     var result = runStep("Verify complete and compatible coverage inputs");
 
