@@ -140,19 +140,26 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
 
   private static String withoutQuotedValues(
       ValidationError rejected, Map<SourceLocation, List<String>> quotedValues) {
-    // Longest first, so that a value is replaced whole before any value written inside it.
-    var replaced =
+    var quoted =
         rejected.getLocations().stream()
             .flatMap(location -> quotedValues.getOrDefault(location, List.of()).stream())
+            .toList();
+    return withoutQuotes(rejected.getDescription(), quoted);
+  }
+
+  private static String withoutQuotes(String message, List<String> quoted) {
+    // Longest first, so that a value is replaced whole before any value written inside it.
+    var replaced =
+        quoted.stream()
             .distinct()
             .sorted(Comparator.comparingInt(String::length).reversed())
             .toList();
-    var message = rejected.getDescription();
+    var redacted = message;
     for (var quotedValue : replaced) {
-      message = message.replace(quotedValue, REDACTED);
+      redacted = redacted.replace(quotedValue, REDACTED);
     }
 
-    return message;
+    return redacted;
   }
 
   private static String withoutAnyValue(ValidationError rejected) {
@@ -213,10 +220,12 @@ class RequestErrorRedactionInstrumentation extends SimplePerformantInstrumentati
 
       // graphql-java quotes a rejected value as its syntax node, and a scalar's own message may
       // quote its literal text.
-      var quotes =
-          Stream.concat(Stream.of(value.toString()), literal(value))
-              .map(text -> "'" + text + "'")
-              .toList();
+      return quoteEach(Stream.concat(Stream.of(value.toString()), literal(value)), quoted);
+    }
+
+    // Whether the texts, each quoted, still fit within the limit.
+    private boolean quoteEach(Stream<String> texts, List<String> quoted) {
+      var quotes = texts.map(text -> "'" + text + "'").toList();
       left -= quotes.stream().mapToLong(String::length).sum();
       quoted.addAll(quotes);
       return left >= 0;
