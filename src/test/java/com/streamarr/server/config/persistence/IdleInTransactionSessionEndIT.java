@@ -20,7 +20,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Idle In Transaction Session End Integration Tests")
-@SpringBootTest(properties = "DATABASE_IDLE_IN_TRANSACTION_TIMEOUT=2s")
+@SpringBootTest(properties = "DATABASE_IDLE_IN_TRANSACTION_TIMEOUT=1s")
 class IdleInTransactionSessionEndIT extends AbstractIntegrationTest {
 
   // PostgreSQL's SQLSTATE for a session ended by idle_in_transaction_session_timeout.
