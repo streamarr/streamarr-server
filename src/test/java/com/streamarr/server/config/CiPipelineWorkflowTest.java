@@ -273,8 +273,10 @@ class CiPipelineWorkflowTest {
         "src/test/resources/application-test.yml",
         "src/main/java/com/streamarr/server/config/observability/OtlpMetricsEndpointConfiguration.java",
         "src/main/java/com/streamarr/server/services/library/ScanProbesWaiting.java",
+        "src/test/java/com/streamarr/server/AbstractIntegrationTest.java",
         "src/test/java/com/streamarr/server/config/observability/ComposeMetricsExportIT.java",
-        "src/test/java/com/streamarr/server/config/observability/ComposeFile.java"
+        "src/test/java/com/streamarr/server/config/observability/ComposeFile.java",
+        "src/test/java/com/streamarr/server/config/observability/ComposePrometheusQueries.java"
       })
   @DisplayName(
       "Should run the Prometheus Compose test when a pull request changes one of its inputs")
