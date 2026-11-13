@@ -28,6 +28,7 @@ import org.testcontainers.images.builder.Transferable;
 public final class WorkerContainerFixture implements AutoCloseable {
 
   private static final String RMS_LEVEL = "RMS level dB: ";
+  private static final Object HOST_PORT_EXPOSURE = new Object();
 
   private final WorkerSessionServer workerSessions;
   private final UUID sourceNamespaceId;
@@ -77,7 +78,12 @@ public final class WorkerContainerFixture implements AutoCloseable {
             "Select a worker image in worker-image.env, STREAMARR_WORKER_IMAGE or streamarr.worker.image")
         .isNotBlank();
     makeMediaReadable();
-    Testcontainers.exposeHostPorts(workerSessions.port());
+    // Testcontainers marks a port exposed before it starts the SSH container that forwards it. A
+    // worker that starts meanwhile is created without the host name that reaches the server.
+    synchronized (HOST_PORT_EXPOSURE) {
+      Testcontainers.exposeHostPorts(workerSessions.port());
+    }
+
     container =
         new GenericContainer<>(image)
             .withLogConsumer(new Slf4jLogConsumer(log).withPrefix("worker-" + workerId))
