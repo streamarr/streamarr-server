@@ -207,7 +207,8 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
   void shouldFailOnlyTheOversizedProbeAndKeepPlayingWhenAProbeResultExceedsTheSessionMessageLimit()
       throws Exception {
     var directory = mediaDirectory();
-    var playing = worker.generateMedia(directory.resolve("playing.mkv"), longMedia());
+    var clip = worker.generateMedia(directory.resolve("clip.mp4"), shortMedia());
+    var playing = worker.generateMedia(directory.resolve("playing.mkv"), longMedia(clip));
     var oversized = worker.generateMedia(directory.resolve("oversized.mkv"), oversizedMedia());
     var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
     var sessionId = UUID.randomUUID();
@@ -459,6 +460,7 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
 
   private static void awaitSegment(UUID sessionId, int index) {
     await()
+        .alias("the job attempt publishes media segment %d".formatted(index))
         .atMost(Duration.ofSeconds(60))
         .until(
             () ->
@@ -565,13 +567,17 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
         "yuv420p");
   }
 
-  // Thirty minutes, so the job attempt still runs after the oversized probe ends.
-  private static List<String> longMedia() {
+  // Two seconds at 24 fps with a keyframe every second. MP4 keeps each frame's duration exact, so
+  // every repeat of the clip starts on the 24 fps grid. Matroska stores the last frame's duration
+  // in whole milliseconds, and each repeat would start 1 ms early. testsrc names no color
+  // primaries, transfer or matrix, and without them MP4 stores the color range only with
+  // write_colr.
+  private static List<String> shortMedia() {
     return List.of(
         "-f",
         "lavfi",
         "-i",
-        "testsrc=size=320x180:rate=24:duration=1800",
+        "testsrc=size=320x180:rate=24:duration=2",
         "-c:v",
         "libx264",
         "-preset",
@@ -579,7 +585,26 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
         "-pix_fmt",
         "yuv420p",
         "-g",
-        "24");
+        "24",
+        "-movflags",
+        "+write_colr");
+  }
+
+  // Thirty minutes, so the job attempt still runs after the oversized probe ends. Repeating the
+  // clip by stream copy encodes no more frames. MP4 marks its track as the default, which an
+  // encode into Matroska does not.
+  private static List<String> longMedia(Path clip) {
+    return List.of(
+        "-stream_loop",
+        "-1",
+        "-i",
+        worker.containerPath(clip),
+        "-c",
+        "copy",
+        "-t",
+        "1800",
+        "-disposition:v",
+        "0");
   }
 
   private static List<String> oversizedMedia() {

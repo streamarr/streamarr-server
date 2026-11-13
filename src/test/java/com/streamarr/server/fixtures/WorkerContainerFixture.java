@@ -174,6 +174,11 @@ public final class WorkerContainerFixture implements AutoCloseable {
     return target;
   }
 
+  /** The path at which the worker reads {@code media}, a path under the source root. */
+  public String containerPath(Path media) {
+    return "/media/" + sourceRoot.relativize(media);
+  }
+
   public Optional<List<String>> commandFor(UUID attemptId) throws Exception {
     var result =
         container.execInContainer(

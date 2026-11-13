@@ -427,10 +427,11 @@ class HlsEncodedEndSmokeTest {
   }
 
   private Path generateSixChannelSource(int audioSeconds) throws Exception {
+    var tone = sourceRoot.resolve("six-channel-tone.m4a");
     workerFixture
         .worker()
         .generateMedia(
-            sourceRoot.resolve("six-channel-tone.m4a"),
+            tone,
             List.of(
                 "-f",
                 "lavfi",
@@ -456,7 +457,7 @@ class HlsEncodedEndSmokeTest {
                 "-stream_loop",
                 "-1",
                 "-i",
-                "/media/six-channel-tone.m4a",
+                workerFixture.worker().containerPath(tone),
                 "-map",
                 "0:v",
                 "-map",
