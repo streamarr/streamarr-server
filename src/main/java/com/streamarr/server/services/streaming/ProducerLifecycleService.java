@@ -827,13 +827,15 @@ public class ProducerLifecycleService {
   }
 
   /**
-   * Starts the first of the variants that a served multivariant playlist lists, at the stream
-   * session's current segment, unless the job attempt of one of them runs. A listed variant then
-   * holds its place under the transcode limit before the player requests it, and a running one
-   * holds it as a started one does while the player plays a variant left out (ADR 0050). Answers
-   * whether the job attempt of one of the listed variants runs afterward. A first variant whose job
-   * attempt does not run, such as a suspended one, holds no place, and recovery rather than a start
-   * replaces it, so it answers false.
+   * Starts the first of the variants that a served multivariant playlist lists whose hardware
+   * encoder has not failed in this stream session, at the stream session's current segment, unless
+   * the job attempt of one of them runs. A listed variant then holds its place under the transcode
+   * limit before the player requests it, and a running one holds it as a started one does while the
+   * player plays a variant left out (ADR 0050). Answers whether the job attempt of one of the
+   * listed variants runs afterward. A variant whose hardware encoder failed never starts again, as
+   * on demand, so it answers false when every listed variant's failed. When the variant to start
+   * has a job attempt that does not run, such as a suspended one, that job attempt holds no place,
+   * and recovery rather than a start replaces it, so it answers false too.
    */
   public boolean startTopListedVariantUnlessOneRuns(
       StreamSession session, List<String> listedVariants) {
@@ -855,18 +857,26 @@ public class ProducerLifecycleService {
             return true;
           }
 
-          if (current.get().getVariantHandle(listedVariants.getFirst()).isPresent()) {
+          var top = firstWithoutAFailedHardwareEncoder(sessionId, listedVariants);
+          if (top.isEmpty() || current.get().getVariantHandle(top.get()).isPresent()) {
             return false;
           }
 
-          var started = startedForThePlaylist(current.get(), listedVariants.getFirst());
+          var started = startedForThePlaylist(current.get(), top.get());
           if (started) {
-            variantsStartedForTheirPlaylist.put(sessionId, listedVariants.getFirst());
-            variantsStartedForTheirPlayer.put(sessionId, listedVariants.getFirst());
+            variantsStartedForTheirPlaylist.put(sessionId, top.get());
+            variantsStartedForTheirPlayer.put(sessionId, top.get());
           }
 
           return started;
         });
+  }
+
+  private Optional<String> firstWithoutAFailedHardwareEncoder(
+      UUID sessionId, List<String> variants) {
+    return variants.stream()
+        .filter(variant -> !transcodeExecutor.hasHardwareEncoderFailed(sessionId, variant))
+        .findFirst();
   }
 
   // A listed variant that runs while the player plays a variant that the playlist leaves out, as
