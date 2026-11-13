@@ -1041,6 +1041,40 @@ class LowerVariantsInTheCopysRangeTest {
             "360p/stream.m3u8?t=t");
   }
 
+  // ADR 0050: the upload budget never refuses playback, and when the top variant that stays cannot
+  // start, the playlist stays whole. Another playback can take the worker's last job slot after the
+  // budget chose the lower variant to start, while the transcode limit still has a place. The copy
+  // takes no job slot.
+  @Test
+  @DisplayName(
+      "Should start the copy and keep the playlist whole when another start takes the worker's last"
+          + " job slot after the upload budget chose a lower variant")
+  void shouldStartTheCopyAndKeepThePlaylistWholeWhenAnotherStartTakesTheWorkersLastJobSlot() {
+    var interloper = new AtomicReference<Runnable>();
+    var budgeted =
+        budgetedPlayback(
+            budgetedRig().registry(runningAtTheNextStartsOwnLookup(interloper)).build());
+    var firstId = sessionOf(startAPlaybackThatLeavesNoRoomForTheNextCopy(budgeted)).getSessionId();
+    workers.limitJobSlots(1);
+    interloper.set(
+        () -> rig.lifecycle().prepareRequestedVariant(firstId, "720p", "720p/segment0.m4s"));
+
+    var second = accepted(budgeted.playback().start(startAuto(clientThatPlaysEveryRange())));
+
+    var session = sessionOf(second);
+    var playlists = new HlsPlaylistService(PROPERTIES, budgeted.budget());
+    assertThat(interloper.get()).isNull();
+    assertThat(workers.jobSlotRefusals()).isOne();
+    assertThat(rig.lifecycle().freeConfiguredTranscodeSlots()).isPositive();
+    assertThat(workers.isRunning(session.getSessionId(), "default")).isTrue();
+    assertThat(listedUris(playlists.generateMultivariantPlaylist(session, "t")))
+        .containsExactly(
+            "stream.m3u8?t=t",
+            "720p/stream.m3u8?t=t",
+            "480p/stream.m3u8?t=t",
+            "360p/stream.m3u8?t=t");
+  }
+
   // A registry that runs the armed action at its first lookup of the next stream session that it
   // saves. A start looks its stream session up under the session lock, after the upload budget
   // chose the variant to start and before the start reserves a place under the transcode limit.

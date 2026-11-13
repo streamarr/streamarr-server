@@ -15,6 +15,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -246,9 +247,10 @@ public class HlsStreamingService implements StreamingService {
 
   // When the upload budget leaves out the first-listed variant, the top variant that it keeps
   // starts instead, so the stream session holds the transcode place that admission found until the
-  // player reads its playlist (ADR 0050). When another start takes that place after the budget
-  // chose the variant, the stream session starts the first-listed variant, as the budget does when
-  // no variant that stays can start. A copy beside its lower variants needs no place.
+  // player reads its playlist (ADR 0050). When another start takes that place or the worker's last
+  // job slot after the budget chose the variant, the stream session starts the first-listed
+  // variant, as the budget does when no variant that stays can start. A copy beside its lower
+  // variants needs neither.
   private StreamSession startTheTopVariantThatStays(StreamSession session) {
     var top = uploadBudget.topKeptVariant(session);
     var firstListed = session.firstListedVariant();
@@ -258,7 +260,7 @@ public class HlsStreamingService implements StreamingService {
 
     try {
       return producerLifecycle.startListedVariant(session, top);
-    } catch (TranscodeLimitReachedException _) {
+    } catch (TranscodeLimitReachedException | TranscodeException _) {
       return producerLifecycle.startListedVariant(session, firstListed);
     }
   }
