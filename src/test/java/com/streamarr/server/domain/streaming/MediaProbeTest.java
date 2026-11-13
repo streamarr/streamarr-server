@@ -4,15 +4,19 @@ import static com.streamarr.server.fixtures.ProbeFixture.audioStreamBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
@@ -240,6 +244,116 @@ class MediaProbeTest {
             subtitle("mov_text", "eng").index(1).build());
 
     assertThat(probe.startsOnTheFirstAudioTrack()).isTrue();
+  }
+
+  // BT.709 is the matrix of high-definition video and BT.601 that of standard definition. ADR 0013
+  // draws the line at 1280 wide or more than 576 high.
+  @ParameterizedTest(name = "{0}x{1} as {2}")
+  @CsvSource({
+    "1920, 1080, BT709",
+    "1280, 720, BT709",
+    "1280, 536, BT709",
+    "1024, 577, BT709",
+    "1279, 576, BT601",
+    "720, 576, BT601",
+    "720, 480, BT601"
+  })
+  @DisplayName(
+      "Should assume BT.709 when an SDR picture that names no matrix is at least 1280 wide or more"
+          + " than 576 high and BT.601 when it is smaller")
+  void
+      shouldAssumeBt709WhenAnSdrPictureThatNamesNoMatrixIsAtLeast1280WideOrMoreThan576HighAndBt601WhenItIsSmaller(
+          int width, int height, AssumedSourceMatrix expected) {
+    var probe =
+        probeWithoutAMatrix(VideoPlaybackFactsFixture.SDR).width(width).height(height).build();
+
+    assertThat(probe.assumedSourceMatrix()).contains(expected);
+  }
+
+  @Test
+  @DisplayName(
+      "Should assume a matrix by the picture's size when the compatible base of a picture that"
+          + " names no matrix is unspecified")
+  void
+      shouldAssumeAMatrixByThePicturesSizeWhenTheCompatibleBaseOfAPictureThatNamesNoMatrixIsUnspecified() {
+    var probe = probeWithoutAMatrix(VideoDynamicRange.UNSPECIFIED).width(1920).height(1080).build();
+
+    assertThat(probe.assumedSourceMatrix()).contains(AssumedSourceMatrix.BT709);
+  }
+
+  @Test
+  @DisplayName("Should assume no matrix when the video stream names one")
+  void shouldAssumeNoMatrixWhenTheVideoStreamNamesOne() {
+    var probe =
+        probeOf(
+            VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                .videoProperties(
+                    Optional.of(
+                        VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                            .matrixCoefficients(Optional.of(MatrixCoefficients.SMPTE170M))
+                            .build())));
+
+    assertThat(probe.assumedSourceMatrix()).isEmpty();
+  }
+
+  // The size rule holds for SDR pictures only: PQ and HLG use BT.2020, and Dolby Vision without a
+  // compatible base uses no YCbCr matrix.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("rangesThatAreNotSdr")
+  @DisplayName(
+      "Should assume no matrix when the compatible base of a picture that names no matrix is PQ,"
+          + " HLG or none")
+  void shouldAssumeNoMatrixWhenTheCompatibleBaseOfAPictureThatNamesNoMatrixIsPqHlgOrNone(
+      String base, VideoDynamicRange range) {
+    var probe = probeWithoutAMatrix(range).build();
+
+    assertThat(probe.assumedSourceMatrix()).isEmpty();
+  }
+
+  static Stream<Arguments> rangesThatAreNotSdr() {
+    return Stream.of(
+        Arguments.of("PQ", VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.PQ)),
+        Arguments.of("HLG", VideoPlaybackFactsFixture.rangeWithoutEnhancement(CompatibleBase.HLG)),
+        Arguments.of("none", VideoPlaybackFactsFixture.dolbyVisionProfile5()));
+  }
+
+  @Test
+  @DisplayName("Should assume no matrix when the probe stored no color facts of the video stream")
+  void shouldAssumeNoMatrixWhenTheProbeStoredNoColorFactsOfTheVideoStream() {
+    var probe =
+        probeOf(VideoPlaybackFactsFixture.sdrH264FactsBuilder().videoProperties(Optional.empty()));
+
+    assertThat(probe.assumedSourceMatrix()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should assume no matrix when the probe stored no playback facts")
+  void shouldAssumeNoMatrixWhenTheProbeStoredNoPlaybackFacts() {
+    var probe =
+        StreamSessionFixture.defaultProbeBuilder().videoPlaybackFacts(Optional.empty()).build();
+
+    assertThat(probe.assumedSourceMatrix()).isEmpty();
+  }
+
+  // A stream of the given range whose stored color facts name no matrix.
+  private static MediaProbe.MediaProbeBuilder probeWithoutAMatrix(VideoDynamicRange range) {
+    return StreamSessionFixture.defaultProbeBuilder()
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .dynamicRange(range)
+                    .videoProperties(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                                .matrixCoefficients(Optional.empty())
+                                .build()))
+                    .build()));
+  }
+
+  private static MediaProbe probeOf(VideoPlaybackFacts.VideoPlaybackFactsBuilder facts) {
+    return StreamSessionFixture.defaultProbeBuilder()
+        .videoPlaybackFacts(Optional.of(facts.build()))
+        .build();
   }
 
   private static MediaProbe probe(StreamInfo... streams) {

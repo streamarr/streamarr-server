@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPAC
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.streaming.AssumedSourceMatrix;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ChannelLayout;
@@ -40,6 +41,7 @@ import com.streamarr.transcode.v1.DolbyVisionOutput;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
 import com.streamarr.transcode.v1.DolbyVisionSampleEntry;
 import com.streamarr.transcode.v1.MasteringDisplayColorVolume;
+import com.streamarr.transcode.v1.MatrixCoefficients;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoCodecProfile;
@@ -697,6 +699,65 @@ class RemoteVariantJobMapperTest {
         Arguments.of("stored false", propertiesWithPresentationTimes(Optional.of(false)), false),
         Arguments.of("stored no value", propertiesWithPresentationTimes(Optional.empty()), false),
         Arguments.of("probed before version 5", Optional.empty(), false));
+  }
+
+  // ITU-T H.273 gives BT.709 code point 1. BT.601 has code points 5 and 6 with the same matrix, and
+  // the contract names it by code point 6, SMPTE 170M.
+  @ParameterizedTest(name = "{0}")
+  @CsvSource({"BT709, MATRIX_COEFFICIENTS_BT709", "BT601, MATRIX_COEFFICIENTS_SMPTE170M"})
+  @DisplayName("Should send the matrix that the encode assumes when the decision assumes one")
+  void shouldSendTheMatrixThatTheEncodeAssumesWhenTheDecisionAssumesOne(
+      AssumedSourceMatrix assumed, MatrixCoefficients sent) {
+    var request = encodeAttemptAssuming(Optional.of(assumed));
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getAssumedSourceMatrix()).isEqualTo(sent);
+  }
+
+  @Test
+  @DisplayName("Should leave the assumed matrix unspecified when the decision assumes none")
+  void shouldLeaveTheAssumedMatrixUnspecifiedWhenTheDecisionAssumesNone() {
+    var request = encodeAttemptAssuming(Optional.empty());
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getAssumedSourceMatrix())
+        .isEqualTo(MatrixCoefficients.MATRIX_COEFFICIENTS_UNSPECIFIED);
+  }
+
+  // A copy changes no sample, and the worker refuses a copy that names a matrix (ADR 0013). The
+  // copy's decision holds the matrix for the encoded lower variants beside it.
+  @Test
+  @DisplayName("Should leave the assumed matrix unspecified when the job copies the video")
+  void shouldLeaveTheAssumedMatrixUnspecifiedWhenTheJobCopiesTheVideo() {
+    var request =
+        copyAttempt()
+            .transcodeDecision(
+                copyDecisionBuilder()
+                    .assumedSourceMatrix(Optional.of(AssumedSourceMatrix.BT709))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getMode()).isEqualTo(VideoMode.VIDEO_MODE_COPY);
+    assertThat(video.getAssumedSourceMatrix())
+        .isEqualTo(MatrixCoefficients.MATRIX_COEFFICIENTS_UNSPECIFIED);
+  }
+
+  private static TranscodeRequest encodeAttemptAssuming(Optional<AssumedSourceMatrix> assumed) {
+    return encodeAttempt("h264")
+        .transcodeDecision(
+            TranscodeDecision.builder()
+                .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                .videoCodecFamily("h264")
+                .audioDecision(AudioDecision.stereoAac())
+                .subtitleDecision(SubtitleDecision.exclude())
+                .videoSource(Optional.of(VideoPlaybackFactsFixture.sdrH264FactsBuilder().build()))
+                .assumedSourceMatrix(assumed)
+                .build())
+        .build();
   }
 
   @ParameterizedTest

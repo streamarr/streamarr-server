@@ -51,6 +51,11 @@ public record MediaProbe(
   private static final Set<String> IMAGE_SUBTITLE_CODECS =
       Set.of("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle");
 
+  // The smallest high-definition picture is 1280 wide, and the largest standard-definition
+  // picture is 576 high.
+  private static final int HIGH_DEFINITION_WIDTH = 1280;
+  private static final int STANDARD_DEFINITION_HEIGHT = 576;
+
   public MediaProbe {
     if (audioChannels == null) {
       audioChannels = OptionalInt.empty();
@@ -82,6 +87,35 @@ public record MediaProbe(
   public PictureSize displayedSize() {
     var coded = new PictureSize(width, height);
     return videoPlaybackFacts.map(facts -> facts.displayedSize(coded)).orElse(coded);
+  }
+
+  /**
+   * The assumed source matrix of the chosen video stream (ADR 0013): BT.709 when the probed picture
+   * is at least 1280 wide or more than 576 high, else BT.601. Empty when the stream names a matrix,
+   * when the probe stored no color facts, and when the stream's compatible base is PQ, HLG or none.
+   */
+  public Optional<AssumedSourceMatrix> assumedSourceMatrix() {
+    return videoPlaybackFacts
+        .filter(facts -> hasSdrOrUnspecifiedBase(facts.dynamicRange()))
+        .flatMap(VideoPlaybackFacts::videoProperties)
+        .filter(properties -> properties.matrixCoefficients().isEmpty())
+        .map(_ -> matrixOfThePictureSize());
+  }
+
+  // An encode converts only such a source without tone mapping (ADR 0013).
+  private static boolean hasSdrOrUnspecifiedBase(VideoDynamicRange range) {
+    return switch (range.compatibleBase()) {
+      case SDR, UNSPECIFIED -> true;
+      case PQ, HLG, NONE -> false;
+    };
+  }
+
+  private AssumedSourceMatrix matrixOfThePictureSize() {
+    if (width >= HIGH_DEFINITION_WIDTH || height > STANDARD_DEFINITION_HEIGHT) {
+      return AssumedSourceMatrix.BT709;
+    }
+
+    return AssumedSourceMatrix.BT601;
   }
 
   /**

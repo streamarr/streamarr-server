@@ -226,6 +226,7 @@ public class TranscodeDecisionService {
             .softwareEncoder(
                 encodeCodecProfile.isPresent() && request.softwareEncodeCodecFamily().isPresent())
             .videoEncodeFormat(encode.map(EncodeChoice::format).orElse(EncodeFormat.SDR_8_BIT))
+            .assumedSourceMatrix(source.assumedSourceMatrix())
             .build());
   }
 
