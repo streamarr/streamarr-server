@@ -49,7 +49,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import lombok.Builder;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -150,44 +154,92 @@ class MeshMediaHandlerIT {
     }
   }
 
-  @ParameterizedTest(name = "{0}")
-  @ValueSource(strings = {"/media/probe", "/media/segment"})
-  @DisplayName("Should return verified media when the standalone worker image handles the request")
-  void shouldReturnVerifiedMediaWhenStandaloneWorkerImageHandlesTheRequest(
-      String path, @TempDir Path tempDir) throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var clip = MeshMediaHandlerIT.class.getResource("/BigBuckBunny_320x180_10s.mp4");
-    assertThat(clip).isNotNull();
-    Files.copy(Path.of(clip.toURI()), mediaRoot.resolve("mesh-fixture.mkv"));
+  @Nested
+  @DisplayName("Standalone Worker Image")
+  class StandaloneWorkerImage {
 
-    try (var rig = Rig.builder().withoutWorker(true).build();
-        var worker =
-            WorkerContainerFixture.builder()
-                .workerSessions(rig.server)
-                .sourceNamespaceId(MeshValidationServer.SOURCE_ID)
-                .sourceRoot(mediaRoot)
-                .build()) {
-      worker.start();
+    private static final int STANDALONE_WORKER_SLOTS = 1;
+
+    @TempDir static Path standaloneWorkerDirectory;
+
+    private static Rig standaloneWorkerRig;
+    private static WorkerContainerFixture standaloneWorker;
+
+    @BeforeAll
+    static void startStandaloneWorker() throws Exception {
+      var mediaRoot = Files.createDirectory(standaloneWorkerDirectory.resolve("media"));
+      var clip = MeshMediaHandlerIT.class.getResource("/BigBuckBunny_320x180_10s.mp4");
+      assertThat(clip).isNotNull();
+      Files.copy(Path.of(clip.toURI()), mediaRoot.resolve("mesh-fixture.mkv"));
+      standaloneWorkerRig = Rig.builder().withoutWorker(true).build();
+      standaloneWorker =
+          WorkerContainerFixture.builder()
+              .workerSessions(standaloneWorkerRig.server)
+              .sourceNamespaceId(MeshValidationServer.SOURCE_ID)
+              .sourceRoot(mediaRoot)
+              .availableSlots(STANDALONE_WORKER_SLOTS)
+              .build();
+      standaloneWorker.start();
       await()
           .atMost(10, TimeUnit.SECONDS)
           .until(
               () ->
-                  !rig.server
+                  !standaloneWorkerRig
+                      .server
                       .eligibleWorkers(MeshValidationServer.SOURCE_ID, streamCopyDecision())
                       .isEmpty());
+    }
 
-      var response = rig.requestMedia(path);
+    @AfterAll
+    static void stopStandaloneWorker() throws Exception {
+      try {
+        if (standaloneWorker != null) {
+          standaloneWorker.close();
+        }
+      } finally {
+        if (standaloneWorkerRig != null) {
+          standaloneWorkerRig.close();
+        }
+      }
+    }
+
+    // The server frees a stopped job's slot and a finished probe's unit before the handler answers.
+    @BeforeEach
+    void requireIdleStandaloneWorker() {
+      assertThat(isStandaloneWorkerIdle())
+          .as("the previous test left the shared worker's slot and probe unit free")
+          .isTrue();
+    }
+
+    @Test
+    @DisplayName("Should confirm real media when the standalone worker image probes the fixture")
+    void shouldConfirmRealMediaWhenTheStandaloneWorkerImageProbesTheFixture() throws Exception {
+      var response = standaloneWorkerRig.probe();
 
       assertThat(response.statusCode()).isEqualTo(200);
-      if (path.equals("/media/probe")) {
-        assertThat(new String(response.body(), StandardCharsets.UTF_8))
-            .isEqualTo("MEDIA_PROBE_COMPLETED");
-        return;
-      }
+      assertThat(response.body()).isEqualTo("MEDIA_PROBE_COMPLETED");
+    }
 
+    @Test
+    @DisplayName(
+        "Should return decodable fMP4 when the standalone worker image transcodes the fixture")
+    void shouldReturnDecodableFmp4WhenTheStandaloneWorkerImageTranscodesTheFixture(
+        @TempDir Path tempDir) throws Exception {
+      var response = standaloneWorkerRig.requestMedia("/media/segment");
+
+      assertThat(response.statusCode()).isEqualTo(200);
       assertThat(Fmp4Fixture.firstBoxType(response.body())).isEqualTo("ftyp");
       var media = Files.write(tempDir.resolve("mesh-media.mp4"), response.body());
-      assertThat(worker.decodedVideoFrameCount(media)).isPositive();
+      assertThat(standaloneWorker.decodedVideoFrameCount(media)).isPositive();
+    }
+
+    private static boolean isStandaloneWorkerIdle() {
+      var server = standaloneWorkerRig.server;
+      return server.availableSlots(MeshValidationServer.SOURCE_ID) == STANDALONE_WORKER_SLOTS
+          && server
+                  .probeCapacity(MeshValidationServer.SOURCE_ID, ProbeVersion.CURRENT)
+                  .runningProbes()
+              == 0;
     }
   }
 
