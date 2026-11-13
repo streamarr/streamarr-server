@@ -217,15 +217,20 @@ final class VideoCopyBandwidth {
   }
 
   private static long unmeasuredCost(MediaProbe source, AudioDecision audio) {
+    return unmeasuredCost(source, audio, source.bitrate());
+  }
+
+  private static long unmeasuredCost(
+      MediaProbe source, AudioDecision audio, long containerBitrate) {
     var copiesAudio = audio.mode() == AudioMode.COPY;
     var videoBitrate = copiedStreamBitrate(source);
     if (videoBitrate.isEmpty() && copiesAudio) {
-      return Math.max(source.bitrate(), audio.bitrate());
+      return Math.max(containerBitrate, audio.bitrate());
     }
 
-    var averageBandwidth = videoBitrate.orElse(source.bitrate()) + audio.bitrate();
+    var averageBandwidth = videoBitrate.orElse(containerBitrate) + audio.bitrate();
     if (copiesAudio && source.audioBitrate().isEmpty()) {
-      return Math.max(averageBandwidth, source.bitrate());
+      return Math.max(averageBandwidth, containerBitrate);
     }
 
     return averageBandwidth;
