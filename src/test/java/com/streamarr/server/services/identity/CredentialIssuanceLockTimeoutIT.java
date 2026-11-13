@@ -44,7 +44,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Credential Issuance Lock Timeout Integration Tests")
-@SpringBootTest(properties = "auth.credential-codes.replacement-lock-timeout=2s")
+@SpringBootTest(properties = "auth.credential-codes.replacement-lock-timeout=500ms")
 class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
 
   @Autowired private CredentialIssuanceService credentialIssuanceService;

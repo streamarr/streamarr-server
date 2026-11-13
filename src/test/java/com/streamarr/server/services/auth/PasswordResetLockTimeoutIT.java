@@ -34,7 +34,7 @@ import org.springframework.dao.PessimisticLockingFailureException;
 @Tag("IntegrationTest")
 @DisplayName("Password Reset Lock Timeout Integration Tests")
 // The same properties as CredentialIssuanceLockTimeoutIT, so both classes share one cached context.
-@SpringBootTest(properties = "auth.credential-codes.replacement-lock-timeout=2s")
+@SpringBootTest(properties = "auth.credential-codes.replacement-lock-timeout=500ms")
 class PasswordResetLockTimeoutIT extends AbstractIntegrationTest {
 
   @Autowired private PasswordResetService passwordResetService;
@@ -80,7 +80,7 @@ class PasswordResetLockTimeoutIT extends AbstractIntegrationTest {
       var blockedPid = awaitBlockedBackendPid(observer, backendPid(holder), null);
       assertThat(activeQuery(observer, blockedPid)).contains("\"user_account\"", "for update");
 
-      // Longer than the configured 2 s lock timeout and shorter than the 5 s default.
+      // Longer than the configured 500 ms lock timeout and shorter than the 5 s default.
       assertThatThrownBy(() -> redemption.get(3, TimeUnit.SECONDS))
           .isInstanceOf(ExecutionException.class)
           .cause()
