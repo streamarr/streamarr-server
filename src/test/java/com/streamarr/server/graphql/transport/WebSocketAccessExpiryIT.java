@@ -70,43 +70,33 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
     authTestSupport.deleteIdentity(admin);
   }
 
+  // The expiry close comes from a real-time timer, so one test pays one expiry for both halves.
   @Test
-  @DisplayName("Should close with 4100 and no complete frame when the opening access token expires")
-  void shouldCloseWith4100AndNoCompleteFrameWhenOpeningAccessTokenExpires() {
+  @DisplayName(
+      "Should close with 4100 and deliver status changes after a fresh-token reconnect when the"
+          + " access token expires")
+  void shouldCloseWith4100AndDeliverStatusChangesAfterFreshTokenReconnectWhenAccessTokenExpires() {
+    var library = saveLibrary();
     var expiresAt = Instant.now().plusSeconds(3).truncatedTo(ChronoUnit.SECONDS);
     var bearer = authTestSupport.profileBearerExpiringAt(admin, expiresAt);
 
-    try (var socket = GraphQlTransportWsTestClient.connectWithBearer(port, bearer)) {
-      socket.subscribe("status", STATUS_SUBSCRIPTION);
+    try (var expiring = GraphQlTransportWsTestClient.connectWithBearer(port, bearer)) {
+      expiring.subscribe("status", STATUS_SUBSCRIPTION);
       activeSubscriptions.awaitCount(STATUS_FIELD, 1);
 
-      var closure = socket.awaitClosure();
+      var closure = expiring.awaitClosure();
 
-      assertThat(closure.statusCode()).isEqualTo(4100);
-      assertThat(closure.reason()).isEqualTo("Access token expired");
-      assertThat(Instant.now()).isAfterOrEqualTo(expiresAt);
-      assertThat(socket.receivedMessages())
+      assertThat(closure.statusCode()).as("close code at token expiry").isEqualTo(4100);
+      assertThat(closure.reason())
+          .as("close reason at token expiry")
+          .isEqualTo("Access token expired");
+      assertThat(Instant.now()).as("close time against token expiry").isAfterOrEqualTo(expiresAt);
+      assertThat(expiring.receivedMessages())
+          .as("frames sent before the expiry close")
           .noneMatch(message -> "complete".equals(message.path("type").asString()));
       activeSubscriptions.awaitCount(STATUS_FIELD, 0);
     }
-  }
 
-  @Test
-  @DisplayName(
-      "Should deliver status changes on a new socket when the client reconnects with a fresh"
-          + " token after 4100")
-  void shouldDeliverStatusChangesOnNewSocketWhenClientReconnectsWithFreshTokenAfter4100() {
-    var library = saveLibrary();
-    var expiresAt = Instant.now().plusSeconds(3).truncatedTo(ChronoUnit.SECONDS);
-    try (var expiring =
-        GraphQlTransportWsTestClient.connectWithBearer(
-            port, authTestSupport.profileBearerExpiringAt(admin, expiresAt))) {
-      expiring.subscribe("status", STATUS_SUBSCRIPTION);
-      activeSubscriptions.awaitCount(STATUS_FIELD, 1);
-      assertThat(expiring.awaitClosure().statusCode()).isEqualTo(4100);
-    }
-
-    activeSubscriptions.awaitCount(STATUS_FIELD, 0);
     try (var renewed =
         GraphQlTransportWsTestClient.connectWithBearer(
             port, authTestSupport.profileBearer(admin))) {
@@ -116,8 +106,12 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
       eventPublisher.publishEvent(new LibraryStatusChangedEvent(library.getId()));
 
       var change = renewed.nextMessageFor("status").path("payload").path("data").path(STATUS_FIELD);
-      assertThat(change.path("id").asString()).isEqualTo(library.getId().toString());
-      assertThat(change.path("administration").path("status").asString()).isEqualTo("HEALTHY");
+      assertThat(change.path("id").asString())
+          .as("library of the status change after reconnecting")
+          .isEqualTo(library.getId().toString());
+      assertThat(change.path("administration").path("status").asString())
+          .as("status of the status change after reconnecting")
+          .isEqualTo("HEALTHY");
     }
   }
 
