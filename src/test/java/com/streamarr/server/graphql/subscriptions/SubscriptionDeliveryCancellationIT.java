@@ -5,48 +5,29 @@ import static java.util.function.Predicate.not;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.Library;
-import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.library.LibraryAdministrationService;
-import com.streamarr.server.support.ActiveSubscriptions;
-import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import com.streamarr.server.support.PostgresLockTestSupport;
 import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import javax.sql.DataSource;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.test.context.TestPropertySource;
 import reactor.core.scheduler.Scheduler;
 
-/**
- * Parks a subscription delivery's database read behind a lock held on another connection, so the
- * subscriber's operation can end, or the read can fail, while the read is in flight. A short lock
- * bound lets a test keep the lock until the bound ends the read.
- */
+/** A short lock bound lets a test keep the lock until the bound ends the read. */
 @Tag("IntegrationTest")
 @DisplayName("Subscription Delivery Cancellation Integration Tests")
-@SpringBootTest(
-    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = "DATABASE_LOCK_TIMEOUT=1s")
-class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
+@TestPropertySource(properties = "DATABASE_LOCK_TIMEOUT=1s")
+class SubscriptionDeliveryCancellationIT extends AbstractSubscriptionDeliveryLockIntegrationTest {
 
   private static final Duration LOCK_BOUND = Duration.ofSeconds(1);
   private static final Duration SETTLE_MARGIN = Duration.ofSeconds(10);
@@ -61,36 +42,10 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
   // The jOOQ read of the Account's live authority; other backends may also wait on user_account.
   private static final String AUTHORITY_READ = "%\"user_account\".\"server_admin\"%";
 
-  @LocalServerPort private int port;
-
-  @Autowired private AuthTestSupport authTestSupport;
   @Autowired private LibraryAdministrationService libraryAdministration;
   @Autowired private LibraryBroadcasters libraryBroadcasters;
   @Autowired private LibraryContentsBroadcasters contentsBroadcasters;
-  @Autowired private LibraryRepository libraryRepository;
-  @Autowired private MeterRegistry meterRegistry;
-  @Autowired private DataSource dataSource;
   @Autowired private Scheduler graphQlSubscriptionDeliveryScheduler;
-
-  private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
-  private ActiveSubscriptions activeSubscriptions;
-  private AuthTestSupport.TestIdentity admin;
-  private Library library;
-
-  @BeforeEach
-  void createServerAdminAndLibrary() {
-    activeSubscriptions = new ActiveSubscriptions(meterRegistry);
-    admin = authTestSupport.createAdminIdentity();
-    library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-  }
-
-  @AfterEach
-  void releaseResources() {
-    sockets.forEach(GraphQlTransportWsTestClient::close);
-    activeSubscriptions.awaitNoneActive();
-    libraryRepository.deleteById(library.getId());
-    authTestSupport.deleteIdentity(admin);
-  }
 
   @Test
   @DisplayName(
@@ -214,13 +169,6 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
     assertThat(engineFailureCount()).isEqualTo(engineFailuresBefore + 1);
   }
 
-  private GraphQlTransportWsTestClient connect() {
-    var socket =
-        GraphQlTransportWsTestClient.connectWithBearer(port, authTestSupport.profileBearer(admin));
-    sockets.add(socket);
-    return socket;
-  }
-
   // A delivery that reads live authority on the delivery thread, as the administration field does
   // for every libraryStatusChanged value.
   private SubscriptionBroadcaster<String> authorityCheckedBroadcaster() {
@@ -255,21 +203,6 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
 
   private HeldTableLock lockLibraryTable() throws SQLException {
     return lockTable("library");
-  }
-
-  // Neither the library's findById nor a read decision's authority read takes a row lock, so only
-  // a table lock parks them.
-  private HeldTableLock lockTable(String table) throws SQLException {
-    var connection = dataSource.getConnection();
-    connection.setAutoCommit(false);
-    try (var statement = connection.createStatement()) {
-      statement.execute("LOCK TABLE " + table + " IN ACCESS EXCLUSIVE MODE");
-    } catch (SQLException failure) {
-      connection.close();
-      throw failure;
-    }
-
-    return new HeldTableLock(connection, PostgresLockTestSupport.backendPid(connection));
   }
 
   private static int awaitBlockedAuthorityRead(Connection observer, HeldTableLock held) {
@@ -309,18 +242,6 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
       try (var result = statement.executeQuery()) {
         assertThat(result.next()).isTrue();
         assertThat(result.getBoolean(1)).isTrue();
-      }
-    }
-  }
-
-  private record HeldTableLock(Connection connection, int backendPid) implements AutoCloseable {
-
-    @Override
-    public void close() throws SQLException {
-      try {
-        connection.rollback();
-      } finally {
-        connection.close();
       }
     }
   }
