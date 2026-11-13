@@ -369,6 +369,9 @@ public class TranscodeDecisionService {
       case PlanChoice.Accepted _
           when VideoCopyBandwidth.exceedsSegmentCap(source, audio, playlist) ->
           segmentCapRefusal(StreamCopyRefusal.EXCEEDS_SEGMENT_CAP, countsRefusals);
+      case PlanChoice.Accepted _
+          when VideoCopyBandwidth.estimateExceedsSegmentCap(source, audio, playlist) ->
+          segmentCapRefusal(StreamCopyRefusal.ESTIMATE_EXCEEDS_SEGMENT_CAP, countsRefusals);
       case PlanChoice.Accepted(var plan, var reasons) ->
           new VideoCopyChoice.Copied(audio, plan, reasons);
     };
@@ -802,8 +805,9 @@ public class TranscodeDecisionService {
     Counter.builder(STREAM_COPY_REFUSALS_METRIC)
         .description(
             "Stream copies of a video codec the client plays, refused because the source's"
-                + " keyframes are not known or open no segment list, a measured segment would"
-                + " exceed the segment cap, or the copy could not keep the keyframes' stored times")
+                + " keyframes are not known or open no segment list, a measured or estimated"
+                + " segment would exceed the segment cap, or the copy could not keep the keyframes'"
+                + " stored times")
         .tag("reason", refusal.name().toLowerCase(Locale.ROOT))
         .register(meterRegistry)
         .increment();
@@ -821,7 +825,10 @@ public class TranscodeDecisionService {
     // FFmpeg corrects the source's start time, and the probe stored no correction to cancel it.
     NO_START_TIME_CORRECTION(DecisionReason.START_TIME_CORRECTION_UNKNOWN),
     // A measured segment of the copy, with its audio, would exceed the segment cap (ADR 0037).
-    EXCEEDS_SEGMENT_CAP(DecisionReason.SEGMENT_EXCEEDS_CAP);
+    EXCEEDS_SEGMENT_CAP(DecisionReason.SEGMENT_EXCEEDS_CAP),
+    // Without a measurement of the copied video, a segment's estimate would exceed the segment cap
+    // (ADR 0037).
+    ESTIMATE_EXCEEDS_SEGMENT_CAP(DecisionReason.SEGMENT_EXCEEDS_CAP);
 
     private final DecisionReason reason;
 
