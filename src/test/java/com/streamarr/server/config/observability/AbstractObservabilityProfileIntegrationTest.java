@@ -101,8 +101,9 @@ abstract class AbstractObservabilityProfileIntegrationTest extends AbstractInteg
   /**
    * Waits for, and returns, the first export of the server's meters that Micrometer collected once
    * the server was ready. It arrives within one step of that, so only a context's first test waits.
-   * The registry fixes the resource, the endpoint and the headers of its exports when the server
-   * starts, so this export carries the same ones as every later export.
+   * The registry builds the resource of its exports when it is created, and {@code
+   * OtlpMetricsEndpointConfiguration} fixes the metrics URL and headers when the server starts, so
+   * this export carries the same ones as every later export.
    */
   ExportMetricsServiceRequest firstExportOfTheReadyServer() throws InterruptedException {
     var exports =
@@ -115,7 +116,8 @@ abstract class AbstractObservabilityProfileIntegrationTest extends AbstractInteg
 
   /**
    * Has each metric reader of the OpenTelemetry SDK collect and export what the SDK holds, and
-   * returns once the collector has received those exports.
+   * returns once those exports have completed. A failed export still completes the flush, so a test
+   * that needs an SDK export checks that the collector received one.
    */
   void flushTheSdksMetrics() {
     var flush = openTelemetrySdk.getOpenTelemetrySdk().getSdkMeterProvider().forceFlush();
