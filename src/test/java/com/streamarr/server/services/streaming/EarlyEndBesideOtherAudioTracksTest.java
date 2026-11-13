@@ -255,8 +255,8 @@ class EarlyEndBesideOtherAudioTracksTest {
         session(
             "a file whose one track ends with the video",
             copied().file(videoToTheEarlyEnd(ENGLISH_TO_THE_EARLY_END)).advertisedEnd(EARLY_END)),
-        // No stream has media after 10 s, so a copy that runs short there ends playback normally
-        // (ADR 0052) instead of an encode that holds the picture and pads silence up to 17 s.
+        // No stream has media after 10 s. A container's duration that runs past every stream's end
+        // never makes a stream end early by itself (ADR 0037, early ends), so the session copies.
         session(
             "a file whose container's duration runs a segment past every stream's end",
             copied()
