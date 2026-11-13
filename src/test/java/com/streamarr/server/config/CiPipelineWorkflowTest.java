@@ -455,7 +455,8 @@ class CiPipelineWorkflowTest {
     }
   }
 
-  // GitHub renders ${{ condition && 'argument' || '' }} as the argument while the condition holds.
+  // GitHub renders a conditional argument as its quoted argument while its condition holds, and as
+  // an empty string otherwise.
   private String renderConditionalArgument(String command, Map<String, String> context)
       throws Exception {
     var conditional =
