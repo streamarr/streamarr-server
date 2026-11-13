@@ -2839,7 +2839,9 @@ class HlsStreamingServiceTest {
   }
 
   // No duration bound limits a merged segment (ADR 0037): the segment that the keyframe at 6 s
-  // opens takes every later slot and runs to the end of the 2 h source.
+  // opens takes every later slot and runs to the end of the 2 h source. Without a measurement,
+  // that segment's estimate is twice the 64,000 bit/s container bitrate over 7,194 s: 115,104,000
+  // bytes, within the 128 MiB segment cap.
   @Test
   @DisplayName("Should copy the video when the source's keyframes stop long before the media end")
   void shouldCopyTheVideoWhenTheSourcesKeyframesStopLongBeforeTheMediaEnd() {
@@ -2847,6 +2849,8 @@ class HlsStreamingServiceTest {
         defaultProbeBuilder()
             .duration(Duration.ofMinutes(120))
             .keyframes(keyframesAtMillis(0, 6_000))
+            .bitrate(64_000)
+            .audioCodec(null)
             .build());
     var file = seedMediaFile();
 
@@ -2858,6 +2862,33 @@ class HlsStreamingServiceTest {
         .singleElement()
         .extracting(request -> request.exactSegmentStarts().orElseThrow().ticks())
         .isEqualTo(List.of(0L, 6_000L));
+  }
+
+  // The 2 h source's probe lists one keyframe, so a copy would deliver the whole file as segment
+  // 0. Without a measurement, that segment's estimate is twice the 5,000,000 bit/s container
+  // bitrate over 7,200 s: 9,000,000,000 bytes, far over the 128 MiB segment cap (ADR 0037).
+  @Test
+  @DisplayName(
+      "Should encode the video on the plain grid when an unmeasured copy would deliver the whole"
+          + " file as one segment")
+  void
+      shouldEncodeTheVideoOnThePlainGridWhenAnUnmeasuredCopyWouldDeliverTheWholeFileAsOneSegment() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofMinutes(120))
+            .keyframes(keyframesAtMillis(0))
+            .build());
+    var file = seedMediaFile();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(session.getTranscodeDecision().reasons())
+        .containsExactly(DecisionReason.SEGMENT_EXCEEDS_CAP);
+    assertThat(transcodeExecutor.getStartedRequests())
+        .singleElement()
+        .satisfies(request -> assertThat(request.exactSegmentStarts()).isEmpty());
   }
 
   @ParameterizedTest(name = "{0}")

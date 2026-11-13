@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.Fraction;
@@ -16,6 +17,7 @@ import com.streamarr.server.domain.streaming.StreamMeasurementSource;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.fixtures.ProbeFixture;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -193,6 +195,25 @@ class VideoCopyBandwidthTest {
         .isEqualTo(4_000_000L);
   }
 
+  // A file of 1 GiB holds more than the 128 MiB segment cap, but a playlist without a segment or a
+  // duration gives no rate to estimate a segment by.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("playlistsWithoutASegmentOrADuration")
+  @DisplayName(
+      "Should estimate no segment over the segment cap when a stream copy cannot list the media"
+          + " playlist")
+  void shouldEstimateNoSegmentOverTheSegmentCapWhenAStreamCopyCannotListTheMediaPlaylist(
+      CopyMediaPlaylist playlist) {
+    var source =
+        defaultProbeBuilder()
+            .bitrate(0)
+            .sourceSnapshot(Optional.of(new SourceFileSnapshot(1L << 30, Instant.EPOCH)))
+            .build();
+
+    assertThat(VideoCopyBandwidth.estimateExceedsSegmentCap(source, AudioDecision.none(), playlist))
+        .isFalse();
+  }
+
   static Stream<CopyMediaPlaylist> playlistsWithoutASegmentOrADuration() {
     return Stream.of(
         CopyMediaPlaylist.UNKNOWN,
@@ -335,6 +356,15 @@ class VideoCopyBandwidthTest {
         .withMessageContaining("audio");
     assertThatNullPointerException()
         .isThrownBy(() -> VideoCopyBandwidth.peakBandwidth(source, audio, null))
+        .withMessageContaining("playlist");
+    assertThatNullPointerException()
+        .isThrownBy(() -> VideoCopyBandwidth.estimateExceedsSegmentCap(null, audio, playlist))
+        .withMessageContaining("source");
+    assertThatNullPointerException()
+        .isThrownBy(() -> VideoCopyBandwidth.estimateExceedsSegmentCap(source, null, playlist))
+        .withMessageContaining("audio");
+    assertThatNullPointerException()
+        .isThrownBy(() -> VideoCopyBandwidth.estimateExceedsSegmentCap(source, audio, null))
         .withMessageContaining("playlist");
   }
 
