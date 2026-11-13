@@ -217,8 +217,35 @@ class CiPipelineWorkflowTest {
     var arguments = buildAndTestMavenArguments(job);
 
     assertThat(arguments).contains(WITHOUT_PROMETHEUS_COMPOSE_TEST);
+  }
+
+  @Test
+  @DisplayName(
+      "Should select no unit test groups when a pull request changes no Prometheus Compose input")
+  void shouldSelectNoUnitTestGroupsWhenAPullRequestChangesNoPrometheusComposeInput()
+      throws Exception {
+    var job =
+        ApplicationJob.builder()
+            .suite("unit")
+            .shardArgument("")
+            .ref(PULL_REQUEST)
+            .changedFiles(List.of(NOT_A_PROMETHEUS_COMPOSE_INPUT))
+            .build();
+
+    var arguments = buildAndTestMavenArguments(job);
+
+    assertThat(arguments)
+        .as("test group selections")
+        .noneMatch(argument -> argument.startsWith("-Dgroups="));
+  }
+
+  @Test
+  @DisplayName(
+      "Should detect Prometheus Compose input changes with the pinned paths filter when jobs run")
+  void shouldDetectPrometheusComposeInputChangesWithThePinnedPathsFilterWhenJobsRun()
+      throws Exception {
     assertThat(step("application", PROMETHEUS_COMPOSE_INPUTS).get("uses"))
-        .as("paths filter")
+        .as("paths filter of the Prometheus Compose test's inputs")
         .isEqualTo(step("changes", "Filter changed paths").get("uses"));
   }
 
