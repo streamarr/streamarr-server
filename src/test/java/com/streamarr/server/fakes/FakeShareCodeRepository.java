@@ -28,6 +28,11 @@ public class FakeShareCodeRepository extends FakeJpaRepository<ShareCode>
   }
 
   @Override
+  public void lockById(UUID shareCodeId) {
+    // One thread owns the in-memory rows; there is no concurrent transaction to wait for.
+  }
+
+  @Override
   public boolean trySpend(UUID shareCodeId, Instant now) {
     return endLive(shareCodeId, ShareCodeStatus.SPENT, now);
   }
