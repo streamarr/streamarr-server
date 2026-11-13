@@ -1,6 +1,7 @@
 package com.streamarr.server;
 
 import com.streamarr.server.support.AuthTestSupportConfig;
+import com.streamarr.server.support.HibernateWorkCounterConfiguration;
 import com.streamarr.server.support.PausedContextConnectionRelease;
 import com.streamarr.server.support.RunningArtworkPrioritySchedulersConfiguration;
 import com.streamarr.server.support.RunningLibraryOperationSchedulerConfiguration;
@@ -26,6 +27,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @AutoConfigureMockMvc
 @Import({
   AuthTestSupportConfig.class,
+  HibernateWorkCounterConfiguration.class,
   PausedContextConnectionRelease.class,
   RunningArtworkPrioritySchedulersConfiguration.class,
   RunningLibraryOperationSchedulerConfiguration.class,

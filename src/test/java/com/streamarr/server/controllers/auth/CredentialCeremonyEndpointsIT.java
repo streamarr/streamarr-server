@@ -56,8 +56,8 @@ import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.ServerScope;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.HibernateWorkCounter;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
-import jakarta.persistence.EntityManagerFactory;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -69,7 +69,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import javax.sql.DataSource;
 import lombok.Builder;
-import org.hibernate.SessionFactory;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -123,7 +122,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @Autowired private PositionCursorCodec positionCursors;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
-  @Autowired private EntityManagerFactory entityManagerFactory;
+  @Autowired private HibernateWorkCounter hibernateWork;
 
   private AuthTestSupport.TestIdentity serverAdmin;
 
@@ -389,27 +388,21 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     issueInvitation("bounded-two@example.com");
     issueInvitation("bounded-three@example.com");
     issueInvitation("bounded-four@example.com");
-    var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
-    var previouslyEnabled = statistics.isStatisticsEnabled();
-    statistics.setStatisticsEnabled(true);
-    statistics.clear();
 
-    try {
-      graphql(
-              authTestSupport.accountBearer(serverAdmin),
-              """
-              query { accountInvitations(first: 1) { edges { node { recipientEmail } } } }
-              """)
-          .andExpect(status().isOk())
-          .andExpect(jsonPath("$.errors").doesNotExist())
-          .andExpect(jsonPath("$.data.accountInvitations.edges.length()").value(1));
+    var counted =
+        hibernateWork.countAs(
+            serverAdmin,
+            () ->
+                graphql(
+                        authTestSupport.accountBearer(serverAdmin),
+                        """
+                        query { accountInvitations(first: 1) { edges { node { recipientEmail } } } }
+                        """)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.errors").doesNotExist())
+                    .andExpect(jsonPath("$.data.accountInvitations.edges.length()").value(1)));
 
-      assertThat(statistics.getEntityStatistics(AccountInvitation.class.getName()).getLoadCount())
-          .isLessThanOrEqualTo(2);
-    } finally {
-      statistics.clear();
-      statistics.setStatisticsEnabled(previouslyEnabled);
-    }
+    assertThat(counted.loaded(AccountInvitation.class)).isLessThanOrEqualTo(2);
   }
 
   @Test
