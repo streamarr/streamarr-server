@@ -257,22 +257,23 @@ class CiPipelineWorkflowTest {
   }
 
   @Test
-  @DisplayName("Should run the HLS smoke tests in their own job when checks run")
-  void shouldRunHlsSmokeTestsInTheirOwnJobWhenChecksRun() throws Exception {
+  @DisplayName("Should start the HLS smoke job like the application jobs when checks run")
+  void shouldStartHlsSmokeJobLikeApplicationJobsWhenChecksRun() throws Exception {
     assertThat(job("smoke"))
         .doesNotContainKey("needs")
         .containsEntry("runs-on", job("application").get("runs-on"));
-    var smoke = steps(job("smoke").get("steps"));
-    assertThat(smoke.subList(0, 3))
+    assertThat(steps(job("smoke").get("steps")).subList(0, 3))
         .as("checkout, worker image pin and JDK setup")
         .isEqualTo(steps(job("application").get("steps")).subList(0, 3));
-    assertThat(smoke.getLast()).containsEntry("name", SMOKE_TESTS);
+  }
+
+  @Test
+  @DisplayName("Should run every HLS smoke test when the smoke job runs")
+  void shouldRunEveryHlsSmokeTestWhenSmokeJobRuns() throws Exception {
+    var smokeTests = steps(job("smoke").get("steps")).getLast();
+    assertThat(smokeTests).containsEntry("name", SMOKE_TESTS);
     var command =
-        smoke
-            .getLast()
-            .get("run")
-            .toString()
-            .replace("./mvnw", "'" + argumentCapturingMaven() + "'");
+        smokeTests.get("run").toString().replace("./mvnw", "'" + argumentCapturingMaven() + "'");
 
     var result = runBash(command);
 
