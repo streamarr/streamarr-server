@@ -71,7 +71,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import lombok.Builder;
 import lombok.NonNull;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -84,18 +86,20 @@ import org.springframework.context.ApplicationEventPublisher;
 class WorkerPlaybackRecoveryIT {
 
   private static final UUID SOURCE_NAMESPACE = UUID.randomUUID();
+  private static final int WORKER_SLOTS = 2;
 
-  @TempDir Path tempDir;
+  @TempDir static Path tempDir;
 
-  private final WorkerEvents events = new WorkerEvents();
+  private static final WorkerEvents events = new WorkerEvents();
+  private static Path mediaRoot;
+  private static LocalSegmentStore segments;
+  private static WorkerSessionServer server;
+  private static WorkerContainerFixture worker;
   private Path sourceRoot;
-  private LocalSegmentStore segments;
-  private WorkerSessionServer server;
-  private WorkerContainerFixture worker;
 
-  @BeforeEach
-  void startWorker() throws Exception {
-    sourceRoot = Files.createDirectory(tempDir.resolve("media"));
+  @BeforeAll
+  static void startWorker() throws Exception {
+    mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     segments = new LocalSegmentStore(tempDir.resolve("segments"));
     server =
         WorkerSessionServer.builder()
@@ -108,15 +112,31 @@ class WorkerPlaybackRecoveryIT {
         WorkerContainerFixture.builder()
             .workerSessions(server)
             .sourceNamespaceId(SOURCE_NAMESPACE)
-            .sourceRoot(sourceRoot)
-            .availableSlots(2)
+            .sourceRoot(mediaRoot)
+            .availableSlots(WORKER_SLOTS)
             .build();
     server.start();
     worker.start();
   }
 
+  // Every test writes movie.mp4, each into its own directory of the shared source root. No job
+  // attempt of an earlier test may hold a slot of the shared worker into the next test.
+  @BeforeEach
+  void awaitEveryWorkerSlotFree() throws IOException {
+    await()
+        .pollDelay(Duration.ZERO)
+        .atMost(Duration.ofSeconds(30))
+        .until(() -> server.availableSlots(SOURCE_NAMESPACE) == WORKER_SLOTS);
+    sourceRoot = Files.createDirectory(mediaRoot.resolve(UUID.randomUUID().toString()));
+  }
+
   @AfterEach
-  void stopWorker() {
+  void removeEventListeners() {
+    events.removeListeners();
+  }
+
+  @AfterAll
+  static void stopWorker() {
     try (var _ = server;
         var _ = worker) {
       // Closes the worker, then the server that it connects to.
@@ -317,7 +337,7 @@ class WorkerPlaybackRecoveryIT {
 
   private ProbeOutcome.Success probe(Path source) {
     var outcome =
-        new RemoteFfprobeService(server, SOURCE_NAMESPACE, source.getParent())
+        new RemoteFfprobeService(server, SOURCE_NAMESPACE, mediaRoot)
             .probe(
                 ProbeExecutionRequest.builder()
                     .sourcePath(source)
@@ -443,6 +463,10 @@ class WorkerPlaybackRecoveryIT {
       listen(type, published::add);
       return published;
     }
+
+    private void removeListeners() {
+      listeners.clear();
+    }
   }
 
   private final class PlaybackRig implements AutoCloseable {
@@ -457,7 +481,7 @@ class WorkerPlaybackRecoveryIT {
 
     private PlaybackRig(PlayedSource played) {
       var source = played.file();
-      var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE, source.getParent());
+      var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE, mediaRoot);
       var probes = new FakeMediaFileContainerInfoRepository();
       var files = new FakeMediaFileRepository();
       var file =
