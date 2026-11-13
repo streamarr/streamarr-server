@@ -246,9 +246,21 @@ public class HlsStreamingService implements StreamingService {
 
   // When the upload budget leaves out the first-listed variant, the top variant that it keeps
   // starts instead, so the stream session holds the transcode place that admission found until the
-  // player reads its playlist (ADR 0050).
+  // player reads its playlist (ADR 0050). When another start takes that place after the budget
+  // chose the variant, the stream session starts the first-listed variant, as the budget does when
+  // no variant that stays can start. A copy beside its lower variants needs no place.
   private StreamSession startTheTopVariantThatStays(StreamSession session) {
-    return producerLifecycle.startListedVariant(session, uploadBudget.topKeptVariant(session));
+    var top = uploadBudget.topKeptVariant(session);
+    var firstListed = session.firstListedVariant();
+    if (top.equals(firstListed)) {
+      return producerLifecycle.startListedVariant(session, firstListed);
+    }
+
+    try {
+      return producerLifecycle.startListedVariant(session, top);
+    } catch (TranscodeLimitReachedException _) {
+      return producerLifecycle.startListedVariant(session, firstListed);
+    }
   }
 
   // The first-listed variant's first job attempt starts at the segment that holds the start

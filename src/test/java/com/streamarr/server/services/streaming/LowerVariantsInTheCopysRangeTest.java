@@ -79,6 +79,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -1003,6 +1004,67 @@ class LowerVariantsInTheCopysRangeTest {
                 assertThat(decision.reasons())
                     .first()
                     .isEqualTo(DecisionReason.LOWER_VARIANT_FAILED));
+  }
+
+  // ADR 0050: the upload budget never refuses playback, and when the top variant that stays cannot
+  // start, the playlist stays whole. Another playback can take the last place under the transcode
+  // limit after the budget chose the lower variant to start, and the copy needs no place there.
+  @Test
+  @DisplayName(
+      "Should start the copy and keep the playlist whole when another start takes the last"
+          + " transcode place after the upload budget chose a lower variant")
+  void shouldStartTheCopyAndKeepThePlaylistWholeWhenAnotherStartTakesTheLastPlaceAfterTheBudget() {
+    var interloper = new AtomicReference<Runnable>();
+    var budgeted =
+        budgetedPlayback(
+            budgetedRig().registry(runningAtTheNextStartsOwnLookup(interloper)).build());
+    var firstId = sessionOf(startAPlaybackThatLeavesNoRoomForTheNextCopy(budgeted)).getSessionId();
+    interloper.set(
+        () -> {
+          rig.lifecycle().prepareRequestedVariant(firstId, "720p", "720p/segment0.m4s");
+          rig.lifecycle().prepareRequestedVariant(firstId, "480p", "480p/init.mp4");
+          rig.lifecycle().prepareRequestedVariant(firstId, "360p", "360p/init.mp4");
+        });
+
+    var second = accepted(budgeted.playback().start(startAuto(clientThatPlaysEveryRange())));
+
+    var session = sessionOf(second);
+    var playlists = new HlsPlaylistService(PROPERTIES, budgeted.budget());
+    assertThat(interloper.get()).isNull();
+    assertThat(rig.lifecycle().freeConfiguredTranscodeSlots()).isZero();
+    assertThat(workers.isRunning(session.getSessionId(), "default")).isTrue();
+    assertThat(listedUris(playlists.generateMultivariantPlaylist(session, "t")))
+        .containsExactly(
+            "stream.m3u8?t=t",
+            "720p/stream.m3u8?t=t",
+            "480p/stream.m3u8?t=t",
+            "360p/stream.m3u8?t=t");
+  }
+
+  // A registry that runs the armed action at its first lookup of the next stream session that it
+  // saves. A start looks its stream session up under the session lock, after the upload budget
+  // chose the variant to start and before the start reserves a place under the transcode limit.
+  private static FakeRuntimeStreamSessionRegistry runningAtTheNextStartsOwnLookup(
+      AtomicReference<Runnable> action) {
+    var saved = new AtomicReference<UUID>();
+    return new FakeRuntimeStreamSessionRegistry() {
+      @Override
+      public void save(StreamSession session) {
+        super.save(session);
+        if (action.get() != null) {
+          saved.compareAndSet(null, session.getSessionId());
+        }
+      }
+
+      @Override
+      public Optional<StreamSession> findById(UUID sessionId) {
+        if (sessionId.equals(saved.get())) {
+          Optional.ofNullable(action.getAndSet(null)).ifPresent(Runnable::run);
+        }
+
+        return super.findById(sessionId);
+      }
+    };
   }
 
   private static void runEach(Queue<Runnable> work) {
