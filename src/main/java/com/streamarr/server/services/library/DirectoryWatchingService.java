@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.audit.SystemWork;
+import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
@@ -15,6 +16,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.DependsOn;
@@ -33,11 +35,13 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
   private final Set<Path> directoriesToWatch = new HashSet<>();
   private DirectoryWatcher watcher;
 
+  @Builder
   public DirectoryWatchingService(
       LibraryRepository libraryRepository,
       FileStabilityChecker fileStabilityChecker,
       LibraryManagementService libraryManagementService,
-      IgnoredFileValidator ignoredFileValidator) {
+      IgnoredFileValidator ignoredFileValidator,
+      Sleeper sleeper) {
     this.libraryRepository = libraryRepository;
     this.fileEventProcessor =
         FileEventProcessor.builder()
@@ -45,6 +49,7 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
             .libraryManagementService(libraryManagementService)
             .ignoredFileValidator(ignoredFileValidator)
             .executors(() -> SystemWork.newExecutorRunningAsSystemActor("file-watcher-"))
+            .sleeper(sleeper)
             .build();
   }
 

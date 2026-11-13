@@ -2,11 +2,13 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.properties.LibraryScanProperties;
@@ -43,17 +45,20 @@ class DirectoryWatchingServiceTest {
 
   @BeforeEach
   void setUp() {
-    service =
-        new DirectoryWatchingService(
-            fakeLibraryRepository,
-            path -> true,
-            null,
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)));
+    service = watcherBuilder().build();
   }
 
   @AfterEach
   void tearDown() throws IOException {
     service.stopWatching();
+  }
+
+  @Test
+  @DisplayName("Should reject a watcher when its retry sleeper is missing")
+  void shouldRejectAWatcherWhenItsRetrySleeperIsMissing() {
+    var builder = watcherBuilder().sleeper(null);
+
+    assertThatNullPointerException().isThrownBy(builder::build).withMessageContaining("sleeper");
   }
 
   @Test
@@ -236,12 +241,21 @@ class DirectoryWatchingServiceTest {
     }
   }
 
+  private DirectoryWatchingService.DirectoryWatchingServiceBuilder watcherBuilder() {
+    return DirectoryWatchingService.builder()
+        .libraryRepository(fakeLibraryRepository)
+        .fileStabilityChecker(path -> true)
+        .ignoredFileValidator(new IgnoredFileValidator(new LibraryScanProperties(null, null, null)))
+        .sleeper(new CountingSleeper());
+  }
+
   private DirectoryWatchingService buildFailingSetupService() {
     return new DirectoryWatchingService(
         fakeLibraryRepository,
         path -> true,
         null,
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null))) {
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        new CountingSleeper()) {
       @Override
       public void setup(List<Library> libraries) throws IOException {
         throw new IOException("simulated failure");
@@ -255,7 +269,8 @@ class DirectoryWatchingServiceTest {
         fakeLibraryRepository,
         path -> true,
         null,
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null))) {
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        new CountingSleeper()) {
       @Override
       public void setup(List<Library> libraries) throws IOException {
         setupStarted.countDown();

@@ -12,6 +12,7 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.ProbeTaskSchedulingException;
+import com.streamarr.server.fakes.CountingSleeper;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryMutationTransaction;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -27,6 +28,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.concurrency.Sleeper;
 import com.streamarr.server.services.filepath.FilepathCodec;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
@@ -72,6 +74,8 @@ class FileEventProcessorTest {
   private FakeMediaFileRepository mediaFileRepository;
   private FakeProbeTaskRequests probeTaskRequests;
   private final TrackingExecutors executors = new TrackingExecutors();
+  private final CountingSleeper retrySleeper = new CountingSleeper();
+  private AtomicReference<Sleeper> sleeperRef;
   private AtomicReference<FileStabilityChecker> stabilityCheckerRef;
   private AtomicReference<ApplicationEventPublisher> eventPublisherRef;
   private FileEventProcessor eventProcessor;
@@ -87,6 +91,7 @@ class FileEventProcessorTest {
     var ignoredFileValidator =
         new IgnoredFileValidator(new LibraryScanProperties(null, null, null));
     var videoExtensionValidator = new VideoExtensionValidator();
+    sleeperRef = new AtomicReference<>(retrySleeper);
     stabilityCheckerRef = new AtomicReference<>(path -> true);
     eventPublisherRef = new AtomicReference<>(_ -> {});
 
@@ -185,6 +190,7 @@ class FileEventProcessorTest {
             .libraryManagementService(libraryManagementService)
             .ignoredFileValidator(ignoredFileValidator)
             .executors(executors)
+            .sleeper(duration -> sleeperRef.get().sleep(duration))
             .build();
 
     eventProcessor.reset(libraryRepository.findAll());
@@ -215,6 +221,27 @@ class FileEventProcessorTest {
 
     assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
         .isEqualTo(FilepathCodec.encode(path));
+  }
+
+  @Test
+  @DisplayName("Should wait longer before each retry when probe requests keep failing")
+  void shouldWaitLongerBeforeEachRetryWhenProbeRequestsKeepFailing() throws Exception {
+    var path = createFile("/media/shows/Show.S01E01.mkv");
+    var failuresLeft = new AtomicInteger(3);
+    probeTaskRequests.dispatchWith(
+        request -> {
+          if (failuresLeft.getAndDecrement() > 0) {
+            throw new ProbeTaskSchedulingException(
+                request.mediaFileId(), new IOException("offline"));
+          }
+        });
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+
+    assertThat(probeTaskRequests.awaitRequest(REQUEST_BOUND).filepathUri())
+        .isEqualTo(FilepathCodec.encode(path));
+    assertThat(retrySleeper.sleeps())
+        .containsExactly(Duration.ofSeconds(2), Duration.ofSeconds(3), Duration.ofMillis(4_500));
   }
 
   @Test
@@ -282,19 +309,23 @@ class FileEventProcessorTest {
   void shouldCancelAPendingProbeRequestWhenItsWatcherWorkIsCancelled(Cancellation cancellation)
       throws Exception {
     var path = createFile("/media/shows/Show.S01E01.mkv");
-    var attempted = new CountDownLatch(1);
     var worker = new AtomicReference<Thread>();
     var attempts = new AtomicInteger();
     probeTaskRequests.dispatchWith(
         request -> {
           worker.set(Thread.currentThread());
           attempts.incrementAndGet();
-          attempted.countDown();
           throw new ProbeTaskSchedulingException(request.mediaFileId(), new IOException("offline"));
+        });
+    var backingOff = new CountDownLatch(1);
+    sleeperRef.set(
+        _ -> {
+          backingOff.countDown();
+          new CountDownLatch(1).await();
         });
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
-    assertThat(attempted.await(5, TimeUnit.SECONDS)).isTrue();
+    assertThat(backingOff.await(5, TimeUnit.SECONDS)).isTrue();
 
     Runnable cancel =
         switch (cancellation) {
@@ -305,7 +336,9 @@ class FileEventProcessorTest {
         };
     cancel.run();
 
-    assertThat(worker.get().join(Duration.ofSeconds(5))).isTrue();
+    assertThat(worker.get().join(Duration.ofSeconds(5)))
+        .as("the cancelled worker stops instead of backing off again")
+        .isTrue();
     assertThat(attempts).hasValue(1);
   }
 
