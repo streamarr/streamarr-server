@@ -12,7 +12,8 @@ import java.util.Optional;
 /**
  * Reads the fields of an encoded probe report while the messages of its report call arrive, and
  * names the first rule that the bytes so far break: a limit that the server states, or the protobuf
- * wire format. It builds no message, so the server decodes only a probe report whose fields keep
+ * wire format. It reads every message that the probe report holds, the result's included, by the
+ * same rules. It builds no message, so the server decodes only a probe report whose fields keep
  * every limit (ADR 0062). It counts every occurrence of a field, in any order of the fields, and a
  * tag, a varint or a length may continue in the next message.
  */
@@ -279,7 +280,6 @@ final class ProbeReportFieldCounter {
 
       if (field.equals(RESULT)) {
         addToResult(length);
-        return Step.SKIP;
       }
 
       if (field.getJavaType() == FieldDescriptor.JavaType.MESSAGE) {

@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.services.streaming.remote.ReportingWorker.intervals;
 import static com.streamarr.server.services.streaming.remote.ReportingWorker.invalidMedia;
+import static com.streamarr.server.services.streaming.remote.ReportingWorker.reportWithResultOfLength;
 import static com.streamarr.server.services.streaming.remote.ReportingWorker.withKeyframes;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -9,10 +10,14 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedOutputStream;
+import com.google.protobuf.UnknownFieldSet;
 import com.google.protobuf.WireFormat;
 import com.streamarr.server.services.streaming.remote.ProbeReportFieldCounter.BrokenRule;
 import com.streamarr.transcode.v1.ProbeAttemptReport;
+import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.ProbeStreamInfo;
 import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -99,8 +104,8 @@ class ProbeReportFieldCounterTest {
 
   @Test
   @DisplayName("Should keep a result when it is exactly as long as the result length limit")
-  void shouldKeepResultWhenItIsExactlyAsLongAsResultLengthLimit() throws IOException {
-    var bytes = lengthDelimited(ProbeAttemptReport.RESULT_FIELD_NUMBER, RESULT_LENGTH_LIMIT);
+  void shouldKeepResultWhenItIsExactlyAsLongAsResultLengthLimit() {
+    var bytes = reportWithResultOfLength(REQUEST, RESULT_LENGTH_LIMIT).build().toByteString();
     var counter = counterOf(bytes);
 
     assertThat(counter.read(bytes)).isEmpty();
@@ -114,7 +119,7 @@ class ProbeReportFieldCounterTest {
   void shouldAddUpLengthsOfResultsFieldsWhenProbeReportHoldsItsResultMoreThanOnce()
       throws IOException {
     var keyframe = withKeyframes(ProbeAttemptReport.newBuilder(), 1).build().toByteString();
-    var first = lengthDelimited(ProbeAttemptReport.RESULT_FIELD_NUMBER, 100);
+    var first = reportWithResultOfLength(REQUEST, 100).build().toByteString();
     var second =
         tagAndLength(ProbeAttemptReport.RESULT_FIELD_NUMBER, RESULT_LENGTH_LIMIT - 100 + 1);
     var counter = counter(ROOM_FOR_A_LONGER_RESULT);
@@ -184,6 +189,27 @@ class ProbeReportFieldCounterTest {
             bytes(0x22, 2, 0x12, 1),
             BrokenRule.FIELD_PAST_ITS_END),
         arguments("a group inside a measured stream", bytes(0x22, 1, 0x0b), BrokenRule.GROUP),
+        arguments("a group inside the result", bytes(0x0a, 1, 0x0b), BrokenRule.GROUP),
+        arguments(
+            "a varint of eleven bytes in the result",
+            bytes(0x0a, 11, 0x10).concat(repeated(0xff, 10)),
+            BrokenRule.OVERLONG_VARINT),
+        arguments(
+            "a field of the result that is longer than the result",
+            bytes(0x0a, 2, 0x1a, 1),
+            BrokenRule.FIELD_PAST_ITS_END),
+        arguments(
+            "a stream of the result that ends inside one of its fields",
+            bytes(0x0a, 5, 0x1a, 3, 0x12, 1, 0x08),
+            BrokenRule.ENDS_INSIDE_A_FIELD),
+        arguments(
+            "the result's probe version with a length",
+            bytes(0x0a, 2, 0x12),
+            BrokenRule.WRONG_WIRE_TYPE),
+        arguments(
+            "a stream of the result as a fixed32 value",
+            bytes(0x0a, 6, 0x1a, 4, 0x15),
+            BrokenRule.WRONG_WIRE_TYPE),
         arguments(
             "a varint of eleven bytes in an undeclared field",
             bytes(0x48).concat(repeated(0xff, 10)),
@@ -476,6 +502,40 @@ class ProbeReportFieldCounterTest {
   }
 
   @Test
+  @DisplayName(
+      "Should go on reading the result after a field of a stream of the result that the contract"
+          + " does not declare")
+  void shouldGoOnReadingResultAfterFieldOfStreamOfResultThatIsNotDeclared() {
+    var stream =
+        ProbeStreamInfo.newBuilder()
+            .setIndex(0)
+            .setUnknownFields(
+                UnknownFieldSet.newBuilder()
+                    .addField(
+                        900,
+                        UnknownFieldSet.Field.newBuilder()
+                            .addLengthDelimited(ByteString.copyFromUtf8("removed"))
+                            .addFixed64(1)
+                            .build())
+                    .build());
+    var undeclared =
+        ProbeAttemptReport.newBuilder()
+            .setResult(
+                ProbeAttemptResult.newBuilder()
+                    .setMedia(ProbeMediaInfo.newBuilder().addStreams(stream)))
+            .build()
+            .toByteString();
+    var groupAfterTheStream = bytes(0x0b);
+    var counter = counter(undeclared.size() + groupAfterTheStream.size());
+
+    var read = counter.read(undeclared);
+    var after = counter.read(groupAfterTheStream);
+
+    assertThat(read).isEmpty();
+    assertThat(after).contains(BrokenRule.GROUP);
+  }
+
+  @Test
   @DisplayName("Should name the first broken rule again when it reads further bytes")
   void shouldNameFirstBrokenRuleAgainWhenItReadsFurtherBytes() {
     var counter = counter(STATED_LENGTH);
@@ -511,15 +571,6 @@ class ProbeReportFieldCounterTest {
 
   private static ProbeReportFieldCounter counter(long statedLength) {
     return new ProbeReportFieldCounter(LIMITS, statedLength);
-  }
-
-  /** A length-delimited field of this many bytes, each zero. */
-  private static ByteString lengthDelimited(int fieldNumber, int length) throws IOException {
-    var out = ByteString.newOutput();
-    var field = CodedOutputStream.newInstance(out);
-    field.writeByteArray(fieldNumber, new byte[length]);
-    field.flush();
-    return out.toByteString();
   }
 
   /** The tag and the length of a length-delimited field, without its bytes. */
