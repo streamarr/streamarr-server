@@ -177,6 +177,30 @@ class EarlyEndBesideOtherAudioTracksTest {
             videoEncodedForItsEarlyEnd()
                 .file(videoToTheEarlyEnd(FRENCH_TO_THE_LATE_END))
                 .advertisedEnd(LATE_END)),
+        // The container's 16.2 s stands as the media end, because it runs less than 1 s past the
+        // English track's scanned 15.5 s. The French track's 16.1 s does not count, because the
+        // player never receives that track (ADR 0037, early ends).
+        session(
+            "a session on a track that ends less than a segment after the video, beside a track"
+                + " that runs a segment past the video",
+            copied()
+                .file(
+                    SourceFile.builder()
+                        .videoEnd(EARLY_END)
+                        .audioTracks(
+                            List.of(
+                                AudioTrack.builder()
+                                    .language("eng")
+                                    .end(Optional.of(Duration.ofMillis(15_500)))
+                                    .build(),
+                                AudioTrack.builder()
+                                    .language("fra")
+                                    .end(Optional.of(Duration.ofMillis(16_100)))
+                                    .build()))
+                        .statedDuration(Duration.ofMillis(16_200))
+                        .build())
+                .language(Language.EN)
+                .advertisedEnd(Duration.ofMillis(16_200))),
         // No scan read the end of the session's track, so the media ends at the container's 17 s.
         session(
             "a session on a track without a known end, beside a track that runs on",
