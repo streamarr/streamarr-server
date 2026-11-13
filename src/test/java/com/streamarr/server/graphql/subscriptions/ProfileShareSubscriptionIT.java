@@ -77,6 +77,33 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
         }
       }
       """;
+  // The Household settings page that lists the visitors' active shares.
+  private static final String ACTIVE_VISITS =
+      """
+      subscription {
+        profileShareChanged {
+          shareId
+          share { id status }
+          householdSharesEdge(statuses: [ACTIVE], visitorsOnly: true) {
+            cursor orderKey node { id }
+          }
+        }
+      }
+      """;
+  // The Sharing page that lists a Profile's earlier offers and shares, beside a Household's list.
+  private static final String EARLIER_SHARES =
+      """
+      subscription {
+        profileShareChanged {
+          shareId
+          share { id status }
+          profileSharesEdge(statuses: [REJECTED, CANCELED, EXPIRED, INVALIDATED, ENDED]) {
+            cursor orderKey node { id }
+          }
+          householdSharesEdge { cursor orderKey node { id } }
+        }
+      }
+      """;
 
   @LocalServerPort private int port;
 
@@ -221,6 +248,77 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
     // The Household still hears that the offer is over, so its client can take the row away.
     assertPartiesHidden(declinedForHost);
     assertPartiesHidden(canceledForHost);
+  }
+
+  @Test
+  @DisplayName(
+      "Should place an older visit after a newer one when the Household accepts the older offer"
+          + " last")
+  void shouldPlaceAnOlderVisitAfterANewerOneWhenTheHouseholdAcceptsTheOlderOfferLast() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host), ACTIVE_VISITS);
+    var olderId = offer(managedProfile());
+    var newerId = offer(managedProfile());
+    decide("acceptProfileShare", newerId);
+    nextChangeWithStatus(hostSocket, newerId, "ACTIVE");
+    var loaded = activeVisits(1);
+
+    decide("acceptProfileShare", olderId);
+    var olderEdge = nextChangeWithStatus(hostSocket, olderId, "ACTIVE").path("householdSharesEdge");
+    var listed = activeVisits(10);
+
+    assertThat(loaded.findValuesAsString("id")).containsExactly(newerId);
+    assertThat(listed.findValuesAsString("id")).containsExactly(newerId, olderId);
+    // The Household's lists put the newest share first, and order keys compare ascending, so the
+    // client places the older visit after the newer visit it already holds.
+    assertThat(olderEdge.path("orderKey").asString())
+        .isGreaterThan(loaded.at("/edges/0/orderKey").asString());
+    assertThat(olderEdge.path("orderKey").asString())
+        .isEqualTo(listed.at("/edges/1/orderKey").asString());
+    assertThat(olderEdge.path("cursor").asString())
+        .isEqualTo(listed.at("/edges/1/cursor").asString());
+  }
+
+  @Test
+  @DisplayName(
+      "Should place a declined offer among the Profile's earlier shares when the Household"
+          + " declines it")
+  void shouldPlaceADeclinedOfferAmongTheProfilesEarlierSharesWhenTheHouseholdDeclinesIt() {
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner), EARLIER_SHARES);
+    var profile = managedProfile();
+    var shareId = offer(profile);
+    var offered = nextChangeWithStatus(ownerSocket, shareId, "PENDING");
+
+    decide("rejectProfileShare", shareId);
+    var declined = nextChangeWithStatus(ownerSocket, shareId, "REJECTED");
+    var listed = earlierShares(profile);
+
+    // The list of earlier offers and shares holds no offer that still waits for an answer.
+    assertThat(offered.path("profileSharesEdge").isNull()).isTrue();
+    assertThat(listed.findValuesAsString("id")).containsExactly(shareId);
+    assertThat(declined.at("/profileSharesEdge/orderKey").asString())
+        .isEqualTo(listed.at("/edges/0/orderKey").asString());
+    assertThat(declined.at("/profileSharesEdge/cursor").asString())
+        .isEqualTo(listed.at("/edges/0/cursor").asString());
+    // The owner administers their own Household, not the one the Profile was offered to.
+    assertThat(declined.path("householdSharesEdge").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should take a declined offer off the Household's list when the Household declines it")
+  void shouldTakeADeclinedOfferOffTheHouseholdsListWhenTheHouseholdDeclinesIt() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host), EARLIER_SHARES);
+    var shareId = offer(managedProfile());
+    var offered = nextChangeWithStatus(hostSocket, shareId, "PENDING");
+
+    decide("rejectProfileShare", shareId);
+    var declined = nextChangeWithStatus(hostSocket, shareId, "REJECTED");
+
+    assertThat(offered.at("/householdSharesEdge/node/id").asString()).isEqualTo(shareId);
+    // A HouseholdAdmin's list of the shares into their Household holds no offer that is over.
+    assertThat(declined.path("householdSharesEdge").isNull()).isTrue();
+    // The host does not manage the Profile, so the Profile's shares are not theirs to list.
+    assertThat(declined.path("profileSharesEdge").isNull()).isTrue();
   }
 
   @Test
@@ -1327,11 +1425,44 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   private GraphQlTransportWsTestClient subscribedSocket(String bearer) {
+    return subscribedSocket(bearer, SUBSCRIPTION);
+  }
+
+  private GraphQlTransportWsTestClient subscribedSocket(String bearer, String subscription) {
     var before = activeSubscriptions.count(FIELD);
     var socket = connect(bearer);
-    socket.subscribe(OPERATION, SUBSCRIPTION);
+    socket.subscribe(OPERATION, subscription);
     activeSubscriptions.awaitCount(FIELD, (int) before + 1);
     return socket;
+  }
+
+  // The first page of the visitors' active shares in the host's Household, as its settings show.
+  private JsonNode activeVisits(int first) {
+    var response =
+        http.execute(
+            authTestSupport.accountBearer(host),
+            """
+            query { householdShares(householdId: "%s", statuses: [ACTIVE], visitorsOnly: true,
+              first: %d) { edges { cursor orderKey node { id } } } }
+            """
+                .formatted(host.household().getId(), first));
+    assertThat(response.path("errors").isMissingNode()).as("errors in %s", response).isTrue();
+    return response.at("/data/householdShares");
+  }
+
+  // The Profile's earlier offers and shares, as the owner's Sharing page shows them.
+  private JsonNode earlierShares(Profile profile) {
+    var response =
+        http.execute(
+            authTestSupport.accountBearer(owner),
+            """
+            query { profileShares(profileId: "%s",
+              statuses: [REJECTED, CANCELED, EXPIRED, INVALIDATED, ENDED]) {
+              edges { cursor orderKey node { id } } } }
+            """
+                .formatted(profile.getId()));
+    assertThat(response.path("errors").isMissingNode()).as("errors in %s", response).isTrue();
+    return response.at("/data/profileShares");
   }
 
   private GraphQlTransportWsTestClient connect(String bearer) {
@@ -1381,10 +1512,15 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
 
   private static JsonNode nextShareWithStatus(
       GraphQlTransportWsTestClient socket, String shareId, String status) {
+    return nextChangeWithStatus(socket, shareId, status).path("share");
+  }
+
+  private static JsonNode nextChangeWithStatus(
+      GraphQlTransportWsTestClient socket, String shareId, String status) {
     while (true) {
-      var share = nextShare(socket, shareId);
-      if (status.equals(share.path("status").asString())) {
-        return share;
+      var change = changesUntil(socket, shareId).getLast();
+      if (status.equals(change.path("share").path("status").asString())) {
+        return change;
       }
     }
   }

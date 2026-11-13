@@ -35,6 +35,14 @@ public interface ProfileHouseholdShareRepositoryCustom {
   List<Row<ProfileHouseholdShare>> rowsOfProfile(
       UUID profileId, ShareStatusFilter filter, Seek seek);
 
+  /** The share where the shares the filter keeps into its Household list it; empty if not kept. */
+  Optional<Row<ProfileHouseholdShare>> findRowIntoHousehold(
+      HouseholdShareFilter filter, UUID shareId);
+
+  /** The share where the Profile's shares that the filter keeps list it; empty if not kept. */
+  Optional<Row<ProfileHouseholdShare>> findRowOfProfile(
+      UUID profileId, ShareStatusFilter filter, UUID shareId);
+
   /**
    * The PENDING share of the Profile into the Household becomes CANCELED (EXPIRED when already
    * past) so a new one can be offered; answers the shares that changed.

@@ -88,12 +88,22 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
   public List<Row<ProfileHouseholdShare>> rowsIntoHousehold(
       HouseholdShareFilter filter, Seek seek) {
     return InMemoryKeyset.byCreationTime(
-        database.values().stream()
-            .filter(share -> share.getHouseholdId().equals(filter.householdId()))
-            .filter(share -> keeps(filter.statuses(), share))
-            .filter(share -> !filter.visitorsOnly() || ofVisitor(share))
-            .toList(),
+        database.values().stream().filter(share -> isKeptIntoHousehold(filter, share)).toList(),
         seek);
+  }
+
+  @Override
+  public Optional<Row<ProfileHouseholdShare>> findRowIntoHousehold(
+      HouseholdShareFilter filter, UUID shareId) {
+    return findById(shareId)
+        .filter(share -> isKeptIntoHousehold(filter, share))
+        .map(InMemoryKeyset::rowByCreationTime);
+  }
+
+  private boolean isKeptIntoHousehold(HouseholdShareFilter filter, ProfileHouseholdShare share) {
+    return share.getHouseholdId().equals(filter.householdId())
+        && keeps(filter.statuses(), share)
+        && (!filter.visitorsOnly() || ofVisitor(share));
   }
 
   // As the real query reads it: a share whose Profile belongs to another Household.
@@ -113,6 +123,15 @@ public class FakeProfileHouseholdShareRepository extends FakeJpaRepository<Profi
             .filter(share -> keeps(filter, share))
             .toList(),
         seek);
+  }
+
+  @Override
+  public Optional<Row<ProfileHouseholdShare>> findRowOfProfile(
+      UUID profileId, ShareStatusFilter filter, UUID shareId) {
+    return findById(shareId)
+        .filter(share -> share.getProfileId().equals(profileId))
+        .filter(share -> keeps(filter, share))
+        .map(InMemoryKeyset::rowByCreationTime);
   }
 
   // As the real query reads it: an offer past its expiry is EXPIRED, never PENDING.

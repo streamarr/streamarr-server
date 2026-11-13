@@ -104,17 +104,13 @@ extend type Subscription {
     An operation whose Account may no longer follow share changes ends with FORBIDDEN.
 
     To build current state, subscribe first, then query householdShares or profileShares, and
-    apply each change by shareId. The lists put the newest share first, so a share created after
-    the client subscribed goes first; a change to a share on a page the client has not loaded can
-    wait for that page. Keep a share in a profileShares list while its status is one of the list's
-    statuses. Keep it in a householdShares list on the same terms when the reader is a ServerAdmin
-    (me.serverAdmin); for anyone else, that list holds only offers that are PENDING and before
-    their expiresAt, and ACTIVE shares, whatever its statuses, so keep a share there only while it
-    is one of those. A HouseholdAdmin who also manages the Profile still gets the share's later
-    changes through the Profile's side, and still drops it from their householdShares list once it
-    is over. In a list kept to visitorsOnly, keep a share only while visitor is true. Remove a
-    share when share is null without errors. A null share with errors is not a
-    removal: keep the share and run the queries again. Except for that last change to the target
+    apply each change by shareId. For each list the client shows, select householdSharesEdge or
+    profileSharesEdge with the arguments of that list. The edge says whether that list holds the
+    share for the subscriber and where. When the edge is not null, place the share by its orderKey
+    among the list's edges. A share that sorts after the last loaded edge, while the list has a next
+    page, waits for that page. When the edge is null and the change has no errors, the list no
+    longer holds the share, so remove the share from that list. A change with errors removes
+    nothing: keep the share and run the queries again. Except for that last change to the target
     Household's HouseholdAdmins, the server reads the share when it delivers the change, and it
     delivers one operation's changes in order, so the last change for a share carries its latest
     state. A share that stops being readable to the subscriber does not arrive
@@ -133,6 +129,22 @@ type ProfileShareChange {
     null.
     """
     share: ProfileShare
+    """
+    Where householdShares lists the share for this subscriber, in the Household the share is into,
+    with these statuses and visitorsOnly. Pass the arguments of the list the client shows. The
+    query and this edge read the list the same way, so the edge's cursor and orderKey are the ones
+    the query gives the share. Null when that list does not hold the share for this subscriber,
+    including once the share is deleted, unless this change has errors.
+    """
+    householdSharesEdge(statuses: [ProfileShareStatus!], visitorsOnly: Boolean): ProfileShareEdge
+    """
+    Where profileShares lists the share for this subscriber, among the shares of the share's
+    Profile, with these statuses. Pass the arguments of the list the client shows. The query and
+    this edge read the list the same way, so the edge's cursor and orderKey are the ones the query
+    gives the share. Null when that list does not hold the share for this subscriber, including once
+    the share is deleted, unless this change has errors.
+    """
+    profileSharesEdge(statuses: [ProfileShareStatus!]): ProfileShareEdge
 }
 
 type ProfileShareConnection {
@@ -140,9 +152,11 @@ type ProfileShareConnection {
     pageInfo: PageInfo!
 }
 
-type ProfileShareEdge {
+type ProfileShareEdge implements OrderedEdge {
     node: ProfileShare!
     cursor: String!
+    "Server ordering key. Compare as ascending ASCII strings, only with keys from the same list."
+    orderKey: String!
 }
 
 "The effects of offering this Profile to the Household."

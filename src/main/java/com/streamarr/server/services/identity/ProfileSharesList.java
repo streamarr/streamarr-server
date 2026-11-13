@@ -8,6 +8,8 @@ import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.services.pagination.PagedList;
 import java.time.Clock;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -27,5 +29,11 @@ public class ProfileSharesList implements PagedList<ProfileHouseholdShare, Share
   @Override
   public List<Row<ProfileHouseholdShare>> rowsBeyond(ShareListScope profile, Seek seek) {
     return shareRepository.rowsOfProfile(profile.id(), profile.filterAt(clock.instant()), seek);
+  }
+
+  /** Where the list places the share, or nothing when the scope does not keep it. */
+  public Optional<Row<ProfileHouseholdShare>> rowOf(ShareListScope profile, UUID shareId) {
+    return shareRepository.findRowOfProfile(
+        profile.id(), profile.filterAt(clock.instant()), shareId);
   }
 }

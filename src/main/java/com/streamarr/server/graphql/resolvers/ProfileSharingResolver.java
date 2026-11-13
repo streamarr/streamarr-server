@@ -29,6 +29,7 @@ import com.streamarr.server.graphql.mutation.sharing.RejectProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
+import com.streamarr.server.services.identity.ShareListOrder;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -75,7 +76,8 @@ public class ProfileSharingResolver {
     var page =
         profileSharingService.householdShares(
             authorizationService.currentIdentity(), household, pageRequest(list, dfe));
-    return relayConnectionAdapter.toConnection(page, list, this::details);
+    return relayConnectionAdapter.toKeyedConnection(
+        page.map(this::details), list, ShareListOrder.NEWEST_FIRST);
   }
 
   @DgsQuery
@@ -88,7 +90,8 @@ public class ProfileSharingResolver {
     var page =
         profileSharingService.profileShares(
             authorizationService.currentIdentity(), profile, pageRequest(list, dfe));
-    return relayConnectionAdapter.toConnection(page, list, this::details);
+    return relayConnectionAdapter.toKeyedConnection(
+        page.map(this::details), list, ShareListOrder.NEWEST_FIRST);
   }
 
   @DgsMutation
