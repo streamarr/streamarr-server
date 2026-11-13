@@ -3609,16 +3609,25 @@ class HlsStreamingServiceTest {
   }
 
   private static StreamingProperties streamingProperties() {
+    return streamingPropertiesBuilder().build();
+  }
+
+  private static StreamingProperties.StreamingPropertiesBuilder streamingPropertiesBuilder() {
     return StreamingProperties.builder()
         .maxConcurrentTranscodes(3)
         .targetSegmentDuration(Duration.ofSeconds(6))
-        .sessionTimeout(Duration.ofSeconds(60))
-        .build();
+        .sessionTimeout(Duration.ofSeconds(60));
   }
 
   private HlsStreamingService serviceWith(
       FakeTranscodeExecutor executor, RuntimeStreamSessionRegistry registry) {
-    var properties = streamingProperties();
+    return serviceWith(executor, registry, streamingProperties());
+  }
+
+  private HlsStreamingService serviceWith(
+      FakeTranscodeExecutor executor,
+      RuntimeStreamSessionRegistry registry,
+      StreamingProperties properties) {
     var rig =
         StreamingRigFixture.streamingRigBuilder()
             .transcodeExecutor(executor)
