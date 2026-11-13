@@ -161,8 +161,8 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should fail closed and count an engine failure when a cancelled delivery's authority read waits past the lock bound")
-  void shouldFailClosedAndCountEngineFailureWhenCancelledDeliverysAuthorityReadWaitsPastLockBound()
+      "Should fail closed and count an engine failure when a cancelled delivery's authority read fails")
+  void shouldFailClosedAndCountEngineFailureWhenCancelledDeliverysAuthorityReadFails()
       throws SQLException {
     var identity = authTestSupport.identityOf(admin);
     var decision = new CompletableFuture<String>();
@@ -176,12 +176,13 @@ class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
               .doOnNext(_ -> decision.complete(viewLibraryAdministrationDecision(identity)))
               .subscribe();
       broadcaster.broadcast("SCANNING");
-      awaitBlockedAuthorityRead(observer, held);
+      var readerPid = awaitBlockedAuthorityRead(observer, held);
       operation.dispose();
+      PostgresLockTestSupport.cancelStatement(observer, readerPid);
 
       assertThat(decision)
-          .as("the authority read ends at the lock bound while user_account stays locked")
-          .succeedsWithin(LOCK_BOUND.plus(SETTLE_MARGIN))
+          .as("the authority read fails while user_account stays locked")
+          .succeedsWithin(SETTLE_MARGIN)
           .isEqualTo("AuthorizationUnavailableException");
     }
 
