@@ -71,9 +71,9 @@ class IdleInTransactionSessionEndIT extends AbstractIntegrationTest {
   }
 
   private int lockSettingsRowUntilTheSessionEnds(Connection holder) throws SQLException {
+    var holderPid = backendPid(holder);
     holder.setAutoCommit(false);
     lockSettingsRow(holder);
-    var holderPid = backendPid(holder);
 
     await().atMost(Duration.ofSeconds(10)).until(() -> !isBackendConnected(holderPid));
     return holderPid;
