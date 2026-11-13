@@ -2,7 +2,6 @@ package com.streamarr.server.graphql.transport;
 
 import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.support.ActiveSubscriptions;
@@ -81,7 +80,7 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
       activeSubscriptions.awaitCount(STATUS_FIELD, MAX_OPERATIONS_PER_CONNECTION - 1);
       socket.subscribe("replacement", STATUS_SUBSCRIPTION);
 
-      awaitActiveOperations(MAX_OPERATIONS_PER_CONNECTION);
+      activeSubscriptions.awaitCount(STATUS_FIELD, MAX_OPERATIONS_PER_CONNECTION);
     }
   }
 
@@ -94,7 +93,7 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
       activeSubscriptions.awaitCount(STATUS_FIELD, 2);
     }
 
-    awaitActiveOperations(0);
+    activeSubscriptions.awaitCount(STATUS_FIELD, 0);
   }
 
   @Test
@@ -106,14 +105,8 @@ class WebSocketOperationLimitIT extends AbstractIntegrationTest {
 
       fresh.subscribe("status", STATUS_SUBSCRIPTION);
 
-      awaitActiveOperations(MAX_OPERATIONS_PER_CONNECTION + 1);
+      activeSubscriptions.awaitCount(STATUS_FIELD, MAX_OPERATIONS_PER_CONNECTION + 1);
     }
-  }
-
-  private void awaitActiveOperations(int expected) {
-    await()
-        .untilAsserted(
-            () -> assertThat(activeSubscriptions.count(STATUS_FIELD)).isEqualTo(expected));
   }
 
   private void subscribeUpToLimit(GraphQlTransportWsTestClient socket) {
