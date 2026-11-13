@@ -2,7 +2,7 @@ package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.IntegrationTestFork;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -106,8 +106,7 @@ class CiPipelineWorkflowTest {
         .isEqualTo("true");
     assertThat(
             xpath.evaluate(
-                ci + "/systemPropertyVariables/" + AbstractIntegrationTest.FORK_NUMBER_PROPERTY,
-                pom))
+                ci + "/systemPropertyVariables/" + IntegrationTestFork.NUMBER_PROPERTY, pom))
         .as("fork number placeholder that Maven leaves for Failsafe")
         .isEqualTo("$${surefire.forkNumber}");
     assertThat(xpath.evaluate("/project" + failsafe + "/forkCount", pom))
