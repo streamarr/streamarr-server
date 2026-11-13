@@ -743,15 +743,14 @@
                         <artifactId>maven-failsafe-plugin</artifactId>
                         <configuration>
                             <failIfNoTests>true</failIfNoTests>
-                            <!-- Most integration tests wait on PostgreSQL, containers and timers
-                                 rather than the CPU, so two JVMs share the runner. Each fork takes
-                                 the next class when it finishes one, and names its own database
-                                 from its number (AbstractIntegrationTest). -->
                             <forkCount>2</forkCount>
                             <reuseForks>true</reuseForks>
-                            <!-- Maven sets a parameter that is only an unknown expression to
-                                 nothing. The escaped form leaves Failsafe the placeholder, which
-                                 it replaces in each fork. -->
+                            <!-- Each fork names its database from this number
+                                 (IntegrationTestFork), so two forks never attach to one reused
+                                 container when a developer enables container reuse. Maven sets a
+                                 parameter that is only an unknown expression to nothing. The
+                                 escaped form leaves Failsafe the placeholder, which it replaces in
+                                 each fork. -->
                             <systemPropertyVariables>
                                 <streamarr.test.fork-number>$${surefire.forkNumber}</streamarr.test.fork-number>
                             </systemPropertyVariables>
