@@ -591,13 +591,13 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
 
   // Thirty minutes, so the job attempt still runs after the oversized probe ends. Repeating the
   // clip by stream copy encodes no more frames. MP4 marks its track as the default, which an
-  // encode into Matroska does not. The worker reads the media root at /media.
+  // encode into Matroska does not.
   private static List<String> longMedia(Path clip) {
     return List.of(
         "-stream_loop",
         "-1",
         "-i",
-        "/media/" + mediaRoot.relativize(clip),
+        worker.containerPath(clip),
         "-c",
         "copy",
         "-t",
