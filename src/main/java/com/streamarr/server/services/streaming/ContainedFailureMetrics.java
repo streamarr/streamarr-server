@@ -6,8 +6,8 @@ import lombok.NonNull;
 import org.springframework.stereotype.Component;
 
 /**
- * Counts the failures that streaming catches and carries on from, under one metric name. The {@code
- * operation} label names the operation that failed.
+ * Counts failures that streaming catches and carries on from, under one metric name. The {@code
+ * operation} label names the operation that failed. Only a failure with a method here counts.
  */
 @Component
 public class ContainedFailureMetrics {
@@ -43,12 +43,10 @@ public class ContainedFailureMetrics {
     segmentUploadDiscardFailures.increment();
   }
 
-  /** The idle segment retention could not be read. */
   void countRetentionReadFailure() {
     retentionReadFailures.increment();
   }
 
-  /** The free space of the segment folder could not be read. */
   void countDiskSpaceReadFailure() {
     diskSpaceReadFailures.increment();
   }
