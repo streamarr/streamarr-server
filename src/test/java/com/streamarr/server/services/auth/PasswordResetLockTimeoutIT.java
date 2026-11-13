@@ -1,5 +1,8 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.support.PostgresLockTestSupport.activeQuery;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitBlockedBackendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockAccountRow;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -58,7 +61,8 @@ class PasswordResetLockTimeoutIT extends AbstractIntegrationTest {
                 .build());
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
-        var holder = dataSource.getConnection()) {
+        var holder = dataSource.getConnection();
+        var observer = dataSource.getConnection()) {
       holder.setAutoCommit(false);
       lockAccountRow(holder, account.getId());
 
@@ -73,8 +77,11 @@ class PasswordResetLockTimeoutIT extends AbstractIntegrationTest {
                         .build());
                 return null;
               });
+      var blockedPid = awaitBlockedBackendPid(observer, backendPid(holder), null);
+      assertThat(activeQuery(observer, blockedPid)).contains("\"user_account\"", "for update");
 
-      assertThatThrownBy(() -> redemption.get(10, TimeUnit.SECONDS))
+      // Longer than the configured 2 s lock timeout and shorter than the 5 s default.
+      assertThatThrownBy(() -> redemption.get(3, TimeUnit.SECONDS))
           .isInstanceOf(ExecutionException.class)
           .cause()
           .isInstanceOf(PessimisticLockingFailureException.class);
