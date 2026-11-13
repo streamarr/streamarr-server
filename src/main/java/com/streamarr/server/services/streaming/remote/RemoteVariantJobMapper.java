@@ -371,10 +371,9 @@ final class RemoteVariantJobMapper {
                 execution
                     .addAllSegmentStartTicks(starts.ticks())
                     .setSegmentStartTimeBase(fraction(starts.timeBase())));
-    if (holdsLastFrame(request) || padsWithSilence(request)) {
-      execution.setAdvertisedEnd(protobufDuration(request.advertisedEnd().orElseThrow()));
-    }
-
+    // The advertised end also ends a copy's last listed segment, against which the worker measures
+    // that segment's video (ADR 0060), so every job carries it.
+    request.advertisedEnd().ifPresent(end -> execution.setAdvertisedEnd(protobufDuration(end)));
     return execution.build();
   }
 
