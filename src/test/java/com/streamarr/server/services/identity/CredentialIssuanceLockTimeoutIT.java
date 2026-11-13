@@ -3,10 +3,7 @@ package com.streamarr.server.services.identity;
 import static com.streamarr.server.fixtures.AccountInvitationFixture.pendingInvitationBuilder;
 import static com.streamarr.server.fixtures.PasswordResetCodeFixture.pendingResetCodeBuilder;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
-import static com.streamarr.server.support.PostgresLockTestSupport.activeQuery;
-import static com.streamarr.server.support.PostgresLockTestSupport.awaitBlockedBackendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
-import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockAccountRow;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -215,32 +212,27 @@ class CredentialIssuanceLockTimeoutIT extends AbstractIntegrationTest {
   }
 
   private void assertReplacementTimesOut(
-      LockOperation lockOperation, String expectedBlockedQuery, Supplier<?> replacement)
+      LockOperation lockOperation, String lockedRelation, Supplier<?> replacement)
       throws Exception {
     try (var lockConnection = dataSource.getConnection();
-        var observer = dataSource.getConnection();
         var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       lockConnection.setAutoCommit(false);
       lockOperation.lock(lockConnection);
 
       var contender = executor.submit(replacement::get);
-      assertBlockedQuery(observer, backendPid(lockConnection), expectedBlockedQuery);
       try {
+        // The trace names the canceled statement and the relation of the row PostgreSQL waited for.
         assertThatThrownBy(() -> contender.get(3, TimeUnit.SECONDS))
             .isInstanceOf(ExecutionException.class)
             .cause()
             .isInstanceOf(ResourceBusyException.class)
-            .hasStackTraceContaining("canceling statement due to lock timeout");
+            .hasStackTraceContaining("for update")
+            .hasStackTraceContaining("canceling statement due to lock timeout")
+            .hasStackTraceContaining("in relation " + lockedRelation);
       } finally {
         lockConnection.rollback();
       }
     }
-  }
-
-  private static void assertBlockedQuery(
-      Connection observer, int blockerPid, String expectedBlockedQuery) throws SQLException {
-    var blockedPid = awaitBlockedBackendPid(observer, blockerPid, null);
-    assertThat(activeQuery(observer, blockedPid)).contains(expectedBlockedQuery, "for update");
   }
 
   @FunctionalInterface
