@@ -32,6 +32,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
@@ -61,6 +62,8 @@ class RemoteRecoveryIT {
 
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+  // A start can pull the worker image before the fixture's two-minute readiness wait.
+  private static final Duration WORKER_START_BOUND = Duration.ofMinutes(3);
 
   @TempDir Path tempDir;
 
@@ -252,8 +255,7 @@ class RemoteRecoveryIT {
         var firstWorker = workerBuilder(server, mediaRoot).ffmpegScript(script).build();
         var secondWorker = workerBuilder(server, mediaRoot).ffmpegScript(script).build()) {
       server.start();
-      firstWorker.start();
-      secondWorker.start();
+      startTogether(firstWorker, secondWorker);
       var rig =
           recoveryRig(
               RecoveryRigConfiguration.builder()
@@ -304,6 +306,15 @@ class RemoteRecoveryIT {
             initialAttemptId,
             RecordedStream.START_AT_ZERO.containerPath(),
             WorkerContainerFixture.emitRecordedStream(replacementRecording));
+  }
+
+  private static void startTogether(WorkerContainerFixture first, WorkerContainerFixture second)
+      throws Exception {
+    try (var firstStart = BoundedTask.start(first::start);
+        var secondStart = BoundedTask.start(second::start)) {
+      firstStart.await(WORKER_START_BOUND);
+      secondStart.await(WORKER_START_BOUND);
+    }
   }
 
   private void startThenKillInitialAttempt(RecoveryRig rig, List<WorkerContainerFixture> workers)
