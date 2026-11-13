@@ -562,6 +562,23 @@ class RemotePlaybackIT {
   }
 
   @Test
+  @DisplayName("Should diagnose the locale when the worker starts under an ASCII locale")
+  void shouldDiagnoseLocaleWhenWorkerStartsUnderAsciiLocale() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+
+    try (var server = server(segmentStore);
+        var worker = workerBuilder(server, mediaRoot).filenameLocale("POSIX").build()) {
+      server.start();
+      worker.start();
+
+      assertThat(worker.logs())
+          .contains("rather than UTF-8")
+          .contains("the effective locale is LC_ALL=POSIX");
+    }
+  }
+
+  @Test
   @DisplayName("Should refuse a remote transcode when no worker is connected")
   void shouldRefuseRemoteTranscodeWhenNoWorkerIsConnected() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
