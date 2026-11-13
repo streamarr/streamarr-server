@@ -72,7 +72,6 @@ import java.util.function.Consumer;
 import lombok.Builder;
 import lombok.NonNull;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -119,20 +118,15 @@ class WorkerPlaybackRecoveryIT {
     worker.start();
   }
 
-  // Every test writes movie.mp4, each into its own directory of the shared source root. No job
-  // attempt of an earlier test may hold a slot of the shared worker into the next test.
+  // Every test writes movie.mp4, so each test writes into its own directory of the shared source
+  // root. Closing a rig stops its job attempts, which frees their slots before close returns.
   @BeforeEach
-  void awaitEveryWorkerSlotFree() throws IOException {
-    await()
-        .pollDelay(Duration.ZERO)
-        .atMost(Duration.ofSeconds(30))
-        .until(() -> server.availableSlots(SOURCE_NAMESPACE) == WORKER_SLOTS);
-    sourceRoot = Files.createDirectory(mediaRoot.resolve(UUID.randomUUID().toString()));
-  }
-
-  @AfterEach
-  void removeEventListeners() {
+  void startFromAnIdleWorker() throws IOException {
     events.removeListeners();
+    assertThat(server.availableSlots(SOURCE_NAMESPACE))
+        .as("free slots of the shared worker; a leftover encode would hold one")
+        .isEqualTo(WORKER_SLOTS);
+    sourceRoot = Files.createDirectory(mediaRoot.resolve(UUID.randomUUID().toString()));
   }
 
   @AfterAll
