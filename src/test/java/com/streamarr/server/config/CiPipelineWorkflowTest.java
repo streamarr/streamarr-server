@@ -261,10 +261,9 @@ class CiPipelineWorkflowTest {
   void shouldStartHlsSmokeJobLikeApplicationJobsWhenChecksRun() throws Exception {
     assertThat(job("smoke"))
         .as("smoke job keys: no needs, if or continue-on-error")
-        .containsOnlyKeys("name", "runs-on", "steps");
-    assertThat(job("smoke").get("runs-on"))
+        .containsOnlyKeys("name", "runs-on", "steps")
         .as("runner")
-        .isEqualTo(job("application").get("runs-on"));
+        .containsEntry("runs-on", job("application").get("runs-on"));
     assertThat(steps(job("smoke").get("steps")).subList(0, 3))
         .as("checkout, worker image pin and JDK setup")
         .isEqualTo(steps(job("application").get("steps")).subList(0, 3));
@@ -274,8 +273,8 @@ class CiPipelineWorkflowTest {
   @DisplayName("Should run every HLS smoke test when the smoke job runs")
   void shouldRunEveryHlsSmokeTestWhenSmokeJobRuns() throws Exception {
     var smokeTests = steps(job("smoke").get("steps")).getLast();
-    assertThat(smokeTests).containsEntry("name", SMOKE_TESTS);
     assertThat(smokeTests)
+        .containsEntry("name", SMOKE_TESTS)
         .as("smoke step keys: no if or continue-on-error")
         .containsOnlyKeys("name", "run");
     var command =
