@@ -16,6 +16,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.events.library.UnmeasuredCopyStartedEvent;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
@@ -767,27 +768,41 @@ public class ProducerLifecycleService {
       stopLeftVariantOfAnotherStreamSession(sessionId, shortage);
     }
 
-    return withSessionLock(
-        sessionId,
-        () -> {
-          var current =
-              runtimeRegistry
-                  .findById(sessionId)
-                  .orElseThrow(() -> new SessionNotFoundException(sessionId));
-          try (var _ =
-              transcodeLimit
-                  .tryReserve(current)
-                  .orElseThrow(() -> new TranscodeLimitReachedException(sessionId))) {
-            startVariant(current, firstListedVariant(current), current.getCurrentSegment());
-            if (runtimeRegistry.findById(sessionId).isEmpty()) {
-              throw new SessionNotFoundException(sessionId);
-            }
+    var started =
+        withSessionLock(
+            sessionId,
+            () -> {
+              var current =
+                  runtimeRegistry
+                      .findById(sessionId)
+                      .orElseThrow(() -> new SessionNotFoundException(sessionId));
+              try (var _ =
+                  transcodeLimit
+                      .tryReserve(current)
+                      .orElseThrow(() -> new TranscodeLimitReachedException(sessionId))) {
+                startVariant(current, firstListedVariant(current), current.getCurrentSegment());
+                if (runtimeRegistry.findById(sessionId).isEmpty()) {
+                  throw new SessionNotFoundException(sessionId);
+                }
 
-            runtimeRegistry.save(current);
-          }
+                runtimeRegistry.save(current);
+              }
 
-          return current;
-        });
+              return current;
+            });
+    publishUnmeasuredCopyStart(started);
+    return started;
+  }
+
+  // Published after the copy's job attempt is dispatched and outside the session mutex. A worker
+  // accepts no bitrate scan chunk from the start of a job attempt, so no chunk of the scan that
+  // the library then moves forward starts on the job attempt's worker (ADR 0054).
+  private void publishUnmeasuredCopyStart(StreamSession session) {
+    if (!copiesVideo(session) || session.getMediaProbe().streamMeasurements().isPresent()) {
+      return;
+    }
+
+    eventPublisher.publishEvent(new UnmeasuredCopyStartedEvent(session.getMediaFileId()));
   }
 
   private static String firstListedVariant(StreamSession session) {

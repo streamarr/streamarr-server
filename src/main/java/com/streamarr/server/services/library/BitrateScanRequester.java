@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.domain.task.BitrateScanPriority;
 import com.streamarr.server.domain.task.BitrateScanTaskRequest;
 import com.streamarr.server.repositories.media.BitrateScanRepository;
 import java.util.UUID;
