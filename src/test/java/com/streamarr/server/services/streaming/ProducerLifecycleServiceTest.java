@@ -50,6 +50,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -167,9 +168,10 @@ class ProducerLifecycleServiceTest {
                         .build()))
             .build();
     runtimeRegistry.save(session);
-    var playlists = new HlsPlaylistService(StreamingProperties.builder().build());
+    var playlists =
+        new HlsPlaylistService(StreamingProperties.builder().build(), UploadBudgetFixture.OFF);
 
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     var playlist = playlists.generateMultivariantPlaylist(session, "test-token");
     var requests = transcodeExecutor.getStartedRequests();
 
@@ -189,8 +191,9 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should refuse initial dispatch when the session is no longer registered")
   void shouldRefuseInitialDispatchWhenTheSessionIsNoLongerRegistered() {
     var session = defaultSessionBuilder().build();
+    var firstListed = session.firstListedVariant();
 
-    assertThatThrownBy(() -> lifecycle.startFirstListedVariant(session))
+    assertThatThrownBy(() -> lifecycle.startListedVariant(session, firstListed))
         .isInstanceOf(SessionNotFoundException.class);
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
@@ -198,7 +201,7 @@ class ProducerLifecycleServiceTest {
   private StreamSession startedSession() {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 
@@ -236,7 +239,7 @@ class ProducerLifecycleServiceTest {
   private StreamSession startedLadderSession() {
     var session = defaultLadderSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 
@@ -244,7 +247,7 @@ class ProducerLifecycleServiceTest {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
     session.setCurrentSegment(900);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 
@@ -560,7 +563,7 @@ class ProducerLifecycleServiceTest {
             .mediaProbe(defaultProbeBuilder().duration(Duration.ofSeconds(60)).build())
             .build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
     lifecycle.prepareRequestedVariant(session.getSessionId(), "720p", "720p/segment10.m4s");
@@ -667,7 +670,7 @@ class ProducerLifecycleServiceTest {
     var session = defaultLadderSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     var played = lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
     lifecycle.completeVariantSwitch(played);
     var switchedUp = lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/segment1.m4s");
@@ -689,7 +692,7 @@ class ProducerLifecycleServiceTest {
     var session = defaultLadderSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    limited.startFirstListedVariant(session);
+    limited.startListedVariant(session, session.firstListedVariant());
     limited.completeVariantSwitch(
         limited.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s"));
     transcodeExecutor.endAfterNextLivenessCheck(sessionId, "480p");
@@ -707,17 +710,41 @@ class ProducerLifecycleServiceTest {
     var limited = lifecycleWith(new MutexFactory<>(), 1);
     var running = defaultLadderSessionBuilder().build();
     runtimeRegistry.save(running);
-    limited.startFirstListedVariant(running);
+    limited.startListedVariant(running, running.firstListedVariant());
     var refused = defaultLadderSessionBuilder().build();
     runtimeRegistry.save(refused);
+    var firstListed = refused.firstListedVariant();
 
-    assertThatThrownBy(() -> limited.startFirstListedVariant(refused))
+    assertThatThrownBy(() -> limited.startListedVariant(refused, firstListed))
         .isInstanceOf(TranscodeLimitReachedException.class);
 
     assertThat(refused.getVariantHandles()).isEmpty();
     assertThat(transcodeExecutor.getStartedRequests())
         .extracting(TranscodeRequest::sessionId)
         .containsExactly(running.getSessionId());
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the variant that the player switches to running when another variant's request finds no place and a served playlist kept that variant")
+  void shouldKeepTheVariantThePlayerSwitchesToWhenAnotherVariantFindsNoPlaceAfterAPlaylistKeptIt() {
+    // Under a transcode limit of 2, the player plays 480p and requests a 360p segment, which
+    // starts 360p in the last place. A served playlist that lists only 360p keeps the running 360p
+    // before its segment reaches the player. The player's 720p initialization request then finds
+    // no place.
+    var limited = lifecycleWith(new MutexFactory<>(), 2);
+    var session = defaultLadderSessionBuilder().build();
+    var sessionId = session.getSessionId();
+    runtimeRegistry.save(session);
+    limited.startListedVariant(session, session.firstListedVariant());
+    limited.completeVariantSwitch(
+        limited.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s"));
+    limited.prepareRequestedVariant(sessionId, "360p", "360p/segment1.m4s");
+    assertThat(limited.startTopListedVariantUnlessOneRuns(session, List.of("360p"))).isTrue();
+
+    limited.prepareRequestedVariant(sessionId, "720p", "720p/init.mp4");
+
+    assertThat(transcodeExecutor.isRunning(sessionId, "360p")).isTrue();
   }
 
   private ProducerLifecycleService lifecycleWith(
@@ -745,7 +772,7 @@ class ProducerLifecycleServiceTest {
     var session = defaultLadderSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     var played = lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment0.m4s");
     lifecycle.completeVariantSwitch(played);
     lifecycle.prepareRequestedVariant(sessionId, "1080p", "1080p/segment1.m4s");
@@ -805,7 +832,7 @@ class ProducerLifecycleServiceTest {
     var session = defaultLadderSessionBuilder().build();
     runtimeRegistry.save(session);
 
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
 
     assertThat(session.getVariantHandles()).containsOnlyKeys("480p");
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), "480p")).isTrue();
@@ -1324,7 +1351,7 @@ class ProducerLifecycleServiceTest {
   void shouldAdvertiseTheWholeTimelineMediaSegmentCountWhenInstallingReplacementAttempt() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startFirstListedVariant(sixtySecondSession);
+    lifecycle.startListedVariant(sixtySecondSession, sixtySecondSession.firstListedVariant());
     transcodeExecutor.markDead(sixtySecondSession.getSessionId());
 
     recover(sixtySecondSession);
@@ -1346,7 +1373,7 @@ class ProducerLifecycleServiceTest {
             .transcodeDecision(fullTranscodeDecision("h264"))
             .build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     var first = transcodeExecutor.getStartedRequests().getFirst();
 
     var result =
@@ -1393,7 +1420,7 @@ class ProducerLifecycleServiceTest {
             .transcodeDecision(fullTranscodeDecision("h264"))
             .build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     transcodeExecutor.markDead(session.getSessionId());
 
     lifecycle.ensurePositioned(
@@ -1415,7 +1442,7 @@ class ProducerLifecycleServiceTest {
             .transcodeDecision(fullTranscodeDecision("h264"))
             .build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     transcodeExecutor.markDead(session.getSessionId());
 
     recover(session);
@@ -1432,7 +1459,7 @@ class ProducerLifecycleServiceTest {
   void shouldLeaveRunningProducerInPlaceWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startFirstListedVariant(sixtySecondSession);
+    lifecycle.startListedVariant(sixtySecondSession, sixtySecondSession.firstListedVariant());
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
     var result =
@@ -1453,7 +1480,7 @@ class ProducerLifecycleServiceTest {
   void shouldInstallNoReplacementAttemptWhenRequestNamesMediaSegmentPastTheAdvertisedTimeline() {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startFirstListedVariant(sixtySecondSession);
+    lifecycle.startListedVariant(sixtySecondSession, sixtySecondSession.firstListedVariant());
     transcodeExecutor.markDead(sixtySecondSession.getSessionId());
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -1557,7 +1584,7 @@ class ProducerLifecycleServiceTest {
             .build();
     runtimeRegistry.save(session);
 
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
 
     var request = transcodeExecutor.getStartedRequests().getLast();
     assertThat(request.width()).isEqualTo(1080);
@@ -1828,7 +1855,7 @@ class ProducerLifecycleServiceTest {
             .mediaProbe(defaultProbeBuilder().duration(Duration.ofSeconds(60)).build())
             .build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     var sessionId = session.getSessionId();
     segmentStore.addSegment(sessionId, "480p/segment9.m4s", new byte[] {1});
     lifecycle.prepareRequestedVariant(sessionId, "480p", "480p/segment9.m4s");
@@ -1929,7 +1956,7 @@ class ProducerLifecycleServiceTest {
   void shouldKeepAnExhaustedEncodeExhaustedWhenTheOnlyNewTargetCannotEncodeItsCodecFamily() {
     var session = defaultSessionBuilder().transcodeDecision(fullTranscodeDecision("av1")).build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     recover(session);
     clock.advance(Duration.ofSeconds(16));
     recover(session);
@@ -1980,7 +2007,7 @@ class ProducerLifecycleServiceTest {
     var session =
         abrSessionBuilder().transcodeDecision(fullTranscodeDecision(videoCodecFamily)).build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 
@@ -2218,7 +2245,7 @@ class ProducerLifecycleServiceTest {
     transcodeExecutor.setTargetEncoders(NVENC_WORKER, List.of(h264Nvenc()));
     transcodeExecutor.setExecutionTargets(List.of(LIBX264_WORKER));
     runtimeRegistry.save(started);
-    lifecycle.startFirstListedVariant(started);
+    lifecycle.startListedVariant(started, started.firstListedVariant());
     return started;
   }
 
@@ -2284,7 +2311,7 @@ class ProducerLifecycleServiceTest {
     var session = defaultLadderSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     serverSettings.changeEncoderPreset(serverAdmin, "SLOWER");
     transcodeExecutor.setExecutionTargets(List.of(NVENC_WORKER, LIBX264_WORKER));
 
@@ -2345,7 +2372,7 @@ class ProducerLifecycleServiceTest {
   private StreamSession startedCopySession(MediaProbe.MediaProbeBuilder probe) {
     var session = defaultSessionBuilder().mediaProbe(probe.build()).build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 
@@ -2612,7 +2639,7 @@ class ProducerLifecycleServiceTest {
             .mediaProbe(probe.build())
             .build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 

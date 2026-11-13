@@ -35,6 +35,7 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -302,7 +303,8 @@ class CopiedAudioMeasuredCountTest {
     var session = createSession(measured(sourceThatIsEncoded()), withoutMaximumBitrate());
 
     var playlist =
-        new HlsPlaylistService(streamingProperties()).generateMultivariantPlaylist(session, "t");
+        new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF)
+            .generateMultivariantPlaylist(session, "t");
 
     assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.COPY);
     assertThat(session.getVariants()).isNotEmpty();
@@ -544,6 +546,7 @@ class CopiedAudioMeasuredCountTest {
         .runtimeRegistry(runtimeRegistry)
         .producerLifecycle(rig.lifecycle())
         .deliveryCoordinator(rig.coordinator())
+        .uploadBudget(UploadBudgetFixture.OFF)
         .meterRegistry(meters)
         .languagePreferences((_, _) -> List.of())
         .build();

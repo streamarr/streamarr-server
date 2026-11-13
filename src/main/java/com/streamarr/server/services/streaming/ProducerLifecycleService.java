@@ -89,6 +89,18 @@ public class ProducerLifecycleService {
   // for it. Other requests leave that job attempt alone until the stop settles, so none of them
   // exhausts the variant or stops a second left copy.
   private final ConcurrentHashMap<VariantKey, UUID> copyReclaims = new ConcurrentHashMap<>();
+  // The variant that a served playlist started in each stream session, until the player requests a
+  // media segment of a variant other than the one it plays (ADR 0050).
+  private final ConcurrentHashMap<UUID, String> variantsStartedForTheirPlaylist =
+      new ConcurrentHashMap<>();
+  // The variant that each stream session started for its player: the first-listed variant, or the
+  // top variant that stays when the upload budget leaves it out, whether creation or a served
+  // playlist started it. A running variant that a served playlist keeps counts as started by that
+  // playlist, and so does a variant that takes the place of the variant that the playlist started.
+  // Until the player's first media-segment request, any request of it may stop another stream
+  // session's left variant (ADR 0019).
+  private final ConcurrentHashMap<UUID, String> variantsStartedForTheirPlayer =
+      new ConcurrentHashMap<>();
   private final TranscodeLimit transcodeLimit = new TranscodeLimit();
 
   public enum RecoveryResult {
@@ -233,9 +245,11 @@ public class ProducerLifecycleService {
    * dead or stalled job attempt. When a media-segment request's replacement of the requested
    * variant finds no free worker job slot, it stops the stream session's own other video variants
    * that run on the replacement's worker and tries once more, then looks for another stream
-   * session's left variant to stop and tries once more. When a worker refused the variant's copy at
-   * startup, it looks for another stream session's left copy on that worker; once it stops one, it
-   * starts the copy on that worker once more.
+   * session's left variant to stop and tries once more. Before the player's first media-segment
+   * request, any request of the variant that the stream session started for its player, an
+   * initialization request included, also looks for another stream session's left variant. When a
+   * worker refused the variant's copy at startup, it looks for another stream session's left copy
+   * on that worker; once it stops one, it starts the copy on that worker once more.
    */
   public RecoveryResult recover(SegmentRequest request) {
     var reclaim = LeftVariantReclaim.allowed();
@@ -339,6 +353,8 @@ public class ProducerLifecycleService {
           playingVariants.remove(sessionId);
           sessionsKeepingLeftVariant.remove(sessionId);
           copyReclaims.keySet().removeIf(key -> key.sessionId().equals(sessionId));
+          variantsStartedForTheirPlaylist.remove(sessionId);
+          variantsStartedForTheirPlayer.remove(sessionId);
         });
     seekPriority.forgetSession(sessionId);
   }
@@ -513,6 +529,7 @@ public class ProducerLifecycleService {
               .reason(reason)
               .target(target.get())
               .makesRoom(isMediaSegmentRequestOfRequestedVariant(request))
+              .startedForANewViewer(isNewViewersRequestOfTheVariantStartedForThePlayer(request))
               .reclaim(pending.reclaim())
               .build();
       var outcome = replaceAndTrack(state, session, command);
@@ -565,7 +582,7 @@ public class ProducerLifecycleService {
     }
 
     return !newestMediaSegmentRequests.containsKey(request.sessionId())
-        && request.variantLabel().equals(firstListedVariant(session));
+        && request.variantLabel().equals(session.firstListedVariant());
   }
 
   // Once a request for a media segment has positioned the variant, a replacement never starts past
@@ -738,6 +755,7 @@ public class ProducerLifecycleService {
       ReplacementReason reason,
       ExecutionTargetId target,
       boolean makesRoom,
+      boolean startedForANewViewer,
       LeftVariantReclaim reclaim) {}
 
   private sealed interface ReplaceResult {
@@ -754,15 +772,16 @@ public class ProducerLifecycleService {
   }
 
   /**
-   * Starts the variant that the multivariant playlist lists first, at the stream session's current
-   * segment. No other variant starts until the player requests one of its segments (ADR 0019). When
-   * no slot is free, another stream session's left variant stops first. Throws {@link
-   * TranscodeLimitReachedException} and starts nothing when the transcode limit still leaves no
-   * place for a stream session that encodes the video.
+   * Starts a variant that the multivariant playlist lists, at the stream session's current segment.
+   * A variant other than the first-listed one holds the playlist's place, as one that a served
+   * playlist starts (ADR 0050). No other variant starts until the player requests one of its
+   * segments (ADR 0019). When no slot is free, another stream session's left variant stops first.
+   * Throws {@link TranscodeLimitReachedException} and starts nothing when the transcode limit still
+   * leaves no place for a stream session that encodes the video.
    */
-  public StreamSession startFirstListedVariant(StreamSession session) {
+  public StreamSession startListedVariant(StreamSession session, String variantLabel) {
     var sessionId = session.getSessionId();
-    var shortage = slotShortage(session, firstListedVariant(session));
+    var shortage = slotShortage(session, variantLabel);
     if (shortage.any()) {
       stopLeftVariantOfAnotherStreamSession(sessionId, shortage);
     }
@@ -778,11 +797,13 @@ public class ProducerLifecycleService {
               transcodeLimit
                   .tryReserve(current)
                   .orElseThrow(() -> new TranscodeLimitReachedException(sessionId))) {
-            startVariant(current, firstListedVariant(current), current.getCurrentSegment());
+            startVariant(current, variantLabel, current.getCurrentSegment());
             if (runtimeRegistry.findById(sessionId).isEmpty()) {
               throw new SessionNotFoundException(sessionId);
             }
 
+            holdThePlaylistsPlaceUnlessFirstListed(current, variantLabel);
+            variantsStartedForTheirPlayer.put(sessionId, variantLabel);
             runtimeRegistry.save(current);
           }
 
@@ -790,12 +811,106 @@ public class ProducerLifecycleService {
         });
   }
 
-  private static String firstListedVariant(StreamSession session) {
-    if (session.getVariants().isEmpty()) {
-      return StreamSession.defaultVariant();
+  // Only the upload budget starts a variant other than the first-listed one. Holding the
+  // playlist's place lets a request of another variant replace it, as when the first playlist
+  // lists the first-listed variant again because the budget no longer leaves it out.
+  private void holdThePlaylistsPlaceUnlessFirstListed(StreamSession session, String variantLabel) {
+    if (variantLabel.equals(session.firstListedVariant())) {
+      return;
     }
 
-    return session.getVariants().getFirst().label();
+    variantsStartedForTheirPlaylist.put(session.getSessionId(), variantLabel);
+  }
+
+  /**
+   * Starts the first of the variants that a served multivariant playlist lists, at the stream
+   * session's current segment, unless the job attempt of one of them runs. A listed variant then
+   * holds its place under the transcode limit before the player requests it, and a running one
+   * holds it as a started one does while the player plays a variant left out (ADR 0050). Answers
+   * whether the job attempt of one of the listed variants runs afterward. A first variant whose job
+   * attempt does not run, such as a suspended one, holds no place, and recovery rather than a start
+   * replaces it, so it answers false.
+   */
+  public boolean startTopListedVariantUnlessOneRuns(
+      StreamSession session, List<String> listedVariants) {
+    var sessionId = session.getSessionId();
+    return withSessionLock(
+        sessionId,
+        () -> {
+          var current = runtimeRegistry.findById(sessionId);
+          if (current.isEmpty()) {
+            return false;
+          }
+
+          var running =
+              listedVariants.stream()
+                  .filter(variant -> transcodeExecutor.isRunning(sessionId, variant))
+                  .findFirst();
+          if (running.isPresent()) {
+            keepForThePlaylist(sessionId, running.get(), listedVariants);
+            return true;
+          }
+
+          if (current.get().getVariantHandle(listedVariants.getFirst()).isPresent()) {
+            return false;
+          }
+
+          var started = startedForThePlaylist(current.get(), listedVariants.getFirst());
+          if (started) {
+            treatAsStartedByThePlaylist(sessionId, listedVariants.getFirst());
+          }
+
+          return started;
+        });
+  }
+
+  private void treatAsStartedByThePlaylist(UUID sessionId, String variantLabel) {
+    variantsStartedForTheirPlaylist.put(sessionId, variantLabel);
+    variantsStartedForTheirPlayer.put(sessionId, variantLabel);
+  }
+
+  // A listed variant that runs while the player plays a variant that the playlist leaves out, as
+  // one that an initialization request started does, counts as the variant that the playlist
+  // started (ADR 0050). It holds the playlist's place, and it is the variant that the stream
+  // session started for its player (ADR 0019).
+  private void keepForThePlaylist(UUID sessionId, String runningVariant, List<String> listed) {
+    var played = playingVariants.get(sessionId);
+    if (played != null && listed.contains(played)) {
+      return;
+    }
+
+    treatAsStartedByThePlaylist(sessionId, runningVariant);
+  }
+
+  private boolean startedForThePlaylist(StreamSession session, String variantLabel) {
+    var startSequenceNumber = currentSegment(session);
+    var refusal = attemptOnDemandStart(session, variantLabel, startSequenceNumber);
+    if (refusal.isPresent()) {
+      log.warn(
+          "Variant {} of session {} did not start for its playlist at segment {}: {}",
+          variantLabel,
+          session.getSessionId(),
+          startSequenceNumber,
+          refusal.get());
+      return false;
+    }
+
+    log.info(
+        "Started variant {} of session {} for its playlist at segment {}",
+        variantLabel,
+        session.getSessionId(),
+        startSequenceNumber);
+    return true;
+  }
+
+  /**
+   * The variant that the stream session's player downloads: the variant of its newest media-segment
+   * request, or the first-listed variant before the player requests a media segment.
+   */
+  public String downloadedVariant(StreamSession session) {
+    return Optional.ofNullable(newestMediaSegmentRequests.get(session.getSessionId()))
+        .map(SegmentRequest::variantLabel)
+        .orElseGet(session::firstListedVariant);
   }
 
   /**
@@ -1035,6 +1150,16 @@ public class ProducerLifecycleService {
         && newest.variantLabel().equals(request.variantLabel());
   }
 
+  private boolean isVariantOfNewestMediaSegmentRequest(UUID sessionId, String variantLabel) {
+    var newest = newestMediaSegmentRequests.get(sessionId);
+    return newest != null && newest.variantLabel().equals(variantLabel);
+  }
+
+  private boolean isNewViewersRequestOfTheVariantStartedForThePlayer(SegmentRequest request) {
+    return !newestMediaSegmentRequests.containsKey(request.sessionId())
+        && request.variantLabel().equals(variantsStartedForTheirPlayer.get(request.sessionId()));
+  }
+
   // The played variant while the newest media-segment request asks for another variant.
   private Optional<String> leftVariant(StreamSession session) {
     var newest = newestMediaSegmentRequests.get(session.getSessionId());
@@ -1060,6 +1185,13 @@ public class ProducerLifecycleService {
         .ifPresent(
             index ->
                 seekPriority.mediaSegmentRequested(request.sessionId(), index, request.arrival()));
+
+    // A request for the variant that the player plays can be one sent before the player read the
+    // playlist that started another variant, so it keeps that variant.
+    if (!request.variantLabel().equals(playingVariants.get(request.sessionId()))) {
+      variantsStartedForTheirPlaylist.remove(request.sessionId());
+    }
+
     var previous = newestMediaSegmentRequests.put(request.sessionId(), request);
     if (previous == null || !previous.variantLabel().equals(request.variantLabel())) {
       newestVariantArrivals.put(request.sessionId(), request.arrival());
@@ -1124,9 +1256,9 @@ public class ProducerLifecycleService {
    * Once the player has received the request's media segment, stops every other video variant when
    * the request's variant is the variant of the stream session's newest media-segment request, and
    * the request arrived no earlier than the request that made it that variant: the player then
-   * plays that variant, so the variant that the player left stops (ADR 0019). A delivered segment
-   * of a variant that the player has since left, or of an earlier switch to the same variant,
-   * changes nothing.
+   * plays that variant, so the variant that the player left stops (ADR 0019). The variant that a
+   * served playlist started keeps running (ADR 0050). A delivered segment of a variant that the
+   * player has since left, or of an earlier switch to the same variant, changes nothing.
    */
   public void completeVariantSwitch(SegmentRequest delivered) {
     if (SegmentNames.indexOf(delivered.segmentName()).isEmpty() || hasNoSwitchPending(delivered)) {
@@ -1157,9 +1289,10 @@ public class ProducerLifecycleService {
 
     playingVariants.put(delivered.sessionId(), delivered.variantLabel());
     sessionsKeepingLeftVariant.remove(delivered.sessionId());
+    var kept = requestedAndPlaylistStartedVariants(delivered);
     List<String> stopped;
     try {
-      stopped = doStopVideoVariantsExcept(session, Set.of(delivered.variantLabel()));
+      stopped = doStopVideoVariantsExcept(session, kept);
     } catch (IllegalStateException | TranscodeException e) {
       // The player already has its segment, so a stop that fails, as one during shutdown does,
       // must not fail the delivery.
@@ -1184,14 +1317,21 @@ public class ProducerLifecycleService {
         delivered.segmentName());
   }
 
+  private Set<String> requestedAndPlaylistStartedVariants(SegmentRequest request) {
+    var variants = new HashSet<String>();
+    variants.add(request.variantLabel());
+    Optional.ofNullable(variantsStartedForTheirPlaylist.get(request.sessionId()))
+        .ifPresent(variants::add);
+    return variants;
+  }
+
   private void doStopVariantsTheSwitchLeaves(SegmentRequest request) {
     var session = runtimeRegistry.findById(request.sessionId()).orElse(null);
     if (session == null || !session.offersVariant(request.variantLabel())) {
       return;
     }
 
-    var kept = new HashSet<String>();
-    kept.add(request.variantLabel());
+    var kept = requestedAndPlaylistStartedVariants(request);
     var left = variantToKeepForSwitchBack(session, request);
     left.ifPresent(kept::add);
     if (left.isPresent()) {
@@ -1279,10 +1419,7 @@ public class ProducerLifecycleService {
     // another reason leaves it running.
     var shortage = slotShortage(session, variantLabel);
     var refusal = attemptOnDemandStart(session, variantLabel, startSequenceNumber);
-    if (refusal.isPresent()
-        && shortage.any()
-        && isNewestMediaSegmentRequest(request)
-        && stopOwnVariantsToMakeRoom(session, variantLabel, shortage)) {
+    if (refusal.isPresent() && shortage.any() && makesRoom(session, request, shortage)) {
       refusal = attemptOnDemandStart(session, variantLabel, startSequenceNumber);
     }
 
@@ -1302,6 +1439,47 @@ public class ProducerLifecycleService {
         sessionId,
         startSequenceNumber);
     return OnDemandStart.STARTED;
+  }
+
+  // The newest media-segment request stops the stream session's other variants whose stop frees
+  // what the start lacks. Any other request stops only the variant that a served playlist started
+  // and that the player has not requested since, because the player chose another variant (ADR
+  // 0050). Answers whether it stopped any.
+  private boolean makesRoom(StreamSession session, SegmentRequest request, SlotShortage shortage) {
+    if (isNewestMediaSegmentRequest(request)) {
+      return stopOwnVariantsToMakeRoom(session, request.variantLabel(), shortage);
+    }
+
+    return stopPlaylistStartedVariantToMakeRoom(session, request.variantLabel(), shortage);
+  }
+
+  // Stops the variant that a served playlist started when it is another variant and its stop
+  // frees what the start lacks (ADR 0050). Answers whether it stopped it. A served playlist keeps
+  // the running variant of the player's newest media-segment request when the player sent that
+  // request before the playlist. The player then plays that variant or switches to that variant,
+  // so the variant keeps running.
+  private boolean stopPlaylistStartedVariantToMakeRoom(
+      StreamSession session, String variantLabel, SlotShortage shortage) {
+    var sessionId = session.getSessionId();
+    var started = variantsStartedForTheirPlaylist.get(sessionId);
+    if (started == null
+        || started.equals(variantLabel)
+        || isVariantOfNewestMediaSegmentRequest(sessionId, started)
+        || !freesTakenSlots(session, started, shortage)) {
+      return false;
+    }
+
+    stopVariant(session, started);
+    // The variant that takes the place holds it for the playlist in turn, so it is also the
+    // variant that the stream session started for its player (ADR 0019).
+    treatAsStartedByThePlaylist(sessionId, variantLabel);
+    runtimeRegistry.save(session);
+    log.info(
+        "Stopped variant {} that the playlist of session {} started to make room for variant {}",
+        started,
+        sessionId,
+        variantLabel);
+    return true;
   }
 
   private static OnDemandStart refusedStart(boolean slotShortage) {
@@ -1389,6 +1567,15 @@ public class ProducerLifecycleService {
 
   private boolean hasConfiguredTranscodeSlotFor(StreamSession session) {
     return !countsAgainstTranscodeLimit(session) || freeConfiguredTranscodeSlots() > 0;
+  }
+
+  /**
+   * Whether the variant can serve its player without waiting for room: its job attempt runs, or a
+   * configured transcode slot and a worker job slot are free for its start.
+   */
+  public boolean isRunningOrStartable(StreamSession session, String variantLabel) {
+    return transcodeExecutor.isRunning(session.getSessionId(), variantLabel)
+        || !slotShortage(session, variantLabel).any();
   }
 
   /**
@@ -1579,8 +1766,26 @@ public class ProducerLifecycleService {
 
     var noFreeSlot = !hasFreeWorkerJobSlotFor(session, command.variantLabel());
     var result = startReplacement(session, command);
-    if (result instanceof ReplaceResult.Refused && noFreeSlot && command.makesRoom()) {
+    if (!(result instanceof ReplaceResult.Refused) || !noFreeSlot) {
+      return result;
+    }
+
+    if (command.makesRoom()) {
       return makeRoomForReplacement(session, command, result);
+    }
+
+    // Any request, an initialization request included, may take the place of the variant that a
+    // served playlist started (ADR 0050).
+    if (stopPlaylistStartedVariantToMakeRoom(
+        session, command.variantLabel(), replacementShortageOn(session, command))) {
+      return startReplacement(session, command);
+    }
+
+    // A new viewer's request of the variant that its stream session started for its player, an
+    // initialization request included, may stop another stream session's left variant (ADR 0019).
+    if (command.startedForANewViewer()
+        && command.reclaim().tryRequest(replacementShortage(session, command.variantLabel()))) {
+      return new ReplaceResult.NoFreeSlot();
     }
 
     return result;
@@ -1609,11 +1814,8 @@ public class ProducerLifecycleService {
   private ReplaceResult makeRoomForReplacement(
       StreamSession session, ReplaceProducerCommand command, ReplaceResult refused) {
     var result = refused;
-    var onTarget =
-        replacementShortage(session, command.variantLabel()).toBuilder()
-            .usableTargets(Set.of(command.target()))
-            .build();
-    if (stopOwnVariantsToMakeRoom(session, command.variantLabel(), onTarget)) {
+    if (stopOwnVariantsToMakeRoom(
+        session, command.variantLabel(), replacementShortageOn(session, command))) {
       result = startReplacement(session, command);
     }
 
@@ -1623,6 +1825,13 @@ public class ProducerLifecycleService {
     }
 
     return new ReplaceResult.NoFreeSlot();
+  }
+
+  private SlotShortage replacementShortageOn(
+      StreamSession session, ReplaceProducerCommand command) {
+    return replacementShortage(session, command.variantLabel()).toBuilder()
+        .usableTargets(Set.of(command.target()))
+        .build();
   }
 
   // A replacement starts without checking the configured transcode limit, so it lacks only a
@@ -1896,7 +2105,7 @@ public class ProducerLifecycleService {
     }
 
     var timeline = timelineOf(session);
-    var variantLabel = requestedVariant(session);
+    var variantLabel = downloadedVariant(session);
     // Media that runs past its probed duration stores media segments that the playlist never
     // advertises, and the run ends at the last advertised one.
     IntPredicate stored =
@@ -1923,15 +2132,6 @@ public class ProducerLifecycleService {
 
     var start = timeline.mediaSegmentEnd(first).minus(timeline.mediaSegmentDuration(first));
     return Optional.of(new MediaTimeRange(start, timeline.mediaSegmentEnd(last)));
-  }
-
-  private String requestedVariant(StreamSession session) {
-    var newest = newestMediaSegmentRequests.get(session.getSessionId());
-    if (newest == null) {
-      return firstListedVariant(session);
-    }
-
-    return newest.variantLabel();
   }
 
   /** A session that no longer exists advertises nothing to refuse, so this answers false. */

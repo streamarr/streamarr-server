@@ -37,6 +37,7 @@ import com.streamarr.server.fixtures.RecordedStream;
 import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.properties.RemoteTranscodeProperties;
@@ -736,7 +737,7 @@ class RemotePlaybackIT {
     var controller =
         new StreamController(
             streamingService,
-            new HlsPlaylistService(properties),
+            new HlsPlaylistService(properties, UploadBudgetFixture.OFF),
             rig.coordinator(),
             authorizationService,
             new DirectPlaySourceService(

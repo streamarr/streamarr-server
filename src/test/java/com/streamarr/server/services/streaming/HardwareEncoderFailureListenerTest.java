@@ -94,7 +94,7 @@ class HardwareEncoderFailureListenerTest {
   private StreamSession startedLadderSession() {
     var session = defaultLadderSessionBuilder().build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 

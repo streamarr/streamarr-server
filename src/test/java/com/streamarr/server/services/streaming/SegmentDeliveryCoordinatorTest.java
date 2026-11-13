@@ -29,6 +29,7 @@ import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
@@ -161,6 +162,7 @@ class SegmentDeliveryCoordinatorTest {
   private void destroy(UUID sessionId) {
     HlsStreamingService.builder()
         .languagePreferences(noLanguagePreferences())
+        .uploadBudget(UploadBudgetFixture.OFF)
         .meterRegistry(new SimpleMeterRegistry())
         .segmentStore(segmentStore)
         .runtimeRegistry(runtimeRegistry)
@@ -285,7 +287,7 @@ class SegmentDeliveryCoordinatorTest {
             .build();
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     runtimeRegistry.removeById(session.getSessionId());
     rig.coordinator().forgetSession(session.getSessionId());
 
@@ -321,7 +323,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     destroyRaceRegistry.destroyAfterNextLookup(
         () -> {
           runtimeRegistry.removeById(sessionId);
@@ -359,7 +361,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
     transcodeExecutor.refuseTarget(TARGET_A);
     transcodeExecutor.refuseTarget(TARGET_B);
@@ -453,7 +455,7 @@ class SegmentDeliveryCoordinatorTest {
             .build();
     var copy = defaultSessionBuilder().mediaProbe(probe).build();
     runtimeRegistry.save(copy);
-    lifecycle.startFirstListedVariant(copy);
+    lifecycle.startListedVariant(copy, copy.firstListedVariant());
     upload(copy.getSessionId(), "segment0.m4s", new byte[] {1});
     completeShortCopy(copy);
     var startedBefore = transcodeExecutor.getStartedRequests().size();
@@ -490,7 +492,7 @@ class SegmentDeliveryCoordinatorTest {
           throws Exception {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startFirstListedVariant(sixtySecondSession);
+    lifecycle.startListedVariant(sixtySecondSession, sixtySecondSession.firstListedVariant());
     var startedBefore = transcodeExecutor.getStartedRequests().size();
 
     var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
@@ -511,7 +513,7 @@ class SegmentDeliveryCoordinatorTest {
       throws Exception {
     var sixtySecondSession = sessionWithDurationBuilder(60).build();
     runtimeRegistry.save(sixtySecondSession);
-    lifecycle.startFirstListedVariant(sixtySecondSession);
+    lifecycle.startListedVariant(sixtySecondSession, sixtySecondSession.firstListedVariant());
     segmentStore.addSegment(sixtySecondSession.getSessionId(), "segment10.m4s", new byte[] {10});
 
     var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
@@ -603,7 +605,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     var startsBefore = transcodeExecutor.getStartedRequests().size();
     // A stored segment 0 takes the producer out of startup, so its 200 ms stall deadline runs on
     // the system clock from the request's first look.
@@ -735,7 +737,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
     session.setCurrentSegment(900);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
     // init.mp4 resolves to the run's start index, so no earlier segment can ever exist -- the
@@ -1101,7 +1103,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     runtimeRegistry.save(session);
     session.setCurrentSegment(2);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     transcodeExecutor.markDead(session.getSessionId());
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -1157,7 +1159,7 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
 
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
     transcodeExecutor.refuseTarget(TARGET_A);
@@ -1228,11 +1230,12 @@ class SegmentDeliveryCoordinatorTest {
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
     gatingExecutor.markDead(sessionId);
     var streamingService =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())
+            .uploadBudget(UploadBudgetFixture.OFF)
             .meterRegistry(new SimpleMeterRegistry())
             .transcodeExecutor(gatingExecutor)
             .segmentStore(segmentStore)
@@ -1279,7 +1282,7 @@ class SegmentDeliveryCoordinatorTest {
 
   private StreamSession started(StreamSession session) {
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 
@@ -1638,7 +1641,7 @@ class SegmentDeliveryCoordinatorTest {
             .sessionMutex(gate.mutexFactory())
             .build();
     runtimeRegistry.save(session);
-    rig.lifecycle().startFirstListedVariant(session);
+    rig.lifecycle().startListedVariant(session, session.firstListedVariant());
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var switchTo720p =
@@ -2409,6 +2412,168 @@ class SegmentDeliveryCoordinatorTest {
     deliverSwitch(switching);
   }
 
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to replace the first-listed variant's dead job attempt when a new viewer's initialization request finds no free worker job slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToReplaceTheFirstListedVariantsDeadJobAttemptWhenANewViewersInitializationRequestFindsNoFreeWorkerJobSlot()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(3);
+    var switching = switchingLadderSession();
+    var newViewer = sessionStartedForItsPlayerAt("480p");
+    var newViewerId = newViewer.getSessionId();
+    transcodeExecutor.markDead(newViewerId, "480p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(newViewerId, "480p", "480p/init.mp4");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(newViewer)).containsExactly("480p");
+    upload(newViewerId, "480p/init.mp4", new byte[] {0x66});
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to replace the dead job attempt of the variant that creation started under the upload budget when a new viewer's initialization request finds no free worker job slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToReplaceTheDeadJobAttemptOfTheVariantThatCreationStartedUnderTheUploadBudgetWhenANewViewersInitializationRequestFindsNoFreeWorkerJobSlot()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(3);
+    var switching = switchingLadderSession();
+    // The upload budget left the first-listed 480p out, so creation started the top kept 360p.
+    var newViewer = sessionStartedForItsPlayerAt("360p");
+    var newViewerId = newViewer.getSessionId();
+    transcodeExecutor.markDead(newViewerId, "360p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(newViewerId, "360p", "360p/init.mp4");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(newViewer)).containsExactly("360p");
+    upload(newViewerId, "360p/init.mp4", new byte[] {0x66});
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to replace the dead job attempt of the variant that a served playlist started when a new viewer's initialization request finds no free worker job slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToReplaceTheDeadJobAttemptOfTheVariantThatAServedPlaylistStartedWhenANewViewersInitializationRequestFindsNoFreeWorkerJobSlot()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(4);
+    var switching = switchingLadderSession();
+    var newViewer = sessionStartedForItsPlayerAt("480p");
+    var newViewerId = newViewer.getSessionId();
+    // The upload budget turned on after creation, so the served playlist leads with 360p.
+    assertThat(lifecycle.startTopListedVariantUnlessOneRuns(newViewer, List.of("360p"))).isTrue();
+    transcodeExecutor.markDead(newViewerId, "360p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(newViewerId, "360p", "360p/init.mp4");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(newViewer)).containsExactlyInAnyOrder("480p", "360p");
+    upload(newViewerId, "360p/init.mp4", new byte[] {0x66});
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to replace the dead job attempt of the running variant that a served playlist keeps when a new viewer's initialization request finds no free worker job slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToReplaceTheDeadJobAttemptOfTheRunningVariantThatAServedPlaylistKeepsWhenANewViewersInitializationRequestFindsNoFreeWorkerJobSlot()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(4);
+    var switching = switchingLadderSession();
+    var newViewer = sessionStartedForItsPlayerAt("480p");
+    var newViewerId = newViewer.getSessionId();
+    // The player's initialization request starts 360p. The upload budget turned on after
+    // creation, so the served playlist leads with 360p and keeps it running.
+    lifecycle.prepareRequestedVariant(newViewerId, "360p", "360p/init.mp4");
+    assertThat(lifecycle.startTopListedVariantUnlessOneRuns(newViewer, List.of("360p"))).isTrue();
+    transcodeExecutor.markDead(newViewerId, "360p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(newViewerId, "360p", "360p/init.mp4");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(newViewer)).containsExactlyInAnyOrder("480p", "360p");
+    upload(newViewerId, "360p/init.mp4", new byte[] {0x66});
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop another stream session's left variant to replace the dead job attempt of the variant that took the place of the variant that creation started under the upload budget when a new viewer's initialization request finds no free worker job slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToReplaceTheDeadJobAttemptOfTheVariantThatTookThePlaceOfTheVariantThatCreationStartedWhenANewViewersInitializationRequestFindsNoFreeWorkerJobSlot()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(3);
+    var switching = switchingLadderSession();
+    // The upload budget left the first-listed 480p out, so creation started the top kept 360p in
+    // the last free slot. The first playlist lists 480p first again, and the player's
+    // initialization request of 480p stops 360p and starts 480p in 360p's slot.
+    var newViewer = sessionStartedForItsPlayerAt("360p");
+    var newViewerId = newViewer.getSessionId();
+    lifecycle.prepareRequestedVariant(newViewerId, "480p", "480p/init.mp4");
+    assertThat(runningVariants(newViewer)).containsExactly("480p");
+    transcodeExecutor.markDead(newViewerId, "480p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(newViewerId, "480p", "480p/init.mp4");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(newViewer)).containsExactly("480p");
+    upload(newViewerId, "480p/init.mp4", new byte[] {0x66});
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep another stream session's left variant when an initialization request replaces the started variant after the player's first media-segment request")
+  void
+      shouldKeepAnotherStreamSessionsLeftVariantWhenAnInitializationRequestReplacesTheStartedVariantAfterThePlayersFirstMediaSegmentRequest()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(3);
+    var switching = switchingLadderSession();
+    var viewer = sessionStartedForItsPlayerAt("480p");
+    var viewerId = viewer.getSessionId();
+    var firstSegment = deliverAsync(viewerId, "480p", "480p/segment0.m4s");
+    upload(viewerId, "480p/segment0.m4s", new byte[] {0});
+    assertThat(firstSegment.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    transcodeExecutor.markDead(viewerId, "480p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(viewerId, "480p", "480p/init.mp4");
+
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(runningVariants(switching.session())).containsExactlyInAnyOrder("480p", "1080p");
+    deliverSwitch(switching);
+  }
+
   // A stream session whose every variant copies the video, so the variant that its player leaves
   // is a copy.
   private StreamSession startedCopyLadderSession() {
@@ -2426,6 +2591,15 @@ class SegmentDeliveryCoordinatorTest {
   private Optional<ExecutionTargetId> runningCopyTarget(StreamSession copy) {
     return transcodeExecutor.runningExecutionTarget(
         copy.getSessionId(), StreamSession.defaultVariant());
+  }
+
+  // Starts the variant that a new stream session starts for its player: the first-listed variant,
+  // or the top variant that stays when the upload budget leaves the first-listed variant out.
+  private StreamSession sessionStartedForItsPlayerAt(String variantLabel) {
+    var session = defaultLadderSessionBuilder().build();
+    runtimeRegistry.save(session);
+    lifecycle.startListedVariant(session, variantLabel);
+    return session;
   }
 
   private record SwitchingSession(
@@ -2460,7 +2634,7 @@ class SegmentDeliveryCoordinatorTest {
 
   private StreamSession suspended(StreamSession session) {
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     lifecycle.suspend(session.getSessionId());
     return session;
   }

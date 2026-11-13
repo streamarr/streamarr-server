@@ -438,6 +438,16 @@ enum Action {
       "viewActiveStreams",
       ResourceKind.SERVER,
       Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_UPLOAD_BUDGET(
+      "viewUploadBudget",
+      ResourceKind.SERVER,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  CHANGE_UPLOAD_BUDGET(
+      "changeUploadBudget",
+      ResourceKind.SERVER,
+      Authorizes.WRITE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";

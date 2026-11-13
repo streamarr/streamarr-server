@@ -17,6 +17,7 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -69,6 +70,7 @@ class SessionReaperDiskPressureTest {
     producerLifecycle = rig.lifecycle();
     streamingService =
         HlsStreamingService.builder()
+            .uploadBudget(UploadBudgetFixture.OFF)
             .mediaFileRepository(new FakeMediaFileRepository())
             .transcodeExecutor(executor)
             .segmentStore(segmentStore)

@@ -217,7 +217,7 @@ class HlsRecoveryContinuitySmokeTest {
                 remuxDecisionBuilder().videoSource(mediaProbe.videoPlaybackFacts()).build())
             .build();
     runtimeRegistry.save(session);
-    lifecycle.startFirstListedVariant(session);
+    lifecycle.startListedVariant(session, session.firstListedVariant());
     return session;
   }
 

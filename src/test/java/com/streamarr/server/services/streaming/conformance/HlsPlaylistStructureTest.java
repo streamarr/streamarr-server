@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
@@ -63,7 +64,7 @@ class HlsPlaylistStructureTest {
             .targetSegmentDuration(Duration.ofSeconds(TARGET_SEGMENT_SECONDS))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
-    service = new HlsPlaylistService(properties);
+    service = new HlsPlaylistService(properties, UploadBudgetFixture.OFF);
   }
 
   private StreamSession mediaSession(int durationSeconds) {

@@ -1,0 +1,40 @@
+# Upload budget (ADR 0050; ADR 0026 shapes). Only a ServerAdmin reads or changes it.
+
+"""
+The server's internet upload speed, as a ServerAdmin enters it from a speed test. It is off by default.
+While it is on, the stream sessions that count against the upload budget may use streamSharePercent of the
+upload speed together. A stream session counts at the average bitrate of what it sends: its measured average
+once the bitrate scan has run, otherwise its probed average, and an encoded variant at its target average. A
+stream session that its client attests it reached over the local network never counts, and neither does a
+suspended one. The budget never refuses playback, never changes direct play and never forces an encode. It only
+leaves variants out of an HLS stream session's multivariant playlist when they would take the counted stream
+sessions over the share. The playlist always keeps its lowest variant. The check runs when the playlist is
+served and reserves nothing, so the budget is a soft cap.
+"""
+type UploadBudgetSetting {
+    "The internet upload speed in megabits per second, or null while the upload budget is off."
+    internetUploadMegabitsPerSecond: Int
+    "The percentage of the internet upload speed that counted stream sessions may use together."
+    streamSharePercent: Int!
+    """
+    The megabits per second that counted stream sessions may use together: streamSharePercent of
+    internetUploadMegabitsPerSecond. Null while the upload budget is off.
+    """
+    streamShareMegabitsPerSecond: Float
+    "The lowest internet upload speed in megabits per second that a ServerAdmin can enter."
+    minimumInternetUploadMegabitsPerSecond: Int!
+    "The highest internet upload speed in megabits per second that a ServerAdmin can enter."
+    maximumInternetUploadMegabitsPerSecond: Int!
+}
+
+input ChangeUploadBudgetInput {
+    "The internet upload speed in megabits per second, from a speed test. Null turns the upload budget off."
+    internetUploadMegabitsPerSecond: Int
+}
+
+type ChangeUploadBudgetPayload {
+    uploadBudgetSetting: UploadBudgetSetting
+    userErrors: [ChangeUploadBudgetError!]!
+}
+
+union ChangeUploadBudgetError = UploadBudgetOutOfRangeError

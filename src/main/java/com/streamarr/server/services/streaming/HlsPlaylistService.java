@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DecimalSeconds;
 import com.streamarr.server.domain.streaming.DolbyVision;
@@ -17,6 +16,8 @@ import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.properties.StreamingProperties;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.OptionalDouble;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,7 @@ public class HlsPlaylistService {
   private static final int PLAYLIST_VERSION = 6;
 
   private final StreamingProperties properties;
+  private final UploadBudget uploadBudget;
 
   public String generateMultivariantPlaylist(StreamSession session, String token) {
     var audio = session.getTranscodeDecision().audioDecision();
@@ -50,33 +52,28 @@ public class HlsPlaylistService {
       appendAudioRendition(sb, audio.channels());
     }
 
-    // Only a copy runs without a ladder. It keeps the source's video bitrate, the displayed source
-    // dimensions and, when it is known, the source's frame rate.
-    if (session.getVariants().isEmpty()) {
-      var probe = session.getMediaProbe();
-      var size = probe.displayedSize();
-      var codecs = codecs(session, copiedVideoCodecString(session));
-      appendStreamInf(
-          sb, copyBandwidth(probe, audio), size.width(), size.height(), codecs, hasAudio);
-      appendCopiedFrameRate(sb, probe);
-      appendVideoRange(sb, session);
-      appendSupplementalCodecs(sb, session);
-      sb.append("\n");
-      sb.append("stream.m3u8?t=").append(token).append("\n");
-      return sb.toString();
-    }
-
-    for (var variant : session.getVariants()) {
-      var bandwidth = Bandwidth.withHeadroom(variant.averageBandwidth(audio.bitrate()));
-      var codecs = codecs(session, encodedVideoCodecString(session, variant));
-      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, hasAudio);
-      appendFrameRate(sb, variant);
-      appendVideoRange(sb, session);
-      sb.append("\n");
-      sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
-    }
-
+    var withheld = uploadBudget.withholdFromPlaylist(session);
+    entries(session, token, hasAudio).stream()
+        .filter(entry -> !withheld.contains(entry.variantLabel()))
+        .forEach(entry -> sb.append(entry.lines()));
     return sb.toString();
+  }
+
+  // One variant's EXT-X-STREAM-INF tag and URI.
+  private record PlaylistEntry(String variantLabel, String lines) {}
+
+  // Only a copy runs without a ladder.
+  private List<PlaylistEntry> entries(StreamSession session, String token, boolean hasAudio) {
+    if (session.getVariants().isEmpty()) {
+      return List.of(copyEntry(session, token, hasAudio));
+    }
+
+    var entries = new ArrayList<PlaylistEntry>();
+    for (var variant : session.getVariants()) {
+      entries.add(encodedEntry(session, variant, token, hasAudio));
+    }
+
+    return entries;
   }
 
   // RFC 8216bis section 4.4.2.2: the player starts at the start position, in the segment that holds
@@ -92,17 +89,46 @@ public class HlsPlaylistService {
                     .append(",PRECISE=YES\n"));
   }
 
-  // A measured copy advertises its measured peak. An unmeasured copy, like an encoded variant, adds
-  // headroom to its average (ADR 0054).
-  private Bandwidth copyBandwidth(MediaProbe probe, AudioDecision audio) {
-    var playlist = CopyMediaPlaylist.of(probe, properties);
-    var average = VideoCopyBandwidth.averageBandwidth(probe, audio, playlist);
-    var peak = VideoCopyBandwidth.peakBandwidth(probe, audio, playlist);
-    if (peak.isEmpty()) {
-      return Bandwidth.withHeadroom(average);
-    }
+  // A copy keeps the source's video bitrate, the displayed source dimensions and, when it is known,
+  // the source's frame rate.
+  private PlaylistEntry copyEntry(StreamSession session, String token, boolean hasAudio) {
+    var probe = session.getMediaProbe();
+    var size = probe.displayedSize();
+    var bandwidth =
+        VariantBandwidth.ofCopy(probe, session.getTranscodeDecision().audioDecision(), properties);
+    var sb = new StringBuilder();
+    appendStreamInf(
+        sb,
+        bandwidth,
+        size.width(),
+        size.height(),
+        codecs(session, copiedVideoCodecString(session)),
+        hasAudio);
+    appendCopiedFrameRate(sb, probe);
+    appendVideoRange(sb, session);
+    appendSupplementalCodecs(sb, session);
+    sb.append("\n");
+    sb.append("stream.m3u8?t=").append(token).append("\n");
+    return new PlaylistEntry(StreamSession.defaultVariant(), sb.toString());
+  }
 
-    return new Bandwidth(peak.getAsLong(), average);
+  private PlaylistEntry encodedEntry(
+      StreamSession session, QualityVariant variant, String token, boolean hasAudio) {
+    var bandwidth =
+        VariantBandwidth.ofEncoded(variant, session.getTranscodeDecision().audioDecision());
+    var sb = new StringBuilder();
+    appendStreamInf(
+        sb,
+        bandwidth,
+        variant.width(),
+        variant.height(),
+        codecs(session, encodedVideoCodecString(session, variant)),
+        hasAudio);
+    appendFrameRate(sb, variant);
+    appendVideoRange(sb, session);
+    sb.append("\n");
+    sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
+    return new PlaylistEntry(variant.label(), sb.toString());
   }
 
   private static String codecs(StreamSession session, String videoCodecString) {
@@ -163,23 +189,9 @@ public class HlsPlaylistService {
     sb.append("\n");
   }
 
-  /** A variant's BANDWIDTH and AVERAGE-BANDWIDTH (RFC 8216 §4.3.4.2). */
-  private record Bandwidth(long peak, long average) {
-
-    // RFC 8216 §4.3.4.2 defines BANDWIDTH as the peak segment bit rate and AVERAGE-BANDWIDTH as
-    // the average. An encoded variant and an unmeasured copy know only an average, so their
-    // BANDWIDTH adds headroom for container overhead and rate variation (ADR 0044). Encoded
-    // variants are capped with -maxrate. Probed source rates remain estimates.
-    private static final int PEAK_HEADROOM_PERCENT = 20;
-
-    static Bandwidth withHeadroom(long average) {
-      return new Bandwidth(average + average * PEAK_HEADROOM_PERCENT / 100, average);
-    }
-  }
-
   private void appendStreamInf(
       StringBuilder sb,
-      Bandwidth bandwidth,
+      VariantBandwidth bandwidth,
       int width,
       int height,
       String codecs,
