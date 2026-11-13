@@ -27,6 +27,23 @@ public class TmdbHttpClientConfiguration {
       @Value("${tmdb.api.requests-per-second:40}") double requestsPerSecond,
       @Value("${tmdb.api.request-timeout-seconds:30}") long requestTimeoutSeconds,
       HttpCache tmdbHttpCache) {
+    return retryingTmdbClient(requestTimeoutSeconds)
+        .version(HttpClient.Version.HTTP_1_1)
+        .cache(tmdbHttpCache)
+        .interceptor(new RateLimitingInterceptor(requestsPerSecond))
+        .build();
+  }
+
+  // The image host limits simultaneous connections, not requests: downloads spend none of the API's
+  // request rate, and HTTP/2 lets concurrent downloads share a connection once one is open.
+  @Bean("tmdbImage")
+  HttpClient tmdbImageHttpClient(
+      @Value("${tmdb.api.request-timeout-seconds:30}") long requestTimeoutSeconds) {
+    return retryingTmdbClient(requestTimeoutSeconds).version(HttpClient.Version.HTTP_2).build();
+  }
+
+  // Interceptors added after the retry run again on each retried attempt.
+  private static Methanol.Builder retryingTmdbClient(long requestTimeoutSeconds) {
     var retryInterceptor =
         RetryInterceptor.newBuilder()
             .maxRetries(5)
@@ -38,16 +55,10 @@ public class TmdbHttpClientConfiguration {
             .listener(new AdmittedTaskRetryListener())
             .build();
 
-    var rateLimitingInterceptor = new RateLimitingInterceptor(requestsPerSecond);
-
     return Methanol.newBuilder()
-        .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofSeconds(15))
         .requestTimeout(Duration.ofSeconds(requestTimeoutSeconds))
-        .cache(tmdbHttpCache)
-        .interceptor(retryInterceptor)
-        .interceptor(rateLimitingInterceptor)
-        .build();
+        .interceptor(retryInterceptor);
   }
 
   // TMDB requests run on the admitted task's own thread, so the task sees the mark (ADR 0041).

@@ -3,12 +3,14 @@ package com.streamarr.server.services.metadata;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.github.mizosoft.methanol.HttpCache;
+import com.github.tomakehurst.wiremock.verification.LoggedRequest;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.exceptions.ImageDownloadException;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
@@ -28,6 +30,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -48,6 +51,9 @@ import tools.jackson.databind.ObjectMapper;
 class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
 
   private static final int DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
+  // Longer than the 2 s ceiling of the backoff the client uses when no Retry-After arrives, so a
+  // client that ignored the header would retry too early.
+  private static final Duration RETRY_AFTER = Duration.ofSeconds(3);
 
   @DynamicPropertySource
   static void configureRequestTimeout(DynamicPropertyRegistry registry) {
@@ -61,6 +67,10 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
   @Autowired
   @Qualifier("tmdb")
   private HttpClient tmdbClient;
+
+  @Autowired
+  @Qualifier("tmdbImage")
+  private HttpClient tmdbImageClient;
 
   @Autowired private ObjectMapper objectMapper;
 
@@ -679,8 +689,9 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should retry image download when rate limited")
-  void shouldRetryImageDownloadWhenRateLimited() throws Exception {
+  @DisplayName(
+      "Should retry the image download after the delay the host asks for when rate limited")
+  void shouldRetryTheImageDownloadAfterTheDelayTheHostAsksForWhenRateLimited() throws Exception {
     var imageBytes = new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0};
 
     wireMock.stubFor(
@@ -690,7 +701,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
             .willReturn(
                 aResponse()
                     .withStatus(429)
-                    .withHeader("Retry-After", "0")
+                    .withHeader("Retry-After", String.valueOf(RETRY_AFTER.toSeconds()))
                     .withHeader("Content-Type", "application/json")
                     .withBody(
                         """
@@ -711,6 +722,69 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
     var result = service.downloadImage("/rate-limited.jpg");
 
     assertThat(result).isEqualTo(imageBytes);
+    var arrivals =
+        wireMock.findAll(getRequestedFor(urlPathEqualTo("/rate-limited.jpg"))).stream()
+            .map(arrival -> arrival.getLoggedDate().toInstant())
+            .sorted()
+            .toList();
+    assertThat(arrivals).hasSize(2);
+    assertThat(Duration.between(arrivals.getFirst(), arrivals.getLast()))
+        .as("wait between the 429 and its retry")
+        .isGreaterThanOrEqualTo(RETRY_AFTER);
+  }
+
+  @Test
+  @DisplayName(
+      "Should download the image over HTTP/2 while metadata calls stay on HTTP/1.1 when the host offers HTTP/2")
+  void shouldDownloadTheImageOverHttp2WhileMetadataCallsStayOnHttp11WhenTheHostOffersHttp2()
+      throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/poster.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withBody(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0})));
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {"page": 1, "results": [], "total_results": 0, "total_pages": 0}
+                        """)));
+
+    service.downloadImage("/poster.jpg");
+    service.searchForMovie(VideoFileParserResult.builder().title("Any").build());
+
+    assertThat(protocolsTheHostSaw("/poster.jpg")).as("image download").containsExactly("HTTP/2.0");
+    assertThat(protocolsTheHostSaw("/search/movie"))
+        .as("metadata call")
+        .containsExactly("HTTP/1.1");
+  }
+
+  @Test
+  @DisplayName("Should fail the image download when the host answers after the request timeout")
+  void shouldFailTheImageDownloadWhenTheHostAnswersAfterTheRequestTimeout() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/slow.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withFixedDelay(3000)
+                    .withBody(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0})));
+
+    assertThatThrownBy(() -> service.downloadImage("/slow.jpg"))
+        .isInstanceOf(HttpTimeoutException.class);
+  }
+
+  private List<String> protocolsTheHostSaw(String path) {
+    return wireMock.findAll(getRequestedFor(urlPathEqualTo(path))).stream()
+        .map(LoggedRequest::getProtocol)
+        .toList();
   }
 
   @Test
@@ -817,6 +891,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
         wireMock.baseUrl(),
         "http://127.0.0.1:" + host.getAddress().getPort(),
         tmdbClient,
+        tmdbImageClient,
         objectMapper,
         clock);
   }
@@ -925,7 +1000,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
     cachedUris.clear();
     tmdbHttpCache.uris().forEachRemaining(cachedUris::add);
     assertThat(cachedUris)
-        .as("Image download should not enter cache due to NO_STORE on request")
+        .as("Image download should not enter the metadata cache")
         .noneMatch(uri -> uri.getPath().contains("/cached-poster.jpg"));
   }
 

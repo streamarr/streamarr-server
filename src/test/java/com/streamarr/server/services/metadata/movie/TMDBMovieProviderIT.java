@@ -54,12 +54,14 @@ class TMDBMovieProviderIT {
   @BeforeAll
   void setupLibrary() {
     wireMock.start();
+    var client = HttpClient.newHttpClient();
     var httpService =
         new TheMovieDatabaseHttpService(
             "test-api-token",
             wireMock.baseUrl(),
             wireMock.baseUrl(),
-            HttpClient.newHttpClient(),
+            client,
+            client,
             new ObjectMapper(),
             Clock.systemUTC());
     provider = new TMDBMovieProvider(httpService, new TmdbSearchDelegate(httpService));
