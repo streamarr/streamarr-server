@@ -569,8 +569,9 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
 
   // Two seconds at 24 fps with a keyframe every second. MP4 keeps each frame's duration exact, so
   // every repeat of the clip starts on the 24 fps grid. Matroska stores the last frame's duration
-  // in whole milliseconds, and each repeat would start 1 ms early. MP4 writes the color range only
-  // with write_colr.
+  // in whole milliseconds, and each repeat would start 1 ms early. testsrc names no color
+  // primaries, transfer or matrix, and without them MP4 stores the color range only with
+  // write_colr.
   private static List<String> shortMedia() {
     return List.of(
         "-f",
