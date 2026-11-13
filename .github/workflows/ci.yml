@@ -138,6 +138,7 @@ jobs:
               - 'pom.xml'
               - 'src/main/resources/application*.yml'
               - 'src/test/resources/application*.yml'
+              - 'src/test/resources/junit-platform.properties'
               - 'src/main/java/com/streamarr/server/config/observability/**'
               - 'src/main/java/com/streamarr/server/services/library/ScanProbesWaiting.java'
               - 'src/test/java/com/streamarr/server/AbstractIntegrationTest.java'

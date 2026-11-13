@@ -271,6 +271,7 @@ class CiPipelineWorkflowTest {
         "src/main/resources/application.yml",
         "src/main/resources/application-observability.yml",
         "src/test/resources/application-test.yml",
+        "src/test/resources/junit-platform.properties",
         "src/main/java/com/streamarr/server/config/observability/OtlpMetricsEndpointConfiguration.java",
         "src/main/java/com/streamarr/server/services/library/ScanProbesWaiting.java",
         "src/test/java/com/streamarr/server/AbstractIntegrationTest.java",
