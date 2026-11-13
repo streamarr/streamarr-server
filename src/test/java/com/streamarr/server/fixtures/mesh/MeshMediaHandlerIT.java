@@ -51,6 +51,7 @@ import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
@@ -202,14 +203,20 @@ class MeshMediaHandlerIT {
       }
     }
 
+    // The server frees a stopped job's slot and a finished probe's unit before the handler answers.
+    @BeforeEach
+    void requireIdleStandaloneWorker() {
+      assertThat(isStandaloneWorkerIdle())
+          .as("the previous test left the shared worker's slot and probe unit free")
+          .isTrue();
+    }
+
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"/media/probe", "/media/segment"})
     @DisplayName(
         "Should return verified media when the standalone worker image handles the request")
     void shouldReturnVerifiedMediaWhenStandaloneWorkerImageHandlesTheRequest(
         String path, @TempDir Path tempDir) throws Exception {
-      await().atMost(10, TimeUnit.SECONDS).until(StandaloneWorkerImage::isStandaloneWorkerIdle);
-
       var response = standaloneWorkerRig.requestMedia(path);
 
       assertThat(response.statusCode()).isEqualTo(200);
@@ -224,8 +231,6 @@ class MeshMediaHandlerIT {
       assertThat(standaloneWorker.decodedVideoFrameCount(media)).isPositive();
     }
 
-    // The cases share one worker, so a job or probe of the previous case must not hold its
-    // capacity.
     private static boolean isStandaloneWorkerIdle() {
       var server = standaloneWorkerRig.server;
       return server.availableSlots(MeshValidationServer.SOURCE_ID) == STANDALONE_WORKER_SLOTS
