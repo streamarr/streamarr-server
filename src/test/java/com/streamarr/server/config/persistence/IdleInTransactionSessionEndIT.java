@@ -94,15 +94,13 @@ class IdleInTransactionSessionEndIT extends AbstractIntegrationTest {
     }
   }
 
+  // In autocommit, the statement takes the lock and releases it in its own transaction, so the
+  // contender leaves no transaction for the idle bound to end.
   private void lockSettingsRowWithoutWaiting() throws SQLException {
-    try (var contender = pool.getConnection()) {
-      contender.setAutoCommit(false);
-      try (var statement = contender.createStatement();
-          var rows = statement.executeQuery(LOCK_SETTINGS_ROW + " NOWAIT")) {
-        assertThat(rows.next()).isTrue();
-      } finally {
-        contender.rollback();
-      }
+    try (var contender = pool.getConnection();
+        var statement = contender.createStatement();
+        var rows = statement.executeQuery(LOCK_SETTINGS_ROW + " NOWAIT")) {
+      assertThat(rows.next()).isTrue();
     }
   }
 
