@@ -455,6 +455,7 @@ class SessionReaperTest {
         .serverSettings(serverSettings)
         .segmentFolderSpace(() -> 1.0)
         .meterRegistry(meters)
+        .containedFailures(new ContainedFailureMetrics(meters))
         .clock(clock);
   }
 

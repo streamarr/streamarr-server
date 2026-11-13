@@ -275,6 +275,7 @@ class SessionReaperDiskPressureTest {
         .serverSettings(defaultServerSettings())
         .segmentFolderSpace(space)
         .meterRegistry(meters)
+        .containedFailures(new ContainedFailureMetrics(meters))
         .clock(clock);
   }
 

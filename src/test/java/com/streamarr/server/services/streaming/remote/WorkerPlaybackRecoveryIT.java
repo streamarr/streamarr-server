@@ -32,6 +32,7 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.streaming.ContainedFailureMetrics;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.LearnedStreamEndListener;
@@ -536,7 +537,9 @@ class WorkerPlaybackRecoveryIT {
               .maximumFormatAttempts(3)
               .build();
       events.listen(VideoCopyOutputMismatchEvent.class, sessions::onVideoCopyOutputMismatch);
-      learning = new LearnedStreamEndListener(registry, learnedEnds, new SimpleMeterRegistry());
+      learning =
+          new LearnedStreamEndListener(
+              registry, learnedEnds, new ContainedFailureMetrics(new SimpleMeterRegistry()));
       events.listen(JobAttemptCompletedEvent.class, learning::onJobAttemptCompleted);
       var shortCopies = new ShortCopyListener(lifecycle.lifecycle(), events);
       events.listen(JobAttemptCompletedEvent.class, shortCopies::onJobAttemptCompleted);
