@@ -7508,6 +7508,37 @@ class HlsStreamingServiceTest {
         .isEqualTo(transcodeExecutor.getStartedRequests().getFirst().exactSegmentStarts());
   }
 
+  // RFC 8216 §6.2.4: so that a player can switch between variant streams, matching content has
+  // matching timestamps and each media playlist has the same target duration. The copy merges the
+  // slots [12 s, 18 s) and [24 s, 30 s), and each lower variant lists the copy's four segments, not
+  // the plain grid's six.
+  @Test
+  @DisplayName(
+      "Should list the copy's merged segments in each lower variant's media playlist when the"
+          + " copy merges slots without a keyframe")
+  void shouldListTheCopysMergedSegmentsInEachLowerVariantsPlaylistWhenTheCopyMergesSlots() {
+    probeResults.setDefaultProbe(
+        defaultProbeBuilder()
+            .duration(Duration.ofSeconds(36))
+            .keyframes(ProbeFixture.keyframesEvery(Duration.ofSeconds(10), Duration.ofSeconds(36)))
+            .build());
+    var playlists = new HlsPlaylistService(streamingProperties(), UploadBudgetFixture.OFF);
+
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(session.getVariants())
+        .extracting(QualityVariant::label)
+        .containsExactly("720p", "480p", "360p")
+        .allSatisfy(
+            label -> {
+              var playlist = playlists.generateMediaPlaylist(session, label, "token");
+              assertThat(extinfDurations(playlist))
+                  .containsExactly("10.000000", "10.000000", "10.000000", "6.000000");
+              assertThat(playlist).contains("#EXT-X-TARGETDURATION:10\n");
+            });
+  }
+
   // Creates an Auto copy session, then requests a lower variant's segment as its player would, and
   // answers the job that the request started.
   private TranscodeRequest firstLowerVariantJobFor(String variantLabel, String segmentName) {

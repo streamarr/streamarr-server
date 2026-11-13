@@ -1,6 +1,7 @@
 package com.streamarr.server.fixtures;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import java.io.IOException;
@@ -15,6 +16,8 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.testcontainers.Testcontainers;
@@ -23,11 +26,24 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.Transferable;
+import tools.jackson.databind.json.JsonMapper;
 
 @Slf4j
 public final class WorkerContainerFixture implements AutoCloseable {
 
   private static final String RMS_LEVEL = "RMS level dB: ";
+
+  // The frame metadata key that FFmpeg's signalstats filter writes.
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  private static final String LUMA_CHANGE = "lavfi.signalstats.YDIF";
+
+  // A picture's frame number in binary, least significant bit on the left, as bars across the top
+  // eighth of the picture: a white bar is 1 and a black bar is 0. The reader averages the upper
+  // half of each bar to one luma sample. Scaling and lossy encoding leave that average far from the
+  // middle grey.
+  private static final int FRAME_NUMBER_BARS = 10;
+  private static final int MIDDLE_GREY = 128;
+  private static final int SMALLEST_DISTANCE_FROM_GREY = 64;
 
   private final WorkerSessionServer workerSessions;
   private final UUID sourceNamespaceId;
@@ -255,6 +271,77 @@ public final class WorkerContainerFixture implements AutoCloseable {
         List.of("-show_entries", "packet=data_hash", "-show_data_hash", "sha256"));
   }
 
+  /**
+   * The codec of each stream of the media and each of its packets in file order, as the worker
+   * image's ffprobe reads them without decoding. A packet without a presentation time is left out.
+   */
+  public ProbedPackets probedPackets(Path media) throws Exception {
+    var probed =
+        JsonMapper.shared()
+            .readTree(
+                probeOutput(
+                    media,
+                    List.of(
+                        "-show_entries",
+                        "stream=codec_type,codec_name:packet=codec_type,pts_time,data_hash",
+                        "-show_data_hash",
+                        "sha256",
+                        "-of",
+                        "json")));
+    var streams =
+        probed
+            .path("streams")
+            .valueStream()
+            .map(
+                stream ->
+                    new ProbedStream(
+                        stream.path("codec_type").asString(), stream.path("codec_name").asString()))
+            .toList();
+    var packets =
+        probed
+            .path("packets")
+            .valueStream()
+            .filter(packet -> !packet.path("pts_time").asString("N/A").equals("N/A"))
+            .map(
+                packet ->
+                    new ProbedPacket(
+                        packet.path("codec_type").asString(),
+                        Double.parseDouble(packet.path("pts_time").asString()),
+                        packet.path("data_hash").asString()))
+            .toList();
+    assertThat(packets).isNotEmpty();
+    return new ProbedPackets(streams, packets);
+  }
+
+  /** A stream's media type as ffprobe names it, such as {@code video}, and its codec. */
+  public record ProbedStream(String mediaType, String codecName) {}
+
+  /** A packet's media type, presentation time in seconds and the SHA-256 hash of its data. */
+  public record ProbedPacket(String mediaType, double presentationSeconds, String dataHash) {}
+
+  /** The streams and packets that ffprobe reads of one file. */
+  public record ProbedPackets(List<ProbedStream> streams, List<ProbedPacket> packets) {
+
+    public List<String> codecsOf(String mediaType) {
+      return streams.stream()
+          .filter(stream -> stream.mediaType().equals(mediaType))
+          .map(ProbedStream::codecName)
+          .toList();
+    }
+
+    public List<Double> presentationTimesOf(String mediaType) {
+      return packetsOf(mediaType).map(ProbedPacket::presentationSeconds).toList();
+    }
+
+    public List<String> dataHashesOf(String mediaType) {
+      return packetsOf(mediaType).map(ProbedPacket::dataHash).toList();
+    }
+
+    private Stream<ProbedPacket> packetsOf(String mediaType) {
+      return packets.stream().filter(packet -> packet.mediaType().equals(mediaType));
+    }
+  }
+
   private List<String> probePackets(
       Path media, String streamSelector, List<String> inspectionArguments) throws Exception {
     return probe(media, streamSelector, inspectionArguments, "csv=p=0");
@@ -263,25 +350,28 @@ public final class WorkerContainerFixture implements AutoCloseable {
   private List<String> probe(
       Path media, String streamSelector, List<String> inspectionArguments, String outputFormat)
       throws Exception {
+    var arguments = new ArrayList<>(List.of("-select_streams", streamSelector));
+    arguments.addAll(inspectionArguments);
+    arguments.addAll(List.of("-of", outputFormat));
+    return probeOutput(media, arguments)
+        .lines()
+        .map(String::trim)
+        .filter(line -> !line.isEmpty())
+        .toList();
+  }
+
+  private String probeOutput(Path media, List<String> arguments) throws Exception {
     var input = "/tmp/inspect-" + UUID.randomUUID() + ".mp4";
     container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
     // A native output file excludes launcher diagnostics and avoids truncated Docker exec stdout.
-    var command =
-        new ArrayList<>(
-            List.of(
-                "/cnb/lifecycle/launcher",
-                "ffprobe",
-                "-v",
-                "error",
-                "-select_streams",
-                streamSelector));
-    command.addAll(inspectionArguments);
-    command.addAll(List.of("-of", outputFormat, "-o", input + ".pts", input));
+    var command = new ArrayList<>(List.of("/cnb/lifecycle/launcher", "ffprobe", "-v", "error"));
+    command.addAll(arguments);
+    command.addAll(List.of("-o", input + ".pts", input));
     var probe = container.execInContainer(command.toArray(String[]::new));
     assertThat(probe.getExitCode()).as(probe.getStderr()).isZero();
     var result = container.execInContainer("cat", input + ".pts");
     assertThat(result.getExitCode()).as(result.getStderr()).isZero();
-    return result.getStdout().lines().map(String::trim).filter(line -> !line.isEmpty()).toList();
+    return result.getStdout();
   }
 
   /**
@@ -381,6 +471,14 @@ public final class WorkerContainerFixture implements AutoCloseable {
   public record DecodedAudio(String channelLayout, List<Double> channelLevels) {}
 
   public long decodedVideoFrameCount(Path media) throws Exception {
+    return decodedVideoFrameHashes(media).size();
+  }
+
+  /**
+   * The MD5 hash of each picture that the worker image's FFmpeg decodes from the media's first
+   * video stream, in presentation order.
+   */
+  public List<String> decodedVideoFrameHashes(Path media) throws Exception {
     var input = "/tmp/decode-" + UUID.randomUUID() + ".mp4";
     container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
     var decode =
@@ -404,7 +502,145 @@ public final class WorkerContainerFixture implements AutoCloseable {
         .getStdout()
         .lines()
         .filter(line -> !line.isBlank() && !line.startsWith("#"))
-        .count();
+        .map(line -> line.substring(line.lastIndexOf(',') + 1).trim())
+        .toList();
+  }
+
+  /**
+   * A filter chain that draws each picture's frame number, counted from 0 and below 1024, as black
+   * and white bars across the top eighth of the picture. Append it to the filter graph of a
+   * generated source, and read the numbers back with {@link #decodedNumberedPictures}.
+   */
+  public static String frameNumberBars() {
+    var bars = new StringBuilder("drawbox=x=0:y=0:w=iw:h=ih/8:color=black:t=fill");
+    for (var bit = 0; bit < FRAME_NUMBER_BARS; bit++) {
+      bars.append(
+          ",drawbox=x=%d*iw/%d:y=0:w=iw/%d:h=ih/8:color=white:t=fill:enable='mod(floor(n/%d),2)'"
+              .formatted(bit, FRAME_NUMBER_BARS, FRAME_NUMBER_BARS, 1 << bit));
+    }
+
+    return bars.toString();
+  }
+
+  /**
+   * Each picture that the worker image's FFmpeg decodes from the media's first video stream, in the
+   * decoder's output order: the presentation time that ffprobe reads for the picture, and the frame
+   * number that its {@link #frameNumberBars} show. Each bar must read as clearly black or white.
+   */
+  public List<NumberedPicture> decodedNumberedPictures(Path media) throws Exception {
+    var presentationTimes = decodedPresentationTimes(media);
+    var frameNumbers = decodedFrameNumbers(media);
+    assertThat(frameNumbers)
+        .as("the frame numbers of the pictures that ffprobe times")
+        .hasSameSizeAs(presentationTimes);
+    return IntStream.range(0, frameNumbers.size())
+        .mapToObj(
+            picture ->
+                new NumberedPicture(presentationTimes.get(picture), frameNumbers.get(picture)))
+        .toList();
+  }
+
+  /** A decoded picture's presentation time in seconds and the frame number that it shows. */
+  public record NumberedPicture(double presentationSeconds, long frameNumber) {}
+
+  // ffprobe reports the presentation time that the decoder carries from each picture's sample.
+  // ffprobe outputs the pictures in the same order as FFmpeg, so the two lists pair by position.
+  private List<Double> decodedPresentationTimes(Path media) throws Exception {
+    return JsonMapper.shared()
+        .readTree(
+            probeOutput(
+                media,
+                List.of(
+                    "-select_streams", "v:0", "-show_entries", "frame=pts_time", "-of", "json")))
+        .path("frames")
+        .valueStream()
+        .map(frame -> Double.parseDouble(frame.path("pts_time").asString()))
+        .toList();
+  }
+
+  private List<Long> decodedFrameNumbers(Path media) throws Exception {
+    var input = "/tmp/numbers-" + UUID.randomUUID() + ".mp4";
+    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
+    var decode =
+        container.execInContainer(
+            "/cnb/lifecycle/launcher",
+            "ffmpeg",
+            "-v",
+            "error",
+            "-xerror",
+            "-i",
+            input,
+            "-map",
+            "0:v:0",
+            "-vf",
+            "format=gray,crop=iw:ih/16:0:0,scale=%d:1:flags=area".formatted(FRAME_NUMBER_BARS),
+            "-fps_mode",
+            "passthrough",
+            "-f",
+            "rawvideo",
+            input + ".bars");
+    assertThat(decode.getExitCode()).as("Decode video: %s", decode.getStderr()).isZero();
+    var bars = Files.createTempFile("frame-number-bars", ".gray");
+    try {
+      container.copyFileFromContainer(input + ".bars", bars.toString());
+      var levels = Files.readAllBytes(bars);
+      assertThat(levels.length % FRAME_NUMBER_BARS).as("the bars of each picture").isZero();
+      return IntStream.range(0, levels.length / FRAME_NUMBER_BARS)
+          .mapToObj(picture -> frameNumberOf(levels, picture))
+          .toList();
+    } finally {
+      Files.deleteIfExists(bars);
+    }
+  }
+
+  private static long frameNumberOf(byte[] levels, int picture) {
+    var number = 0L;
+    for (var bit = 0; bit < FRAME_NUMBER_BARS; bit++) {
+      var level = Byte.toUnsignedInt(levels[picture * FRAME_NUMBER_BARS + bit]);
+      assertThat(level)
+          .as("the luma of bar %d of picture %d, black or white", bit, picture)
+          .isNotCloseTo(MIDDLE_GREY, within(SMALLEST_DISTANCE_FROM_GREY));
+      if (level > MIDDLE_GREY) {
+        number |= 1L << bit;
+      }
+    }
+
+    return number;
+  }
+
+  /**
+   * How much each decoded frame of the media's first video stream differs from the frame before it:
+   * the mean absolute difference of their luma samples, which FFmpeg's signalstats filter reports
+   * as YDIF, in presentation order. The first frame has none before it and reports 0.
+   */
+  public List<Double> lumaChangeFromPreviousFrame(Path media) throws Exception {
+    var input = "/tmp/change-" + UUID.randomUUID() + ".mp4";
+    container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
+    var decode =
+        container.execInContainer(
+            "/cnb/lifecycle/launcher",
+            "ffmpeg",
+            "-v",
+            "error",
+            "-xerror",
+            "-i",
+            input,
+            "-map",
+            "0:v:0",
+            "-vf",
+            "signalstats,metadata=mode=print:key=" + LUMA_CHANGE + ":file=" + input + ".change",
+            "-f",
+            "null",
+            "-");
+    assertThat(decode.getExitCode()).as("Decode video: %s", decode.getStderr()).isZero();
+    var changes = container.execInContainer("cat", input + ".change");
+    assertThat(changes.getExitCode()).as(changes.getStderr()).isZero();
+    return changes
+        .getStdout()
+        .lines()
+        .filter(line -> line.startsWith(LUMA_CHANGE + "="))
+        .map(line -> Double.parseDouble(line.substring(LUMA_CHANGE.length() + 1)))
+        .toList();
   }
 
   public String logs() {
