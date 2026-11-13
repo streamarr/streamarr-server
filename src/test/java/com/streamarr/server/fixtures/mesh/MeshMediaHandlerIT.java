@@ -211,21 +211,23 @@ class MeshMediaHandlerIT {
           .isTrue();
     }
 
-    @ParameterizedTest(name = "{0}")
-    @ValueSource(strings = {"/media/probe", "/media/segment"})
-    @DisplayName(
-        "Should return verified media when the standalone worker image handles the request")
-    void shouldReturnVerifiedMediaWhenStandaloneWorkerImageHandlesTheRequest(
-        String path, @TempDir Path tempDir) throws Exception {
-      var response = standaloneWorkerRig.requestMedia(path);
+    @Test
+    @DisplayName("Should confirm real media when the standalone worker image probes the fixture")
+    void shouldConfirmRealMediaWhenTheStandaloneWorkerImageProbesTheFixture() throws Exception {
+      var response = standaloneWorkerRig.probe();
 
       assertThat(response.statusCode()).isEqualTo(200);
-      if (path.equals("/media/probe")) {
-        assertThat(new String(response.body(), StandardCharsets.UTF_8))
-            .isEqualTo("MEDIA_PROBE_COMPLETED");
-        return;
-      }
+      assertThat(response.body()).isEqualTo("MEDIA_PROBE_COMPLETED");
+    }
 
+    @Test
+    @DisplayName(
+        "Should return decodable fMP4 when the standalone worker image transcodes the fixture")
+    void shouldReturnDecodableFmp4WhenTheStandaloneWorkerImageTranscodesTheFixture(
+        @TempDir Path tempDir) throws Exception {
+      var response = standaloneWorkerRig.requestMedia("/media/segment");
+
+      assertThat(response.statusCode()).isEqualTo(200);
       assertThat(Fmp4Fixture.firstBoxType(response.body())).isEqualTo("ftyp");
       var media = Files.write(tempDir.resolve("mesh-media.mp4"), response.body());
       assertThat(standaloneWorker.decodedVideoFrameCount(media)).isPositive();
