@@ -18,7 +18,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 /**
  * Runs the server under the {@code observability} profile against a {@link RecordingOtlpCollector}
@@ -27,15 +28,6 @@ import org.springframework.test.context.TestPropertySource;
  */
 @Tag("IntegrationTest")
 @ActiveProfiles("observability")
-// Inline properties, unlike @DynamicPropertySource ones, let a subclass set its own step.
-@TestPropertySource(
-    properties = {
-      // The SDK exports metrics only when a test flushes it: a flush fails while an export runs.
-      "otel.metric.export.interval=3600000",
-      "otel.bsp.schedule.delay=100",
-      "otel.blrp.schedule.delay=100",
-      "management.otlp.metrics.export.step=1s"
-    })
 abstract class AbstractObservabilityProfileIntegrationTest extends AbstractIntegrationTest {
 
   static final Duration EXPORT_WAIT = Duration.ofSeconds(30);
@@ -51,6 +43,15 @@ abstract class AbstractObservabilityProfileIntegrationTest extends AbstractInteg
   static final String READY_METER = "application.ready.time";
 
   @Autowired private AutoConfiguredOpenTelemetrySdk openTelemetrySdk;
+
+  @DynamicPropertySource
+  static void exportOften(DynamicPropertyRegistry registry) {
+    // The SDK exports metrics only when a test flushes it: a flush fails while an export runs.
+    registry.add("otel.metric.export.interval", () -> "3600000");
+    registry.add("otel.bsp.schedule.delay", () -> "100");
+    registry.add("otel.blrp.schedule.delay", () -> "100");
+    registry.add("management.otlp.metrics.export.step", () -> "1s");
+  }
 
   static void setDeploymentVariables(
       ConfigurableApplicationContext context, Map<String, Object> variables) {

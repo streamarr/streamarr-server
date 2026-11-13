@@ -38,7 +38,6 @@ import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -48,10 +47,6 @@ import tools.jackson.databind.json.JsonMapper;
 @DisplayName("Metric Export Integration Tests")
 @ContextConfiguration(initializers = MetricExportIT.DeploymentVariables.class)
 @Import(MetricExportIT.AsyncResponseController.class)
-// An exemplar reaches only the export that Micrometer publishes in the step after its request's.
-// That publish runs up to 80 % into the step. Below 500 ms, a publish delayed by tens of
-// milliseconds would fall into the following step and drop the exemplar.
-@TestPropertySource(properties = "management.otlp.metrics.export.step=500ms")
 class MetricExportIT extends AbstractObservabilityProfileIntegrationTest {
 
   private static final String POOL_METER = "hikaricp.connections.active";
