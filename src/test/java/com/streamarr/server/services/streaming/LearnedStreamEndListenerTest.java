@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionB
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import com.streamarr.server.domain.media.LearnedStreamEnd;
@@ -52,6 +53,8 @@ class LearnedStreamEndListenerTest {
   private static final Duration CLOSE_RETURN_BOUND = Duration.ofSeconds(10);
   private static final SourceStreamEnd AUDIO_END =
       new SourceStreamEnd(1, Duration.ofMillis(84_021));
+  private static final SourceStreamEnd SECOND_AUDIO_END =
+      new SourceStreamEnd(2, Duration.ofSeconds(80));
 
   @TempDir private Path temporaryDirectory;
 
@@ -62,8 +65,10 @@ class LearnedStreamEndListenerTest {
   private final FakeLearnedStreamEndRepository learnedStreamEnds =
       new FakeLearnedStreamEndRepository(probeOutcomes);
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+  private final ContainedFailureMetrics containedFailures =
+      new ContainedFailureMetrics(meterRegistry);
   private final LearnedStreamEndListener listener =
-      new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, meterRegistry);
+      new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, containedFailures);
   private Path source;
   private SourceFileSnapshot probedSnapshot;
 
@@ -71,6 +76,14 @@ class LearnedStreamEndListenerTest {
   void writeTheProbedSource() throws IOException {
     source = Files.write(temporaryDirectory.resolve("movie.mkv"), new byte[] {1, 2, 3});
     probedSnapshot = snapshotOf(source);
+  }
+
+  @Test
+  @DisplayName("Should reject missing contained failure metrics when the listener is created")
+  void shouldRejectMissingContainedFailureMetricsWhenTheListenerIsCreated() {
+    assertThatThrownBy(() -> new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("containedFailures");
   }
 
   @Test
@@ -161,19 +174,19 @@ class LearnedStreamEndListenerTest {
       "Should count each end it fails to store and let the completion finish when the database"
           + " refuses the write")
   void shouldCountEachEndItFailsToStoreAndLetTheCompletionFinishWhenTheDatabaseRefusesTheWrite() {
-    var session = savedSession(probeOf(Optional.of(probedSnapshot)));
+    var session = savedSession(probeWithTwoStreamsThatStateNoEnd());
     var withoutDatabase =
         new LearnedStreamEndListener(
-            runtimeRegistry, new UnavailableLearnedStreamEndRepository(), meterRegistry);
+            runtimeRegistry, new UnavailableLearnedStreamEndRepository(), containedFailures);
 
     assertThatCode(
             () -> {
-              withoutDatabase.onJobAttemptCompleted(completion(session, AUDIO_END));
+              withoutDatabase.onJobAttemptCompleted(
+                  completion(session, List.of(AUDIO_END, SECOND_AUDIO_END)));
               withoutDatabase.close();
             })
         .doesNotThrowAnyException();
-    assertThat(meterRegistry.get("streamarr.streaming.learned_stream_end_store_failures").counter())
-        .satisfies(failures -> assertThat(failures.count()).isEqualTo(1));
+    assertThat(storeFailures()).isEqualTo(2);
   }
 
   @Test
@@ -183,7 +196,7 @@ class LearnedStreamEndListenerTest {
   void shouldReturnToTheWorkersReportBeforeTheEndIsStoredWhenTheDatabaseHoldsTheWrite() {
     var session = savedSession(probeOf(Optional.of(probedSnapshot)));
     var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
-    var holding = new LearnedStreamEndListener(runtimeRegistry, held, meterRegistry);
+    var holding = new LearnedStreamEndListener(runtimeRegistry, held, containedFailures);
 
     assertTimeoutPreemptively(
         Duration.ofSeconds(5), () -> holding.onJobAttemptCompleted(completion(session, AUDIO_END)));
@@ -201,7 +214,7 @@ class LearnedStreamEndListenerTest {
       throws Exception {
     var session = savedSession(probeOf(Optional.of(probedSnapshot)));
     var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
-    var holding = new LearnedStreamEndListener(runtimeRegistry, held, meterRegistry);
+    var holding = new LearnedStreamEndListener(runtimeRegistry, held, containedFailures);
     holding.onJobAttemptCompleted(completion(session, AUDIO_END));
     awaitLatch(held.storing);
 
@@ -220,7 +233,7 @@ class LearnedStreamEndListenerTest {
       throws Exception {
     var session = savedSession(probeOf(Optional.of(probedSnapshot)));
     var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
-    var stoppedServer = new LearnedStreamEndListener(runtimeRegistry, held, meterRegistry);
+    var stoppedServer = new LearnedStreamEndListener(runtimeRegistry, held, containedFailures);
     stoppedServer.onJobAttemptCompleted(completion(session, AUDIO_END));
     awaitLatch(held.storing);
     BoundedTask.runWithin(CLOSE_RETURN_BOUND, stoppedServer::close);
@@ -244,9 +257,8 @@ class LearnedStreamEndListenerTest {
       throws Exception {
     var session = savedSession(probeWithTwoStreamsThatStateNoEnd());
     var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
-    var holding = new LearnedStreamEndListener(runtimeRegistry, held, meterRegistry);
-    holding.onJobAttemptCompleted(
-        completion(session, List.of(AUDIO_END, new SourceStreamEnd(2, Duration.ofSeconds(80)))));
+    var holding = new LearnedStreamEndListener(runtimeRegistry, held, containedFailures);
+    holding.onJobAttemptCompleted(completion(session, List.of(AUDIO_END, SECOND_AUDIO_END)));
     awaitLatch(held.storing);
 
     BoundedTask.runWithin(CLOSE_RETURN_BOUND, holding::close);
@@ -262,7 +274,7 @@ class LearnedStreamEndListenerTest {
       throws Exception {
     var session = savedSession(probeOf(Optional.of(probedSnapshot)));
     var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
-    var holding = new LearnedStreamEndListener(runtimeRegistry, held, meterRegistry);
+    var holding = new LearnedStreamEndListener(runtimeRegistry, held, containedFailures);
     holding.onJobAttemptCompleted(completion(session, AUDIO_END));
     awaitLatch(held.storing);
     boolean closingThreadKeptItsInterrupt;
@@ -440,7 +452,9 @@ class LearnedStreamEndListenerTest {
   }
 
   private double storeFailures() {
-    return meterRegistry.counter("streamarr.streaming.learned_stream_end_store_failures").count();
+    return meterRegistry
+        .counter("streamarr.streaming.contained_failures", "operation", "learned_stream_end_store")
+        .count();
   }
 
   private static SourceFileSnapshot snapshotOf(Path file) throws IOException {

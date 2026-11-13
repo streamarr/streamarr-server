@@ -28,9 +28,6 @@ public class SessionReaper {
   // Below this free share of the segment folder's file system, idle sessions go before they expire.
   private static final double MINIMUM_FREE_FRACTION = 0.10;
   private static final String EVICTION_METRIC = "streamarr.streaming.disk_pressure_evictions";
-  private static final String READ_FAILURE_METRIC = "streamarr.streaming.disk_space_read_failures";
-  private static final String RETENTION_READ_FAILURE_METRIC =
-      "streamarr.streaming.retention_read_failures";
 
   private final StreamingService streamingService;
   private final StreamingProperties properties;
@@ -39,6 +36,7 @@ public class SessionReaper {
   private final ServerSettingsService serverSettings;
   private final SegmentFolderSpace segmentFolderSpace;
   private final MeterRegistry meterRegistry;
+  private final ContainedFailureMetrics containedFailures;
   private final Clock clock;
 
   @Scheduled(fixedDelayString = "${streaming.reaper-interval-ms:15000}")
@@ -80,7 +78,7 @@ public class SessionReaper {
     try {
       return Optional.of(serverSettings.idleSegmentRetention());
     } catch (RuntimeException failure) {
-      meterRegistry.counter(RETENTION_READ_FAILURE_METRIC).increment();
+      containedFailures.countRetentionReadFailure();
       log.warn("Failed to read the idle segment retention; no session expires this sweep", failure);
       return Optional.empty();
     }
@@ -103,7 +101,7 @@ public class SessionReaper {
         evict(session.getSessionId());
       }
     } catch (UncheckedIOException failure) {
-      meterRegistry.counter(READ_FAILURE_METRIC).increment();
+      containedFailures.countDiskSpaceReadFailure();
       log.warn("Failed to read the free space of the segment folder", failure);
     }
   }

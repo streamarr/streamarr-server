@@ -126,8 +126,6 @@ class WorkerSessionGrpcServiceTest {
   private static final String MISSING_ENCODER_METRIC = "streamarr.streaming.missing_encoder";
   private static final String UNKNOWN_JOB_ATTEMPT_REPORTS_METRIC =
       "streamarr.streaming.unknown_job_attempt_reports";
-  private static final String UPLOAD_DISCARD_FAILURES_METRIC =
-      "streamarr.streaming.segment_upload_discard_failures";
   private static final WorkerVerifiedVideoEncoder LIBX264 =
       softwareEncoder(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264");
 
@@ -1740,8 +1738,7 @@ class WorkerSessionGrpcServiceTest {
     assertThat(response.errorCount()).isEqualTo(1);
     assertThat(Status.fromThrowable(response.error()).getCode())
         .isEqualTo(Status.Code.INVALID_ARGUMENT);
-    assertThat(started.meterRegistry().get(UPLOAD_DISCARD_FAILURES_METRIC).counter().count())
-        .isEqualTo(1);
+    assertThat(uploadDiscardFailures(started.meterRegistry())).isEqualTo(1);
   }
 
   @Test
@@ -1817,6 +1814,12 @@ class WorkerSessionGrpcServiceTest {
     return UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(data)).build();
   }
 
+  private static double uploadDiscardFailures(SimpleMeterRegistry meterRegistry) {
+    return meterRegistry
+        .counter("streamarr.streaming.contained_failures", "operation", "segment_upload_discard")
+        .count();
+  }
+
   @Builder
   private record StartedUpload(
       StreamObserver<UploadSegmentRequest> upload,
@@ -1880,8 +1883,7 @@ class WorkerSessionGrpcServiceTest {
     assertThat(result.response().errorCount()).isEqualTo(1);
     assertThat(Status.fromThrowable(result.response().error()).getCode())
         .isEqualTo(Status.Code.INTERNAL);
-    assertThat(result.meterRegistry().get(UPLOAD_DISCARD_FAILURES_METRIC).counter().count())
-        .isEqualTo(1);
+    assertThat(uploadDiscardFailures(result.meterRegistry())).isEqualTo(1);
   }
 
   private static OwnershipLossResult uploadThatLosesOwnership(BlockingSegmentStore segmentStore)

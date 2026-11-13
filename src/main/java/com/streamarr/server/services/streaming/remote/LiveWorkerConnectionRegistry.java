@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.exceptions.ProbeExecutionException;
+import com.streamarr.server.services.streaming.ContainedFailureMetrics;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.ProbeCapacity;
@@ -103,8 +104,6 @@ final class LiveWorkerConnectionRegistry {
       "streamarr.streaming.unknown_job_attempt_reports";
   private static final String YIELD_COMMANDS_METRIC = "streamarr.streaming.seek_yield_commands";
   private static final String HOLD_BACK_COMMANDS_METRIC = "streamarr.streaming.hold_back_commands";
-  private static final String UPLOAD_DISCARD_FAILURES_METRIC =
-      "streamarr.streaming.segment_upload_discard_failures";
   // A probe refused for one of these reasons runs again later, when a worker can take it.
   private static final Set<ProbeRefusal> WAITING_FOR_WORKER =
       EnumSet.of(
@@ -124,7 +123,7 @@ final class LiveWorkerConnectionRegistry {
   private final Counter unknownJobAttemptReports;
   private final Counter yieldCommands;
   private final Counter holdBackCommands;
-  private final Counter uploadDiscardFailures;
+  private final ContainedFailureMetrics containedFailures;
   private final HeldSegmentRequests heldRequests;
   private final ApplicationEventPublisher eventPublisher;
   private final MeterRegistry meterRegistry;
@@ -173,12 +172,7 @@ final class LiveWorkerConnectionRegistry {
         Counter.builder(HOLD_BACK_COMMANDS_METRIC)
             .description("Hold-back commands that reached a worker's session stream")
             .register(meterRegistry);
-    uploadDiscardFailures =
-        Counter.builder(UPLOAD_DISCARD_FAILURES_METRIC)
-            .description(
-                "Ended segment uploads whose temporary file could not be deleted from the segment"
-                    + " folder")
-            .register(meterRegistry);
+    containedFailures = new ContainedFailureMetrics(meterRegistry);
     capacityMeters = new WorkerCapacityMeters(meterRegistry);
   }
 
@@ -892,7 +886,7 @@ final class LiveWorkerConnectionRegistry {
 
   /** An ended upload's temporary file could not be deleted, so it stays in the segment folder. */
   void countUploadDiscardFailure() {
-    uploadDiscardFailures.increment();
+    containedFailures.countSegmentUploadDiscardFailure();
   }
 
   // A held request's pass re-measures its stall deadline and counts as an access of the stream

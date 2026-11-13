@@ -6,8 +6,6 @@ import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,8 +31,6 @@ import org.springframework.transaction.TransactionException;
  */
 public class LearnedStreamEndListener implements AutoCloseable {
 
-  private static final String STORE_FAILURES_METRIC =
-      "streamarr.streaming.learned_stream_end_store_failures";
   // A store is one short transaction, so an end already handed to the store is kept. A store that
   // still waits after this time waits for the media file's row or for a pooled connection, which
   // can take a minute. A shutdown does not wait for that.
@@ -42,7 +38,7 @@ public class LearnedStreamEndListener implements AutoCloseable {
 
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final LearnedStreamEndRepository learnedStreamEnds;
-  private final Counter storeFailures;
+  private final ContainedFailureMetrics containedFailures;
   // The listener runs inside the worker's completion report. A store can wait on the media file's
   // row lock, and waiting there would hold back every later report from that worker.
   private final ExecutorService learning = Executors.newVirtualThreadPerTaskExecutor();
@@ -51,15 +47,10 @@ public class LearnedStreamEndListener implements AutoCloseable {
   public LearnedStreamEndListener(
       @NonNull RuntimeStreamSessionRegistry runtimeRegistry,
       @NonNull LearnedStreamEndRepository learnedStreamEnds,
-      @NonNull MeterRegistry meterRegistry) {
+      @NonNull ContainedFailureMetrics containedFailures) {
     this.runtimeRegistry = runtimeRegistry;
     this.learnedStreamEnds = learnedStreamEnds;
-    storeFailures =
-        Counter.builder(STORE_FAILURES_METRIC)
-            .description(
-                "Stream end times that a completed job attempt reported but the database did not"
-                    + " store")
-            .register(meterRegistry);
+    this.containedFailures = containedFailures;
   }
 
   /**
@@ -131,7 +122,7 @@ public class LearnedStreamEndListener implements AutoCloseable {
         return;
       }
 
-      storeFailures.increment();
+      containedFailures.countLearnedStreamEndStoreFailure();
     }
   }
 
