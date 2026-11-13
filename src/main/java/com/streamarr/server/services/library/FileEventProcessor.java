@@ -21,6 +21,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.springframework.util.backoff.ExponentialBackOff;
@@ -52,7 +53,7 @@ class FileEventProcessor {
       LibraryManagementService libraryManagementService,
       IgnoredFileValidator ignoredFileValidator,
       Supplier<ExecutorService> executors,
-      Sleeper sleeper) {
+      @NonNull Sleeper sleeper) {
     this.fileStabilityChecker = fileStabilityChecker;
     this.libraryManagementService = libraryManagementService;
     this.ignoredFileValidator = ignoredFileValidator;

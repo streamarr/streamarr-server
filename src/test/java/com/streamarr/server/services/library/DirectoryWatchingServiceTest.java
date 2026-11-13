@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -50,6 +51,14 @@ class DirectoryWatchingServiceTest {
   @AfterEach
   void tearDown() throws IOException {
     service.stopWatching();
+  }
+
+  @Test
+  @DisplayName("Should reject a watcher when its retry sleeper is missing")
+  void shouldRejectAWatcherWhenItsRetrySleeperIsMissing() {
+    var builder = watcherBuilder().sleeper(null);
+
+    assertThatNullPointerException().isThrownBy(builder::build).withMessageContaining("sleeper");
   }
 
   @Test
