@@ -1138,7 +1138,7 @@ class PlaybackSessionServiceTest {
         .isEqualTo(3);
   }
 
-  // ADR 0058: an encoded video stays encoded in the playback choice that its encode plays. A
+  // ADR 0060: an encoded video stays encoded in the playback choice that its encode plays. A
   // worker can report the failure while start still creates the stream session, before the
   // playback session has read that stream session's decision.
   @ParameterizedTest

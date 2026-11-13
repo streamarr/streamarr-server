@@ -1029,7 +1029,7 @@ class StreamingResolverTest {
         .isEqualTo(message);
   }
 
-  // ADR 0058: copied audio that ran short beside an encoded video recovers with an audio encode,
+  // ADR 0060: copied audio that ran short beside an encoded video recovers with an audio encode,
   // and the video's encode is unchanged, so the playback session names no format change. A worker
   // can report the failure before the mutation that starts playback has returned.
   @Test

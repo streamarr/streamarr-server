@@ -4290,7 +4290,7 @@ class HlsStreamingServiceTest {
   @Builder
   record UnverifiedEncode(ProbedCodecFamily acceptedEncode, Set<String> verifiedFamilies) {}
 
-  // ADR 0058: only an encode can pad audio whose copy ran short beside video.
+  // ADR 0060: only an encode can pad audio whose copy ran short beside video.
   @ParameterizedTest
   @CsvSource({"COPY_OR_ENCODE,AUDIO_TRANSCODE", "ENCODE_ONLY,FULL_TRANSCODE"})
   @DisplayName(

@@ -453,7 +453,7 @@ class RemoteFormatFailureIT {
     }
   }
 
-  // ADR 0058: another attempt of the same decision copies the same short audio, so the failure
+  // ADR 0060: another attempt of the same decision copies the same short audio, so the failure
   // ends the job and playback recovers with an audio encode. The recovery keeps an encoded video
   // encoded, so the event says which the job did.
   @ParameterizedTest
