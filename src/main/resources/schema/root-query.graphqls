@@ -108,8 +108,12 @@ type Query {
     names: it waits until it is canceled, replaced, ended for another reason or expired, so the list
     never tells who has an Account. A ServerAdmin reads such an invitation as invalidated, so not
     here. An invitation leaves the list once it is accepted, declined, canceled, replaced,
-    invalidated or expired. Everyone else gets an empty list, a HouseholdAdmin who only supervises
-    the Profile included, as do a device-bound session and a Profile that does not exist.
+    invalidated or expired. An invitation is out of the list from its expiresAt on, before the
+    server stores the invitation as expired. No subscription delivers changes to this list. A
+    client takes an invitation out of an open list at the invitation's expiresAt. A client sees an
+    answer or a cancellation when the client reads the list again. Everyone else gets an empty
+    list, a HouseholdAdmin who only supervises the Profile included, as do a device-bound session
+    and a Profile that does not exist.
     """
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     """
