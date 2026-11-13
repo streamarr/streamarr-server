@@ -13,6 +13,7 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.NonNull;
@@ -429,15 +430,17 @@ public record MediaProbe(
   }
 
   /**
-   * This probe with each learned end time as its stream's end time (ADR 0037, early ends). A
-   * learned end time was read from the stream's packets, so it replaces the end time that the
-   * container header states: the header of a truncated file states the length of the whole file.
-   * Only the end times that a keyframe packet scan read count toward {@link #mediaEnd}.
+   * This probe with each learned end time as its stream's end time (ADR 0037, early ends). An end
+   * time that a keyframe packet scan read replaces the end time that the container header states,
+   * because the header of a truncated file states the length of the whole file. An end time that a
+   * job attempt learned only fills an end time that the header does not state, because the
+   * attempt's FFmpeg can stop at a read error and still complete. Only the end times that a
+   * keyframe packet scan read count toward {@link #mediaEnd}.
    */
   public MediaProbe withLearnedEndTimes(@NonNull List<LearnedStreamEnd> learned) {
     var learnedByIndex =
         learned.stream()
-            .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, LearnedStreamEnd::endTime));
+            .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, Function.identity()));
     var scannedByIndex =
         learned.stream()
             .filter(LearnedStreamEnd::fromPacketScan)
@@ -448,13 +451,17 @@ public record MediaProbe(
   }
 
   private static StreamInfo withLearnedEndTime(
-      StreamInfo stream, Map<Integer, Duration> learnedByIndex) {
+      StreamInfo stream, Map<Integer, LearnedStreamEnd> learnedByIndex) {
     var learned = learnedByIndex.get(stream.index());
     if (learned == null) {
       return stream;
     }
 
-    return stream.toBuilder().endTime(Optional.of(learned)).build();
+    if (stream.endTime().isPresent() && !learned.fromPacketScan()) {
+      return stream;
+    }
+
+    return stream.toBuilder().endTime(Optional.of(learned.endTime())).build();
   }
 
   /** Whether the probe lists the stream and its container header states no end time for it. */

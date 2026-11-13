@@ -476,6 +476,24 @@ class MediaProbeTest {
     assertThat(probe.videoEndTime()).contains(Duration.ofMillis(12_291));
   }
 
+  // A job attempt learns an end only for a stream whose header states none. A later probe of the
+  // same file can state an end that the earlier probe did not. After a read error, the end that
+  // the attempt learned can lie before the end that the header states.
+  @Test
+  @DisplayName(
+      "Should keep the stream end that the container header states when a job attempt learned an"
+          + " earlier end")
+  void shouldKeepTheStreamEndThatTheContainerHeaderStatesWhenAJobAttemptLearnedAnEarlierEnd() {
+    var probe =
+        probeLasting(Duration.ofSeconds(30), video(), audioStatedToEndAt(1, 30_000))
+            .withLearnedEndTimes(List.of(attemptLearnedEnd(1, Duration.ofSeconds(14))));
+
+    assertThat(probe.audioStreams())
+        .singleElement()
+        .extracting(StreamInfo::endTime)
+        .isEqualTo(Optional.of(Duration.ofSeconds(30)));
+  }
+
   // Packet times are not sample times. A Matroska file counts them in whole milliseconds, and an
   // AC-3 track's last packet can state less than its frame holds: a scan read 5.009 s where the
   // last decoded sample ends at 5.01356 s and the container states 5.014 s. A container that ends

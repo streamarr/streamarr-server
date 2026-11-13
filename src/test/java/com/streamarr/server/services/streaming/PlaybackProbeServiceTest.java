@@ -177,6 +177,29 @@ class PlaybackProbeServiceTest {
           .isEqualTo(Optional.of(Duration.ofSeconds(14)));
     }
 
+    // A job attempt learns an end only for a stream whose header states none. A later probe of the
+    // same file can state an end that the earlier probe did not. The attempt's FFmpeg can stop at a
+    // read error and still complete, so the end that the attempt learned can lie before the end
+    // that the header states.
+    @Test
+    @DisplayName(
+        "Should keep the header's end time when a job attempt learned an earlier end for the stream")
+    void shouldKeepTheHeadersEndTimeWhenAJobAttemptLearnedAnEarlierEndForTheStream() {
+      outcomes.store(
+          audioAndVideo(REQUESTED_INPUTS.snapshot(), Optional.of(Duration.ofSeconds(30))));
+      var stored =
+          learnedStreamEnds.store(
+              learnedEnd(REQUESTED_INPUTS.snapshot(), 1, Duration.ofSeconds(14)));
+
+      var probe = probeOf(service().read(mediaFileId));
+
+      assertThat(stored).isTrue();
+      assertThat(probe.audioStreams())
+          .singleElement()
+          .extracting(StreamInfo::endTime)
+          .isEqualTo(Optional.of(Duration.ofSeconds(30)));
+    }
+
     @Test
     @DisplayName("Should keep the header's end time when no end was learned for the stream")
     void shouldKeepTheHeadersEndTimeWhenNoEndWasLearnedForTheStream() {
