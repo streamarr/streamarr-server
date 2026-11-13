@@ -272,20 +272,21 @@ public class PlaybackSessionService implements AutoCloseable {
             playback,
             () ->
                 playedVariant
-                    .flatMap(variant -> reserveTheCopyAlone(playback, failedId, variant))
+                    .filter(
+                        variant -> isLowerVariantBesideTheReadyCopy(playback, failedId, variant))
+                    .flatMap(_ -> reserveTheCopyAlone(playback, failedId))
                     .or(() -> reserveRecovery(playback, failedId, failure)));
     reservation.ifPresent(this::scheduleAfterChange);
   }
 
-  // A failure of an encoded lower variant beside the copy that plays withdraws the lower variants:
-  // a stream session that lists the same copy alone replaces the stream session (ADR 0050). It
-  // keeps the playback choice and the video operations, so the copy keeps its range and bit depth,
-  // and it spends no format attempt. A failure of the copy itself, or of a format attempt that no
-  // longer plays, reserves nothing here.
+  // A failure of an encoded lower variant beside the copy withdraws the lower variants: a stream
+  // session that lists the same copy alone replaces the stream session (ADR 0050). It keeps the
+  // playback choice and the video operations, so the copy keeps its range and bit depth, and it
+  // spends no format attempt. A format attempt that is no longer current, or that ended normally,
+  // reserves nothing here.
   private Optional<FormatAttemptReservation> reserveTheCopyAlone(
-      PlaybackSession playback, UUID failedId, String variantLabel) {
-    if (!isLowerVariantBesideTheCurrentCopy(playback, failedId, variantLabel)
-        || endedNormally(playback)) {
+      PlaybackSession playback, UUID failedId) {
+    if (!isCurrentAttempt(playback, failedId) || endedNormally(playback)) {
       return Optional.empty();
     }
 
@@ -302,7 +303,7 @@ public class PlaybackSessionService implements AutoCloseable {
                 .spendsAFormatAttempt(false)));
   }
 
-  private boolean isLowerVariantBesideTheCurrentCopy(
+  private boolean isLowerVariantBesideTheReadyCopy(
       PlaybackSession playback, UUID streamId, String variantLabel) {
     return isCurrentAttempt(playback, streamId)
         && playback.current instanceof PlaybackFormatAttempt.Ready(var session)
@@ -315,11 +316,11 @@ public class PlaybackSessionService implements AutoCloseable {
     var playback = streamOwners.get(failedId);
     if (playback == null
         || !locked(
-            playback, () -> isLowerVariantBesideTheCurrentCopy(playback, failedId, variantLabel))) {
+            playback, () -> isLowerVariantBesideTheReadyCopy(playback, failedId, variantLabel))) {
       return false;
     }
 
-    handleJobFailure(failedId, owner -> reserveTheCopyAlone(owner, failedId, variantLabel));
+    handleJobFailure(failedId, owner -> reserveTheCopyAlone(owner, failedId));
     return true;
   }
 
