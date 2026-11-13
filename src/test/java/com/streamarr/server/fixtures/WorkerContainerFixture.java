@@ -79,7 +79,8 @@ public final class WorkerContainerFixture implements AutoCloseable {
         .isNotBlank();
     makeMediaReadable();
     // Testcontainers marks a port exposed before it starts the SSH container that forwards it. A
-    // worker that starts meanwhile is created without the host name that reaches the server.
+    // worker that starts meanwhile is created without the host name that reaches the server. Only
+    // a JVM's first exposure starts that container, so the race shows when a test runs on its own.
     synchronized (HOST_PORT_EXPOSURE) {
       Testcontainers.exposeHostPorts(workerSessions.port());
     }
