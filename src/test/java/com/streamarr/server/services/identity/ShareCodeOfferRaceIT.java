@@ -69,16 +69,10 @@ class ShareCodeOfferRaceIT extends AbstractIntegrationTest {
     var first = track(authTestSupport.createIdentity());
     var second = track(authTestSupport.createIdentity());
     var code = authTestSupport.shareCodeFor(host);
-    var codeRow =
-        RowLockTarget.builder()
-            .dataSource(dataSource)
-            .table("share_code")
-            .rowId(stored(code).getId())
-            .build();
 
     List<Outcome<ProfileHouseholdShare, ShareRejections.Offer>> outcomes;
     try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
-        var codeLock = lockRow(codeRow)) {
+        var codeLock = lockRow(codeRow(code))) {
       var firstOffer = executor.submit(() -> offerOwnProfile(first, code));
       var secondOffer = executor.submit(() -> offerOwnProfile(second, code));
       await()
@@ -109,6 +103,14 @@ class ShareCodeOfferRaceIT extends AbstractIntegrationTest {
         authTestSupport.identityOf(offerer),
         offerer.profile().getId(),
         ShareCodeCommand.builder().code(code).ipAddress("203.0.113.7").build());
+  }
+
+  private RowLockTarget codeRow(String code) {
+    return RowLockTarget.builder()
+        .dataSource(dataSource)
+        .table("share_code")
+        .rowId(stored(code).getId())
+        .build();
   }
 
   private ShareCode stored(String code) {
