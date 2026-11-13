@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import static com.streamarr.server.fixtures.PaginationFixture.firstRows;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static com.streamarr.server.support.StoredNotificationRows.document;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,9 +28,11 @@ import com.streamarr.server.support.ProfileCastSupport;
 import com.streamarr.server.support.StoredNotificationRows;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,7 +48,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * The request about an invitation to manage a Profile whose time runs out (ADR 0063 §Requests), on
  * a clock the tests move past the invitation's expiry: the request reads as expired from its expiry
- * on, and the sweep that stores the invitation's expiry resolves it as expired, at the expiry.
+ * on, and the sweep that stores the invitation's expiry resolves it as expired, at the expiry. The
+ * Profile's pending list leaves the invitation out from its expiry on, before the sweep, because a
+ * manager's open Managers list drops the invitation at its expiresAt and gets no live change.
  */
 @Tag("IntegrationTest")
 @DisplayName("Manager Invitation Expiry Notifications Integration Tests")
@@ -156,9 +161,40 @@ class ManagerInvitationExpiryNotificationsIT extends AbstractIntegrationTest {
             });
   }
 
+  @Test
+  @DisplayName(
+      "Should leave the invitation out of its Profile's pending list from its expiry when the sweep"
+          + " has not run")
+  void shouldLeaveTheInvitationOutOfItsProfilesPendingListFromItsExpiryWhenTheSweepHasNotRun() {
+    var issued = steps.invite(sam, alex, mara.account().getEmail());
+    var expiresAt = stored(issued).getExpiresAt();
+    moveClockTo(expiresAt.minus(1, ChronoUnit.MICROS));
+    assertThat(pendingForAlex()).containsExactly(issued.invitation().getId());
+
+    moveClockTo(expiresAt);
+
+    assertThat(pendingForAlex()).isEmpty();
+    assertThat(stored(issued).getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
+  }
+
   /** Moves the clock a second past the invitation's expiry. */
   private void runOut(IssuedManagerInvitation issued) {
-    clock.advance(Duration.between(clock.instant(), stored(issued).getExpiresAt().plusSeconds(1)));
+    moveClockTo(stored(issued).getExpiresAt().plusSeconds(1));
+  }
+
+  private void moveClockTo(Instant instant) {
+    clock.advance(Duration.between(clock.instant(), instant));
+  }
+
+  /** The invitations that Sam, who manages Alex, reads in Alex's pending list. */
+  private List<UUID> pendingForAlex() {
+    return profileManagement
+        .pendingManagerInvitationsForProfile(
+            authTestSupport.identityOf(sam), alex.getId(), firstRows(10))
+        .rows()
+        .stream()
+        .map(row -> row.item().getId())
+        .toList();
   }
 
   private ProfileManagerInvitation stored(IssuedManagerInvitation issued) {
