@@ -96,8 +96,9 @@ public class ProducerLifecycleService {
   // The variant that each stream session started for its player: the first-listed variant, or the
   // top variant that stays when the upload budget leaves it out, whether creation or a served
   // playlist started it. A running variant that a served playlist keeps counts as started by that
-  // playlist. Until the player's first media-segment request, any request of it may stop another
-  // stream session's left variant (ADR 0019).
+  // playlist, and so does a variant that takes the place of the variant that the playlist started.
+  // Until the player's first media-segment request, any request of it may stop another stream
+  // session's left variant (ADR 0019).
   private final ConcurrentHashMap<UUID, String> variantsStartedForTheirPlayer =
       new ConcurrentHashMap<>();
   private final TranscodeLimit transcodeLimit = new TranscodeLimit();
@@ -1469,8 +1470,9 @@ public class ProducerLifecycleService {
     }
 
     stopVariant(session, started);
-    // The variant that takes the place holds it for the playlist in turn.
-    variantsStartedForTheirPlaylist.put(sessionId, variantLabel);
+    // The variant that takes the place holds it for the playlist in turn, so it is also the
+    // variant that the stream session started for its player (ADR 0019).
+    treatAsStartedByThePlaylist(sessionId, variantLabel);
     runtimeRegistry.save(session);
     log.info(
         "Stopped variant {} that the playlist of session {} started to make room for variant {}",

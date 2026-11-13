@@ -2521,6 +2521,36 @@ class SegmentDeliveryCoordinatorTest {
 
   @Test
   @DisplayName(
+      "Should stop another stream session's left variant to replace the dead job attempt of the variant that took the place of the variant that creation started under the upload budget when a new viewer's initialization request finds no free worker job slot")
+  void
+      shouldStopAnotherStreamSessionsLeftVariantToReplaceTheDeadJobAttemptOfTheVariantThatTookThePlaceOfTheVariantThatCreationStartedWhenANewViewersInitializationRequestFindsNoFreeWorkerJobSlot()
+          throws Exception {
+    rebuildRig(10, new MutexFactory<>());
+    transcodeExecutor.limitJobSlots(3);
+    var switching = switchingLadderSession();
+    // The upload budget left the first-listed 480p out, so creation started the top kept 360p in
+    // the last free slot. The first playlist lists 480p first again, and the player's
+    // initialization request of 480p stops 360p and starts 480p in 360p's slot.
+    var newViewer = sessionStartedForItsPlayerAt("360p");
+    var newViewerId = newViewer.getSessionId();
+    lifecycle.prepareRequestedVariant(newViewerId, "480p", "480p/init.mp4");
+    assertThat(runningVariants(newViewer)).containsExactly("480p");
+    transcodeExecutor.markDead(newViewerId, "480p");
+    startedLadderSession();
+    assertThat(transcodeExecutor.availableSlots()).isZero();
+
+    var recovery = deliverAsync(newViewerId, "480p", "480p/init.mp4");
+    transcodeExecutor.awaitStartedTarget(ExecutionTargetId.LOCAL);
+
+    assertThat(runningVariants(switching.session())).containsExactly("1080p");
+    assertThat(runningVariants(newViewer)).containsExactly("480p");
+    upload(newViewerId, "480p/init.mp4", new byte[] {0x66});
+    assertThat(recovery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    deliverSwitch(switching);
+  }
+
+  @Test
+  @DisplayName(
       "Should keep another stream session's left variant when an initialization request replaces the started variant after the player's first media-segment request")
   void
       shouldKeepAnotherStreamSessionsLeftVariantWhenAnInitializationRequestReplacesTheStartedVariantAfterThePlayersFirstMediaSegmentRequest()
