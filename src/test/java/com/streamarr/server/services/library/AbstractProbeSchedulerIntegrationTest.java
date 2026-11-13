@@ -157,8 +157,8 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
     return ProbeSchedulerStarter.fromContext(applicationContext);
   }
 
-  /** How long the probe and scan schedulers wait between polls. */
-  Duration pollingInterval() {
+  /** How long a scan scheduler from {@link #scanSchedulerBuilder()} waits between polls. */
+  Duration scanSchedulerPollingInterval() {
     return UnstartedSchedulerConfiguration.schedulerProperties(environment).getPollingInterval();
   }
 

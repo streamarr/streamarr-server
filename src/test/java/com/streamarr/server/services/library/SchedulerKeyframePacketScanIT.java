@@ -127,10 +127,10 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
     try {
       assertThat(started.poll(10, TimeUnit.SECONDS)).isNotNull();
-      // A poll that finds every scan thread busy tells no listener, so wait out five polls.
-      var fivePolls = pollingInterval().multipliedBy(5);
-      assertThat(started.poll(fivePolls.toMillis(), TimeUnit.MILLISECONDS))
-          .as("No second scan starts within five polls")
+      // A poll that finds every scan thread busy tells no listener, so wait out five intervals.
+      var fiveIntervals = scanSchedulerPollingInterval().multipliedBy(5);
+      assertThat(started.poll(fiveIntervals.toMillis(), TimeUnit.MILLISECONDS))
+          .as("No second scan starts within five polling intervals")
           .isNull();
     } finally {
       release.countDown();
