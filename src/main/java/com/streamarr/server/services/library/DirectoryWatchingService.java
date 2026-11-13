@@ -16,6 +16,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.DependsOn;
@@ -34,6 +35,7 @@ public class DirectoryWatchingService implements InitializingBean, LibraryWatchT
   private final Set<Path> directoriesToWatch = new HashSet<>();
   private DirectoryWatcher watcher;
 
+  @Builder
   public DirectoryWatchingService(
       LibraryRepository libraryRepository,
       FileStabilityChecker fileStabilityChecker,

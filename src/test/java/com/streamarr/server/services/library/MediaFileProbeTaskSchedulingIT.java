@@ -163,15 +163,17 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
     var backingOffWorker = new CompletableFuture<Thread>();
     var rejectionEnded = new CountDownLatch(1);
     var watcher =
-        new DirectoryWatchingService(
-            libraries,
-            _ -> true,
-            libraryManagementService,
-            ignoredFileValidator,
-            _ -> {
-              backingOffWorker.complete(Thread.currentThread());
-              rejectionEnded.await();
-            });
+        DirectoryWatchingService.builder()
+            .libraryRepository(libraries)
+            .fileStabilityChecker(_ -> true)
+            .libraryManagementService(libraryManagementService)
+            .ignoredFileValidator(ignoredFileValidator)
+            .sleeper(
+                _ -> {
+                  backingOffWorker.complete(Thread.currentThread());
+                  rejectionEnded.await();
+                })
+            .build();
     try {
       watcher.addDirectory(directory);
       try (var _ = rejectProbeTaskRequests()) {

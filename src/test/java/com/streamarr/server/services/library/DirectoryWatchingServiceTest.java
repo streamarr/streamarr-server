@@ -44,13 +44,7 @@ class DirectoryWatchingServiceTest {
 
   @BeforeEach
   void setUp() {
-    service =
-        new DirectoryWatchingService(
-            fakeLibraryRepository,
-            path -> true,
-            null,
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-            new CountingSleeper());
+    service = watcherBuilder().build();
   }
 
   @AfterEach
@@ -236,6 +230,14 @@ class DirectoryWatchingServiceTest {
     } finally {
       logCapture.close();
     }
+  }
+
+  private DirectoryWatchingService.DirectoryWatchingServiceBuilder watcherBuilder() {
+    return DirectoryWatchingService.builder()
+        .libraryRepository(fakeLibraryRepository)
+        .fileStabilityChecker(path -> true)
+        .ignoredFileValidator(new IgnoredFileValidator(new LibraryScanProperties(null, null, null)))
+        .sleeper(new CountingSleeper());
   }
 
   private DirectoryWatchingService buildFailingSetupService() {
