@@ -501,9 +501,9 @@ class ProbeReportFieldCounterTest {
 
   @Test
   @DisplayName(
-      "Should find only varints in the repeated number fields of a probe report, whose packed runs"
-          + " the counter reads as varints")
-  void shouldFindOnlyVarintsInRepeatedNumberFieldsOfProbeReportWhosePackedRunsAreReadAsVarints() {
+      "Should declare only varints in the repeated number fields of a probe report when the counter"
+          + " reads every packed run as varints")
+  void shouldDeclareOnlyVarintsInRepeatedNumberFieldsWhenCounterReadsEveryPackedRunAsVarints() {
     var fields = repeatedNumberFields(ProbeAttemptReport.getDescriptor(), new HashSet<>());
 
     assertThat(fields)
@@ -578,9 +578,9 @@ class ProbeReportFieldCounterTest {
 
   @Test
   @DisplayName(
-      "Should go on reading the result after a field of a stream of the result that the contract"
+      "Should go on reading the result when a stream of the result holds a field that the contract"
           + " does not declare")
-  void shouldGoOnReadingResultAfterFieldOfStreamOfResultThatIsNotDeclared() {
+  void shouldGoOnReadingResultWhenStreamOfResultHoldsFieldThatIsNotDeclared() {
     var stream =
         ProbeStreamInfo.newBuilder()
             .setIndex(0)

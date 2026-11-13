@@ -958,9 +958,9 @@ class ProbeReportCallTest {
 
   @Test
   @DisplayName(
-      "Should read no message of a short probe report's call while the free room in the memory"
+      "Should read no message of a short probe report's call when the free room in the memory"
           + " budget is one byte shorter than the 16 KiB that every probe report holds")
-  void shouldReadNoMessageOfShortReportsCallWhileFreeRoomIsOneByteShorterThanSmallestRoom()
+  void shouldReadNoMessageOfShortReportsCallWhenFreeRoomIsOneByteShorterThanSmallestRoom()
       throws Exception {
     var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
     holdAllRoomBut(worker, SMALLEST_ROOM - 1);
