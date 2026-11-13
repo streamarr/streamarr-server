@@ -30,6 +30,9 @@ class Fmp4FixtureTest {
   // Main 10 (profile 2) with compatibility flag 2 and the progressive and frame-only constraints.
   private static final byte[] MAIN_10_FIELDS = HexFormat.of().parseHex("0220000000900000000000");
 
+  // A media rate is a 16.16 fixed-point number: its integer part, then its fraction.
+  private static final int RATE_ONE = 0x1_0000;
+
   @ParameterizedTest
   @CsvSource({"0, 0, 0", "141, 141, 282", "140, 141, 281"})
   @DisplayName("Should count only audio samples when a segment contains multiple track runs")
@@ -105,8 +108,8 @@ class Fmp4FixtureTest {
     var initialization =
         box(
             "moov",
-            trackWithEditList("soun", editList(version, new Edit(1_000, 1))),
-            trackWithEditList("vide", editList(version, new Edit(mediaTime, 1))));
+            trackWithEditList("soun", editList(version, new Edit(1_000, RATE_ONE))),
+            trackWithEditList("vide", editList(version, new Edit(mediaTime, RATE_ONE))));
 
     assertThat(Fmp4Fixture.videoEditMediaTime(initialization)).isEqualTo(expectedSeconds);
   }
@@ -131,13 +134,17 @@ class Fmp4FixtureTest {
   static Stream<Arguments> editListsThatAPlayerNeedNotSupport() {
     return Stream.of(
         Arguments.of(
-            Named.of("an empty edit", editList(0, new Edit(-1, 1))), "the media time of the"),
+            Named.of("an empty edit", editList(0, new Edit(-1, RATE_ONE))),
+            "the media time of the"),
         Arguments.of(
-            Named.of("two edits", editList(0, new Edit(0, 1), new Edit(128, 1))),
+            Named.of("two edits", editList(0, new Edit(0, RATE_ONE), new Edit(128, RATE_ONE))),
             "the edits of the"),
         Arguments.of(
-            Named.of("an edit at media rate two", editList(0, new Edit(0, 2))),
-            "the integer part of the edit's media rate"));
+            Named.of("an edit at media rate two", editList(0, new Edit(0, 2 * RATE_ONE))),
+            "the integer part of the edit's media rate"),
+        Arguments.of(
+            Named.of("an edit at media rate one and a half", editList(0, new Edit(0, 0x1_8000))),
+            "the fraction of the edit's media rate"));
   }
 
   // A track of the timescale 128 whose edts holds the edit list.
@@ -167,7 +174,7 @@ class Fmp4FixtureTest {
             .putInt(edits.length);
     for (var edit : edits) {
       putSegmentDurationAndMediaTime(list, version, edit.mediaTime());
-      list.putShort((short) edit.mediaRate()).putShort((short) 0);
+      list.putInt(edit.mediaRate());
     }
 
     return box("elst", list.array());
