@@ -53,9 +53,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Scans a library whose shows each hold more episodes than the scan admits at first. The scan
- * matches many episodes of one show at once, so they race to create the show and its seasons. Each
- * episode must still join the one show and season it belongs to.
+ * Scans a library of shows with many episodes each. The scan matches several episodes of one show
+ * at once, so they race to create the show and its seasons. Each episode must still join the one
+ * show and season it belongs to.
  */
 @Isolated
 @Tag("IntegrationTest")
