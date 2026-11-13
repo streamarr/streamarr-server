@@ -47,10 +47,8 @@ public final class IntegrationTestShardFilter implements PostDiscoveryFilter {
           PROPERTY + " must name a shard of a count, such as 1/2, but was \"" + value + "\"");
     }
 
-    var count = Integer.parseInt(matcher.group(2));
     return new SelectedShard(
-        Integer.parseInt(matcher.group(1)),
-        IntegrationTestShards.balancing(count, IntegrationTestShards.recordedSeconds()));
+        Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)));
   }
 
   // The outermost class, so that a nested class's tests run in its enclosing class's shard.
@@ -67,11 +65,11 @@ public final class IntegrationTestShardFilter implements PostDiscoveryFilter {
                     descriptor.getUniqueId() + " belongs to no test class, so it has no shard"));
   }
 
-  private record SelectedShard(int shard, IntegrationTestShards shards) {
+  private record SelectedShard(int shard, int count) {
 
     FilterResult filter(String testClassName) {
       return FilterResult.includedIf(
-          shards.shardOf(testClassName) == shard,
+          IntegrationTestShards.shardOf(testClassName, count) == shard,
           () -> testClassName + " runs in shard " + shard,
           () -> testClassName + " runs in another shard");
     }

@@ -1,6 +1,6 @@
 # Seconds each integration test class took in CI run 43271700507 (2026-11-12), including its
-# context start and containers. IntegrationTestShards balances the CI shards with these times.
-# A class missing here still runs in exactly one shard, so stale times cost only balance.
+# context start and containers. IntegrationTestShardsTest checks that splitting the classes by
+# name hash balances these times. The split itself reads no record, so a stale one costs nothing.
 # The first class of a test JVM also pays for PostgreSQL, Flyway and the first context, which
 # every shard pays once, so PostgresLockTestSupportIT is listed with its test methods' time.
 com.streamarr.server.ActuatorExposureIT	3.44

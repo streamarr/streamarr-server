@@ -9,7 +9,6 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -60,9 +59,8 @@ class IntegrationTestShardFilterTest {
   @Test
   @DisplayName("Should keep a test class and its nested tests in one shard when JUnit discovers it")
   void shouldKeepATestClassAndItsNestedTestsInOneShardWhenJunitDiscoversIt() {
-    var shards = IntegrationTestShards.balancing(2, IntegrationTestShards.recordedSeconds());
-    var keeper = shards.shardOf(IntegrationTestShardFilterTest.class.getName());
-    assertThat(shards.shardOf(WhenEveryShardRuns.class.getName()))
+    var keeper = IntegrationTestShards.shardOf(IntegrationTestShardFilterTest.class.getName(), 2);
+    assertThat(IntegrationTestShards.shardOf(WhenEveryShardRuns.class.getName(), 2))
         .as("shard of the nested class's own name")
         .isNotEqualTo(keeper);
     var everyTest = discoveredTests();
@@ -116,9 +114,7 @@ class IntegrationTestShardFilterTest {
       var filters = everyShardOf(count);
 
       var keepers =
-          Stream.concat(
-                  IntegrationTestShards.recordedSeconds().keySet().stream(),
-                  GENERATED_CLASSES.stream())
+          GENERATED_CLASSES.stream()
               .collect(
                   Collectors.toMap(
                       Function.identity(), name -> shardsKeeping(filters, testMethodOf(name))));
