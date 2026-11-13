@@ -85,9 +85,11 @@ class MetricExportWithSdkExporterIT extends AbstractObservabilityProfileIntegrat
 
     assertThat(afterRemoval)
         .extracting(OtlpExports::exporter)
+        .as("exporters of the exports collected after the removal")
         .contains(Optional.of(MICROMETER), Optional.of(OPENTELEMETRY_SDK));
     assertThat(afterRemoval)
         .flatMap(AbstractObservabilityProfileIntegrationTest::workersOf)
+        .as("workers of the production speed meter in the exports collected after its removal")
         .doesNotContain(worker);
   }
 
