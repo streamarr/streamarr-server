@@ -46,6 +46,10 @@ import tools.jackson.databind.ObjectMapper;
  * Prometheus with the container's.
  */
 @Tag("IntegrationTest")
+// Pull request CI runs this class only when one of its inputs changes. A file outside this package
+// that it comes to depend on belongs in the Prometheus Compose test's inputs in
+// .github/workflows/ci.yml.
+@Tag("PrometheusComposeTest")
 @DisplayName("Compose metrics export integration tests")
 @ContextConfiguration(initializers = ComposeMetricsExportIT.ComposeServerEnvironment.class)
 class ComposeMetricsExportIT extends AbstractIntegrationTest {

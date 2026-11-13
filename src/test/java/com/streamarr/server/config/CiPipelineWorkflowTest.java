@@ -3,6 +3,8 @@ package com.streamarr.server.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.support.IntegrationTestShardFilter;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,6 +20,7 @@ import java.util.stream.Stream;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathFactory;
+import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -25,6 +28,13 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.platform.engine.discovery.ClassNameFilter;
+import org.junit.platform.engine.discovery.DiscoverySelectors;
+import org.junit.platform.engine.support.descriptor.ClassSource;
+import org.junit.platform.launcher.EngineFilter;
+import org.junit.platform.launcher.TagFilter;
+import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
+import org.junit.platform.launcher.core.LauncherFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
 import org.yaml.snakeyaml.Yaml;
@@ -36,9 +46,21 @@ class CiPipelineWorkflowTest {
   private static final String SONAR_ANALYSIS =
       "Analyze coverage and require the SonarCloud quality gate";
   private static final String SMOKE_TESTS = "Run HLS smoke tests";
+  private static final String BUILD_AND_TEST = "Build and test";
+  private static final String PROMETHEUS_COMPOSE_INPUTS =
+      "Detect changes to the Prometheus Compose test's inputs";
+  private static final String PROMETHEUS_COMPOSE_TAG = "PrometheusComposeTest";
+  private static final String WITHOUT_PROMETHEUS_COMPOSE_TEST =
+      "-Dgroups=!" + PROMETHEUS_COMPOSE_TAG;
+  private static final String NOT_A_PROMETHEUS_COMPOSE_INPUT =
+      "src/main/java/com/streamarr/server/services/library/LibraryManagementService.java";
+  private static final String PULL_REQUEST = "refs/pull/389/merge";
+  private static final String MAIN = "refs/heads/main";
   private static final String CI_INTEGRATION = "/project/profiles/profile[id='ci-integration']";
   private static final Predicate<String> FORMATTING_OR_STYLE_PROPERTY =
       Pattern.compile("-D(checkstyle|spotless)\\..*").asMatchPredicate();
+  private static final Predicate<String> TEST_GROUP_SELECTION =
+      Pattern.compile("-Dgroups=.*").asMatchPredicate();
 
   @TempDir private Path temporaryDirectory;
 
@@ -192,23 +214,269 @@ class CiPipelineWorkflowTest {
             "-Dcheckstyle.skip=" + skipped, "-Dspotless.check.skip=" + skipped);
   }
 
-  // shardArgument is what GitHub renders for this job's shard expression.
+  @ParameterizedTest
+  @ValueSource(strings = {"1", "2"})
+  @DisplayName(
+      "Should exclude the Prometheus Compose test when a pull request changes none of its inputs")
+  void shouldExcludeThePrometheusComposeTestWhenAPullRequestChangesNoneOfItsInputs(String shard)
+      throws Exception {
+    var job =
+        integrationJob(shard)
+            .ref(PULL_REQUEST)
+            .changedFiles(List.of(NOT_A_PROMETHEUS_COMPOSE_INPUT))
+            .build();
+
+    var arguments = buildAndTestMavenArguments(job);
+
+    assertThat(arguments)
+        .filteredOn(TEST_GROUP_SELECTION)
+        .as("test group selections")
+        .containsExactly(WITHOUT_PROMETHEUS_COMPOSE_TEST);
+  }
+
+  @Test
+  @DisplayName(
+      "Should select no unit test groups when a pull request changes no Prometheus Compose input")
+  void shouldSelectNoUnitTestGroupsWhenAPullRequestChangesNoPrometheusComposeInput()
+      throws Exception {
+    var job =
+        ApplicationJob.builder()
+            .suite("unit")
+            .shardArgument("")
+            .ref(PULL_REQUEST)
+            .changedFiles(List.of(NOT_A_PROMETHEUS_COMPOSE_INPUT))
+            .build();
+
+    var arguments = buildAndTestMavenArguments(job);
+
+    assertThat(arguments).filteredOn(TEST_GROUP_SELECTION).as("test group selections").isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should detect Prometheus Compose input changes with the pinned paths filter when jobs run")
+  void shouldDetectPrometheusComposeInputChangesWithThePinnedPathsFilterWhenJobsRun()
+      throws Exception {
+    assertThat(step("application", PROMETHEUS_COMPOSE_INPUTS))
+        .as("step that detects changes to the Prometheus Compose test's inputs")
+        .containsEntry("uses", step("changes", "Filter changed paths").get("uses"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        ".github/workflows/ci.yml",
+        "docker-compose.yml",
+        "pom.xml",
+        "src/main/resources/application.yml",
+        "src/main/resources/application-observability.yml",
+        "src/test/resources/application-test.yml",
+        "src/test/resources/junit-platform.properties",
+        "src/main/java/com/streamarr/server/config/observability/OtlpMetricsEndpointConfiguration.java",
+        "src/main/java/com/streamarr/server/services/library/ScanProbesWaiting.java",
+        "src/test/java/com/streamarr/server/AbstractIntegrationTest.java",
+        "src/test/java/com/streamarr/server/config/observability/ComposeMetricsExportIT.java",
+        "src/test/java/com/streamarr/server/config/observability/ComposeFile.java",
+        "src/test/java/com/streamarr/server/config/observability/ComposePrometheusQueries.java"
+      })
+  @DisplayName(
+      "Should run the Prometheus Compose test when a pull request changes one of its inputs")
+  void shouldRunThePrometheusComposeTestWhenAPullRequestChangesOneOfItsInputs(String input)
+      throws Exception {
+    for (var shard : List.of("1", "2")) {
+      var job =
+          integrationJob(shard)
+              .ref(PULL_REQUEST)
+              .changedFiles(List.of(NOT_A_PROMETHEUS_COMPOSE_INPUT, input))
+              .build();
+
+      var arguments = buildAndTestMavenArguments(job);
+
+      assertThat(arguments)
+          .filteredOn(TEST_GROUP_SELECTION)
+          .as("shard %s's test group selections", shard)
+          .isEmpty();
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"1", "2"})
+  @DisplayName("Should run the Prometheus Compose test when main builds")
+  void shouldRunThePrometheusComposeTestWhenMainBuilds(String shard) throws Exception {
+    var job =
+        integrationJob(shard)
+            .ref(MAIN)
+            .changedFiles(List.of(NOT_A_PROMETHEUS_COMPOSE_INPUT))
+            .build();
+
+    var arguments = buildAndTestMavenArguments(job);
+
+    assertThat(arguments).filteredOn(TEST_GROUP_SELECTION).as("test group selections").isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should run the Prometheus Compose test when a developer build verifies")
+  void shouldRunThePrometheusComposeTestWhenADeveloperBuildVerifies() throws Exception {
+    assertThat(Files.readAllLines(Path.of("pom.xml")))
+        .filteredOn(line -> line.contains(PROMETHEUS_COMPOSE_TAG))
+        .as("Maven configuration that names the Prometheus Compose test's tag")
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should name checked-in files when listing the Prometheus Compose test's inputs")
+  void shouldNameCheckedInFilesWhenListingThePrometheusComposeTestsInputs() throws Exception {
+    var inputs = prometheusComposeInputs();
+
+    assertThat(inputs).as("Prometheus Compose test inputs").isNotEmpty();
+    assertThat(inputs)
+        .filteredOn(Predicate.not(CiPipelineWorkflowTest::matchesACheckedInFile))
+        .as("input patterns that match no checked-in file")
+        .isEmpty();
+  }
+
+  // The tag's inputs in ci.yml list what this one class depends on. Another class with the tag
+  // would skip pull request CI even when what it depends on changes.
+  @Test
+  @DisplayName(
+      "Should leave out only the Compose metrics export test when CI excludes the Prometheus"
+          + " Compose tag")
+  void shouldLeaveOutOnlyTheComposeMetricsExportTestWhenCiExcludesThePrometheusComposeTag() {
+    var request =
+        LauncherDiscoveryRequestBuilder.request()
+            .selectors(DiscoverySelectors.selectPackage("com.streamarr"))
+            .filters(
+                EngineFilter.includeEngines("junit-jupiter"),
+                ClassNameFilter.includeClassNamePatterns(".*IT"),
+                TagFilter.includeTags(PROMETHEUS_COMPOSE_TAG))
+            .build();
+
+    var plan = LauncherFactory.create().discover(request);
+
+    var testClasses =
+        plan.getRoots().stream()
+            .flatMap(engine -> plan.getChildren(engine).stream())
+            .flatMap(testClass -> testClass.getSource().stream())
+            .filter(ClassSource.class::isInstance)
+            .map(ClassSource.class::cast)
+            .map(ClassSource::getJavaClass)
+            .map(Class::getSimpleName)
+            .toList();
+    assertThat(testClasses)
+        .as("integration test classes carrying the %s tag", PROMETHEUS_COMPOSE_TAG)
+        .containsExactly("ComposeMetricsExportIT");
+  }
+
+  private static ApplicationJob.ApplicationJobBuilder integrationJob(String shard) {
+    return ApplicationJob.builder()
+        .suite("integration")
+        .shardArgument("-Dci.integration.shard=" + shard);
+  }
+
+  // A main build runs every integration test, so these are each job's complete arguments.
   private List<String> buildAndTestMavenArguments(String suite, String shardArgument)
       throws Exception {
+    return buildAndTestMavenArguments(
+        ApplicationJob.builder()
+            .suite(suite)
+            .shardArgument(shardArgument)
+            .ref(MAIN)
+            .changedFiles(List.of())
+            .build());
+  }
+
+  private List<String> buildAndTestMavenArguments(ApplicationJob job) throws Exception {
     var context =
         Map.of(
             "matrix.suite",
-            suite,
+            job.suite(),
             "matrix.suite == 'integration'",
-            Boolean.toString(suite.equals("integration")),
+            Boolean.toString(job.suite().equals("integration")),
             "matrix.shard && format('-Dci.integration.shard={0}', matrix.shard)",
-            shardArgument);
-    var command = render(step("application", "Build and test").get("run").toString(), context);
+            job.shardArgument());
+    var detection = step("application", PROMETHEUS_COMPOSE_INPUTS);
+    var outputs =
+        Map.of(
+            "steps." + detection.get("id") + ".outputs.changed",
+            prometheusComposeInputsChanged(job));
+    var run = step("application", BUILD_AND_TEST).get("run").toString();
+    var command = render(renderConditionalArgument(run, outputs), context);
 
     var result = runBash(command.replace("./mvnw", "'" + argumentCapturingMaven() + "'"));
 
     assertThat(result.exitCode()).as(result.output()).isZero();
     return result.output().lines().toList();
+  }
+
+  // GitHub renders the output of a step that was skipped or has not run yet as empty. For these
+  // patterns the paths filter matches as Java's glob does: * within one folder, ** across folders.
+  private String prometheusComposeInputsChanged(ApplicationJob job) throws Exception {
+    var steps = stepNames("application");
+    if (steps.indexOf(PROMETHEUS_COMPOSE_INPUTS) > steps.indexOf(BUILD_AND_TEST)) {
+      return "";
+    }
+
+    var condition = step("application", PROMETHEUS_COMPOSE_INPUTS).get("if").toString();
+    if (!holds(condition, Map.of("matrix.suite", job.suite(), "github.ref", job.ref()))) {
+      return "";
+    }
+
+    var inputs = prometheusComposeInputs().stream().map(CiPipelineWorkflowTest::glob).toList();
+    var changed =
+        job.changedFiles().stream()
+            .map(Path::of)
+            .anyMatch(file -> inputs.stream().anyMatch(input -> input.matches(file)));
+    return Boolean.toString(changed);
+  }
+
+  private List<String> prometheusComposeInputs() throws Exception {
+    var detection = step("application", PROMETHEUS_COMPOSE_INPUTS);
+    Map<String, Object> filters =
+        new Yaml().load(map(detection.get("with")).get("filters").toString());
+
+    return ((List<?>) filters.get("changed")).stream().map(Object::toString).toList();
+  }
+
+  private static boolean matchesACheckedInFile(String pattern) {
+    var wildcard = pattern.indexOf('*');
+    if (wildcard < 0) {
+      return Files.isRegularFile(Path.of(pattern));
+    }
+
+    var directory = Path.of(pattern.substring(0, pattern.lastIndexOf('/', wildcard)));
+    if (!Files.isDirectory(directory)) {
+      return false;
+    }
+
+    try (var files = Files.walk(directory)) {
+      return files.anyMatch(glob(pattern)::matches);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  // GitHub renders a conditional argument as its quoted argument while its condition holds, and as
+  // an empty string otherwise.
+  private String renderConditionalArgument(String command, Map<String, String> context)
+      throws Exception {
+    var conditional =
+        Pattern.compile("\\$\\{\\{ ([^{}]+) && '([^']+)' \\|\\| '' }}").matcher(command);
+    assertThat(conditional.find()).as("conditional argument in %s", command).isTrue();
+    var argument = "";
+    if (holds(conditional.group(1), context)) {
+      argument = conditional.group(2);
+    }
+
+    return command.substring(0, conditional.start())
+        + argument
+        + command.substring(conditional.end());
+  }
+
+  private boolean holds(String condition, Map<String, String> context) throws Exception {
+    var result = runBash("[[ " + substituteContext(condition, context) + " ]]");
+    assertThat(result.exitCode()).as("%s: %s", condition, result.output()).isIn(0, 1);
+
+    return result.exitCode() == 0;
   }
 
   @Test
@@ -605,4 +873,9 @@ class CiPipelineWorkflowTest {
   }
 
   private record CommandResult(int exitCode, String output) {}
+
+  // shardArgument is what GitHub renders for this job's shard expression.
+  @Builder
+  private record ApplicationJob(
+      String suite, String shardArgument, String ref, List<String> changedFiles) {}
 }
