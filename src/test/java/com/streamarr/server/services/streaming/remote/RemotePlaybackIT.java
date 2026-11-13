@@ -612,12 +612,13 @@ class RemotePlaybackIT {
     var meterRegistry = new SimpleMeterRegistry();
     var server = server(segmentStore, meterRegistry);
     var shared =
-        new SharedWorker(
-            mediaRoot,
-            segmentStore,
-            meterRegistry,
-            server,
-            workerBuilder(server, mediaRoot).ffmpegScript(ffmpegScript).build());
+        SharedWorker.builder()
+            .mediaRoot(mediaRoot)
+            .segmentStore(segmentStore)
+            .meterRegistry(meterRegistry)
+            .server(server)
+            .worker(workerBuilder(server, mediaRoot).ffmpegScript(ffmpegScript).build())
+            .build();
     SHARED_WORKERS.put(ffmpegScript, shared);
     server.start();
     shared.worker().start();
@@ -905,6 +906,7 @@ class RemotePlaybackIT {
         .build();
   }
 
+  @Builder
   private record SharedWorker(
       Path mediaRoot,
       PublishingSegmentStore segmentStore,
