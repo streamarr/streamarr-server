@@ -49,7 +49,6 @@ public record ArtworkSchedulerStarter(
   public ArtworkScheduler start(ArtworkPriority priority, SchedulerListener listener) {
     var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
     properties.setShutdownMaxWait(Duration.ofMillis(200));
-    properties.setPollingInterval(Duration.ofMillis(100));
     var scheduler =
         ArtworkScheduler.builder()
             .schedulerProperties(properties)
