@@ -32,6 +32,7 @@ import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
@@ -43,6 +44,9 @@ import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.Builder;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -61,8 +65,56 @@ class RemoteRecoveryIT {
 
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+  // The test's two-minute timeout stops a slow start before this bound runs out, as it did when
+  // the workers started one after the other.
+  private static final Duration WORKER_START_BOUND = Duration.ofMinutes(2);
 
   @TempDir Path tempDir;
+
+  // The tests that need one worker share this server and worker, and each sets the worker's
+  // scripted FFmpeg body before it starts a job. The re-dispatch test connects its workers one
+  // after the other, and the two-worker test needs a server with exactly two eligible workers, so
+  // each starts its own.
+  @TempDir static Path sharedTempDir;
+
+  private static Path sharedMediaRoot;
+  private static LocalSegmentStore sharedSegmentStore;
+  private static MeterRegistry sharedMeterRegistry;
+  private static WorkerSessionServer sharedServer;
+  private static WorkerContainerFixture sharedWorker;
+
+  // Teardown stops this test's stream session on the shared server, so a job that the test leaves
+  // running when it fails holds no slot into the next test.
+  private UUID sharedStreamSessionId;
+
+  @BeforeAll
+  static void startSharedServerAndWorker() throws Exception {
+    sharedMediaRoot = Files.createDirectory(sharedTempDir.resolve("media"));
+    sharedSegmentStore = new LocalSegmentStore(sharedTempDir.resolve("server-segments"));
+    sharedMeterRegistry = new SimpleMeterRegistry();
+    sharedServer = server(sharedSegmentStore, sharedMeterRegistry);
+    sharedServer.start();
+    sharedWorker = workerBuilder(sharedServer, sharedMediaRoot).build();
+    sharedWorker.start();
+  }
+
+  @AfterAll
+  static void stopSharedServerAndWorker() {
+    if (sharedWorker != null) {
+      sharedWorker.close();
+    }
+
+    if (sharedServer != null) {
+      sharedServer.close();
+    }
+  }
+
+  @AfterEach
+  void stopSharedStreamSession() {
+    if (sharedStreamSessionId != null) {
+      sharedServer.stopStreamSession(sharedStreamSessionId);
+    }
+  }
 
   @Test
   @DisplayName(
@@ -127,39 +179,31 @@ class RemoteRecoveryIT {
   @Test
   @DisplayName("Should surface a terminal outcome when every worker attempt fails")
   void shouldSurfaceTerminalOutcomeWhenEveryWorkerAttemptFails() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
+    var mediaFile =
+        Files.writeString(sharedMediaRoot.resolve(streamSessionId + ".mkv"), "test media");
+    var executor = new RemoteTranscodeExecutor(sharedServer, SOURCE_NAMESPACE_ID, sharedMediaRoot);
+    var rig =
+        recoveryRig(
+            RecoveryRigConfiguration.builder()
+                .initialAttempt(initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX))
+                .segmentStore(sharedSegmentStore)
+                .heldRequests(sharedServer.heldSegmentRequests())
+                .executor(executor)
+                .build());
+    prepareSharedWorker(streamSessionId, "exit 73\n");
 
-    try (var server = server(segmentStore);
-        var failingWorker = workerBuilder(server, mediaRoot).ffmpegScript("exit 73\n").build()) {
-      server.start();
-      failingWorker.start();
-      var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
-      var rig =
-          recoveryRig(
-              RecoveryRigConfiguration.builder()
-                  .initialAttempt(initialAttempt(streamSessionId, mediaFile, TranscodeMode.REMUX))
-                  .segmentStore(segmentStore)
-                  .heldRequests(server.heldSegmentRequests())
-                  .executor(executor)
-                  .build());
+    var handle = executor.start(rig.configuration().initialAttempt());
+    rig.session().setHandle(handle);
+    await()
+        .atMost(5, TimeUnit.SECONDS)
+        .until(() -> !sharedServer.isRunning(streamSessionId, StreamSession.defaultVariant()));
 
-      var handle = executor.start(rig.configuration().initialAttempt());
-      rig.session().setHandle(handle);
-      await()
-          .atMost(5, TimeUnit.SECONDS)
-          .until(() -> !server.isRunning(streamSessionId, StreamSession.defaultVariant()));
+    var delivery =
+        rig.coordinator().deliver(streamSessionId, StreamSession.defaultVariant(), "segment0.m4s");
 
-      var delivery =
-          rig.coordinator()
-              .deliver(streamSessionId, StreamSession.defaultVariant(), "segment0.m4s");
-
-      assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
-      assertThat(rig.session().getHandle().orElseThrow().status())
-          .isEqualTo(TranscodeStatus.FAILED);
-    }
+    assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
+    assertThat(rig.session().getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
   @ParameterizedTest(name = "{0}")
@@ -170,66 +214,61 @@ class RemoteRecoveryIT {
       "Should publish a replacement attempt's media segments when its initialization segment matches the stored one")
   void shouldPublishReplacementAttemptsMediaSegmentsWhenItsInitializationSegmentMatchesStoredOne(
       TranscodeMode mode) throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var mediaFile =
-        Files.write(mediaRoot.resolve("movie.mp4"), RecordedStream.START_AT_ZERO.bytes());
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
-    var meterRegistry = new SimpleMeterRegistry();
     var streamSessionId = UUID.randomUUID();
+    var mediaFile =
+        Files.write(
+            sharedMediaRoot.resolve(streamSessionId + ".mp4"),
+            RecordedStream.START_AT_ZERO.bytes());
     var initialAttempt = initialAttempt(streamSessionId, mediaFile, mode);
+    var rig =
+        recoveryRig(
+            RecoveryRigConfiguration.builder()
+                .initialAttempt(initialAttempt)
+                .segmentStore(sharedSegmentStore)
+                .heldRequests(sharedServer.heldSegmentRequests())
+                .executor(
+                    new RemoteTranscodeExecutor(sharedServer, SOURCE_NAMESPACE_ID, sharedMediaRoot))
+                .build());
+    var worker =
+        prepareSharedWorker(
+            streamSessionId,
+            killableThenReplacedScript(initialAttempt.attemptId(), RecordedStream.START_AT_ZERO));
+    var mismatchesBefore = initializationSegmentMismatches(sharedMeterRegistry);
+    startThenKillInitialAttempt(rig, List.of(worker));
 
-    try (var server = server(segmentStore, meterRegistry);
-        var worker =
-            workerBuilder(server, mediaRoot)
-                .ffmpegScript(
-                    killableThenReplacedScript(
-                        initialAttempt.attemptId(), RecordedStream.START_AT_ZERO))
-                .build()) {
-      server.start();
-      worker.start();
-      var rig =
-          recoveryRig(
-              RecoveryRigConfiguration.builder()
-                  .initialAttempt(initialAttempt)
-                  .segmentStore(segmentStore)
-                  .heldRequests(server.heldSegmentRequests())
-                  .executor(new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot))
-                  .build());
-      startThenKillInitialAttempt(rig, List.of(worker));
+    var delivery =
+        rig.coordinator().deliver(streamSessionId, StreamSession.defaultVariant(), "segment1.m4s");
 
-      var delivery =
-          rig.coordinator()
-              .deliver(streamSessionId, StreamSession.defaultVariant(), "segment1.m4s");
-
-      var media =
-          switch (delivery) {
-            case SegmentDelivery.Ready _ ->
-                Bytes.concat(
-                    Fmp4Fixture.withInitializationSegment(
-                        segmentStore, streamSessionId, "segment0.m4s"),
-                    StoredSegments.bytes(delivery));
-            default -> throw new AssertionError(delivery);
-          };
-      var recoveredMedia = Files.write(tempDir.resolve("recovered.mp4"), media);
-      var producerMedia =
-          Files.write(tempDir.resolve("producer.mp4"), RecordedStream.START_AT_ZERO.bytes());
-      assertThat(worker.videoPacketHashes(recoveredMedia))
-          .as("the initial and replacement attempts preserve every video packet in order")
-          .isNotEmpty()
-          .containsExactlyElementsOf(worker.videoPacketHashes(producerMedia));
-      assertThat(worker.audioPacketHashes(recoveredMedia))
-          .as("the initial and replacement attempts preserve every audio packet in order")
-          .isNotEmpty()
-          .containsExactlyElementsOf(worker.audioPacketHashes(producerMedia));
-      var replacementAttemptId = rig.session().getHandle().orElseThrow().attemptId();
-      assertThat(replacementAttemptId)
-          .as("recovery replaced the initial attempt")
-          .isNotEqualTo(initialAttempt.attemptId());
-      assertThat(worker.commandFor(replacementAttemptId))
-          .as("the worker ran the replacement attempt")
-          .isPresent();
-      assertThat(initializationSegmentMismatches(meterRegistry)).isZero();
-    }
+    var media =
+        switch (delivery) {
+          case SegmentDelivery.Ready _ ->
+              Bytes.concat(
+                  Fmp4Fixture.withInitializationSegment(
+                      sharedSegmentStore, streamSessionId, "segment0.m4s"),
+                  StoredSegments.bytes(delivery));
+          default -> throw new AssertionError(delivery);
+        };
+    var recoveredMedia = Files.write(tempDir.resolve("recovered.mp4"), media);
+    var producerMedia =
+        Files.write(tempDir.resolve("producer.mp4"), RecordedStream.START_AT_ZERO.bytes());
+    assertThat(worker.videoPacketHashes(recoveredMedia))
+        .as("the initial and replacement attempts preserve every video packet in order")
+        .isNotEmpty()
+        .containsExactlyElementsOf(worker.videoPacketHashes(producerMedia));
+    assertThat(worker.audioPacketHashes(recoveredMedia))
+        .as("the initial and replacement attempts preserve every audio packet in order")
+        .isNotEmpty()
+        .containsExactlyElementsOf(worker.audioPacketHashes(producerMedia));
+    var replacementAttemptId = rig.session().getHandle().orElseThrow().attemptId();
+    assertThat(replacementAttemptId)
+        .as("recovery replaced the initial attempt")
+        .isNotEqualTo(initialAttempt.attemptId());
+    assertThat(worker.commandFor(replacementAttemptId))
+        .as("the worker ran the replacement attempt")
+        .isPresent();
+    assertThat(initializationSegmentMismatches(sharedMeterRegistry))
+        .as("no initialization segment was refused while this test ran")
+        .isEqualTo(mismatchesBefore);
   }
 
   @Test
@@ -252,8 +291,7 @@ class RemoteRecoveryIT {
         var firstWorker = workerBuilder(server, mediaRoot).ffmpegScript(script).build();
         var secondWorker = workerBuilder(server, mediaRoot).ffmpegScript(script).build()) {
       server.start();
-      firstWorker.start();
-      secondWorker.start();
+      startTogether(firstWorker, secondWorker);
       var rig =
           recoveryRig(
               RecoveryRigConfiguration.builder()
@@ -304,6 +342,26 @@ class RemoteRecoveryIT {
             initialAttemptId,
             RecordedStream.START_AT_ZERO.containerPath(),
             WorkerContainerFixture.emitRecordedStream(replacementRecording));
+  }
+
+  // Each test starts with the shared worker's one slot free, as on a worker of its own. Stopping an
+  // earlier test's stream session freed any slot that its job held.
+  private WorkerContainerFixture prepareSharedWorker(UUID streamSessionId, String ffmpegScript) {
+    sharedStreamSessionId = streamSessionId;
+    await()
+        .atMost(10, TimeUnit.SECONDS)
+        .until(() -> sharedServer.availableSlots(SOURCE_NAMESPACE_ID) == 1);
+    sharedWorker.replaceFfmpegScript(ffmpegScript);
+    return sharedWorker;
+  }
+
+  private static void startTogether(WorkerContainerFixture first, WorkerContainerFixture second)
+      throws Exception {
+    try (var firstStart = BoundedTask.start(first::start);
+        var secondStart = BoundedTask.start(second::start)) {
+      firstStart.await(WORKER_START_BOUND);
+      secondStart.await(WORKER_START_BOUND);
+    }
   }
 
   private void startThenKillInitialAttempt(RecoveryRig rig, List<WorkerContainerFixture> workers)
@@ -389,7 +447,8 @@ class RemoteRecoveryIT {
     return server(segmentStore, new SimpleMeterRegistry());
   }
 
-  private WorkerSessionServer server(LocalSegmentStore segmentStore, MeterRegistry meterRegistry) {
+  private static WorkerSessionServer server(
+      LocalSegmentStore segmentStore, MeterRegistry meterRegistry) {
     return WorkerSessionServer.builder()
         .eventPublisher(new CapturingEventPublisher())
         .configuration(serverConfigurationBuilder().address("127.0.0.1").build())
@@ -398,7 +457,7 @@ class RemoteRecoveryIT {
         .build();
   }
 
-  private WorkerContainerFixture.WorkerContainerFixtureBuilder workerBuilder(
+  private static WorkerContainerFixture.WorkerContainerFixtureBuilder workerBuilder(
       WorkerSessionServer server, Path mediaRoot) {
     return WorkerContainerFixture.builder()
         .workerSessions(server)
