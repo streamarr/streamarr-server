@@ -72,8 +72,9 @@ class RemoteRecoveryIT {
   @TempDir Path tempDir;
 
   // The tests that need one worker share this server and worker, and each sets the worker's
-  // scripted FFmpeg body before it starts a job. A test that connects workers at chosen moments
-  // starts its own.
+  // scripted FFmpeg body before it starts a job. The re-dispatch test connects its workers one
+  // after the other, and the two-worker test needs a server with exactly two eligible workers, so
+  // each starts its own.
   @TempDir static Path sharedTempDir;
 
   private static Path sharedMediaRoot;
