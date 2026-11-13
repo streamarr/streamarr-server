@@ -143,9 +143,7 @@ class ProfileSharePartiesServiceTest {
           + " is past its expiry")
   void shouldHideProfileAndOffererFromTargetHouseholdAdminWhenPendingOfferIsPastItsExpiry() {
     allowOnly(this::administersTarget);
-    var lapsed =
-        ShareReference.of(
-            offerOf(ProfileShareStatus.PENDING).expiresAt(NOW.minusSeconds(1)).build(), NOW);
+    var lapsed = stored(offerOf(ProfileShareStatus.PENDING).expiresAt(NOW.minusSeconds(1)));
 
     assertThat(service.profiles(reader(), Set.of(lapsed))).isEmpty();
     assertThat(service.offererNames(reader(), Set.of(lapsed))).isEmpty();
@@ -361,14 +359,23 @@ class ProfileSharePartiesServiceTest {
     return intent.equals(new Intent.ViewProfileShareHouseholds(offered.getId()));
   }
 
-  private static ShareReference liveShare(
-      UUID profileId, UUID householdId, Optional<UUID> offeredBy) {
-    return new ShareReference(profileId, householdId, offeredBy, true);
+  private ShareReference liveShare(UUID profileId, UUID householdId, Optional<UUID> offeredBy) {
+    return stored(
+        ProfileHouseholdShare.builder()
+            .profileId(profileId)
+            .householdId(householdId)
+            .status(ProfileShareStatus.ACTIVE)
+            .offeredByAccountId(offeredBy.orElse(null)));
   }
 
   /** The share of the offered Profile into the target at the status, read at {@code NOW}. */
   private ShareReference shareIn(ProfileShareStatus status) {
-    return ShareReference.of(offerOf(status).build(), NOW);
+    return stored(offerOf(status));
+  }
+
+  /** The share, stored, as a page reads it at {@code NOW}. */
+  private ShareReference stored(ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> share) {
+    return ShareReference.of(shares.save(share.build()), NOW);
   }
 
   private ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> offerOf(
