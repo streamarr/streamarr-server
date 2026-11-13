@@ -12,10 +12,14 @@ import com.streamarr.server.services.streaming.StoredSegment;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
+import java.nio.file.NotDirectoryException;
 import java.nio.file.Path;
 import java.nio.file.SecureDirectoryStream;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -104,7 +108,7 @@ public class LocalSegmentStore implements SegmentStore {
       getOutputDirectory(sessionId);
       var segmentPath = resolveSegmentPath();
       try {
-        Files.createDirectories(segmentPath.getParent());
+        createOrReuseFolder(segmentPath.getParent());
         return publishOnce(segmentPath);
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
@@ -150,7 +154,16 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   public Path getOutputDirectory(UUID sessionId) {
-    return sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
+    var sessionDir = sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
+
+    try {
+      // A soft link can take this folder's place after the store created it. A variant folder
+      // created through that soft link would sit outside the segment folder.
+      requireFolder(sessionDir);
+      return sessionDir;
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed to reuse session directory", e);
+    }
   }
 
   public Path getOutputDirectory(UUID sessionId, String variantLabel) {
@@ -158,7 +171,7 @@ public class LocalSegmentStore implements SegmentStore {
     var variantDir = sessionDir.resolve(variantLabel);
 
     try {
-      Files.createDirectories(variantDir);
+      createOrReuseFolder(variantDir);
       return variantDir;
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to create variant directory", e);
@@ -205,10 +218,28 @@ public class LocalSegmentStore implements SegmentStore {
     var dir = baseDir.resolve(sessionId.toString());
 
     try {
-      Files.createDirectories(dir);
+      createOrReuseFolder(dir);
       return dir;
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to create session directory", e);
+    }
+  }
+
+  // Files.createDirectories accepts a soft link to a folder in the folder's place, and the store
+  // would then write through that soft link.
+  private static void createOrReuseFolder(Path folder) throws IOException {
+    try {
+      Files.createDirectory(folder);
+    } catch (FileAlreadyExistsException _) {
+      requireFolder(folder);
+    }
+  }
+
+  private static void requireFolder(Path path) throws IOException {
+    var attributes =
+        Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+    if (!attributes.isDirectory()) {
+      throw new NotDirectoryException(path.toString());
     }
   }
 

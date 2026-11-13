@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -26,6 +27,7 @@ class PreparedSegmentFileTest {
 
   private static final Path DIRECTORY = Path.of("segments");
   private static final Path INITIALIZATION_TARGET = DIRECTORY.resolve("session/720p/init.mp4");
+  private static final String UPLOAD_NAME = "\\.upload-\\d+\\.tmp";
 
   // The temporary file is on the default file system and the target on another one. Java moves
   // a file between two file systems by copying it, and refuses to call that move atomic.
@@ -63,36 +65,16 @@ class PreparedSegmentFileTest {
   }
 
   @Test
-  @DisplayName("Should suppress cleanup failure when the temporary file cannot be opened")
-  void shouldSuppressCleanupFailureWhenTemporaryFileCannotBeOpened() {
+  @DisplayName(
+      "Should fail the preparation with the creation's own failure when the temporary file cannot"
+          + " be created")
+  void shouldFailPreparationWithCreationsOwnFailureWhenTemporaryFileCannotBeCreated() {
     var files = new InMemoryFileOperations();
-    files.failOpen = true;
-    files.failDelete = true;
+    files.failCreate = true;
 
     assertThatThrownBy(() -> PreparedSegmentFile.create(files, DIRECTORY))
         .isInstanceOf(IOException.class)
-        .hasMessage("temporary open failed")
-        .satisfies(
-            failure ->
-                assertThat(failure.getSuppressed())
-                    .singleElement()
-                    .satisfies(
-                        suppressed -> {
-                          assertThat(suppressed).isInstanceOf(IOException.class);
-                          assertThat(suppressed.getMessage()).isEqualTo("temporary cleanup failed");
-                        }));
-  }
-
-  @Test
-  @DisplayName("Should delete the temporary file when it cannot be opened for writing")
-  void shouldDeleteTemporaryFileWhenItCannotBeOpenedForWriting() {
-    var files = new InMemoryFileOperations();
-    files.failOpen = true;
-
-    assertThatThrownBy(() -> PreparedSegmentFile.create(files, DIRECTORY))
-        .isInstanceOf(IOException.class);
-
-    assertThat(files.hasTemporaryFile()).isFalse();
+        .hasMessage("temporary create failed");
   }
 
   @Test
@@ -109,7 +91,7 @@ class PreparedSegmentFileTest {
 
     assertThatThrownBy(prepared::close).isInstanceOf(IOException.class);
 
-    assertThat(files.hasTemporaryFile()).isFalse();
+    assertThat(files.hasUploadFile()).isFalse();
   }
 
   private static PreparedSegmentFile prepared(InMemoryFileOperations files, byte[] data)
@@ -121,25 +103,22 @@ class PreparedSegmentFileTest {
 
   private static final class InMemoryFileOperations implements PreparedSegmentFile.FileOperations {
 
-    private final Path temporary = DIRECTORY.resolve("upload.tmp");
     private final Map<Path, byte[]> contents = new HashMap<>();
-    private boolean failOpen;
+    private boolean failCreate;
     private boolean failWrite;
     private boolean failClose;
-    private boolean failDelete;
 
     @Override
-    public Path createTemporary(Path directory) {
-      contents.put(temporary, new byte[0]);
-      return temporary;
-    }
-
-    @Override
-    public WritableByteChannel openForWriting(Path path) throws IOException {
-      if (failOpen) {
-        throw new IOException("temporary open failed");
+    public WritableByteChannel createNew(Path path) throws IOException {
+      if (failCreate) {
+        throw new IOException("temporary create failed");
       }
 
+      if (contents.containsKey(path)) {
+        throw new FileAlreadyExistsException(path.toString());
+      }
+
+      contents.put(path, new byte[0]);
       return new WritableByteChannel() {
         private boolean open = true;
 
@@ -186,10 +165,7 @@ class PreparedSegmentFileTest {
     }
 
     @Override
-    public void delete(Path path) throws IOException {
-      if (failDelete) {
-        throw new IOException("temporary cleanup failed");
-      }
+    public void delete(Path path) {
       contents.remove(path);
     }
 
@@ -197,8 +173,9 @@ class PreparedSegmentFileTest {
       return contents.get(path);
     }
 
-    private boolean hasTemporaryFile() {
-      return contents.containsKey(temporary);
+    private boolean hasUploadFile() {
+      return contents.keySet().stream()
+          .anyMatch(path -> path.getFileName().toString().matches(UPLOAD_NAME));
     }
   }
 }

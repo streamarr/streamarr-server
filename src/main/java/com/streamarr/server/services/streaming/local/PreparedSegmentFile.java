@@ -4,23 +4,38 @@ import com.streamarr.server.services.streaming.SegmentPublication;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.security.SecureRandom;
+import java.util.Optional;
+import java.util.Set;
 import lombok.NonNull;
 
 final class PreparedSegmentFile implements AutoCloseable {
 
   private static final String UPLOAD_PREFIX = ".upload-";
   private static final String UPLOAD_SUFFIX = ".tmp";
+  // Another file holds a random 64-bit name only by rare chance, so a few new names are enough.
+  private static final int UPLOAD_NAME_ATTEMPTS = 8;
+  private static final SecureRandom UPLOAD_NAMES = new SecureRandom();
 
   interface FileOperations {
-    Path createTemporary(Path directory) throws IOException;
-
-    WritableByteChannel openForWriting(Path path) throws IOException;
+    /**
+     * Creates a new file at {@code path} and opens it for writing. Fails with {@link
+     * FileAlreadyExistsException} when any entry holds the name, a soft link included, and never
+     * follows that entry.
+     */
+    WritableByteChannel createNew(Path path) throws IOException;
 
     /** Fails, moving nothing, on a volume that cannot move a file atomically. */
     void moveAtomically(Path source, Path target) throws IOException;
@@ -36,14 +51,19 @@ final class PreparedSegmentFile implements AutoCloseable {
   private enum NioFileOperations implements FileOperations {
     INSTANCE;
 
-    @Override
-    public Path createTemporary(Path directory) throws IOException {
-      return Files.createTempFile(directory, UPLOAD_PREFIX, UPLOAD_SUFFIX);
-    }
+    private static final Set<OpenOption> NEW_FILE_FOR_WRITING =
+        Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
+    private static final FileAttribute<Set<PosixFilePermission>> OWNER_ONLY =
+        PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"));
 
     @Override
-    public WritableByteChannel openForWriting(Path path) throws IOException {
-      return Files.newByteChannel(path, StandardOpenOption.WRITE);
+    public WritableByteChannel createNew(Path path) throws IOException {
+      // A published segment keeps these permissions, so only the server's user can read it.
+      if (path.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+        return Files.newByteChannel(path, NEW_FILE_FOR_WRITING, OWNER_ONLY);
+      }
+
+      return Files.newByteChannel(path, NEW_FILE_FOR_WRITING);
     }
 
     @Override
@@ -93,18 +113,35 @@ final class PreparedSegmentFile implements AutoCloseable {
     return create(NioFileOperations.INSTANCE, directory);
   }
 
+  /**
+   * Creates the upload's file in {@code directory} under a new name, {@code .upload-} followed by
+   * digits and {@code .tmp}. Every later write goes through the file opened at its creation, so a
+   * soft link that later takes the name receives none of the upload's bytes.
+   */
   static PreparedSegmentFile create(@NonNull FileOperations files, Path directory)
       throws IOException {
-    var temporary = files.createTemporary(directory);
-    try {
-      return new PreparedSegmentFile(files, temporary, files.openForWriting(temporary));
-    } catch (IOException | RuntimeException preparationFailure) {
-      try {
-        files.delete(temporary);
-      } catch (IOException cleanupFailure) {
-        preparationFailure.addSuppressed(cleanupFailure);
+    for (var attempt = 0; attempt < UPLOAD_NAME_ATTEMPTS; attempt++) {
+      var temporary = directory.resolve(newUploadName());
+      var content = createUnlessTheNameIsTaken(files, temporary);
+      if (content.isPresent()) {
+        return new PreparedSegmentFile(files, temporary, content.get());
       }
-      throw preparationFailure;
+    }
+
+    throw new FileAlreadyExistsException(
+        directory.toString(), null, "Every generated upload name is taken");
+  }
+
+  private static String newUploadName() {
+    return UPLOAD_PREFIX + Long.toUnsignedString(UPLOAD_NAMES.nextLong()) + UPLOAD_SUFFIX;
+  }
+
+  private static Optional<WritableByteChannel> createUnlessTheNameIsTaken(
+      FileOperations files, Path temporary) throws IOException {
+    try {
+      return Optional.of(files.createNew(temporary));
+    } catch (FileAlreadyExistsException _) {
+      return Optional.empty();
     }
   }
 
