@@ -375,7 +375,6 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
                     .containsExactly(tuple("video", Optional.of(new Fraction(24, 1)))));
   }
 
-  // Each test writes its media into its own directory under the worker's source root.
   private static Path mediaDirectory() throws IOException {
     return Files.createDirectory(mediaRoot.resolve(UUID.randomUUID().toString()));
   }
