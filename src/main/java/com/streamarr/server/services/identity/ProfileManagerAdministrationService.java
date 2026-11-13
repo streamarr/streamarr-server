@@ -286,7 +286,7 @@ public class ProfileManagerAdministrationService {
     // With the inviter's own Profile, to recheck its eligibility, in the order an invite takes the
     // same two: an invite to the inviter's address may run at once.
     var profileId = invitation.getProfileId();
-    var locked =
+    boolean locked =
         Optional.ofNullable(invitation.getInviterAccountId())
             .map(inviterId -> profileRepository.lockWithPersonalProfileOf(profileId, inviterId))
             .orElseGet(() -> profileRepository.lockById(profileId));
