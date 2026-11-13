@@ -54,27 +54,29 @@ class ShareErrorsTest {
 
   @Test
   @DisplayName(
-      "Should tell the person to reload when Accept, Decline or Cancel finds the share invitation"
-          + " no longer waiting")
-  void shouldTellThePersonToReloadWhenShareInvitationIsNoLongerWaiting() {
-    var expected =
-        "That share invitation is no longer waiting for an answer. Reload the page to see what"
-            + " changed.";
-
+      "Should name the refused action and tell the person to reload when Accept, Decline or Cancel"
+          + " finds the share invitation not pending")
+  void shouldNameTheRefusedActionWhenShareInvitationIsNotPending() {
     assertSoftly(
         softly -> {
           softly
               .assertThat(
                   ShareErrors.toAcceptError(new ShareRejections.ShareNotPending()).message())
-              .isEqualTo(expected);
+              .isEqualTo(
+                  "This share invitation can't be accepted anymore. Reload the page to see what"
+                      + " changed.");
           softly
               .assertThat(
                   ShareErrors.toRejectError(new ShareRejections.ShareNotPending()).message())
-              .isEqualTo(expected);
+              .isEqualTo(
+                  "This share invitation can't be declined anymore. Reload the page to see what"
+                      + " changed.");
           softly
               .assertThat(
                   ShareErrors.toCancelError(new ShareRejections.ShareNotPending()).message())
-              .isEqualTo(expected);
+              .isEqualTo(
+                  "This share invitation can't be canceled anymore. Reload the page to see what"
+                      + " changed.");
         });
   }
 
@@ -88,8 +90,8 @@ class ShareErrorsTest {
 
     assertThat(error.message())
         .isEqualTo(
-            "That share invitation was withdrawn and can no longer be accepted. Reload the page"
-                + " to see the share invitations that are still waiting.");
+            "This share invitation was withdrawn and can't be accepted. Reload the page to see if"
+                + " other share invitations are available.");
   }
 
   @Test
