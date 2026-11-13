@@ -24,7 +24,7 @@ public class TmdbHttpClientConfiguration {
 
   @Bean("tmdb")
   HttpClient tmdbHttpClient(
-      @Value("${tmdb.api.requests-per-second:35}") double requestsPerSecond,
+      @Value("${tmdb.api.requests-per-second:40}") double requestsPerSecond,
       @Value("${tmdb.api.request-timeout-seconds:30}") long requestTimeoutSeconds,
       HttpCache tmdbHttpCache) {
     var retryInterceptor =
