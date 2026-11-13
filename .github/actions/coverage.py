@@ -65,7 +65,7 @@ def authorization_classes(classes):
 
 def integration_shards():
     count = ET.parse("pom.xml").getroot().findtext(INTEGRATION_SHARDS, "", POM)
-    if not re.fullmatch(r"[1-9][0-9]*", count):
+    if not re.fullmatch(r"[1-9]\d*", count, re.ASCII):
         raise ValueError(f"pom.xml must set ci.integration.shards to a shard count, not {count!r}")
     return [f"integration-{shard}" for shard in range(1, int(count) + 1)]
 

@@ -203,7 +203,8 @@ class CiCoverageWorkflowTest {
         "",
         "<ci.integration.shards/>",
         "<ci.integration.shards>0</ci.integration.shards>",
-        "<ci.integration.shards>two</ci.integration.shards>"
+        "<ci.integration.shards>two</ci.integration.shards>",
+        "<ci.integration.shards>1\u0662</ci.integration.shards>"
       })
   @DisplayName("Should reject coverage inputs when the build names no integration shards")
   void shouldRejectCoverageInputsWhenTheBuildNamesNoIntegrationShards(String shards)
