@@ -1,8 +1,5 @@
 package com.streamarr.server.services.auth;
 
-import static com.streamarr.server.support.PostgresLockTestSupport.activeQuery;
-import static com.streamarr.server.support.PostgresLockTestSupport.awaitBlockedBackendPid;
-import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockAccountRow;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,7 +31,7 @@ import org.springframework.dao.PessimisticLockingFailureException;
 @Tag("IntegrationTest")
 @DisplayName("Password Reset Lock Timeout Integration Tests")
 // The same properties as CredentialIssuanceLockTimeoutIT, so both classes share one cached context.
-@SpringBootTest(properties = "auth.credential-codes.replacement-lock-timeout=2s")
+@SpringBootTest(properties = "auth.credential-codes.replacement-lock-timeout=500ms")
 class PasswordResetLockTimeoutIT extends AbstractIntegrationTest {
 
   @Autowired private PasswordResetService passwordResetService;
@@ -61,8 +58,7 @@ class PasswordResetLockTimeoutIT extends AbstractIntegrationTest {
                 .build());
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
-        var holder = dataSource.getConnection();
-        var observer = dataSource.getConnection()) {
+        var holder = dataSource.getConnection()) {
       holder.setAutoCommit(false);
       lockAccountRow(holder, account.getId());
 
@@ -77,14 +73,16 @@ class PasswordResetLockTimeoutIT extends AbstractIntegrationTest {
                         .build());
                 return null;
               });
-      var blockedPid = awaitBlockedBackendPid(observer, backendPid(holder), null);
-      assertThat(activeQuery(observer, blockedPid)).contains("\"user_account\"", "for update");
-
-      // Longer than the configured 2 s lock timeout and shorter than the 5 s default.
+      // Longer than the configured 500 ms lock timeout and shorter than the 5 s default. The
+      // message names the canceled statement and the relation of the row PostgreSQL waited for.
       assertThatThrownBy(() -> redemption.get(3, TimeUnit.SECONDS))
           .isInstanceOf(ExecutionException.class)
           .cause()
-          .isInstanceOf(PessimisticLockingFailureException.class);
+          .isInstanceOf(PessimisticLockingFailureException.class)
+          .hasMessageContainingAll(
+              "for update",
+              "canceling statement due to lock timeout",
+              "in relation \"user_account\"");
       assertThat(passwordHashOf(account.getId())).isEqualTo(passwordHashBefore);
       assertThat(resetCodeRepository.findById(code.getId()).orElseThrow().getStatus())
           .isEqualTo(PasswordResetCodeStatus.PENDING);
