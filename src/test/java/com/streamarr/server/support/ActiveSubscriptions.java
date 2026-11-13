@@ -1,8 +1,8 @@
 package com.streamarr.server.support;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
@@ -30,23 +30,27 @@ public final class ActiveSubscriptions {
 
   // Registration and release send no protocol message (ADR 0042), so tests wait on the gauge.
   public void awaitCount(String field, int expected) {
-    awaitGauge().until(() -> count(field) == expected);
+    awaitGauge()
+        .untilAsserted(
+            () ->
+                assertThat(count(field)).as("registered %s operations", field).isEqualTo(expected));
   }
 
   /** Waits until no field has a registered operation, so the next test starts from zero. */
   public void awaitNoneActive() {
     awaitGauge()
-        .until(
+        .untilAsserted(
             () ->
-                meterRegistry.find(METRIC).gauges().stream().allMatch(ActiveSubscriptions::isZero));
+                assertThat(meterRegistry.find(METRIC).gauges())
+                    .allSatisfy(
+                        gauge ->
+                            assertThat(gauge.value())
+                                .as("registered %s operations", gauge.getId().getTag("field"))
+                                .isZero()));
   }
 
   // The gauge is an in-memory read, so checking at once and often costs nothing.
   private static ConditionFactory awaitGauge() {
     return await().atMost(BOUND).pollDelay(Duration.ZERO).pollInterval(POLL_INTERVAL);
-  }
-
-  private static boolean isZero(Gauge gauge) {
-    return gauge.value() == 0;
   }
 }
