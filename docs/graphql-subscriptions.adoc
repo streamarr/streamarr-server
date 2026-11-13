@@ -251,6 +251,9 @@ The server supplies the same `MediaEdge` as the query, including an opaque `orde
 The independent `item` selection updates entity data even when the edge is null because the item left a filtered view.
 Clients compare keys against their loaded window and reconcile by item ID; they do not reconstruct filter or sort rules from selected entity fields.
 See link:library-contents.md[Live library contents] for window boundaries, removals and recovery.
+* *Profile shares* use `householdSharesEdge(statuses, visitorsOnly)` and `profileSharesEdge(statuses)` from `profileShareChanged`, with the same arguments as `householdShares` and `profileShares`.
+The server supplies the same `ProfileShareEdge` as the query, with its `orderKey` and cursor, and decides from the subscriber's authority whether the list holds the share.
+See <<Profile shares>> for who receives each share change and how the share lists stay current.
 
 A client keeps the `pageInfo` cursors from its last page query and never builds a cursor.
 A cursor stays a valid position after its item leaves the view or moves.
@@ -326,12 +329,14 @@ The server stores `EXPIRED` on such offers every `AUTH_SHARING_EXPIRY_SWEEP_INTE
 
 A client subscribes first and then queries `householdShares` or `profileShares`.
 It applies each change by `shareId`.
-In a `profileShares` list, it keeps a share while its status is one of the list's statuses.
-In a `householdShares` list, it keeps a share on the same terms when the reader is a ServerAdmin (`me.serverAdmin`).
-For any other reader, a `householdShares` list holds only offers that are `PENDING` and before their `expiresAt`, and `ACTIVE` shares, whatever its statuses, so the client keeps a share there only while it is one of those.
-A HouseholdAdmin who also manages the Profile still receives the share's later changes through the Profile's side, and still drops the share from their `householdShares` list once it is over.
-In a `householdShares` list kept to `visitorsOnly`, it also keeps a share only while its `visitor` field is true.
-The lists put the newest share first, so a share created after the client subscribed goes first.
+For each list it shows, the client selects `householdSharesEdge` or `profileSharesEdge` with the arguments of that list.
+The edge says whether that list holds the share for the subscriber, and where.
+When the edge is not `null`, the client places the share among the list's edges by comparing `orderKey` values as ascending ASCII strings.
+The lists put the newest share first, by the time the share was created, so an older share that joins a list goes after the newer shares.
+A share whose key sorts after the last loaded edge, while the list has a next page, waits for that page.
+When the edge is `null` and the change has no `errors`, the list no longer holds the share, and the client removes the share from that list.
+For example, the change that ends an offer or a share has a `null` `householdSharesEdge` for the target Household's HouseholdAdmins, because their list holds only offers that are `PENDING` and before their `expiresAt`, and `ACTIVE` shares.
+A change with `errors` removes nothing: the client keeps the share and runs its queries again.
 The server delivers one operation's changes in order, so the last change for a share carries its latest state.
 After every reconnect, the client subscribes and queries again.
 

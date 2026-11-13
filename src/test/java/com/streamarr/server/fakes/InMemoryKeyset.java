@@ -30,16 +30,13 @@ public final class InMemoryKeyset {
   /** The entities beyond the seek, ordered by creation time, then ID. */
   public static <E extends BaseAuditableEntity<?>> List<Row<E>> byCreationTime(
       Collection<E> entities, Seek seek) {
-    return rowsBeyond(
-        entities.stream()
-            .map(
-                entity ->
-                    new Row<>(
-                        entity,
-                        new Position(
-                            new SortValue.OfInstant(entity.getCreatedOn()), entity.getId())))
-            .toList(),
-        seek);
+    return rowsBeyond(entities.stream().map(InMemoryKeyset::rowByCreationTime).toList(), seek);
+  }
+
+  /** The entity where a list ordered by creation time, then ID, places it. */
+  public static <E extends BaseAuditableEntity<?>> Row<E> rowByCreationTime(E entity) {
+    return new Row<>(
+        entity, new Position(new SortValue.OfInstant(entity.getCreatedOn()), entity.getId()));
   }
 
   public static <T> List<Row<T>> rowsBeyond(Collection<Row<T>> rows, Seek seek) {

@@ -226,6 +226,30 @@ public class ProfileHouseholdShareRepositoryCustomImpl
     return PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(profileId).and(keptBy(filter));
   }
 
+  @Override
+  public Optional<Row<ProfileHouseholdShare>> findRowIntoHousehold(
+      HouseholdShareFilter filter, UUID shareId) {
+    return row(intoHousehold(filter), shareId);
+  }
+
+  @Override
+  public Optional<Row<ProfileHouseholdShare>> findRowOfProfile(
+      UUID profileId, ShareStatusFilter filter, UUID shareId) {
+    return row(ofProfile(profileId, filter), shareId);
+  }
+
+  private Optional<Row<ProfileHouseholdShare>> row(Condition scope, UUID shareId) {
+    var query =
+        BY_CREATION
+            .selectFrom(dsl, PROFILE_HOUSEHOLD_SHARE)
+            .where(scope)
+            .and(PROFILE_HOUSEHOLD_SHARE.ID.eq(shareId));
+    return JooqQueryHelper.nativeRows(
+            entityManager, query, ProfileHouseholdShare.class, BY_CREATION)
+        .stream()
+        .findFirst();
+  }
+
   private List<Row<ProfileHouseholdShare>> rowsBeyond(Condition scope, Seek seek) {
     var query =
         BY_CREATION.rowsBeyond(BY_CREATION.selectFrom(dsl, PROFILE_HOUSEHOLD_SHARE), scope, seek);

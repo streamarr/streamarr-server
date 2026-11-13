@@ -774,6 +774,135 @@ class ProfileSharingServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should place each share where the Household's list holds it when a HouseholdAdmin reads"
+          + " shares of every outcome")
+  void shouldPlaceEachShareWhereTheHouseholdsListHoldsItWhenAHouseholdAdminReadsEveryOutcome() {
+    var live = sharesOfEveryOutcomeInto(household);
+    administerHouseholdOnly();
+
+    var listed =
+        service.householdShares(identity(), everyShareInto(household), paginationOptions()).rows();
+    var placed =
+        shares.findAll().stream()
+            .flatMap(
+                share ->
+                    service
+                        .householdShareRow(identity(), everyShareInto(household), share.getId())
+                        .stream())
+            .toList();
+
+    assertThat(listed)
+        .extracting(row -> row.item().getId())
+        .containsExactlyInAnyOrderElementsOf(live);
+    assertThat(placed).containsExactlyInAnyOrderElementsOf(listed);
+  }
+
+  @Test
+  @DisplayName(
+      "Should place a share that is over when the reader may read the Household's share history")
+  void shouldPlaceAShareThatIsOverWhenTheReaderMayReadTheHouseholdsShareHistory() {
+    var declined = declinedShare();
+    authorization.decideUnitWith(
+        intent ->
+            switch (intent) {
+              case Intent.ViewHouseholdAdministration(var id) when id.equals(household.getId()) ->
+                  allowed();
+              case Intent.ViewHouseholdShareHistory(var id) when id.equals(household.getId()) ->
+                  allowed();
+              default -> denied();
+            });
+
+    var placed = service.householdShareRow(identity(), everyShareInto(household), declined.getId());
+    var listed =
+        service.householdShares(identity(), everyShareInto(household), paginationOptions()).rows();
+
+    assertThat(listed).hasSize(1);
+    assertThat(placed).contains(listed.getFirst());
+  }
+
+  @Test
+  @DisplayName("Should place no share when the statuses the reader asks for leave it out")
+  void shouldPlaceNoShareWhenTheStatusesTheReaderAsksForLeaveItOut() {
+    var offer = pendingShare();
+
+    var active =
+        service.householdShareRow(
+            identity(), sharesInto(household, ProfileShareStatus.ACTIVE), offer.getId());
+    var pending =
+        service.householdShareRow(
+            identity(), sharesInto(household, ProfileShareStatus.PENDING), offer.getId());
+
+    assertThat(active).isEmpty();
+    assertThat(pending).map(row -> row.item().getId()).contains(offer.getId());
+  }
+
+  @Test
+  @DisplayName("Should place no share when the reader may not read the Household's shares")
+  void shouldPlaceNoShareWhenTheReaderMayNotReadTheHouseholdsShares() {
+    var offer = pendingShare();
+    authorization.denyAll();
+
+    var placed = service.householdShareRow(identity(), everyShareInto(household), offer.getId());
+
+    assertThat(placed).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should place a share where the Profile's list holds it when the reader may read its shares")
+  void shouldPlaceAShareWhereTheProfilesListHoldsItWhenTheReaderMayReadItsShares() {
+    declinedShare();
+    var visit = activeShare();
+
+    var placed = service.profileShareRow(identity(), everyShareOf(profile.getId()), visit.getId());
+    var listed =
+        service
+            .profileShares(identity(), everyShareOf(profile.getId()), paginationOptions())
+            .rows();
+
+    assertThat(listed).hasSize(2);
+    assertThat(placed).isPresent();
+    assertThat(listed).contains(placed.orElseThrow());
+  }
+
+  @Test
+  @DisplayName(
+      "Should place no share of a Profile when the statuses the reader asks for leave it out")
+  void shouldPlaceNoShareOfAProfileWhenTheStatusesTheReaderAsksForLeaveItOut() {
+    var visit = activeShare();
+
+    var declinedOnly =
+        service.profileShareRow(
+            identity(),
+            new ShareListScope(profile.getId(), List.of(ProfileShareStatus.REJECTED)),
+            visit.getId());
+    var activeOnly =
+        service.profileShareRow(
+            identity(),
+            new ShareListScope(profile.getId(), List.of(ProfileShareStatus.ACTIVE)),
+            visit.getId());
+
+    assertThat(declinedOnly).isEmpty();
+    assertThat(activeOnly).map(row -> row.item().getId()).contains(visit.getId());
+  }
+
+  @Test
+  @DisplayName("Should place no share of a Profile when the reader only hosts the Profile")
+  void shouldPlaceNoShareOfAProfileWhenTheReaderOnlyHostsTheProfile() {
+    var visit = activeShare();
+    authorization.decideUnitWith(
+        intent ->
+            intent.equals(new Intent.ViewProfileAdministration(profile.getId()))
+                ? allowed()
+                : denied());
+
+    var placed = service.profileShareRow(identity(), everyShareOf(profile.getId()), visit.getId());
+
+    assertThat(placed).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should expose only wouldLock and nameConflict when an offer is preflighted")
   void shouldExposeOnlyWouldLockAndNameConflictWhenOfferIsPreflighted() {
     var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());

@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
+import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -580,6 +581,29 @@ public class ProfileSharingService {
     }
 
     return Pager.page(profileSharesList, profile, request);
+  }
+
+  /**
+   * Where {@link #householdShares} lists the share for the reader, so a share change can say where
+   * the share goes; nothing when that list does not hold the share for them.
+   */
+  public Optional<Row<ProfileHouseholdShare>> householdShareRow(
+      AuthenticatedIdentity identity, HouseholdSharesScope household, UUID shareId) {
+    return readableScope(identity, household)
+        .flatMap(readable -> householdSharesList.rowOf(readable, shareId));
+  }
+
+  /**
+   * Where {@link #profileShares} lists the share for the reader, so a share change can say where
+   * the share goes; nothing when that list does not hold the share for them.
+   */
+  public Optional<Row<ProfileHouseholdShare>> profileShareRow(
+      AuthenticatedIdentity identity, ShareListScope profile, UUID shareId) {
+    if (!mayViewProfileShares(identity, profile.id())) {
+      return Optional.empty();
+    }
+
+    return profileSharesList.rowOf(profile, shareId);
   }
 
   /**

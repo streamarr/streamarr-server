@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import graphql.language.AstPrinter;
 import graphql.language.Description;
 import graphql.language.FieldDefinition;
+import graphql.language.ListType;
 import graphql.language.NonNullType;
 import graphql.language.ObjectTypeDefinition;
+import graphql.language.Type;
 import graphql.language.TypeName;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -25,8 +27,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * The subscription schema contract from ADR 0042: every field is nullable so a field error never
  * ends the operation, every field but the ServerAdmin fields and the share field requires a
  * selected Profile with ViewProfileActivity, the share field follows the share queries' reads, a
- * removed library is identified by id alone, and a watch-state change lists its items, each
- * nullable so a failed item leaves the others intact.
+ * removed library is identified by id alone, a watch-state change lists its items, each nullable so
+ * a failed item leaves the others intact, and every list edge a change carries is an OrderedEdge.
  */
 @Tag("UnitTest")
 @DisplayName("Subscription Contract Tests")
@@ -162,6 +164,47 @@ class SubscriptionContractTest {
         .satisfies(
             field ->
                 assertThat(AstPrinter.printAst(field.getType())).isEqualTo("ContinueWatchingEdge"));
+  }
+
+  @Test
+  @DisplayName("Should implement OrderedEdge when a subscription change carries a list's edge")
+  void shouldImplementOrderedEdgeWhenASubscriptionChangeCarriesAListsEdge() {
+    var edgeTypes =
+        subscriptionFields().stream()
+            .flatMap(field -> changeFields(typeName(field.getType())))
+            .map(field -> typeName(field.getType()))
+            .filter(name -> name.endsWith("Edge"))
+            .distinct()
+            .toList();
+
+    assertThat(edgeTypes).contains("MediaEdge", "ContinueWatchingEdge", "ProfileShareEdge");
+    assertThat(edgeTypes)
+        .allSatisfy(
+            name ->
+                assertThat(objectType(name).getImplements())
+                    .extracting(SubscriptionContractTest::typeName)
+                    .contains("OrderedEdge"));
+  }
+
+  // The fields of a change, and of the changes it lists, such as a watch-state change's Continue
+  // Watching changes.
+  private static Stream<FieldDefinition> changeFields(String typeName) {
+    return SCHEMA.getType(typeName, ObjectTypeDefinition.class).stream()
+        .flatMap(type -> type.getFieldDefinitions().stream())
+        .flatMap(
+            field ->
+                typeName(field.getType()).endsWith("Change")
+                    ? Stream.concat(Stream.of(field), changeFields(typeName(field.getType())))
+                    : Stream.of(field));
+  }
+
+  private static String typeName(Type<?> type) {
+    return switch (type) {
+      case NonNullType nonNull -> typeName(nonNull.getType());
+      case ListType list -> typeName(list.getType());
+      case TypeName name -> name.getName();
+      default -> throw new IllegalArgumentException("unexpected type " + type);
+    };
   }
 
   private static List<FieldDefinition> subscriptionFields() {
