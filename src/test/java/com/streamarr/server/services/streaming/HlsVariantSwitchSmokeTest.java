@@ -723,14 +723,16 @@ class HlsVariantSwitchSmokeTest {
   // files' order. Times count in whole frames: a switch may repeat or skip less than one output
   // frame (ADR 0050). ffprobe reports a fragmented MP4's timestamps later by its most negative
   // composition offset, the video's reorder delay, which can differ between the copy and the
-  // encode. So the first sample's composition time comes from the boxes (tfdt plus composition
-  // offset, ISO/IEC 14496-12 8.8.12 and 8.8.8), without an edit list, and ffprobe gives every
-  // other frame's distance from that sample. A file's packets come in decode order, so each file's
-  // frames are sorted.
+  // encode. So the first sample's presentation time comes from the boxes: tfdt plus composition
+  // offset (ISO/IEC 14496-12 8.8.12 and 8.8.8), less the media time of the initialization
+  // segment's edit (8.6.6), which a player applies. ffprobe gives every other frame's distance from
+  // that sample. A file's packets come in decode order, so each file's frames are sorted.
   private static List<Long> presentedFrames(List<ReadMedia> media) throws Exception {
     var frames = new ArrayList<Long>();
     for (var file : media) {
-      var firstSample = Fmp4Fixture.firstVideoPresentationTime(Files.readAllBytes(file.path()));
+      var bytes = Files.readAllBytes(file.path());
+      var firstSample =
+          Fmp4Fixture.firstVideoPresentationTime(bytes) - Fmp4Fixture.videoEditMediaTime(bytes);
       var probed = file.packets().presentationTimesOf(VIDEO);
       probed.stream()
           .map(seconds -> frameNumber(firstSample + seconds - probed.getFirst()))

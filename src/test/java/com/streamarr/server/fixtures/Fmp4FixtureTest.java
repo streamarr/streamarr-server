@@ -8,11 +8,15 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Fragmented MP4 Fixture Tests")
@@ -78,6 +82,104 @@ class Fmp4FixtureTest {
 
     assertThat(Fmp4Fixture.firstVideoPresentationTime(media.toByteArray()))
         .isEqualTo(expectedSeconds);
+  }
+
+  @Test
+  @DisplayName("Should read a media time of zero when the video track has no edit list")
+  void shouldReadAMediaTimeOfZeroWhenTheVideoTrackHasNoEditList() {
+    var initialization = box("moov", track("vide", 1, 128));
+
+    assertThat(Fmp4Fixture.videoEditMediaTime(initialization)).isZero();
+  }
+
+  // ISO/IEC 14496-12 8.6.6: a player subtracts the edit's media time, in the media's timescale of
+  // 128, from each composition time. Version 1 holds 64-bit times. The audio track's edit list
+  // starts elsewhere, so reading it gives another time.
+  @ParameterizedTest
+  @CsvSource({"0, 256, 2.0", "1, 64, 0.5"})
+  @DisplayName(
+      "Should read the edit's media time in the video track's timescale when the video track's edit"
+          + " list holds one edit at media rate one")
+  void shouldReadTheEditsMediaTimeWhenTheVideoTracksEditListHoldsOneEditAtMediaRateOne(
+      int version, long mediaTime, double expectedSeconds) {
+    var initialization =
+        box(
+            "moov",
+            trackWithEditList("soun", editList(version, new Edit(1_000, 1))),
+            trackWithEditList("vide", editList(version, new Edit(mediaTime, 1))));
+
+    assertThat(Fmp4Fixture.videoEditMediaTime(initialization)).isEqualTo(expectedSeconds);
+  }
+
+  // Media Source Extensions ISO BMFF byte stream format, section 3: a player must support an edit
+  // list of one edit at media rate one. An empty edit has the media time -1 (ISO/IEC 14496-12
+  // 8.6.6.3).
+  @ParameterizedTest
+  @MethodSource("editListsThatAPlayerNeedNotSupport")
+  @DisplayName(
+      "Should refuse the video track's edit list when it holds an edit list that a player need not"
+          + " support")
+  void shouldRefuseTheVideoTracksEditListWhenItHoldsAnEditListThatAPlayerNeedNotSupport(
+      byte[] editList, String field) {
+    var initialization = box("moov", trackWithEditList("vide", editList));
+
+    assertThatThrownBy(() -> Fmp4Fixture.videoEditMediaTime(initialization))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining(field);
+  }
+
+  static Stream<Arguments> editListsThatAPlayerNeedNotSupport() {
+    return Stream.of(
+        Arguments.of(
+            Named.of("an empty edit", editList(0, new Edit(-1, 1))), "the media time of the"),
+        Arguments.of(
+            Named.of("two edits", editList(0, new Edit(0, 1), new Edit(128, 1))),
+            "the edits of the"),
+        Arguments.of(
+            Named.of("an edit at media rate two", editList(0, new Edit(0, 2))),
+            "the integer part of the edit's media rate"));
+  }
+
+  // A track of the timescale 128 whose edts holds the edit list.
+  private static byte[] trackWithEditList(String handler, byte[] editList) {
+    var mediaHeader = ByteBuffer.allocate(24).putInt(12, 128).array();
+    var handlerHeader = ByteBuffer.allocate(25).put(8, handler.getBytes(StandardCharsets.US_ASCII));
+    return box(
+        "trak",
+        box("tkhd", new byte[84]),
+        box("edts", editList),
+        box("mdia", box("mdhd", mediaHeader), box("hdlr", handlerHeader.array())));
+  }
+
+  private record Edit(long mediaTime, int mediaRate) {}
+
+  // Each edit holds a segment duration of 0, which spans the whole presentation, its media time and
+  // its media rate (ISO/IEC 14496-12 8.6.6.2).
+  private static byte[] editList(int version, Edit... edits) {
+    var timeBytes = 4;
+    if (version == 1) {
+      timeBytes = 8;
+    }
+
+    var list =
+        ByteBuffer.allocate(8 + edits.length * (2 * timeBytes + 4))
+            .putInt(version << 24)
+            .putInt(edits.length);
+    for (var edit : edits) {
+      putSegmentDurationAndMediaTime(list, version, edit.mediaTime());
+      list.putShort((short) edit.mediaRate()).putShort((short) 0);
+    }
+
+    return box("elst", list.array());
+  }
+
+  private static void putSegmentDurationAndMediaTime(ByteBuffer list, int version, long mediaTime) {
+    if (version == 1) {
+      list.putLong(0).putLong(mediaTime);
+      return;
+    }
+
+    list.putInt(0).putInt((int) mediaTime);
   }
 
   // ISO/IEC 14496-15 E.3 gives hev1.1.6.L93.B0 for Main at level 3.1; Main 10 sets compatibility

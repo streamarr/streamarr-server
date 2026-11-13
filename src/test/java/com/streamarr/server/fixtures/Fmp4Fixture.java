@@ -246,6 +246,42 @@ public final class Fmp4Fixture {
         / (double) timescale;
   }
 
+  /**
+   * The media time in seconds at which the video track's edit list starts the presentation, or 0
+   * when the track has no edit list. A player subtracts this time from each sample's composition
+   * time (ISO/IEC 14496-12 8.6.6). The ISO BMFF byte stream format of Media Source Extensions
+   * (section 3) requires a player to support an edit list of one edit at media rate one. A player
+   * need not support any other edit list, so any other edit list fails.
+   */
+  public static double videoEditMediaTime(byte[] initialization) {
+    var track =
+        requiredBox(boxes(ByteBuffer.wrap(initialization)), "moov").children("trak").stream()
+            .filter(Fmp4Fixture::isVideo)
+            .findFirst()
+            .orElseThrow();
+    var editBoxes = track.children("edts");
+    if (editBoxes.isEmpty()) {
+      return 0;
+    }
+
+    var editList = editBoxes.getFirst().child("elst").payload();
+    assertThat(editList.getInt(4)).as("the edits of the video track's edit list").isOne();
+    // The edit holds its segment duration, its media time and its media rate (8.6.6.2).
+    var mediaTime = (long) editList.getInt(12);
+    var rate = 16;
+    if (editList.get(0) == 1) {
+      mediaTime = editList.getLong(16);
+      rate = 24;
+    }
+
+    assertThat(mediaTime)
+        .as("the media time of the video track's edit, where -1 marks an empty edit")
+        .isNotNegative();
+    assertThat(editList.getShort(rate)).as("the integer part of the edit's media rate").isOne();
+    assertThat(editList.getShort(rate + 2)).as("the fraction of the edit's media rate").isZero();
+    return mediaTime / (double) headerField(track.child("mdia").child("mdhd"));
+  }
+
   // The first sample entry of the video track's stsd, whose full-box header and entry count take 8
   // bytes.
   private static Box videoSampleEntry(byte[] initialization) {
