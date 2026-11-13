@@ -172,7 +172,9 @@ public final class WorkerContainerFixture implements AutoCloseable {
   /**
    * Replaces the started worker's scripted FFmpeg body. Each media-producing command reads the body
    * when it runs, so every command that starts after this returns runs the new body, while one
-   * already running keeps the body it read.
+   * already running keeps the body it read. Call it only while no media-producing command can
+   * start. The copy is not atomic: a command that starts during it can find no body and run the
+   * image's FFmpeg, or run part of the new body.
    */
   public void replaceFfmpegScript(String ffmpegScript) {
     container.copyFileToContainer(Transferable.of(ffmpegScript, 0644), FFMPEG_BODY);
