@@ -12,8 +12,9 @@ import lombok.NonNull;
  * the stream. It holds for the source file of {@code snapshot} only. {@code endTime} lies on the
  * zero-based timeline of the probe's keyframe positions, as a probed end time does. {@code
  * fromPacketScan} says that a keyframe packet scan read it. A scan fails when it cannot read the
- * source to its end, while a job attempt's FFmpeg can stop at a read error and still complete, so
- * only a scanned end time moves a stream session's end.
+ * source to its end, while a job attempt's FFmpeg can stop at a read error and still complete. So
+ * only a scanned end time replaces an end time that the container header states, and only a scanned
+ * end time moves a stream session's end.
  */
 @Builder(toBuilder = true)
 public record LearnedStreamEnd(
