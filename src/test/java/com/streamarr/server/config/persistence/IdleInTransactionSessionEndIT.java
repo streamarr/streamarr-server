@@ -20,7 +20,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Idle In Transaction Session End Integration Tests")
-@SpringBootTest(properties = "DATABASE_IDLE_IN_TRANSACTION_TIMEOUT=2s")
+@SpringBootTest(properties = "DATABASE_IDLE_IN_TRANSACTION_TIMEOUT=1s")
 class IdleInTransactionSessionEndIT extends AbstractIntegrationTest {
 
   // PostgreSQL's SQLSTATE for a session ended by idle_in_transaction_session_timeout.
@@ -71,9 +71,9 @@ class IdleInTransactionSessionEndIT extends AbstractIntegrationTest {
   }
 
   private int lockSettingsRowUntilTheSessionEnds(Connection holder) throws SQLException {
+    var holderPid = backendPid(holder);
     holder.setAutoCommit(false);
     lockSettingsRow(holder);
-    var holderPid = backendPid(holder);
 
     await().atMost(Duration.ofSeconds(10)).until(() -> !isBackendConnected(holderPid));
     return holderPid;
@@ -94,15 +94,13 @@ class IdleInTransactionSessionEndIT extends AbstractIntegrationTest {
     }
   }
 
+  // In autocommit, the statement takes the lock and releases it in its own transaction, so the
+  // contender leaves no transaction for the idle bound to end.
   private void lockSettingsRowWithoutWaiting() throws SQLException {
-    try (var contender = pool.getConnection()) {
-      contender.setAutoCommit(false);
-      try (var statement = contender.createStatement();
-          var rows = statement.executeQuery(LOCK_SETTINGS_ROW + " NOWAIT")) {
-        assertThat(rows.next()).isTrue();
-      } finally {
-        contender.rollback();
-      }
+    try (var contender = pool.getConnection();
+        var statement = contender.createStatement();
+        var rows = statement.executeQuery(LOCK_SETTINGS_ROW + " NOWAIT")) {
+      assertThat(rows.next()).isTrue();
     }
   }
 
