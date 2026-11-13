@@ -46,10 +46,10 @@ import reactor.core.scheduler.Scheduler;
 @DisplayName("Subscription Delivery Cancellation Integration Tests")
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = "DATABASE_LOCK_TIMEOUT=3s")
+    properties = "DATABASE_LOCK_TIMEOUT=1s")
 class SubscriptionDeliveryCancellationIT extends AbstractIntegrationTest {
 
-  private static final Duration LOCK_BOUND = Duration.ofSeconds(3);
+  private static final Duration LOCK_BOUND = Duration.ofSeconds(1);
   private static final Duration SETTLE_MARGIN = Duration.ofSeconds(10);
 
   private static final String COUNTS_FIELD = "libraryCountsChanged";
