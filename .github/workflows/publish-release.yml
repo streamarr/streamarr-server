@@ -22,7 +22,7 @@ jobs:
     name: Validate release version and revision
     permissions:
       contents: read
-    uses: streamarr/streamarr-workflows/.github/workflows/validate-release.yml@4f248f00cffecd547583dc70a0abab492775eecf
+    uses: streamarr/streamarr-workflows/.github/workflows/validate-release.yml@adea5cf60a91421f977012b4d37f890a6322bebd
     with:
       tag: ${{ inputs.tag || '' }}
 
@@ -79,7 +79,7 @@ jobs:
     needs: [validate_release, build_release_images]
     permissions:
       contents: read
-    uses: streamarr/streamarr-workflows/.github/workflows/publish-image.yml@4f248f00cffecd547583dc70a0abab492775eecf
+    uses: streamarr/streamarr-workflows/.github/workflows/publish-image.yml@adea5cf60a91421f977012b4d37f890a6322bebd
     with:
       image-repository: streamarr/streamarr-server
       source-revision: ${{ needs.validate_release.outputs.revision }}
