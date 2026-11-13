@@ -82,7 +82,9 @@ class MetricExportWithSdkExporterIT extends AbstractObservabilityProfileIntegrat
     productionSpeed.record(2.5);
     var beforeRemoval =
         exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position());
-    assertThat(workersOf(beforeRemoval)).contains(worker);
+    assertThat(workersOf(beforeRemoval))
+        .as("workers of the production speed meter in the export collected before its removal")
+        .contains(worker);
 
     meterRegistry.remove(productionSpeed);
     var removalPosition = COLLECTOR.metricExports().position();
@@ -91,9 +93,11 @@ class MetricExportWithSdkExporterIT extends AbstractObservabilityProfileIntegrat
 
     assertThat(afterRemoval)
         .extracting(OtlpExports::exporter)
+        .as("exporters of the exports collected after the removal")
         .contains(Optional.of(MICROMETER), Optional.of(OPENTELEMETRY_SDK));
     assertThat(afterRemoval)
         .flatMap(MetricExportWithSdkExporterIT::workersOf)
+        .as("workers of the production speed meter in the exports collected after its removal")
         .doesNotContain(worker);
   }
 
