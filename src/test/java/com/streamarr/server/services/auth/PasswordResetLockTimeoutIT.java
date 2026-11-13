@@ -21,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.PessimisticLockingFailureException;
 
 /**
@@ -29,6 +30,8 @@ import org.springframework.dao.PessimisticLockingFailureException;
  */
 @Tag("IntegrationTest")
 @DisplayName("Password Reset Lock Timeout Integration Tests")
+// The same properties as CredentialIssuanceLockTimeoutIT, so both classes share one cached context.
+@SpringBootTest(properties = "auth.credential-codes.replacement-lock-timeout=2s")
 class PasswordResetLockTimeoutIT extends AbstractIntegrationTest {
 
   @Autowired private PasswordResetService passwordResetService;
