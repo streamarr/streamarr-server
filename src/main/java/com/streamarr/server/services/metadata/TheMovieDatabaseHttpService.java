@@ -52,6 +52,7 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
   private final String tmdbImageBaseUrl;
 
   private final HttpClient client;
+  private final HttpClient imageClient;
   private final ObjectMapper objectMapper;
   private final Clock clock;
 
@@ -60,12 +61,14 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
       @Value("${tmdb.api.base-url}") String tmdbApiBaseUrl,
       @Value("${tmdb.image.base-url:https://image.tmdb.org/t/p/original}") String tmdbImageBaseUrl,
       @Qualifier("tmdb") HttpClient client,
+      @Qualifier("tmdbImage") HttpClient imageClient,
       ObjectMapper objectMapper,
       Clock clock) {
     this.tmdbApiToken = tmdbApiToken;
     this.tmdbApiBaseUrl = tmdbApiBaseUrl;
     this.tmdbImageBaseUrl = tmdbImageBaseUrl;
     this.client = client;
+    this.imageClient = imageClient;
     this.objectMapper = objectMapper;
     this.clock = clock;
   }
@@ -154,7 +157,7 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
     var request = MutableRequest.GET(uri).cacheControl(NO_STORE);
     // BodyHandlers.limiting fails with a plain IOException, which reads as a retryable network
     // error. Reading the stream lets a body over the limit fail as a terminal download failure.
-    var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+    var response = imageClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
 
     try (var body = response.body()) {
       if (response.statusCode() != 200) {
@@ -170,13 +173,26 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
 
   private static byte[] readImageBody(InputStream body, HttpHeaders headers, String pathFragment)
       throws IOException, InterruptedException {
-    if (headers.firstValueAsLong("Content-Length").orElse(0) > MAX_IMAGE_BYTES) {
+    var declaredLength = headers.firstValueAsLong("Content-Length").orElse(0);
+    if (declaredLength > MAX_IMAGE_BYTES) {
       throw ImageDownloadException.bodyOverLimit(pathFragment, MAX_IMAGE_BYTES);
     }
 
     var image = readAtMost(body, MAX_IMAGE_BYTES + 1);
     if (image.length > MAX_IMAGE_BYTES) {
       throw ImageDownloadException.bodyOverLimit(pathFragment, MAX_IMAGE_BYTES);
+    }
+
+    // The JDK fails an HTTP/1.1 body that ends before its declared length, but not an HTTP/2 one.
+    if (image.length < declaredLength) {
+      throw new IOException(
+          "Image body for "
+              + pathFragment
+              + " ended after "
+              + image.length
+              + " of its declared "
+              + declaredLength
+              + " bytes");
     }
 
     return image;

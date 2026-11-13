@@ -34,6 +34,14 @@ public class TmdbHttpClientConfiguration {
         .build();
   }
 
+  // The image host limits simultaneous connections, not requests: downloads spend none of the API's
+  // request rate, and HTTP/2 lets concurrent downloads share a connection once one is open.
+  @Bean("tmdbImage")
+  HttpClient tmdbImageHttpClient(
+      @Value("${tmdb.api.request-timeout-seconds:30}") long requestTimeoutSeconds) {
+    return retryingTmdbClient(requestTimeoutSeconds).version(HttpClient.Version.HTTP_2).build();
+  }
+
   // Interceptors added after the retry run again on each retried attempt.
   private static Methanol.Builder retryingTmdbClient(long requestTimeoutSeconds) {
     var retryInterceptor =
