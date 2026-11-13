@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import io.micrometer.registry.otlp.OtlpConfig;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.logs.LoggerProvider;
 import java.io.IOException;
@@ -48,12 +49,15 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
   private static final Pattern METRICS_VARIABLE =
       Pattern.compile("OTEL_.*|MANAGEMENT_.*|SPRING_APPLICATION_NAME");
   private static final Duration STORAGE_WAIT = Duration.ofSeconds(60);
+  // The Compose documentation promises an export every 10 seconds.
+  private static final Duration EXPORT_STEP = Duration.ofSeconds(10);
   private static final String SERVICE = "streamarr-server";
 
   private static final GenericContainer<?> PROMETHEUS = startPrometheus();
   private static final HttpClient HTTP = HttpClient.newHttpClient();
 
   @Autowired private OpenTelemetry openTelemetry;
+  @Autowired private OtlpConfig otlpConfig;
 
   @AfterAll
   static void stopPrometheus() {
@@ -71,6 +75,15 @@ class ComposeMetricsExportIT extends AbstractIntegrationTest {
             () ->
                 assertThat(storedMetricNames())
                     .contains("streamarr_probes_waiting", "hikaricp_connections_active"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should send the server's meters every ten seconds when it runs with the Compose settings")
+  void shouldSendTheServersMetersEveryTenSecondsWhenItRunsWithTheComposeSettings() {
+    assertThat(otlpConfig.step())
+        .as("export step of the OTLP meter registry")
+        .isEqualTo(EXPORT_STEP);
   }
 
   @Test
