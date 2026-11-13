@@ -22,9 +22,10 @@ import org.junit.jupiter.api.io.TempDir;
 class RemoteWorkerKeepaliveIT {
 
   // gRPC allows no shorter keepalive time. The default keepalive would take at least 40 seconds
-  // to close the connection.
+  // to close the connection. The worker is paused before the server's first ping, so the short
+  // timeout can end only the frozen connection.
   private static final WorkerSessionKeepalive SHORTEST_KEEPALIVE =
-      new WorkerSessionKeepalive(Duration.ofSeconds(10), Duration.ofSeconds(1));
+      new WorkerSessionKeepalive(Duration.ofSeconds(10), Duration.ofMillis(100));
 
   @TempDir Path mediaRoot;
 

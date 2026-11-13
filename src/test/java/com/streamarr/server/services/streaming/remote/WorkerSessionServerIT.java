@@ -134,7 +134,7 @@ class WorkerSessionServerIT {
     var configuration =
         serverConfigurationBuilder()
             .probeTimeout(
-                ending == SessionEnd.TIMED_OUT ? Duration.ofSeconds(2) : Duration.ofMinutes(1))
+                ending == SessionEnd.TIMED_OUT ? Duration.ofMillis(500) : Duration.ofMinutes(1))
             .probeCancellationTimeout(Duration.ofMillis(100))
             .build();
     try (var server =
@@ -167,6 +167,9 @@ class WorkerSessionServerIT {
         var upload = upload(channel, metadata, bytes);
         try {
           assertThat(segmentStore.entered.await(5, TimeUnit.SECONDS)).isTrue();
+          assertThat(pending)
+              .as("the probe must still be pending when segment publication holds the connection")
+              .isNotDone();
           switch (ending) {
             case DISCONNECTED -> worker.close();
             case REPLACED -> {
