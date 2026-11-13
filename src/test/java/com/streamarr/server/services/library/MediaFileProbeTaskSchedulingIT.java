@@ -170,8 +170,14 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
             .ignoredFileValidator(ignoredFileValidator)
             .sleeper(
                 _ -> {
-                  backingOffWorker.complete(Thread.currentThread());
-                  rejectionEnded.await();
+                  if (backingOffWorker.complete(Thread.currentThread())) {
+                    rejectionEnded.await();
+                    return;
+                  }
+
+                  // A second back-off means the retry failed too. It parks until stopWatching
+                  // interrupts it, so the failing retry does not run again without a pause.
+                  new CountDownLatch(1).await();
                 })
             .build();
     try {
@@ -192,7 +198,7 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
 
       // Each stability check runs on its own thread, which ends once the retry has returned.
       assertThat(backingOffWorker.resultNow().join(REQUEST_BOUND))
-          .as("the worker that backed off ends after its retry")
+          .as("the worker that backed off ends after one retry")
           .isTrue();
       var replacementSize = Files.size(path);
       assertThat(scheduledRequest())
