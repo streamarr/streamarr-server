@@ -46,6 +46,8 @@ tmdb:
 # integration test context (RunningArtworkPrioritySchedulersConfiguration).
 db-scheduler:
   enabled: false
+  # Schedulers find an execution stored by another client at their next poll, so poll often.
+  polling-interval: 100ms
 
 # Scans that wait for their probes check stored results often, so tests finish soon after a result.
 probe:
