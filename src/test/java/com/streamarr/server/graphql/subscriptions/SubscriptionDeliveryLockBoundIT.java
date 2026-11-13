@@ -41,7 +41,7 @@ class SubscriptionDeliveryLockBoundIT extends AbstractSubscriptionDeliveryLockIn
         "counts",
         "subscription { libraryCountsChanged(libraryId: \"%s\") { id } }"
             .formatted(library.getId()));
-    awaitFirstCountsDelivery(socket);
+    awaitCountsRegistered(socket);
     try (var held = lockTable("library");
         var observer = dataSource.getConnection()) {
       contentsBroadcasters.getCounts().broadcast(library.getId(), library.getId());
@@ -70,12 +70,12 @@ class SubscriptionDeliveryLockBoundIT extends AbstractSubscriptionDeliveryLockIn
     }
   }
 
-  private void awaitFirstCountsDelivery(GraphQlTransportWsTestClient socket) {
+  // The gauge counts a registration before the registration reads its library, so a count of one
+  // does not show that the read has ended. The read runs while the server handles the subscribe,
+  // so once the server has handled it the read cannot wait on the lock taken next.
+  private void awaitCountsRegistered(GraphQlTransportWsTestClient socket) {
+    socket.awaitSentMessagesHandled();
     activeSubscriptions.awaitCount(COUNTS_FIELD, 1);
-    contentsBroadcasters.getCounts().broadcast(library.getId(), library.getId());
-    // The registration's own library read runs before this delivery reaches the socket, so it
-    // cannot wait on the lock taken next.
-    assertThat(socket.nextMessageFor("counts").path("type").asString()).isEqualTo("next");
   }
 
   // A cancelled delivery sends the subscriber nothing, so only its backend shows that the read
