@@ -2,14 +2,21 @@ package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.support.IntegrationTestShardFilter;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -18,6 +25,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
 import org.yaml.snakeyaml.Yaml;
 
 @Tag("UnitTest")
@@ -27,6 +36,7 @@ class CiPipelineWorkflowTest {
   private static final String SONAR_ANALYSIS =
       "Analyze coverage and require the SonarCloud quality gate";
   private static final String SMOKE_TESTS = "Run HLS smoke tests";
+  private static final String CI_INTEGRATION = "/project/profiles/profile[id='ci-integration']";
   private static final Predicate<String> FORMATTING_OR_STYLE_PROPERTY =
       Pattern.compile("-D(checkstyle|spotless)\\..*").asMatchPredicate();
 
@@ -48,48 +58,132 @@ class CiPipelineWorkflowTest {
     assertThat(result.exitCode()).as(result.output()).isEqualTo(allowed ? 0 : 1);
   }
 
-  @ParameterizedTest
-  @ValueSource(strings = {"unit", "integration"})
-  @DisplayName("Should select complementary Maven profiles for parallel application jobs")
-  void shouldSelectComplementaryMavenProfilesForParallelApplicationJobs(String suite)
-      throws Exception {
-    var matrix = map(map(job("application").get("strategy")).get("matrix"));
-    assertThat(matrix).containsEntry("suite", List.of("unit", "integration"));
-    assertThat(job("analysis")).containsEntry("needs", "application");
+  @Test
+  @DisplayName("Should run the unit tests and every integration shard when application jobs run")
+  void shouldRunTheUnitTestsAndEveryIntegrationShardWhenApplicationJobsRun() throws Exception {
+    var shards = Integer.parseInt(pomValue(CI_INTEGRATION + "/properties/ci.integration.shards"));
+    var jobs = new ArrayList<Map<String, Object>>(List.of(Map.of("suite", "unit")));
+    IntStream.rangeClosed(1, shards)
+        .forEach(shard -> jobs.add(Map.of("suite", "integration", "shard", shard)));
 
-    var arguments = buildAndTestMavenArguments(suite);
+    assertThat(shards).as("integration shards").isGreaterThan(1);
+    assertThat(map(job("application").get("strategy")))
+        .containsEntry("fail-fast", false)
+        .containsEntry("matrix", Map.of("include", jobs));
+    assertThat(job("application"))
+        .containsEntry(
+            "name",
+            "Build and test application (${{ matrix.suite }}"
+                + "${{ matrix.shard && format(', shard {0}', matrix.shard) }})");
+    assertThat(job("analysis")).containsEntry("needs", "application");
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "unit, ''",
+    "integration, -Dci.integration.shard=1",
+    "integration, -Dci.integration.shard=2"
+  })
+  @DisplayName("Should select complementary Maven profiles when application jobs run in parallel")
+  void shouldSelectComplementaryMavenProfilesWhenApplicationJobsRunInParallel(
+      String suite, String shardArgument) throws Exception {
+    var arguments = buildAndTestMavenArguments(suite, shardArgument);
 
     assertThat(arguments)
         .filteredOn(FORMATTING_OR_STYLE_PROPERTY.negate())
         .as("%s job's Maven arguments other than Checkstyle and Spotless properties", suite)
-        .containsExactly("--batch-mode", "verify", "-Pci-" + suite);
-    var factory = DocumentBuilderFactory.newInstance();
-    factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-    var pom = factory.newDocumentBuilder().parse(Path.of("pom.xml").toFile());
-    var xpath = XPathFactory.newInstance().newXPath();
+        .containsExactlyElementsOf(
+            Stream.of("--batch-mode", "verify", "-Pci-" + suite, shardArgument)
+                .filter(Predicate.not(String::isEmpty))
+                .toList());
     var profile = "/project/profiles/profile[id='ci-" + suite + "']";
-    assertThat(xpath.evaluate(profile + "/properties/jacoco.aggregate.skip", pom))
-        .isEqualTo("true");
-    assertThat(xpath.evaluate(profile + "/properties/skipITs", pom))
+    assertThat(pomValue(profile + "/properties/jacoco.aggregate.skip")).isEqualTo("true");
+    assertThat(pomValue(profile + "/properties/skipITs"))
         .isEqualTo(suite.equals("unit") ? "true" : "");
     var plugins = profile + "/build/plugins/plugin";
-    assertThat(
-            xpath.evaluate(
-                plugins + "[artifactId='maven-surefire-plugin']/configuration/skipTests", pom))
+    assertThat(pomValue(plugins + "[artifactId='maven-surefire-plugin']/configuration/skipTests"))
         .isEqualTo(suite.equals("integration") ? "true" : "");
-    assertThat(
-            xpath.evaluate(
-                plugins + "[artifactId='maven-failsafe-plugin']/configuration/skipTests", pom))
+    assertThat(pomValue(plugins + "[artifactId='maven-failsafe-plugin']/configuration/skipTests"))
         .isEmpty();
   }
 
+  @Test
+  @DisplayName("Should hand each integration shard its shard and coverage file when CI runs them")
+  void shouldHandEachIntegrationShardItsShardAndCoverageFileWhenCiRunsThem() throws Exception {
+    var failsafe =
+        CI_INTEGRATION + "/build/plugins/plugin[artifactId='maven-failsafe-plugin']/configuration";
+    var jacoco =
+        "/project/build/plugins/plugin[artifactId='jacoco-maven-plugin']/executions/execution";
+
+    assertThat(
+            pomValue(failsafe + "/systemPropertyVariables/" + IntegrationTestShardFilter.PROPERTY))
+        .isEqualTo("${ci.integration.shard}/${ci.integration.shards}");
+    assertThat(pomValue(CI_INTEGRATION + "/properties/integration.coverage.file"))
+        .isEqualTo(
+            "${project.build.directory}/jacoco-output/"
+                + "jacoco-integration-${ci.integration.shard}-tests.exec");
+    assertThat(pomValue(jacoco + "[id='before-integration-test-execution']/configuration/destFile"))
+        .isEqualTo("${integration.coverage.file}");
+    assertThat(pomValue(jacoco + "[id='after-integration-test-execution']/configuration/dataFile"))
+        .isEqualTo("${integration.coverage.file}");
+    assertThat(pomValue("/project/properties/integration.coverage.file"))
+        .as("a developer build's integration coverage file")
+        .isEqualTo("${project.build.directory}/jacoco-output/jacoco-integration-tests.exec");
+    assertThat(
+            pomValue(
+                "count(//*[name()='"
+                    + IntegrationTestShardFilter.PROPERTY
+                    + "'][not(ancestor::profile)])"))
+        .as("shard selections in a developer build")
+        .isEqualTo("0");
+  }
+
   @ParameterizedTest
-  @CsvSource({"unit, false", "integration, true"})
+  @ValueSource(strings = {"1", "2"})
+  @DisplayName("Should deliver each shard's reports and coverage to the analysis when shards run")
+  void shouldDeliverEachShardsReportsAndCoverageToTheAnalysisWhenShardsRun(String shard)
+      throws Exception {
+    var upload = step("application", "Upload integration coverage");
+    var context = Map.of("matrix.shard", shard);
+    var coverage = "jacoco-integration-" + shard + "-tests.exec";
+    var download = map(step("analysis", "Download test results").get("with"));
+    var merged =
+        pomValues(
+            "/project/build/plugins/plugin[artifactId='jacoco-maven-plugin']/executions"
+                + "/execution[id='merge-unit-and-integration']/configuration/fileSets/fileSet"
+                + "/includes/include");
+
+    var artifact = render(map(upload.get("with")).get("name").toString(), context);
+    var paths = render(map(upload.get("with")).get("path").toString(), context).lines().toList();
+
+    assertThat(upload).containsEntry("if", "matrix.suite == 'integration'");
+    assertThat(artifact).isEqualTo("application-tests-integration-" + shard);
+    assertThat(paths)
+        .containsExactly(
+            "target/failsafe-reports/",
+            "!target/failsafe-reports/failsafe-summary.xml",
+            "target/jacoco-output/" + coverage,
+            "target/ci-integration-" + shard + "-classes.sha256");
+    assertThat(download).containsEntry("path", "target").containsEntry("merge-multiple", true);
+    assertThat(glob(download.get("pattern").toString()).matches(Path.of(artifact)))
+        .as("analysis downloads %s", artifact)
+        .isTrue();
+    assertThat(merged)
+        .as("coverage files the analysis merges")
+        .anyMatch(include -> glob(include).matches(Path.of(coverage)));
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "unit, '', false",
+    "integration, -Dci.integration.shard=1, true",
+    "integration, -Dci.integration.shard=2, true"
+  })
   @DisplayName(
-      "Should check formatting and style only in the unit job when both jobs build one commit")
-  void shouldCheckFormattingAndStyleOnlyInUnitJobWhenBothJobsBuildOneCommit(
-      String suite, boolean skipped) throws Exception {
-    var arguments = buildAndTestMavenArguments(suite);
+      "Should check formatting and style only in the unit job when every job builds one commit")
+  void shouldCheckFormattingAndStyleOnlyInUnitJobWhenEveryJobBuildsOneCommit(
+      String suite, String shardArgument, boolean skipped) throws Exception {
+    var arguments = buildAndTestMavenArguments(suite, shardArgument);
 
     assertThat(arguments)
         .filteredOn(FORMATTING_OR_STYLE_PROPERTY)
@@ -98,13 +192,17 @@ class CiPipelineWorkflowTest {
             "-Dcheckstyle.skip=" + skipped, "-Dspotless.check.skip=" + skipped);
   }
 
-  private List<String> buildAndTestMavenArguments(String suite) throws Exception {
+  // shardArgument is what GitHub renders for this job's shard expression.
+  private List<String> buildAndTestMavenArguments(String suite, String shardArgument)
+      throws Exception {
     var context =
         Map.of(
             "matrix.suite",
             suite,
             "matrix.suite == 'integration'",
-            Boolean.toString(suite.equals("integration")));
+            Boolean.toString(suite.equals("integration")),
+            "matrix.shard && format('-Dci.integration.shard={0}', matrix.shard)",
+            shardArgument);
     var command = render(step("application", "Build and test").get("run").toString(), context);
 
     var result = runBash(command.replace("./mvnw", "'" + argumentCapturingMaven() + "'"));
@@ -404,6 +502,33 @@ class CiPipelineWorkflowTest {
             });
   }
 
+  private static String pomValue(String expression) throws Exception {
+    return XPathFactory.newInstance().newXPath().evaluate(expression, pom()).strip();
+  }
+
+  private static List<String> pomValues(String expression) throws Exception {
+    var nodes =
+        (NodeList)
+            XPathFactory.newInstance()
+                .newXPath()
+                .evaluate(expression, pom(), XPathConstants.NODESET);
+
+    return IntStream.range(0, nodes.getLength())
+        .mapToObj(index -> nodes.item(index).getTextContent().strip())
+        .toList();
+  }
+
+  private static Document pom() throws Exception {
+    var factory = DocumentBuilderFactory.newInstance();
+    factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+
+    return factory.newDocumentBuilder().parse(Path.of("pom.xml").toFile());
+  }
+
+  private static PathMatcher glob(String pattern) {
+    return FileSystems.getDefault().getPathMatcher("glob:" + pattern);
+  }
+
   private String sonarAnalysisCommand() throws Exception {
     return step("analysis", SONAR_ANALYSIS)
         .get("run")
@@ -447,7 +572,7 @@ class CiPipelineWorkflowTest {
   }
 
   private static String render(String command, Map<String, String> context) {
-    return Pattern.compile("\\$\\{\\{([^{}]*+)}}")
+    return Pattern.compile("\\$\\{\\{((?:[^{}]|\\{[^{}]*+})*+)}}")
         .matcher(command)
         .replaceAll(match -> context.get(match.group(1).strip()));
   }

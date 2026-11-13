@@ -69,6 +69,7 @@
         <awaitility.version>4.3.0</awaitility.version>
         <jacoco.skip>false</jacoco.skip>
         <jacoco.aggregate.skip>${jacoco.skip}</jacoco.aggregate.skip>
+        <integration.coverage.file>${project.build.directory}/jacoco-output/jacoco-integration-tests.exec</integration.coverage.file>
         <jacoco.version>0.8.16</jacoco.version>
         <flyway.version>12.11.0</flyway.version>
         <surefire-failsafe-plugin.version>3.6.1</surefire-failsafe-plugin.version>
@@ -328,6 +329,12 @@
         </dependency>
 
         <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
@@ -513,9 +520,7 @@
                             <goal>prepare-agent</goal>
                         </goals>
                         <configuration>
-                            <destFile>
-                                ${project.build.directory}/jacoco-output/jacoco-integration-tests.exec
-                            </destFile>
+                            <destFile>${integration.coverage.file}</destFile>
                             <propertyName>failsafe.jacoco.args</propertyName>
                         </configuration>
                     </execution>
@@ -526,9 +531,7 @@
                             <goal>report</goal>
                         </goals>
                         <configuration>
-                            <dataFile>
-                                ${project.build.directory}/jacoco-output/jacoco-integration-tests.exec
-                            </dataFile>
+                            <dataFile>${integration.coverage.file}</dataFile>
                             <outputDirectory>
                                 ${project.reporting.outputDirectory}/jacoco-integration-test-coverage-report
                             </outputDirectory>
@@ -547,7 +550,7 @@
                                     <directory>${project.build.directory}/jacoco-output/</directory>
                                     <includes>
                                         <include>jacoco-unit-tests.exec</include>
-                                        <include>jacoco-integration-tests.exec</include>
+                                        <include>jacoco-integration*-tests.exec</include>
                                     </includes>
                                 </fileSet>
                             </fileSets>
@@ -704,8 +707,9 @@
     </build>
 
     <profiles>
-        <!-- CI workers execute both complete suites on separate runners. Only their merged
-             coverage is checked; plain verify keeps the complete local build and coverage gate. -->
+        <!-- CI runs the unit suite on one runner and the integration suite in shards on others.
+             Only their merged coverage is checked; plain verify keeps the complete local build,
+             every integration test and the coverage gate. -->
         <profile>
             <id>ci-unit</id>
             <properties>
@@ -728,6 +732,9 @@
             <id>ci-integration</id>
             <properties>
                 <jacoco.aggregate.skip>true</jacoco.aggregate.skip>
+                <!-- Each CI job passes -Dci.integration.shard with its shard, from 1 to this count. -->
+                <ci.integration.shards>2</ci.integration.shards>
+                <integration.coverage.file>${project.build.directory}/jacoco-output/jacoco-integration-${ci.integration.shard}-tests.exec</integration.coverage.file>
             </properties>
             <build>
                 <plugins>
@@ -743,6 +750,9 @@
                         <artifactId>maven-failsafe-plugin</artifactId>
                         <configuration>
                             <failIfNoTests>true</failIfNoTests>
+                            <systemPropertyVariables>
+                                <streamarr.test.shard>${ci.integration.shard}/${ci.integration.shards}</streamarr.test.shard>
+                            </systemPropertyVariables>
                         </configuration>
                     </plugin>
                 </plugins>
