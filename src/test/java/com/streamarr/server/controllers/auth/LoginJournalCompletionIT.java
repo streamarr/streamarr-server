@@ -20,6 +20,7 @@ import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
@@ -47,6 +48,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @Import(LoginJournalCompletionIT.PasswordEncoderConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class LoginJournalCompletionIT extends AbstractIntegrationTest {
+
+  // The journal sets its own lock_timeout, since ADR 0028 bounds its locks. A transaction that
+  // loses it waits for the server-wide lock_timeout instead.
+  private static final Duration JOURNAL_LOCK_TIMEOUT = Duration.ofSeconds(2);
+  private static final Duration SERVER_LOCK_TIMEOUT = Duration.ofSeconds(30);
 
   @Autowired private MockMvc mockMvc;
   @Autowired private LoginService loginService;
@@ -91,6 +97,8 @@ class LoginJournalCompletionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return unavailable without creating a session when journal completion fails")
   void shouldReturnUnavailableWithoutCreatingSessionWhenJournalCompletionFails() throws Exception {
+    passwordEncoder.afterNextMatch(this::lockReservedAttemptAndCancelItsCompletion);
+
     mockMvc
         .perform(
             post("/api/auth/login")
@@ -111,8 +119,10 @@ class LoginJournalCompletionIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should roll back the login session when completing its journal entry fails")
-  void shouldRollBackLoginSessionWhenCompletingJournalEntryFails() {
+  @DisplayName(
+      "Should roll back the login session at the journal's lock timeout when its journal entry"
+          + " stays locked")
+  void shouldRollBackLoginSessionAtJournalLockTimeoutWhenJournalEntryStaysLocked() {
     var command =
         LoginCommand.builder()
             .email(account.getEmail())
@@ -121,9 +131,14 @@ class LoginJournalCompletionIT extends AbstractIntegrationTest {
             .ipAddress("192.0.2.99")
             .build();
 
+    var started = Instant.now();
     assertThatThrownBy(() -> loginService.login(command))
         .isInstanceOf(CredentialAttemptUnavailableException.class);
 
+    assertThat(Duration.between(started, Instant.now()))
+        .as("the completion stops waiting on the locked journal row at the journal's own bound")
+        .isGreaterThanOrEqualTo(JOURNAL_LOCK_TIMEOUT)
+        .isLessThan(SERVER_LOCK_TIMEOUT);
     assertThat(sessionRepository.findByAccountId(account.getId())).isEmpty();
     assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM refresh_token", Integer.class))
         .isEqualTo(originalDigestCount);
@@ -165,7 +180,10 @@ class LoginJournalCompletionIT extends AbstractIntegrationTest {
     } catch (SQLException failure) {
       throw new AssertionError("Could not lock the reserved credential attempt", failure);
     }
+  }
 
+  private void lockReservedAttemptAndCancelItsCompletion() {
+    lockReservedAttempt();
     journalCompletionCancelled =
         cancelOnceBlocked(dataSource, journalLock.backendPid(), "%credential_attempt%");
   }
