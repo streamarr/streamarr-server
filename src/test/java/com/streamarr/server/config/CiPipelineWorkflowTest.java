@@ -49,6 +49,8 @@ class CiPipelineWorkflowTest {
   private static final String CI_INTEGRATION = "/project/profiles/profile[id='ci-integration']";
   private static final Predicate<String> FORMATTING_OR_STYLE_PROPERTY =
       Pattern.compile("-D(checkstyle|spotless)\\..*").asMatchPredicate();
+  private static final Predicate<String> TEST_GROUP_SELECTION =
+      Pattern.compile("-Dgroups=.*").asMatchPredicate();
 
   @TempDir private Path temporaryDirectory;
 
@@ -216,7 +218,10 @@ class CiPipelineWorkflowTest {
 
     var arguments = buildAndTestMavenArguments(job);
 
-    assertThat(arguments).contains(WITHOUT_PROMETHEUS_COMPOSE_TEST);
+    assertThat(arguments)
+        .filteredOn(TEST_GROUP_SELECTION)
+        .as("test group selections")
+        .containsExactly(WITHOUT_PROMETHEUS_COMPOSE_TEST);
   }
 
   @Test
@@ -234,9 +239,7 @@ class CiPipelineWorkflowTest {
 
     var arguments = buildAndTestMavenArguments(job);
 
-    assertThat(arguments)
-        .as("test group selections")
-        .noneMatch(argument -> argument.startsWith("-Dgroups="));
+    assertThat(arguments).filteredOn(TEST_GROUP_SELECTION).as("test group selections").isEmpty();
   }
 
   @Test
@@ -267,17 +270,20 @@ class CiPipelineWorkflowTest {
       "Should run the Prometheus Compose test when a pull request changes one of its inputs")
   void shouldRunThePrometheusComposeTestWhenAPullRequestChangesOneOfItsInputs(String input)
       throws Exception {
-    var job =
-        integrationJob("1")
-            .ref(PULL_REQUEST)
-            .changedFiles(List.of(NOT_A_PROMETHEUS_COMPOSE_INPUT, input))
-            .build();
+    for (var shard : List.of("1", "2")) {
+      var job =
+          integrationJob(shard)
+              .ref(PULL_REQUEST)
+              .changedFiles(List.of(NOT_A_PROMETHEUS_COMPOSE_INPUT, input))
+              .build();
 
-    var arguments = buildAndTestMavenArguments(job);
+      var arguments = buildAndTestMavenArguments(job);
 
-    assertThat(arguments)
-        .as("test group selections")
-        .noneMatch(argument -> argument.startsWith("-Dgroups="));
+      assertThat(arguments)
+          .filteredOn(TEST_GROUP_SELECTION)
+          .as("shard %s's test group selections", shard)
+          .isEmpty();
+    }
   }
 
   @ParameterizedTest
@@ -292,9 +298,7 @@ class CiPipelineWorkflowTest {
 
     var arguments = buildAndTestMavenArguments(job);
 
-    assertThat(arguments)
-        .as("test group selections")
-        .noneMatch(argument -> argument.startsWith("-Dgroups="));
+    assertThat(arguments).filteredOn(TEST_GROUP_SELECTION).as("test group selections").isEmpty();
   }
 
   @Test
@@ -407,7 +411,10 @@ class CiPipelineWorkflowTest {
     var conditional =
         Pattern.compile("\\$\\{\\{ ([^{}]+) && '([^']+)' \\|\\| '' }}").matcher(command);
     assertThat(conditional.find()).as("conditional argument in %s", command).isTrue();
-    var argument = holds(conditional.group(1), context) ? conditional.group(2) : "";
+    var argument = "";
+    if (holds(conditional.group(1), context)) {
+      argument = conditional.group(2);
+    }
 
     return command.substring(0, conditional.start())
         + argument
