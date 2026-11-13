@@ -144,7 +144,7 @@ artwork:
   # companies). Each thread count caps how many targets' steps run at once on that scheduler.
   scheduling:
     primary-threads: ${ARTWORK_PRIMARY_THREADS:16}
-    background-threads: ${ARTWORK_BACKGROUND_THREADS:4}
+    background-threads: ${ARTWORK_BACKGROUND_THREADS:16}
   runs:
     # How often a scan or refresh that waits for primary artwork checks its recorded results.
     result-check-interval: ${ARTWORK_RESULT_CHECK_INTERVAL:2s}
