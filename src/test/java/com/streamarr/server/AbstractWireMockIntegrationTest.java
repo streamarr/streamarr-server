@@ -26,6 +26,8 @@ public abstract class AbstractWireMockIntegrationTest extends AbstractIntegratio
     registry.add("tmdb.image.base-url", wireMock::baseUrl);
     registry.add("tmdb.api.token", () -> "test-api-token");
     // The TMDB request rate would only pace these tests; RateLimitingInterceptorTest covers it.
+    // No subclass can change it: Spring sets it after a subclass's @DynamicPropertySource, and a
+    // dynamic property wins over @TestPropertySource.
     registry.add("tmdb.api.requests-per-second", () -> "10000");
   }
 

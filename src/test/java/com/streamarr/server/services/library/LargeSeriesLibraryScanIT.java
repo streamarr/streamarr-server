@@ -59,7 +59,6 @@ import org.springframework.test.context.TestPropertySource;
     properties = {
       "spring.datasource.hikari.maximum-pool-size=4",
       "spring.datasource.hikari.connection-timeout=1000",
-      "tmdb.api.requests-per-second=10000",
       "artwork.scheduling.primary-threads=2",
       "artwork.scheduling.background-threads=1"
     })
