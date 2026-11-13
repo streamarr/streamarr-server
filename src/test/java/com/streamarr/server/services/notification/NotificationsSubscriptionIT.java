@@ -1031,8 +1031,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   @Test
   @DisplayName(
       "Should deliver the dismissal of every invitation Notification when its Profile is deleted")
-  void shouldDeliverTheDismissalOfEveryInvitationNotificationWhenItsProfileIsDeleted()
-      throws Exception {
+  void shouldDeliverTheDismissalOfEveryInvitationNotificationWhenItsProfileIsDeleted() {
     var mara = track(authTestSupport.createIdentity());
     var alex = alex();
     var answered = invitations.invite(sam, alex, mara.account().getEmail()).invitation();
