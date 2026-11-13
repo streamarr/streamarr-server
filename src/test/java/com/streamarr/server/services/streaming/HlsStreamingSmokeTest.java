@@ -161,6 +161,7 @@ class HlsStreamingSmokeTest {
                     .properties(properties)
                     .build())
             .build();
+    workerFixture.creditUploadsTo(producerLifecycle);
     streamingService =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())

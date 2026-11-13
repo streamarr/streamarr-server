@@ -122,6 +122,7 @@ class HevcEncodeSmokeTest {
             .runtimeRegistry(sessionRegistry)
             .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
             .build();
+    workerFixture.creditUploadsTo(rig.lifecycle());
     coordinator = rig.coordinator();
     mediaFileRepository = new FakeMediaFileRepository();
     probeRepository = new FakeMediaFileContainerInfoRepository();

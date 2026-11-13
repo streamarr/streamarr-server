@@ -1089,16 +1089,60 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should wait when the encoder is within the forward gap of the request")
   void shouldWaitWhenTheEncoderIsWithinTheForwardGapOfTheRequest() {
     var session = startedSession();
-    segmentStore.addSegment(session.getSessionId(), "segment96.m4s", new byte[] {1});
+    publishDefaultSegments(session, 96, 96);
     var attemptBefore = session.getHandle().orElseThrow().attemptId();
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
     lifecycle.ensurePositioned(
         session.getSessionId(), StreamSession.defaultVariant(), "segment100.m4s");
 
-    // segment96 exists, so the encoder is close behind the request.
+    // The running job attempt stored segment96, so the encoder is close behind the request.
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
     assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptBefore);
+  }
+
+  // The job attempt at segment 90 has stored segments 90 to 96. Segment 97, one relocation gap
+  // before the request, is a segment of the earlier job attempt at segment 96.
+  @Test
+  @DisplayName(
+      "Should relocate when only an earlier job attempt stored the media segment one relocation gap"
+          + " before the request")
+  void
+      shouldRelocateWhenOnlyAnEarlierJobAttemptStoredTheMediaSegmentOneRelocationGapBeforeTheRequest() {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment96.m4s");
+    publishDefaultSegments(session, 96, 100);
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment90.m4s");
+    publishDefaultSegments(session, 90, 96);
+
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment101.m4s");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 96, 90, 101);
+  }
+
+  // The job attempt at segment 90 has stored segments 90 to 97, so it stored segment 97 again and
+  // is one relocation gap behind the request.
+  @Test
+  @DisplayName(
+      "Should wait when the running job attempt stored again the media segment that an earlier job"
+          + " attempt had stored one relocation gap before the request")
+  void
+      shouldWaitWhenTheRunningJobAttemptStoredAgainTheMediaSegmentThatAnEarlierJobAttemptHadStoredOneRelocationGapBeforeTheRequest() {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment96.m4s");
+    publishDefaultSegments(session, 96, 100);
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment90.m4s");
+    publishDefaultSegments(session, 90, 97);
+
+    lifecycle.ensurePositioned(sessionId, StreamSession.defaultVariant(), "segment101.m4s");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 96, 90);
   }
 
   @Test
@@ -1727,9 +1771,7 @@ class ProducerLifecycleServiceTest {
       shouldRelocateTheVariantToAnOlderHeldRequestsSegmentWhenTheNewerOfTwoHeldRequestsReplacedTheirStalledJobAttemptAtItsOwnSegment() {
     var session = startedSession();
     var sessionId = session.getSessionId();
-    for (var produced = 0; produced < 5; produced++) {
-      segmentStore.addSegment(sessionId, "segment" + produced + ".m4s", new byte[] {1});
-    }
+    publishDefaultSegments(session, 0, 4);
     var older =
         lifecycle.prepareRequestedVariant(
             sessionId, StreamSession.defaultVariant(), "segment5.m4s");

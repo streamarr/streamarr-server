@@ -118,6 +118,7 @@ class HlsRecoveryContinuitySmokeTest {
                     .properties(properties)
                     .build())
             .build();
+    workerFixture.creditUploadsTo(lifecycle);
     coordinator =
         SegmentDeliveryCoordinator.builder()
             .segmentStore(segmentStore)

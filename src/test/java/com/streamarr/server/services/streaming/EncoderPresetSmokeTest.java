@@ -121,6 +121,7 @@ class EncoderPresetSmokeTest {
                     .properties(StreamingProperties.builder().build())
                     .build())
             .build();
+    workerFixture.creditUploadsTo(lifecycle);
   }
 
   @AfterEach

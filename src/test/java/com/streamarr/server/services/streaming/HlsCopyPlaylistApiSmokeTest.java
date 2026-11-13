@@ -164,6 +164,7 @@ class HlsCopyPlaylistApiSmokeTest {
             .sessionMutex(new MutexFactory<>())
             .build();
     producerLifecycle = rig.lifecycle();
+    workerFixture.creditUploadsTo(producerLifecycle);
     streamingService =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())
