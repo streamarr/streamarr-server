@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.mutation.sharing;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.streamarr.server.services.identity.ShareRejections;
@@ -49,6 +50,48 @@ class ShareErrorsTest {
               .assertThat(ShareErrors.toAcceptError(new ShareRejections.NameConflict()))
               .isExactlyInstanceOf(ShareNameConflictError.class);
         });
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the refused action and tell the person to reload when Accept, Decline or Cancel"
+          + " finds the share invitation not pending")
+  void shouldNameTheRefusedActionWhenShareInvitationIsNotPending() {
+    assertSoftly(
+        softly -> {
+          softly
+              .assertThat(
+                  ShareErrors.toAcceptError(new ShareRejections.ShareNotPending()).message())
+              .isEqualTo(
+                  "This share invitation can't be accepted anymore. Reload the page to see what"
+                      + " changed.");
+          softly
+              .assertThat(
+                  ShareErrors.toRejectError(new ShareRejections.ShareNotPending()).message())
+              .isEqualTo(
+                  "This share invitation can't be declined anymore. Reload the page to see what"
+                      + " changed.");
+          softly
+              .assertThat(
+                  ShareErrors.toCancelError(new ShareRejections.ShareNotPending()).message())
+              .isEqualTo(
+                  "This share invitation can't be canceled anymore. Reload the page to see what"
+                      + " changed.");
+        });
+  }
+
+  @Test
+  @DisplayName(
+      "Should say the share invitation was withdrawn without the stored reason when Accept finds"
+          + " it withdrawn")
+  void shouldSayShareInvitationWasWithdrawnWithoutStoredReasonWhenAcceptFindsItWithdrawn() {
+    var error =
+        ShareErrors.toAcceptError(new ShareRejections.OfferInvalidated("offering manager deleted"));
+
+    assertThat(error.message())
+        .isEqualTo(
+            "This share invitation was withdrawn and can't be accepted. Reload the page to see if"
+                + " other share invitations are available.");
   }
 
   @Test
