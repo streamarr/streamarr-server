@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.xpath.XPathFactory;
@@ -26,6 +27,8 @@ class CiPipelineWorkflowTest {
   private static final String SONAR_ANALYSIS =
       "Analyze coverage and require the SonarCloud quality gate";
   private static final String SMOKE_TESTS = "Run HLS smoke tests";
+  private static final Predicate<String> FORMATTING_OR_STYLE_PROPERTY =
+      Pattern.compile("-D(checkstyle|spotless)\\..*").asMatchPredicate();
 
   @TempDir private Path temporaryDirectory;
 
@@ -53,24 +56,13 @@ class CiPipelineWorkflowTest {
     var matrix = map(map(job("application").get("strategy")).get("matrix"));
     assertThat(matrix).containsEntry("suite", List.of("unit", "integration"));
     assertThat(job("analysis")).containsEntry("needs", "application");
-    var capture = argumentCapturingMaven();
-    var arguments =
-        Map.of(
-            "matrix.suite",
-            suite,
-            "matrix.suite == 'integration'",
-            Boolean.toString(suite.equals("integration")));
-    var command = render(step("application", "Build and test").get("run").toString(), arguments);
 
-    var result = runBash(command.replace("./mvnw", "'" + capture + "'"));
+    var arguments = buildAndTestMavenArguments(suite);
 
-    assertThat(result.exitCode()).as(result.output()).isZero();
-    assertThat(result.output().lines().toList())
-        .containsExactly(
-            "--batch-mode",
-            "verify",
-            "-Pci-" + suite,
-            "-Dcheckstyle.skip=" + suite.equals("integration"));
+    assertThat(arguments)
+        .filteredOn(FORMATTING_OR_STYLE_PROPERTY.negate())
+        .as("%s job's Maven arguments other than Checkstyle and Spotless properties", suite)
+        .containsExactly("--batch-mode", "verify", "-Pci-" + suite);
     var factory = DocumentBuilderFactory.newInstance();
     factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
     var pom = factory.newDocumentBuilder().parse(Path.of("pom.xml").toFile());
@@ -89,6 +81,36 @@ class CiPipelineWorkflowTest {
             xpath.evaluate(
                 plugins + "[artifactId='maven-failsafe-plugin']/configuration/skipTests", pom))
         .isEmpty();
+  }
+
+  @ParameterizedTest
+  @CsvSource({"unit, false", "integration, true"})
+  @DisplayName(
+      "Should check formatting and style only in the unit job when both jobs build one commit")
+  void shouldCheckFormattingAndStyleOnlyInUnitJobWhenBothJobsBuildOneCommit(
+      String suite, boolean skipped) throws Exception {
+    var arguments = buildAndTestMavenArguments(suite);
+
+    assertThat(arguments)
+        .filteredOn(FORMATTING_OR_STYLE_PROPERTY)
+        .as("%s job's Checkstyle and Spotless properties", suite)
+        .containsExactlyInAnyOrder(
+            "-Dcheckstyle.skip=" + skipped, "-Dspotless.check.skip=" + skipped);
+  }
+
+  private List<String> buildAndTestMavenArguments(String suite) throws Exception {
+    var context =
+        Map.of(
+            "matrix.suite",
+            suite,
+            "matrix.suite == 'integration'",
+            Boolean.toString(suite.equals("integration")));
+    var command = render(step("application", "Build and test").get("run").toString(), context);
+
+    var result = runBash(command.replace("./mvnw", "'" + argumentCapturingMaven() + "'"));
+
+    assertThat(result.exitCode()).as(result.output()).isZero();
+    return result.output().lines().toList();
   }
 
   @Test
