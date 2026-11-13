@@ -22,7 +22,9 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -48,7 +50,8 @@ class ProfileSharePartiesServiceTest {
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
   private final ProfileSharePartiesService service =
-      new ProfileSharePartiesService(authorization, profiles, accounts, households);
+      new ProfileSharePartiesService(
+          authorization, shares, profiles, accounts, households, Clock.fixed(NOW, ZoneOffset.UTC));
 
   private Household target;
   private Profile offered;
@@ -147,6 +150,34 @@ class ProfileSharePartiesServiceTest {
 
     assertThat(service.profiles(reader(), Set.of(lapsed))).isEmpty();
     assertThat(service.offererNames(reader(), Set.of(lapsed))).isEmpty();
+  }
+
+  // ---- A share that ends between the page that reads it and the loading of its parties.
+
+  @Test
+  @DisplayName(
+      "Should hide the Profile from the target HouseholdAdmin when the share ends after a page read"
+          + " it")
+  void shouldHideProfileFromTargetHouseholdAdminWhenShareEndsAfterPageReadIt() {
+    allowOnly(this::administersTarget);
+    var readWhileActive = shareIn(ProfileShareStatus.ACTIVE);
+    assertThat(shares.tryEndActive(readWhileActive.shareId(), NOW)).isPresent();
+
+    assertThat(service.profiles(reader(), Set.of(readWhileActive))).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should not name the offerer to the target HouseholdAdmin when the offer is declined after a"
+          + " page read it")
+  void shouldNotNameOffererToTargetHouseholdAdminWhenOfferIsDeclinedAfterPageReadIt() {
+    allowOnly(this::administersTarget);
+    var readWhilePending = shareIn(ProfileShareStatus.PENDING);
+    assertThat(
+            shares.tryDeclinePending(readWhilePending.shareId(), ProfileShareStatus.REJECTED, NOW))
+        .isPresent();
+
+    assertThat(service.offererNames(reader(), Set.of(readWhilePending))).isEmpty();
   }
 
   @ParameterizedTest(name = "{0}")
@@ -368,14 +399,14 @@ class ProfileSharePartiesServiceTest {
             .offeredByAccountId(offeredBy.orElse(null)));
   }
 
-  /** The share of the offered Profile into the target at the status, read at {@code NOW}. */
+  /** The share of the offered Profile into the target at the status. */
   private ShareReference shareIn(ProfileShareStatus status) {
     return stored(offerOf(status));
   }
 
-  /** The share, stored, as a page reads it at {@code NOW}. */
+  /** The share, stored, as a page reads it. */
   private ShareReference stored(ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> share) {
-    return ShareReference.of(shares.save(share.build()), NOW);
+    return ShareReference.of(shares.save(share.build()));
   }
 
   private ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> offerOf(
