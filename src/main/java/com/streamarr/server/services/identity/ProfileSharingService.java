@@ -38,6 +38,8 @@ import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Profile sharing (ADR 0024 §Profile sharing): a share makes one Profile available to a Household
@@ -595,6 +597,10 @@ public class ProfileSharingService {
    * Profile is decided by its Household alone. Refuses a reader who may no longer follow share
    * changes at all.
    */
+  // Every read of one decision sees one snapshot. A Profile deleted after the read that finds it
+  // would otherwise be missing when authorization reads its facts, and the failed decision would
+  // end the reader's operation.
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public Optional<ShareChange> shareChange(
       AuthenticatedIdentity identity, ProfileShareChangedEvent change) {
     requireViewProfileShareChanges(identity);
