@@ -25,6 +25,7 @@ class CiPipelineWorkflowTest {
 
   private static final String SONAR_ANALYSIS =
       "Analyze coverage and require the SonarCloud quality gate";
+  private static final String SMOKE_TESTS = "Run HLS smoke tests";
 
   @TempDir private Path temporaryDirectory;
 
@@ -231,7 +232,8 @@ class CiPipelineWorkflowTest {
             "if", "github.ref == 'refs/heads/main' || needs.changes.outputs.packaging == 'true'");
     assertThat(job("build"))
         .containsEntry(
-            "needs", List.of("changes", "contracts", "application", "analysis", "package_image"))
+            "needs",
+            List.of("changes", "contracts", "application", "smoke", "analysis", "package_image"))
         .containsEntry("if", "${{ always() }}")
         .containsEntry("timeout-minutes", 5);
     assertThat(requiredJobs().get("uses").toString())
@@ -252,6 +254,53 @@ class CiPipelineWorkflowTest {
     assertThat(job("contracts")).doesNotContainKey("needs");
     assertThat(stepNames("contracts")).containsAll(contractChecks);
     assertThat(stepNames("application")).doesNotContainAnyElementsOf(contractChecks);
+  }
+
+  @Test
+  @DisplayName("Should start the HLS smoke job like the application jobs when checks run")
+  void shouldStartHlsSmokeJobLikeApplicationJobsWhenChecksRun() throws Exception {
+    assertThat(job("smoke"))
+        .as("smoke job keys: no needs, if or continue-on-error")
+        .containsOnlyKeys("name", "runs-on", "steps")
+        .as("runner")
+        .containsEntry("runs-on", job("application").get("runs-on"));
+    assertThat(steps(job("smoke").get("steps")).subList(0, 3))
+        .as("checkout, worker image pin and JDK setup")
+        .isEqualTo(steps(job("application").get("steps")).subList(0, 3));
+  }
+
+  @Test
+  @DisplayName("Should run every HLS smoke test when the smoke job runs")
+  void shouldRunEveryHlsSmokeTestWhenSmokeJobRuns() throws Exception {
+    var smokeTests = steps(job("smoke").get("steps")).getLast();
+    assertThat(smokeTests)
+        .containsEntry("name", SMOKE_TESTS)
+        .as("smoke step keys: no if or continue-on-error")
+        .containsOnlyKeys("name", "run");
+    var command =
+        smokeTests.get("run").toString().replace("./mvnw", "'" + argumentCapturingMaven() + "'");
+
+    var result = runBash(command);
+
+    assertThat(result.exitCode()).as(result.output()).isZero();
+    assertThat(result.output().lines().toList())
+        .containsExactly(
+            "--batch-mode",
+            "test",
+            "-Dsurefire.excludedGroups=",
+            "-Dgroups=SmokeTest",
+            "-Djacoco.skip=true",
+            "-Dcheckstyle.skip=true",
+            "-Dspotless.check.skip=true");
+  }
+
+  @Test
+  @DisplayName("Should leave the HLS smoke tests out of the application build when checks run")
+  void shouldLeaveHlsSmokeTestsOutOfApplicationBuildWhenChecksRun() throws Exception {
+    assertThat(steps(job("application").get("steps")))
+        .extracting(candidate -> String.valueOf(candidate.get("run")))
+        .as("application steps that run smoke tests")
+        .noneMatch(run -> run.contains("SmokeTest"));
   }
 
   // A checkout in an always() job can hang, so the shared action is the build job's only step.
