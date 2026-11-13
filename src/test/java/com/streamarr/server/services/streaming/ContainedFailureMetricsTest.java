@@ -19,7 +19,8 @@ class ContainedFailureMetricsTest {
       "Should reject a missing meter registry when the contained failure metrics are created")
   void shouldRejectMissingMeterRegistryWhenTheContainedFailureMetricsAreCreated() {
     assertThatThrownBy(() -> new ContainedFailureMetrics(null))
-        .isInstanceOf(NullPointerException.class);
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("meterRegistry");
   }
 
   @Test

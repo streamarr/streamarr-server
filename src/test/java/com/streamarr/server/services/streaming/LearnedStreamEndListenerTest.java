@@ -53,6 +53,8 @@ class LearnedStreamEndListenerTest {
   private static final Duration CLOSE_RETURN_BOUND = Duration.ofSeconds(10);
   private static final SourceStreamEnd AUDIO_END =
       new SourceStreamEnd(1, Duration.ofMillis(84_021));
+  private static final SourceStreamEnd SECOND_AUDIO_END =
+      new SourceStreamEnd(2, Duration.ofSeconds(80));
 
   @TempDir private Path temporaryDirectory;
 
@@ -80,7 +82,8 @@ class LearnedStreamEndListenerTest {
   @DisplayName("Should reject missing contained failure metrics when the listener is created")
   void shouldRejectMissingContainedFailureMetricsWhenTheListenerIsCreated() {
     assertThatThrownBy(() -> new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, null))
-        .isInstanceOf(NullPointerException.class);
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("containedFailures");
   }
 
   @Test
@@ -171,18 +174,19 @@ class LearnedStreamEndListenerTest {
       "Should count each end it fails to store and let the completion finish when the database"
           + " refuses the write")
   void shouldCountEachEndItFailsToStoreAndLetTheCompletionFinishWhenTheDatabaseRefusesTheWrite() {
-    var session = savedSession(probeOf(Optional.of(probedSnapshot)));
+    var session = savedSession(probeWithTwoStreamsThatStateNoEnd());
     var withoutDatabase =
         new LearnedStreamEndListener(
             runtimeRegistry, new UnavailableLearnedStreamEndRepository(), containedFailures);
 
     assertThatCode(
             () -> {
-              withoutDatabase.onJobAttemptCompleted(completion(session, AUDIO_END));
+              withoutDatabase.onJobAttemptCompleted(
+                  completion(session, List.of(AUDIO_END, SECOND_AUDIO_END)));
               withoutDatabase.close();
             })
         .doesNotThrowAnyException();
-    assertThat(storeFailures()).isEqualTo(1);
+    assertThat(storeFailures()).isEqualTo(2);
   }
 
   @Test
@@ -254,8 +258,7 @@ class LearnedStreamEndListenerTest {
     var session = savedSession(probeWithTwoStreamsThatStateNoEnd());
     var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
     var holding = new LearnedStreamEndListener(runtimeRegistry, held, containedFailures);
-    holding.onJobAttemptCompleted(
-        completion(session, List.of(AUDIO_END, new SourceStreamEnd(2, Duration.ofSeconds(80)))));
+    holding.onJobAttemptCompleted(completion(session, List.of(AUDIO_END, SECOND_AUDIO_END)));
     awaitLatch(held.storing);
 
     BoundedTask.runWithin(CLOSE_RETURN_BOUND, holding::close);
