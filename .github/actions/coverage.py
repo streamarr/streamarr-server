@@ -12,6 +12,8 @@ COMPILER_OUTPUTS = Path(
     "target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst"
 )
 AUTHORIZATION = Path("com/streamarr/server/services/authorization")
+POM = {"m": "http://maven.apache.org/POM/4.0.0"}
+INTEGRATION_SHARDS = "m:profiles/m:profile[m:id='ci-integration']/m:properties/m:ci.integration.shards"
 
 
 def compiled_classes():
@@ -30,9 +32,10 @@ def compiled_classes():
     return sorted(classes)
 
 
-def fingerprint(suite):
+def fingerprint(suite, shard):
     classes = compiled_classes()
-    Path(f"target/ci-{suite}-classes.sha256").write_text(class_manifest(classes))
+    name = suite if shard is None else f"{suite}-{shard}"
+    Path(f"target/ci-{name}-classes.sha256").write_text(class_manifest(classes))
 
 
 def class_manifest(classes):
@@ -57,11 +60,18 @@ def authorization_classes(classes):
     return {path for path in classes if Path("target/classes") / AUTHORIZATION in path.parents}
 
 
+def integration_shards():
+    count = ET.parse("pom.xml").getroot().findtext(INTEGRATION_SHARDS, "", POM)
+    if not count.isdigit() or int(count) == 0:
+        raise ValueError(f"pom.xml must set ci.integration.shards to a shard count, not {count!r}")
+    return [f"integration-{shard}" for shard in range(1, int(count) + 1)]
+
+
 def verify_inputs():
     classes = compiled_classes()
     authorization_classes(classes)
     expected = class_manifest(classes)
-    for suite in ("unit", "integration"):
+    for suite in ["unit", *integration_shards()]:
         execution = Path(f"target/jacoco-output/jacoco-{suite}-tests.exec")
         if execution.stat().st_size == 0:
             raise ValueError(f"Empty {suite} execution data: {execution}")
@@ -74,12 +84,11 @@ def verify_report():
     merged = Path("target/jacoco-output/merged.exec")
     if merged.stat().st_size == 0:
         raise ValueError("Empty merged execution data")
-    namespaces = {"m": "http://maven.apache.org/POM/4.0.0"}
     exclusions = [
         element.text
         for element in ET.parse("pom.xml").findall(
             ".//m:plugin[m:artifactId='jacoco-maven-plugin']/m:configuration/m:excludes/m:exclude",
-            namespaces,
+            POM,
         )
     ]
     expected = {
@@ -123,12 +132,14 @@ def verify_class_coverage(node):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("fingerprint").add_argument("suite", choices=["unit", "integration"])
+    fingerprint_command = commands.add_parser("fingerprint")
+    fingerprint_command.add_argument("suite", choices=["unit", "integration"])
+    fingerprint_command.add_argument("shard", nargs="?", type=int)
     commands.add_parser("verify-inputs")
     commands.add_parser("verify-report")
     args = parser.parse_args()
     actions = {
-        "fingerprint": lambda: fingerprint(args.suite),
+        "fingerprint": lambda: fingerprint(args.suite, args.shard),
         "verify-inputs": verify_inputs,
         "verify-report": verify_report,
     }

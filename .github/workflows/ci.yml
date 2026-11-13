@@ -94,12 +94,18 @@ jobs:
         run: python3 -m unittest discover -s .github/actions/pack-build/test -p 'test_*.py'
 
   application:
-    name: Build and test application (${{ matrix.suite }})
+    name: Build and test application (${{ matrix.suite }}${{ matrix.shard && format(', shard {0}', matrix.shard) }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # One integration job per shard, from 1 to ci.integration.shards in pom.xml.
       matrix:
-        suite: [ unit, integration ]
+        include:
+          - suite: unit
+          - suite: integration
+            shard: 1
+          - suite: integration
+            shard: 2
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -122,9 +128,10 @@ jobs:
           ./mvnw --batch-mode verify -Pci-${{ matrix.suite }}
           -Dcheckstyle.skip=${{ matrix.suite == 'integration' }}
           -Dspotless.check.skip=${{ matrix.suite == 'integration' }}
+          ${{ matrix.shard && format('-Dci.integration.shard={0}', matrix.shard) }}
 
       - name: Fingerprint compiled classes
-        run: python3 .github/actions/coverage.py fingerprint ${{ matrix.suite }}
+        run: python3 .github/actions/coverage.py fingerprint ${{ matrix.suite }} ${{ matrix.shard }}
 
       - name: Upload unit coverage and compiled classes
         if: matrix.suite == 'unit'
@@ -146,11 +153,13 @@ jobs:
         if: matrix.suite == 'integration'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: application-tests-integration
+          name: application-tests-integration-${{ matrix.shard }}
+          # Every shard writes its own summary, and the analysis job reads only the class reports.
           path: |
             target/failsafe-reports/
-            target/jacoco-output/jacoco-integration-tests.exec
-            target/ci-integration-classes.sha256
+            !target/failsafe-reports/failsafe-summary.xml
+            target/jacoco-output/jacoco-integration-${{ matrix.shard }}-tests.exec
+            target/ci-integration-${{ matrix.shard }}-classes.sha256
           if-no-files-found: error
           compression-level: 1
           retention-days: 7

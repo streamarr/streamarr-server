@@ -8,12 +8,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.xpath.XPathFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.yaml.snakeyaml.Yaml;
 
@@ -131,15 +135,7 @@ class CiCoverageWorkflowTest {
   }
 
   @ParameterizedTest
-  @ValueSource(
-      strings = {
-        "target/jacoco-output/jacoco-unit-tests.exec",
-        "target/jacoco-output/jacoco-integration-tests.exec",
-        "target/ci-unit-classes.sha256",
-        "target/ci-integration-classes.sha256",
-        COMPILER_OUTPUTS,
-        "target/classes/" + AUTHORIZATION + "AuthorizationService$Decision.class"
-      })
+  @MethodSource("coverageArtifacts")
   @DisplayName("Should reject coverage inputs when an artifact is missing or empty")
   void shouldRejectCoverageInputsWhenAnArtifactIsMissingOrEmpty(String artifact) throws Exception {
     coverageInputs();
@@ -159,8 +155,9 @@ class CiCoverageWorkflowTest {
       throws Exception {
     coverageInputs();
     var sentinel = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  -\n";
-    write("target/ci-unit-classes.sha256", sentinel);
-    write("target/ci-integration-classes.sha256", sentinel);
+    for (var suite : coverageSuites()) {
+      write("target/ci-" + suite + "-classes.sha256", sentinel);
+    }
 
     var result = runStep("Verify complete and compatible coverage inputs");
 
@@ -198,6 +195,22 @@ class CiCoverageWorkflowTest {
     var result = runStep("Verify combined coverage");
 
     assertThat(result.exitCode()).as(result.output()).isNotZero();
+  }
+
+  @Test
+  @DisplayName("Should reject coverage inputs when the build names no integration shards")
+  void shouldRejectCoverageInputsWhenTheBuildNamesNoIntegrationShards() throws Exception {
+    coverageInputs();
+    var pom = workspace.resolve("pom.xml");
+    Files.writeString(
+        pom,
+        Files.readString(pom)
+            .replaceAll("<ci\\.integration\\.shards>[^<]*+</ci\\.integration\\.shards>", ""));
+
+    var result = runStep("Verify complete and compatible coverage inputs");
+
+    assertThat(result.exitCode()).as(result.output()).isNotZero();
+    assertThat(result.output()).contains("ci.integration.shards");
   }
 
   private void completeReport(String counters) throws Exception {
@@ -239,12 +252,53 @@ class CiCoverageWorkflowTest {
             + launcher
             + ".class\n");
     write("target/jacoco-output/jacoco-unit-tests.exec", "unit execution data");
-    write("target/jacoco-output/jacoco-integration-tests.exec", "integration execution data");
-    var fingerprint = runStep("Fingerprint compiled classes");
-    assertThat(fingerprint.exitCode()).as(fingerprint.output()).isZero();
-    Files.copy(
-        workspace.resolve("target/ci-unit-classes.sha256"),
-        workspace.resolve("target/ci-integration-classes.sha256"));
+    var unit = runStep("Fingerprint compiled classes");
+    assertThat(unit.exitCode()).as(unit.output()).isZero();
+    var shards = integrationShards();
+    for (var shard = 1; shard <= shards; shard++) {
+      write(
+          "target/jacoco-output/jacoco-integration-" + shard + "-tests.exec",
+          "integration shard " + shard + " execution data");
+      var integration =
+          runStep("Fingerprint compiled classes", "integration", Integer.toString(shard));
+      assertThat(integration.exitCode()).as(integration.output()).isZero();
+    }
+  }
+
+  static Stream<String> coverageArtifacts() throws Exception {
+    var artifacts = new ArrayList<String>();
+    for (var suite : coverageSuites()) {
+      artifacts.add("target/jacoco-output/jacoco-" + suite + "-tests.exec");
+      artifacts.add("target/ci-" + suite + "-classes.sha256");
+    }
+
+    artifacts.add(COMPILER_OUTPUTS);
+    artifacts.add("target/classes/" + AUTHORIZATION + "AuthorizationService$Decision.class");
+
+    return artifacts.stream();
+  }
+
+  private static List<String> coverageSuites() throws Exception {
+    var suites = new ArrayList<>(List.of("unit"));
+    var shards = integrationShards();
+    for (var shard = 1; shard <= shards; shard++) {
+      suites.add("integration-" + shard);
+    }
+
+    return suites;
+  }
+
+  private static int integrationShards() throws Exception {
+    var factory = DocumentBuilderFactory.newInstance();
+    factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+    var pom = factory.newDocumentBuilder().parse(Path.of("pom.xml").toFile());
+
+    return Integer.parseInt(
+        XPathFactory.newInstance()
+            .newXPath()
+            .evaluate(
+                "/project/profiles/profile[id='ci-integration']/properties/ci.integration.shards",
+                pom));
   }
 
   private void write(String path, String content) throws Exception {
@@ -254,6 +308,10 @@ class CiCoverageWorkflowTest {
   }
 
   private CommandResult runStep(String name) throws Exception {
+    return runStep(name, "unit", "");
+  }
+
+  private CommandResult runStep(String name, String suite, String shard) throws Exception {
     Map<String, Object> workflow;
     try (var input = Files.newInputStream(Path.of(".github/workflows/ci.yml"))) {
       workflow = new Yaml().load(input);
@@ -271,8 +329,12 @@ class CiCoverageWorkflowTest {
       command.addAll(List.of("-o", "pipefail"));
     }
 
-    command.addAll(
-        List.of("-c", step.get("run").toString().replace("${{ matrix.suite }}", "unit")));
+    var run =
+        step.get("run")
+            .toString()
+            .replace("${{ matrix.suite }}", suite)
+            .replace("${{ matrix.shard }}", shard);
+    command.addAll(List.of("-c", run));
     var output = workspace.resolve("command.log");
     var process =
         new ProcessBuilder(command)
