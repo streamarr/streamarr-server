@@ -71,12 +71,20 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
   }
 
   // The expiry close comes from a real-time timer, so one test pays one expiry for both halves.
+  // A wait that times out names no half, so each half is a method of its own and the stack trace
+  // names the half that broke.
   @Test
   @DisplayName(
       "Should close with 4100 and deliver status changes after a fresh-token reconnect when the"
           + " access token expires")
   void shouldCloseWith4100AndDeliverStatusChangesAfterFreshTokenReconnectWhenAccessTokenExpires() {
     var library = saveLibrary();
+
+    assertExpiringSocketClosesWith4100AndNoCompleteFrame();
+    assertFreshTokenSocketReceivesStatusChange(library);
+  }
+
+  private void assertExpiringSocketClosesWith4100AndNoCompleteFrame() {
     var expiresAt = Instant.now().plusSeconds(3).truncatedTo(ChronoUnit.SECONDS);
     var bearer = authTestSupport.profileBearerExpiringAt(admin, expiresAt);
 
@@ -96,7 +104,9 @@ class WebSocketAccessExpiryIT extends AbstractIntegrationTest {
           .noneMatch(message -> "complete".equals(message.path("type").asString()));
       activeSubscriptions.awaitCount(STATUS_FIELD, 0);
     }
+  }
 
+  private void assertFreshTokenSocketReceivesStatusChange(Library library) {
     try (var renewed =
         GraphQlTransportWsTestClient.connectWithBearer(
             port, authTestSupport.profileBearer(admin))) {
