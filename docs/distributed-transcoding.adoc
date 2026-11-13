@@ -219,14 +219,15 @@ A worker fails a probe whose result is longer with `PROBE_FAILURE_RESULT_TOO_LAR
 `STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT` bounds how long the server waits for a message that it asked for on a report call. It defaults to `30s`.
 When no message arrives in that time, the server ends the report call with `DEADLINE_EXCEEDED`, and the probe runs again.
 The time that a probe report waits for the memory budget does not count, and no bound covers the whole probe report.
-`STREAMING_WORKER_SESSION_PROBE_REPORT_MEMORY_BUDGET` bounds the bytes of probe reports that the server reads at once. It defaults to `64MB` and must be at least the length limit.
+`STREAMING_WORKER_SESSION_PROBE_REPORT_MEMORY_BUDGET` bounds the bytes of probe reports that the server reads at once. It defaults to `64MB` and must be at least the length limit plus the result length limit.
 This budget is separate from the 512 MiB of declared segment payload.
-Before the server reads any byte of a probe report, it reserves room in the budget: the length that the first message states, and at least 48 KiB, the most bytes of titles, handler names and chapters in a result. It releases the room when the report call ends.
+Before the server reads any byte of a probe report, it reserves room in the budget: the length that the first message states, plus the result length limit. It releases the room when the report call ends.
+The result gets room of its own because its streams and chapters are small messages, which decode to many times their length.
 A probe report may take at most 32 times its room in heap while the server decodes it and after, so the probe reports that the server reads at once take at most 32 times the budget: 2 GiB of heap at the default budget.
 While a probe report does not fit the budget, the server reads no message of its report call.
 The waiting probe reports of playback probes get room before the waiting probe reports of other probes, and within each of the two groups the probe reports get room in the order in which they asked.
 The server never refuses a report call for lack of room.
-The server refuses to start when a limit or the idle timeout is not positive, when the length limit is below `128KB`, when the result length limit is below `48KB` or above the length limit, or when the memory budget is below the length limit.
+The server refuses to start when a limit or the idle timeout is not positive, when the length limit is below `128KB`, when the result length limit is below `48KB` or above the length limit, or when the memory budget is below the length limit plus the result length limit.
 
 The first message of a report call names the worker session, the worker and the probe attempt, and states the length of the probe report.
 The server reads the report call only when that message names a probe attempt that the worker's live session runs and that no other report call reports. It refuses any other report call with `PERMISSION_DENIED`, or with `ALREADY_EXISTS` when another report call already reports the attempt.

@@ -43,7 +43,7 @@ public record ProbeReportLimits(
   // keeps both caps.
   private static final long LONGEST_TITLES_AND_HANDLER_NAMES_BYTES = 16_384;
   private static final long LONGEST_CHAPTERS_BYTES = 32_768;
-  static final long SHORTEST_RESULT_LENGTH_LIMIT_BYTES =
+  private static final long SHORTEST_RESULT_LENGTH_LIMIT_BYTES =
       LONGEST_TITLES_AND_HANDLER_NAMES_BYTES + LONGEST_CHAPTERS_BYTES;
 
   public ProbeReportLimits {
@@ -82,10 +82,21 @@ public record ProbeReportLimits(
     }
 
     // Otherwise a probe report at the length limit would wait for the budget without end.
-    if (memoryBudgetBytes < lengthLimitBytes) {
+    if (memoryBudgetBytes < lengthLimitBytes + resultLengthLimitBytes) {
       throw new IllegalArgumentException(
-          "Worker probe report memory budget must be at least the probe report length limit");
+          "Worker probe report memory budget must be at least the probe report length limit plus"
+              + " the result length limit");
     }
+  }
+
+  /**
+   * The room in the memory budget that a probe report of this length holds while the server reads
+   * it: its length, and the result length limit for its result.
+   */
+  long roomBytes(long reportLengthBytes) {
+    // The result's streams and chapters are small messages, which decode to many times their
+    // length. The room of its own lets a short probe report hold them.
+    return reportLengthBytes + resultLengthLimitBytes;
   }
 
   private static void requirePositive(long value, String setting) {

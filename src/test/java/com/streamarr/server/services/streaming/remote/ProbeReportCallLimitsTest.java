@@ -18,6 +18,7 @@ import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.ProbeStreamInfo;
 import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import io.grpc.Status;
 import java.io.IOException;
@@ -48,12 +49,12 @@ class ProbeReportCallLimitsTest {
           .measuredKeyframeIntervalLimit(6)
           .resultLengthLimitBytes(RESULT_LENGTH_LIMIT)
           .build();
-  // Room for one report of 140,000 bytes, and for no second report of more than 60,000 bytes
-  // beside it.
+  // Room for one report of 140,000 bytes, and for no second report beside it: each holds its
+  // length plus the result length limit.
   private static final ProbeReportLimits TIGHT_MEMORY =
       ProbeReportLimits.builder()
           .lengthLimitBytes(150_000)
-          .memoryBudgetBytes(200_000)
+          .memoryBudgetBytes(220_000)
           .resultLengthLimitBytes(RESULT_LENGTH_LIMIT)
           .build();
   private static final int LENGTH_OF_HELD_REPORT = 140_000;
@@ -428,6 +429,45 @@ class ProbeReportCallLimitsTest {
                 Stream.of(
                     arguments(chapters, defaultLimit),
                     arguments(chapters, SHORTEST_RESULT_LENGTH_LIMIT)));
+  }
+
+  @ParameterizedTest(name = "at a result length limit of {0} bytes")
+  @MethodSource("resultLengthLimits")
+  @DisplayName(
+      "Should accept a probe report when its result holds chapters at the chapter cap beside"
+          + " hundreds of subtitle streams with short labels")
+  void shouldAcceptProbeReportWhenItsResultHoldsChaptersAtChapterCapBesideManyLabelledStreams(
+      long resultLengthLimitBytes) throws Exception {
+    var limits = ProbeReportLimits.builder().resultLengthLimitBytes(resultLengthLimitBytes).build();
+    var worker = ReportingWorker.connectedTo(limits);
+    var probe = worker.dispatch();
+    var media = ProbeMediaInfo.newBuilder().setContainer(DenseChapters.ZERO_TIMES.container());
+    media.addStreams(ProbeStreamInfo.newBuilder().setCodecType("video").setCodec("h264"));
+    for (var index = 1; index <= 400; index++) {
+      media.addStreams(
+          ProbeStreamInfo.newBuilder()
+              .setIndex(index)
+              .setCodecType("subtitle")
+              .setCodec("subrip")
+              .setTitle("t")
+              .setHandlerName("h"));
+    }
+
+    var report = invalidMedia(probe.request());
+    report.getResultBuilder().setMedia(media);
+    assertThat((long) report.getResult().getSerializedSize())
+        .as("result within the shortest result length limit")
+        .isLessThanOrEqualTo(SHORTEST_RESULT_LENGTH_LIMIT);
+
+    var call = worker.report(probe.request(), report.build());
+
+    assertThat(call.isAnswered()).isTrue();
+    assertThat(probe.outcome().get(1, TimeUnit.SECONDS)).isEqualTo(report.build());
+  }
+
+  static Stream<Long> resultLengthLimits() {
+    return Stream.of(
+        ProbeReportLimits.DEFAULT.resultLengthLimitBytes(), SHORTEST_RESULT_LENGTH_LIMIT);
   }
 
   /**

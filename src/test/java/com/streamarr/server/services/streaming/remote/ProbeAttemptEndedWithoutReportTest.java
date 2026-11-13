@@ -37,7 +37,11 @@ class ProbeAttemptEndedWithoutReportTest {
   private static final ProbeDispatch BUSY = new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY);
   // Room for one probe report of 140,000 bytes, and for no second one of 100,000 bytes beside it.
   private static final ProbeReportLimits TIGHT_MEMORY =
-      ProbeReportLimits.builder().lengthLimitBytes(150_000).memoryBudgetBytes(200_000).build();
+      ProbeReportLimits.builder()
+          .lengthLimitBytes(150_000)
+          .resultLengthLimitBytes(48 * 1024)
+          .memoryBudgetBytes(200_000)
+          .build();
 
   @Test
   @DisplayName(

@@ -200,7 +200,8 @@ streaming:
       # The server ends a report call when it asked for a message and none arrives in this time.
       idle-timeout: ${STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT:30s}
       # The most bytes of probe reports that the server reads at once. A report call waits while
-      # its probe report does not fit. The budget must be at least the length limit.
+      # its probe report does not fit. Each probe report holds its length plus the result length
+      # limit, so the budget must be at least the length limit plus the result length limit.
       memory-budget: ${STREAMING_WORKER_SESSION_PROBE_REPORT_MEMORY_BUDGET:64MB}
   remote:
     source-namespace-id: ${STREAMING_REMOTE_SOURCE_NAMESPACE_ID:}

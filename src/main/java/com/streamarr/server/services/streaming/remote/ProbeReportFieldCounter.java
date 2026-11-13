@@ -18,10 +18,9 @@ import java.util.Optional;
  * order of the fields, and a tag, a varint or a length may continue in the next message.
  *
  * <p>The decoded size limit is {@value #DECODED_BYTES_PER_BYTE_OF_ROOM} times the probe report's
- * room in the memory budget: its length, and at least {@value #SMALLEST_ROOM_BYTES} bytes. The
- * counter adds up the heap that the decoder would take for each message, list, number and text, and
- * ends the probe report as soon as that heap passes the limit, before the decoder allocates any of
- * it.
+ * room in the memory budget: its length plus the result length limit. The counter adds up the heap
+ * that the decoder would take for each message, list, number and text, and ends the probe report as
+ * soon as that heap passes the limit, before the decoder allocates any of it.
  */
 final class ProbeReportFieldCounter {
 
@@ -62,16 +61,10 @@ final class ProbeReportFieldCounter {
   // least its tag and its length.
   private static final int FEWEST_BYTES_OF_A_STREAM_IN_THE_RESULT = 2;
   // A probe report decodes to at most this many times its room in the memory budget, so the probe
-  // reports that the server reads at once decode to at most this many times the budget. A smaller
-  // multiple would refuse valid probe reports: a number of one byte in a list takes up to 20 bytes
-  // while the decoder grows the list, and the untitled chapters that a short probe report holds at
-  // their cap take up to 30 times its room.
+  // reports that the server reads at once decode to at most this many times the budget. A number
+  // of one byte in a list takes up to 20 bytes while the decoder grows the list. With the room of
+  // its own, a result that fills the result length limit may decode to 64 times its length.
   private static final long DECODED_BYTES_PER_BYTE_OF_ROOM = 32;
-  // A short probe report can still hold a result's titles, handler names and chapters at their
-  // caps, which decode to more than the multiple of their length, because each chapter and each
-  // stream decodes to objects.
-  private static final long SMALLEST_ROOM_BYTES =
-      ProbeReportLimits.SHORTEST_RESULT_LENGTH_LIMIT_BYTES;
   // The most heap that protobuf-java's decoder takes, measured on the contract's messages, while it
   // decodes and after: for a message, for each field that its type declares, and for each repeated
   // field's list. Each bound is at least 1.4 times the heap measured on a 64-bit JVM, which also
@@ -122,14 +115,9 @@ final class ProbeReportFieldCounter {
                 StreamMeasurementIntervals.KEYFRAME_INTERVAL_PACKET_COUNTS_FIELD_NUMBER),
             new Count(
                 limits.measuredKeyframeIntervalLimit(), BrokenRule.MEASURED_KEYFRAME_INTERVALS));
-    decodedSizeLimitBytes = DECODED_BYTES_PER_BYTE_OF_ROOM * roomBytes(reportLengthBytes);
+    decodedSizeLimitBytes = DECODED_BYTES_PER_BYTE_OF_ROOM * limits.roomBytes(reportLengthBytes);
     report = new Message(REPORT, reportLengthBytes);
     addDecodedBytes(messageBytes(REPORT));
-  }
-
-  /** The room in the memory budget that a probe report of this length holds while it is read. */
-  static long roomBytes(long reportLengthBytes) {
-    return Math.max(reportLengthBytes, SMALLEST_ROOM_BYTES);
   }
 
   /** Reads the next bytes of the probe report. */

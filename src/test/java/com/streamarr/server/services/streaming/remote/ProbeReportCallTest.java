@@ -54,12 +54,16 @@ class ProbeReportCallTest {
       ProbeReportLimits.builder().keyframeLimit(4).measuredKeyframeIntervalLimit(6).build();
   // The server's limit of report calls that one worker holds open.
   private static final int REPORT_CALLS_PER_WORKER = 24;
-  // Room for one large report, and for no second report of more than 60,000 bytes beside it.
+  // Room for one large report, and for no second report beside it: each holds its length plus the
+  // result length limit.
   private static final ProbeReportLimits TIGHT_MEMORY =
-      ProbeReportLimits.builder().lengthLimitBytes(150_000).memoryBudgetBytes(200_000).build();
-  // Every probe report holds at least this much room in the memory budget: the most bytes of
-  // titles, handler names and chapters that a result holds (ADR 0032).
-  private static final long SMALLEST_ROOM = 48 * 1024;
+      ProbeReportLimits.builder()
+          .lengthLimitBytes(150_000)
+          .resultLengthLimitBytes(48 * 1024)
+          .memoryBudgetBytes(200_000)
+          .build();
+  // Leaves room beside it for a waiting report of 10,000 bytes, and none for one of 50,000.
+  private static final long LENGTH_OF_REPORT_THAT_LEAVES_ROOM = 90_000;
   private static final long SHORT_REPORT_LENGTH = 100;
   private static final int KEYFRAMES_OF_LARGE_REPORT = 7_000;
   private static final Duration SHORT_IDLE_TIMEOUT = Duration.ofMillis(250);
@@ -959,12 +963,12 @@ class ProbeReportCallTest {
 
   @Test
   @DisplayName(
-      "Should read no message of a short probe report's call when the free room in the memory"
-          + " budget is one byte shorter than the 48 KiB that every probe report holds")
-  void shouldReadNoMessageOfShortReportsCallWhenFreeRoomIsOneByteShorterThanSmallestRoom()
+      "Should read no message of a probe report's call when the free room in the memory budget is"
+          + " one byte shorter than its length plus the result length limit")
+  void shouldReadNoMessageOfReportCallWhenFreeRoomIsOneByteShorterThanItsLengthPlusResultLimit()
       throws Exception {
     var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
-    holdAllRoomBut(worker, SMALLEST_ROOM - 1);
+    holdAllRoomBut(worker, SHORT_REPORT_LENGTH + TIGHT_MEMORY.resultLengthLimitBytes() - 1);
 
     var shortReport = waitForRoom(worker, SHORT_REPORT_LENGTH);
 
@@ -974,11 +978,11 @@ class ProbeReportCallTest {
 
   @Test
   @DisplayName(
-      "Should read a short probe report's call at once when the free room in the memory budget is"
-          + " the 48 KiB that every probe report holds")
-  void shouldReadShortReportsCallAtOnceWhenFreeRoomIsSmallestRoom() throws Exception {
+      "Should read a probe report's call at once when the free room in the memory budget is its"
+          + " length plus the result length limit")
+  void shouldReadReportCallAtOnceWhenFreeRoomIsItsLengthPlusResultLengthLimit() throws Exception {
     var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
-    holdAllRoomBut(worker, SMALLEST_ROOM);
+    holdAllRoomBut(worker, SHORT_REPORT_LENGTH + TIGHT_MEMORY.resultLengthLimitBytes());
 
     var shortReport = waitForRoom(worker, SHORT_REPORT_LENGTH);
 
@@ -1043,10 +1047,10 @@ class ProbeReportCallTest {
   void shouldGiveRoomToWaitingReportCallsInOrderInWhichTheyAskedWhenLaterReportWouldFitFirst()
       throws Exception {
     var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
-    var holder = holdRoomForLargeReport(worker);
-    var earlier = waitForRoom(worker, 100_000);
-    var later = waitForRoom(worker, 50_000);
-    var last = waitForRoom(worker, 150_000);
+    var holder = waitForRoom(worker, LENGTH_OF_REPORT_THAT_LEAVES_ROOM);
+    var earlier = waitForRoom(worker, 50_000);
+    var later = waitForRoom(worker, 10_000);
+    var last = waitForRoom(worker, LENGTH_OF_REPORT_THAT_LEAVES_ROOM);
     var demandOfLaterBehindEarlier = later.unreadDemand();
 
     holder.cancel();
@@ -1067,9 +1071,9 @@ class ProbeReportCallTest {
   void shouldGiveRoomToNextWaitingReportCallWhenReportCallEndsWhileItWaitsForMemoryBudget()
       throws Exception {
     var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
-    holdRoomForLargeReport(worker);
-    var earlier = waitForRoom(worker, 100_000);
-    var later = waitForRoom(worker, 50_000);
+    waitForRoom(worker, LENGTH_OF_REPORT_THAT_LEAVES_ROOM);
+    var earlier = waitForRoom(worker, 50_000);
+    var later = waitForRoom(worker, 10_000);
 
     earlier.cancel();
 
@@ -1182,6 +1186,7 @@ class ProbeReportCallTest {
         ReportingWorker.connectedTo(
             ProbeReportLimits.builder()
                 .lengthLimitBytes(TIGHT_MEMORY.lengthLimitBytes())
+                .resultLengthLimitBytes(TIGHT_MEMORY.resultLengthLimitBytes())
                 .memoryBudgetBytes(TIGHT_MEMORY.memoryBudgetBytes())
                 .idleTimeout(SHORT_IDLE_TIMEOUT)
                 .build());
@@ -1218,17 +1223,14 @@ class ProbeReportCallTest {
     return call;
   }
 
-  /**
-   * Opens two report calls that hold all of the memory budget's room but this many bytes. Each
-   * states a length above the smallest room, so that each holds its length.
-   */
+  /** Opens a report call that holds all of the memory budget's room but this many bytes. */
   private static void holdAllRoomBut(ReportingWorker worker, long freeBytes) throws Exception {
-    var lengthOfSecond = SMALLEST_ROOM + 1;
-    var first = waitForRoom(worker, TIGHT_MEMORY.memoryBudgetBytes() - lengthOfSecond - freeBytes);
-    var second = waitForRoom(worker, lengthOfSecond);
+    var holder =
+        waitForRoom(
+            worker,
+            TIGHT_MEMORY.memoryBudgetBytes() - TIGHT_MEMORY.resultLengthLimitBytes() - freeBytes);
 
-    assertThat(first.unreadDemand()).isEqualTo(1);
-    assertThat(second.unreadDemand()).isEqualTo(1);
+    assertThat(holder.unreadDemand()).isEqualTo(1);
   }
 
   /** A report call of a background probe whose metadata states a probe report of this length. */

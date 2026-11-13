@@ -104,7 +104,8 @@ class ProbeReportLimitsTest {
     var limits =
         ProbeReportLimits.builder()
             .lengthLimitBytes(Integer.MAX_VALUE)
-            .memoryBudgetBytes(Integer.MAX_VALUE)
+            .memoryBudgetBytes(
+                Integer.MAX_VALUE + ProbeReportLimits.DEFAULT.resultLengthLimitBytes())
             .build();
 
     assertThat(limits.lengthLimitBytes()).isEqualTo(Integer.MAX_VALUE);

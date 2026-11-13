@@ -204,14 +204,15 @@ class WorkerSessionConfigurationTest {
 
   @Test
   @DisplayName(
-      "Should reject a probe report memory budget below the length limit when starting the"
-          + " listener")
-  void shouldRejectProbeReportMemoryBudgetBelowLengthLimitWhenStartingListener() {
+      "Should reject a probe report memory budget below the length limit plus the result length"
+          + " limit when starting the listener")
+  void shouldRejectProbeReportMemoryBudgetBelowLengthLimitPlusResultLimitWhenStartingListener() {
     contextRunner
         .withPropertyValues(
             "streaming.worker-session.port=0",
             "streaming.worker-session.probe-report.length-limit=1MB",
-            "streaming.worker-session.probe-report.memory-budget=1048575B")
+            "streaming.worker-session.probe-report.result-length-limit=128KB",
+            "streaming.worker-session.probe-report.memory-budget=1179647B")
         .run(
             context -> {
               assertThat(context).hasFailed();
@@ -220,20 +221,21 @@ class WorkerSessionConfigurationTest {
                   .isInstanceOf(IllegalArgumentException.class)
                   .hasMessage(
                       "Worker probe report memory budget must be at least the probe report length"
-                          + " limit");
+                          + " limit plus the result length limit");
             });
   }
 
   @Test
   @DisplayName(
       "Should start the listener when the probe report length limit is the limit of one message"
-          + " and the memory budget equals it")
-  void shouldStartListenerWhenProbeReportLengthLimitIsLimitOfOneMessageAndMemoryBudgetEqualsIt() {
+          + " and the memory budget is that limit plus the result length limit")
+  void shouldStartListenerWhenLengthLimitIsLimitOfOneMessageAndBudgetIsItPlusResultLimit() {
     contextRunner
         .withPropertyValues(
             "streaming.worker-session.port=0",
             "streaming.worker-session.probe-report.length-limit=128KB",
-            "streaming.worker-session.probe-report.memory-budget=128KB")
+            "streaming.worker-session.probe-report.result-length-limit=48KB",
+            "streaming.worker-session.probe-report.memory-budget=176KB")
         .run(
             context -> {
               assertThat(context).hasNotFailed();

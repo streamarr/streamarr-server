@@ -169,7 +169,7 @@ final class ProbeReportObserver implements StreamObserver<ReportProbeAttemptRequ
     room =
         memoryBudget.reserve(
             ProbeKind.of(admitted.request()),
-            ProbeReportFieldCounter.roomBytes(statedLength),
+            limits.roomBytes(statedLength),
             this::readOnceRoomIsFree);
     if (room.isGrantedAtOnce()) {
       requestMessage();

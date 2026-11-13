@@ -54,9 +54,9 @@ class ProbeReportFieldCounterTest {
   private static final int STATED_LENGTH = 32;
   // Long enough for a result beyond the result length limit, so that only the result breaks a rule.
   private static final long ROOM_FOR_A_LONGER_RESULT = 2L * RESULT_LENGTH_LIMIT;
-  // Long enough for every part of a probe report that tests the decoded size limit: 32 times this
-  // room, 2 MiB, is the limit.
-  private static final int ROOM_FOR_DECODED_PARTS = 64 * 1024;
+  // Long enough for every part of a probe report that tests the decoded size limit. With the
+  // shortest result length limit the room is 112 KiB, and 32 times the room, 3.5 MiB, is the limit.
+  private static final int LENGTH_OF_DECODED_PARTS = 64 * 1024;
   // Long enough that more empty measured streams than half the result length limit keep the
   // decoded size limit, so that only their count breaks a rule.
   private static final long ROOM_FOR_EMPTY_MEASURED_STREAMS = 1024L * 1024;
@@ -474,18 +474,19 @@ class ProbeReportFieldCounterTest {
           + " messages that each keep it on their own")
   void shouldBreakDecodedSizeLimitWhenReportHoldsNumbersTextsAndMessagesThatEachKeepItAlone()
       throws IOException {
-    // Of the decoded size limit, the numbers take about a quarter, the texts about a quarter and the
-    // messages about three fifths.
+    // Of the decoded size limit, the numbers take about an eighth, the texts about an eighth and
+    // the
+    // messages about four fifths.
     var numbers =
         ProbeAttemptReport.newBuilder()
-            .addAllKeyframePresentationTimeDeltas(Collections.nCopies(28_000, 1L))
+            .addAllKeyframePresentationTimeDeltas(Collections.nCopies(24_750, 1L))
             .build()
             .toByteString();
-    var texts = reportOfContainer(repeated(bytes(0x0a, 1, 'x'), 10_500));
+    var texts = reportOfContainer(repeated(bytes(0x0a, 1, 'x'), 9_250));
     var messages =
         reportOfMedia(
             ProbeMediaInfo.newBuilder()
-                .addAllStreams(Collections.nCopies(2_750, ProbeStreamInfo.getDefaultInstance())));
+                .addAllStreams(Collections.nCopies(6_425, ProbeStreamInfo.getDefaultInstance())));
     var allThree = numbers.concat(texts).concat(messages);
 
     var withoutNumbers = decodedSizeCounter().read(texts.concat(messages));
@@ -493,7 +494,7 @@ class ProbeReportFieldCounterTest {
     var withoutMessages = decodedSizeCounter().read(numbers.concat(texts));
     var withAllThree = decodedSizeCounter().read(allThree);
 
-    assertThat(allThree.size()).isLessThanOrEqualTo(ROOM_FOR_DECODED_PARTS);
+    assertThat(allThree.size()).isLessThanOrEqualTo(LENGTH_OF_DECODED_PARTS);
     assertThat(withoutNumbers).isEmpty();
     assertThat(withoutTexts).isEmpty();
     assertThat(withoutMessages).isEmpty();
@@ -631,10 +632,17 @@ class ProbeReportFieldCounterTest {
         .build();
   }
 
-  /** A counter of a probe report as long as its room, whose keyframe limit no part reaches. */
+  /**
+   * A counter of a probe report of the decoded parts' length at the shortest result length limit,
+   * whose keyframe limit no part reaches.
+   */
   private static ProbeReportFieldCounter decodedSizeCounter() {
-    var limits = ProbeReportLimits.builder().keyframeLimit(100_000).build();
-    return new ProbeReportFieldCounter(limits, ROOM_FOR_DECODED_PARTS);
+    var limits =
+        ProbeReportLimits.builder()
+            .keyframeLimit(100_000)
+            .resultLengthLimitBytes(48 * 1024)
+            .build();
+    return new ProbeReportFieldCounter(limits, LENGTH_OF_DECODED_PARTS);
   }
 
   private static ByteString reportOfMedia(ProbeMediaInfo.Builder media) {
