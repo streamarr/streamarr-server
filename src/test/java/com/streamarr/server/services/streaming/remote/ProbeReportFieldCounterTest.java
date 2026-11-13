@@ -54,8 +54,8 @@ class ProbeReportFieldCounterTest {
   private static final int STATED_LENGTH = 32;
   // Long enough for a result beyond the result length limit, so that only the result breaks a rule.
   private static final long ROOM_FOR_A_LONGER_RESULT = 2L * RESULT_LENGTH_LIMIT;
-  // Long enough for every part of a probe report that tests the decoded size limit: 24 times this
-  // room, 1.5 MiB, is the limit.
+  // Long enough for every part of a probe report that tests the decoded size limit: 32 times this
+  // room, 2 MiB, is the limit.
   private static final int ROOM_FOR_DECODED_PARTS = 64 * 1024;
   // Long enough that more empty measured streams than half the result length limit keep the
   // decoded size limit, so that only their count breaks a rule.
@@ -474,18 +474,18 @@ class ProbeReportFieldCounterTest {
           + " messages that each keep it on their own")
   void shouldBreakDecodedSizeLimitWhenReportHoldsNumbersTextsAndMessagesThatEachKeepItAlone()
       throws IOException {
-    // Of the decoded size limit, the numbers take 35%, while the decoder grows their list, the
-    // texts 30% and the messages 55%.
+    // Of the decoded size limit, the numbers take about a quarter, the texts about a quarter and the
+    // messages about three fifths.
     var numbers =
         ProbeAttemptReport.newBuilder()
-            .addAllKeyframePresentationTimeDeltas(Collections.nCopies(27_525, 1L))
+            .addAllKeyframePresentationTimeDeltas(Collections.nCopies(28_000, 1L))
             .build()
             .toByteString();
-    var texts = reportOfContainer(repeated(bytes(0x0a, 1, 'x'), 8_903));
+    var texts = reportOfContainer(repeated(bytes(0x0a, 1, 'x'), 10_500));
     var messages =
         reportOfMedia(
             ProbeMediaInfo.newBuilder()
-                .addAllStreams(Collections.nCopies(1_897, ProbeStreamInfo.getDefaultInstance())));
+                .addAllStreams(Collections.nCopies(2_750, ProbeStreamInfo.getDefaultInstance())));
     var allThree = numbers.concat(texts).concat(messages);
 
     var withoutNumbers = decodedSizeCounter().read(texts.concat(messages));

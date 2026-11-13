@@ -5,6 +5,7 @@ import static com.streamarr.server.services.streaming.remote.ReportingWorker.inv
 import static com.streamarr.server.services.streaming.remote.ReportingWorker.reportWithResultOfLength;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedOutputStream;
@@ -25,12 +26,15 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Probe Report Call Limits Tests")
@@ -59,6 +63,8 @@ class ProbeReportCallLimitsTest {
       (int) ProbeReportLimits.DEFAULT.resultLengthLimitBytes();
   // The most bytes of the probe report that one message of 128 KiB holds beside its framing.
   private static final int MESSAGE_BYTES = 131_000;
+  private static final int CHAPTER_CAP_BYTES = 32_768;
+  private static final long SHORTEST_RESULT_LENGTH_LIMIT = 48 * 1024;
 
   @Test
   @DisplayName(
@@ -374,28 +380,6 @@ class ProbeReportCallLimitsTest {
             .addAllKeyframeDecodeTimeDeltas(deltas);
       }
     },
-    // A worker leaves out chapters beyond 32,768 encoded bytes (ADR 0032). Each of these chapters
-    // takes 10 bytes: a start and an end below 128 seconds, and no title.
-    UNTITLED_CHAPTERS_AT_THE_CHAPTER_CAP {
-      @Override
-      ProbeAttemptReport.Builder report(ProbeAttemptReport.Builder report) {
-        var container = ProbeContainerInfo.newBuilder();
-        for (var chapter = 0; chapter < 3_276; chapter++) {
-          var start = 1 + chapter % 100;
-          container.addChapters(
-              ProbeChapter.newBuilder()
-                  .setStartTime(Duration.newBuilder().setSeconds(start))
-                  .setEndTime(Duration.newBuilder().setSeconds(start + 1L)));
-        }
-
-        assertThat(container.build().getChaptersList())
-            .as("chapters within the cap")
-            .extracting(ProbeChapter::getSerializedSize)
-            .containsOnly(8);
-        report.getResultBuilder().setMedia(ProbeMediaInfo.newBuilder().setContainer(container));
-        return report;
-      }
-    },
     ONE_BYTE_INTERVALS_AT_THE_INTERVAL_LIMIT {
       @Override
       ProbeAttemptReport.Builder report(ProbeAttemptReport.Builder report) {
@@ -411,6 +395,91 @@ class ProbeReportCallLimitsTest {
 
     /** Adds the dense entries to a probe report that holds a result. */
     abstract ProbeAttemptReport.Builder report(ProbeAttemptReport.Builder report);
+  }
+
+  @ParameterizedTest(name = "{0} at a result length limit of {1} bytes")
+  @MethodSource("chaptersAtTheCap")
+  @DisplayName(
+      "Should accept a probe report when its untitled chapters reach the chapter cap in a dense"
+          + " encoding")
+  void shouldAcceptProbeReportWhenItsUntitledChaptersReachChapterCapInDenseEncoding(
+      DenseChapters chapters, long resultLengthLimitBytes) throws Exception {
+    var limits = ProbeReportLimits.builder().resultLengthLimitBytes(resultLengthLimitBytes).build();
+    var worker = ReportingWorker.connectedTo(limits);
+    var probe = worker.dispatch();
+    var container = chapters.container();
+    assertThat(container.getSerializedSize())
+        .as("chapters at the cap")
+        .isBetween(CHAPTER_CAP_BYTES - chapters.entryBytes + 1, CHAPTER_CAP_BYTES);
+    var report = invalidMedia(probe.request());
+    report.getResultBuilder().setMedia(ProbeMediaInfo.newBuilder().setContainer(container));
+
+    var call = worker.report(probe.request(), report.build());
+
+    assertThat(call.isAnswered()).isTrue();
+    assertThat(probe.outcome().get(1, TimeUnit.SECONDS)).isEqualTo(report.build());
+  }
+
+  static Stream<Arguments> chaptersAtTheCap() {
+    var defaultLimit = ProbeReportLimits.DEFAULT.resultLengthLimitBytes();
+    return Stream.of(DenseChapters.values())
+        .flatMap(
+            chapters ->
+                Stream.of(
+                    arguments(chapters, defaultLimit),
+                    arguments(chapters, SHORTEST_RESULT_LENGTH_LIMIT)));
+  }
+
+  /**
+   * Untitled chapters as a worker encodes them, whose encoded bytes reach the cap of 32,768 that a
+   * worker keeps them within (ADR 0032).
+   */
+  private enum DenseChapters {
+    // A start and an end below 128 seconds.
+    ONE_BYTE_TIMES(10) {
+      @Override
+      ProbeChapter chapter(int position) {
+        var start = 1 + position % 100;
+        return ProbeChapter.newBuilder()
+            .setStartTime(Duration.newBuilder().setSeconds(start))
+            .setEndTime(Duration.newBuilder().setSeconds(start + 1L))
+            .build();
+      }
+    },
+    // A start and an end at the start of the timeline.
+    ZERO_TIMES(6) {
+      @Override
+      ProbeChapter chapter(int position) {
+        return ProbeChapter.newBuilder()
+            .setStartTime(Duration.getDefaultInstance())
+            .setEndTime(Duration.getDefaultInstance())
+            .build();
+      }
+    },
+    // No time base, so neither a start nor an end.
+    NO_TIMES(2) {
+      @Override
+      ProbeChapter chapter(int position) {
+        return ProbeChapter.getDefaultInstance();
+      }
+    };
+
+    private final int entryBytes;
+
+    DenseChapters(int entryBytes) {
+      this.entryBytes = entryBytes;
+    }
+
+    abstract ProbeChapter chapter(int position);
+
+    ProbeContainerInfo container() {
+      var container = ProbeContainerInfo.newBuilder();
+      for (var position = 0; position < CHAPTER_CAP_BYTES / entryBytes; position++) {
+        container.addChapters(chapter(position));
+      }
+
+      return container.build();
+    }
   }
 
   @Test

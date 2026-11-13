@@ -62,10 +62,11 @@ final class ProbeReportFieldCounter {
   // least its tag and its length.
   private static final int FEWEST_BYTES_OF_A_STREAM_IN_THE_RESULT = 2;
   // A probe report decodes to at most this many times its room in the memory budget, so the probe
-  // reports that the server reads at once decode to at most this many times the budget. A number
-  // of one byte in a list takes up to 20 bytes while the decoder grows the list, so a smaller
-  // multiple would refuse valid probe reports.
-  private static final long DECODED_BYTES_PER_BYTE_OF_ROOM = 24;
+  // reports that the server reads at once decode to at most this many times the budget. A smaller
+  // multiple would refuse valid probe reports: a number of one byte in a list takes up to 20 bytes
+  // while the decoder grows the list, and the untitled chapters that a short probe report holds at
+  // their cap take up to 30 times its room.
+  private static final long DECODED_BYTES_PER_BYTE_OF_ROOM = 32;
   // A short probe report can still hold a result's titles, handler names and chapters at their
   // caps, which decode to more than the multiple of their length, because each chapter and each
   // stream decodes to objects.
