@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionB
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import com.streamarr.server.domain.media.LearnedStreamEnd;
@@ -73,6 +74,13 @@ class LearnedStreamEndListenerTest {
   void writeTheProbedSource() throws IOException {
     source = Files.write(temporaryDirectory.resolve("movie.mkv"), new byte[] {1, 2, 3});
     probedSnapshot = snapshotOf(source);
+  }
+
+  @Test
+  @DisplayName("Should reject missing contained failure metrics when the listener is created")
+  void shouldRejectMissingContainedFailureMetricsWhenTheListenerIsCreated() {
+    assertThatThrownBy(() -> new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, null))
+        .isInstanceOf(NullPointerException.class);
   }
 
   @Test
