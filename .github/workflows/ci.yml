@@ -124,7 +124,8 @@ jobs:
           cache: maven
 
       # The Prometheus Compose test checks that the Compose file's Prometheus stores the server's
-      # export. Pull requests that change none of its inputs leave it out; main always runs it.
+      # export. Main always runs it. Other builds leave it out when their changes touch none of its
+      # inputs: a pull request's files, or a dispatched branch's changes since it left main.
       - name: Detect changes to the Prometheus Compose test's inputs
         id: prometheus_compose_inputs
         if: matrix.suite == 'integration' && github.ref != 'refs/heads/main'
