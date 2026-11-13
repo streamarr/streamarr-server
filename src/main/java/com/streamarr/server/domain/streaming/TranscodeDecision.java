@@ -23,7 +23,10 @@ import lombok.NonNull;
  * in a fixed quality, and is empty in Auto and Original (ADR 0013). {@code softwareEncoder} is true
  * when the encode runs on the software encoder of its codec family after a hardware encoder failed
  * (ADR 0044). {@code videoEncodeFormat} is the range and bit depth that the decision's encode
- * writes, and a decision that copies the video holds 8-bit SDR (#397).
+ * writes, and a decision that copies the video holds 8-bit SDR (#397). {@code assumedSourceMatrix}
+ * is the matrix with which every encode of the video reads the source, and is empty when {@link
+ * MediaProbe#assumedSourceMatrix()} is. A decision that copies the video holds it for the encoded
+ * lower variants beside the copy, and the copy's own job carries none (ADR 0013).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
@@ -40,7 +43,8 @@ public record TranscodeDecision(
     @NonNull OptionalInt audioStreamIndex,
     @NonNull Optional<DynamicRangeChoice> dynamicRangeChoice,
     boolean softwareEncoder,
-    @NonNull EncodeFormat videoEncodeFormat) {
+    @NonNull EncodeFormat videoEncodeFormat,
+    @NonNull Optional<AssumedSourceMatrix> assumedSourceMatrix) {
 
   public TranscodeDecision {
     var copiesVideo = transcodeMode != null && transcodeMode.copiesVideo();
@@ -177,5 +181,6 @@ public record TranscodeDecision(
     private OptionalInt audioStreamIndex = OptionalInt.empty();
     private Optional<DynamicRangeChoice> dynamicRangeChoice = Optional.empty();
     private EncodeFormat videoEncodeFormat = EncodeFormat.SDR_8_BIT;
+    private Optional<AssumedSourceMatrix> assumedSourceMatrix = Optional.empty();
   }
 }

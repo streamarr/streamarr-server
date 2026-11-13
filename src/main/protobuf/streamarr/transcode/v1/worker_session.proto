@@ -559,6 +559,12 @@ message VideoDecision {
   // UNSPECIFIED. An older server leaves it UNSPECIFIED on an SDR encode, and
   // the worker then writes 4:2:0. A PQ or HLG encode always sets it.
   ChromaSubsampling output_chroma_subsampling = 21;
+  // BT709 or SMPTE170M: the matrix with which an encode that does not tone-map
+  // reads a source whose probe result names no matrix (ADR 0013). UNSPECIFIED
+  // on every other job: the worker then reads each frame with the matrix that
+  // the frame names. The worker refuses any other value, a copy that sets the
+  // field, and a source whose compatible base is PQ, HLG or NONE.
+  MatrixCoefficients assumed_source_matrix = 22;
 }
 
 message Deinterlace {

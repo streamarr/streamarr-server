@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.AssumedSourceMatrix;
 import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
@@ -133,6 +134,55 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.encodeCodecProfile()).contains(EncodeCodecProfile.H264_HIGH);
     assertThat(decision.videoSource()).isEqualTo(source.videoPlaybackFacts());
     assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+  }
+
+  @Test
+  @DisplayName("Should assume BT.709 when it encodes a 1080p SDR source that names no matrix")
+  void shouldAssumeBt709WhenItEncodesA1080pSdrSourceThatNamesNoMatrix() {
+    var decision = decideFor(sdr1080pSourceWithoutAMatrix(), VideoFormatConstraint.ENCODE_ONLY);
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(decision.assumedSourceMatrix()).contains(AssumedSourceMatrix.BT709);
+  }
+
+  // ADR 0013: an encoded lower variant beside a copy reads the source as every other encode does.
+  @Test
+  @DisplayName(
+      "Should hold the assumed matrix for the encoded lower variants when it copies a 1080p SDR"
+          + " source that names no matrix")
+  void
+      shouldHoldTheAssumedMatrixForTheEncodedLowerVariantsWhenItCopiesA1080pSdrSourceThatNamesNoMatrix() {
+    var decision = decideFor(sdr1080pSourceWithoutAMatrix(), VideoFormatConstraint.COPY_OR_ENCODE);
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.assumedSourceMatrix()).contains(AssumedSourceMatrix.BT709);
+  }
+
+  private TranscodeDecision decideFor(MediaProbe source, VideoFormatConstraint constraint) {
+    return service
+        .decide(
+            TranscodeDecisionRequest.builder()
+                .source(source)
+                .capabilityDeclaration(declaring(H264))
+                .encodableVideoCodecFamilies(Set.of("h264"))
+                .videoFormatConstraint(constraint)
+                .build())
+        .orElseThrow();
+  }
+
+  private MediaProbe sdr1080pSourceWithoutAMatrix() {
+    return probeBuilder("h264", "aac")
+        .videoPlaybackFacts(
+            Optional.of(
+                VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                    .streamIndex(0)
+                    .videoProperties(
+                        Optional.of(
+                            VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                                .matrixCoefficients(Optional.empty())
+                                .build()))
+                    .build()))
+        .build();
   }
 
   @Test

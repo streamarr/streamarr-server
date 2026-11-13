@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import com.streamarr.server.domain.streaming.AssumedSourceMatrix;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ChromaticityCoordinates;
@@ -27,6 +28,7 @@ import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.Deinterlace;
 import com.streamarr.transcode.v1.DeinterlaceOutput;
 import com.streamarr.transcode.v1.FieldOrder;
+import com.streamarr.transcode.v1.MatrixCoefficients;
 import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
@@ -130,7 +132,20 @@ final class RemoteVariantJobMapper {
         .deinterlace()
         .map(RemoteVariantJobMapper::deinterlace)
         .ifPresent(video::setDeinterlace);
+    request
+        .transcodeDecision()
+        .assumedSourceMatrix()
+        .map(RemoteVariantJobMapper::matrixCoefficients)
+        .ifPresent(video::setAssumedSourceMatrix);
     return video.build();
+  }
+
+  // BT.601 has two code points with the same matrix, and the job names it by code point 6.
+  private static MatrixCoefficients matrixCoefficients(AssumedSourceMatrix assumed) {
+    return switch (assumed) {
+      case BT709 -> MatrixCoefficients.MATRIX_COEFFICIENTS_BT709;
+      case BT601 -> MatrixCoefficients.MATRIX_COEFFICIENTS_SMPTE170M;
+    };
   }
 
   @SuppressWarnings("checkstyle:fullyQualifiedName")
