@@ -176,7 +176,10 @@ public enum DecisionReason {
   DIRECT_PLAY_FAILED,
   /** An earlier format attempt's copy failed, so this format attempt encodes the video. */
   COPY_FAILED,
-  /** An earlier format attempt's encode failed, so this one encodes in another codec family. */
+  /**
+   * An earlier format attempt's encode failed, so this one encodes in another codec family or in
+   * another range and bit depth (ADR 0013).
+   */
   ENCODE_FAILED,
   /**
    * An earlier format attempt's Dolby Vision copy failed, so this one copies the video with its

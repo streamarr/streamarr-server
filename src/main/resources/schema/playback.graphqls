@@ -330,7 +330,10 @@ enum DecisionReason {
     DIRECT_PLAY_FAILED
     "The copy of the format attempt before this one failed, so this one encodes the video."
     COPY_FAILED
-    "The encode of the format attempt before this one failed, so this one encodes in another codec family."
+    """
+    The encode of the format attempt before this one failed, so this one encodes in another codec family or in another
+    range and bit depth.
+    """
     ENCODE_FAILED
     """
     The Dolby Vision copy of the format attempt before this one failed, so this one copies the video with its Dolby
