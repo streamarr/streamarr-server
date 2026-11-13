@@ -41,14 +41,22 @@ public final class IntegrationTestShardFilter implements PostDiscoveryFilter {
 
   private static SelectedShard select(String value) {
     var matcher = SHARD_OF_COUNT.matcher(value);
-    if (!matcher.matches()
-        || Integer.parseInt(matcher.group(1)) > Integer.parseInt(matcher.group(2))) {
-      throw new IllegalArgumentException(
-          PROPERTY + " must name a shard of a count, such as 1/2, but was \"" + value + "\"");
+    if (!matcher.matches()) {
+      throw invalidShard(value);
     }
 
-    return new SelectedShard(
-        Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)));
+    var shard = Integer.parseInt(matcher.group(1));
+    var count = Integer.parseInt(matcher.group(2));
+    if (shard > count) {
+      throw invalidShard(value);
+    }
+
+    return new SelectedShard(shard, count);
+  }
+
+  private static IllegalArgumentException invalidShard(String value) {
+    return new IllegalArgumentException(
+        PROPERTY + " must name a shard of a count, such as 1/2, but was \"" + value + "\"");
   }
 
   // The outermost class, so that a nested class's tests run in its enclosing class's shard.

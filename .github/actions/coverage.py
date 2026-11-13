@@ -5,6 +5,7 @@ import argparse
 import fnmatch
 import hashlib
 from pathlib import Path
+import re
 import sys
 import xml.etree.ElementTree as ET
 
@@ -34,7 +35,9 @@ def compiled_classes():
 
 def fingerprint(suite, shard):
     classes = compiled_classes()
-    name = suite if shard is None else f"{suite}-{shard}"
+    name = suite
+    if shard is not None:
+        name = f"{suite}-{shard}"
     Path(f"target/ci-{name}-classes.sha256").write_text(class_manifest(classes))
 
 
@@ -62,7 +65,7 @@ def authorization_classes(classes):
 
 def integration_shards():
     count = ET.parse("pom.xml").getroot().findtext(INTEGRATION_SHARDS, "", POM)
-    if not count.isdigit() or int(count) == 0:
+    if not re.fullmatch(r"[1-9][0-9]*", count):
         raise ValueError(f"pom.xml must set ci.integration.shards to a shard count, not {count!r}")
     return [f"integration-{shard}" for shard in range(1, int(count) + 1)]
 
