@@ -1,5 +1,7 @@
 package com.streamarr.server.controllers.auth;
 
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
+import static com.streamarr.server.support.PostgresLockTestSupport.cancelOnceBlocked;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -7,14 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.support.AuthTestSupport;
+import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,39 +25,48 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Holds an {@code ACCESS EXCLUSIVE} lock on the journal from a separate connection and checks that
- * the APIs report credential verification unavailable when the write times out.
+ * Holds an {@code ACCESS EXCLUSIVE} lock on the journal from a separate connection, cancels the
+ * request's journal statement once it waits on that lock, and checks that the APIs report
+ * credential verification unavailable when the write fails.
  */
 @Tag("IntegrationTest")
 @DisplayName("Credential Journal Outage Integration Tests")
 class CredentialJournalOutageIT extends AbstractIntegrationTest {
 
+  private static final String JOURNAL_STATEMENT = "%credential_attempt%";
+
   @Autowired private MockMvc mockMvc;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private DataSource dataSource;
 
-  private final CountDownLatch tableLocked = new CountDownLatch(1);
-  private final CountDownLatch releaseTable = new CountDownLatch(1);
-  private ExecutorService executor;
-  private Future<?> lockHolder;
   private AuthTestSupport.TestIdentity identity;
+  private Connection journalLock;
+  private CompletableFuture<Void> journalWriteCancelled;
 
   @BeforeEach
-  void lockJournalTable() throws InterruptedException {
+  void failTheJournalWriteBehindATableLock() throws SQLException {
     identity = authTestSupport.createIdentity();
-    executor = Executors.newVirtualThreadPerTaskExecutor();
-    lockHolder = executor.submit(this::holdJournalTableLock);
-    assertThat(tableLocked.await(10, TimeUnit.SECONDS))
-        .as("the credential journal should be locked before the ceremony starts")
-        .isTrue();
+    journalLock = dataSource.getConnection();
+    journalLock.setAutoCommit(false);
+    try (var statement = journalLock.createStatement()) {
+      statement.execute("LOCK TABLE credential_attempt IN ACCESS EXCLUSIVE MODE");
+    }
+
+    journalWriteCancelled =
+        cancelOnceBlocked(dataSource, backendPid(journalLock), JOURNAL_STATEMENT);
   }
 
   @AfterEach
-  void releaseJournalTable() throws InterruptedException, ExecutionException, TimeoutException {
-    releaseTable.countDown();
-    lockHolder.get(10, TimeUnit.SECONDS);
-    executor.close();
-    authTestSupport.deleteIdentity(identity);
+  void releaseJournalTable() throws SQLException {
+    try {
+      assertThat(journalWriteCancelled)
+          .as("the request's journal statement waited on the lock and was cancelled")
+          .succeedsWithin(Duration.ofSeconds(10));
+    } finally {
+      journalLock.rollback();
+      journalLock.close();
+      authTestSupport.deleteIdentity(identity);
+    }
   }
 
   @Test
@@ -114,21 +121,5 @@ class CredentialJournalOutageIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.errors[0].extensions.errorType").value("UNAVAILABLE"))
         .andExpect(
             jsonPath("$.errors[0].extensions.code").value("CREDENTIAL_VERIFICATION_UNAVAILABLE"));
-  }
-
-  private Void holdJournalTableLock() throws SQLException, InterruptedException {
-    try (var connection = dataSource.getConnection()) {
-      connection.setAutoCommit(false);
-      try (var statement = connection.createStatement()) {
-        statement.execute("LOCK TABLE credential_attempt IN ACCESS EXCLUSIVE MODE");
-      }
-
-      tableLocked.countDown();
-      releaseTable.await(60, TimeUnit.SECONDS);
-
-      connection.rollback();
-    }
-
-    return null;
   }
 }

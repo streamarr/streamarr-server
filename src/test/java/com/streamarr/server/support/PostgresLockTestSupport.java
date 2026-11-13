@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -163,6 +164,38 @@ public final class PostgresLockTestSupport {
   public static int awaitBlockedBackendPidRunning(
       Connection observer, int blockerPid, String queryPattern) {
     return awaitBlockedBackendPid(observer, new BlockedBackend(blockerPid, null, queryPattern));
+  }
+
+  /**
+   * Starts a virtual thread that waits for a backend that {@code blockerPid} blocks and whose
+   * current statement matches {@code queryPattern} (ILIKE), then cancels that statement. It fails
+   * at once with SQLSTATE 57014, so a test of how a failed statement is handled need not wait out a
+   * lock timeout. The future fails when no such backend waits within the wait's bound.
+   */
+  public static CompletableFuture<Void> cancelOnceBlocked(
+      DataSource dataSource, int blockerPid, String queryPattern) {
+    var wanted = new BlockedBackend(blockerPid, null, queryPattern);
+    return CompletableFuture.runAsync(
+        () -> awaitAndCancelBlockedStatement(dataSource, wanted), Thread.ofVirtual()::start);
+  }
+
+  /** Cancels the statement that {@code backendPid} runs, as {@code pg_cancel_backend} does. */
+  public static void cancelStatement(Connection observer, int backendPid) throws SQLException {
+    try (var statement = observer.prepareStatement("SELECT pg_cancel_backend(?)")) {
+      statement.setInt(1, backendPid);
+      try (var result = statement.executeQuery()) {
+        assertThat(result.next()).isTrue();
+        assertThat(result.getBoolean(1)).as("backend %d was signalled", backendPid).isTrue();
+      }
+    }
+  }
+
+  private static void awaitAndCancelBlockedStatement(DataSource dataSource, BlockedBackend wanted) {
+    try (var observer = dataSource.getConnection()) {
+      cancelStatement(observer, awaitBlockedBackendPid(observer, wanted));
+    } catch (SQLException failure) {
+      throw new IllegalStateException("Could not cancel the blocked statement.", failure);
+    }
   }
 
   private static int awaitBlockedBackendPid(Connection observer, BlockedBackend wanted) {
