@@ -509,7 +509,7 @@ public final class WorkerContainerFixture implements AutoCloseable {
   /**
    * A filter chain that draws each picture's frame number, counted from 0 and below 1024, as black
    * and white bars across the top eighth of the picture. Append it to the filter graph of a
-   * generated source, and read the numbers back with {@link #decodedFrameNumbers}.
+   * generated source, and read the numbers back with {@link #decodedNumberedPictures}.
    */
   public static String frameNumberBars() {
     var bars = new StringBuilder("drawbox=x=0:y=0:w=iw:h=ih/8:color=black:t=fill");
@@ -523,10 +523,42 @@ public final class WorkerContainerFixture implements AutoCloseable {
   }
 
   /**
-   * The frame number that each picture decoded from the media's first video stream shows in its
-   * {@link #frameNumberBars}, in presentation order. Each bar must read as clearly black or white.
+   * Each picture that the worker image's FFmpeg decodes from the media's first video stream, in the
+   * decoder's output order: the presentation time that ffprobe reads for the picture, and the frame
+   * number that its {@link #frameNumberBars} show. Each bar must read as clearly black or white.
    */
-  public List<Long> decodedFrameNumbers(Path media) throws Exception {
+  public List<NumberedPicture> decodedNumberedPictures(Path media) throws Exception {
+    var presentationTimes = decodedPresentationTimes(media);
+    var frameNumbers = decodedFrameNumbers(media);
+    assertThat(frameNumbers)
+        .as("the frame numbers of the pictures that ffprobe times")
+        .hasSameSizeAs(presentationTimes);
+    return IntStream.range(0, frameNumbers.size())
+        .mapToObj(
+            picture ->
+                new NumberedPicture(presentationTimes.get(picture), frameNumbers.get(picture)))
+        .toList();
+  }
+
+  /** A decoded picture's presentation time in seconds and the frame number that it shows. */
+  public record NumberedPicture(double presentationSeconds, long frameNumber) {}
+
+  // ffprobe reports the presentation time that the decoder carries from each picture's sample.
+  // ffprobe outputs the pictures in the same order as FFmpeg, so the two lists pair by position.
+  private List<Double> decodedPresentationTimes(Path media) throws Exception {
+    return JsonMapper.shared()
+        .readTree(
+            probeOutput(
+                media,
+                List.of(
+                    "-select_streams", "v:0", "-show_entries", "frame=pts_time", "-of", "json")))
+        .path("frames")
+        .valueStream()
+        .map(frame -> Double.parseDouble(frame.path("pts_time").asString()))
+        .toList();
+  }
+
+  private List<Long> decodedFrameNumbers(Path media) throws Exception {
     var input = "/tmp/numbers-" + UUID.randomUUID() + ".mp4";
     container.copyFileToContainer(Transferable.of(Files.readAllBytes(media), 0644), input);
     var decode =

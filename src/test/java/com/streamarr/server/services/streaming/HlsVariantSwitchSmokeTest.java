@@ -35,6 +35,7 @@ import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.UploadBudgetFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
+import com.streamarr.server.fixtures.WorkerContainerFixture.NumberedPicture;
 import com.streamarr.server.fixtures.WorkerContainerFixture.ProbedPackets;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -58,6 +59,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -365,17 +367,18 @@ class HlsVariantSwitchSmokeTest {
       SwitchedSource switched) throws Exception {
     var playback = playSwitching(switched, FROM_THE_COPY);
     var sourceFrames = sourceFrames(playback.source());
+    var presented = presentedPictures(playback.played());
 
     assertSwitchedSegmentsPlayAsTheSource(playback);
-    assertThat(presentedFrames(playback.played()))
+    assertThat(presented)
+        .extracting(PresentedPicture::frame)
         .as(
             "the video frames that the player presents across its switches at 10 and 20 s: every"
                 + " source frame once, and none after the copy's last")
         .containsExactlyElementsOf(sourceFrames);
-    assertThat(playback.played())
-        .flatExtracting(ReadMedia::frameNumbers)
-        .as("the source picture that each of those frames shows: every source picture once")
-        .containsExactlyElementsOf(sourceFrames);
+    assertThat(presented)
+        .as("the source picture that the player presents at each of those frames: its own")
+        .containsExactlyElementsOf(eachShowingItsOwnNumber(sourceFrames));
     assertEverySourceAudioPacketPlaysOnce(playback);
   }
 
@@ -399,6 +402,7 @@ class HlsVariantSwitchSmokeTest {
     var playback = playSwitching(switched, FROM_THE_ENCODED_VARIANT);
     var sourceFrames = sourceFrames(playback.source());
     var heldFrames = framesFrom(sourceFrames.size(), playback.advertisedEnd());
+    var presented = presentedPictures(playback.played());
 
     // The source's noise differs in every picture, and a held frame shows the last picture again.
     // The encode is lossy, so the repeated picture still changes a little. Against the pinned
@@ -413,18 +417,20 @@ class HlsVariantSwitchSmokeTest {
     assertThat(heldFrames)
         .as("the source's last picture ends before the advertised end, so an encode holds it")
         .isNotEmpty();
-    assertThat(presentedFrames(playback.played()))
+    assertThat(presented)
+        .extracting(PresentedPicture::frame)
         .as(
             "the video frames that the player presents across its switches at 10 and 20 s: every"
                 + " source frame once, then the frames that the encoded last segment holds")
         .containsExactlyElementsOf(concat(sourceFrames, heldFrames));
-    assertThat(playback.played())
-        .flatExtracting(ReadMedia::frameNumbers)
+    assertThat(presented)
         .as(
-            "the source picture that each of those frames shows: every source picture once, then"
-                + " the last source picture in each held frame")
+            "the source picture that the player presents at each of those frames: its own, then"
+                + " the last source picture at each held frame")
         .containsExactlyElementsOf(
-            concat(sourceFrames, Collections.nCopies(heldFrames.size(), sourceFrames.getLast())));
+            concat(
+                eachShowingItsOwnNumber(sourceFrames),
+                eachShowing(heldFrames, sourceFrames.getLast())));
     assertThat(lastPictureChanges.subList(firstHeld, lastPictureChanges.size()))
         .as(
             "each held frame repeats the picture before it, where the smallest change between two"
@@ -456,9 +462,9 @@ class HlsVariantSwitchSmokeTest {
     var encoded = playback.playlists().get(Variant.ENCODED);
     var played = playback.played();
 
-    assertThat(source.frameNumbers())
-        .as("the frame number that each source picture shows, in presentation order")
-        .containsExactlyElementsOf(sourceFrames(source));
+    assertThat(picturesOnTimeline(source, 0).toList())
+        .as("the frame number that each source picture shows at its presentation time: its own")
+        .containsExactlyElementsOf(eachShowingItsOwnNumber(sourceFrames(source)));
     assertThat(
             playback
                 .session()
@@ -721,17 +727,18 @@ class HlsVariantSwitchSmokeTest {
   }
 
   // What a player decodes from one file, read once with the worker image's FFmpeg: the hash of
-  // each picture and the frame number that it shows, the file's codecs and packets, and how its
-  // first frame signals its range and bit depth. A copy can repackage a keyframe's sample, as the
-  // worker's Annex B filter does for H.265 from Matroska, so the pictures are compared and not the
-  // video packets. Decoding is exact, and the noise makes every picture differ.
+  // each picture, the frame number that it shows with its presentation time, the file's codecs and
+  // packets, and how its first frame signals its range and bit depth. A copy can repackage a
+  // keyframe's sample, as the worker's Annex B filter does for H.265 from Matroska, so the pictures
+  // are compared and not the video packets. Decoding is exact, and the noise makes every picture
+  // differ.
   private ReadMedia read(Path media) throws Exception {
     var worker = workerFixture.worker();
     var firstFrame = worker.firstVideoFrame(media);
     return ReadMedia.builder()
         .path(media)
         .pictures(worker.decodedVideoFrameHashes(media))
-        .frameNumbers(worker.decodedFrameNumbers(media))
+        .numberedPictures(worker.decodedNumberedPictures(media))
         .packets(worker.probedPackets(media))
         .rangeSignalling(
             RANGE_SIGNALLING.stream()
@@ -740,28 +747,44 @@ class HlsVariantSwitchSmokeTest {
         .build();
   }
 
-  // The number of each video frame that the files present, on the 24 fps timeline and in the
-  // files' order. Times count in whole frames: a switch may repeat or skip less than one output
-  // frame (ADR 0050). ffprobe reports a fragmented MP4's timestamps later by its most negative
-  // composition offset, the video's reorder delay, which can differ between the copy and the
-  // encode. So the first sample's presentation time comes from the boxes: tfdt plus composition
-  // offset (ISO/IEC 14496-12 8.8.12 and 8.8.8), less the media time of the initialization
-  // segment's edit (8.6.6), which a player applies. ffprobe gives every other frame's distance from
-  // that sample. A file's packets come in decode order, so each file's frames are sorted.
-  private static List<Long> presentedFrames(List<ReadMedia> media) throws Exception {
-    var frames = new ArrayList<Long>();
+  // Each video frame that the files present, on the 24 fps timeline and in the files' order, with
+  // the number of the source picture that it shows. Times count in whole frames: a switch may
+  // repeat or skip less than one output frame (ADR 0050). ffprobe reports a fragmented MP4's
+  // timestamps later by its most negative composition offset, the video's reorder delay, which can
+  // differ between the copy and the encode. So the first sample's presentation time comes from the
+  // boxes: tfdt plus composition offset (ISO/IEC 14496-12 8.8.12 and 8.8.8), less the media time
+  // of the initialization segment's edit (8.6.6), which a player applies. ffprobe gives every
+  // picture's distance from that sample.
+  private static List<PresentedPicture> presentedPictures(List<ReadMedia> media) throws Exception {
+    var presented = new ArrayList<PresentedPicture>();
     for (var file : media) {
       var bytes = Files.readAllBytes(file.path());
       var firstSample =
           Fmp4Fixture.firstVideoPresentationTime(bytes) - Fmp4Fixture.videoEditMediaTime(bytes);
-      var probed = file.packets().presentationTimesOf(VIDEO);
-      probed.stream()
-          .map(seconds -> frameNumber(firstSample + seconds - probed.getFirst()))
-          .sorted()
-          .forEach(frames::add);
+      var firstPacket = file.packets().presentationTimesOf(VIDEO).getFirst();
+      picturesOnTimeline(file, firstSample - firstPacket).forEach(presented::add);
     }
 
-    return frames;
+    return presented;
+  }
+
+  // A player presents each picture at the picture's own presentation time, in whatever order the
+  // decoder outputs the pictures. A picture with a wrong time therefore shows at another frame.
+  private static Stream<PresentedPicture> picturesOnTimeline(ReadMedia file, double shift) {
+    return file.numberedPictures().stream()
+        .map(
+            picture ->
+                new PresentedPicture(
+                    frameNumber(picture.presentationSeconds() + shift), picture.frameNumber()))
+        .sorted(Comparator.comparingLong(PresentedPicture::frame));
+  }
+
+  private static List<PresentedPicture> eachShowingItsOwnNumber(List<Long> frames) {
+    return frames.stream().map(frame -> new PresentedPicture(frame, frame)).toList();
+  }
+
+  private static List<PresentedPicture> eachShowing(List<Long> frames, long picture) {
+    return frames.stream().map(frame -> new PresentedPicture(frame, picture)).toList();
   }
 
   // Matroska stores each frame's presentation time itself, so ffprobe reads it unchanged.
@@ -785,7 +808,7 @@ class HlsVariantSwitchSmokeTest {
         .toList();
   }
 
-  private static List<Long> concat(List<Long> first, List<Long> second) {
+  private static <T> List<T> concat(List<T> first, List<T> second) {
     return Stream.concat(first.stream(), second.stream()).toList();
   }
 
@@ -794,11 +817,14 @@ class HlsVariantSwitchSmokeTest {
     ENCODED
   }
 
+  // One frame of the 24 fps timeline and the number of the source picture that it shows.
+  private record PresentedPicture(long frame, long picture) {}
+
   @Builder
   private record ReadMedia(
       Path path,
       List<String> pictures,
-      List<Long> frameNumbers,
+      List<NumberedPicture> numberedPictures,
       ProbedPackets packets,
       Map<String, String> rangeSignalling) {
 
