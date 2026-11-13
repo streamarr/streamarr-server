@@ -14,11 +14,20 @@ public class IntegrationTestFork {
   // so two forks with one database name would truncate each other's tables. Fork 1, and a run
   // outside Failsafe's forks, keep the container that developers already reuse.
   static String databaseName(Properties systemProperties) {
-    var fork = Integer.parseInt(systemProperties.getProperty(NUMBER_PROPERTY, "1"));
+    var fork = forkNumber(systemProperties.getProperty(NUMBER_PROPERTY, "1"));
     if (fork == 1) {
       return "streamarr";
     }
 
     return "streamarr_fork" + fork;
+  }
+
+  private static int forkNumber(String value) {
+    try {
+      return Integer.parseInt(value);
+    } catch (NumberFormatException e) {
+      throw new IllegalStateException(
+          "%s must be a Failsafe fork number, but was \"%s\"".formatted(NUMBER_PROPERTY, value), e);
+    }
   }
 }

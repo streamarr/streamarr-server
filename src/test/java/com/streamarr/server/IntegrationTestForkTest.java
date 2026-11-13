@@ -1,6 +1,7 @@
 package com.streamarr.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Properties;
 import org.junit.jupiter.api.DisplayName;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Integration Test Fork Tests")
@@ -31,6 +33,18 @@ class IntegrationTestForkTest {
   void shouldGiveALaterForkADatabaseOfItsOwnWhenFailsafeNumbersTheForks(
       String number, String database) {
     assertThat(IntegrationTestFork.databaseName(forkNumber(number))).isEqualTo(database);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"", "${surefire.forkNumber}"})
+  @DisplayName("Should name the fork number property when its value is not a number")
+  void shouldNameTheForkNumberPropertyWhenItsValueIsNotANumber(String value) {
+    var properties = forkNumber(value);
+
+    assertThatThrownBy(() -> IntegrationTestFork.databaseName(properties))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(IntegrationTestFork.NUMBER_PROPERTY)
+        .hasMessageContaining("\"" + value + "\"");
   }
 
   private static Properties forkNumber(String value) {
