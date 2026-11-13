@@ -10,6 +10,7 @@ import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
+import com.streamarr.server.graphql.cursor.ShareListCursors;
 import com.streamarr.server.graphql.dto.ProfileShareDetails;
 import com.streamarr.server.graphql.dto.ProfileSharePreview;
 import com.streamarr.server.graphql.inputs.AcceptProfileShareInput;
@@ -27,9 +28,7 @@ import com.streamarr.server.graphql.mutation.sharing.OfferProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.RejectProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
-import com.streamarr.server.services.identity.HouseholdSharesScope;
 import com.streamarr.server.services.identity.ProfileSharingService;
-import com.streamarr.server.services.identity.ShareListScope;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationService;
@@ -37,7 +36,6 @@ import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
 import java.util.List;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 
 @DgsComponent
@@ -72,10 +70,8 @@ public class ProfileSharingResolver {
       @InputArgument Boolean visitorsOnly,
       DataFetchingEnvironment dfe) {
     var household =
-        new HouseholdSharesScope(
-            new ShareListScope(Ids.parseUuid(householdId), statusesOrEvery(statuses)),
-            Boolean.TRUE.equals(visitorsOnly));
-    var list = new ListIdentity("household-shares", household);
+        ShareListCursors.householdScope(Ids.parseUuid(householdId), statuses, visitorsOnly);
+    var list = ShareListCursors.listOf(household);
     var page =
         profileSharingService.householdShares(
             authorizationService.currentIdentity(), household, pageRequest(list, dfe));
@@ -87,8 +83,8 @@ public class ProfileSharingResolver {
       @InputArgument String profileId,
       @InputArgument List<ProfileShareStatus> statuses,
       DataFetchingEnvironment dfe) {
-    var profile = new ShareListScope(Ids.parseUuid(profileId), statusesOrEvery(statuses));
-    var list = new ListIdentity("profile-shares", profile);
+    var profile = ShareListCursors.profileScope(Ids.parseUuid(profileId), statuses);
+    var list = ShareListCursors.listOf(profile);
     var page =
         profileSharingService.profileShares(
             authorizationService.currentIdentity(), profile, pageRequest(list, dfe));
@@ -170,11 +166,6 @@ public class ProfileSharingResolver {
 
   private ProfileShareDetails details(ProfileHouseholdShare share) {
     return ProfileShareDetails.from(share, clock.instant());
-  }
-
-  /** A missing status list keeps every share, as an empty one does. */
-  private static List<ProfileShareStatus> statusesOrEvery(List<ProfileShareStatus> statuses) {
-    return Objects.requireNonNullElse(statuses, List.of());
   }
 
   private PageRequest pageRequest(ListIdentity list, DataFetchingEnvironment dfe) {
