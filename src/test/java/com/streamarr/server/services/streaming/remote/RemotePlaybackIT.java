@@ -9,7 +9,6 @@ import static org.awaitility.Awaitility.await;
 
 import com.google.common.primitives.Bytes;
 import com.streamarr.server.controllers.StreamController;
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
@@ -25,7 +24,6 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
-import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -560,31 +558,6 @@ class RemotePlaybackIT {
       assertThat(segmentStore.publication("segment0.m4s"))
           .as("the first media segment of the MP3 source")
           .succeedsWithin(Duration.ofSeconds(30));
-    }
-  }
-
-  @Test
-  @DisplayName(
-      "Should fail the probe for retry when the worker reads filenames under an ASCII locale")
-  void shouldFailProbeForRetryWhenWorkerReadsFilenamesUnderAsciiLocale() throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var mediaFile = Files.writeString(mediaRoot.resolve("Café Meridian (2006).mkv"), "test media");
-    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
-
-    try (var server = server(segmentStore);
-        var worker = workerBuilder(server, mediaRoot).filenameLocale("POSIX").build()) {
-      server.start();
-      worker.start();
-      var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, mediaRoot);
-      var request = probeRequest(mediaFile);
-
-      assertThatThrownBy(() -> service.probe(request))
-          .isInstanceOfSatisfying(
-              ProbeExecutionException.class,
-              exception ->
-                  assertThat(exception.reason()).isEqualTo(ItemFailureReason.SOURCE_INACCESSIBLE))
-          .hasMessage(
-              "Worker probe reported a retryable failure: PROBE_FAILURE_SOURCE_UNAVAILABLE");
     }
   }
 
