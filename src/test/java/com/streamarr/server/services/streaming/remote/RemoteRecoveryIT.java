@@ -62,8 +62,9 @@ class RemoteRecoveryIT {
 
   private static final UUID SOURCE_NAMESPACE_ID =
       UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
-  // A start can pull the worker image before the fixture's two-minute readiness wait.
-  private static final Duration WORKER_START_BOUND = Duration.ofMinutes(3);
+  // The test's two-minute timeout stops a slow start before this bound runs out, as it did when
+  // the workers started one after the other.
+  private static final Duration WORKER_START_BOUND = Duration.ofMinutes(2);
 
   @TempDir Path tempDir;
 
