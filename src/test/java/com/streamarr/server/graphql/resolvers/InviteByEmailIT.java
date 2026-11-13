@@ -183,11 +183,9 @@ class InviteByEmailIT extends AbstractIntegrationTest {
           + " other")
   void shouldInviteInAsManyStatementsAsToAnAddressNobodyHasWhenTheAddressIsAnyOther(Invitee invitee)
       throws Exception {
-    var nobody = addressOf(Invitee.NO_ACCOUNT);
-    var address = addressOf(invitee);
-
-    var forNobody = statementCount.statementsWhile(() -> invite(nobody));
-    var forAddress = statementCount.statementsWhile(() -> invite(address));
+    var forNobody =
+        statementCount.statementsWhile(() -> uninvited(Invitee.NO_ACCOUNT), this::invite);
+    var forAddress = statementCount.statementsWhile(() -> uninvited(invitee), this::invite);
 
     assertThat(forAddress).isEqualTo(forNobody);
   }
@@ -399,6 +397,12 @@ class InviteByEmailIT extends AbstractIntegrationTest {
         yield disabled.account().getEmail();
       }
     };
+  }
+
+  /** An address of the invitee's kind, while no invitation is stored. */
+  private String uninvited(Invitee invitee) {
+    invitationRepository.deleteAll();
+    return addressOf(invitee);
   }
 
   private TestIdentity holderOf(String address) {
