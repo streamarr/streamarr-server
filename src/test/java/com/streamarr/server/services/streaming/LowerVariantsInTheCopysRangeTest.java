@@ -68,11 +68,14 @@ import com.streamarr.server.services.streaming.events.TerminalTranscodeFailureEv
 import com.streamarr.server.services.streaming.events.VariantRecoveryExhaustedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executor;
@@ -952,6 +955,60 @@ class LowerVariantsInTheCopysRangeTest {
     assertThat(listedUris(playlists.generateMultivariantPlaylist(copyAlone, "t")))
         .containsExactly("stream.m3u8?t=t");
     assertThat(workers.isRunning(copyAlone.getSessionId(), "default")).isTrue();
+  }
+
+  // The upload budget starts the top lower variant that it keeps while the server creates the
+  // stream session (ADR 0050), so a worker can report that variant's failure before the format
+  // attempt is ready. A lower variant's failure never ends the copy, so the copy alone replaces
+  // that stream session too.
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeFailure.class,
+      names = {"OUTPUT_MISMATCH", "INVALID_SPECIFICATION", "SEGMENT_CAP_EXCEEDED"})
+  @DisplayName(
+      "Should replace the stream session with the copy alone when the lower variant that the upload"
+          + " budget starts fails before the format attempt is ready")
+  void shouldReplaceTheStreamSessionWithTheCopyAloneWhenTheBudgetsLowerVariantFailsBeforeItIsReady(
+      TranscodeFailure failure) {
+    var formatAttempts = new ArrayDeque<Runnable>();
+    var budgeted = budgetedPlayback(budgetedRig().formatAttempts(formatAttempts::add).build());
+    startAPlaybackThatLeavesNoRoomForTheNextCopy(budgeted);
+    var failedIds = new ArrayList<UUID>();
+    workers.afterEachStart(
+        request -> {
+          if (request.variantLabel().equals("720p")) {
+            failedIds.add(request.sessionId());
+            workers.failTerminally(request.sessionId(), "720p", failure);
+            budgeted
+                .playback()
+                .onTerminalTranscodeFailure(terminalFailure(request.sessionId(), "720p", failure));
+          }
+        });
+    var command = startAuto(clientThatPlaysEveryRange());
+
+    var started = accepted(budgeted.playback().start(command));
+    runEach(formatAttempts);
+
+    var after = budgeted.snapshotOf(started, command);
+    var copyAlone = sessionOf(after);
+    assertThat(failedIds).singleElement().isNotEqualTo(copyAlone.getSessionId());
+    assertThat(runningVariants(failedIds.getFirst())).isEmpty();
+    assertThatTheCopyPlaysAlone(after);
+    assertThat(workers.isRunning(copyAlone.getSessionId(), "default")).isTrue();
+    assertThat(after.formatAttemptCount()).isEqualTo(1);
+    assertThat(after.decisions())
+        .last()
+        .satisfies(
+            decision ->
+                assertThat(decision.reasons())
+                    .first()
+                    .isEqualTo(DecisionReason.LOWER_VARIANT_FAILED));
+  }
+
+  private static void runEach(Queue<Runnable> work) {
+    while (!work.isEmpty()) {
+      work.remove().run();
+    }
   }
 
   // ADR 0050 for an AV1 copy: a hardware AV1 encoder that writes every range runs beside H.265 and

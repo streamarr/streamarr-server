@@ -261,7 +261,7 @@ public class PlaybackSessionService implements AutoCloseable {
   }
 
   // The player's failure belongs to the variant that it plays. A lower variant's withdraws the
-  // lower variants; any other recovers.
+  // lower variants; any other recovers. A player plays only a ready format attempt.
   private void recoverFromPlayersFormatFailure(
       PlaybackSession playback, ReportPlaybackFormatFailureCommand command) {
     var failedId = command.streamSessionId();
@@ -310,13 +310,30 @@ public class PlaybackSessionService implements AutoCloseable {
         && session.isLowerVariantBesideTheCopy(variantLabel);
   }
 
-  // Answers whether the failed job attempt was an encoded lower variant's beside the copy that
-  // plays, so that the failure's own recovery does not follow it.
+  // The upload budget can start a lower variant while the server creates the stream session, so
+  // that variant's job attempt can fail before the format attempt is ready. The streaming service
+  // lists the stream session before it starts any job attempt.
+  private boolean isLowerVariantBesideThePendingCopy(
+      PlaybackSession playback, UUID streamId, String variantLabel) {
+    return isCurrentAttempt(playback, streamId)
+        && playback.current instanceof PlaybackFormatAttempt.Pending
+        && streamingService.getAllSessions().stream()
+            .anyMatch(
+                session ->
+                    session.getSessionId().equals(streamId)
+                        && session.isLowerVariantBesideTheCopy(variantLabel));
+  }
+
+  // Answers whether the failed job attempt was an encoded lower variant's beside the copy of the
+  // current format attempt, so that the failure's own recovery does not follow it.
   private boolean tryWithdrawLowerVariantsAfterJobFailure(UUID failedId, String variantLabel) {
     var playback = streamOwners.get(failedId);
     if (playback == null
         || !locked(
-            playback, () -> isLowerVariantBesideTheReadyCopy(playback, failedId, variantLabel))) {
+            playback,
+            () ->
+                isLowerVariantBesideTheReadyCopy(playback, failedId, variantLabel)
+                    || isLowerVariantBesideThePendingCopy(playback, failedId, variantLabel))) {
       return false;
     }
 
