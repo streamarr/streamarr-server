@@ -214,14 +214,15 @@ A worker leaves a larger measurement out of a probe.
 The server sizes each bitrate scan chunk so that its keyframes, each measured in every measured stream, stay within the limit.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_LENGTH_LIMIT` sets `probe_report_length_limit_bytes`, the length of the longest probe report. It defaults to `16MB` and must be at least `128KB`, the limit of one message.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_RESULT_LENGTH_LIMIT` sets `probe_result_length_limit_bytes`, the length of the longest encoded result in one probe report. It defaults to `128KB`. It must be at least `48KB`, the 16,384 encoded bytes of a result's titles and handler names and the 32,768 of its chapters, and at most the length limit.
-It bounds the heap that decoding a result takes, which can be many times the result's length because every small entry of the result decodes to an object.
+Every small entry of a result decodes to an object, so a result can decode to many times its length. The decoded size limit below also covers the result.
 A worker fails a probe whose result is longer with `PROBE_FAILURE_RESULT_TOO_LARGE`.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT` bounds how long the server waits for a message that it asked for on a report call. It defaults to `30s`.
 When no message arrives in that time, the server ends the report call with `DEADLINE_EXCEEDED`, and the probe runs again.
 The time that a probe report waits for the memory budget does not count, and no bound covers the whole probe report.
 `STREAMING_WORKER_SESSION_PROBE_REPORT_MEMORY_BUDGET` bounds the bytes of probe reports that the server reads at once. It defaults to `64MB` and must be at least the length limit.
 This budget is separate from the 512 MiB of declared segment payload.
-The server reserves the length that the first message states before it reads any byte of the probe report, and releases it when the report call ends.
+Before the server reads any byte of a probe report, it reserves room in the budget: the length that the first message states, and at least 16 KiB. It releases the room when the report call ends.
+A probe report may decode to at most 16 times its room, so the probe reports that the server reads at once decode to at most 16 times the budget: 1 GiB of heap at the default budget.
 While a probe report does not fit the budget, the server reads no message of its report call.
 The waiting probe reports of playback probes get room before the waiting probe reports of other probes, and within each of the two groups the probe reports get room in the order in which they asked.
 The server never refuses a report call for lack of room.
@@ -231,8 +232,11 @@ The first message of a report call names the worker session, the worker and the 
 The server reads the report call only when that message names a probe attempt that the worker's live session runs and that no other report call reports. It refuses any other report call with `PERMISSION_DENIED`, or with `ALREADY_EXISTS` when another report call already reports the attempt.
 The server reads one message at a time and reads the fields of the probe report as they arrive, without decoding them.
 It ends the report call at the first message after which the result is longer than the result length limit, the keyframes exceed the keyframe limit, the measured keyframe intervals exceed their limit, or the measured streams outnumber half the result length limit in bytes, or after which the bytes break the protobuf wire format or hold a field in a wire type that the field cannot have, and frees the probe report's room in the budget at once.
+It also ends the report call at the first message after which the probe report would decode to more than 16 times its room.
+The server adds up a fixed bound of heap for each message, list, number and text of the probe report, so the call ends before the server decodes any of it. Each bound is at least the heap that the decoder took in a measurement.
+The server reads the result's fields by the same rules as the other fields.
 Every measured stream must also appear in the result, where a stream takes at least two bytes.
-The server skips a field that the worker contract does not declare, at the top of the probe report or inside a measured stream, after checking its encoding, and discards such fields at every level when it decodes the probe report, so a worker that still sends a field that a later contract removed keeps working.
+The server skips a field that the worker contract does not declare, at any level of the probe report, after checking its encoding, and discards such fields at every level when it decodes the probe report, so a worker that still sends a field that a later contract removed keeps working.
 After the last message it decodes the probe report, checks it against the worker contract, and answers once with the probe attempt and the length that it accepted.
 A probe report breaks the worker contract when it exceeds a stated limit, when its bytes number more or fewer than its first message stated, or when its bytes do not decode.
 The server then ends that report call with `INVALID_ARGUMENT`, and the violation counts toward the three consecutive contract violations that end a probe's retries. The worker session and its other probes continue.

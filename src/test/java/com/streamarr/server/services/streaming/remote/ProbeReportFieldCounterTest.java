@@ -10,6 +10,8 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedOutputStream;
+import com.google.protobuf.Descriptors.Descriptor;
+import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.UnknownFieldSet;
 import com.google.protobuf.WireFormat;
 import com.streamarr.server.services.streaming.remote.ProbeReportFieldCounter.BrokenRule;
@@ -21,8 +23,12 @@ import com.streamarr.transcode.v1.ProbeStreamInfo;
 import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -48,6 +54,12 @@ class ProbeReportFieldCounterTest {
   private static final int STATED_LENGTH = 32;
   // Long enough for a result beyond the result length limit, so that only the result breaks a rule.
   private static final long ROOM_FOR_A_LONGER_RESULT = 2L * RESULT_LENGTH_LIMIT;
+  // Long enough for every part of a probe report that tests the decoded size limit: 16 times this
+  // room, 1 MiB, is the limit.
+  private static final int ROOM_FOR_DECODED_PARTS = 64 * 1024;
+  // Long enough that more empty measured streams than half the result length limit keep the
+  // decoded size limit, so that only their count breaks a rule.
+  private static final long ROOM_FOR_EMPTY_MEASURED_STREAMS = 1024L * 1024;
   private static final ProbeRequest REQUEST =
       ProbeRequest.newBuilder()
           .setProbeAttemptId(toProto(UUID.randomUUID()))
@@ -428,8 +440,8 @@ class ProbeReportFieldCounterTest {
   void
       shouldBreakMeasuredStreamLimitAtMeasuredStreamBeyondHalfResultLengthLimitAndKeepReportAtIt() {
     var atTheLimit = repeated(emptyMeasuredStream(), RESULT_LENGTH_LIMIT / 2);
-    var kept = counterOf(atTheLimit);
-    var broken = counter(atTheLimit.size() + emptyMeasuredStream().size());
+    var kept = counter(ROOM_FOR_EMPTY_MEASURED_STREAMS);
+    var broken = counter(ROOM_FOR_EMPTY_MEASURED_STREAMS);
 
     var readAtTheLimit = broken.read(atTheLimit);
     var beyondTheLimit = broken.read(emptyMeasuredStream());
@@ -438,6 +450,69 @@ class ProbeReportFieldCounterTest {
     assertThat(kept.end()).isEmpty();
     assertThat(readAtTheLimit).isEmpty();
     assertThat(beyondTheLimit).contains(BrokenRule.MEASURED_STREAMS);
+  }
+
+  @Test
+  @DisplayName(
+      "Should break the decoded size limit when a result within the result length limit holds"
+          + " only empty streams")
+  void shouldBreakDecodedSizeLimitWhenResultWithinResultLengthLimitHoldsOnlyEmptyStreams() {
+    // The streams take all but the four bytes of the media's tag and length.
+    var streams =
+        Collections.nCopies((RESULT_LENGTH_LIMIT - 4) / 2, ProbeStreamInfo.getDefaultInstance());
+    var bytes = reportOfMedia(ProbeMediaInfo.newBuilder().addAllStreams(streams));
+    var counter = counterOf(bytes);
+
+    var read = counter.read(bytes);
+
+    assertThat(read).contains(BrokenRule.DECODED_SIZE);
+  }
+
+  @Test
+  @DisplayName(
+      "Should break the decoded size limit when the probe report holds numbers, texts and"
+          + " messages that each keep it on their own")
+  void shouldBreakDecodedSizeLimitWhenReportHoldsNumbersTextsAndMessagesThatEachKeepItAlone()
+      throws IOException {
+    // Each part takes about two fifths of the decoded size limit.
+    var numbers =
+        ProbeAttemptReport.newBuilder()
+            .addAllKeyframePresentationTimeDeltas(Collections.nCopies(34_952, 1L))
+            .build()
+            .toByteString();
+    var texts = reportOfContainer(repeated(bytes(0x0a, 1, 'x'), 8_388));
+    var messages =
+        reportOfMedia(
+            ProbeMediaInfo.newBuilder()
+                .addAllStreams(Collections.nCopies(919, ProbeStreamInfo.getDefaultInstance())));
+    var allThree = numbers.concat(texts).concat(messages);
+
+    var withoutNumbers = decodedSizeCounter().read(texts.concat(messages));
+    var withoutTexts = decodedSizeCounter().read(numbers.concat(messages));
+    var withoutMessages = decodedSizeCounter().read(numbers.concat(texts));
+    var withAllThree = decodedSizeCounter().read(allThree);
+
+    assertThat(allThree.size()).isLessThanOrEqualTo(ROOM_FOR_DECODED_PARTS);
+    assertThat(withoutNumbers).isEmpty();
+    assertThat(withoutTexts).isEmpty();
+    assertThat(withoutMessages).isEmpty();
+    assertThat(withAllThree).contains(BrokenRule.DECODED_SIZE);
+  }
+
+  @Test
+  @DisplayName(
+      "Should find only varints in the repeated number fields of a probe report, whose packed runs"
+          + " the counter reads as varints")
+  void shouldFindOnlyVarintsInRepeatedNumberFieldsOfProbeReportWhosePackedRunsAreReadAsVarints() {
+    var fields = repeatedNumberFields(ProbeAttemptReport.getDescriptor(), new HashSet<>());
+
+    assertThat(fields)
+        .isNotEmpty()
+        .allSatisfy(
+            field ->
+                assertThat(field.getLiteType().getWireType())
+                    .as(field.getFullName())
+                    .isEqualTo(WireFormat.WIRETYPE_VARINT));
   }
 
   @Test
@@ -553,6 +628,52 @@ class ProbeReportFieldCounterTest {
         .addStreamMeasurementIntervals(intervals(0, 2))
         .addStreamMeasurementIntervals(intervals(1, 2))
         .build();
+  }
+
+  /** A counter of a probe report as long as its room, whose keyframe limit no part reaches. */
+  private static ProbeReportFieldCounter decodedSizeCounter() {
+    var limits = ProbeReportLimits.builder().keyframeLimit(100_000).build();
+    return new ProbeReportFieldCounter(limits, ROOM_FOR_DECODED_PARTS);
+  }
+
+  private static ByteString reportOfMedia(ProbeMediaInfo.Builder media) {
+    return ProbeAttemptReport.newBuilder()
+        .setResult(ProbeAttemptResult.newBuilder().setMedia(media))
+        .build()
+        .toByteString();
+  }
+
+  /** A probe report whose result's container holds these encoded fields. */
+  private static ByteString reportOfContainer(ByteString fields) throws IOException {
+    var container = lengthDelimited(ProbeMediaInfo.CONTAINER_FIELD_NUMBER, fields);
+    var media = lengthDelimited(ProbeAttemptResult.MEDIA_FIELD_NUMBER, container);
+    return lengthDelimited(ProbeAttemptReport.RESULT_FIELD_NUMBER, media);
+  }
+
+  private static ByteString lengthDelimited(int fieldNumber, ByteString content)
+      throws IOException {
+    return tagAndLength(fieldNumber, content.size()).concat(content);
+  }
+
+  /** The repeated fields of numbers in the message and in every message that it holds. */
+  private static List<FieldDescriptor> repeatedNumberFields(
+      Descriptor message, Set<Descriptor> visited) {
+    var fields = new ArrayList<FieldDescriptor>();
+    if (!visited.add(message)) {
+      return fields;
+    }
+
+    for (var field : message.getFields()) {
+      if (field.isPackable()) {
+        fields.add(field);
+      }
+
+      if (field.getJavaType() == FieldDescriptor.JavaType.MESSAGE) {
+        fields.addAll(repeatedNumberFields(field.getMessageType(), visited));
+      }
+    }
+
+    return fields;
   }
 
   /** Writes a packed run of this many entries, each one byte. */

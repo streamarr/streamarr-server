@@ -11,11 +11,17 @@ import java.util.Optional;
 
 /**
  * Reads the fields of an encoded probe report while the messages of its report call arrive, and
- * names the first rule that the bytes so far break: a limit that the server states, or the protobuf
- * wire format. It reads every message that the probe report holds, the result's included, by the
- * same rules. It builds no message, so the server decodes only a probe report whose fields keep
- * every limit (ADR 0062). It counts every occurrence of a field, in any order of the fields, and a
- * tag, a varint or a length may continue in the next message.
+ * names the first rule that the bytes so far break: a limit that the server states, the decoded
+ * size limit, or the protobuf wire format. It reads every message that the probe report holds, the
+ * result's included, by the same rules. It builds no message, so the server decodes only a probe
+ * report whose fields keep every limit (ADR 0062). It counts every occurrence of a field, in any
+ * order of the fields, and a tag, a varint or a length may continue in the next message.
+ *
+ * <p>The decoded size limit is {@value #DECODED_BYTES_PER_BYTE_OF_ROOM} times the probe report's
+ * room in the memory budget: its length, and at least {@value #SMALLEST_ROOM_BYTES} bytes. The
+ * counter adds up the heap that the decoder would take for each message, list, number and text, and
+ * ends the probe report as soon as that heap passes the limit, before the decoder allocates any of
+ * it.
  */
 final class ProbeReportFieldCounter {
 
@@ -28,6 +34,10 @@ final class ProbeReportFieldCounter {
     MEASURED_STREAMS(
         "Worker probe report measures more streams than a result within the result length limit"
             + " can hold"),
+    DECODED_SIZE(
+        "Worker probe report would decode to more than "
+            + DECODED_BYTES_PER_BYTE_OF_ROOM
+            + " times its room in the memory budget"),
     WRONG_WIRE_TYPE("Worker probe report holds a field in a wire type that the field cannot have"),
     OVERLONG_VARINT("Worker probe report holds a varint longer than ten bytes"),
     INVALID_TAG("Worker probe report holds a tag of field number zero or of no wire type"),
@@ -51,6 +61,24 @@ final class ProbeReportFieldCounter {
   // Every measured stream must also appear in the result, and a stream of the result takes at
   // least its tag and its length.
   private static final int FEWEST_BYTES_OF_A_STREAM_IN_THE_RESULT = 2;
+  // A probe report decodes to at most this many times its room in the memory budget, so the probe
+  // reports that the server reads at once decode to at most this many times the budget. A number
+  // of one byte in a list takes up to twelve bytes once decoded, so a smaller multiple would refuse
+  // valid probe reports.
+  private static final long DECODED_BYTES_PER_BYTE_OF_ROOM = 16;
+  // A probe report of a few hundred bytes decodes to many times its length, because each message
+  // of its result decodes to an object.
+  private static final long SMALLEST_ROOM_BYTES = 16L * 1024;
+  // The most heap that protobuf-java's decoder takes, measured on the contract's messages: for a
+  // message, for each field that its type declares, and for each repeated field's list. Each
+  // bound is at least 1.4 times the heap measured on a 64-bit JVM.
+  private static final long MESSAGE_BYTES = 64;
+  private static final long FIELD_BYTES = 8;
+  private static final long LIST_BYTES = 128;
+  // A number in a list, with room for the list's growth.
+  private static final long NUMBER_BYTES = 12;
+  // A text or bytes field, beside two bytes for each byte of its length.
+  private static final long TEXT_BYTES = 48;
   private static final Descriptor REPORT = ProbeAttemptReport.getDescriptor();
   private static final Descriptor MEASURED_STREAM = StreamMeasurementIntervals.getDescriptor();
   private static final FieldDescriptor RESULT =
@@ -59,8 +87,10 @@ final class ProbeReportFieldCounter {
   private final long resultLengthLimitBytes;
   // The entries of these fields count against a limit, over every message that holds the field.
   private final Map<FieldDescriptor, Count> countedFields;
+  private final long decodedSizeLimitBytes;
   private final Message report;
   private long resultBytes;
+  private long decodedBytes;
   // Unset while the bytes keep every rule.
   private BrokenRule broken;
 
@@ -85,7 +115,14 @@ final class ProbeReportFieldCounter {
                 StreamMeasurementIntervals.KEYFRAME_INTERVAL_PACKET_COUNTS_FIELD_NUMBER),
             new Count(
                 limits.measuredKeyframeIntervalLimit(), BrokenRule.MEASURED_KEYFRAME_INTERVALS));
+    decodedSizeLimitBytes = DECODED_BYTES_PER_BYTE_OF_ROOM * roomBytes(reportLengthBytes);
     report = new Message(REPORT, reportLengthBytes);
+    addDecodedBytes(messageBytes(REPORT));
+  }
+
+  /** The room in the memory budget that a probe report of this length holds while it is read. */
+  static long roomBytes(long reportLengthBytes) {
+    return Math.max(reportLengthBytes, SMALLEST_ROOM_BYTES);
   }
 
   /** Reads the next bytes of the probe report. */
@@ -116,6 +153,22 @@ final class ProbeReportFieldCounter {
 
     return wireType == field.getLiteType().getWireType()
         || (field.isPackable() && wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED);
+  }
+
+  private static long messageBytes(Descriptor type) {
+    var bytes = MESSAGE_BYTES;
+    for (var field : type.getFields()) {
+      bytes += field.isRepeated() ? FIELD_BYTES + LIST_BYTES : FIELD_BYTES;
+    }
+
+    return bytes;
+  }
+
+  private void addDecodedBytes(long bytes) {
+    decodedBytes += bytes;
+    if (decodedBytes > decodedSizeLimitBytes) {
+      breakRule(BrokenRule.DECODED_SIZE);
+    }
   }
 
   private void countEntries(FieldDescriptor field, long entries) {
@@ -282,17 +335,20 @@ final class ProbeReportFieldCounter {
         addToResult(length);
       }
 
-      if (field.getJavaType() == FieldDescriptor.JavaType.MESSAGE) {
-        countEntries(field, 1);
-        inner = new Message(field.getMessageType(), length);
-        return Step.MESSAGE;
-      }
-
-      if (field.isPackable()) {
-        return Step.PACKED;
-      }
-
-      return Step.SKIP;
+      return switch (field.getJavaType()) {
+        case MESSAGE -> {
+          countEntries(field, 1);
+          addDecodedBytes(messageBytes(field.getMessageType()));
+          inner = new Message(field.getMessageType(), length);
+          yield Step.MESSAGE;
+        }
+        case STRING, BYTE_STRING -> {
+          addDecodedBytes(TEXT_BYTES + 2L * length);
+          yield Step.SKIP;
+        }
+        // A packed run of varints: the contract declares no repeated field of a fixed width.
+        default -> Step.PACKED;
+      };
     }
 
     private void skipNumber(int length) {
@@ -301,10 +357,11 @@ final class ProbeReportFieldCounter {
       step = Step.SKIP;
     }
 
-    // An entry of a repeated field that holds numbers, or the value of a field that holds one.
+    // Entries of a repeated field that holds numbers, or the value of a field that holds one.
     private void countNumbers(long numbers) {
       if (field != null && field.isRepeated()) {
         countEntries(field, numbers);
+        addDecodedBytes(NUMBER_BYTES * numbers);
       }
     }
 

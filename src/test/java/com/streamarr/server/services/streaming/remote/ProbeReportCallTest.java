@@ -57,6 +57,9 @@ class ProbeReportCallTest {
   // Room for one large report, and for no second report of more than 60,000 bytes beside it.
   private static final ProbeReportLimits TIGHT_MEMORY =
       ProbeReportLimits.builder().lengthLimitBytes(150_000).memoryBudgetBytes(200_000).build();
+  // Every probe report holds at least this much room in the memory budget (ADR 0062).
+  private static final long SMALLEST_ROOM = 16 * 1024;
+  private static final long SHORT_REPORT_LENGTH = 100;
   private static final int KEYFRAMES_OF_LARGE_REPORT = 7_000;
   private static final Duration SHORT_IDLE_TIMEOUT = Duration.ofMillis(250);
 
@@ -953,6 +956,34 @@ class ProbeReportCallTest {
     assertThat(probe.outcome()).isNotDone();
   }
 
+  @Test
+  @DisplayName(
+      "Should read no message of a short probe report's call while the free room in the memory"
+          + " budget is one byte shorter than the 16 KiB that every probe report holds")
+  void shouldReadNoMessageOfShortReportsCallWhileFreeRoomIsOneByteShorterThanSmallestRoom()
+      throws Exception {
+    var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
+    holdAllRoomBut(worker, SMALLEST_ROOM - 1);
+
+    var shortReport = waitForRoom(worker, SHORT_REPORT_LENGTH);
+
+    assertThat(shortReport.unreadDemand()).isZero();
+    assertThat(shortReport.isOpen()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should read a short probe report's call at once when the free room in the memory budget is"
+          + " the 16 KiB that every probe report holds")
+  void shouldReadShortReportsCallAtOnceWhenFreeRoomIsSmallestRoom() throws Exception {
+    var worker = ReportingWorker.connectedTo(TIGHT_MEMORY);
+    holdAllRoomBut(worker, SMALLEST_ROOM);
+
+    var shortReport = waitForRoom(worker, SHORT_REPORT_LENGTH);
+
+    assertThat(shortReport.unreadDemand()).isEqualTo(1);
+  }
+
   @ParameterizedTest(name = "{0}")
   @EnumSource(RoomHolderEnd.class)
   @DisplayName(
@@ -1184,6 +1215,16 @@ class ProbeReportCallTest {
             .metadata(probe.request())
             .setReportLengthBytes(largeReport(probe.request()).getSerializedSize()));
     return call;
+  }
+
+  /** Opens two report calls that hold all of the memory budget's room but this many bytes. */
+  private static void holdAllRoomBut(ReportingWorker worker, long freeBytes) throws Exception {
+    var longest = TIGHT_MEMORY.lengthLimitBytes();
+    var first = waitForRoom(worker, longest);
+    var second = waitForRoom(worker, TIGHT_MEMORY.memoryBudgetBytes() - longest - freeBytes);
+
+    assertThat(first.unreadDemand()).isEqualTo(1);
+    assertThat(second.unreadDemand()).isEqualTo(1);
   }
 
   /** A report call of a background probe whose metadata states a probe report of this length. */
