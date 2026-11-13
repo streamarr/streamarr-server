@@ -460,6 +460,7 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
 
   private static void awaitSegment(UUID sessionId, int index) {
     await()
+        .alias("the job attempt publishes media segment %d".formatted(index))
         .atMost(Duration.ofSeconds(60))
         .until(
             () ->
