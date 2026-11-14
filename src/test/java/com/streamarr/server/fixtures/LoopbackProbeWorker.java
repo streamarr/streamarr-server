@@ -217,10 +217,13 @@ public final class LoopbackProbeWorker implements AutoCloseable {
    */
   @Override
   public void close() throws InterruptedException {
-    awaitReportCalls();
-    requests.onCompleted();
-    channel.shutdownNow();
-    assertThat(channel.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+    try {
+      awaitReportCalls();
+      requests.onCompleted();
+    } finally {
+      channel.shutdownNow();
+      assertThat(channel.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+    }
   }
 
   private void awaitReportCalls() throws InterruptedException {
