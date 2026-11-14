@@ -129,6 +129,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 **Listener annotations:**
 - `@EventListener` — for publishers that are non-transactional (synchronous, same thread)
 - `@TransactionalEventListener(phase = AFTER_COMMIT)` — for publishers inside a transaction; side effects only execute if the transaction commits
+- `@EventListener` for a publisher inside a transaction — when the listener's only effect is a database write that must commit or roll back with the publisher's writes. The write joins the publisher's transaction, so a stop after the commit cannot lose it, and a failed write undoes the publisher's writes (`BitrateScanRequester`)
 
 **Conventions:**
 - Events are Java records in a `services.<domain>.events` package while every listener lives in that same domain

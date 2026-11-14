@@ -18,6 +18,7 @@ import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.task.ProbeTaskRequest;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
@@ -440,6 +441,8 @@ class HlsCopyPlaylistApiSmokeTest {
             .scanner(probes::scanKeyframePackets)
             .fileSystem(FileSystems.getDefault())
             .outcomes(probeOutcomes)
+            .eventPublisher(new CapturingEventPublisher())
+            .transactionManager(new FakeTransactionManager())
             .meterRegistry(new SimpleMeterRegistry())
             .build();
     return packetScans.requests().stream().map(execution::execute).toList();

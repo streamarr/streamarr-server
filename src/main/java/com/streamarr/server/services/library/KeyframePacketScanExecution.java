@@ -9,6 +9,7 @@ import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
 import com.streamarr.server.domain.streaming.SourceStreamEnd;
+import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
@@ -17,6 +18,7 @@ import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.library.events.KeyframePacketScanPublishedEvent;
 import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.KeyframePacketScanner;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -30,7 +32,10 @@ import lombok.Builder;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * One keyframe packet scan execution, independent of the scheduler that runs it. Transient failures
@@ -40,7 +45,7 @@ import org.springframework.stereotype.Service;
  * KeyframePacketScanResult.Failed}, which its completion counts.
  */
 @Service
-@Builder
+@Builder(toBuilder = true)
 @RequiredArgsConstructor
 @Slf4j
 public class KeyframePacketScanExecution {
@@ -52,6 +57,8 @@ public class KeyframePacketScanExecution {
   private final KeyframePacketScanner scanner;
   private final FileSystem fileSystem;
   private final MediaFileContainerInfoRepository outcomes;
+  @NonNull private final ApplicationEventPublisher eventPublisher;
+  @NonNull private final PlatformTransactionManager transactionManager;
   @NonNull private final MeterRegistry meterRegistry;
 
   public KeyframePacketScanResult execute(KeyframePacketScanTaskRequest request) {
@@ -110,14 +117,28 @@ public class KeyframePacketScanExecution {
       return failed("no_keyframe_result");
     }
 
-    outcomes.publishKeyframePacketScan(
+    var publication =
         KeyframePacketScanPublication.builder()
             .mediaFileId(request.mediaFileId())
             .snapshot(request.snapshot())
             .probeVersion(request.probeVersion())
             .keyframes(keyframes.get())
             .streamEnds(scannedStreamEnds(outcome))
-            .build());
+            .streamMeasurements(scannedStreamMeasurements(outcome))
+            .build();
+    // The event's listeners run in the publication's transaction, so stored keyframe positions
+    // that need a bitrate scan always have one (ADR 0054).
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            _ -> {
+              if (!outcomes.publishKeyframePacketScan(publication)) {
+                return;
+              }
+
+              eventPublisher.publishEvent(
+                  new KeyframePacketScanPublishedEvent(
+                      request.mediaFileId(), request.filepathUri()));
+            });
     return new KeyframePacketScanResult.Completed();
   }
 
@@ -148,6 +169,13 @@ public class KeyframePacketScanExecution {
     return switch (outcome) {
       case ProbeOutcome.Failure _ -> List.of();
       case ProbeOutcome.Success success -> success.scannedStreamEnds();
+    };
+  }
+
+  private static Optional<StreamMeasurements> scannedStreamMeasurements(ProbeOutcome outcome) {
+    return switch (outcome) {
+      case ProbeOutcome.Failure _ -> Optional.empty();
+      case ProbeOutcome.Success success -> success.streamMeasurements();
     };
   }
 

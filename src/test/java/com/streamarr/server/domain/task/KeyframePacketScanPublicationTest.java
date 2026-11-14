@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -38,12 +39,16 @@ class KeyframePacketScanPublicationTest {
     assertThat(publication.keyframes()).isEqualTo(keyframes);
   }
 
+  // Lombok's builder setters refuse null before the record's constructor runs, so these tests
+  // construct the record itself.
   @Test
   @DisplayName("Should reject a publication when its media file is missing")
   void shouldRejectAPublicationWhenItsMediaFileIsMissing() {
     assertThatNullPointerException()
         .isThrownBy(
-            () -> new KeyframePacketScanPublication(null, SNAPSHOT, 3, UNAVAILABLE, List.of()))
+            () ->
+                new KeyframePacketScanPublication(
+                    null, SNAPSHOT, 3, UNAVAILABLE, List.of(), Optional.empty()))
         .withMessageContaining("mediaFileId");
   }
 
@@ -54,7 +59,9 @@ class KeyframePacketScanPublicationTest {
 
     assertThatNullPointerException()
         .isThrownBy(
-            () -> new KeyframePacketScanPublication(mediaFileId, null, 3, UNAVAILABLE, List.of()))
+            () ->
+                new KeyframePacketScanPublication(
+                    mediaFileId, null, 3, UNAVAILABLE, List.of(), Optional.empty()))
         .withMessageContaining("snapshot");
   }
 
@@ -65,8 +72,36 @@ class KeyframePacketScanPublicationTest {
 
     assertThatNullPointerException()
         .isThrownBy(
-            () -> new KeyframePacketScanPublication(mediaFileId, SNAPSHOT, 3, null, List.of()))
+            () ->
+                new KeyframePacketScanPublication(
+                    mediaFileId, SNAPSHOT, 3, null, List.of(), Optional.empty()))
         .withMessageContaining("keyframes");
+  }
+
+  @Test
+  @DisplayName("Should reject a publication when its stream ends are missing")
+  void shouldRejectAPublicationWhenItsStreamEndsAreMissing() {
+    var mediaFileId = UUID.randomUUID();
+
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                new KeyframePacketScanPublication(
+                    mediaFileId, SNAPSHOT, 3, UNAVAILABLE, null, Optional.empty()))
+        .withMessageContaining("streamEnds");
+  }
+
+  @Test
+  @DisplayName("Should reject a publication when its stream measurements are missing")
+  void shouldRejectAPublicationWhenItsStreamMeasurementsAreMissing() {
+    var mediaFileId = UUID.randomUUID();
+
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                new KeyframePacketScanPublication(
+                    mediaFileId, SNAPSHOT, 3, UNAVAILABLE, List.of(), null))
+        .withMessageContaining("streamMeasurements");
   }
 
   @ParameterizedTest

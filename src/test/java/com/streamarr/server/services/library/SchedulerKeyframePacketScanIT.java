@@ -44,7 +44,6 @@ import com.streamarr.transcode.v1.ProbeFailure;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -101,6 +100,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
   @Autowired private DSLContext dsl;
   @Autowired private MediaFileProbeTaskScheduler probeTaskScheduler;
   @Autowired private BitrateScanExecution bitrateScanExecution;
+  @Autowired private KeyframePacketScanExecution keyframePacketScanExecution;
 
   private final BlockingQueue<ExecutionComplete> scanCompletions = new LinkedBlockingQueue<>();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
@@ -429,11 +429,8 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
 
   private void startScanScheduler(KeyframePacketScanner scanner, Clock clock) {
     var execution =
-        KeyframePacketScanExecution.builder()
-            .reader(reader)
+        keyframePacketScanExecution.toBuilder()
             .scanner(scanner)
-            .fileSystem(FileSystems.getDefault())
-            .outcomes(outcomes)
             .meterRegistry(meterRegistry)
             .build();
     scanScheduler =

@@ -26,11 +26,9 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.filepath.FilepathCodec;
-import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -67,7 +65,7 @@ class KeyframePacketScanWorkerIT extends AbstractIntegrationTest {
   @TempDir Path mediaRoot;
 
   @Autowired private ProbeExecution probeExecution;
-  @Autowired private PersistedProbeReader reader;
+  @Autowired private KeyframePacketScanExecution keyframePacketScanExecution;
   @Autowired private MediaFileContainerInfoRepository outcomes;
   @Autowired private MediaFileRepository mediaFiles;
   @Autowired private LibraryRepository libraries;
@@ -126,11 +124,9 @@ class KeyframePacketScanWorkerIT extends AbstractIntegrationTest {
       assertThat(packetScans.requests()).hasSize(1);
 
       var result =
-          KeyframePacketScanExecution.builder()
-              .reader(reader)
+          keyframePacketScanExecution.toBuilder()
               .scanner(remote::scanKeyframePackets)
-              .fileSystem(FileSystems.getDefault())
-              .outcomes(outcomes)
+              .eventPublisher(new CapturingEventPublisher())
               .meterRegistry(new SimpleMeterRegistry())
               .build()
               .execute(packetScans.requests().getFirst());
