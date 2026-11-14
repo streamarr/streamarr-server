@@ -33,6 +33,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 
@@ -152,23 +153,23 @@ public class HlsStreamingService implements StreamingService {
     var mediaFileId = command.mediaFileId();
     var options = command.options();
     var request =
-        TranscodeDecisionRequest.builder()
-            .source(probe)
-            .capabilityDeclaration(command.capabilityDeclaration())
-            .videoFormatConstraint(command.videoFormatConstraint())
-            .excludedEncodeCodecFamilies(command.excludedEncodeCodecFamilies())
-            .excludedEncodeFormats(command.excludedEncodeFormats())
-            .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
-            .hardwareEncodableVideoCodecFamilies(
-                transcodeExecutor.hardwareEncodableVideoCodecFamilies())
-            .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
-            .viewerLimits(ViewerLimits.of(options))
-            .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
-            .videoEncoders(encodableVideoEncoders(command.softwareEncodeCodecFamily()))
-            .verifiedVideoEncoders(verifiedVideoEncoders(command.softwareEncodeCodecFamily()))
-            .directPlayRefusals(directPlay.refusals())
-            .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
-            .build();
+        withVideoEncoders(
+            TranscodeDecisionRequest.builder()
+                .source(probe)
+                .capabilityDeclaration(command.capabilityDeclaration())
+                .videoFormatConstraint(command.videoFormatConstraint())
+                .excludedEncodeCodecFamilies(command.excludedEncodeCodecFamilies())
+                .excludedEncodeFormats(command.excludedEncodeFormats())
+                .excludedHardwareEncodeCodecFamilies(command.excludedHardwareEncodeCodecFamilies())
+                .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
+                .hardwareEncodableVideoCodecFamilies(
+                    transcodeExecutor.hardwareEncodableVideoCodecFamilies())
+                .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
+                .viewerLimits(ViewerLimits.of(options))
+                .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
+                .directPlayRefusals(directPlay.refusals())
+                .softwareContinuation(command.softwareContinuation())
+                .build());
     var candidate = transcodeDecisionService.decide(request);
     if (candidate.isEmpty()) {
       candidate = decideAfterStoppingALeftVariant(command.streamSessionId(), request);
@@ -341,7 +342,9 @@ public class HlsStreamingService implements StreamingService {
 
   // Only some workers may write the candidate's 10-bit or HDR output, so a left variant on a worker
   // that writes the codec family in 8-bit SDR also makes room before the family is given up, when
-  // the client plays that encode. An 8-bit HEVC encode is H.265 Main, not Main 10 (#58).
+  // the client plays that encode. An 8-bit HEVC encode is H.265 Main, not Main 10 (#58). A software
+  // continuation of a PQ or HLG encode never continues in 8-bit SDR, so no such left variant makes
+  // room for it.
   private boolean stopLeftVariantForTheFamilyOf(
       UUID sessionId, TranscodeDecisionRequest request, TranscodeDecision candidate) {
     if (producerLifecycle.stopLeftVariantOfAnotherStreamSession(sessionId, candidate)) {
@@ -349,7 +352,8 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var eightBitProfile = candidate.encodeCodecProfile().map(EncodeCodecProfile::eightBitProfile);
-    return !candidate.videoEncodeFormat().equals(EncodeFormat.SDR_8_BIT)
+    return request.mayEncode(EncodeFormat.SDR_8_BIT)
+        && !candidate.videoEncodeFormat().equals(EncodeFormat.SDR_8_BIT)
         && eightBitProfile
             .filter(
                 profile ->
@@ -370,28 +374,41 @@ public class HlsStreamingService implements StreamingService {
         .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
         .hardwareEncodableVideoCodecFamilies(
             transcodeExecutor.hardwareEncodableVideoCodecFamilies())
-        .videoEncoders(encodableVideoEncoders(request.softwareEncodeCodecFamily()))
+        .videoEncoders(encodableVideoEncoders(request))
         .build();
+  }
+
+  // The request with the encoders of the workers with a free slot, and with busy workers' encoders.
+  private TranscodeDecisionRequest withVideoEncoders(TranscodeDecisionRequest request) {
+    return request.toBuilder()
+        .videoEncoders(encodableVideoEncoders(request))
+        .verifiedVideoEncoders(
+            encodersFor(
+                request,
+                transcodeExecutor.verifiedVideoEncoders(),
+                transcodeExecutor.verifiedSoftwareVideoEncoders()))
+        .build();
+  }
+
+  private List<WorkerVerifiedEncoder> encodableVideoEncoders(TranscodeDecisionRequest request) {
+    return encodersFor(
+        request,
+        transcodeExecutor.encodableVideoEncoders(),
+        transcodeExecutor.encodableSoftwareVideoEncoders());
   }
 
   // A software encode after a hardware encoder failure runs on the software encoders, which may
   // write less than the hardware encoders of the same codec family (ADR 0044).
-  private List<WorkerVerifiedEncoder> encodableVideoEncoders(
-      Optional<String> softwareEncodeCodecFamily) {
-    if (softwareEncodeCodecFamily.isPresent()) {
-      return transcodeExecutor.encodableSoftwareVideoEncoders();
-    }
-
-    return transcodeExecutor.encodableVideoEncoders();
-  }
-
-  private List<WorkerVerifiedEncoder> verifiedVideoEncoders(
-      Optional<String> softwareEncodeCodecFamily) {
-    if (softwareEncodeCodecFamily.isPresent()) {
-      return transcodeExecutor.verifiedSoftwareVideoEncoders();
-    }
-
-    return transcodeExecutor.verifiedVideoEncoders();
+  private static List<WorkerVerifiedEncoder> encodersFor(
+      TranscodeDecisionRequest request,
+      List<WorkerVerifiedEncoder> encoders,
+      List<WorkerVerifiedEncoder> softwareEncoders) {
+    return Stream.concat(
+            encoders.stream()
+                .filter(encoder -> !request.encodesInSoftware(encoder.backend().codecFamily())),
+            softwareEncoders.stream()
+                .filter(encoder -> request.encodesInSoftware(encoder.backend().codecFamily())))
+        .toList();
   }
 
   private Optional<TranscodeDecision> stoppableEncodeCandidate(
@@ -416,8 +433,55 @@ public class HlsStreamingService implements StreamingService {
       return refuseForLackOfCapacity(CapacityRefusal.NO_ENCODER_WITH_FREE_SLOT);
     }
 
+    // After a hardware encoder failure, a worker runs the codec family's encode only on a software
+    // encoder of it (ADR 0044). When no worker has one but the failed hardware encoder writes what
+    // the client plays, the client's declaration is not what refuses the stream session.
+    if (isContinuationWithoutASoftwareEncoder(request)
+        || encodeCandidateWithoutTheMissingSoftwareEncoder(request).isPresent()) {
+      return refuseForLackOfCapacity(CapacityRefusal.NO_SOFTWARE_ENCODER_AFTER_HARDWARE_FAILURE);
+    }
+
     encodeCandidateMissingAnEncoder(request).ifPresent(this::countMissingEncoderSession);
     return new CreateStreamSessionRejection.NoEligibleVideoFormat();
+  }
+
+  // The client played the encode that a software continuation continues. The worker stops offering
+  // a failed hardware encoder before it reports the failure, so no connected worker may still offer
+  // the encoder that wrote it.
+  private static boolean isContinuationWithoutASoftwareEncoder(TranscodeDecisionRequest request) {
+    return request
+        .softwareContinuation()
+        .filter(
+            continuation ->
+                hasNoEncoderOf(request.verifiedVideoEncoders(), continuation.codecFamily()))
+        .isPresent();
+  }
+
+  // The encode that the verified encoders could run if a codec family that encodes in software but
+  // has no software encoder on a connected worker encoded on its other verified encoders, such as
+  // the hardware encoder that failed. The request lists only the software encoders of a codec
+  // family that encodes in software, so it lists no encoder of such a codec family, and the
+  // workers' other encoders are read now.
+  private Optional<TranscodeDecision> encodeCandidateWithoutTheMissingSoftwareEncoder(
+      TranscodeDecisionRequest request) {
+    var verified = request.verifiedVideoEncoders();
+    var standIns =
+        transcodeExecutor.verifiedVideoEncoders().stream()
+            .filter(encoder -> hasNoEncoderOf(verified, encoder.backend().codecFamily()))
+            .toList();
+    if (standIns.isEmpty()) {
+      return Optional.empty();
+    }
+
+    return verifiedEncodeCandidate(
+        request.toBuilder()
+            .verifiedVideoEncoders(Stream.concat(verified.stream(), standIns.stream()).toList())
+            .build());
+  }
+
+  private static boolean hasNoEncoderOf(List<WorkerVerifiedEncoder> encoders, String codecFamily) {
+    return encoders.stream()
+        .noneMatch(encoder -> encoder.backend().codecFamily().equals(codecFamily));
   }
 
   // The encode that connected workers would run if each had an encoder for every codec family
@@ -638,7 +702,10 @@ public class HlsStreamingService implements StreamingService {
   private static boolean isSlotShortage(CapacityRefusal refusal) {
     return switch (refusal) {
       case NO_FREE_WORKER_SLOT, NO_FREE_CONFIGURED_TRANSCODE_SLOT -> true;
-      case NO_CONNECTED_WORKER, NO_ENCODER_WITH_FREE_SLOT -> false;
+      case NO_CONNECTED_WORKER,
+          NO_ENCODER_WITH_FREE_SLOT,
+          NO_SOFTWARE_ENCODER_AFTER_HARDWARE_FAILURE ->
+          false;
     };
   }
 
@@ -647,7 +714,8 @@ public class HlsStreamingService implements StreamingService {
     NO_CONNECTED_WORKER,
     NO_ENCODER_WITH_FREE_SLOT,
     NO_FREE_WORKER_SLOT,
-    NO_FREE_CONFIGURED_TRANSCODE_SLOT
+    NO_FREE_CONFIGURED_TRANSCODE_SLOT,
+    NO_SOFTWARE_ENCODER_AFTER_HARDWARE_FAILURE
   }
 
   private boolean countsAgainstTranscodeLimit(TranscodeMode mode) {
