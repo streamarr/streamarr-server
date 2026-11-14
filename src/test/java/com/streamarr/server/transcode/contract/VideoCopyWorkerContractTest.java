@@ -15,6 +15,7 @@ import com.streamarr.transcode.v1.DolbyVisionOutput;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
 import com.streamarr.transcode.v1.DolbyVisionSampleEntry;
 import com.streamarr.transcode.v1.MasteringDisplayColorVolume;
+import com.streamarr.transcode.v1.MatrixCoefficients;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoCopyFeature;
@@ -28,12 +29,45 @@ import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 // ADR 0013 and ADR 0036 (third amendments, streamarr/streamarr-adr#93) decide what a copy's
 // planned output carries and that each worker declares the bitstream rewrites it supports.
 @Tag("UnitTest")
 @DisplayName("Video Copy Worker Contract Tests")
 class VideoCopyWorkerContractTest {
+
+  @ParameterizedTest
+  @EnumSource(
+      value = MatrixCoefficients.class,
+      names = {"MATRIX_COEFFICIENTS_BT709", "MATRIX_COEFFICIENTS_SMPTE170M"})
+  @DisplayName("Should carry the assumed source matrix when an H.264 copy lists its rewrite")
+  void shouldCarryTheAssumedSourceMatrixWhenAnH264CopyListsItsRewrite(MatrixCoefficients matrix)
+      throws Exception {
+    var rewrite =
+        BitstreamRewrite.getDescriptor()
+            .findValueByName("BITSTREAM_REWRITE_NAME_ASSUMED_SOURCE_MATRIX");
+    assertThat(rewrite).isNotNull();
+    var copy =
+        VideoDecision.newBuilder()
+            .setMode(VideoMode.VIDEO_MODE_COPY)
+            .setCodecFamily(VideoCodecFamily.VIDEO_CODEC_FAMILY_H264)
+            .setAssumedSourceMatrix(matrix)
+            .addBitstreamRewritesValue(rewrite.getNumber())
+            .build();
+    var capabilities =
+        WorkerCapabilities.newBuilder().addBitstreamRewritesValue(rewrite.getNumber()).build();
+
+    var decoded = VideoDecision.parseFrom(copy.toByteArray());
+
+    assertThat(decoded.getAssumedSourceMatrix()).isEqualTo(matrix);
+    assertThat(decoded.getBitstreamRewritesValueList()).containsExactly(5);
+    assertThat(
+            WorkerCapabilities.parseFrom(capabilities.toByteArray())
+                .getBitstreamRewritesValueList())
+        .containsExactly(5);
+  }
 
   @Test
   @DisplayName(
@@ -203,7 +237,8 @@ class VideoCopyWorkerContractTest {
             tuple("BITSTREAM_REWRITE_STRIP_DOLBY_VISION", 1),
             tuple("BITSTREAM_REWRITE_STRIP_HDR10_PLUS", 2),
             tuple("BITSTREAM_REWRITE_NORMALIZE_DOLBY_VISION_RECORD", 3),
-            tuple("BITSTREAM_REWRITE_CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1", 4));
+            tuple("BITSTREAM_REWRITE_CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1", 4),
+            tuple("BITSTREAM_REWRITE_NAME_ASSUMED_SOURCE_MATRIX", 5));
     assertThat(values(VideoCopyFeature.getDescriptor()))
         .containsExactly(
             tuple("VIDEO_COPY_FEATURE_UNSPECIFIED", 0),

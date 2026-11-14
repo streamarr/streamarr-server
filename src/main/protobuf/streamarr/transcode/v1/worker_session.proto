@@ -314,6 +314,13 @@ enum BitstreamRewrite {
   // The worker converts single-track Dolby Vision profile 7 to profile 8.1.
   // streamarr/streamarr-server#651 defines this rewrite.
   BITSTREAM_REWRITE_CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1 = 4;
+  // An H.264 copy names assumed_source_matrix in every SPS (avcC and samples)
+  // and one replacement nclx colr box (ADR 0013, copy-names-assumed-matrix).
+  // SPS primaries, transfer and range stay; absent descriptions gain unspecified
+  // primaries/transfer. The box takes the first avcC SPS's values, substituting
+  // BT.709 for unspecified primaries/transfer and limited for unstated range.
+  // An unreadable SPS fails the attempt as an output mismatch.
+  BITSTREAM_REWRITE_NAME_ASSUMED_SOURCE_MATRIX = 5;
 }
 
 // This value names something a copy can need beyond passing the source's
@@ -560,10 +567,11 @@ message VideoDecision {
   // the worker then writes 4:2:0. A PQ or HLG encode always sets it.
   ChromaSubsampling output_chroma_subsampling = 21;
   // BT709 or SMPTE170M: the matrix with which an encode that does not tone-map
-  // reads a source whose probe result names no matrix (ADR 0013). UNSPECIFIED
-  // on every other job: the worker then reads each frame with the matrix that
-  // the frame names. The worker refuses any other value, a copy that sets the
-  // field, and a source whose compatible base is PQ, HLG or NONE.
+  // reads a source whose probe result names no matrix (ADR 0013). An H.264
+  // copy sets it exactly when it lists NAME_ASSUMED_SOURCE_MATRIX. UNSPECIFIED
+  // on every other job: an encode then reads each frame's named matrix, and
+  // a copy preserves the source's colour description. The worker refuses any
+  // other value and a source whose compatible base is PQ, HLG or NONE.
   MatrixCoefficients assumed_source_matrix = 22;
 }
 
