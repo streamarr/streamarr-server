@@ -32,6 +32,7 @@ import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfilePinHasher;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
@@ -99,7 +100,12 @@ class ProfileAdministrationServiceTest {
           households,
           accounts,
           invitations,
+          new ProfileManagerInvitationLifecycle(managerInvitations, new CapturingEventPublisher()),
           managerInvitations,
+          new LeavingManagerProposals(
+              new ProfileManagerInvitationLifecycle(
+                  managerInvitations, new CapturingEventPublisher()),
+              new ProfileShareLifecycle(shares, shareEvents)),
           audit,
           new ProfilePinHasher(encoder),
           new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),
@@ -763,8 +769,7 @@ class ProfileAdministrationServiceTest {
     var rejection = rejectionOf(outcome);
     assertThat(rejection).isInstanceOf(ProfileRejections.WouldLockProfile.class);
     var wouldLock = (ProfileRejections.WouldLockProfile) rejection;
-    assertThat(wouldLock.householdId()).isEqualTo(household.getId());
-    assertThat(wouldLock.householdName()).contains(household.getName());
+    assertThat(wouldLock.household()).map(Household::getId).contains(household.getId());
     assertThat(profiles.findById(adult.getId()).orElseThrow().getPinHash()).isEqualTo("hash");
   }
 
@@ -789,30 +794,38 @@ class ProfileAdministrationServiceTest {
 
     assertThat(rejection).isInstanceOf(ProfileRejections.WouldLockProfile.class);
     var wouldLock = (ProfileRejections.WouldLockProfile) rejection;
-    assertThat(wouldLock.householdId()).isEqualTo(otherHousehold.getId());
-    assertThat(wouldLock.householdName()).contains(otherHousehold.getName());
+    assertThat(wouldLock.household()).map(Household::getId).contains(otherHousehold.getId());
     assertThat(profiles.findById(adult.getId()).orElseThrow().getPinHash()).isEqualTo("hash");
   }
 
   @Test
-  @DisplayName("Should withhold the Household name when the caller may not view it")
-  void shouldWithholdHouseholdNameWhenCallerMayNotViewIt() {
-    var adult =
+  @DisplayName(
+      "Should withhold the Household when the caller may not use it and does not manage the"
+          + " Profile")
+  void shouldWithholdTheHouseholdWhenTheCallerMayNotUseItAndDoesNotManageTheProfile() {
+    var otherHousehold = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var kid =
         profiles.save(
-            ProfileFixture.defaultProfileBuilder()
-                .householdId(household.getId())
+            ProfileFixture.kidProfileBuilder()
+                .householdId(otherHousehold.getId())
+                .maximumAllowedRatingAge(13)
                 .pinHash("hash")
                 .build());
-    var kid =
-        profiles.save(ProfileFixture.kidProfileBuilder().householdId(household.getId()).build());
-    shares.share(adult.getId(), household.getId(), false);
+    var stricterKid =
+        profiles.save(
+            ProfileFixture.kidProfileBuilder()
+                .householdId(otherHousehold.getId())
+                .maximumAllowedRatingAge(10)
+                .build());
+    shares.share(kid.getId(), otherHousehold.getId(), false);
     shares.share(kid.getId(), household.getId(), false);
+    shares.share(stricterKid.getId(), otherHousehold.getId(), false);
     authorization.decideUnitWith(
-        intent -> intent instanceof Intent.ViewHouseholdAdministration ? denied() : allowed());
+        intent -> intent instanceof Intent.ViewProfileManagers ? denied() : allowed());
 
-    var rejection = rejectionOf(service.removeProfilePin(identity(), adult.getId()));
+    var rejection = rejectionOf(service.removeProfilePin(identity(), kid.getId()));
 
-    assertThat(((ProfileRejections.WouldLockProfile) rejection).householdName()).isEmpty();
+    assertThat(((ProfileRejections.WouldLockProfile) rejection).household()).isEmpty();
   }
 
   @Test
@@ -1030,8 +1043,8 @@ class ProfileAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName("Should invalidate pending manager invitations when the Profile is deleted")
-  void shouldInvalidatePendingManagerInvitationsWhenProfileIsDeleted() {
+  @DisplayName("Should refuse to delete the Profile when an invitation to manage it waits")
+  void shouldRefuseToDeleteTheProfileWhenAnInvitationToManageItWaits() {
     var orphan =
         profiles.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
@@ -1049,16 +1062,19 @@ class ProfileAdministrationServiceTest {
                 .secretDigest(new byte[] {1})
                 .build());
 
-    service.deleteProfile(identity(), orphan.getId());
+    var outcome = service.deleteProfile(identity(), orphan.getId());
 
+    assertThat(rejectionOf(outcome)).isInstanceOf(ProfileRejections.ProfileNotDeletable.class);
+    assertThat(profiles.findById(orphan.getId())).isPresent();
     assertThat(managerInvitations.findById(invitation.getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+        .isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 
   @Test
   @DisplayName(
-      "Should invalidate pending manager invitations when the recipient becomes restricted")
-  void shouldInvalidatePendingManagerInvitationsWhenRecipientBecomesRestricted() {
+      "Should invalidate pending manager invitations for the recipient alone when it becomes"
+          + " restricted")
+  void shouldInvalidatePendingManagerInvitationsForTheRecipientAloneWhenItBecomesRestricted() {
     var member = accounts.save(AccountFixture.defaultAccountBuilder().build());
     var personal =
         profiles.save(
@@ -1092,9 +1108,12 @@ class ProfileAdministrationServiceTest {
                     ProfilePolicyTransition.Classification.RESTRICT_SOVEREIGN_ADULT)));
     service.setProfileContentCeiling(identity(), personal.getId(), 12);
 
-    // Eligibility ends with the restriction: no pending proposal may outlive it.
-    assertThat(managerInvitations.findById(invitation.getId()).orElseThrow().getStatus())
+    // Eligibility ends with the restriction: the recipient can no longer answer, while to the
+    // Profile's managers the invitation still waits (ADR 0024 §Invitations).
+    var stored = managerInvitations.findById(invitation.getId()).orElseThrow();
+    assertThat(stored.statusToItsAccountAt(Instant.now()))
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(stored.statusAt(Instant.now())).isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 
   @Test
@@ -1184,7 +1203,12 @@ class ProfileAdministrationServiceTest {
         households,
         accounts,
         invitations,
+        new ProfileManagerInvitationLifecycle(managerInvitations, new CapturingEventPublisher()),
         managerInvitations,
+        new LeavingManagerProposals(
+            new ProfileManagerInvitationLifecycle(
+                managerInvitations, new CapturingEventPublisher()),
+            new ProfileShareLifecycle(shares, shareEvents)),
         audit,
         new ProfilePinHasher(encoder),
         new MutationTransactions(transactionManager, new ConstraintViolationTranslator()),

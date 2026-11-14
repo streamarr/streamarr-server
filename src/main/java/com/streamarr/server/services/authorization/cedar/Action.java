@@ -98,12 +98,34 @@ enum Action {
       FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.PROFILE_MANAGEMENT),
+  VIEW_MANAGED_PROFILES(
+      "viewManagedProfiles",
+      ResourceKind.ACCOUNT,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   VIEW_MANAGER_INVITATIONS(
       "viewManagerInvitations",
       ResourceKind.PROFILE,
       Authorizes.READ,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
       FactRequirement.PROFILE_MANAGEMENT),
+  VIEW_PROFILE_MANAGERS(
+      "viewProfileManagers",
+      ResourceKind.PROFILE,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT),
+  VIEW_RECEIVED_MANAGER_INVITATIONS(
+      "viewReceivedManagerInvitations",
+      ResourceKind.ACCOUNT,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_RECEIVED_MANAGER_INVITATION(
+      "viewReceivedManagerInvitation",
+      ResourceKind.MANAGER_INVITATION,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.MANAGER_INVITATION_FACTS),
   VIEW_PROFILE_SHARE_HOUSEHOLDS(
       "viewProfileShareHouseholds",
       ResourceKind.PROFILE,

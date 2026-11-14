@@ -57,6 +57,20 @@ when {
   (principal has serverAdmin && principal.serverAdmin)
 };
 
+// The Profiles an Account manages, across Households: the Account itself, while it is enabled. The
+// planner pins the resource to the caller's own Account, so nobody lists another Account's, a
+// ServerAdmin included. A device-bound session administers nothing (devices.cedar).
+@id("view-managed-profiles-as-enabled-account")
+permit (
+  principal,
+  action == Streamarr::Action::"viewManagedProfiles",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  principal == resource
+};
+
 // The server-wide Household catalogue is ServerAdmin's inspection surface.
 @id("view-households-as-live-server-admin")
 permit (

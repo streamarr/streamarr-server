@@ -18,6 +18,7 @@ import com.streamarr.server.graphql.inputs.AdministrativelyRemoveProfileManagerI
 import com.streamarr.server.graphql.inputs.CancelManagerInvitationInput;
 import com.streamarr.server.graphql.inputs.DeclineManagerInvitationInput;
 import com.streamarr.server.graphql.inputs.InviteProfileManagerInput;
+import com.streamarr.server.graphql.inputs.LookUpManagerInvitationCodeInput;
 import com.streamarr.server.graphql.inputs.RelinquishProfileManagementInput;
 import com.streamarr.server.graphql.inputs.RemoveProfileManagerInput;
 import com.streamarr.server.graphql.mutation.MutationPayloads;
@@ -27,6 +28,7 @@ import com.streamarr.server.graphql.mutation.managers.AdministrativelyRemoveProf
 import com.streamarr.server.graphql.mutation.managers.CancelManagerInvitationPayload;
 import com.streamarr.server.graphql.mutation.managers.DeclineManagerInvitationPayload;
 import com.streamarr.server.graphql.mutation.managers.InviteProfileManagerPayload;
+import com.streamarr.server.graphql.mutation.managers.LookUpManagerInvitationCodePayload;
 import com.streamarr.server.graphql.mutation.managers.ManagerErrors;
 import com.streamarr.server.graphql.mutation.managers.RelinquishProfileManagementPayload;
 import com.streamarr.server.graphql.mutation.managers.RemoveProfileManagerPayload;
@@ -75,6 +77,18 @@ public class ProfileManagerResolver {
     return relayConnectionAdapter.toConnection(page, list, this::invitationDetails);
   }
 
+  @DgsQuery
+  public ManagerInvitationDetails managerInvitation(@InputArgument String invitationId) {
+    var identity = authorizationService.currentIdentity();
+    return managerService
+        .managerInvitation(identity, Ids.parseUuid(invitationId))
+        .map(
+            reading ->
+                ManagerInvitationDetails.from(
+                    reading.invitation(), reading.status(), identity.accountId()))
+        .orElse(null);
+  }
+
   @DgsMutation
   public InviteProfileManagerPayload inviteProfileManager(
       @InputArgument InviteProfileManagerInput input) {
@@ -83,7 +97,7 @@ public class ProfileManagerResolver {
             .inviteProfileManager(
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.profileId()),
-                Ids.parseUuid(input.recipientAccountId()))
+                input.email())
             .map(
                 issued ->
                     new IssuedManagerInvitation(
@@ -106,11 +120,11 @@ public class ProfileManagerResolver {
 
   @DgsMutation
   public AcceptManagerInvitationPayload acceptManagerInvitation(
-      @InputArgument AcceptManagerInvitationInput input, DataFetchingEnvironment dfe) {
+      @InputArgument AcceptManagerInvitationInput input) {
     return MutationPayloads.payload(
         managerService
             .acceptManagerInvitation(
-                authorizationService.currentIdentity(), managerInvitationCode(input.code(), dfe))
+                authorizationService.currentIdentity(), Ids.parseUuid(input.invitationId()))
             .map(this::invitationDetails),
         ManagerErrors::toAcceptError,
         AcceptManagerInvitationPayload::new);
@@ -118,14 +132,26 @@ public class ProfileManagerResolver {
 
   @DgsMutation
   public DeclineManagerInvitationPayload declineManagerInvitation(
-      @InputArgument DeclineManagerInvitationInput input, DataFetchingEnvironment dfe) {
+      @InputArgument DeclineManagerInvitationInput input) {
     return MutationPayloads.payload(
         managerService
             .declineManagerInvitation(
-                authorizationService.currentIdentity(), managerInvitationCode(input.code(), dfe))
+                authorizationService.currentIdentity(), Ids.parseUuid(input.invitationId()))
             .map(this::invitationDetails),
         ManagerErrors::toDeclineError,
         DeclineManagerInvitationPayload::new);
+  }
+
+  @DgsMutation
+  public LookUpManagerInvitationCodePayload lookUpManagerInvitationCode(
+      @InputArgument LookUpManagerInvitationCodeInput input, DataFetchingEnvironment dfe) {
+    return MutationPayloads.payload(
+        managerService
+            .lookUpManagerInvitationCode(
+                authorizationService.currentIdentity(), managerInvitationCode(input.code(), dfe))
+            .map(this::invitationDetails),
+        ManagerErrors::toLookUpError,
+        LookUpManagerInvitationCodePayload::new);
   }
 
   @DgsMutation
@@ -190,7 +216,8 @@ public class ProfileManagerResolver {
   }
 
   private ManagerInvitationDetails invitationDetails(ProfileManagerInvitation invitation) {
-    return ManagerInvitationDetails.from(invitation, clock.instant());
+    return ManagerInvitationDetails.from(
+        invitation, clock.instant(), authorizationService.currentIdentity().accountId());
   }
 
   private ManagerInvitationCodeCommand managerInvitationCode(

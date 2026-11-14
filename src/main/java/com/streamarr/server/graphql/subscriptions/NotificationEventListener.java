@@ -3,8 +3,10 @@ package com.streamarr.server.graphql.subscriptions;
 import com.streamarr.server.domain.notification.ChangedNotification;
 import com.streamarr.server.domain.notification.RecipientReference;
 import com.streamarr.server.graphql.dto.NotificationsChange;
+import com.streamarr.server.services.events.notification.NotificationRecipientDeletedEvent;
 import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -23,8 +25,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * deleting a Profile dismisses what was said about the Profile and about each of its shares, so the
  * listener gathers what the transaction changed and, once it commits, pushes one change to each
  * recipient with each of its Notifications once. A transaction that rolls back pushes nothing, and
- * so does a change announced with no transaction behind it. It reads nothing: each operation reads
- * the Notifications on a delivery thread, after the writer has released its database connection.
+ * so does a change announced with no transaction behind it. A recipient that the transaction
+ * deletes is pushed nothing, even what the transaction changed before deleting it, since its
+ * Notifications go with it (ADR 0063 §Deletion, disabling, and the end of a subject). It reads
+ * nothing: each operation reads the Notifications on a delivery thread, after the writer has
+ * released its database connection.
  */
 @Component
 @RequiredArgsConstructor
@@ -40,6 +45,15 @@ public class NotificationEventListener {
     }
 
     pendingPush().gather(event.notifications());
+  }
+
+  @EventListener
+  public void onNotificationRecipientDeleted(NotificationRecipientDeletedEvent event) {
+    if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+      return;
+    }
+
+    pendingPush().forget(event.recipient());
   }
 
   private PendingPush pendingPush() {
@@ -78,9 +92,14 @@ public class NotificationEventListener {
   private final class PendingPush implements TransactionSynchronization {
 
     private final List<ChangedNotification> changed = new ArrayList<>();
+    private final Set<RecipientReference> deleted = new HashSet<>();
 
     void gather(List<ChangedNotification> notifications) {
       changed.addAll(notifications);
+    }
+
+    void forget(RecipientReference recipient) {
+      deleted.add(recipient);
     }
 
     @Override
@@ -95,7 +114,10 @@ public class NotificationEventListener {
 
     @Override
     public void afterCommit() {
-      push(changed);
+      push(
+          changed.stream()
+              .filter(notification -> !deleted.contains(notification.recipient()))
+              .toList());
     }
 
     @Override

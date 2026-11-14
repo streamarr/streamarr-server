@@ -1,6 +1,7 @@
 package com.streamarr.server.services.authorization;
 
 import com.streamarr.server.domain.auth.ProfileKind;
+import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import java.util.UUID;
 
 /**
@@ -50,8 +51,33 @@ public sealed interface Intent {
 
   record ViewProfileAdministration(UUID profileId) implements UnitIntent {}
 
+  /**
+   * The Profiles the signed-in Account manages, across Households: its own, while it is enabled,
+   * never from a device-bound session.
+   */
+  record ViewManagedProfiles() implements UnitIntent {}
+
   /** Pending direct-manager invitations: ProfileManagers and live ServerAdmin only. */
   record ViewManagerInvitations(UUID profileId) implements UnitIntent {}
+
+  /**
+   * The Accounts that manage a Profile: its ProfileManagers and live ServerAdmin only, never from a
+   * device-bound session.
+   */
+  record ViewProfileManagers(UUID profileId) implements UnitIntent {}
+
+  /**
+   * The pending manager invitations addressed to the caller's own Account: an enabled Account,
+   * never from a device-bound session, which may not answer them.
+   */
+  record ViewReceivedManagerInvitations() implements UnitIntent {}
+
+  /**
+   * One manager invitation that names the caller's own Account, whatever its status: an enabled
+   * Account, never from a device-bound session, which may not answer it. The inviter and a
+   * ServerAdmin read it through the Profile's administration instead.
+   */
+  record ViewReceivedManagerInvitation(UUID invitationId) implements UnitIntent {}
 
   /**
    * A Profile's shares into every Household and the name of each: the offering side only, meaning
@@ -117,7 +143,10 @@ public sealed interface Intent {
    * mutation must write.
    */
   sealed interface ProfilePolicyChange extends Intent
-      permits ChangeProfileKind, SetProfileContentCeiling, ClearProfileContentCeiling {
+      permits ChangeProfileKind,
+          SetProfileContentCeiling,
+          ClearProfileContentCeiling,
+          SetProfilePolicy {
 
     UUID profileId();
   }
@@ -128,6 +157,13 @@ public sealed interface Intent {
       implements ProfilePolicyChange {}
 
   record ClearProfileContentCeiling(UUID profileId) implements ProfilePolicyChange {}
+
+  /**
+   * Give a Profile a kind and Content Ceiling at once. No mutation makes both changes in one step;
+   * the lock preview asks it, so that it previews only a change the caller may make.
+   */
+  record SetProfilePolicy(UUID profileId, ProfilePolicyTarget target)
+      implements ProfilePolicyChange {}
 
   /** Set or remove a Profile's PIN: managers and supervising admins. */
   record ManageProfilePin(UUID profileId) implements UnitIntent {}

@@ -335,6 +335,21 @@ namespace Streamarr {
     resource: Profile,
     context: {},
   };
+  action viewProfileManagers in managerAdministration appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
+  action viewReceivedManagerInvitations in managerAdministration appliesTo {
+    principal: Account,
+    resource: Account,
+    context: {},
+  };
+  action viewReceivedManagerInvitation in managerAdministration appliesTo {
+    principal: Account,
+    resource: ManagerInvitation,
+    context: {},
+  };
   action acceptManagerInvitation in managerAdministration appliesTo {
     principal: Account,
     resource: ManagerInvitation,
@@ -514,6 +529,12 @@ namespace Streamarr {
   action viewProfileAdministration in profileAdministration appliesTo {
     principal: Account,
     resource: Profile,
+    context: {},
+  };
+  // The Profiles the signed-in Account manages; the resource is the Account itself.
+  action viewManagedProfiles in profileAdministration appliesTo {
+    principal: Account,
+    resource: Account,
     context: {},
   };
 

@@ -8,10 +8,13 @@ import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.P
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static org.jooq.impl.DSL.lower;
 
+import com.streamarr.server.domain.auth.HouseholdProfilesFilter;
 import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileAuthority;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
+import com.streamarr.server.domain.auth.ProfileReaderRelation;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.jooq.generated.enums.ProfileShareStatus;
@@ -19,6 +22,7 @@ import com.streamarr.server.jooq.generated.tables.records.ProfileRecord;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
 import jakarta.persistence.EntityManager;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -267,7 +271,7 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
 
   @Override
   public List<Row<Profile>> rowsAvailableInHousehold(UUID householdId, Seek seek) {
-    var keyset = Keyset.<String>builder().sortValue(lower(PROFILE.NAME)).itemId(PROFILE.ID).build();
+    var keyset = byName();
     var query =
         keyset.rowsBeyond(
             dsl.select(PROFILE.asterisk(), keyset.selectedSortValue())
@@ -277,6 +281,99 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
             availableIn(householdId),
             seek);
     return JooqQueryHelper.nativeRows(entityManager, query, Profile.class, keyset);
+  }
+
+  @Override
+  public List<Row<Profile>> rowsManagedBy(UUID accountId, Seek seek) {
+    var keyset = byName();
+    var query =
+        keyset.rowsBeyond(
+            dsl.select(PROFILE.asterisk(), keyset.selectedSortValue()).from(PROFILE),
+            ProfileAuthorityConditions.managedBy(DSL.val(accountId)),
+            seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, Profile.class, keyset);
+  }
+
+  @Override
+  public List<Row<Profile>> rowsInHousehold(HouseholdProfilesFilter filter, Seek seek) {
+    var managedThere =
+        PROFILE
+            .HOUSEHOLD_ID
+            .eq(filter.householdId())
+            .and(ProfileAuthorityConditions.managedBy(DSL.val(filter.readerAccountId())));
+    var kept =
+        filter.everyAvailableProfile()
+            ? managedThere.or(
+                DSL.exists(
+                    DSL.selectOne()
+                        .from(PROFILE_HOUSEHOLD_SHARE)
+                        .where(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(PROFILE.ID))
+                        .and(availableIn(filter.householdId()))))
+            : managedThere;
+    var keyset = byName();
+    var query =
+        keyset.rowsBeyond(
+            dsl.select(PROFILE.asterisk(), keyset.selectedSortValue()).from(PROFILE), kept, seek);
+    return JooqQueryHelper.nativeRows(entityManager, query, Profile.class, keyset);
+  }
+
+  @Override
+  public boolean lockForInvitationTo(UUID profileId, String email) {
+    return lockWithPersonalProfileOfAccount(
+        profileId, lower(USER_ACCOUNT.EMAIL).eq(lower(DSL.val(email))));
+  }
+
+  @Override
+  public boolean lockWithPersonalProfileOf(UUID profileId, UUID accountId) {
+    return lockWithPersonalProfileOfAccount(profileId, USER_ACCOUNT.ID.eq(accountId));
+  }
+
+  // Whether the Profile exists, having locked it and the Personal Profile of the Account that
+  // matches, if any.
+  private boolean lockWithPersonalProfileOfAccount(UUID profileId, Condition account) {
+    var accountsProfile =
+        DSL.select(USER_ACCOUNT.PERSONAL_PROFILE_ID).from(USER_ACCOUNT).where(account);
+    // PostgreSQL locks the rows as the sort returns them, so in id order.
+    return dsl.select(PROFILE.ID)
+        .from(PROFILE)
+        .where(PROFILE.ID.eq(profileId).or(PROFILE.ID.in(accountsProfile)))
+        .orderBy(PROFILE.ID)
+        .forUpdate()
+        .fetch(PROFILE.ID)
+        .contains(profileId);
+  }
+
+  @Override
+  public Set<UUID> availableAmong(UUID householdId, Collection<UUID> profileIds) {
+    if (profileIds.isEmpty()) {
+      return Set.of();
+    }
+
+    return dsl.select(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID)
+        .from(PROFILE_HOUSEHOLD_SHARE)
+        .where(availableIn(householdId))
+        .and(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.in(profileIds))
+        .fetchSet(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID);
+  }
+
+  @Override
+  public Set<UUID> availableWhereTheyBelong(Collection<UUID> profileIds) {
+    if (profileIds.isEmpty()) {
+      return Set.of();
+    }
+
+    return dsl.select(PROFILE.ID)
+        .from(PROFILE)
+        .join(PROFILE_HOUSEHOLD_SHARE)
+        .on(PROFILE_HOUSEHOLD_SHARE.PROFILE_ID.eq(PROFILE.ID))
+        .and(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.eq(PROFILE.HOUSEHOLD_ID))
+        .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(DSL.inline(ProfileShareStatus.ACTIVE)))
+        .where(PROFILE.ID.in(profileIds))
+        .fetchSet(PROFILE.ID);
+  }
+
+  private static Keyset<String> byName() {
+    return Keyset.<String>builder().sortValue(lower(PROFILE.NAME)).itemId(PROFILE.ID).build();
   }
 
   @Override
@@ -297,6 +394,44 @@ public class ProfileRepositoryCustomImpl implements ProfileRepositoryCustom {
         .HOUSEHOLD_ID
         .eq(householdId)
         .and(PROFILE_HOUSEHOLD_SHARE.STATUS.eq(DSL.inline(ProfileShareStatus.ACTIVE)));
+  }
+
+  @Override
+  public List<ProfileReaderRelation> relationsTo(UUID accountId, Collection<UUID> profileIds) {
+    if (profileIds.isEmpty()) {
+      return List.of();
+    }
+
+    var reader = DSL.val(accountId);
+    var readersHousehold =
+        DSL.exists(
+            DSL.selectOne()
+                .from(USER_ACCOUNT)
+                .where(USER_ACCOUNT.ID.eq(reader))
+                .and(USER_ACCOUNT.HOUSEHOLD_ID.eq(PROFILE.HOUSEHOLD_ID)));
+    return dsl.select(
+            PROFILE.ID,
+            PROFILE.HOUSEHOLD_ID,
+            DSL.field(ProfileAuthorityConditions.managedBy(reader)),
+            DSL.field(ProfileAuthorityConditions.supervisedBy(reader)),
+            DSL.field(readersHousehold))
+        .from(PROFILE)
+        .where(PROFILE.ID.in(profileIds))
+        .fetch(
+            row ->
+                new ProfileReaderRelation(
+                    row.value1(),
+                    row.value2(),
+                    authorityOf(row.value3(), row.value4()),
+                    row.value5()));
+  }
+
+  private static Optional<ProfileAuthority> authorityOf(boolean manages, boolean supervises) {
+    if (manages) {
+      return Optional.of(ProfileAuthority.MANAGES);
+    }
+
+    return supervises ? Optional.of(ProfileAuthority.SUPERVISES) : Optional.empty();
   }
 
   @Override

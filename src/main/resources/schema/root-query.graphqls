@@ -29,8 +29,32 @@ type Query {
     householdAdministration(householdId: ID!): HouseholdAdministration
     households(first: Int, after: String, last: Int, before: String): HouseholdAdministrationConnection!
     accountAdministration(accountId: ID!): AccountAdministration
+    """
+    A Profile's administrative details: for its managers, for the HouseholdAdmins of a Household
+    where it is available, and for ServerAdmins. Null for everyone else, for a device-bound session
+    and when no Profile has the id.
+    """
     profileAdministration(profileId: ID!): ProfileAdministration
+    """
+    A Household's Profiles for Household settings, by name. Its HouseholdAdmins and ServerAdmins
+    get every Profile available there, both those that belong there and the visitors shared in,
+    and also the Profiles they manage that belong there but are not available there. Any other
+    Account gets the Profiles it manages that belong there; an Account whose own Personal Profile
+    is supervised manages none, so its list is empty. A visitor's row never says where it comes
+    from. A device-bound session and a disabled Account get an empty list.
+    """
+    householdProfiles(householdId: ID!, first: Int, after: String, last: Int, before: String): HouseholdProfileConnection!
+    """
+    Every Account invitation, newest first. ServerAdmin work: everyone else, a device-bound session
+    included, gets FORBIDDEN.
+    """
     accountInvitations(first: Int, after: String, last: Int, before: String): AccountInvitationConnection!
+    """
+    Before an Account is invited for an existing Profile: the Profile, the Household it belongs to
+    and the other Households where it is available. ServerAdmin work: everyone else, a device-bound
+    session included, gets FORBIDDEN. Null when no Profile has the id, when it is already an
+    Account's Personal Profile, or when its Household no longer exists.
+    """
     accountInvitationProfilePreview(profileId: ID!): AccountInvitationProfilePreview
     """
     What offering this Profile to the Household a share code names would mean: whether the Profile
@@ -76,8 +100,69 @@ type Query {
     A missing code, an unauthorized caller or a device-bound session gets null.
     """
     shareCode(shareCodeId: ID!): ShareCode
+    """
+    The pending invitations to manage a Profile, newest first, for its managers and for
+    ServerAdmins: the address each was sent to, as typed, who sent it and when it expires. An
+    invitation to an address that no Account can answer for is listed like any other, and so, to
+    the managers, is one that the server invalidated because of what became of the Account it
+    names: it waits until it is canceled, replaced, ended for another reason or expired, so the list
+    never tells who has an Account. A ServerAdmin reads such an invitation as invalidated, so not
+    here. An invitation leaves the list once it is accepted, declined, canceled, replaced,
+    invalidated or expired. An invitation is out of the list from its expiresAt on, before the
+    server stores the invitation as expired. No subscription delivers changes to this list. A
+    client takes an invitation out of an open list at the invitation's expiresAt. A client sees an
+    answer or a cancellation when the client reads the list again. Everyone else gets an empty
+    list, a HouseholdAdmin who only supervises the Profile included, as do a device-bound session
+    and a Profile that does not exist.
+    """
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
+    """
+    Which Profiles giving this Profile the kind and Content Ceiling given would lock, before the
+    change is made; maximumAllowedRatingAge null means no Content Ceiling. For whoever may make that
+    change, as changeProfileKind, setProfileMaximumAllowedRatingAge and
+    removeProfileMaximumAllowedRatingAge decide it, a recent password aside. Null for everyone else,
+    for a negative maximumAllowedRatingAge, which the change refuses, for a device-bound session and
+    when no Profile has the id. It covers every Household where the Profile is available and always
+    says whether the Profile itself would lock, but lists a Household only where the asking Account
+    may already see that the Profile is available, names there only the Profiles it may see, and
+    of the rest says only that other Profiles would lock.
+    """
+    profilePolicyChangePreview(profileId: ID!, kind: ProfileKind!, maximumAllowedRatingAge: Int): ProfileLockPreview
+    """
+    Which Profiles creating a Profile of this kind and Content Ceiling in the Household would lock
+    there, and whether the new Profile itself would be locked until it has a PIN, before it is
+    created; maximumAllowedRatingAge null means no Content Ceiling. For whoever may create a Profile
+    there: its HouseholdAdmins whose own Personal Profile is an unrestricted Adult, and
+    ServerAdmins. It always lists the Household, a ServerAdmin's included, and names there only the
+    Profiles the asking Account may see. Null for everyone else, for
+    a negative maximumAllowedRatingAge, which creation refuses, for a device-bound session and when
+    no Household has the id.
+    """
+    profileCreationPreview(householdId: ID!, kind: ProfileKind!, maximumAllowedRatingAge: Int): ProfileLockPreview
+    """
+    The Accounts that manage a Profile, for the Managers section of its page: the Account whose own
+    Personal Profile it is first, then its direct managers by display name. Only the Profile's
+    managers and ServerAdmins read it. Anyone else, a HouseholdAdmin who only supervises it among
+    them, gets an empty list, as do a device-bound session, a disabled Account and a Profile that
+    does not exist.
+    """
+    profileManagers(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileManagerConnection!
+    """
+    The pending invitations to manage a Profile that name the signed-in Account and that it may
+    still answer, newest first. Empty for a device-bound session and for a disabled Account.
+    """
     pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
+    """
+    One invitation to manage a Profile, at any status, for the page where the Account it names
+    accepts or declines it. Its named Account, the managers of its Profile and ServerAdmins read it;
+    addressedToReader is true only for the named Account, the one that may decide it. It shows the
+    Profile's and the inviter's names as they are now, and the names it was made with once the
+    Profile or the inviter is deleted. The Profile's managers read an invitation that the server
+    invalidated because of what became of the Account it names as still waiting; that Account and
+    ServerAdmins read it as INVALIDATED. Null for everyone else, for a device-bound session, for a
+    disabled Account, and when no invitation has the id.
+    """
+    managerInvitation(invitationId: ID!): ManagerInvitationDetails
     """
     A Household's active Devices, newest first, for its HouseholdAdmins and for ServerAdmins.
     Everyone else gets an empty list. visitorsOnly: true keeps only the Devices that visitors
@@ -89,6 +174,11 @@ type Query {
     serverEsnBlocks(first: Int, after: String, last: Int, before: String): EsnBlockConnection!
     householdDeletionPreview(householdId: ID!): HouseholdDeletionPreview
     securityAuditEvents(first: Int, after: String, last: Int, before: String): SecurityAuditEventConnection!
+    """
+    A Profile's viewing activity, most recent first: for its managers, for a session whose selected
+    Profile it is, and for ServerAdmins. Everyone else gets an empty list, as does a Profile that
+    does not exist.
+    """
     profileActivity(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileActivityConnection!
     encoderPresetSetting: EncoderPresetSetting!
     idleSegmentRetentionSetting: IdleSegmentRetentionSetting!
@@ -96,7 +186,10 @@ type Query {
     notificationRetentionSetting: NotificationRetentionSetting!
     "How long a share code stays live after it is issued. Requires a ServerAdmin."
     shareCodeLifetimeSetting: ShareCodeLifetimeSetting!
-    "How long an invitation or an offer of a Profile waits for its answer. Requires a ServerAdmin."
+    """
+    How long an invitation or an offer of a Profile waits for its answer. Requires a ServerAdmin;
+    anyone else gets FORBIDDEN.
+    """
     invitationLifetimeSetting: InvitationLifetimeSetting!
     "How many live share codes a Household may hold at once. Requires a ServerAdmin."
     shareCodeLimitSetting: ShareCodeLimitSetting!

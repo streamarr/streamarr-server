@@ -1,5 +1,6 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
@@ -19,6 +20,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfilePinHasher;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -64,7 +66,9 @@ public class ProfileAdministrationService {
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
   private final AccountInvitationRepository accountInvitationRepository;
-  private final ProfileManagerInvitationRepository profileManagerInvitationRepository;
+  private final ProfileManagerInvitationLifecycle managerInvitationLifecycle;
+  private final ProfileManagerInvitationRepository managerInvitationRepository;
+  private final LeavingManagerProposals leavingManagerProposals;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final ProfilePinHasher profilePinHasher;
   private final MutationTransactions mutationTransactions;
@@ -415,10 +419,16 @@ public class ProfileAdministrationService {
             throw new MutationRejection(refusal.get());
           }
 
+          // An invitation that still waits to the Profile's managers blocks, even one invalidated
+          // for its Account, so deletion never tells them what became of that Account (ADR 0024).
+          if (managerInvitationRepository.existsWaitingForProfile(profileId, clock.instant())) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotDeletable());
+          }
+
           profileRepository.lockProfileDeletionAcrossHouseholds(profileId);
           accountInvitationRepository.invalidatePendingByProfileId(
               profileId, "Profile deleted", clock.instant());
-          profileManagerInvitationRepository.invalidatePendingByProfileId(
+          managerInvitationLifecycle.invalidatePendingByProfileId(
               profileId, "Profile deleted", clock.instant());
           shareLifecycle.announceDeletionWithProfile(profileId, clock.instant());
           notificationDismissals.profileDeleted(profileId);
@@ -452,7 +462,7 @@ public class ProfileAdministrationService {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
-          invalidateRecipientProposalsWhenRestricted(profileId, transition);
+          invalidateProposalsWhenRestricted(profileId, transition);
 
           // The decision above JPA-loaded this row in this transaction; re-read past the
           // first-level cache or the payload would show the pre-transition state.
@@ -473,9 +483,10 @@ public class ProfileAdministrationService {
   /**
    * Restricting a linked Personal Profile ends the person's eligibility (ADR 0024): a pending
    * manager invitation naming them must not outlive it and later restore authority forbidden to
-   * restricted Accounts.
+   * restricted Accounts. They no longer manage that Profile either, so the invitations they sent to
+   * manage it and the offers they made of it stand no longer.
    */
-  private void invalidateRecipientProposalsWhenRestricted(
+  private void invalidateProposalsWhenRestricted(
       UUID profileId, ProfilePolicyTransition transition) {
     var restricted =
         transition.targetKind() == ProfileKind.KID || transition.targetCeiling() != null;
@@ -485,10 +496,14 @@ public class ProfileAdministrationService {
 
     userAccountRepository
         .findByPersonalProfileId(profileId)
-        .ifPresent(
-            linked ->
-                profileManagerInvitationRepository.invalidatePendingByRecipientAccountId(
-                    linked.getId(), "recipient became ineligible", clock.instant()));
+        .ifPresent(linked -> withdrawProposalsOf(linked.getId(), profileId));
+  }
+
+  private void withdrawProposalsOf(UUID restrictedAccountId, UUID personalProfileId) {
+    var now = clock.instant();
+    managerInvitationLifecycle.invalidatePendingByRecipientAccountId(
+        restrictedAccountId, "recipient became ineligible", now);
+    leavingManagerProposals.withdraw(personalProfileId, restrictedAccountId, now);
   }
 
   private ProfilePolicyTransition decideTransition(
@@ -536,7 +551,7 @@ public class ProfileAdministrationService {
 
   /**
    * Refuses removal when it would lock the Profile in any Household where it is available. The
-   * Household is named only for a caller who may view its administration.
+   * Household is named only for a caller who may already see that the Profile is available there.
    */
   private Optional<ProfileRejections.WouldLockProfile> wouldLockIn(
       AuthenticatedIdentity identity, UUID profileId) {
@@ -547,11 +562,11 @@ public class ProfileAdministrationService {
       var available = profileRepository.findAvailableInHousehold(householdId);
       var requiring = ProfileSafetyRule.profilesRequiringPin(available);
       if (requiring.contains(profileId)) {
-        var name =
-            mayViewHousehold(identity, householdId)
-                ? householdRepository.findById(householdId).map(h -> h.getName())
-                : Optional.<String>empty();
-        return Optional.of(new ProfileRejections.WouldLockProfile(householdId, name));
+        var household =
+            seesTheProfileIn(identity, profileId, householdId)
+                ? householdRepository.findById(householdId)
+                : Optional.<Household>empty();
+        return Optional.of(new ProfileRejections.WouldLockProfile(household));
       }
     }
 
@@ -570,6 +585,14 @@ public class ProfileAdministrationService {
   private boolean mayViewProfile(AuthenticatedIdentity identity, UUID profileId) {
     return authorizationService.decide(identity, new Intent.ViewProfileAdministration(profileId))
         instanceof Decision.Allowed<?>;
+  }
+
+  // Whoever may use the Household, manages the Profile or is a ServerAdmin may already see that the
+  // Profile is available there (ADR 0024 §PIN safety); viewProfileManagers allows the last two.
+  private boolean seesTheProfileIn(
+      AuthenticatedIdentity identity, UUID profileId, UUID householdId) {
+    return userAccountRepository.mayUseHousehold(identity.accountId(), householdId)
+        || authorizationService.isAllowed(identity, new Intent.ViewProfileManagers(profileId));
   }
 
   private boolean mayViewHousehold(AuthenticatedIdentity identity, UUID householdId) {

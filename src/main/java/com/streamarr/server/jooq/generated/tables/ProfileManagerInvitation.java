@@ -156,6 +156,18 @@ public class ProfileManagerInvitation extends TableImpl<ProfileManagerInvitation
      */
     public final TableField<ProfileManagerInvitationRecord, byte[]> SECRET_DIGEST = createField(DSL.name("secret_digest"), SQLDataType.BLOB.nullable(false), this, "");
 
+    /**
+     * The column
+     * <code>public.profile_manager_invitation.recipient_invalidated_at</code>.
+     */
+    public final TableField<ProfileManagerInvitationRecord, OffsetDateTime> RECIPIENT_INVALIDATED_AT = createField(DSL.name("recipient_invalidated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
+
+    /**
+     * The column
+     * <code>public.profile_manager_invitation.recipient_invalidation_reason</code>.
+     */
+    public final TableField<ProfileManagerInvitationRecord, String> RECIPIENT_INVALIDATION_REASON = createField(DSL.name("recipient_invalidation_reason"), SQLDataType.CLOB, this, "");
+
     private ProfileManagerInvitation(Name alias, Table<ProfileManagerInvitationRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -227,7 +239,7 @@ public class ProfileManagerInvitation extends TableImpl<ProfileManagerInvitation
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_PM_INVITATION_PROFILE, Indexes.IDX_PM_INVITATION_RECIPIENT, Indexes.UQ_PM_INVITATION_LIVE);
+        return Arrays.asList(Indexes.IDX_PM_INVITATION_PENDING_EXPIRY, Indexes.IDX_PM_INVITATION_PROFILE, Indexes.IDX_PM_INVITATION_RECIPIENT);
     }
 
     @Override
@@ -286,7 +298,8 @@ public class ProfileManagerInvitation extends TableImpl<ProfileManagerInvitation
     @Override
     public List<Check<ProfileManagerInvitationRecord>> getChecks() {
         return Arrays.asList(
-            Internal.createCheck(this, DSL.name("chk_pm_invitation_pending_has_parties"), "(((status <> 'PENDING'::profile_manager_invitation_status) OR ((profile_id IS NOT NULL) AND (inviter_account_id IS NOT NULL) AND (recipient_account_id IS NOT NULL))))", true)
+            Internal.createCheck(this, DSL.name("chk_pm_invitation_pending_has_parties"), "(((status <> 'PENDING'::profile_manager_invitation_status) OR ((profile_id IS NOT NULL) AND (inviter_account_id IS NOT NULL))))", true),
+            Internal.createCheck(this, DSL.name("chk_pm_invitation_recipient_invalidation_has_reason"), "(((recipient_invalidated_at IS NULL) = (recipient_invalidation_reason IS NULL)))", true)
         );
     }
 

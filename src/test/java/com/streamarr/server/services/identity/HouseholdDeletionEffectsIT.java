@@ -747,19 +747,33 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should invalidate only removed Profile manager invitations when deleting a Household")
-  void shouldInvalidateOnlyRemovedProfileManagerInvitationsWhenDeletingHousehold() {
+      "Should invalidate only the removed and moved Profiles' manager invitations when deleting a"
+          + " Household")
+  void shouldInvalidateOnlyRemovedAndMovedProfilesManagerInvitationsWhenDeletingHousehold() {
     var orphan = createSourceProfile();
-    var target =
+    var removed =
         profileManagerInvitationRepository.saveAndFlush(
             managerInvitation().profileId(orphan.getId()).build());
-    var unrelated =
+    var moved =
         profileManagerInvitationRepository.saveAndFlush(
             managerInvitation().profileId(doomed.profile().getId()).build());
+    var unrelated =
+        profileManagerInvitationRepository.saveAndFlush(
+            managerInvitation()
+                .profileId(admin.profile().getId())
+                .inviterAccountId(admin.account().getId())
+                .inviterDisplayName(admin.account().getDisplayName())
+                .recipientAccountId(doomed.account().getId())
+                .recipientEmail(doomed.account().getEmail())
+                .build());
 
     performSuccessfulTransferAndDeletion();
 
-    assertThat(profileManagerInvitationRepository.findById(target.getId()))
+    assertThat(profileManagerInvitationRepository.findById(removed.getId()))
+        .get()
+        .extracting(ProfileManagerInvitation::getStatus)
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(profileManagerInvitationRepository.findById(moved.getId()))
         .get()
         .extracting(ProfileManagerInvitation::getStatus)
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
@@ -807,8 +821,8 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep a surviving manager's invitation when preserving the Profile")
-  void shouldKeepSurvivingManagerInvitationWhenPreservingProfile() {
+  @DisplayName("Should invalidate a surviving manager's invitation when the kept Profile moves")
+  void shouldInvalidateSurvivingManagersInvitationWhenKeptProfileMoves() {
     var recipient = authTestSupport.createIdentity();
     try {
       profileManagerRepository.saveAndFlush(
@@ -833,15 +847,15 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
       assertThat(profileManagerInvitationRepository.findById(invitation.getId()))
           .get()
           .extracting(ProfileManagerInvitation::getStatus)
-          .isEqualTo(ProfileManagerInvitationStatus.PENDING);
+          .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     } finally {
       authTestSupport.deleteIdentity(recipient);
     }
   }
 
   @Test
-  @DisplayName("Should keep a surviving manager's share offer when preserving the Profile")
-  void shouldKeepSurvivingManagerShareOfferWhenPreservingProfile() {
+  @DisplayName("Should invalidate a surviving manager's share offer when the kept Profile moves")
+  void shouldInvalidateSurvivingManagersShareOfferWhenKeptProfileMoves() {
     var recipient = authTestSupport.createIdentity();
     try {
       profileManagerRepository.saveAndFlush(
@@ -867,7 +881,7 @@ class HouseholdDeletionEffectsIT extends AbstractIntegrationTest {
       assertThat(shareRepository.findById(offer.getId()))
           .get()
           .extracting(ProfileHouseholdShare::getStatus)
-          .isEqualTo(ProfileShareStatus.PENDING);
+          .isEqualTo(ProfileShareStatus.INVALIDATED);
     } finally {
       authTestSupport.deleteIdentity(recipient);
     }

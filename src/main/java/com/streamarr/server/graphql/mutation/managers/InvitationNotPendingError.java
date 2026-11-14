@@ -4,4 +4,7 @@ import com.streamarr.server.graphql.mutation.InputMutationError;
 import java.util.List;
 
 public record InvitationNotPendingError(String message, List<String> inputPath)
-    implements CancelManagerInvitationError, InputMutationError {}
+    implements CancelManagerInvitationError,
+        AcceptManagerInvitationError,
+        DeclineManagerInvitationError,
+        InputMutationError {}

@@ -42,6 +42,7 @@ import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -110,7 +111,8 @@ class AccountLifecycleServiceTest {
               new ProfileShareLifecycle(shares, shareEvents),
               new NotificationDismissals(shares, managerInvitations, shareEvents),
               managers,
-              managerInvitations,
+              new ProfileManagerInvitationLifecycle(
+                  managerInvitations, new CapturingEventPublisher()),
               accountInvitations,
               resetCodes,
               sessions,
@@ -279,6 +281,43 @@ class AccountLifecycleServiceTest {
         .extracting(ProfileHouseholdShare::isStructural)
         .isEqualTo(false);
     assertThat(structuralShareIn(destination.getId())).isPresent();
+  }
+
+  @ParameterizedTest
+  @EnumSource(SourceHouseholdAccess.class)
+  @DisplayName(
+      "Should invalidate the Personal Profile's waiting manager invitations and offers when its"
+          + " Account transfers")
+  void shouldInvalidatePersonalProfilesWaitingInvitationsAndOffersWhenItsAccountTransfers(
+      SourceHouseholdAccess access) {
+    var invitation =
+        managerInvitations.save(
+            managerInvitation().profileId(mover.getPersonalProfileId()).build());
+    var offer = shares.save(shareOffer().profileId(mover.getPersonalProfileId()).build());
+    var unrelatedInvitation = managerInvitations.save(managerInvitation().build());
+    var unrelatedOffer = shares.save(shareOffer().build());
+
+    assertThat(
+            service.transferAccount(
+                identity(), transferCommand().sourceHouseholdAccess(access).build()))
+        .isEqualTo(Outcome.accepted(mover));
+
+    assertThat(managerInvitations.findById(invitation.getId()))
+        .get()
+        .extracting(saved -> saved.statusAt(NOW))
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(shares.findById(offer.getId()))
+        .get()
+        .extracting(ProfileHouseholdShare::getStatus)
+        .isEqualTo(ProfileShareStatus.INVALIDATED);
+    assertThat(managerInvitations.findById(unrelatedInvitation.getId()))
+        .get()
+        .extracting(saved -> saved.statusAt(NOW))
+        .isEqualTo(ProfileManagerInvitationStatus.PENDING);
+    assertThat(shares.findById(unrelatedOffer.getId()))
+        .get()
+        .extracting(ProfileHouseholdShare::getStatus)
+        .isEqualTo(ProfileShareStatus.PENDING);
   }
 
   @Test
@@ -471,13 +510,15 @@ class AccountLifecycleServiceTest {
 
     deleteAccount(caller);
 
+    // Its named Account reads every invalidation; one for that Account alone still waits to the
+    // Profile's managers (ADR 0024 §Invitations).
     assertThat(managerInvitations.findById(target.getId()))
         .get()
-        .extracting(ProfileManagerInvitation::getStatus)
+        .extracting(invitation -> invitation.statusToItsAccountAt(NOW))
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(managerInvitations.findById(unrelated.getId()))
         .get()
-        .extracting(ProfileManagerInvitation::getStatus)
+        .extracting(invitation -> invitation.statusToItsAccountAt(NOW))
         .isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 

@@ -34,6 +34,18 @@ public final class ProfileConnections {
    * Profile. Answers the new Account's id.
    */
   public UUID connect(Profile profile, TestIdentity serverAdmin, TestIdentity reofferedTo) {
+    return connect(profile, serverAdmin, List.of(reofferedTo.household().getId()));
+  }
+
+  /**
+   * The ServerAdmin issues an Account invitation for the Profile that offers it again to nobody,
+   * and the invitation is accepted. Answers the new Account's id.
+   */
+  public UUID connect(Profile profile, TestIdentity serverAdmin) {
+    return connect(profile, serverAdmin, List.of());
+  }
+
+  private UUID connect(Profile profile, TestIdentity serverAdmin, List<UUID> reofferHouseholdIds) {
     var issued =
         credentialIssuance
             .issueAccountInvitationForProfile(
@@ -42,7 +54,7 @@ public final class ProfileConnections {
                     .recipientEmail(recipientEmail)
                     .householdRole(HouseholdRole.MEMBER)
                     .profileId(profile.getId())
-                    .reofferHouseholdIds(List.of(reofferedTo.household().getId()))
+                    .reofferHouseholdIds(reofferHouseholdIds)
                     .build())
             .fold(
                 invitation -> invitation,

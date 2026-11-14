@@ -10,12 +10,12 @@ import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
-import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
@@ -47,7 +47,7 @@ public class ProfileLifecycleService {
   private final UserAccountRepository userAccountRepository;
   private final HouseholdRepository householdRepository;
   private final ProfileManagerRepository profileManagerRepository;
-  private final ProfileManagerInvitationRepository managerInvitationRepository;
+  private final ProfileManagerInvitationLifecycle managerInvitationLifecycle;
   private final AccountInvitationRepository accountInvitationRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileShareLifecycle shareLifecycle;
@@ -230,7 +230,7 @@ public class ProfileLifecycleService {
 
   private void invalidateProfileBoundArtifacts(UUID profileId, String reason, Instant now) {
     accountInvitationRepository.invalidatePendingByProfileId(profileId, reason, now);
-    managerInvitationRepository.invalidatePendingByProfileId(profileId, reason, now);
+    managerInvitationLifecycle.invalidatePendingByProfileId(profileId, reason, now);
     // Read after any wait above, so an offer whose time ran out meanwhile is stored as expired.
     shareLifecycle.invalidatePendingByProfileId(profileId, reason, clock.instant());
   }

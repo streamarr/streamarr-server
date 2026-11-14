@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.notification.ChangedNotification;
 import com.streamarr.server.domain.notification.DismissalSelector;
@@ -20,12 +21,14 @@ import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.notification.JooqNotificationRepository;
 import com.streamarr.server.repositories.notification.NotificationRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
+import com.streamarr.server.services.auth.ManagerInvitationExpirySweeper;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
@@ -36,6 +39,7 @@ import com.streamarr.server.services.identity.AccountLifecycleService.TransferAc
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.HouseholdDeletionService;
 import com.streamarr.server.services.identity.HouseholdDeletionService.TransferLastAccountAndDeleteHouseholdCommand;
+import com.streamarr.server.services.identity.ProfileAdministrationService;
 import com.streamarr.server.services.identity.ProfileLifecycleService;
 import com.streamarr.server.services.identity.ProfileLifecycleService.TransferProfileCommand;
 import com.streamarr.server.services.identity.ProfileManagerAdministrationService;
@@ -47,6 +51,8 @@ import com.streamarr.server.support.ActiveSubscriptions;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
+import com.streamarr.server.support.ManagerInvitationSteps;
+import com.streamarr.server.support.ProfileCastSupport;
 import com.streamarr.server.support.ProfileConnections;
 import com.streamarr.server.support.ShareSteps;
 import com.streamarr.server.support.StoredNotificationRows;
@@ -68,6 +74,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -105,6 +113,8 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
                 __typename id unread message
                 ... on RequestNotification { resolution }
                 ... on ProfileShareAnsweredNotification { answer }
+                ... on ProfileManagerInvitationAnsweredNotification { invitationAnswer: answer }
+                ... on ProfileManagementRemovedNotification { profileName }
               }
             }
           }
@@ -124,6 +134,8 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
               __typename id unread message
               ... on RequestNotification { resolution }
               ... on ProfileShareAnsweredNotification { answer }
+              ... on ProfileManagerInvitationAnsweredNotification { invitationAnswer: answer }
+              ... on ProfileManagementRemovedNotification { profileName }
             }
           }
         }
@@ -149,6 +161,9 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private AccountInvitationService accountInvitations;
   @Autowired private AccountInvitationRepository invitationRepository;
   @Autowired private ProfileManagerAdministrationService profileManagement;
+  @Autowired private ProfileManagerInvitationRepository managerInvitationRepository;
+  @Autowired private ManagerInvitationExpirySweeper invitationExpirySweeper;
+  @Autowired private ProfileAdministrationService profileAdministration;
   @Autowired private ProfileLifecycleService profileLifecycle;
   @Autowired private HouseholdDeletionService householdDeletion;
   @Autowired private NotificationService notificationService;
@@ -159,6 +174,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   @Autowired private ApplicationEventPublisher eventPublisher;
   @Autowired private DSLContext dsl;
   @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private ProfileCastSupport cast;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private MeterRegistry meterRegistry;
 
@@ -172,6 +188,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
   private TestIdentity riverside;
   private TestIdentity riversideAdmin;
   private ShareSteps steps;
+  private ManagerInvitationSteps invitations;
   private ProfileConnections connections;
   private StoredNotificationRows rows;
 
@@ -187,6 +204,13 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
             .managers(profileManagerRepository)
             .shares(shareRepository)
             .accounts(userAccountRepository)
+            .transactions(transactionTemplate)
+            .build();
+    invitations =
+        ManagerInvitationSteps.builder()
+            .management(profileManagement)
+            .auth(authTestSupport)
+            .invitations(managerInvitationRepository)
             .transactions(transactionTemplate)
             .build();
     connections =
@@ -211,6 +235,7 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
     activeSubscriptions.awaitNoneActive();
     connections.deleteConnected();
     rows.deleteOf(identities.stream().map(NotificationsSubscriptionIT::accountOf).toList());
+    managerInvitationRepository.deleteAll();
     identities.reversed().forEach(authTestSupport::deleteIdentity);
   }
 
@@ -767,6 +792,278 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should deliver the request, then its decision, and the answer to the inviter when an"
+          + " invitation is accepted")
+  void shouldDeliverTheRequestThenItsDecisionAndTheAnswerToTheInviterWhenAnInvitationIsAccepted()
+      throws Exception {
+    var mara = track(authTestSupport.createIdentity());
+    var invited = subscribedSocket(authTestSupport.accountBearer(mara));
+    var inviter = subscribedSocket(authTestSupport.accountBearer(sam));
+
+    var invitation = invitations.invite(sam, alex(), mara.account().getEmail()).invitation();
+    var made = nextChange(invited);
+    assertThat(onlyChange(made).path("notificationId").asString())
+        .isEqualTo(toldAbout(mara, invitation).id().toString());
+    assertThat(nodeOf(made).path("__typename").asString())
+        .isEqualTo("ProfileManagerInvitationReceivedNotification");
+    assertThat(made.path("unreadNotificationCount").asInt()).isEqualTo(1);
+    assertMatchesAFreshQuery(made, mara);
+    var outcome =
+        profileManagement.acceptManagerInvitation(
+            authTestSupport.identityOf(mara), invitation.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var decided = nextChange(invited);
+    assertThat(onlyChange(decided).path("notificationId"))
+        .isEqualTo(onlyChange(made).path("notificationId"));
+    assertThat(nodeOf(decided).path("resolution").asString()).isEqualTo("DECIDED");
+    assertThat(decided.path("unreadNotificationCount").asInt()).isZero();
+    assertMatchesAFreshQuery(decided, mara);
+    var answered = nextChange(inviter);
+    assertThat(onlyChange(answered).path("notificationId").asString())
+        .isEqualTo(toldAbout(sam, invitation).id().toString());
+    assertThat(nodeOf(answered).path("__typename").asString())
+        .isEqualTo("ProfileManagerInvitationAnsweredNotification");
+    assertThat(nodeOf(answered).path("invitationAnswer").asString()).isEqualTo("ACCEPTED");
+    assertThat(answered.path("unreadNotificationCount").asInt()).isEqualTo(1);
+    assertMatchesAFreshQuery(answered, sam);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the decision and the answer to the inviter when an invitation is declined")
+  void shouldDeliverTheDecisionAndTheAnswerToTheInviterWhenAnInvitationIsDeclined()
+      throws Exception {
+    var mara = track(authTestSupport.createIdentity());
+    var invitation = invitations.invite(sam, alex(), mara.account().getEmail()).invitation();
+    var invited = subscribedSocket(authTestSupport.accountBearer(mara));
+    var inviter = subscribedSocket(authTestSupport.accountBearer(sam));
+
+    var outcome =
+        profileManagement.declineManagerInvitation(
+            authTestSupport.identityOf(mara), invitation.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    var decided = nextChange(invited);
+    assertThat(onlyChange(decided).path("notificationId").asString())
+        .isEqualTo(toldAbout(mara, invitation).id().toString());
+    assertThat(nodeOf(decided).path("resolution").asString()).isEqualTo("DECIDED");
+    assertThat(decided.path("unreadNotificationCount").asInt()).isZero();
+    assertMatchesAFreshQuery(decided, mara);
+    var answered = nextChange(inviter);
+    assertThat(onlyChange(answered).path("notificationId").asString())
+        .isEqualTo(toldAbout(sam, invitation).id().toString());
+    assertThat(nodeOf(answered).path("invitationAnswer").asString()).isEqualTo("DECLINED");
+    assertThat(answered.path("unreadNotificationCount").asInt()).isEqualTo(1);
+    assertMatchesAFreshQuery(answered, sam);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the request's withdrawal when the manager that sent the invitation"
+          + " relinquishes management")
+  void shouldDeliverTheRequestsWithdrawalWhenTheManagerThatSentTheInvitationRelinquishesManagement()
+      throws Exception {
+    var mara = track(authTestSupport.createIdentity());
+    var alex = steps.profileManagedBy("Alex", sam, sam, theo);
+    var invitation = invitations.invite(theo, alex, mara.account().getEmail()).invitation();
+    var socket = subscribedSocket(authTestSupport.accountBearer(mara));
+
+    var outcome =
+        profileManagement.relinquishProfileManagement(
+            authTestSupport.identityOf(theo), alex.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertInvitationWithdrawn(nextChange(socket), mara, invitation);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the older request's withdrawal with the new request in one change when a new"
+          + " invitation replaces it")
+  void
+      shouldDeliverTheOlderRequestsWithdrawalWithTheNewRequestInOneChangeWhenANewInvitationReplacesIt()
+          throws Exception {
+    var mara = track(authTestSupport.createIdentity());
+    var alex = alex();
+    var older = invitations.invite(sam, alex, mara.account().getEmail()).invitation();
+    var socket = subscribedSocket(authTestSupport.accountBearer(mara));
+
+    var newer = invitations.invite(sam, alex, mara.account().getEmail()).invitation();
+
+    var replaced = nextChange(socket);
+    assertThat(
+            replaced
+                .path("notifications")
+                .valueStream()
+                .map(
+                    change ->
+                        tuple(
+                            change.path("notificationId").asString(),
+                            textOrNull(change.path("edge").path("node").path("resolution")))))
+        .containsExactly(
+            tuple(toldAbout(mara, older).id().toString(), "WITHDRAWN"),
+            tuple(toldAbout(mara, newer).id().toString(), null));
+    assertThat(replaced.path("unreadNotificationCount").asInt()).isEqualTo(1);
+    assertMatchesAFreshQuery(replaced, mara);
+  }
+
+  @Test
+  @DisplayName("Should deliver the request's withdrawal when its invitation is canceled")
+  void shouldDeliverTheRequestsWithdrawalWhenItsInvitationIsCanceled() throws Exception {
+    var mara = track(authTestSupport.createIdentity());
+    var invitation = invitations.invite(sam, alex(), mara.account().getEmail()).invitation();
+    var socket = subscribedSocket(authTestSupport.accountBearer(mara));
+
+    var outcome =
+        profileManagement.cancelManagerInvitation(
+            authTestSupport.identityOf(sam), invitation.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertInvitationWithdrawn(nextChange(socket), mara, invitation);
+  }
+
+  @ParameterizedTest
+  @EnumSource(InviteeChange.class)
+  @DisplayName(
+      "Should deliver the request's withdrawal when its Account becomes ineligible or is granted"
+          + " management")
+  void shouldDeliverTheRequestsWithdrawalWhenItsAccountBecomesIneligibleOrIsGrantedManagement(
+      InviteeChange change) throws Exception {
+    var alex = alex();
+    var invitation = invitations.invite(sam, alex, theo.account().getEmail()).invitation();
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(theo));
+
+    var outcome =
+        switch (change) {
+          case BECAME_INELIGIBLE -> {
+            // A restricted Profile needs an eligible manager besides its own Account.
+            cast.grant(sam, theo.profile());
+            yield profileAdministration.setProfileContentCeiling(
+                authTestSupport.freshIdentityOf(serverAdmin), theo.profile().getId(), 12);
+          }
+          case GRANTED_MANAGEMENT ->
+              profileManagement.administrativelyGrantProfileManager(
+                  authTestSupport.freshIdentityOf(serverAdmin),
+                  alex.getId(),
+                  theo.account().getId(),
+                  "looks after Alex");
+        };
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertInvitationWithdrawn(nextChange(socket), theo, invitation);
+  }
+
+  /** What becomes of an invited Account that ends its invitation for it alone. */
+  enum InviteeChange {
+    BECAME_INELIGIBLE,
+    GRANTED_MANAGEMENT
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the request's withdrawal when the invitation's Profile is connected to an"
+          + " Account")
+  void shouldDeliverTheRequestsWithdrawalWhenTheInvitationsProfileIsConnectedToAnAccount()
+      throws Exception {
+    var mara = track(authTestSupport.createIdentity());
+    var alex = alex();
+    var invitation = invitations.invite(sam, alex, mara.account().getEmail()).invitation();
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(mara));
+
+    connections.connect(alex, serverAdmin);
+
+    assertInvitationWithdrawn(nextChange(socket), mara, invitation);
+  }
+
+  @Test
+  @DisplayName("Should deliver the request's expiry when the sweep stores the invitation's expiry")
+  void shouldDeliverTheRequestsExpiryWhenTheSweepStoresTheInvitationsExpiry() throws Exception {
+    var mara = track(authTestSupport.createIdentity());
+    var invitation = invitations.invite(sam, alex(), mara.account().getEmail()).invitation();
+    var socket = subscribedSocket(authTestSupport.accountBearer(mara));
+
+    invitations.lapse(invitation);
+    invitationExpirySweeper.sweep();
+
+    var expired = nextChange(socket);
+    assertThat(onlyChange(expired).path("notificationId").asString())
+        .isEqualTo(toldAbout(mara, invitation).id().toString());
+    assertThat(nodeOf(expired).path("resolution").asString()).isEqualTo("EXPIRED");
+    assertThat(expired.path("unreadNotificationCount").asInt()).isZero();
+    assertMatchesAFreshQuery(expired, mara);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the removal and then its update in place when the same Account is removed"
+          + " again before reading it")
+  void
+      shouldDeliverTheRemovalAndThenItsUpdateInPlaceWhenTheSameAccountIsRemovedAgainBeforeReadingIt()
+          throws Exception {
+    var mara = track(authTestSupport.createIdentity());
+    var alex = alex();
+    cast.grant(mara, alex);
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var socket = subscribedSocket(authTestSupport.accountBearer(mara));
+
+    invitations.removeManagement(serverAdmin, mara, alex);
+    var made = nextChange(socket);
+    assertThat(nodeOf(made).path("__typename").asString())
+        .isEqualTo("ProfileManagementRemovedNotification");
+    assertThat(nodeOf(made).path("profileName").asString()).isEqualTo("Alex");
+    assertThat(made.path("unreadNotificationCount").asInt()).isEqualTo(1);
+    assertMatchesAFreshQuery(made, mara);
+    cast.grant(mara, alex);
+    cast.rename(alex, "Alexandra");
+    invitations.removeManagement(serverAdmin, mara, alex);
+
+    var updated = nextChange(socket);
+    assertThat(onlyChange(updated).path("notificationId"))
+        .isEqualTo(onlyChange(made).path("notificationId"));
+    assertThat(nodeOf(updated).path("profileName").asString()).isEqualTo("Alexandra");
+    assertThat(updated.path("unreadNotificationCount").asInt()).isEqualTo(1);
+    assertMatchesAFreshQuery(updated, mara);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the dismissal of every invitation Notification when its Profile is deleted")
+  void shouldDeliverTheDismissalOfEveryInvitationNotificationWhenItsProfileIsDeleted() {
+    var mara = track(authTestSupport.createIdentity());
+    var alex = alex();
+    var answered = invitations.invite(sam, alex, mara.account().getEmail()).invitation();
+    assertThat(
+            profileManagement.declineManagerInvitation(
+                authTestSupport.identityOf(mara), answered.getId()))
+        .isInstanceOf(Outcome.Accepted.class);
+    var waiting = invitations.invite(sam, alex, mara.account().getEmail()).invitation();
+    var invitedLost =
+        List.of(
+            toldAbout(mara, answered).id().toString(), toldAbout(mara, waiting).id().toString());
+    var inviterLost = List.of(toldAbout(sam, answered).id().toString());
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var invited = subscribedSocket(authTestSupport.accountBearer(mara));
+    var inviter = subscribedSocket(authTestSupport.accountBearer(sam));
+
+    var outcome =
+        profileLifecycle.administrativelyDeleteProfile(
+            authTestSupport.freshIdentityOf(serverAdmin), alex.getId(), "a duplicate");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertDismissed(nextChange(invited), invitedLost);
+    assertDismissed(nextChange(inviter), inviterLost);
+    var sentinel = tellSentinel(mara, sam);
+    assertThat(onlyChange(nextChange(invited)).path("notificationId").asString())
+        .isEqualTo(sentinel.get(accountOf(mara)).toString());
+    assertThat(onlyChange(nextChange(inviter)).path("notificationId").asString())
+        .isEqualTo(sentinel.get(accountOf(sam)).toString());
+  }
+
+  @Test
+  @DisplayName(
       "Should deliver the mark to every open socket of the Account when its recipient marks the"
           + " news read")
   void shouldDeliverTheMarkToEveryOpenSocketOfTheAccountWhenItsRecipientMarksTheNewsRead()
@@ -933,6 +1230,32 @@ class NotificationsSubscriptionIT extends AbstractIntegrationTest {
 
   private Profile kai() {
     return steps.profileManagedBy("Kai", sam, sam);
+  }
+
+  private Profile alex() {
+    return steps.profileManagedBy("Alex", sam, sam);
+  }
+
+  /** The recipient's Notification about the invitation. */
+  private Row toldAbout(TestIdentity recipient, ProfileManagerInvitation invitation) {
+    return rows.about(SubjectReference.profileManagerInvitation(invitation.getId())).stream()
+        .filter(notification -> notification.recipient().equals(accountOf(recipient)))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  /**
+   * The change resolves the recipient's request about the invitation as withdrawn, as a fresh query
+   * reads it.
+   */
+  private void assertInvitationWithdrawn(
+      JsonNode change, TestIdentity recipient, ProfileManagerInvitation invitation)
+      throws Exception {
+    assertThat(onlyChange(change).path("notificationId").asString())
+        .isEqualTo(toldAbout(recipient, invitation).id().toString());
+    assertThat(nodeOf(change).path("resolution").asString()).isEqualTo("WITHDRAWN");
+    assertThat(change.path("unreadNotificationCount").asInt()).isZero();
+    assertMatchesAFreshQuery(change, recipient);
   }
 
   /** The recipient's news that Riverside accepted an offer of a new Profile that Theo manages. */

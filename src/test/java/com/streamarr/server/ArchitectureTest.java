@@ -53,6 +53,7 @@ import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.notification.architecturefixture.ForeignShareReadFixture;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.CreditService;
@@ -61,6 +62,7 @@ import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.RootServiceCycleFixture;
 import com.streamarr.server.services.architecturefixture.DirectAccountPasswordMatchFixture;
 import com.streamarr.server.services.architecturefixture.DirectGenreServiceFixture;
+import com.streamarr.server.services.architecturefixture.DirectManagerInvitationWriteFixture;
 import com.streamarr.server.services.architecturefixture.DirectShareWriteFixture;
 import com.streamarr.server.services.architecturefixture.IncomingHttpServiceFixture;
 import com.streamarr.server.services.architecturefixture.IncomingWebRequestServiceFixture;
@@ -70,6 +72,7 @@ import com.streamarr.server.services.auth.AccountPasswordVerifier;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordTimingEqualizer;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfilePinVerifier;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.auth.architecturefixture.RequestServiceThreads;
@@ -491,6 +494,14 @@ class ArchitectureTest {
   static final ArchRule notificationEventsMustNotDependOnTheNotificationsModule =
       notificationEventsMustNotDependOnTheNotificationsModule();
 
+  // Every write of a manager invitation sits in ProfileManagerInvitationLifecycle, so one class
+  // names every way an invitation changes. The repository's reads stay open to every service. The
+  // only other writer is the database trigger that ends an invitation when one of its parties is
+  // deleted; whoever deletes a party ends that party's invitations through the lifecycle first.
+  @ArchTest
+  static final ArchRule onlyTheInvitationLifecycleMayWriteManagerInvitations =
+      onlyTheInvitationLifecycleMayWriteManagerInvitations();
+
   // Authenticated Account-password checks share one throttle and timing contract. Login is exempt
   // because no authenticated Account exists yet.
   @ArchTest
@@ -783,6 +794,19 @@ class ArchitectureTest {
     assertThatThrownBy(() -> rule.check(moduleBound))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("NotificationKindCatalog");
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a direct invitation write when a service bypasses the invitation lifecycle")
+  void shouldRejectADirectInvitationWriteWhenAServiceBypassesTheInvitationLifecycle() {
+    var directInvitationWrite =
+        new ClassFileImporter().importClasses(DirectManagerInvitationWriteFixture.class);
+    var rule = onlyTheInvitationLifecycleMayWriteManagerInvitations();
+
+    assertThatThrownBy(() -> rule.check(directInvitationWrite))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("tryCancelPending");
   }
 
   @ParameterizedTest
@@ -1149,6 +1173,17 @@ class ArchitectureTest {
             "The Notifications module depends only on its own packages, its own events in the shared"
                 + " events package, its types in domain and the server's shared parts, and reads only"
                 + " its own table");
+  }
+
+  private static ArchRule onlyTheInvitationLifecycleMayWriteManagerInvitations() {
+    return noClasses()
+        .that()
+        .doNotBelongToAnyOf(ProfileManagerInvitationLifecycle.class)
+        .should()
+        .callMethodWhere(
+            target(owner(assignableTo(ProfileManagerInvitationRepository.class)))
+                .and(target(not(nameMatching("(find|exists|count|is|has|lock|rows|flush).*")))))
+        .as("Only ProfileManagerInvitationLifecycle may write manager invitations");
   }
 
   private static ArchRule onlyCreditServiceMaySaveCredits() {

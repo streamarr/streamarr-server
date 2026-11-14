@@ -18,8 +18,8 @@ import org.junit.jupiter.api.Test;
 /**
  * ADR 0063 specifies kinds that no build makes yet. Their types are written here, in test SDL
  * alone, over the live schema, to show that the Notification interfaces take them as they stand: a
- * library's news and a ProfileManager invitation's request validate beside the sharing kinds, and
- * the list and its live changes carry any Notification without a schema change.
+ * library's news validates beside the kinds the server sends, and the list and its live changes
+ * carry any Notification without a schema change.
  */
 @Tag("UnitTest")
 @DisplayName("Specified-Only Kinds Schema Fit Tests")
@@ -40,52 +40,30 @@ class SpecifiedOnlyKindsSchemaFitTest {
           removed: Int!
           failed: Int!
       }
-
-      "Test SDL only: an Account is invited to manage a Profile."
-      type ProfileManagerInvitationReceivedNotification implements RequestNotification & Notification {
-          id: ID!
-          message: String!
-          createdAt: String!
-          latestEventAt: String!
-          unread: Boolean!
-          expiresAt: String
-          resolution: RequestResolution
-          resolvedAt: String
-          invitationId: ID!
-          profileName: String!
-          answer: ProfileManagerInvitationAnswer
-      }
-
-      "Test SDL only: how an invited Account answered."
-      enum ProfileManagerInvitationAnswer {
-          ACCEPTED
-          DECLINED
-      }
       """;
 
   @Test
   @DisplayName(
-      "Should validate a library's news and an invitation's request beside the sharing kinds when"
-          + " they implement the Notification interfaces")
-  void shouldValidateALibrarysNewsAndAnInvitationsRequestWhenTheyImplementTheInterfaces()
+      "Should validate a library's news beside the kinds the server sends when it implements the"
+          + " Notification interface")
+  void shouldValidateALibrarysNewsBesideTheKindsTheServerSendsWhenItImplementsTheInterface()
       throws IOException {
     var schema = SchemaGenerator.createdMockedSchema(liveSchema() + "\n" + SPECIFIED_ONLY_KINDS);
 
     assertThat(schema.getImplementations(interfaceOf(schema, "Notification")))
         .extracting(GraphQLObjectType::getName)
-        .contains(
-            "LibraryScanFinishedNotification", "ProfileManagerInvitationReceivedNotification");
+        .contains("LibraryScanFinishedNotification", "ProfileShareEndedNotification");
     assertThat(schema.getImplementations(interfaceOf(schema, "RequestNotification")))
         .extracting(GraphQLObjectType::getName)
-        .contains("ProfileManagerInvitationReceivedNotification")
-        .doesNotContain("LibraryScanFinishedNotification");
+        .containsExactlyInAnyOrder(
+            "ProfileShareOfferedNotification", "ProfileManagerInvitationReceivedNotification");
   }
 
   @Test
   @DisplayName(
-      "Should carry any Notification in the list's edges when a kind is added beside the sharing"
-          + " kinds")
-  void shouldCarryAnyNotificationInTheListsEdgesWhenAKindIsAddedBesideTheSharingKinds()
+      "Should carry any Notification in the list's edges when a kind is added beside the kinds the"
+          + " server sends")
+  void shouldCarryAnyNotificationInTheListsEdgesWhenAKindIsAddedBesideTheKindsTheServerSends()
       throws IOException {
     var schema = SchemaGenerator.createdMockedSchema(liveSchema() + "\n" + SPECIFIED_ONLY_KINDS);
 

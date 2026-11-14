@@ -2,8 +2,10 @@ package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialKind;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationsFilter;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
@@ -14,9 +16,10 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.CredentialAttemptGate;
+import com.streamarr.server.services.auth.EmailAddressValidator;
 import com.streamarr.server.services.auth.InvitationLifetime;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
-import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.mutation.MutationRejection;
@@ -26,7 +29,7 @@ import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
 import java.time.Clock;
-import java.util.List;
+import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
@@ -39,8 +42,8 @@ import org.springframework.stereotype.Service;
 /**
  * Manages direct ProfileManagers through invitations or ServerAdmin overrides (ADR 0024). Overrides
  * require reauthentication. Removing a manager invalidates their outstanding invitations and share
- * offers. Code checks are journaled by invitation ID and return the same error for all invalid
- * codes.
+ * offers, and tells the removed Account. Code checks are journaled by invitation ID and return the
+ * same error for all invalid codes.
  */
 @Service
 @RequiredArgsConstructor
@@ -50,16 +53,20 @@ public class ProfileManagerAdministrationService {
       "chk_restricted_account_holds_no_authority";
   private static final String CHK_ELIGIBLE_MANAGER = "chk_profile_home_anchor";
   private static final String REPLACED_REASON = "replaced by a newer invitation";
-  private static final String INVITER_LEFT_REASON = "inviting manager lost management";
+  private static final String BECAME_MANAGER_REASON = "named Account became a manager";
+  // ADR 0024: so that a manager cannot fill other people's Notifications with Requests.
+  private static final int PENDING_INVITATIONS_PER_PROFILE = 10;
   private static final String RESOURCE_PROFILE_ID = "profileId";
   private static final String RESOURCE_ACCOUNT_ID = "accountId";
 
   private final AuthorizationService authorizationService;
   private final ProfileManagerInvitationRepository invitationRepository;
+  private final ProfileManagerInvitationLifecycle invitationLifecycle;
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileRepository profileRepository;
   private final UserAccountRepository userAccountRepository;
-  private final ProfileShareLifecycle shareLifecycle;
+  private final LeavingManagerProposals leavingManagerProposals;
+  private final ProfileManagementNotifications managementNotifications;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final OpaqueOneTimeCodes opaqueCodes;
   private final CredentialAttemptGate credentialAttempts;
@@ -69,8 +76,13 @@ public class ProfileManagerAdministrationService {
   private final ReceivedManagerInvitationsList receivedManagerInvitationsList;
   private final Clock clock;
 
+  /**
+   * Invites whoever has the email address to manage the Profile. The answer is the same whether or
+   * not an Account has the address and whether or not that Account may accept: the invitation names
+   * the Account only when it may, and otherwise waits with nobody who can accept it (ADR 0024).
+   */
   public Outcome<IssuedManagerInvitation, ManagerRejections.Invite> inviteProfileManager(
-      AuthenticatedIdentity identity, UUID profileId, UUID recipientAccountId) {
+      AuthenticatedIdentity identity, UUID profileId, String email) {
     var profile = profileRepository.findById(profileId);
     if (profile.isEmpty()) {
       return Outcome.rejected(new ManagerRejections.ProfileNotFound());
@@ -81,49 +93,64 @@ public class ProfileManagerAdministrationService {
       return Outcome.rejected(refusal.get());
     }
 
-    var recipient = userAccountRepository.findById(recipientAccountId);
-    if (recipient.isEmpty()) {
-      return Outcome.rejected(new ManagerRejections.RecipientNotFound());
-    }
+    return switch (EmailAddressValidator.validate(email)) {
+      case EmailAddressValidator.Blank _ -> Outcome.rejected(new ManagerRejections.EmailRequired());
+      case EmailAddressValidator.Malformed _ ->
+          Outcome.rejected(new ManagerRejections.EmailInvalid());
+      case EmailAddressValidator.Valid(var address) -> invite(identity, profile.get(), address);
+    };
+  }
 
-    if (!isEligible(recipient.get())) {
-      return Outcome.rejected(new ManagerRejections.RecipientNotEligible());
-    }
-
-    if (alreadyManages(recipient.get(), profileId)) {
-      return Outcome.rejected(new ManagerRejections.AlreadyManager());
-    }
-
+  // Every address runs the same statements in the same order, whether or not an Account may accept
+  // the invitation, so neither the answer nor its timing tells the inviter who has an Account.
+  private Outcome<IssuedManagerInvitation, ManagerRejections.Invite> invite(
+      AuthenticatedIdentity identity, Profile profile, String address) {
+    var profileId = profile.getId();
     var inviterName =
         userAccountRepository
             .findById(identity.accountId())
             .map(UserAccount::getDisplayName)
             .orElse("");
     var issued = opaqueCodes.issue();
-    var now = clock.instant();
+    // To the microsecond PostgreSQL keeps, so the answer's expiry is the one every read shows.
+    var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
     return mutationTransactions.write(
         () -> {
-          lockProfile(profileId, ManagerRejections.ProfileNotFound::new);
+          // With the invitee's own Profile, in one global order: two Accounts may invite each
+          // other.
+          if (!profileRepository.lockForInvitationTo(profileId, address)) {
+            throw new MutationRejection(new ManagerRejections.ProfileNotFound());
+          }
+
           var currentRefusal = inviteRefusal(identity, profileId);
           if (currentRefusal.isPresent()) {
             throw new MutationRejection(currentRefusal.get());
           }
 
-          invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
-              profileId, recipientAccountId, REPLACED_REASON, now);
+          // Counted under the Profile's lock, which every invitation to it takes first.
+          if (invitationRepository.countLivePendingForProfileExceptTo(profileId, address, now)
+              >= PENDING_INVITATIONS_PER_PROFILE) {
+            throw new MutationRejection(new ManagerRejections.ManagerInvitationLimitReached());
+          }
+
+          var recipientAccountId =
+              userAccountRepository.lockAccountThatMayAcceptManagement(profileId, address);
+          invitationLifecycle.invalidatePendingByProfileIdAndRecipientEmail(
+              profileId, address, REPLACED_REASON, now);
           var invitation =
-              invitationRepository.saveAndFlush(
+              invitationLifecycle.issue(
                   ProfileManagerInvitation.builder()
                       .profileId(profileId)
-                      .profileName(profile.orElseThrow().getName())
+                      .profileName(profile.getName())
                       .inviterAccountId(identity.accountId())
                       .inviterDisplayName(inviterName)
-                      .recipientAccountId(recipientAccountId)
-                      .recipientEmail(recipient.get().getEmail())
+                      .recipientAccountId(recipientAccountId.orElse(null))
+                      .recipientEmail(address)
                       .expiresAt(now.plus(invitationLifetime.invitationLifetime()))
                       .publicId(issued.publicId())
                       .secretDigest(issued.digest())
-                      .build());
+                      .build(),
+                  now);
           return new IssuedManagerInvitation(invitation, issued.code());
         },
         _ -> Optional.empty());
@@ -154,7 +181,8 @@ public class ProfileManagerAdministrationService {
 
     return mutationTransactions.write(
         () -> {
-          if (!invitationRepository.tryCancelPending(invitationId, clock.instant())) {
+          if (!invitationLifecycle.tryCancelPending(
+              invitationId, identity.accountId(), clock.instant())) {
             throw new MutationRejection(new ManagerRejections.InvitationNotPending());
           }
 
@@ -163,43 +191,76 @@ public class ProfileManagerAdministrationService {
         _ -> Optional.empty());
   }
 
-  public Outcome<ProfileManagerInvitation, ManagerRejections.Accept> acceptManagerInvitation(
+  /**
+   * The invitation a presented code belongs to, so that its named Account can decide it by id. Each
+   * lookup is a credential attempt by the presenting Account, counted against the invitation, and
+   * it leaves the invitation pending. A session that may not read the invitations it received is
+   * refused with FORBIDDEN before any attempt counts. A code that does not work, one whose
+   * invitation no longer waits for its Account, and one that names another Account, get
+   * ManagerInvitationNotFound; only a wrong secret counts as a failed attempt.
+   */
+  public Outcome<ProfileManagerInvitation, ManagerRejections.LookUp> lookUpManagerInvitationCode(
       AuthenticatedIdentity identity, ManagerInvitationCodeCommand command) {
-    var resolved = resolvePresented(command);
-    if (resolved.isEmpty()) {
+    authorizationService.requireAllowed(identity, new Intent.ViewReceivedManagerInvitations());
+    return resolvePresented(command)
+        .filter(
+            invitation ->
+                authorizationService.isAllowed(
+                    identity, new Intent.ViewReceivedManagerInvitation(invitation.getId())))
+        .filter(
+            invitation ->
+                invitation.statusToItsAccountAt(clock.instant())
+                    == ProfileManagerInvitationStatus.PENDING)
+        .<Outcome<ProfileManagerInvitation, ManagerRejections.LookUp>>map(Outcome::accepted)
+        .orElseGet(() -> Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound()));
+  }
+
+  /**
+   * The named Account accepts by the invitation's id and becomes a direct manager. No code is
+   * presented, so nothing counts as a credential attempt.
+   */
+  public Outcome<ProfileManagerInvitation, ManagerRejections.Accept> acceptManagerInvitation(
+      AuthenticatedIdentity identity, UUID invitationId) {
+    var found =
+        decidableBy(identity, invitationId, new Intent.AcceptManagerInvitation(invitationId));
+    if (found.isEmpty()) {
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
 
-    var invitation = resolved.get();
-    if (!authorizationService.isAllowed(
-        identity, new Intent.AcceptManagerInvitation(invitation.getId()))) {
-      // Return the same error as an unknown invitation when the caller is not its recipient.
-      return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
+    var invitation = found.get();
+    var now = clock.instant();
+    if (invitation.statusToItsAccountAt(now) != ProfileManagerInvitationStatus.PENDING) {
+      return Outcome.rejected(new ManagerRejections.InvitationNotPending());
     }
 
     if (!userAccountRepository.findById(identity.accountId()).map(this::isEligible).orElse(false)) {
       return Outcome.rejected(new ManagerRejections.RecipientNotEligible());
     }
 
-    var now = clock.instant();
     Outcome<Optional<ProfileManagerInvitation>, ManagerRejections.Accept> attempt =
         mutationTransactions.write(
             () -> {
               lockAcceptanceProfiles(invitation);
               if (!stillProposable(invitation)) {
-                invitationRepository.tryInvalidatePending(
-                    invitation.getId(), INVITER_LEFT_REASON, now);
+                invitationLifecycle.tryInvalidatePending(
+                    invitation.getId(), LeavingManagerProposals.INVITER_LEFT_REASON, now);
                 return Optional.empty();
               }
 
-              if (!invitationRepository.tryAcceptPending(invitation.getId(), now)) {
-                throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
+              if (!invitationLifecycle.tryAcceptPending(
+                  invitation.getId(), identity.accountId(), now)) {
+                throw new MutationRejection(new ManagerRejections.InvitationNotPending());
               }
 
               if (!profileManagerRepository.tryGrantDirectManagement(
                   identity.accountId(), invitation.getProfileId())) {
                 throw new MutationRejection(new ManagerRejections.AlreadyManager());
               }
+
+              // Another invitation to this Account, sent to an address it had before, must not
+              // outlive its becoming a manager (ADR 0024 §Invitations).
+              invitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
+                  invitation.getProfileId(), identity.accountId(), BECAME_MANAGER_REASON, now);
 
               audit(
                   identity,
@@ -217,52 +278,52 @@ public class ProfileManagerAdministrationService {
         accepted ->
             accepted
                 .<Outcome<ProfileManagerInvitation, ManagerRejections.Accept>>map(Outcome::accepted)
-                .orElseGet(
-                    () -> Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound())),
+                .orElseGet(() -> Outcome.rejected(new ManagerRejections.InvitationNotPending())),
         Outcome::rejected);
   }
 
   private void lockAcceptanceProfiles(ProfileManagerInvitation invitation) {
-    // Lock both Profiles in UUID order to avoid deadlocks while rechecking the inviter's
-    // eligibility.
-    var invitationProfileId = invitation.getProfileId();
-    var inviterProfileId =
+    // With the inviter's own Profile, to recheck its eligibility, in the order an invite takes the
+    // same two: an invite to the inviter's address may run at once.
+    var profileId = invitation.getProfileId();
+    boolean locked =
         Optional.ofNullable(invitation.getInviterAccountId())
-            .flatMap(userAccountRepository::findById)
-            .map(UserAccount::getPersonalProfileId);
-    var profileIds =
-        inviterProfileId
-            .map(profileId -> List.of(invitationProfileId, profileId))
-            .orElseGet(() -> List.of(invitationProfileId));
-    profileIds.stream()
-        .distinct()
-        .sorted()
-        .forEach(
-            profileId -> lockProfile(profileId, ManagerRejections.ManagerInvitationNotFound::new));
+            .map(inviterId -> profileRepository.lockWithPersonalProfileOf(profileId, inviterId))
+            .orElseGet(() -> profileRepository.lockById(profileId));
+    if (!locked) {
+      throw new MutationRejection(new ManagerRejections.InvitationNotPending());
+    }
   }
 
+  /** The named Account declines by the invitation's id. */
   public Outcome<ProfileManagerInvitation, ManagerRejections.Decline> declineManagerInvitation(
-      AuthenticatedIdentity identity, ManagerInvitationCodeCommand command) {
-    var resolved = resolvePresented(command);
-    if (resolved.isEmpty()) {
-      return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
-    }
-
-    var invitation = resolved.get();
-    if (!authorizationService.isAllowed(
-        identity, new Intent.DeclineManagerInvitation(invitation.getId()))) {
+      AuthenticatedIdentity identity, UUID invitationId) {
+    if (decidableBy(identity, invitationId, new Intent.DeclineManagerInvitation(invitationId))
+        .isEmpty()) {
       return Outcome.rejected(new ManagerRejections.ManagerInvitationNotFound());
     }
 
     return mutationTransactions.write(
         () -> {
-          if (!invitationRepository.tryDeclinePending(invitation.getId(), clock.instant())) {
-            throw new MutationRejection(new ManagerRejections.ManagerInvitationNotFound());
+          if (!invitationLifecycle.tryDeclinePending(
+              invitationId, identity.accountId(), clock.instant())) {
+            throw new MutationRejection(new ManagerRejections.InvitationNotPending());
           }
 
-          return invitationRepository.findById(invitation.getId()).orElseThrow();
+          return invitationRepository.findById(invitationId).orElseThrow();
         },
         _ -> Optional.empty());
+  }
+
+  /**
+   * The invitation, when the caller is the Account it names; empty for anyone else and for an id
+   * that names no invitation, which answer alike.
+   */
+  private Optional<ProfileManagerInvitation> decidableBy(
+      AuthenticatedIdentity identity, UUID invitationId, Intent.UnitIntent decision) {
+    return invitationRepository
+        .findById(invitationId)
+        .filter(_ -> authorizationService.isAllowed(identity, decision));
   }
 
   public Outcome<UUID, ManagerRejections.Relinquish> relinquishProfileManagement(
@@ -286,7 +347,10 @@ public class ProfileManagerAdministrationService {
             throw new MutationRejection(new ManagerRejections.ManagementAlreadyRemoved());
           }
 
-          invalidateLeaversProposals(profileId, identity.accountId());
+          // An old invitation must not bring back the authority the Account gave up.
+          invitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
+              profileId, identity.accountId(), "named Account stopped managing", clock.instant());
+          leavingManagerProposals.withdraw(profileId, identity.accountId(), clock.instant());
           return profileId;
         },
         constraint ->
@@ -351,7 +415,7 @@ public class ProfileManagerAdministrationService {
           }
 
           // The consent this grant makes redundant must not linger as a second live path.
-          invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
+          invitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
               profileId, accountId, "granted by override", now);
           audit(
               identity,
@@ -397,23 +461,74 @@ public class ProfileManagerAdministrationService {
             eligibleManagerRejection(constraint, ManagerRejections.EligibleManagerRequired::new));
   }
 
-  /** A page of the Profile's pending manager invitations, newest first; hidden reads as empty. */
+  /**
+   * A page of the Profile's pending manager invitations, newest first; hidden reads as empty. An
+   * invitation invalidated because of what became of its invited Account still waits here for the
+   * Profile's managers, and not for a ServerAdmin, who reads it as invalidated (ADR 0024).
+   */
   public ListPage<ProfileManagerInvitation> pendingManagerInvitationsForProfile(
       AuthenticatedIdentity identity, UUID profileId, PageRequest request) {
-    if (!authorizationService.isAllowed(identity, new Intent.ViewManagerInvitations(profileId))) {
+    // A decision about a Profile that does not exist fails rather than denies.
+    if (!profileRepository.existsById(profileId)
+        || !authorizationService.isAllowed(
+            identity, new Intent.ViewManagerInvitations(profileId))) {
       return ListPage.empty();
     }
 
-    return Pager.page(profileManagerInvitationsList, profileId, request);
+    return Pager.page(
+        profileManagerInvitationsList,
+        new ProfileManagerInvitationsFilter(profileId, !readsAsServerAdmin(identity)),
+        request);
   }
 
   /**
-   * A page of the caller's own pending manager invitations, newest first; holding the seat is the
-   * visibility.
+   * A page of the caller's own pending manager invitations, newest first. Empty for a device-bound
+   * session and a disabled Account, which may not answer them.
    */
   public ListPage<ProfileManagerInvitation> pendingManagerInvitations(
       AuthenticatedIdentity identity, PageRequest request) {
+    if (!authorizationService.isAllowed(identity, new Intent.ViewReceivedManagerInvitations())) {
+      return ListPage.empty();
+    }
+
     return Pager.page(receivedManagerInvitationsList, identity.accountId(), request);
+  }
+
+  /**
+   * One invitation at any status, for its named Account, the managers of its Profile and
+   * ServerAdmins; empty for everyone else and when no invitation has the id. Its named Account and
+   * a ServerAdmin read every invalidation; the Profile's managers read an invitation invalidated
+   * because of what became of its invited Account as still waiting (ADR 0024 §Read authorization).
+   */
+  public Optional<ManagerInvitationReading> managerInvitation(
+      AuthenticatedIdentity identity, UUID invitationId) {
+    return invitationRepository
+        .findById(invitationId)
+        .flatMap(invitation -> readingOf(identity, invitation));
+  }
+
+  private Optional<ManagerInvitationReading> readingOf(
+      AuthenticatedIdentity identity, ProfileManagerInvitation invitation) {
+    var now = clock.instant();
+    if (authorizationService.isAllowed(
+            identity, new Intent.ViewReceivedManagerInvitation(invitation.getId()))
+        || readsAsServerAdmin(identity)) {
+      return Optional.of(
+          new ManagerInvitationReading(invitation, invitation.statusToItsAccountAt(now)));
+    }
+
+    if (invitation.getProfileId() != null
+        && authorizationService.isAllowed(
+            identity, new Intent.ViewManagerInvitations(invitation.getProfileId()))) {
+      return Optional.of(new ManagerInvitationReading(invitation, invitation.statusAt(now)));
+    }
+
+    return Optional.empty();
+  }
+
+  // ServerAdmin authority, read live, is what viewing every Household takes.
+  private boolean readsAsServerAdmin(AuthenticatedIdentity identity) {
+    return authorizationService.isAllowed(identity, new Intent.ViewHouseholds());
   }
 
   private void removeDisputedAuthority(
@@ -432,10 +547,17 @@ public class ProfileManagerAdministrationService {
     }
 
     var now = clock.instant();
+    managementNotifications.managementRemoved(
+        ProfileManagementNotifications.ManagementRemoval.builder()
+            .profileId(profileId)
+            .managerAccountId(managerAccountId)
+            .removedBy(identity.accountId())
+            .at(now)
+            .build());
     // An older invitation naming the removed Account could silently restore what was disputed.
-    invitationRepository.invalidatePendingByProfileIdAndRecipientAccountId(
+    invitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
         profileId, managerAccountId, "removal disputes the authority", now);
-    invalidateLeaversProposals(profileId, managerAccountId);
+    leavingManagerProposals.withdraw(profileId, managerAccountId, clock.instant());
     audit(
         identity,
         SecurityAuditEntry.builder()
@@ -443,14 +565,6 @@ public class ProfileManagerAdministrationService {
             .reason(reason)
             .resource(RESOURCE_PROFILE_ID, profileId)
             .resource(RESOURCE_ACCOUNT_ID, managerAccountId));
-  }
-
-  private void invalidateLeaversProposals(UUID profileId, UUID leaverAccountId) {
-    var now = clock.instant();
-    invitationRepository.invalidatePendingInvitationsByInviterAccountIdAndProfileId(
-        leaverAccountId, profileId, INVITER_LEFT_REASON, now);
-    shareLifecycle.invalidatePendingOffersByProfileIdAndOffererAccountId(
-        profileId, leaverAccountId, "offering manager lost management", now);
   }
 
   private <R> void lockProfile(UUID profileId, Supplier<? extends R> vanished) {
@@ -472,10 +586,10 @@ public class ProfileManagerAdministrationService {
           credentialAttempts.attempt(
               codeMetadata(invitation, command.ipAddress()),
               () -> {
+                // The secret alone: an attempt that counted what became of the invited Account
+                // would tell the inviter, who holds the code too (ADR 0024 §Invitations).
                 if (invitation == null
-                    || !opaqueCodes.matches(presented.get(), invitation.getSecretDigest())
-                    || invitation.getStatus() != ProfileManagerInvitationStatus.PENDING
-                    || !invitation.getExpiresAt().isAfter(clock.instant())) {
+                    || !opaqueCodes.matches(presented.get(), invitation.getSecretDigest())) {
                   throw new InvalidOneTimeCodeException();
                 }
 
@@ -566,16 +680,9 @@ public class ProfileManagerAdministrationService {
   }
 
   /** The invitation is visible to its parties and to whoever may view the Profile's admin. */
+  // Whoever may read the invitation learns that it exists: the read rule of managerInvitation.
   private boolean mayViewInvitation(AuthenticatedIdentity identity, UUID invitationId) {
-    return invitationRepository
-        .findById(invitationId)
-        .map(
-            invitation ->
-                identity.accountId().equals(invitation.getRecipientAccountId())
-                    || identity.accountId().equals(invitation.getInviterAccountId())
-                    || (invitation.getProfileId() != null
-                        && mayViewProfile(identity, invitation.getProfileId())))
-        .orElse(false);
+    return managerInvitation(identity, invitationId).isPresent();
   }
 
   private boolean mayViewProfile(AuthenticatedIdentity identity, UUID profileId) {

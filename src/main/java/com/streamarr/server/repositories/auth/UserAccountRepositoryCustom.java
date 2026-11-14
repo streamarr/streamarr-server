@@ -34,6 +34,13 @@ public interface UserAccountRepositoryCustom {
   Map<UUID, List<Row<UserAccount>>> rowsBeyond(Map<UUID, Seek> seeksByHousehold);
 
   /**
+   * The Accounts beyond the seek that manage the Profile, as the Cedar fact {@code
+   * managedByPrincipal} decides it: the Account whose own Personal Profile it is first, with the
+   * empty sort value, then the direct managers by lowercased display name, then ID.
+   */
+  List<Row<UserAccount>> rowsManaging(UUID profileId, Seek seek);
+
+  /**
    * The Account's current enabled state and ServerAdmin authority, read as scalars so the
    * authorization slice never sees a first-level-cache copy. Empty when the Account does not exist.
    */
@@ -114,6 +121,16 @@ public interface UserAccountRepositoryCustom {
    */
   boolean isEligibleProfileManager(
       UUID accountId, UUID householdId, ProfileManagerEligibility eligibility);
+
+  /**
+   * The Account that may accept an invitation to manage the Profile that is sent to the address:
+   * the Account with that address, whatever its case, whose own Personal Profile is an unrestricted
+   * Adult, and that does not already manage the Profile. One statement answers for every address,
+   * so its timing does not say whether an Account has it. It holds that Account's Personal Profile
+   * under a share lock, so a change of that Profile's policy waits for the invitation and then
+   * withdraws it. Call it inside the write transaction, after locking the Profile.
+   */
+  Optional<UUID> lockAccountThatMayAcceptManagement(UUID profileId, String email);
 
   boolean tryGrantServerAdmin(UUID accountId);
 

@@ -9,11 +9,15 @@ import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.NotificationSnapshot;
 import com.streamarr.server.domain.notification.RecipientReference;
 import com.streamarr.server.domain.notification.SubjectReference;
+import com.streamarr.server.graphql.dto.NotificationsChange;
+import com.streamarr.server.graphql.subscriptions.KeyedSubscriptionBroadcaster;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.events.notification.ProfileManagementNotificationKinds;
+import com.streamarr.server.services.events.notification.ProfileManagementRemovedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
@@ -27,11 +31,10 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.notification.events.NotificationsChangedEvent;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
+import com.streamarr.server.support.ManagerInvitationSteps;
 import com.streamarr.server.support.ShareSteps;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.HouseholdNewsSnapshot;
-import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.InvitationReceivedSnapshot;
-import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.ManagementRemovedSnapshot;
 import com.streamarr.server.support.StoredNotificationRows;
 import com.streamarr.server.support.StoredNotificationRows.Row;
 import java.time.Duration;
@@ -41,6 +44,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.jooq.DSLContext;
@@ -67,6 +72,13 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RecordApplicationEvents
 class NotificationDismissalsIT extends AbstractIntegrationTest {
 
+  private static final NotificationKind RECEIVED =
+      ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_RECEIVED;
+  private static final NotificationKind ANSWERED =
+      ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_ANSWERED;
+  private static final NotificationKind REMOVED =
+      ProfileManagementNotificationKinds.PROFILE_MANAGEMENT_REMOVED;
+
   @Autowired private ProfileSharingService sharing;
   @Autowired private ProfileAdministrationService profileAdministration;
   @Autowired private ProfileLifecycleService profileLifecycle;
@@ -74,6 +86,10 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
   @Autowired private HouseholdDeletionService householdDeletion;
   @Autowired private AccountLifecycleService accountLifecycle;
   @Autowired private ApplicationEvents applicationEvents;
+
+  @Autowired
+  private KeyedSubscriptionBroadcaster<UUID, NotificationsChange> notificationsChangeBroadcaster;
+
   @Autowired private ProfileManagerInvitationRepository invitationRepository;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
@@ -90,6 +106,7 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
   private TestIdentity theo;
   private TestIdentity serverAdmin;
   private ShareSteps steps;
+  private ManagerInvitationSteps managementSteps;
   private StoredNotificationRows rows;
 
   @BeforeEach
@@ -103,6 +120,13 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
             .managers(profileManagerRepository)
             .shares(shareRepository)
             .accounts(userAccountRepository)
+            .transactions(transactionTemplate)
+            .build();
+    managementSteps =
+        ManagerInvitationSteps.builder()
+            .management(profileManagement)
+            .auth(authTestSupport)
+            .invitations(invitationRepository)
             .transactions(transactionTemplate)
             .build();
     sam = track(authTestSupport.createIdentity());
@@ -126,27 +150,32 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
       ProfileDeletion deletion) {
     var ollie = steps.unsharedProfileManagedBy("Ollie", sam, sam);
     var kai = steps.unsharedProfileManagedBy("Kai", theo, theo);
-    var invitation = SubjectReference.profileManagerInvitation(invite(theo, ollie));
+    var answered = SubjectReference.profileManagerInvitation(invite(sam, theo, ollie));
+    assertThat(
+            profileManagement.acceptManagerInvitation(
+                authTestSupport.identityOf(theo), answered.id()))
+        .isInstanceOf(Outcome.Accepted.class);
+    managementSteps.removeManagement(serverAdmin, theo, ollie);
+    var waiting = SubjectReference.profileManagerInvitation(invite(sam, theo, ollie));
+    var removed = SubjectReference.profile(ollie.getId());
     tell(
-        SpecifiedOnlyNotificationKinds.MANAGEMENT_REMOVED,
-        SubjectReference.profile(ollie.getId()),
-        new ManagementRemovedSnapshot("Ollie"));
-    tell(
-        SpecifiedOnlyNotificationKinds.INVITATION_RECEIVED,
-        invitation,
-        new InvitationReceivedSnapshot("Ollie", Optional.empty()));
-    tell(
-        SpecifiedOnlyNotificationKinds.MANAGEMENT_REMOVED,
+        REMOVED,
         SubjectReference.profile(kai.getId()),
-        new ManagementRemovedSnapshot("Kai"));
+        new ProfileManagementRemovedSnapshot("Kai"));
+    assertThat(rows.about(answered))
+        .extracting(Row::kind)
+        .containsExactlyInAnyOrder(RECEIVED.name(), ANSWERED.name());
+    assertThat(rows.about(removed)).extracting(Row::kind).containsExactly(REMOVED.name());
+    assertThat(rows.about(waiting)).extracting(Row::kind).containsExactly(RECEIVED.name());
 
     var outcome = delete(ollie, deletion);
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
-    assertThat(rows.about(SubjectReference.profile(ollie.getId()))).isEmpty();
-    assertThat(rows.about(invitation)).isEmpty();
+    assertThat(rows.about(removed)).isEmpty();
+    assertThat(rows.about(answered)).isEmpty();
+    assertThat(rows.about(waiting)).isEmpty();
     assertThat(rows.about(SubjectReference.profile(kai.getId()))).hasSize(1);
-    assertThat(invitationRepository.findById(invitation.id())).isPresent();
+    assertThat(invitationRepository.findAllById(List.of(answered.id(), waiting.id()))).hasSize(2);
   }
 
   /** How a Profile is deleted. */
@@ -235,9 +264,9 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
     var personal = SubjectReference.profile(brook.profile().getId());
     var offer = steps.offer(brook, brook.profile(), theo);
     tell(
-        SpecifiedOnlyNotificationKinds.MANAGEMENT_REMOVED,
+        ProfileManagementNotificationKinds.PROFILE_MANAGEMENT_REMOVED,
         personal,
-        new ManagementRemovedSnapshot(brook.profile().getName()));
+        new ProfileManagementRemovedSnapshot(brook.profile().getName()));
 
     var outcome = delete(brook, AccountDeletion.BY_A_SERVER_ADMIN);
 
@@ -283,6 +312,103 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
     assertThat(applicationEvents.stream(NotificationsChangedEvent.class)).isEmpty();
   }
 
+  /**
+   * Deleting the invited Account first withdraws its request and then deletes it. Each operation
+   * receives its Account's changes in the order they are pushed, so a change pushed after the
+   * deletion arrives first only when the deletion pushed nothing.
+   */
+  @Test
+  @DisplayName("Should push nothing when an Account with a waiting invitation request is deleted")
+  void shouldPushNothingWhenAnAccountWithAWaitingInvitationRequestIsDeleted() throws Exception {
+    var brook = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    invite(sam, brook, steps.unsharedProfileManagedBy("Ollie", sam, sam));
+    assertThat(rows.of(accountOf(brook)))
+        .singleElement()
+        .satisfies(request -> assertThat(request.resolution()).isEmpty());
+    var brookId = brook.account().getId();
+    var pushed = new LinkedBlockingQueue<NotificationsChange>();
+    var operation = notificationsChangeBroadcaster.register(brookId).subscribe(pushed::add);
+
+    try {
+      var outcome =
+          accountLifecycle.deleteMyAccount(authTestSupport.freshIdentityOf(brook), "DELETE");
+      var afterTheDeletion = new NotificationsChange(List.of(UUID.randomUUID()));
+      notificationsChangeBroadcaster.broadcast(brookId, afterTheDeletion);
+
+      assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+      assertThat(rows.of(accountOf(brook))).isEmpty();
+      assertThat(pushed.poll(10, TimeUnit.SECONDS)).isEqualTo(afterTheDeletion);
+    } finally {
+      operation.dispose();
+    }
+  }
+
+  @Test
+  @DisplayName("Should keep the invited Account's withdrawn request when the inviter is deleted")
+  void shouldKeepTheInvitedAccountsWithdrawnRequestWhenTheInviterIsDeleted() {
+    var brook = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var ollie = steps.unsharedProfileManagedBy("Ollie", sam, sam, brook);
+    var invitation = SubjectReference.profileManagerInvitation(invite(brook, theo, ollie));
+
+    var outcome =
+        accountLifecycle.deleteMyAccount(authTestSupport.freshIdentityOf(brook), "DELETE");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.about(invitation))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.recipient()).isEqualTo(accountOf(theo));
+              assertThat(request.kind()).isEqualTo(RECEIVED.name());
+              assertThat(request.resolution()).contains("WITHDRAWN");
+            });
+    assertThat(invitationRepository.findById(invitation.id())).isPresent();
+  }
+
+  @ParameterizedTest
+  @EnumSource(InvitationParty.class)
+  @DisplayName(
+      "Should delete only the deleted Account's own Notifications when the invitee or the inviter is"
+          + " deleted")
+  void shouldDeleteOnlyTheDeletedAccountsOwnNotificationsWhenTheInviteeOrTheInviterIsDeleted(
+      InvitationParty party) {
+    var brook = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var mara = track(authTestSupport.createHouseholdMemberIdentity(sam));
+    var ollie = steps.unsharedProfileManagedBy("Ollie", sam, sam, brook);
+    var invitationId = invite(brook, mara, ollie);
+    assertThat(
+            profileManagement.declineManagerInvitation(
+                authTestSupport.identityOf(mara), invitationId))
+        .isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.about(SubjectReference.profileManagerInvitation(invitationId)))
+        .extracting(Row::recipient)
+        .containsExactlyInAnyOrder(accountOf(mara), accountOf(brook));
+    var deleted =
+        switch (party) {
+          case INVITEE -> mara;
+          case INVITER -> brook;
+        };
+    var kept =
+        switch (party) {
+          case INVITEE -> brook;
+          case INVITER -> mara;
+        };
+    var keptRows = rows.of(accountOf(kept));
+
+    var outcome =
+        accountLifecycle.deleteMyAccount(authTestSupport.freshIdentityOf(deleted), "DELETE");
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(rows.of(accountOf(deleted))).isEmpty();
+    assertThat(rows.of(accountOf(kept))).isEqualTo(keptRows);
+  }
+
+  /** Which party to a manager invitation is deleted. */
+  enum InvitationParty {
+    INVITEE,
+    INVITER
+  }
+
   /** What becomes of the final Account of a Household being deleted. */
   enum HouseholdDeletion {
     TRANSFER_ITS_LAST_ACCOUNT,
@@ -323,9 +449,13 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
 
   private Outcome<?, ?> delete(Profile profile, ProfileDeletion deletion) {
     return switch (deletion) {
-      case BY_ITS_SOLE_MANAGER ->
-          profileAdministration.deleteProfile(
-              authTestSupport.freshIdentityOf(sam), profile.getId());
+      case BY_ITS_SOLE_MANAGER -> {
+        // A waiting invitation blocks the deletion, so Sam cancels each first.
+        invitationIds.forEach(
+            id -> profileManagement.cancelManagerInvitation(authTestSupport.identityOf(sam), id));
+        yield profileAdministration.deleteProfile(
+            authTestSupport.freshIdentityOf(sam), profile.getId());
+      }
       case BY_A_SERVER_ADMIN ->
           profileLifecycle.administrativelyDeleteProfile(
               authTestSupport.freshIdentityOf(serverAdmin), profile.getId(), "a duplicate");
@@ -339,12 +469,12 @@ class NotificationDismissalsIT extends AbstractIntegrationTest {
     };
   }
 
-  /** An invitation for the Account to manage the Profile, issued by the Profile's manager Sam. */
-  private UUID invite(TestIdentity invited, Profile profile) {
+  /** An invitation for the Account to manage the Profile, issued by one of its managers. */
+  private UUID invite(TestIdentity inviter, TestIdentity invited, Profile profile) {
     var invitationId =
         profileManagement
             .inviteProfileManager(
-                authTestSupport.identityOf(sam), profile.getId(), invited.account().getId())
+                authTestSupport.identityOf(inviter), profile.getId(), invited.account().getEmail())
             .fold(
                 issued -> issued.invitation().getId(),
                 rejection -> {

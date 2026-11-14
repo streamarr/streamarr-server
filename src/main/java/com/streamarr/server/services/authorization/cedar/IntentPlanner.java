@@ -58,8 +58,21 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onAccount(Action.VIEW_ACCOUNT_ADMINISTRATION, accountId));
       case Intent.ViewProfileAdministration(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.VIEW_PROFILE_ADMINISTRATION, profileId));
+      case Intent.ViewManagedProfiles _ ->
+          unitPlan(
+              AuthorizationCheck.onAccount(Action.VIEW_MANAGED_PROFILES, identity.accountId()));
       case Intent.ViewManagerInvitations(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.VIEW_MANAGER_INVITATIONS, profileId));
+      case Intent.ViewProfileManagers(var profileId) ->
+          unitPlan(AuthorizationCheck.onProfile(Action.VIEW_PROFILE_MANAGERS, profileId));
+      case Intent.ViewReceivedManagerInvitations _ ->
+          unitPlan(
+              AuthorizationCheck.onAccount(
+                  Action.VIEW_RECEIVED_MANAGER_INVITATIONS, identity.accountId()));
+      case Intent.ViewReceivedManagerInvitation(var invitationId) ->
+          unitPlan(
+              AuthorizationCheck.onManagerInvitation(
+                  Action.VIEW_RECEIVED_MANAGER_INVITATION, invitationId));
       case Intent.ViewProfileShareHouseholds(var profileId) ->
           unitPlan(AuthorizationCheck.onProfile(Action.VIEW_PROFILE_SHARE_HOUSEHOLDS, profileId));
       case Intent.ViewHouseholdShareHistory(var householdId) ->

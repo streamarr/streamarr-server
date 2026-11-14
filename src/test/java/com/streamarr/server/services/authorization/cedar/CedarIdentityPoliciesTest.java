@@ -1312,6 +1312,90 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName("Should refuse who manages a Profile when a HouseholdAdmin only supervises it")
+    void shouldRefuseWhoManagesAProfileWhenAHouseholdAdminOnlySupervisesIt() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      shares.share(kid.getId(), account.getHouseholdId(), false);
+
+      assertThat(decide(atHome(), new Intent.ViewProfileManagers(kid.getId())))
+          .as("supervising HouseholdAdmin")
+          .isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should let a manager see who manages a Profile only when the session is not device-bound")
+    void shouldLetAManagerSeeWhoManagesAProfileOnlyWhenTheSessionIsNotDeviceBound() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      var view = new Intent.ViewProfileManagers(kid.getId());
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(kid.getId()).build());
+
+      assertThat(decide(atHome(), view)).as("manager at home").isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), view)).as("manager on a device").isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should let a ServerAdmin see who manages a Profile only when the session is not"
+            + " device-bound and the Account is enabled")
+    void
+        shouldLetAServerAdminSeeWhoManagesAProfileOnlyWhenTheSessionIsNotDeviceBoundAndTheAccountIsEnabled() {
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      var view = new Intent.ViewProfileManagers(kid.getId());
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(decide(atHome(), view)).as("ServerAdmin at home").isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), view)).as("ServerAdmin on a device").isEqualTo(DENIED);
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), view)).as("disabled ServerAdmin").isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should let an enabled Account read the invitations it received only when its session is"
+            + " not device-bound")
+    void shouldLetAnEnabledAccountReadTheInvitationsItReceivedOnlyWhenItsSessionIsNotDeviceBound() {
+      var received = new Intent.ViewReceivedManagerInvitations();
+      assertThat(decide(atHome(), received)).isEqualTo(ALLOWED);
+      assertThat(decide(member(), received)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), received)).isEqualTo(DENIED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), received)).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should let only the named Account read an invitation when its session is not device-bound")
+    void shouldLetOnlyTheNamedAccountReadAnInvitationWhenItsSessionIsNotDeviceBound() {
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var invitation =
+          new Intent.ViewReceivedManagerInvitation(
+              pendingManagerInvitation(orphan.getId(), account.getId()).getId());
+      assertThat(decide(atHome(), invitation)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), invitation)).isEqualTo(DENIED);
+
+      // The inviter and a ServerAdmin read it through the Profile's administration instead.
+      var someoneElses = pendingManagerInvitation(orphan.getId(), UUID.randomUUID());
+      someoneElses.setInviterAccountId(account.getId());
+      managerInvitations.save(someoneElses);
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), new Intent.ViewReceivedManagerInvitation(someoneElses.getId())))
+          .isEqualTo(DENIED);
+      assertThat(decide(atHome(), new Intent.ViewReceivedManagerInvitation(UUID.randomUUID())))
+          .isEqualTo(DENIED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), invitation)).isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should allow an invitation answer when the caller is the named recipient")
     void shouldAllowInvitationAnswerWhenCallerIsNamedRecipient() {
       var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
@@ -1635,6 +1719,43 @@ class CedarIdentityPoliciesTest {
       accounts.save(account);
 
       assertThat(decide(onDevice(atHome()), viewActiveStreams)).isEqualTo(DENIED);
+    }
+  }
+
+  @Nested
+  @DisplayName("The Profiles an Account manages")
+  class ManagedProfiles {
+
+    private final Intent.UnitIntent viewManagedProfiles = new Intent.ViewManagedProfiles();
+
+    @Test
+    @DisplayName(
+        "Should let an enabled Account list the Profiles it manages when its session is not"
+            + " device-bound, whatever its Household role")
+    void shouldLetAnEnabledAccountListTheProfilesItManagesWhenItsSessionIsNotDeviceBound() {
+      assertThat(decide(atHome(), viewManagedProfiles)).isEqualTo(ALLOWED);
+      assertThat(decide(member(), viewManagedProfiles)).isEqualTo(ALLOWED);
+      assertThat(decide(visiting(), viewManagedProfiles)).isEqualTo(ALLOWED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should refuse the Profiles an Account manages when the session is device-bound, a"
+            + " ServerAdmin's included")
+    void shouldRefuseTheProfilesAnAccountManagesWhenTheSessionIsDeviceBound() {
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(decide(onDevice(atHome()), viewManagedProfiles)).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName("Should refuse the Profiles an Account manages when the Account is disabled")
+    void shouldRefuseTheProfilesAnAccountManagesWhenTheAccountIsDisabled() {
+      account.setEnabled(false);
+      accounts.save(account);
+
+      assertThat(decide(atHome(), viewManagedProfiles)).isEqualTo(DENIED);
     }
   }
 

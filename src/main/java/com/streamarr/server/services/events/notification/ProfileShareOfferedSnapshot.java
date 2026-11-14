@@ -16,18 +16,12 @@ public record ProfileShareOfferedSnapshot(
   @Override
   public String line(Optional<RequestResolution> resolution) {
     var profile = NotificationLines.quoted(profileName);
-    return resolution
-        .map(resolved -> resolvedLine(profile, resolved))
-        .orElse("%s was offered to your Household.".formatted(profile));
-  }
-
-  private String resolvedLine(String profile, RequestResolution resolution) {
     var offer = "The offer of %s to your Household".formatted(profile);
-    return switch (resolution) {
-      case DECIDED ->
-          "%s was %s.".formatted(offer, answer.map(NotificationLines::answered).orElse("decided"));
-      case WITHDRAWN -> "%s was withdrawn.".formatted(offer);
-      case EXPIRED -> "%s expired.".formatted(offer);
-    };
+    return resolution
+        .map(
+            resolved ->
+                NotificationLines.resolved(
+                    offer, resolved, answer.map(NotificationLines::answered)))
+        .orElse("%s was offered to your Household.".formatted(profile));
   }
 }

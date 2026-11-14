@@ -1,12 +1,16 @@
 package com.streamarr.server.repositories.auth;
 
+import com.streamarr.server.domain.auth.HouseholdProfilesFilter;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfilePolicySnapshot;
 import com.streamarr.server.domain.auth.ProfilePolicyTarget;
+import com.streamarr.server.domain.auth.ProfileReaderRelation;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface ProfileRepositoryCustom {
@@ -20,10 +24,36 @@ public interface ProfileRepositoryCustom {
    */
   List<Row<Profile>> rowsAvailableInHousehold(UUID householdId, Seek seek);
 
+  /**
+   * The Profiles the Account manages beyond the seek, in every Household, ordered by lowercased
+   * name, then ID: its own Personal Profile while that is an unrestricted Adult, and every Profile
+   * it holds a direct grant for.
+   */
+  List<Row<Profile>> rowsManagedBy(UUID accountId, Seek seek);
+
+  /**
+   * The Profiles the filter keeps for Household settings beyond the seek, ordered by lowercased
+   * name, then ID.
+   */
+  List<Row<Profile>> rowsInHousehold(HouseholdProfilesFilter filter, Seek seek);
+
+  /** Which of the Profiles are available in the Household. */
+  Set<UUID> availableAmong(UUID householdId, Collection<UUID> profileIds);
+
+  /** Which of the Profiles are available in the Household each of them belongs to. */
+  Set<UUID> availableWhereTheyBelong(Collection<UUID> profileIds);
+
   /** The Kid Profiles actively shared into the Household, which decide its PIN safety rule. */
   List<Profile> findAvailableKidsInHousehold(UUID householdId);
 
   boolean existsAvailableInHouseholdWithNameIgnoreCase(UUID householdId, String name);
+
+  /**
+   * What the Account is to each of the Profiles that exist, in one statement: whether it manages
+   * each and whether it supervises each, as the Cedar facts would decide them one at a time, and
+   * whether each belongs to the Account's own Household.
+   */
+  List<ProfileReaderRelation> relationsTo(UUID accountId, Collection<UUID> profileIds);
 
   /**
    * The Profile's current policy read under a row-level write lock (SELECT … FOR UPDATE), as
@@ -31,6 +61,21 @@ public interface ProfileRepositoryCustom {
    * managed JPA copy could be stale.
    */
   Optional<ProfilePolicySnapshot> lockPolicyById(UUID profileId);
+
+  /**
+   * Locks the Profile and, when an Account has the address, that Account's Personal Profile, in
+   * their id order and in one statement whatever the address, so two invitations that each name the
+   * other's inviter wait for each other rather than deadlock (ADR 0024: one global lock order).
+   * Whether the Profile exists.
+   */
+  boolean lockForInvitationTo(UUID profileId, String email);
+
+  /**
+   * Locks the Profile and the Account's Personal Profile in the order {@link #lockForInvitationTo}
+   * takes them, so an acceptance that rechecks its inviter and an invite to that inviter's address
+   * wait for each other rather than deadlock. Whether the Profile exists.
+   */
+  boolean lockWithPersonalProfileOf(UUID profileId, UUID accountId);
 
   /** Locks and confirms the Profile is unrestricted for a Share sovereignty decision. */
   boolean lockIfUnrestricted(UUID profileId);

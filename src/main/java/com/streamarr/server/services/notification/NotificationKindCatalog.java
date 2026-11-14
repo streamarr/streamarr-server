@@ -2,6 +2,7 @@ package com.streamarr.server.services.notification;
 
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.NotificationKinds;
+import com.streamarr.server.services.events.notification.ProfileManagementNotificationKinds;
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import java.util.Map;
 import java.util.Optional;
@@ -12,8 +13,9 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 /**
- * The kinds the module reads back by their stored names: the sharing kinds, and any kind a bean
- * contributes. A kind keeps its name for good, so a stored Notification always finds its kind.
+ * The kinds the module reads back by their stored names: the sharing kinds, the Profile management
+ * kinds, and any kind a bean contributes. A kind keeps its name for good, so a stored Notification
+ * always finds its kind.
  */
 @Component
 public class NotificationKindCatalog implements NotificationKinds {
@@ -22,7 +24,11 @@ public class NotificationKindCatalog implements NotificationKinds {
 
   public NotificationKindCatalog(ObjectProvider<NotificationKind> contributed) {
     kinds =
-        Stream.concat(SharingNotificationKinds.ALL.stream(), contributed.orderedStream())
+        Stream.of(
+                SharingNotificationKinds.ALL.stream(),
+                ProfileManagementNotificationKinds.ALL.stream(),
+                contributed.orderedStream())
+            .flatMap(Function.identity())
             .collect(Collectors.toUnmodifiableMap(NotificationKind::name, Function.identity()));
   }
 

@@ -7,4 +7,5 @@ public record ManagerInvitationNotFoundError(String message, List<String> inputP
     implements CancelManagerInvitationError,
         AcceptManagerInvitationError,
         DeclineManagerInvitationError,
+        LookUpManagerInvitationCodeError,
         InputMutationError {}

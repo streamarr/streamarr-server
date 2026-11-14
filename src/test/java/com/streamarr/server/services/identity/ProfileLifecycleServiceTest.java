@@ -33,6 +33,7 @@ import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -84,7 +85,7 @@ class ProfileLifecycleServiceTest {
           accounts,
           households,
           managers,
-          managerInvitations,
+          new ProfileManagerInvitationLifecycle(managerInvitations, new CapturingEventPublisher()),
           accountInvitations,
           shares,
           new ProfileShareLifecycle(shares, shareEvents),

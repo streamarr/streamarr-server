@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.mutation.profile;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.graphql.mutation.InputMutationError;
 import com.streamarr.server.graphql.mutation.MutationError;
 import com.streamarr.server.services.identity.ProfileRejections;
@@ -171,21 +172,28 @@ class ProfileErrorsTest {
   @Test
   @DisplayName("Should name the Household in the lock error when it may be seen")
   void shouldNameHouseholdInLockErrorWhenItMayBeSeen() {
-    var householdId = UUID.randomUUID();
+    var beachHouse =
+        HouseholdFixture.defaultHouseholdBuilder()
+            .id(UUID.randomUUID())
+            .name("Beach House")
+            .build();
     var named =
         ProfileErrors.toRemoveProfilePinError(
-            new ProfileRejections.WouldLockProfile(householdId, Optional.of("Beach House")));
+            new ProfileRejections.WouldLockProfile(Optional.of(beachHouse)));
     var unnamed =
         ProfileErrors.toRemoveProfilePinError(
-            new ProfileRejections.WouldLockProfile(householdId, Optional.empty()));
+            new ProfileRejections.WouldLockProfile(Optional.empty()));
 
     assertThat(named)
         .isInstanceOf(ProfilePinRequiredError.class)
         .satisfies(
-            error ->
-                assertThat(((ProfilePinRequiredError) error).message()).contains("Beach House"));
+            error -> {
+              assertThat(((ProfilePinRequiredError) error).message()).contains("Beach House");
+              assertThat(((ProfilePinRequiredError) error).householdId())
+                  .isEqualTo(beachHouse.getId());
+            });
     assertThat(((ProfilePinRequiredError) unnamed).message()).doesNotContain("Beach House");
-    assertThat(((ProfilePinRequiredError) unnamed).householdId()).isEqualTo(householdId);
+    assertThat(((ProfilePinRequiredError) unnamed).householdId()).isNull();
   }
 
   @Test
