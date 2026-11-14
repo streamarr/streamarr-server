@@ -6,6 +6,7 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -45,7 +46,8 @@ public record MediaProbe(
     @NonNull KeyframeKnowledge keyframes,
     @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts,
     @NonNull Optional<StreamMeasurements> streamMeasurements,
-    @NonNull Optional<SourceFileSnapshot> sourceSnapshot) {
+    @NonNull Optional<SourceFileSnapshot> sourceSnapshot,
+    @NonNull Set<Integer> streamsWithLearnedEnds) {
 
   // ffprobe's names for PGS, VobSub and DVB subtitles.
   private static final Set<String> IMAGE_SUBTITLE_CODECS =
@@ -57,6 +59,7 @@ public record MediaProbe(
   private static final int STANDARD_DEFINITION_HEIGHT = 576;
 
   public MediaProbe {
+    streamsWithLearnedEnds = Set.copyOf(streamsWithLearnedEnds);
     if (audioChannels == null) {
       audioChannels = OptionalInt.empty();
     }
@@ -78,6 +81,7 @@ public record MediaProbe(
     private Optional<VideoPlaybackFacts> videoPlaybackFacts = Optional.empty();
     private Optional<StreamMeasurements> streamMeasurements = Optional.empty();
     private Optional<SourceFileSnapshot> sourceSnapshot = Optional.empty();
+    private Set<Integer> streamsWithLearnedEnds = Set.of();
   }
 
   /**
@@ -339,6 +343,14 @@ public record MediaProbe(
     return endsEarly(audioStreams().stream().findFirst(), margin);
   }
 
+  /** The selected audio's header or scanned end, excluding an end learned by a job attempt. */
+  public Optional<Duration> probedSessionAudioEnd() {
+    return audioStreams().stream()
+        .findFirst()
+        .filter(stream -> !streamsWithLearnedEnds.contains(stream.index()))
+        .flatMap(StreamInfo::endTime);
+  }
+
   private Optional<StreamInfo> chosenVideoStream() {
     return videoPlaybackFacts.flatMap(
         facts -> streams.stream().filter(s -> s.index() == facts.streamIndex()).findFirst());
@@ -366,7 +378,13 @@ public record MediaProbe(
             .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, LearnedStreamEnd::endTime));
     var withLearned =
         streams.stream().map(stream -> withLearnedEndTime(stream, learnedByIndex)).toList();
-    return toBuilder().streams(withLearned).build();
+    var learnedIndices = new HashSet<>(streamsWithLearnedEnds);
+    streams.stream()
+        .filter(stream -> stream.endTime().isEmpty())
+        .map(StreamInfo::index)
+        .filter(learnedByIndex::containsKey)
+        .forEach(learnedIndices::add);
+    return toBuilder().streams(withLearned).streamsWithLearnedEnds(learnedIndices).build();
   }
 
   private static StreamInfo withLearnedEndTime(

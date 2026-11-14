@@ -3,12 +3,17 @@ package com.streamarr.server.domain.streaming;
 import static com.streamarr.server.fixtures.ProbeFixture.audioStreamBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.media.LearnedStreamEnd;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -348,6 +353,36 @@ class MediaProbeTest {
                                 .matrixCoefficients(Optional.empty())
                                 .build()))
                     .build()));
+  }
+
+  @Test
+  @DisplayName("Should distinguish stated and learned ends when choosing another audio track")
+  void shouldDistinguishStatedAndLearnedEndsWhenChoosingAnotherAudioTrack() {
+    var stated = audioIn("eng").index(1).endTime(Optional.of(Duration.ofSeconds(10))).build();
+    var unknown = audioIn("fra").index(2).endTime(Optional.empty()).build();
+    var learned =
+        List.of(
+            LearnedStreamEnd.builder()
+                .mediaFileId(UUID.randomUUID())
+                .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+                .streamIndex(1)
+                .endTime(Duration.ofSeconds(12))
+                .build(),
+            LearnedStreamEnd.builder()
+                .mediaFileId(UUID.randomUUID())
+                .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+                .streamIndex(2)
+                .endTime(Duration.ofSeconds(20))
+                .build());
+
+    var withEnds = probe(stated, unknown).withLearnedEndTimes(learned).withLearnedEndTimes(learned);
+
+    assertThat(withEnds.probedSessionAudioEnd()).contains(Duration.ofSeconds(10));
+    var switched = withEnds.withSessionAudioTrackAt(1);
+    assertThat(switched.audioStreams().getFirst().endTime()).contains(Duration.ofSeconds(20));
+    assertThat(switched.probedSessionAudioEnd()).isEmpty();
+    assertThat(switched.withSessionAudioTrackAt(0).probedSessionAudioEnd())
+        .contains(Duration.ofSeconds(10));
   }
 
   private static MediaProbe probeOf(VideoPlaybackFacts.VideoPlaybackFactsBuilder facts) {

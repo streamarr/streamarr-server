@@ -56,7 +56,7 @@ public class SessionProgressService {
     runtimeRegistry.updatePlaybackState(sessionId, positionSeconds, state);
     eventPublisher.publishEvent(new StreamSessionTimelineReportedEvent(sessionId));
 
-    var durationSeconds = (int) session.getMediaProbe().duration().toSeconds();
+    var durationSeconds = (int) session.getMediaEnd().toSeconds();
     if (durationSeconds <= 0) {
       return;
     }

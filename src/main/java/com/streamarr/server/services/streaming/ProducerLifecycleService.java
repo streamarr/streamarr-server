@@ -1779,12 +1779,12 @@ public class ProducerLifecycleService {
   }
 
   /**
-   * Settles the end of a stream copy's job attempt that read its source to the end (ADR 0052). The
-   * worker reports the completion only after the server accepted the attempt's last segment, so a
-   * copy whose stored media segments from the attempt's first one stop before the playlist's last
-   * ran short there. The stream session keeps the first short copy that a completion shows. Answers
-   * the short copy when this completion showed it. In every stream session, a completion that
-   * reports that the source ended early sets the last segment at which a job attempt may start.
+   * Settles a stream copy's completed job attempt (ADR 0052). The worker reports the completion
+   * only after the server accepted the attempt's last segment, so a copy whose stored media
+   * segments from the attempt's first one stop before the playlist's last ran short there. The
+   * stream session keeps the first short copy that a completion shows. Answers the short copy when
+   * this completion showed it. In every stream session, a completion that reports that the source
+   * ended early sets the last segment at which a job attempt may start.
    */
   public Optional<ShortCopy> settleCompletedJobAttempt(@NonNull CompletedJobAttempt completion) {
     return withSessionLock(

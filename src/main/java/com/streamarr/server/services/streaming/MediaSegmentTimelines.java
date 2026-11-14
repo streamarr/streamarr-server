@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DemuxerSeekTime;
 import com.streamarr.server.domain.streaming.ExactSegmentStarts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
@@ -7,7 +8,9 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.properties.StreamingProperties;
+import java.time.Duration;
 import java.util.Optional;
 
 /**
@@ -29,8 +32,29 @@ final class MediaSegmentTimelines {
    * when they are known.
    */
   static MediaSegmentTimeline of(StreamSession session, StreamingProperties properties) {
-    var probe = session.getMediaProbe();
-    if (!session.getTranscodeDecision().transcodeMode().copiesVideo()) {
+    var probe = session.getMediaProbe().toBuilder().duration(session.getMediaEnd()).build();
+    return of(probe, session.getTranscodeDecision(), properties);
+  }
+
+  static Optional<Duration> endOfCopiedAudioSegment(
+      MediaProbe probe, TranscodeDecision decision, StreamingProperties properties) {
+    if (decision.audioDecision().mode() != AudioMode.COPY) {
+      return Optional.empty();
+    }
+
+    return probe
+        .probedSessionAudioEnd()
+        .filter(Duration::isPositive)
+        .map(
+            audioEnd -> {
+              var timeline = of(probe, decision, properties);
+              return timeline.mediaSegmentEnd(timeline.mediaSegmentIndexAt(audioEnd.minusNanos(1)));
+            });
+  }
+
+  private static MediaSegmentTimeline of(
+      MediaProbe probe, TranscodeDecision decision, StreamingProperties properties) {
+    if (!decision.transcodeMode().copiesVideo()) {
       return encodeOf(probe, properties);
     }
 
