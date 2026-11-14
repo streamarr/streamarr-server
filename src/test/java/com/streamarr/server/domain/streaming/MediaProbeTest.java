@@ -16,6 +16,7 @@ import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -30,6 +31,7 @@ class MediaProbeTest {
 
   private static final String MATROSKA_DEMUXER = "matroska,webm";
   private static final String MOV_DEMUXER = "mov,mp4,m4a,3gp,3g2,mj2";
+  private static final Duration ONE_SEGMENT = Duration.ofSeconds(6);
 
   @ParameterizedTest
   @ValueSource(strings = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle"})
@@ -641,6 +643,198 @@ class MediaProbeTest {
     assertThat(learned.videoEndTime()).contains(Duration.ofMillis(14_167));
   }
 
+  // The margin is one 6 s segment (ADR 0037, early ends). Every media playlist of the session runs
+  // to its media end, and a container's duration that runs past every stream's end never makes a
+  // stream end early by itself, so a stream ends early only when the media end and another
+  // stream's end both lie past it.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("videoEnds")
+  @DisplayName(
+      "Should find that the video ends early only when the media and another stream end at least"
+          + " one margin after it")
+  void shouldFindThatTheVideoEndsEarlyOnlyWhenTheMediaAndAnotherStreamEndAtLeastOneMarginAfterIt(
+      MediaProbe probe, boolean endsEarly) {
+    assertThat(probe.videoEndsEarly(ONE_SEGMENT)).isEqualTo(endsEarly);
+  }
+
+  static Stream<Arguments> videoEnds() {
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "a scan read that the session's audio ends one margin after the video",
+                probeLasting(Duration.ofSeconds(16), video(), audio(1))
+                    .withLearnedEndTimes(List.of(scannedEnd(0, 10_000), scannedEnd(1, 16_000)))),
+            true),
+        Arguments.of(
+            Named.of(
+                "a scan read that the session's audio ends just under one margin after the video",
+                probeLasting(Duration.ofMillis(15_999), video(), audio(1))
+                    .withLearnedEndTimes(List.of(scannedEnd(0, 10_000), scannedEnd(1, 15_999)))),
+            false),
+        Arguments.of(
+            Named.of(
+                "a scan read that a track listed after the session's ends one margin after the"
+                    + " video",
+                probeLasting(Duration.ofSeconds(16), video(), audio(1), audio(2))
+                    .withLearnedEndTimes(
+                        List.of(
+                            scannedEnd(0, 10_000), scannedEnd(1, 10_000), scannedEnd(2, 16_000)))),
+            false),
+        Arguments.of(
+            Named.of(
+                "a scan read that a track listed before the session's ends one margin after the"
+                    + " video",
+                probeLasting(Duration.ofSeconds(16), video(), audio(1), audio(2))
+                    .withLearnedEndTimes(
+                        List.of(
+                            scannedEnd(0, 10_000), scannedEnd(1, 16_000), scannedEnd(2, 10_000)))
+                    .withSessionAudioTrackAt(1)),
+            false),
+        Arguments.of(
+            Named.of(
+                "the session plays the second of two tracks, which a scan read to end one margin"
+                    + " after the video",
+                probeLasting(Duration.ofSeconds(16), video(), audio(1), audio(2))
+                    .withLearnedEndTimes(
+                        List.of(
+                            scannedEnd(0, 10_000), scannedEnd(1, 10_000), scannedEnd(2, 16_000)))
+                    .withSessionAudioTrackAt(1)),
+            true),
+        // The container's 16.2 s stands as the media end, because it runs less than 1 s past the
+        // later scanned end of the two delivered streams. The other track ends at 16.1 s.
+        Arguments.of(
+            Named.of(
+                "a scan read the ends of both delivered streams, and a track that the session"
+                    + " does not play ends one margin after the video",
+                probeLasting(Duration.ofMillis(16_200), video(), audio(1), audio(2))
+                    .withLearnedEndTimes(
+                        List.of(
+                            scannedEnd(0, 10_000), scannedEnd(1, 15_500), scannedEnd(2, 16_100)))),
+            false),
+        Arguments.of(
+            Named.of(
+                "a file without audio whose second video stream ends one margin after the video,"
+                    + " which a scan read",
+                probeLasting(Duration.ofSeconds(16), video(), secondVideoStatedToEndAt(16_000))
+                    .withLearnedEndTimes(List.of(scannedEnd(0, 10_000)))),
+            false),
+        Arguments.of(
+            Named.of(
+                "only the header states the ends, and a track that the session does not play ends"
+                    + " one margin after the video",
+                probeLasting(
+                    Duration.ofSeconds(16),
+                    videoStatedToEndAt(10_000),
+                    audioStatedToEndAt(1, 10_000),
+                    audioStatedToEndAt(2, 16_000))),
+            true),
+        Arguments.of(
+            Named.of(
+                "only the header states the ends, and the container runs one margin past every"
+                    + " stream",
+                probeLasting(
+                    Duration.ofSeconds(16),
+                    videoStatedToEndAt(10_000),
+                    audioStatedToEndAt(1, 10_000))),
+            false),
+        Arguments.of(
+            Named.of(
+                "only the header states the end of the video, which a file without audio holds,"
+                    + " and the container runs one margin past it",
+                probeLasting(Duration.ofSeconds(16), videoStatedToEndAt(10_000))),
+            false),
+        Arguments.of(
+            Named.of(
+                "no scan read the session audio's end, and another track ends one margin after"
+                    + " the video",
+                probeLasting(Duration.ofSeconds(16), video(), audio(1), audio(2))
+                    .withLearnedEndTimes(List.of(scannedEnd(0, 10_000), scannedEnd(2, 16_000)))),
+            true),
+        Arguments.of(
+            Named.of(
+                "the video has no stated end",
+                probeLasting(Duration.ofSeconds(16), video(), audioStatedToEndAt(1, 16_000))),
+            false));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("sessionAudioEnds")
+  @DisplayName(
+      "Should find that the session's audio ends early only when the media and another stream end"
+          + " at least one margin after it")
+  void
+      shouldFindThatTheSessionsAudioEndsEarlyOnlyWhenTheMediaAndAnotherStreamEndAtLeastOneMarginAfterIt(
+          MediaProbe probe, boolean endsEarly) {
+    assertThat(probe.sessionAudioEndsEarly(ONE_SEGMENT)).isEqualTo(endsEarly);
+  }
+
+  static Stream<Arguments> sessionAudioEnds() {
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "a scan read that the video ends one margin after the session's audio",
+                probeLasting(Duration.ofSeconds(16), video(), audio(1))
+                    .withLearnedEndTimes(List.of(scannedEnd(0, 16_000), scannedEnd(1, 10_000)))),
+            true),
+        Arguments.of(
+            Named.of(
+                "a scan read that another track ends one margin after the session's audio",
+                probeLasting(Duration.ofSeconds(16), video(), audio(1), audio(2))
+                    .withLearnedEndTimes(
+                        List.of(
+                            scannedEnd(0, 10_000), scannedEnd(1, 10_000), scannedEnd(2, 16_000)))),
+            false),
+        Arguments.of(
+            Named.of(
+                "a scan read the ends of both delivered streams, and a track that the session"
+                    + " does not play ends one margin after the session's audio",
+                probeLasting(Duration.ofMillis(16_200), video(), audio(1), audio(2))
+                    .withLearnedEndTimes(
+                        List.of(
+                            scannedEnd(0, 15_500), scannedEnd(1, 10_000), scannedEnd(2, 16_100)))),
+            false),
+        Arguments.of(
+            Named.of(
+                "the session plays the second of two tracks, which a scan read to end one margin"
+                    + " before the video",
+                probeLasting(Duration.ofSeconds(16), video(), audio(1), audio(2))
+                    .withLearnedEndTimes(
+                        List.of(
+                            scannedEnd(0, 16_000), scannedEnd(1, 16_000), scannedEnd(2, 10_000)))
+                    .withSessionAudioTrackAt(1)),
+            true),
+        Arguments.of(
+            Named.of(
+                "only the header states the ends, and a track that the session does not play ends"
+                    + " one margin after the session's audio",
+                probeLasting(
+                    Duration.ofSeconds(16),
+                    videoStatedToEndAt(10_000),
+                    audioStatedToEndAt(1, 10_000),
+                    audioStatedToEndAt(2, 16_000))),
+            true),
+        Arguments.of(
+            Named.of(
+                "only the header states the ends, and the container runs one margin past every"
+                    + " stream",
+                probeLasting(
+                    Duration.ofSeconds(16),
+                    videoStatedToEndAt(10_000),
+                    audioStatedToEndAt(1, 10_000))),
+            false),
+        Arguments.of(
+            Named.of(
+                "only the header states the session audio's end, beside video whose end it does"
+                    + " not state, and the container runs one margin past it",
+                probeLasting(Duration.ofSeconds(16), video(), audioStatedToEndAt(1, 10_000))),
+            false),
+        Arguments.of(
+            Named.of(
+                "the session's audio has no stated end",
+                probeLasting(Duration.ofSeconds(16), videoStatedToEndAt(16_000), audio(1))),
+            false));
+  }
+
   private static LearnedStreamEnd scannedEnd(int streamIndex, long endMillis) {
     return scannedEnd(streamIndex, Duration.ofMillis(endMillis));
   }
@@ -669,6 +863,15 @@ class MediaProbeTest {
 
   private static StreamInfo videoStatedToEndAt(long endMillis) {
     return video().toBuilder().endTime(Optional.of(Duration.ofMillis(endMillis))).build();
+  }
+
+  // A second video stream, such as another angle, which the session does not deliver.
+  private static StreamInfo secondVideoStatedToEndAt(long endMillis) {
+    return StreamInfo.builder()
+        .index(1)
+        .codecType("video")
+        .endTime(Optional.of(Duration.ofMillis(endMillis)))
+        .build();
   }
 
   private static StreamInfo audioStatedToEndAt(int index, long endMillis) {

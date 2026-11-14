@@ -928,10 +928,11 @@ class TranscodeDecisionReasonTest {
   @ParameterizedTest(name = "{0}")
   @MethodSource("earlyEndingStreams")
   @DisplayName(
-      "Should encode a chosen stream only when it ends at least one segment before another stream"
-          + " of the source")
-  void shouldEncodeAChosenStreamOnlyWhenItEndsAtLeastOneSegmentBeforeAnotherStreamOfTheSource(
-      Source source, boolean copiesVideo, AudioMode audio, List<DecisionReason> expected) {
+      "Should encode a delivered stream only when it ends at least one segment before the session's"
+          + " media end and another stream's end")
+  void
+      shouldEncodeADeliveredStreamOnlyWhenItEndsAtLeastOneSegmentBeforeTheSessionsMediaEndAndAnotherStreamsEnd(
+          Source source, boolean copiesVideo, AudioMode audio, List<DecisionReason> expected) {
     var decision = decide(source.probe(), defaultDeclarationBuilder().build());
 
     assertThat(decision.transcodeMode().copiesVideo()).isEqualTo(copiesVideo);
@@ -939,7 +940,8 @@ class TranscodeDecisionReasonTest {
     assertThat(decision.reasons()).containsExactlyElementsOf(expected);
   }
 
-  // The source's container is 10 minutes long, cut into 6 s segments.
+  // The source's container is 10 minutes long, cut into 6 s segments. Only its header states where
+  // each stream ends, so the session's media ends at the container's duration.
   static Stream<Arguments> earlyEndingStreams() {
     var tenMinutes = Duration.ofMinutes(10);
     var oneSegmentEarlier = tenMinutes.minusSeconds(6);
@@ -975,7 +977,8 @@ class TranscodeDecisionReasonTest {
             List.of()),
         Arguments.of(
             Named.of(
-                "video and audio that end one segment before a second audio track",
+                "video and audio that end one segment before an audio track that the session does"
+                    + " not play, which sets the container's duration",
                 Source.builder()
                     .videoEnd(oneSegmentEarlier)
                     .audioEnd(oneSegmentEarlier)
@@ -986,7 +989,16 @@ class TranscodeDecisionReasonTest {
             List.of(DecisionReason.VIDEO_ENDS_EARLY, DecisionReason.AUDIO_ENDS_EARLY)),
         Arguments.of(
             Named.of(
-                "audio whose end the probe states beside video whose end it does not",
+                "video and audio that end together one segment before the container's duration,"
+                    + " which no stream's end reaches",
+                Source.builder().videoEnd(oneSegmentEarlier).audioEnd(oneSegmentEarlier).build()),
+            true,
+            AudioMode.COPY,
+            List.of()),
+        Arguments.of(
+            Named.of(
+                "audio whose end the probe states long before the container's duration, beside"
+                    + " video whose end it does not",
                 Source.builder().audioEnd(Duration.ofSeconds(20)).build()),
             true,
             AudioMode.COPY,

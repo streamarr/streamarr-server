@@ -356,7 +356,7 @@ public record MediaProbe(
    * session reads {@link #directPlayMediaEnd} instead.
    */
   public Duration mediaEnd() {
-    var sessionAudio = audioStreams().stream().limit(1).toList();
+    var sessionAudio = sessionAudioStream().stream().toList();
     return mediaEndWith(sessionAudio);
   }
 
@@ -419,18 +419,34 @@ public record MediaProbe(
   }
 
   /**
-   * Whether the chosen video stream ends at least {@code margin} before another stream of the
-   * source ends, by their probed end times (ADR 0037, early ends). The probe states end times for
-   * audio and video streams only. A stream whose end time the probe does not state never ends
-   * early, and never makes another stream end early.
+   * Whether the chosen video stream's probed end time lies at least {@code margin} before both the
+   * {@link #mediaEnd}, to which every media playlist of the session runs, and the latest end time
+   * that the rule counts (ADR 0037, early ends). Where a keyframe packet scan read the ends of the
+   * two streams that the session delivers, the rule counts only those two ends, so no other stream
+   * of the file, such as an audio track that the session does not play, makes the video end early.
+   * That holds also while the container's duration stands as the media end, because it runs less
+   * than {@link #LEAST_HEADER_OVERSTATEMENT} past the later scanned end. Where no scan read them,
+   * the media end is the container's duration, and the rule counts the end that the probe states
+   * for every stream of the file, so the video ends early only when another stream's stated end
+   * also lies that far past it. A container's duration that runs past every stream's end therefore
+   * never makes a stream end early by itself. A stream whose end time the probe does not state
+   * never ends early.
    */
   public boolean videoEndsEarly(@NonNull Duration margin) {
     return endsEarly(chosenVideoStream(), margin);
   }
 
-  /** Whether the session's audio stream ends early, by the rule of {@link #videoEndsEarly}. */
+  /**
+   * Whether the session's audio stream ends at least {@code margin} before both the media end and
+   * the latest end time that the rule counts, by the rule of {@link #videoEndsEarly}.
+   */
   public boolean sessionAudioEndsEarly(@NonNull Duration margin) {
-    return endsEarly(audioStreams().stream().findFirst(), margin);
+    return endsEarly(sessionAudioStream(), margin);
+  }
+
+  // The session plays the first audio stream that the probe lists.
+  private Optional<StreamInfo> sessionAudioStream() {
+    return audioStreams().stream().findFirst();
   }
 
   private Optional<StreamInfo> chosenVideoStream() {
@@ -439,15 +455,28 @@ public record MediaProbe(
   }
 
   private boolean endsEarly(Optional<StreamInfo> stream, Duration margin) {
-    if (stream.isEmpty() || stream.get().endTime().isEmpty()) {
-      return false;
-    }
+    var sourceEnd = advertisedSourceEnd();
+    return stream
+        .flatMap(StreamInfo::endTime)
+        .filter(end -> sourceEnd.compareTo(end.plus(margin)) >= 0)
+        .isPresent();
+  }
 
-    var earliestLaterEnd = stream.get().endTime().get().plus(margin);
+  // The earlier of the media end and the latest end time that the rule counts: the later scanned
+  // end of the two delivered streams, or, until a scan has read both, the latest end time that the
+  // probe states for a stream of the file.
+  private Duration advertisedSourceEnd() {
+    var mediaEnd = mediaEnd();
+    return scannedEndOf(sessionAudioStream().stream().toList())
+        .or(this::latestStatedEnd)
+        .filter(latestEnd -> latestEnd.compareTo(mediaEnd) < 0)
+        .orElse(mediaEnd);
+  }
+
+  private Optional<Duration> latestStatedEnd() {
     return streams.stream()
-        .filter(other -> other.index() != stream.get().index())
-        .flatMap(other -> other.endTime().stream())
-        .anyMatch(end -> end.compareTo(earliestLaterEnd) >= 0);
+        .flatMap(stream -> stream.endTime().stream())
+        .max(Comparator.naturalOrder());
   }
 
   /**
