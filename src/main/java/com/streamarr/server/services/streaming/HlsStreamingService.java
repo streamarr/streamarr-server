@@ -251,6 +251,10 @@ public class HlsStreamingService implements StreamingService {
   // past the end of the session's own audio track.
   private Outcome<StreamSession, CreateStreamSessionRejection> startDirectPlay(
       CreateStreamSessionCommand command, StreamSession session) {
+    if (session.getMediaEnd().isZero() || session.getMediaEnd().isNegative()) {
+      return Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments());
+    }
+
     if (startsAtOrPast(command, session.getMediaEnd())) {
       return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
     }
