@@ -102,6 +102,9 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
   // 160,000 bytes, past the 131,072 bytes of one message.
   private static final int OVERSIZED_STREAM_COUNT = 40;
   private static final int OVERSIZED_LANGUAGE_BYTES = 4_000;
+  // The default result length limit of 128 KiB keeps a result within one message, so the worker
+  // fails a larger result as too large. This limit lets the oversized result through.
+  private static final long RESULT_LENGTH_LIMIT_BYTES = 256L * 1024;
   private static final int WORKER_SLOTS = 2;
 
   @TempDir static Path tempDir;
@@ -126,7 +129,14 @@ class ProbeVersion8WorkerIT extends AbstractIntegrationTest {
     server =
         WorkerSessionServer.builder()
             .eventPublisher(new CapturingEventPublisher())
-            .configuration(serverConfigurationBuilder().address("127.0.0.1").build())
+            .configuration(
+                serverConfigurationBuilder()
+                    .address("127.0.0.1")
+                    .probeReportLimits(
+                        ProbeReportLimits.builder()
+                            .resultLengthLimitBytes(RESULT_LENGTH_LIMIT_BYTES)
+                            .build())
+                    .build())
             .segmentStore(segmentStore)
             .meterRegistry(new SimpleMeterRegistry())
             .build();
