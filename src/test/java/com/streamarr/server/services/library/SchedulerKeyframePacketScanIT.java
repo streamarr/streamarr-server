@@ -361,7 +361,7 @@ class SchedulerKeyframePacketScanIT extends AbstractProbeSchedulerIntegrationTes
           }
 
           var dispatched = worker.nextResponse(WORKER_WAIT).getStartProbe().getRequest();
-          worker.reply(
+          worker.report(
               ProbeAttemptResult.newBuilder()
                   .setProbeAttemptId(dispatched.getProbeAttemptId())
                   .setProbeVersion(dispatched.getProbeVersion() + 1)

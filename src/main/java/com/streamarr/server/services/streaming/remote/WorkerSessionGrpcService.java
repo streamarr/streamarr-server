@@ -9,10 +9,10 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptStarted;
-import com.streamarr.transcode.v1.ProbeAttemptResult;
+import com.streamarr.transcode.v1.ProbeAttemptEndedWithoutReport;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.ReportProbeAttemptRequest;
+import com.streamarr.transcode.v1.ReportProbeAttemptResponse;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
@@ -50,6 +50,7 @@ final class WorkerSessionGrpcService
   private final LiveWorkerConnectionRegistry workerConnections;
   private final SegmentStore segmentStore;
   private final SegmentUploadAdmission segmentUploadAdmission;
+  private final ProbeReportCalls probeReportCalls;
 
   WorkerSessionGrpcService(
       LiveWorkerConnectionRegistry workerConnections, SegmentStore segmentStore) {
@@ -60,6 +61,7 @@ final class WorkerSessionGrpcService
             SegmentUploadLimits.MAXIMUM_CONCURRENT_SEGMENT_UPLOADS,
             SegmentUploadLimits.MAXIMUM_BUFFERED_SEGMENT_BYTES,
             SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER);
+    probeReportCalls = new ProbeReportCalls(workerConnections);
   }
 
   @Override
@@ -111,6 +113,13 @@ final class WorkerSessionGrpcService
         yield IGNORED_UPLOAD_OBSERVER;
       }
     };
+  }
+
+  @Override
+  public StreamObserver<ReportProbeAttemptRequest> reportProbeAttempt(
+      StreamObserver<ReportProbeAttemptResponse> responseObserver) {
+    return probeReportCalls.open(
+        WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get(), responseObserver);
   }
 
   private static final class RegistrationObserver
@@ -207,12 +216,9 @@ final class WorkerSessionGrpcService
         case JOB_ATTEMPT_COMPLETED -> completeOrWarn(request.getJobAttemptCompleted());
         case JOB_ATTEMPT_STOPPED ->
             finishOrWarn(request.getJobAttemptStopped().getJobAttemptId(), "stopped");
-        case PROBE_RESULT -> completeProbe(request.getProbeResult());
-        case PROBE_KEYFRAME_POSITIONS_PART ->
-            acceptKeyframePositionsPart(request.getProbeKeyframePositionsPart());
-        case PROBE_STREAM_MEASUREMENT_PART ->
-            acceptStreamMeasurementPart(request.getProbeStreamMeasurementPart());
         case PROBE_CAPACITY_CHANGED -> changeProbeCapacity(request.getProbeCapacityChanged());
+        case PROBE_ATTEMPT_ENDED_WITHOUT_REPORT ->
+            endProbeAttemptWithoutReport(request.getProbeAttemptEndedWithoutReport());
         case VIDEO_ENCODERS_CHANGED -> changeVideoEncoders(request.getVideoEncodersChanged());
         case JOB_ATTEMPT_PROGRESS ->
             workerConnections.reportProgress(
@@ -254,6 +260,24 @@ final class WorkerSessionGrpcService
           authenticatedWorkerId);
     }
 
+    private void endProbeAttemptWithoutReport(ProbeAttemptEndedWithoutReport ended) {
+      var probeAttemptId = fromProto(ended.getProbeAttemptId());
+      if (workerConnections.endProbeAttemptWithoutReport(
+          authenticatedWorkerId, workerSessionId, probeAttemptId)) {
+        log.debug(
+            "Worker {} ended probe attempt {} without a probe report",
+            authenticatedWorkerId,
+            probeAttemptId);
+        return;
+      }
+
+      log.debug(
+          "Ignoring that worker {} ended probe attempt {} without a probe report: its worker"
+              + " session did not start the attempt, or the attempt has already ended",
+          authenticatedWorkerId,
+          probeAttemptId);
+    }
+
     private void startJobAttempt(JobAttemptStarted started) {
       log.debug(
           "Worker {} started job attempt {}",
@@ -261,42 +285,6 @@ final class WorkerSessionGrpcService
           fromProto(started.getJobAttemptId()));
       workerConnections.checkReportedEncoderBackend(
           authenticatedWorkerId, workerSessionId, started);
-    }
-
-    private void completeProbe(ProbeAttemptResult result) {
-      if (workerConnections.completeProbe(authenticatedWorkerId, workerSessionId, result)) {
-        return;
-      }
-
-      log.warn(
-          "Worker {} reported an unaccepted probe result for attempt {} at version {}",
-          authenticatedWorkerId,
-          fromProto(result.getProbeAttemptId()),
-          result.getProbeVersion());
-    }
-
-    private void acceptKeyframePositionsPart(ProbeKeyframePositionsPart part) {
-      if (workerConnections.acceptKeyframePositionsPart(
-          authenticatedWorkerId, workerSessionId, part)) {
-        return;
-      }
-
-      log.warn(
-          "Worker {} sent keyframe positions for unaccepted probe attempt {}",
-          authenticatedWorkerId,
-          fromProto(part.getProbeAttemptId()));
-    }
-
-    private void acceptStreamMeasurementPart(ProbeStreamMeasurementPart part) {
-      if (workerConnections.acceptStreamMeasurementPart(
-          authenticatedWorkerId, workerSessionId, part)) {
-        return;
-      }
-
-      log.warn(
-          "Worker {} sent stream measurements for unaccepted probe attempt {}",
-          authenticatedWorkerId,
-          fromProto(part.getProbeAttemptId()));
     }
 
     private void reportFailedJobAttempt(JobAttemptFailed failed) {

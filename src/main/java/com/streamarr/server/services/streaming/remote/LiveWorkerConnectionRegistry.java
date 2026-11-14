@@ -3,15 +3,12 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 
-import com.streamarr.server.domain.media.ItemFailureReason;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.SourceEndedEarly;
 import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.TranscodeFailure;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
-import com.streamarr.server.exceptions.ProbeContractViolationException;
-import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.services.streaming.ContainedFailureMetrics;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
@@ -39,13 +36,13 @@ import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptProgress;
 import com.streamarr.transcode.v1.JobAttemptStarted;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
+import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCancelReason;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.ProbeFailure;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeRequest;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.StartVariantCommand;
@@ -82,6 +79,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -89,6 +87,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -113,11 +112,20 @@ final class LiveWorkerConnectionRegistry {
   private static final Duration DEFERRAL_WARNING_INTERVAL = Duration.ofMinutes(1);
   private static final Executor PROBE_DEADLINE_CALLBACKS =
       command -> Thread.ofVirtual().name("worker-probe-deadline").start(command);
+  // Ends the open report call of a probe attempt that ended with its worker session.
+  private static final Status WORKER_SESSION_ENDED =
+      Status.PERMISSION_DENIED.withDescription("Worker session ended");
+  // Ends the open report call of a probe attempt that its worker ended without a probe report. A
+  // report call whose first message arrives after that end gets the same code.
+  private static final Status ENDED_WITHOUT_REPORT =
+      Status.PERMISSION_DENIED.withDescription(
+          "Worker ended the probe attempt without a probe report");
   private final long probeTimeoutNanos;
   private final long keyframeScanTimeoutNanos;
   private final long bitrateScanChunkTimeoutNanos;
   private final long probeCancellationTimeoutNanos;
   private final long startReportTimeoutNanos;
+  private final ProbeReportLimits probeReportLimits;
   private final Counter initializationSegmentMismatches;
   private final Counter encoderBackendMismatches;
   private final Counter unknownJobAttemptReports;
@@ -146,6 +154,7 @@ final class LiveWorkerConnectionRegistry {
     bitrateScanChunkTimeoutNanos = configuration.bitrateScanChunkTimeout().toNanos();
     probeCancellationTimeoutNanos = configuration.probeCancellationTimeout().toNanos();
     startReportTimeoutNanos = configuration.startReportTimeout().toNanos();
+    probeReportLimits = configuration.probeReportLimits();
     initializationSegmentMismatches =
         Counter.builder(INITIALIZATION_SEGMENT_MISMATCH_METRIC)
             .description(
@@ -402,32 +411,46 @@ final class LiveWorkerConnectionRegistry {
     return capacities.stream().reduce(ProbeCapacity.NONE, ProbeCapacity::plus);
   }
 
-  boolean completeProbe(UUID workerId, UUID workerSessionId, ProbeAttemptResult result) {
-    var connection = currentConnection(workerId, workerSessionId);
-    if (connection.isEmpty() || !connection.get().completeProbe(result)) {
-      return false;
-    }
-
+  private void countIfNoFreeCapacity(ProbeAttemptResult result) {
     if (result.getFailure() == ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY) {
       countDeferredProbe(
           "no_free_capacity", "A worker had no free unit of the probe's capacity when it arrived");
     }
-
-    return true;
   }
 
-  boolean acceptStreamMeasurementPart(
-      UUID workerId, UUID workerSessionId, ProbeStreamMeasurementPart part) {
-    return currentConnection(workerId, workerSessionId)
-        .map(connection -> connection.acceptStreamMeasurementPart(part))
-        .orElse(false);
+  ProbeReportLimits probeReportLimits() {
+    return probeReportLimits;
   }
 
-  boolean acceptKeyframePositionsPart(
-      UUID workerId, UUID workerSessionId, ProbeKeyframePositionsPart part) {
-    return currentConnection(workerId, workerSessionId)
-        .map(connection -> connection.acceptKeyframePositionsPart(part))
-        .orElse(false);
+  /**
+   * Decides whether a report call may report the probe attempt that its first message names: an
+   * attempt that the authenticated worker's live session runs and that no other report call
+   * reports. {@code endReportCall} ends the admitted call with a status when the attempt ends
+   * without it. Takes no monitor, so a report call never waits for a publication or a dispatch.
+   */
+  ProbeReportAdmission admitProbeReport(
+      UUID authenticatedWorkerId,
+      ProbeAttemptReportMetadata metadata,
+      Consumer<Status> endReportCall) {
+    var connection = connections.get(authenticatedWorkerId);
+    if (connection == null
+        || !connection.isThisWorkerSession(metadata.getWorkerSessionId(), metadata.getWorker())) {
+      return new ProbeReportAdmission.NotOwned();
+    }
+
+    return connection.admitProbeReport(fromProto(metadata.getProbeAttemptId()), endReportCall);
+  }
+
+  /**
+   * Ends the probe attempt that a worker reports ended without a probe report. The worker session
+   * stops counting the probe, the wait that follows a cancel command ends, and an open report call
+   * for the attempt ends. A probe whose probe report the server still waited for fails for a retry,
+   * as when its worker is lost. Returns false, and changes nothing, when the worker session that
+   * sent the event did not start the attempt, or when the attempt has already ended.
+   */
+  boolean endProbeAttemptWithoutReport(UUID workerId, UUID workerSessionId, UUID probeAttemptId) {
+    var connection = currentConnection(workerId, workerSessionId);
+    return connection.isPresent() && connection.get().endProbeWithoutReport(probeAttemptId);
   }
 
   Optional<VariantDispatch> dispatchTo(ExecutionTargetId target, VariantJob job) {
@@ -1135,7 +1158,12 @@ final class LiveWorkerConnectionRegistry {
       var accepted =
           WorkerSessionAccepted.newBuilder()
               .setWorkerSessionId(toProto(workerSessionId))
-              .setSegmentUploadLimit(SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER);
+              .setSegmentUploadLimit(SegmentUploadLimits.MAXIMUM_SEGMENT_UPLOADS_PER_WORKER)
+              .setProbeReportLimit(ProbeReportLimits.REPORT_CALLS_PER_WORKER)
+              .setProbeReportLengthLimitBytes(probeReportLimits.lengthLimitBytes())
+              .setKeyframeLimit(probeReportLimits.keyframeLimit())
+              .setMeasuredKeyframeIntervalLimit(probeReportLimits.measuredKeyframeIntervalLimit())
+              .setProbeResultLengthLimitBytes(probeReportLimits.resultLengthLimitBytes());
       synchronized (outbound) {
         responseObserver.onNext(
             EstablishWorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
@@ -1215,13 +1243,7 @@ final class LiveWorkerConnectionRegistry {
       }
 
       var attemptId = fromProto(request.getProbeAttemptId());
-      var pending =
-          new PendingProbe(
-              request,
-              new CompletableFuture<>(),
-              new CompletableFuture<>(),
-              new ReceivedKeyframePositionsParts(),
-              new ReceivedStreamMeasurementParts());
+      var pending = new PendingProbe(request);
       if (pendingProbes.putIfAbsent(attemptId, pending.result()) != null) {
         return new ProbeDispatch.Refused(ProbeRefusal.ATTEMPT_IN_PROGRESS);
       }
@@ -1251,8 +1273,8 @@ final class LiveWorkerConnectionRegistry {
         return new ProbeDispatch.Refused(ProbeRefusal.WORKER_UNREACHABLE);
       }
 
-      return new ProbeDispatch.Dispatched(
-          pending.result().orTimeout(timeoutNanos(request), TimeUnit.NANOSECONDS));
+      pending.timeOutUnlessEndedOnWorkerWithin(timeoutNanos(request));
+      return new ProbeDispatch.Dispatched(pending.result());
     }
 
     private long timeoutNanos(ProbeRequest request) {
@@ -1308,6 +1330,7 @@ final class LiveWorkerConnectionRegistry {
       }
 
       pendingProbes.remove(attemptId, pending.result());
+      pending.endReportCall(WORKER_SESSION_ENDED);
       var workerId = fromProto(worker.getWorkerId());
       if (!connections.remove(workerId, this)) {
         return;
@@ -1333,115 +1356,100 @@ final class LiveWorkerConnectionRegistry {
       }
     }
 
-    private boolean completeProbe(ProbeAttemptResult result) {
-      var attemptId = fromProto(result.getProbeAttemptId());
-      var pending = activeProbes.remove(attemptId);
-      if (pending == null) {
-        return false;
-      }
-
-      pending.terminated().complete(null);
-      try {
-        return finishProbe(pending, result);
-      } finally {
-        pendingProbes.remove(attemptId, pending.result());
-      }
-    }
-
-    private boolean finishProbe(PendingProbe pending, ProbeAttemptResult result) {
-      // Not a contract violation: a wrongly versioned worker deployment fails every probe at once,
-      // and fixing the deployment changes neither a source nor its probe version.
-      if (result.getProbeVersion() != pending.request().getProbeVersion()) {
-        pending
-            .result()
-            .completeExceptionally(
-                new ProbeExecutionException(
-                    ItemFailureReason.MISCONFIGURED,
-                    "Worker probe reply version mismatch: expected %s, received %s"
-                        .formatted(
-                            Integer.toUnsignedString(pending.request().getProbeVersion()),
-                            Integer.toUnsignedString(result.getProbeVersion()))));
-        return false;
-      }
-
-      if (pending.keyframePositionsParts().violatesContract()) {
-        pending
-            .result()
-            .completeExceptionally(
-                new ProbeContractViolationException(
-                    "Worker probe sent keyframe positions parts that break the contract"));
-        return false;
-      }
-
-      // The contract discards the parts of an attempt whose result reports no measurement.
-      if (reportsMeasurement(result) && pending.streamMeasurementParts().violatesContract()) {
-        pending
-            .result()
-            .completeExceptionally(
-                new ProbeContractViolationException(
-                    "Worker probe sent stream measurement parts that break the contract"));
-        return false;
-      }
-
-      pending
-          .result()
-          .complete(
-              new ProbeAttemptReport(
-                  result,
-                  pending.keyframePositionsParts().parts(),
-                  measurementParts(result, pending.streamMeasurementParts())));
-      return true;
-    }
-
-    private static List<ProbeStreamMeasurementPart> measurementParts(
-        ProbeAttemptResult result, ReceivedStreamMeasurementParts received) {
-      if (!reportsMeasurement(result)) {
-        return List.of();
-      }
-
-      return received.parts();
-    }
-
-    private static boolean reportsMeasurement(ProbeAttemptResult result) {
-      return result.getMedia().hasStreamMeasurements()
-          || result.getBitrateScanChunk().hasMeasured();
-    }
-
-    private boolean acceptStreamMeasurementPart(ProbeStreamMeasurementPart part) {
-      var pending = activeProbes.get(fromProto(part.getProbeAttemptId()));
-      if (pending == null) {
-        return false;
-      }
-
-      pending.streamMeasurementParts().add(part);
-      return true;
-    }
-
-    private boolean acceptKeyframePositionsPart(ProbeKeyframePositionsPart part) {
-      var pending = activeProbes.get(fromProto(part.getProbeAttemptId()));
-      if (pending == null) {
-        return false;
-      }
-
-      pending.keyframePositionsParts().add(part);
-      return true;
-    }
-
     private void abandonProbe(UUID attemptId) {
-      failProbe(attemptId, "Worker disconnected during probe dispatch");
+      failProbe(attemptId, "Worker disconnected during probe dispatch", WORKER_SESSION_ENDED);
     }
 
-    private void failProbe(UUID attemptId, String reason) {
+    // Removing the attempt decides that it has not ended and claims its end in one step, as every
+    // other end of a probe attempt does. Takes no monitor: a publication holds the monitor through
+    // its file I/O, and the wait that follows a cancel command must not outlast the publication.
+    private boolean endProbeWithoutReport(UUID attemptId) {
+      return failProbe(
+          attemptId, "Worker ended the probe attempt without a probe report", ENDED_WITHOUT_REPORT);
+    }
+
+    private boolean failProbe(UUID attemptId, String reason, Status reportCallEnd) {
       var pending = activeProbes.remove(attemptId);
       if (pending == null) {
-        return;
+        return false;
       }
 
-      pending.terminated().complete(null);
-      pending
-          .result()
-          .completeExceptionally(new ProbeExecutionException(ItemFailureReason.TEMPORARY, reason));
+      pending.failForRetry(reason);
       pendingProbes.remove(attemptId, pending.result());
+      pending.endReportCall(reportCallEnd);
+      return true;
+    }
+
+    private ProbeReportAdmission admitProbeReport(UUID attemptId, Consumer<Status> endReportCall) {
+      var pending = activeProbes.get(attemptId);
+      if (pending == null) {
+        return new ProbeReportAdmission.NotOwned();
+      }
+
+      if (!pending.tryStartReportCall(endReportCall)) {
+        return new ProbeReportAdmission.AlreadyReported();
+      }
+
+      // A worker session that ended since the lookup has failed the attempt and found no report
+      // call to end.
+      if (activeProbes.get(attemptId) != pending) {
+        return new ProbeReportAdmission.NotOwned();
+      }
+
+      // Stops the probe's timeout and the wait that follows a cancel command.
+      pending.endOnWorker();
+      return new ProbeReportAdmission.Admitted(new ReportedAttempt(attemptId, pending));
+    }
+
+    /** The probe attempt of this worker session that a report call reports. */
+    @RequiredArgsConstructor
+    private final class ReportedAttempt implements ReportedProbeAttempt {
+
+      private final UUID attemptId;
+      private final PendingProbe pending;
+
+      @Override
+      public ProbeRequest request() {
+        return pending.request();
+      }
+
+      @Override
+      public boolean complete(ProbeAttemptReport report) {
+        return end(
+            () -> {
+              pending.complete(report);
+              countIfNoFreeCapacity(report.getResult());
+            });
+      }
+
+      @Override
+      public void failForAnotherVersion(ProbeAttemptResult reported) {
+        end(() -> pending.failForAnotherVersion(reported));
+      }
+
+      @Override
+      public void failForContractViolation(String message) {
+        end(() -> pending.failForContractViolation(message));
+      }
+
+      @Override
+      public void failForRetry(String reason) {
+        end(() -> pending.failForRetry(reason));
+      }
+
+      private boolean end(Runnable ending) {
+        if (!activeProbes.remove(attemptId, pending)) {
+          return false;
+        }
+
+        try {
+          ending.run();
+        } finally {
+          pendingProbes.remove(attemptId, pending.result());
+        }
+
+        return true;
+      }
     }
 
     private boolean canAccessSource(VariantJob job) {
@@ -1856,8 +1864,11 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private boolean isFromThisWorkerSession(SegmentUploadMetadata metadata) {
-      return toProto(workerSessionId).equals(metadata.getWorkerSessionId())
-          && worker.equals(metadata.getWorker());
+      return isThisWorkerSession(metadata.getWorkerSessionId(), metadata.getWorker());
+    }
+
+    private boolean isThisWorkerSession(Uuid namedSessionId, WorkerIdentity namedWorker) {
+      return toProto(workerSessionId).equals(namedSessionId) && worker.equals(namedWorker);
     }
 
     private boolean matchesAnActiveJob(SegmentUploadMetadata metadata) {
@@ -2002,7 +2013,9 @@ final class LiveWorkerConnectionRegistry {
       activeVariants.clear();
       drained.forEach(this::wakeHeldRequests);
       List.copyOf(encodeAttempts.keySet()).forEach(this::forgetEncodeAttempt);
-      activeProbes.keySet().forEach(attemptId -> failProbe(attemptId, "Worker session ended"));
+      activeProbes
+          .keySet()
+          .forEach(attemptId -> failProbe(attemptId, "Worker session ended", WORKER_SESSION_ENDED));
       return drained;
     }
 
@@ -2022,12 +2035,5 @@ final class LiveWorkerConnectionRegistry {
 
     private record EncodeAttempt(
         WorkerVerifiedEncoder encoder, CompletableFuture<Boolean> backendConfirmed) {}
-
-    private record PendingProbe(
-        ProbeRequest request,
-        CompletableFuture<ProbeAttemptReport> result,
-        CompletableFuture<Void> terminated,
-        ReceivedKeyframePositionsParts keyframePositionsParts,
-        ReceivedStreamMeasurementParts streamMeasurementParts) {}
   }
 }

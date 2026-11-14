@@ -22,6 +22,7 @@ import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.MethodDescriptor.MethodType;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.IntStream;
 import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -48,6 +49,23 @@ class ProbeReportWorkerContractTest {
         .isEqualTo(ReportProbeAttemptRequest.getDescriptor().getFullName());
     assertThat(declared.getOutputType().getFullName())
         .isEqualTo(ReportProbeAttemptResponse.getDescriptor().getFullName());
+  }
+
+  @Test
+  @DisplayName(
+      "Should reserve the numbers and names of the session's probe result and its parts when the"
+          + " report call replaces them")
+  void shouldReserveNumbersAndNamesOfSessionsProbeResultAndItsPartsWhenReportCallReplacesThem() {
+    var declared = EstablishWorkerSessionRequest.getDescriptor().toProto();
+
+    assertThat(
+            declared.getReservedRangeList().stream()
+                .flatMapToInt(range -> IntStream.range(range.getStart(), range.getEnd()))
+                .boxed())
+        .containsExactly(6, 7, 9);
+    assertThat(declared.getReservedNameList())
+        .containsExactly(
+            "probe_result", "probe_keyframe_positions_part", "probe_stream_measurement_part");
   }
 
   @Test

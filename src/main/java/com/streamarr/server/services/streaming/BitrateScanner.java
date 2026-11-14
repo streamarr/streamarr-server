@@ -20,4 +20,13 @@ public interface BitrateScanner {
    *     retry, for example after its worker disconnected
    */
   BitrateScanChunkOutcome scanChunk(BitrateScanChunkRequest request);
+
+  /**
+   * The most keyframe intervals, summed over a chunk's measured streams, that the scanner takes
+   * back from one chunk. A chunk that asks for more cannot succeed. A scanner that states no limit
+   * takes any chunk.
+   */
+  default int measuredKeyframeIntervalLimit() {
+    return Integer.MAX_VALUE;
+  }
 }

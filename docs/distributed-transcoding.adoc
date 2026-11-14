@@ -181,8 +181,14 @@ When a probe, a packet scan or a bitrate scan chunk reaches its timeout, the com
 When the server stops a probe while the server shuts down, the command carries the shutdown reason.
 The worker learns of a timeout only from this reason.
 The worker may lower its background probe capacity when probes reach the timeout, but not when a packet scan or a bitrate scan chunk does (https://github.com/streamarr/streamarr-adr/blob/main/adr/0032-media-file-probe-results-are-persisted.adoc[ADR 0032]).
-`STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` for the worker to acknowledge termination.
-Until then, the probe keeps its unit of the worker's probe capacity.
+Each of the three timeouts runs from the start command until the first message of the probe's report call reaches the server.
+The time that a probe report waits on the worker for a free report call counts toward the timeout. The time that the worker takes to send the rest of the probe report does not, so the server never cancels a probe whose probe report is arriving.
+A canceled probe attempt has no probe report.
+The worker answers every cancel command with the event `ProbeAttemptEndedWithoutReport` on the worker session, once the probe has ended on the worker.
+`STREAMING_WORKER_SESSION_PROBE_CANCELLATION_TIMEOUT` allows `5s` after a cancel command for that event.
+The first message of a report call that the worker opened before the cancel command arrived also ends the wait.
+The server reads such a report call like any other, and the probe report changes nothing.
+Until the event arrives or that report call ends, the probe keeps its unit of the worker's probe capacity.
 A worker that misses this deadline is disconnected and fenced. Its other active jobs are abandoned and recover through the existing playback recovery path.
 Closing a worker connection cancels its probes and waits for their native processes to terminate.
 The server publishes no segment of an encode until the worker's start report names the encoder backend that the worker advertised.
@@ -195,6 +201,54 @@ An unresponsive filesystem can delay worker shutdown.
 The server pings a worker after `STREAMING_WORKER_SESSION_KEEPALIVE_TIME` without hearing from it, and closes the connection when no acknowledgement arrives within `STREAMING_WORKER_SESSION_KEEPALIVE_TIMEOUT`.
 Closing a dead worker's connection releases its playback slots, its probe capacity, and its upload reservations.
 The time defaults to `30s` and must be at least `10s`, the shortest that gRPC allows. The timeout defaults to `10s`.
+
+A worker sends each probe report in a call of its own, the report call (https://github.com/streamarr/streamarr-adr/blob/main/adr/0062-a-worker-sends-each-probe-report-in-a-call-of-its-own.adoc[ADR 0062]).
+When the server accepts a worker session, it states five limits beside `segment_upload_limit`, each from the value that it enforces.
+`probe_report_limit` is the most report calls that the server accepts from one worker at once.
+It is 24: the 33 calls that the server accepts on one connection, less the worker session and the 8 segment uploads of one worker.
+The server refuses a report call beyond that limit with `RESOURCE_EXHAUSTED`.
+`STREAMING_WORKER_SESSION_PROBE_REPORT_KEYFRAME_LIMIT` sets `keyframe_limit`, the most keyframes in one probe report. It defaults to `150000`.
+A worker reports the keyframes of a file with more keyframes as unavailable, and the server encodes that file's video.
+`STREAMING_WORKER_SESSION_PROBE_REPORT_MEASURED_KEYFRAME_INTERVAL_LIMIT` sets `measured_keyframe_interval_limit`, the most measured keyframe intervals in one probe report, added up over its measured streams. It defaults to `1000000`.
+A worker leaves a larger measurement out of a probe.
+The server sizes each bitrate scan chunk so that its keyframes, each measured in every measured stream, stay within the limit.
+`STREAMING_WORKER_SESSION_PROBE_REPORT_LENGTH_LIMIT` sets `probe_report_length_limit_bytes`, the length of the longest probe report. It defaults to `16MB` and must be at least `128KB`, the limit of one message.
+`STREAMING_WORKER_SESSION_PROBE_REPORT_RESULT_LENGTH_LIMIT` sets `probe_result_length_limit_bytes`, the length of the longest encoded result in one probe report. It defaults to `128KB`. It must be at least `48KB`, the 16,384 encoded bytes of a result's titles and handler names and the 32,768 of its chapters, and at most the length limit.
+Every small entry of a result decodes to an object, so a result can decode to many times its length. The decoded size limit below also covers the result.
+A worker fails a probe whose result is longer with `PROBE_FAILURE_RESULT_TOO_LARGE`.
+`STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT` bounds how long the server waits for a message that it asked for on a report call. It defaults to `30s`.
+When no message arrives in that time, the server ends the report call with `DEADLINE_EXCEEDED`, and the probe runs again.
+The time that a probe report waits for the memory budget does not count, and no bound covers the whole probe report.
+`STREAMING_WORKER_SESSION_PROBE_REPORT_MEMORY_BUDGET` bounds the bytes of probe reports that the server reads at once. It defaults to `64MB` and must be at least the length limit plus the result length limit.
+This budget is separate from the 512 MiB of declared segment payload.
+Before the server reads any byte of a probe report, it reserves room in the budget: the length that the first message states, plus the result length limit. It releases the room when the report call ends.
+The result gets room of its own because its streams and chapters are small messages, which decode to many times their length.
+A probe report may take at most 32 times its room in heap while the server decodes it and after, so the probe reports that the server reads at once take at most 32 times the budget: 2 GiB of heap at the default budget.
+While a probe report does not fit the budget, the server reads no message of its report call.
+The waiting probe reports of playback probes get room before the waiting probe reports of other probes, and within each of the two groups the probe reports get room in the order in which they asked.
+The server never refuses a report call for lack of room.
+The server refuses to start when a limit or the idle timeout is not positive, when the length limit is below `128KB`, when the result length limit is below `48KB` or above the length limit, or when the memory budget is below the length limit plus the result length limit.
+
+The first message of a report call names the worker session, the worker and the probe attempt, and states the length of the probe report.
+The server reads the report call only when that message names a probe attempt that the worker's live session runs and that no other report call reports. It refuses any other report call with `PERMISSION_DENIED`, or with `ALREADY_EXISTS` when another report call already reports the attempt.
+The server reads one message at a time and reads the fields of the probe report as they arrive, without decoding them.
+It ends the report call at the first message after which the result is longer than the result length limit, the keyframes exceed the keyframe limit, the measured keyframe intervals exceed their limit, or the measured streams outnumber half the result length limit in bytes, or after which the bytes break the protobuf wire format or hold a field in a wire type that the field cannot have, and frees the probe report's room in the budget at once.
+It also ends the report call at the first message after which the probe report would take more than 32 times its room in heap.
+The server adds up a fixed bound of heap for each message, list, number and text of the probe report, so the call ends before the server decodes any of it. Each bound is at least the heap that the decoder took in a measurement, also while the decoder grows a list or copies a text.
+The server reads the result's fields by the same rules as the other fields.
+Every measured stream must also appear in the result, where a stream takes at least two bytes.
+The server skips a field that the worker contract does not declare, at any level of the probe report, after checking its encoding, and discards such fields at every level when it decodes the probe report, so a worker that still sends a field that a later contract removed keeps working.
+After the last message it decodes the probe report, checks it against the worker contract, and answers once with the probe attempt and the length that it accepted.
+A probe report breaks the worker contract when it exceeds a stated limit, when its bytes number more or fewer than its first message stated, or when its bytes do not decode.
+The server then ends that report call with `INVALID_ARGUMENT`, and the violation counts toward the three consecutive contract violations that end a probe's retries. The worker session and its other probes continue.
+A probe report of another probe version than the server asked for fails its probe as misconfigured, and its report call ends with `FAILED_PRECONDITION`, unless the probe report breaks a stated limit or the wire format, which the server finds before it decodes the probe version.
+When a report call ends without the server's answer and without a contract violation, the probe fails as on a lost worker and runs again. A message of a report call above the 128 KiB limit of one message ends only that report call, in this way.
+A worker also sends `ProbeAttemptEndedWithoutReport` when a report call ended without the server's answer.
+A probe attempt keeps its unit of the worker's probe capacity until its report call ends or that event names the attempt.
+When the event names a probe attempt whose probe report the server still waits for, the probe fails as on a lost worker and runs again, and the server ends an open report call for the attempt with `PERMISSION_DENIED`.
+The server ignores the event when the attempt has already ended, or when the worker session that sent the event did not start the attempt.
+The server reads a probe report only from a report call.
+It ignores a probe result that a worker built for an earlier contract sends on the worker session, as it ignores any session event that the contract does not define, and that worker's probe ends at its probe timeout.
 
 The server exposes Spring Boot probe groups at `/actuator/health/liveness` and `/actuator/health/readiness` on port `8080`.
 The standalone Spring Boot worker exposes the same paths on port `9091`.

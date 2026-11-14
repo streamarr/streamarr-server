@@ -60,9 +60,10 @@ import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.transcode.v1.BitrateScanChunkResult;
 import com.streamarr.transcode.v1.BitrateScanChunkStream;
 import com.streamarr.transcode.v1.BitrateScanChunkStreams;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeRequest;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -568,15 +569,14 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
         chunk.getPresentationTimeDeltasList().stream().mapToLong(Long::longValue).sum()
             + TICKS_PER_KEYFRAME;
     var streams = BitrateScanChunkStreams.newBuilder();
+    var report = ProbeAttemptReport.newBuilder();
     for (var index : chunk.getMeasuredStreamIndexesList()) {
       var bytes = bytesPerInterval(index);
-      worker.sendStreamMeasurementPart(
-          ProbeStreamMeasurementPart.newBuilder()
-              .setProbeAttemptId(request.getProbeAttemptId())
+      report.addStreamMeasurementIntervals(
+          StreamMeasurementIntervals.newBuilder()
               .setStreamIndex(index)
               .addAllKeyframeIntervalBytes(Collections.nCopies(intervals, (int) bytes))
-              .addAllKeyframeIntervalPacketCounts(Collections.nCopies(intervals, 1))
-              .build());
+              .addAllKeyframeIntervalPacketCounts(Collections.nCopies(intervals, 1)));
       streams.addStreams(
           BitrateScanChunkStream.newBuilder()
               .setStreamIndex(index)
@@ -588,11 +588,13 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
               .setEndTime(end));
     }
 
-    worker.reply(
-        ProbeAttemptResult.newBuilder()
-            .setProbeAttemptId(request.getProbeAttemptId())
-            .setProbeVersion(request.getProbeVersion())
-            .setBitrateScanChunk(BitrateScanChunkResult.newBuilder().setMeasured(streams))
+    worker.report(
+        report
+            .setResult(
+                ProbeAttemptResult.newBuilder()
+                    .setProbeAttemptId(request.getProbeAttemptId())
+                    .setProbeVersion(request.getProbeVersion())
+                    .setBitrateScanChunk(BitrateScanChunkResult.newBuilder().setMeasured(streams)))
             .build());
   }
 

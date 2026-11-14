@@ -183,6 +183,26 @@ streaming:
     keepalive:
       time: ${STREAMING_WORKER_SESSION_KEEPALIVE_TIME:30s}
       timeout: ${STREAMING_WORKER_SESSION_KEEPALIVE_TIMEOUT:10s}
+    # A worker sends each probe report in a report call. The server states the first four limits
+    # to every worker whose session it accepts (ADR 0062).
+    probe-report:
+      # The most keyframes in one probe report. A worker reports the keyframes of a file with more
+      # as unavailable, and the server encodes that file's video.
+      keyframe-limit: ${STREAMING_WORKER_SESSION_PROBE_REPORT_KEYFRAME_LIMIT:150000}
+      # The most measured keyframe intervals in one probe report, added up over its measured
+      # streams. A worker leaves a larger measurement out of a probe.
+      measured-keyframe-interval-limit: ${STREAMING_WORKER_SESSION_PROBE_REPORT_MEASURED_KEYFRAME_INTERVAL_LIMIT:1000000}
+      # The length of the longest probe report. It must be at least 128KB, the limit of one message.
+      length-limit: ${STREAMING_WORKER_SESSION_PROBE_REPORT_LENGTH_LIMIT:16MB}
+      # The length of the longest encoded result in one probe report. It must be at least 48KB, the
+      # most that a result's titles, handler names and chapters take, and at most the length limit.
+      result-length-limit: ${STREAMING_WORKER_SESSION_PROBE_REPORT_RESULT_LENGTH_LIMIT:128KB}
+      # The server ends a report call when it asked for a message and none arrives in this time.
+      idle-timeout: ${STREAMING_WORKER_SESSION_PROBE_REPORT_IDLE_TIMEOUT:30s}
+      # The most bytes of probe reports that the server reads at once. A report call waits while
+      # its probe report does not fit. Each probe report holds its length plus the result length
+      # limit, so the budget must be at least the length limit plus the result length limit.
+      memory-budget: ${STREAMING_WORKER_SESSION_PROBE_REPORT_MEMORY_BUDGET:64MB}
   remote:
     source-namespace-id: ${STREAMING_REMOTE_SOURCE_NAMESPACE_ID:}
     source-root: ${STREAMING_REMOTE_SOURCE_ROOT:}

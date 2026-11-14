@@ -49,16 +49,16 @@ import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
 import com.streamarr.transcode.v1.MeasuredStream;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeFailure;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import com.streamarr.transcode.v1.StreamMeasurementSource;
 import com.streamarr.transcode.v1.StreamMeasurements;
 import com.streamarr.transcode.v1.VariantJob;
@@ -164,7 +164,7 @@ class RemoteFfprobeServiceIT {
           try (var other = BoundedTask.start(() -> service.probe(request().build()))) {
             var otherRequest = worker.nextResponse().getStartProbe().getRequest();
 
-            worker.reply(
+            worker.report(
                 answer(oversizedRequest)
                     .setFailure(ProbeFailure.PROBE_FAILURE_RESULT_TOO_LARGE)
                     .build());
@@ -172,7 +172,7 @@ class RemoteFfprobeServiceIT {
             assertThat(oversized.await(Duration.ofSeconds(5)))
                 .isEqualTo(new ProbeOutcome.Failure(ProbeError.RESULT_TOO_LARGE));
 
-            worker.reply(
+            worker.report(
                 answer(otherRequest)
                     .setMedia(
                         ProbeMediaInfo.newBuilder()
@@ -246,7 +246,7 @@ class RemoteFfprobeServiceIT {
           for (var sent = 0; sent < 3; sent++) {
             var started = worker.nextResponse().getStartProbe().getRequest();
             priorities.add(started.getPriority());
-            worker.reply(
+            worker.report(
                 answer(started).setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA).build());
           }
 
@@ -275,7 +275,7 @@ class RemoteFfprobeServiceIT {
 
         try (var probe = BoundedTask.start(() -> service.probe(request().build()))) {
           var started = worker.nextResponse().getStartProbe().getRequest();
-          worker.reply(
+          worker.report(
               answer(started).setFailure(ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY).build());
 
           var deadline = Duration.ofSeconds(5);
@@ -337,29 +337,29 @@ class RemoteFfprobeServiceIT {
         var request = request().build();
         try (var scan = BoundedTask.start(() -> service.scanKeyframePackets(request))) {
           var dispatched = worker.nextResponse().getStartProbe().getRequest();
-          worker.sendKeyframePositionsPart(
-              ProbeKeyframePositionsPart.newBuilder()
-                  .setProbeAttemptId(dispatched.getProbeAttemptId())
-                  .addAllPresentationTimeDeltas(List.of(0L, 90_000L))
-                  .addAllDecodeTimeDeltas(List.of(0L, 0L))
-                  .build());
-          worker.reply(
-              answer(dispatched)
-                  .setMedia(
-                      ProbeMediaInfo.newBuilder()
-                          .addStreams(
-                              ProbeStreamInfo.newBuilder().setIndex(0).setCodecType("video"))
-                          .setKeyframes(
-                              ProbeKeyframes.newBuilder()
-                                  .setPositions(
-                                      KeyframePositions.newBuilder()
-                                          .setStreamIndex(0)
-                                          .setTimeBaseNumerator(1)
-                                          .setTimeBaseDenominator(90_000)
-                                          .setSource(
-                                              KeyframePositionSource
-                                                  .KEYFRAME_POSITION_SOURCE_PACKET_SCAN)
-                                          .setKeyframeCount(2))))
+          worker.report(
+              ProbeAttemptReport.newBuilder()
+                  .addAllKeyframePresentationTimeDeltas(List.of(0L, 90_000L))
+                  .addAllKeyframeDecodeTimeDeltas(List.of(0L, 0L))
+                  .setResult(
+                      answer(dispatched)
+                          .setMedia(
+                              ProbeMediaInfo.newBuilder()
+                                  .addStreams(
+                                      ProbeStreamInfo.newBuilder()
+                                          .setIndex(0)
+                                          .setCodecType("video"))
+                                  .setKeyframes(
+                                      ProbeKeyframes.newBuilder()
+                                          .setPositions(
+                                              KeyframePositions.newBuilder()
+                                                  .setStreamIndex(0)
+                                                  .setTimeBaseNumerator(1)
+                                                  .setTimeBaseDenominator(90_000)
+                                                  .setSource(
+                                                      KeyframePositionSource
+                                                          .KEYFRAME_POSITION_SOURCE_PACKET_SCAN)
+                                                  .setKeyframeCount(2)))))
                   .build());
 
           var bound = Duration.ofSeconds(5);
@@ -384,70 +384,58 @@ class RemoteFfprobeServiceIT {
         var request = request().probeVersion(ProbeVersion.CURRENT).build();
         try (var probe = BoundedTask.start(() -> service.probe(request))) {
           var dispatched = worker.nextResponse().getStartProbe().getRequest();
-          worker.sendKeyframePositionsPart(
-              ProbeKeyframePositionsPart.newBuilder()
-                  .setProbeAttemptId(dispatched.getProbeAttemptId())
-                  .addAllPresentationTimeDeltas(List.of(0L, 90_000L))
-                  .addAllDecodeTimeDeltas(List.of(0L, 90_000L))
-                  .build());
-          worker.sendStreamMeasurementPart(
-              measurementPart(dispatched, 0)
-                  .addKeyframeIntervalBytes(700)
-                  .addKeyframeIntervalPacketCounts(12)
-                  .build());
-          worker.sendStreamMeasurementPart(
-              measurementPart(dispatched, 1)
-                  .addKeyframeIntervalBytes(40)
-                  .addKeyframeIntervalPacketCounts(46)
-                  .build());
-          worker.sendStreamMeasurementPart(
-              measurementPart(dispatched, 0)
-                  .addKeyframeIntervalBytes(-1)
-                  .addKeyframeIntervalPacketCounts(36)
-                  .build());
-          worker.sendStreamMeasurementPart(
-              measurementPart(dispatched, 1)
-                  .addKeyframeIntervalBytes(60)
-                  .addKeyframeIntervalPacketCounts(48)
-                  .build());
-          worker.reply(
-              answer(dispatched)
-                  .setMedia(
-                      WorkerProbeResultFixture.version4MediaBuilder()
-                          .addStreams(
-                              ProbeStreamInfo.newBuilder().setIndex(1).setCodecType("audio"))
-                          .setKeyframes(
-                              ProbeKeyframes.newBuilder()
-                                  .setPositions(
-                                      KeyframePositions.newBuilder()
-                                          .setStreamIndex(0)
-                                          .setTimeBaseNumerator(1)
-                                          .setTimeBaseDenominator(90_000)
+          worker.report(
+              ProbeAttemptReport.newBuilder()
+                  .addAllKeyframePresentationTimeDeltas(List.of(0L, 90_000L))
+                  .addAllKeyframeDecodeTimeDeltas(List.of(0L, 90_000L))
+                  .addStreamMeasurementIntervals(
+                      intervals(0)
+                          .addAllKeyframeIntervalBytes(List.of(700, -1))
+                          .addAllKeyframeIntervalPacketCounts(List.of(12, 36)))
+                  .addStreamMeasurementIntervals(
+                      intervals(1)
+                          .addAllKeyframeIntervalBytes(List.of(40, 60))
+                          .addAllKeyframeIntervalPacketCounts(List.of(46, 48)))
+                  .setResult(
+                      answer(dispatched)
+                          .setMedia(
+                              WorkerProbeResultFixture.version4MediaBuilder()
+                                  .addStreams(
+                                      ProbeStreamInfo.newBuilder()
+                                          .setIndex(1)
+                                          .setCodecType("audio"))
+                                  .setKeyframes(
+                                      ProbeKeyframes.newBuilder()
+                                          .setPositions(
+                                              KeyframePositions.newBuilder()
+                                                  .setStreamIndex(0)
+                                                  .setTimeBaseNumerator(1)
+                                                  .setTimeBaseDenominator(90_000)
+                                                  .setSource(
+                                                      KeyframePositionSource
+                                                          .KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX)
+                                                  .setKeyframeCount(2)))
+                                  .setStreamMeasurements(
+                                      StreamMeasurements.newBuilder()
                                           .setSource(
-                                              KeyframePositionSource
-                                                  .KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX)
-                                          .setKeyframeCount(2)))
-                          .setStreamMeasurements(
-                              StreamMeasurements.newBuilder()
-                                  .setSource(
-                                      StreamMeasurementSource
-                                          .STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE)
-                                  .addStreams(
-                                      MeasuredStream.newBuilder()
-                                          .setStreamIndex(0)
-                                          .setMeasuredBytes(700L + 0xFFFF_FFFFL)
-                                          .setPacketCount(48)
-                                          .setTimeBaseNumerator(1)
-                                          .setTimeBaseDenominator(12_288)
-                                          .setMeasuredDuration(24_576))
-                                  .addStreams(
-                                      MeasuredStream.newBuilder()
-                                          .setStreamIndex(1)
-                                          .setMeasuredBytes(100)
-                                          .setPacketCount(94)
-                                          .setTimeBaseNumerator(1)
-                                          .setTimeBaseDenominator(48_000)
-                                          .setMeasuredDuration(96_000))))
+                                              StreamMeasurementSource
+                                                  .STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE)
+                                          .addStreams(
+                                              MeasuredStream.newBuilder()
+                                                  .setStreamIndex(0)
+                                                  .setMeasuredBytes(700L + 0xFFFF_FFFFL)
+                                                  .setPacketCount(48)
+                                                  .setTimeBaseNumerator(1)
+                                                  .setTimeBaseDenominator(12_288)
+                                                  .setMeasuredDuration(24_576))
+                                          .addStreams(
+                                              MeasuredStream.newBuilder()
+                                                  .setStreamIndex(1)
+                                                  .setMeasuredBytes(100)
+                                                  .setPacketCount(94)
+                                                  .setTimeBaseNumerator(1)
+                                                  .setTimeBaseDenominator(48_000)
+                                                  .setMeasuredDuration(96_000)))))
                   .build());
 
           var outcome = probe.await(Duration.ofSeconds(5));
@@ -463,11 +451,8 @@ class RemoteFfprobeServiceIT {
     }
   }
 
-  private static ProbeStreamMeasurementPart.Builder measurementPart(
-      ProbeRequest dispatched, int streamIndex) {
-    return ProbeStreamMeasurementPart.newBuilder()
-        .setProbeAttemptId(dispatched.getProbeAttemptId())
-        .setStreamIndex(streamIndex);
+  private static StreamMeasurementIntervals.Builder intervals(int streamIndex) {
+    return StreamMeasurementIntervals.newBuilder().setStreamIndex(streamIndex);
   }
 
   @Test
@@ -485,24 +470,24 @@ class RemoteFfprobeServiceIT {
         var request = chunkRequest().build();
         try (var scan = BoundedTask.start(() -> service.scanBitrateScanChunk(request))) {
           var dispatched = worker.nextResponse().getStartProbe().getRequest();
-          worker.sendStreamMeasurementPart(
-              measurementPart(dispatched, 0)
-                  .addAllKeyframeIntervalBytes(List.of(700, 300))
-                  .addAllKeyframeIntervalPacketCounts(List.of(12, 36))
-                  .build());
-          worker.sendStreamMeasurementPart(
-              measurementPart(dispatched, 1)
-                  .addAllKeyframeIntervalBytes(List.of(40, 60))
-                  .addAllKeyframeIntervalPacketCounts(List.of(46, 48))
-                  .build());
-          worker.reply(
-              answer(dispatched)
-                  .setBitrateScanChunk(
-                      BitrateScanChunkResult.newBuilder()
-                          .setMeasured(
-                              BitrateScanChunkStreams.newBuilder()
-                                  .addStreams(chunkVideoStream())
-                                  .addStreams(chunkAudioStream())))
+          worker.report(
+              ProbeAttemptReport.newBuilder()
+                  .addStreamMeasurementIntervals(
+                      intervals(0)
+                          .addAllKeyframeIntervalBytes(List.of(700, 300))
+                          .addAllKeyframeIntervalPacketCounts(List.of(12, 36)))
+                  .addStreamMeasurementIntervals(
+                      intervals(1)
+                          .addAllKeyframeIntervalBytes(List.of(40, 60))
+                          .addAllKeyframeIntervalPacketCounts(List.of(46, 48)))
+                  .setResult(
+                      answer(dispatched)
+                          .setBitrateScanChunk(
+                              BitrateScanChunkResult.newBuilder()
+                                  .setMeasured(
+                                      BitrateScanChunkStreams.newBuilder()
+                                          .addStreams(chunkVideoStream())
+                                          .addStreams(chunkAudioStream()))))
                   .build());
 
           var outcome = scan.await(Duration.ofSeconds(5));
@@ -630,6 +615,38 @@ class RemoteFfprobeServiceIT {
   }
 
   @Test
+  @DisplayName(
+      "Should fail for persisted retry and keep the worker session when the worker ends the probe"
+          + " attempt without a probe report")
+  void shouldFailForPersistedRetryAndKeepWorkerSessionWhenWorkerEndsAttemptWithoutProbeReport()
+      throws Exception {
+    try (var server = server();
+        var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+      server.start();
+      try (var worker = worker(server.port(), 1)) {
+        var service = new RemoteFfprobeService(server, SOURCE_NAMESPACE_ID, directory);
+        var request = request().build();
+        var result = calls.submit(() -> service.probe(request));
+        try {
+          var started = worker.nextResponse().getStartProbe().getRequest();
+
+          worker.endWithoutReport(started.getProbeAttemptId());
+
+          assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
+              .cause()
+              .isInstanceOfSatisfying(
+                  ProbeExecutionException.class,
+                  failure -> assertThat(failure.reason()).isEqualTo(ItemFailureReason.TEMPORARY));
+          assertThat(worker.terminated()).isNotDone();
+          assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
+        } finally {
+          result.cancel(true);
+        }
+      }
+    }
+  }
+
+  @Test
   @DisplayName("Should defer the probe without a failure when no worker is available")
   void shouldDeferTheProbeWithoutAFailureWhenNoWorkerIsAvailable() throws Exception {
     try (var server = server()) {
@@ -745,7 +762,7 @@ class RemoteFfprobeServiceIT {
         assertThat(dispatched.getSource().getSourceNamespaceId())
             .isEqualTo(toProto(SOURCE_NAMESPACE_ID));
         assertThat(dispatched.getSource().getRelativeKey()).isEqualTo("movie.mkv");
-        worker.reply(
+        worker.report(
             ProbeAttemptResult.newBuilder()
                 .setProbeAttemptId(dispatched.getProbeAttemptId())
                 .setProbeVersion(dispatched.getProbeVersion())
@@ -825,7 +842,7 @@ class RemoteFfprobeServiceIT {
               ProbeChapter.newBuilder()
                   .setStartTime(newBuilder().setSeconds(300))
                   .setEndTime(newBuilder().setSeconds(1_500));
-          worker.reply(
+          worker.report(
               ProbeAttemptResult.newBuilder()
                   .setProbeAttemptId(dispatched.getProbeAttemptId())
                   .setProbeVersion(dispatched.getProbeVersion())
@@ -1045,7 +1062,7 @@ class RemoteFfprobeServiceIT {
         var request = request().probeVersion(ProbeVersion.FIRST_TO_REPORT_PLAYBACK_FACTS).build();
         try (var result = BoundedTask.start(() -> service.probe(request))) {
           var dispatched = worker.nextResponse().getStartProbe().getRequest();
-          worker.reply(
+          worker.report(
               ProbeAttemptResult.newBuilder()
                   .setProbeAttemptId(dispatched.getProbeAttemptId())
                   .setProbeVersion(dispatched.getProbeVersion())
@@ -1099,7 +1116,7 @@ class RemoteFfprobeServiceIT {
         try (var result =
             BoundedTask.start(() -> service.probe(request().probeVersion(4).build()))) {
           var dispatched = worker.nextResponse().getStartProbe().getRequest();
-          worker.reply(answer(dispatched).setMedia(media).build());
+          worker.report(answer(dispatched).setMedia(media).build());
           var outcome = result.await(Duration.ofSeconds(5));
           assertThat(outcome).isInstanceOf(ProbeOutcome.Success.class);
           var success = (ProbeOutcome.Success) outcome;
@@ -1164,7 +1181,7 @@ class RemoteFfprobeServiceIT {
         var request = request().build();
         try (var result = BoundedTask.start(() -> service.probe(request))) {
           var dispatched = worker.nextResponse().getStartProbe().getRequest();
-          worker.reply(reply.apply(dispatched).build());
+          worker.report(reply.apply(dispatched).build());
           return result.await(Duration.ofSeconds(5));
         }
       }

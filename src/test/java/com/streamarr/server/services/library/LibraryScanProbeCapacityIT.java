@@ -140,9 +140,9 @@ class LibraryScanProbeCapacityIT extends AbstractScanningIntegrationTest {
           .as("The stream session's job attempt starts while the scan's probes run")
           .isEqualTo(EstablishWorkerSessionResponse.CommandCase.START_VARIANT);
 
-      firstProbes.forEach(probe -> worker.reply(invalidMedia(probe)));
+      firstProbes.forEach(probe -> worker.report(invalidMedia(probe)));
       var remainingProbes = startedProbes(worker, FILES - PROBE_CAPACITY);
-      remainingProbes.forEach(probe -> worker.reply(invalidMedia(probe)));
+      remainingProbes.forEach(probe -> worker.report(invalidMedia(probe)));
       libraryOperationDriver.awaitEnd(end);
     }
 

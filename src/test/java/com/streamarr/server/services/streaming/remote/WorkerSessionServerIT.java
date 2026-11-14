@@ -36,6 +36,7 @@ import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
+import com.streamarr.server.fixtures.WorkerProbeReporter;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
@@ -53,27 +54,27 @@ import com.streamarr.transcode.v1.JobAttemptStopped;
 import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeFailure;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
-import com.streamarr.transcode.v1.ProbeStreamInfo;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadLimitReached;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
-import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.VideoCodecFamily;
+import com.streamarr.transcode.v1.VideoEncodersChanged;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
+import com.streamarr.transcode.v1.WorkerVerifiedVideoEncoder;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
@@ -82,6 +83,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
@@ -96,6 +98,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
 import java.util.stream.IntStream;
 import lombok.Builder;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
@@ -120,8 +123,6 @@ class WorkerSessionServerIT {
   // Every entry takes the widest sint64 encoding, 10 bytes, so the test covers the largest
   // keyframe positions a worker can report for this many keyframes.
   private static final long WIDEST_KEYFRAME_TIME_DELTA = Long.MIN_VALUE;
-  // worker_session.proto bounds each list of a ProbeKeyframePositionsPart to this many entries.
-  private static final int MAXIMUM_KEYFRAMES_PER_PART = 4_096;
   // worker_session.proto states the largest session message the server accepts.
   private static final int SESSION_MESSAGE_LIMIT_BYTES = 131_072;
 
@@ -326,7 +327,8 @@ class WorkerSessionServerIT {
             .setKeyframePacketScanCapacity(1);
         registration.getRegistrationBuilder().getCapabilitiesBuilder().addProbeVersions(2);
         session.onNext(registration.build());
-        assertThat(responses.poll(5, TimeUnit.SECONDS))
+        var accepted = responses.poll(5, TimeUnit.SECONDS);
+        assertThat(accepted)
             .isNotNull()
             .satisfies(response -> assertThat(response.hasSessionAccepted()).isTrue());
         var request =
@@ -349,9 +351,14 @@ class WorkerSessionServerIT {
                 .setProbeVersion(2)
                 .setFailure(ProbeFailure.PROBE_FAILURE_NO_VIDEO_STREAM)
                 .build();
-        session.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
+        WorkerProbeReporter.builder()
+            .channel(channel)
+            .workerSessionId(accepted.getSessionAccepted().getWorkerSessionId())
+            .worker(registration.getRegistration().getWorker())
+            .build()
+            .report(result);
 
-        assertThat(pending.get(5, TimeUnit.SECONDS).result()).isEqualTo(result);
+        assertThat(pending.get(5, TimeUnit.SECONDS).getResult()).isEqualTo(result);
         assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
       } finally {
         shutdown(channel);
@@ -368,8 +375,10 @@ class WorkerSessionServerIT {
       server.start();
       var channel = workerChannel(server.port());
       try {
-        var worker = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
-        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var identity = workerIdentity(UUID.randomUUID());
+        var worker = connectProbeWorker(channel, identity);
+        var accepted = worker.nextResponse();
+        assertThat(accepted.hasSessionAccepted()).isTrue();
         var job = variantJob();
         assertThat(server.dispatch(job)).isPresent();
         assertThat(worker.nextResponse().hasStartVariant()).isTrue();
@@ -399,24 +408,21 @@ class WorkerSessionServerIT {
                                         .setKeyframeCount(LONG_SOURCE_KEYFRAME_COUNT))))
                 .build();
 
-        IntStream.iterate(
-                0,
-                first -> first < LONG_SOURCE_KEYFRAME_COUNT,
-                first -> first + MAXIMUM_KEYFRAMES_PER_PART)
-            .mapToObj(
-                first ->
-                    widestKeyframePositionsPart(
-                        request.getProbeAttemptId(),
-                        Math.min(MAXIMUM_KEYFRAMES_PER_PART, LONG_SOURCE_KEYFRAME_COUNT - first)))
-            .forEach(
-                part ->
-                    worker.send(
-                        EstablishWorkerSessionRequest.newBuilder()
-                            .setProbeKeyframePositionsPart(part)
-                            .build()));
-        worker.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
+        var widestTimes =
+            Collections.nCopies(LONG_SOURCE_KEYFRAME_COUNT, WIDEST_KEYFRAME_TIME_DELTA);
+        WorkerProbeReporter.builder()
+            .channel(channel)
+            .workerSessionId(accepted.getSessionAccepted().getWorkerSessionId())
+            .worker(identity)
+            .build()
+            .report(
+                ProbeAttemptReport.newBuilder()
+                    .setResult(result)
+                    .addAllKeyframePresentationTimeDeltas(widestTimes)
+                    .addAllKeyframeDecodeTimeDeltas(widestTimes)
+                    .build());
 
-        assertThat(pending.get(5, TimeUnit.SECONDS).result()).isEqualTo(result);
+        assertThat(pending.get(5, TimeUnit.SECONDS).getResult()).isEqualTo(result);
         assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
         assertThat(server.availableSlots(SOURCE_NAMESPACE_ID))
             .as("the running variant must keep its slot")
@@ -429,23 +435,28 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName(
-      "Should deliver a probe result when its session message takes exactly the contract's limit")
-  void shouldDeliverProbeResultWhenItsSessionMessageTakesExactlyTheContractsLimit()
+      "Should accept a worker session when its registration takes exactly the contract's session"
+          + " message limit")
+  void shouldAcceptWorkerSessionWhenItsRegistrationTakesExactlyTheContractsSessionMessageLimit()
       throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
       try {
-        var worker = connectProbeWorker(channel, workerIdentity(UUID.randomUUID()));
-        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
-        var request = probeRequest();
-        var pending = dispatched(server.dispatchProbe(request));
-        assertThat(worker.nextResponse().getStartProbe().getRequest()).isEqualTo(request);
-        var message = probeResultMessageOfSize(request, SESSION_MESSAGE_LIMIT_BYTES);
+        var registration =
+            sessionMessageOfSize(
+                SESSION_MESSAGE_LIMIT_BYTES,
+                encoder ->
+                    registration(
+                        workerIdentity(UUID.randomUUID()),
+                        WorkerCapabilities.newBuilder()
+                            .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
+                            .addVideoEncoders(encoder)
+                            .build()));
 
-        worker.send(message);
+        var response = send(channel, registration).get(5, TimeUnit.SECONDS);
 
-        assertThat(pending.get(5, TimeUnit.SECONDS).result()).isEqualTo(message.getProbeResult());
+        assertThat(response.hasSessionAccepted()).isTrue();
         assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
       } finally {
         shutdown(channel);
@@ -455,9 +466,9 @@ class WorkerSessionServerIT {
 
   @Test
   @DisplayName(
-      "Should end the worker's session when a probe result's session message exceeds the"
-          + " contract's limit by one byte")
-  void shouldEndWorkersSessionWhenProbeResultsSessionMessageExceedsTheContractsLimitByOneByte()
+      "Should end the worker's session when one of its session messages exceeds the contract's"
+          + " limit by one byte")
+  void shouldEndWorkersSessionWhenOneOfItsSessionMessagesExceedsTheContractsLimitByOneByte()
       throws Exception {
     try (var server = server()) {
       server.start();
@@ -469,7 +480,14 @@ class WorkerSessionServerIT {
         var pending = dispatched(server.dispatchProbe(request));
         assertThat(worker.nextResponse().getStartProbe().getRequest()).isEqualTo(request);
 
-        worker.send(probeResultMessageOfSize(request, SESSION_MESSAGE_LIMIT_BYTES + 1));
+        worker.send(
+            sessionMessageOfSize(
+                SESSION_MESSAGE_LIMIT_BYTES + 1,
+                encoder ->
+                    EstablishWorkerSessionRequest.newBuilder()
+                        .setVideoEncodersChanged(
+                            VideoEncodersChanged.newBuilder().addVideoEncoders(encoder))
+                        .build()));
 
         assertThatThrownBy(worker::awaitClosed)
             .as("The server must end the session call")
@@ -494,45 +512,24 @@ class WorkerSessionServerIT {
         .build();
   }
 
-  // Pads one stream's language tag, which neither the contract nor the worker bounds, until the
-  // session message that carries the result takes exactly the given number of bytes.
-  private static EstablishWorkerSessionRequest probeResultMessageOfSize(
-      ProbeRequest request, int bytes) {
-    var language = 0;
+  // Pads the name of one encoder, which the contract does not bound, until the session message
+  // that lists the encoder takes exactly the given number of bytes.
+  private static EstablishWorkerSessionRequest sessionMessageOfSize(
+      int bytes, Function<WorkerVerifiedVideoEncoder, EstablishWorkerSessionRequest> listing) {
+    var padding = 0;
     for (var attempt = 0; attempt < 3; attempt++) {
       var message =
-          EstablishWorkerSessionRequest.newBuilder()
-              .setProbeResult(
-                  ProbeAttemptResult.newBuilder()
-                      .setProbeAttemptId(request.getProbeAttemptId())
-                      .setProbeVersion(request.getProbeVersion())
-                      .setMedia(
-                          ProbeMediaInfo.newBuilder()
-                              .addStreams(
-                                  ProbeStreamInfo.newBuilder()
-                                      .setIndex(0)
-                                      .setCodecType("video")
-                                      .setLanguage("a".repeat(language)))))
-              .build();
+          listing.apply(
+              softwareEncoder(
+                  VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264" + "a".repeat(padding)));
       if (message.getSerializedSize() == bytes) {
         return message;
       }
 
-      language += bytes - message.getSerializedSize();
+      padding += bytes - message.getSerializedSize();
     }
 
-    throw new AssertionError("No probe result encodes to exactly " + bytes + " bytes");
-  }
-
-  private static ProbeKeyframePositionsPart widestKeyframePositionsPart(
-      Uuid probeAttemptId, int keyframes) {
-    var part = ProbeKeyframePositionsPart.newBuilder().setProbeAttemptId(probeAttemptId);
-    for (var keyframe = 0; keyframe < keyframes; keyframe++) {
-      part.addPresentationTimeDeltas(WIDEST_KEYFRAME_TIME_DELTA);
-      part.addDecodeTimeDeltas(WIDEST_KEYFRAME_TIME_DELTA);
-    }
-
-    return part.build();
+    throw new AssertionError("No session message encodes to exactly " + bytes + " bytes");
   }
 
   @Test

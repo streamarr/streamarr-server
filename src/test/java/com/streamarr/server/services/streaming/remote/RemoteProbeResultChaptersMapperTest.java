@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.ChapterKnowledge;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fixtures.WorkerProbeResultFixture;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
@@ -183,6 +184,6 @@ class RemoteProbeResultChaptersMapperTest {
   }
 
   private static ProbeAttemptReport report(ProbeAttemptResult result) {
-    return new ProbeAttemptReport(result, List.of());
+    return ProbeAttemptReport.newBuilder().setResult(result).build();
   }
 }

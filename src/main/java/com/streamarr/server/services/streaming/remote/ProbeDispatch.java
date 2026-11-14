@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import java.util.concurrent.Future;
 import lombok.NonNull;
 

@@ -108,6 +108,141 @@ class WorkerSessionConfigurationTest {
                             Duration.ofSeconds(30), Duration.ofSeconds(10))));
   }
 
+  @ParameterizedTest(name = "{0}={1}")
+  @CsvSource({
+    "keyframe-limit,0,Worker probe report keyframe limit must be positive",
+    "keyframe-limit,-1,Worker probe report keyframe limit must be positive",
+    "measured-keyframe-interval-limit,0,"
+        + "Worker probe report measured keyframe interval limit must be positive",
+    "measured-keyframe-interval-limit,-1,"
+        + "Worker probe report measured keyframe interval limit must be positive",
+    "length-limit,0B,Worker probe report length limit must be positive",
+    "length-limit,-1B,Worker probe report length limit must be positive",
+    "result-length-limit,0B,Worker probe report result length limit must be positive",
+    "result-length-limit,-1B,Worker probe report result length limit must be positive",
+    "idle-timeout,0s,Worker probe report idle timeout must be positive",
+    "idle-timeout,-1s,Worker probe report idle timeout must be positive",
+    "memory-budget,0B,Worker probe report memory budget must be positive",
+    "memory-budget,-1B,Worker probe report memory budget must be positive"
+  })
+  @DisplayName("Should reject a nonpositive probe report setting when starting the listener")
+  void shouldRejectNonpositiveProbeReportSettingWhenStartingListener(
+      String property, String value, String message) {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.port=0",
+            "streaming.worker-session.probe-report." + property + "=" + value)
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessage(message);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a probe report length limit below the limit of one message when starting the"
+          + " listener")
+  void shouldRejectProbeReportLengthLimitBelowLimitOfOneMessageWhenStartingListener() {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.port=0",
+            "streaming.worker-session.probe-report.length-limit=131071B")
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessage("Worker probe report length limit must be at least 131072 bytes");
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a probe report result length limit below 48KB when starting the listener")
+  void shouldRejectProbeReportResultLengthLimitBelow48KilobytesWhenStartingListener() {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.port=0",
+            "streaming.worker-session.probe-report.result-length-limit=49151B")
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessage(
+                      "Worker probe report result length limit must be at least 49152 bytes");
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a probe report result length limit above the length limit when starting the"
+          + " listener")
+  void shouldRejectProbeReportResultLengthLimitAboveLengthLimitWhenStartingListener() {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.port=0",
+            "streaming.worker-session.probe-report.length-limit=1MB",
+            "streaming.worker-session.probe-report.result-length-limit=1048577B")
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessage(
+                      "Worker probe report result length limit must be at most the probe report"
+                          + " length limit");
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a probe report memory budget below the length limit plus the result length"
+          + " limit when starting the listener")
+  void shouldRejectProbeReportMemoryBudgetBelowLengthLimitPlusResultLimitWhenStartingListener() {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.port=0",
+            "streaming.worker-session.probe-report.length-limit=1MB",
+            "streaming.worker-session.probe-report.result-length-limit=128KB",
+            "streaming.worker-session.probe-report.memory-budget=1179647B")
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalArgumentException.class)
+                  .hasMessage(
+                      "Worker probe report memory budget must be at least the probe report length"
+                          + " limit plus the result length limit");
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should start the listener when the probe report length limit is the limit of one message"
+          + " and the memory budget is that limit plus the result length limit")
+  void shouldStartListenerWhenLengthLimitIsLimitOfOneMessageAndBudgetIsItPlusResultLimit() {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.port=0",
+            "streaming.worker-session.probe-report.length-limit=128KB",
+            "streaming.worker-session.probe-report.result-length-limit=48KB",
+            "streaming.worker-session.probe-report.memory-budget=176KB")
+        .run(
+            context -> {
+              assertThat(context).hasNotFailed();
+              assertThat(context.getBean(WorkerSessionServer.class).port()).isPositive();
+            });
+  }
+
   @ParameterizedTest
   @ValueSource(ints = {-1, 65536})
   @DisplayName("Should reject an invalid port when starting the worker listener")

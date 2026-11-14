@@ -34,8 +34,8 @@ import org.springframework.context.event.ContextClosedEvent;
 public final class WorkerSessionServer
     implements AutoCloseable, ApplicationListener<ContextClosedEvent> {
 
-  private static final int MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION = 33;
-  private static final int MAXIMUM_INBOUND_MESSAGE_BYTES = 128 * 1024;
+  static final int MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION = 33;
+  static final int MAXIMUM_INBOUND_MESSAGE_BYTES = 128 * 1024;
   private static final int PERMITTED_CLIENT_KEEPALIVE_SECONDS = 10;
   private final WorkerSessionServerConfiguration configuration;
   private final SegmentStore segmentStore;
@@ -132,14 +132,24 @@ public final class WorkerSessionServer
    * Returns a refusal with its reason when no worker accepts the attempt. Each execution attempt
    * requires a fresh, non-nil ID, a nonzero contract version, and a source.
    *
-   * <p>Cancelling the future requests worker termination; its reservation remains until a terminal
-   * reply or session end. The configured probe deadline fails the future and requests cancellation.
-   * A worker that does not acknowledge cancellation within the grace period is disconnected and
+   * <p>Cancelling the future requests worker termination; its reservation remains until the
+   * attempt's report call ends or the session ends. The configured probe deadline fails the future
+   * and requests cancellation, unless the first message of the attempt's report call arrives first:
+   * the time that the worker takes to send the rest of its probe report does not count. A worker
+   * that sends no such message within the grace period after a cancel command is disconnected and
    * fenced before more work can be assigned to that session.
    */
   public synchronized ProbeDispatch dispatchProbe(ProbeRequest request) {
     requireStarted();
     return workerConnections.dispatchProbe(request);
+  }
+
+  /**
+   * The most keyframe intervals, summed over its measured streams, that one probe report may hold.
+   * The server states the same limit to each worker when it accepts the worker session.
+   */
+  public int measuredKeyframeIntervalLimit() {
+    return configuration.probeReportLimits().measuredKeyframeIntervalLimit();
   }
 
   /**

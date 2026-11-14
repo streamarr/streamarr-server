@@ -25,10 +25,10 @@ import com.streamarr.transcode.v1.ContentLightLevel;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.DolbyVisionConfiguration;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
-import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.function.UnaryOperator;
@@ -1445,6 +1445,6 @@ class RemoteProbeResultStreamPropertiesMapperTest {
   }
 
   private static ProbeAttemptReport report(ProbeAttemptResult result) {
-    return new ProbeAttemptReport(result, List.of());
+    return ProbeAttemptReport.newBuilder().setResult(result).build();
   }
 }

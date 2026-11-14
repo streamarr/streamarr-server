@@ -8,7 +8,7 @@ import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.transcode.v1.KeyframesUnavailable;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import java.util.ArrayList;
@@ -17,14 +17,14 @@ import java.util.List;
 /** Maps and validates the keyframes a worker reports with a successful probe. */
 final class RemoteKeyframeKnowledgeMapper {
 
-  KeyframeKnowledge map(ProbeMediaInfo media, List<ProbeKeyframePositionsPart> parts) {
+  KeyframeKnowledge map(ProbeMediaInfo media, ProbeAttemptReport report) {
     if (!media.hasKeyframes()) {
       return new KeyframeKnowledge.NotReported();
     }
 
     var keyframes = media.getKeyframes();
     return switch (keyframes.getResultCase()) {
-      case POSITIONS -> new KeyframeKnowledge.Known(positions(media, keyframes, parts));
+      case POSITIONS -> new KeyframeKnowledge.Known(positions(media, keyframes, report));
       case PACKET_SCAN_REQUIRED ->
           new KeyframeKnowledge.PacketScanRequired(packetScanReason(keyframes));
       case UNAVAILABLE ->
@@ -34,7 +34,7 @@ final class RemoteKeyframeKnowledgeMapper {
   }
 
   private KeyframePositions positions(
-      ProbeMediaInfo media, ProbeKeyframes keyframes, List<ProbeKeyframePositionsPart> parts) {
+      ProbeMediaInfo media, ProbeKeyframes keyframes, ProbeAttemptReport report) {
     var reported = keyframes.getPositions();
     if (reported.getTimeBaseNumerator() <= 0 || reported.getTimeBaseDenominator() <= 0) {
       throw violation("Worker probe keyframe time base is not positive");
@@ -44,7 +44,7 @@ final class RemoteKeyframeKnowledgeMapper {
       throw violation("Worker probe keyframe stream index names no video stream");
     }
 
-    var positions = absolutePositions(parts);
+    var positions = absolutePositions(report);
     if (positions.isEmpty()
         || positions.size() != Integer.toUnsignedLong(reported.getKeyframeCount())) {
       throw violation("Worker probe keyframe count differs from the keyframes it sent");
@@ -65,25 +65,24 @@ final class RemoteKeyframeKnowledgeMapper {
             stream -> stream.getIndex() == streamIndex && "video".equals(stream.getCodecType()));
   }
 
-  private static List<KeyframePosition> absolutePositions(List<ProbeKeyframePositionsPart> parts) {
+  private static List<KeyframePosition> absolutePositions(ProbeAttemptReport report) {
+    if (report.getKeyframePresentationTimeDeltasCount()
+        != report.getKeyframeDecodeTimeDeltasCount()) {
+      throw violation("Worker probe report's keyframe position lists differ in length");
+    }
+
     var positions = new ArrayList<KeyframePosition>();
     var presentationTime = 0L;
     var decodeTime = 0L;
-    for (var part : parts) {
-      if (part.getPresentationTimeDeltasCount() != part.getDecodeTimeDeltasCount()) {
-        throw violation("Worker probe keyframe part lists differ in length");
+    for (var entry = 0; entry < report.getKeyframeDecodeTimeDeltasCount(); entry++) {
+      var nextDecodeTime = add(decodeTime, report.getKeyframeDecodeTimeDeltas(entry));
+      if (!positions.isEmpty() && nextDecodeTime <= decodeTime) {
+        throw violation("Worker probe keyframe decode times do not increase");
       }
 
-      for (var entry = 0; entry < part.getDecodeTimeDeltasCount(); entry++) {
-        var nextDecodeTime = add(decodeTime, part.getDecodeTimeDeltas(entry));
-        if (!positions.isEmpty() && nextDecodeTime <= decodeTime) {
-          throw violation("Worker probe keyframe decode times do not increase");
-        }
-
-        presentationTime = add(presentationTime, part.getPresentationTimeDeltas(entry));
-        decodeTime = nextDecodeTime;
-        positions.add(new KeyframePosition(presentationTime, decodeTime));
-      }
+      presentationTime = add(presentationTime, report.getKeyframePresentationTimeDeltas(entry));
+      decodeTime = nextDecodeTime;
+      positions.add(new KeyframePosition(presentationTime, decodeTime));
     }
 
     return positions;
