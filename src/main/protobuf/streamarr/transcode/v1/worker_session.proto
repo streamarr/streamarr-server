@@ -791,7 +791,7 @@ message SourceStreamEnd {
   // This field holds the stream's ProbeStreamInfo.index.
   optional uint32 stream_index = 1;
   // This field holds the latest end of the stream's samples, on seek_position's
-  // timeline, which is the timeline of ProbeKeyframePositionsPart. A sample
+  // timeline, which is also the probe report's keyframe timeline. A sample
   // ends at its presentation time plus its duration. The worker reads it from
   // the source's packets, not from the container header.
   google.protobuf.Duration end_time = 2;
@@ -1279,12 +1279,12 @@ message ProbeStreamInfo {
   // is absent in other source containers, which store no sample entry, for a
   // stream without one, such as cover art, and on other streams (ADR 0032).
   optional string sample_entry = 48;
-  // From probe version 8, the chosen video stream reports, in frames per
-  // second, the highest rate its presentation times show over 1 to 24
-  // consecutive frame intervals, a listed rate when one fits their precision,
-  // or the base rate its declared rates agree on when no time proves a faster
-  // one. It is absent when the worker cannot measure it, on an interlaced
-  // stream and on every other stream. It is never zero (ADR 0032).
+  // From probe version 8, the chosen video's maximum frame rate, in frames per
+  // second. Version 9 requires 24 consecutive picture intervals, each
+  // supporting the measured rate within timestamp precision (ADR 0032).
+  // A listed rate within one-tick precision is used; the agreeing declared
+  // base rate remains the floor. Absent when unknown, interlaced, or not the
+  // chosen video stream; never zero.
   Fraction maximum_frame_rate = 49;
 }
 
