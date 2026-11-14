@@ -352,11 +352,30 @@ public record MediaProbe(
    * The container's duration also stands while it runs less than {@link
    * #LEAST_HEADER_OVERSTATEMENT} past the scanned end, so a healthy file is never advertised
    * shorter than its header states. The end counts up to the next whole millisecond, the unit of
-   * the segment list, so the list never ends before the last sample does.
+   * the segment list, so the list never ends before the last sample does. A direct-play stream
+   * session reads {@link #directPlayMediaEnd} instead.
    */
   public Duration mediaEnd() {
+    var sessionAudio = audioStreams().stream().limit(1).toList();
+    return mediaEndWith(sessionAudio);
+  }
+
+  /**
+   * Where the media that a direct-play stream session delivers ends: the media end, read from the
+   * chosen video stream and every audio stream of the file instead of the session's audio stream
+   * alone. Direct play sends the whole file, and a player that can select an audio track inside it
+   * switches tracks without telling the server (ADR 0045). While no scan has read the end time of
+   * one of those streams, the media ends at the container's duration.
+   */
+  public Duration directPlayMediaEnd() {
+    return mediaEndWith(audioStreams());
+  }
+
+  private Duration mediaEndWith(List<StreamInfo> deliveredAudio) {
     var end =
-        scannedMediaEnd().filter(scannedEnd -> !headerAgreesWith(scannedEnd)).orElse(duration);
+        scannedEndOf(deliveredAudio)
+            .filter(scannedEnd -> !headerAgreesWith(scannedEnd))
+            .orElse(duration);
     return countedUpToAWholeMillisecond(end);
   }
 
@@ -375,14 +394,16 @@ public record MediaProbe(
     return !overstatement.isNegative() && overstatement.compareTo(LEAST_HEADER_OVERSTATEMENT) < 0;
   }
 
-  private Optional<Duration> scannedMediaEnd() {
-    var videoEnd = chosenVideoStream().flatMap(this::scannedEndTimeOf);
-    var sessionAudio = audioStreams().stream().findFirst();
-    if (videoEnd.isEmpty() || sessionAudio.isEmpty()) {
-      return videoEnd;
+  // The latest scanned end of the chosen video stream and of each delivered audio stream, or empty
+  // while no scan has read one of them.
+  private Optional<Duration> scannedEndOf(List<StreamInfo> deliveredAudio) {
+    var latest = chosenVideoStream().flatMap(this::scannedEndTimeOf);
+    for (var audio : deliveredAudio) {
+      latest =
+          latest.flatMap(end -> scannedEndTimeOf(audio).map(audioEnd -> laterOf(audioEnd, end)));
     }
 
-    return scannedEndTimeOf(sessionAudio.get()).map(audioEnd -> laterOf(audioEnd, videoEnd.get()));
+    return latest;
   }
 
   private static Duration laterOf(Duration first, Duration second) {

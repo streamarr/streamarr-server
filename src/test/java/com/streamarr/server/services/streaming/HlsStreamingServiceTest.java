@@ -6759,6 +6759,15 @@ class HlsStreamingServiceTest {
   // keyframes at 0, 6 and 12 s, the video's end one frame before the media end, and the audio's
   // end at the media end.
   private MediaFile seedMediaFileScannedToEndAt(Duration containerDuration, Duration mediaEnd) {
+    return seedMediaFileScanned(
+        defaultProbeBuilder().duration(containerDuration).build(),
+        List.of(
+            new SourceStreamEnd(0, mediaEnd.minusMillis(42)), new SourceStreamEnd(1, mediaEnd)));
+  }
+
+  // A media file of the probe, whose keyframe packet scan read keyframes at 0, 6 and 12 s and the
+  // stream ends.
+  private MediaFile seedMediaFileScanned(MediaProbe probe, List<SourceStreamEnd> streamEnds) {
     var file = seedMediaFile();
     var snapshot = new SourceFileSnapshot(1_000_000, Instant.EPOCH);
     probeResults.publish(
@@ -6767,8 +6776,7 @@ class HlsStreamingServiceTest {
             .snapshot(snapshot)
             .probeVersion(ProbeVersion.CURRENT)
             .outcome(
-                ProbeFixture.completeProbeBuilder(
-                        defaultProbeBuilder().duration(containerDuration).build())
+                ProbeFixture.completeProbeBuilder(probe)
                     .keyframes(
                         new KeyframeKnowledge.PacketScanRequired(
                             KeyframePacketScanReason.NO_CONTAINER_INDEX))
@@ -6792,10 +6800,7 @@ class HlsStreamingServiceTest {
                                 new KeyframePosition(6_000, 6_000),
                                 new KeyframePosition(12_000, 12_000)))
                         .build()))
-            .streamEnds(
-                List.of(
-                    new SourceStreamEnd(0, mediaEnd.minusMillis(42)),
-                    new SourceStreamEnd(1, mediaEnd)))
+            .streamEnds(streamEnds)
             .build());
     return file;
   }
@@ -6826,6 +6831,103 @@ class HlsStreamingServiceTest {
     assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
     assertThat(session.getStartPosition()).contains(Duration.ofMillis(5_381_500));
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // A player that can select an audio track inside a directly played file switches tracks in place
+  // (ADR 0045), so direct play can store a position past the end of the session's own track.
+  @Test
+  @DisplayName(
+      "Should direct-play from a start position past the session's audio track when another audio"
+          + " track of the file ends later")
+  void shouldDirectPlayFromAStartPositionPastTheSessionsAudioTrackWhenAnotherTrackEndsLater() {
+    var command =
+        directPlayCommandSelectingAudioTracks(seedMediaFileWhoseSecondAudioTrackEndsLater())
+            .startPosition(Optional.of(Duration.ofSeconds(90)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getDelivery()).isEqualTo(StreamDelivery.DIRECT_PLAY);
+    assertThat(session.getStartPosition()).contains(Duration.ofSeconds(90));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a direct-play start position at the end of the file's longest audio track")
+  void shouldRefuseADirectPlayStartPositionAtTheEndOfTheFilesLongestAudioTrack() {
+    var command =
+        directPlayCommandSelectingAudioTracks(seedMediaFileWhoseSecondAudioTrackEndsLater())
+            .startPosition(Optional.of(Duration.ofSeconds(120)))
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    assertThat(runtimeRegistry.findById(command.streamSessionId())).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should refuse direct play when an alternate audio track has no known end")
+  void shouldRefuseDirectPlayWhenAnAlternateAudioTrackHasNoKnownEnd(boolean explicitStart) {
+    var file =
+        seedMediaFileScanned(
+            directPlayableProbeWithAudioIn("eng", "fra").toBuilder()
+                .duration(Duration.ZERO)
+                .build(),
+            List.of(
+                new SourceStreamEnd(0, Duration.ofSeconds(60)),
+                new SourceStreamEnd(1, Duration.ofSeconds(60))));
+    var command =
+        directPlayCommandSelectingAudioTracks(file)
+            .startPosition(explicitStart ? Optional.of(Duration.ZERO) : Optional.empty())
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new CreateStreamSessionRejection.NoMediaSegments());
+    assertThat(runtimeRegistry.findById(command.streamSessionId())).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // An HLS stream session delivers its own audio track only, so its playlists end with that track.
+  @Test
+  @DisplayName(
+      "Should refuse an HLS start position past the session's audio track when another audio track"
+          + " of the file ends later")
+  void shouldRefuseAnHlsStartPositionPastTheSessionsAudioTrackWhenAnotherTrackEndsLater() {
+    var command =
+        createStreamSessionCommandBuilder(
+                seedMediaFileWhoseSecondAudioTrackEndsLater().getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofSeconds(90)))
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // The header states 120 s. A keyframe packet scan read the video and the first audio track to
+  // 60 s, and the second audio track to 120 s.
+  private MediaFile seedMediaFileWhoseSecondAudioTrackEndsLater() {
+    return seedMediaFileScanned(
+        directPlayableProbeWithAudioIn("eng", "fra").toBuilder()
+            .duration(Duration.ofSeconds(120))
+            .build(),
+        List.of(
+            new SourceStreamEnd(0, Duration.ofSeconds(60)),
+            new SourceStreamEnd(1, Duration.ofSeconds(60)),
+            new SourceStreamEnd(2, Duration.ofSeconds(120))));
+  }
+
+  private CreateStreamSessionCommand.CreateStreamSessionCommandBuilder
+      directPlayCommandSelectingAudioTracks(MediaFile file) {
+    return directPlayCommand(file.getId())
+        .capabilityDeclaration(
+            directPlayDeclarationBuilder().selectsAudioTrackInDirectPlay(true).build());
   }
 
   @Test

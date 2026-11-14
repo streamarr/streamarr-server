@@ -416,6 +416,59 @@ class MediaProbeTest {
     assertThat(probe.withSessionAudioTrackAt(1).mediaEnd()).isEqualTo(Duration.ofSeconds(25));
   }
 
+  // Direct play sends the whole file, and a player that can select an audio track inside it
+  // switches tracks without telling the server (ADR 0045).
+  @Test
+  @DisplayName(
+      "Should end a direct play at the latest scanned end of the video and every audio stream when"
+          + " another audio track ends later")
+  void shouldEndADirectPlayAtTheLatestScannedEndWhenAnotherAudioTrackEndsLater() {
+    var probe =
+        probeLasting(Duration.ofSeconds(30), video(), audio(1), audio(2))
+            .withLearnedEndTimes(
+                List.of(scannedEnd(0, 14_000), scannedEnd(1, 16_000), scannedEnd(2, 25_000)));
+
+    assertThat(probe.directPlayMediaEnd()).isEqualTo(Duration.ofSeconds(25));
+  }
+
+  @Test
+  @DisplayName(
+      "Should end a direct play at the container's duration when no scan read the end of one of the"
+          + " file's audio streams")
+  void shouldEndADirectPlayAtTheContainersDurationWhenNoScanReadTheEndOfOneOfTheAudioStreams() {
+    var probe =
+        probeLasting(Duration.ofSeconds(30), video(), audio(1), audio(2))
+            .withLearnedEndTimes(List.of(scannedEnd(0, 14_000), scannedEnd(1, 16_000)));
+
+    assertThat(probe.directPlayMediaEnd()).isEqualTo(Duration.ofSeconds(30));
+  }
+
+  @Test
+  @DisplayName("Should end a direct play at the media end when the file holds one audio stream")
+  void shouldEndADirectPlayAtTheMediaEndWhenTheFileHoldsOneAudioStream() {
+    var probe =
+        probeLasting(Duration.ofSeconds(30), video(), audio(1))
+            .withLearnedEndTimes(List.of(scannedEnd(0, 14_167), scannedEnd(1, 14_250)));
+
+    assertThat(probe.directPlayMediaEnd()).isEqualTo(Duration.ofMillis(14_250));
+  }
+
+  // Only the container header states where each stream ends here, and a stream's header is no
+  // better evidence than the container's.
+  @Test
+  @DisplayName(
+      "Should end a direct play at the container's duration when no scan read any stream's end")
+  void shouldEndADirectPlayAtTheContainersDurationWhenNoScanReadAnyStreamsEnd() {
+    var probe =
+        probeLasting(
+            Duration.ofSeconds(24),
+            videoStatedToEndAt(4_000),
+            audioStatedToEndAt(1, 4_000),
+            audioStatedToEndAt(2, 20_000));
+
+    assertThat(probe.directPlayMediaEnd()).isEqualTo(Duration.ofSeconds(24));
+  }
+
   @Test
   @DisplayName(
       "Should end the media at the container's duration when the server learned no end of the"
