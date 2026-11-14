@@ -1,8 +1,10 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
+import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -13,6 +15,8 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -35,6 +39,8 @@ import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Profile sharing (ADR 0024 §Profile sharing): a share makes one Profile available to a Household
@@ -56,6 +62,7 @@ public class ProfileSharingService {
 
   private final AuthorizationService authorizationService;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final ProfileRepository profileRepository;
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
@@ -64,7 +71,7 @@ public class ProfileSharingService {
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final MutationTransactions mutationTransactions;
   private final CredentialCodeProperties credentialCodeProperties;
-  private final PendingShareOffersList pendingShareOffersList;
+  private final HouseholdSharesList householdSharesList;
   private final ProfileSharesList profileSharesList;
   private final Clock clock;
 
@@ -91,8 +98,8 @@ public class ProfileSharingService {
           }
 
           var now = clock.instant();
-          shareRepository.supersedePending(profileId, householdId, now);
-          return shareRepository.saveAndFlush(
+          shareLifecycle.supersedePending(profileId, householdId, now);
+          return shareLifecycle.create(
               ProfileHouseholdShare.builder()
                   .profileId(profileId)
                   .householdId(householdId)
@@ -142,65 +149,75 @@ public class ProfileSharingService {
   public Outcome<ProfileHouseholdShare, ShareRejections.End> endProfileShare(
       AuthenticatedIdentity identity, UUID shareId) {
     return endInTransaction(
+        identity,
         shareId,
-        () -> {
-          Optional<ShareRejections.End> refusal =
-              refusalOf(
-                  identity,
-                  new Intent.EndProfileShare(shareId),
-                  () -> mayViewShare(identity, shareId),
-                  Refusals.<ShareRejections.End>hiddenAs(ShareRejections.ShareNotFound::new)
-                      .visibleAs(
-                          () ->
-                              structuralRefusal(
-                                  shareId, ShareRejections.StructuralShareCannotEnd::new)));
-          refusal.ifPresent(
-              rejection -> {
-                throw new MutationRejection(rejection);
-              });
-        },
-        _ -> {},
-        new EndRefusals<>(
-            ShareRejections.ShareNotActive::new, ShareRejections.StructuralShareCannotEnd::new));
+        EndSteps.<ShareRejections.End>builder()
+            .authorize(
+                () -> {
+                  Optional<ShareRejections.End> refusal =
+                      refusalOf(
+                          identity,
+                          new Intent.EndProfileShare(shareId),
+                          () -> mayViewShare(identity, shareId),
+                          Refusals.<ShareRejections.End>hiddenAs(ShareRejections.ShareNotFound::new)
+                              .visibleAs(
+                                  () ->
+                                      structuralRefusal(
+                                          shareId, ShareRejections.StructuralShareCannotEnd::new)));
+                  refusal.ifPresent(
+                      rejection -> {
+                        throw new MutationRejection(rejection);
+                      });
+                })
+            .afterEnd(_ -> {})
+            .notActive(ShareRejections.ShareNotActive::new)
+            .structural(ShareRejections.StructuralShareCannotEnd::new)
+            .build());
   }
 
   public Outcome<ProfileHouseholdShare, ShareRejections.AdministrativelyEnd>
       administrativelyEndProfileShare(AuthenticatedIdentity identity, UUID shareId, String reason) {
     return endInTransaction(
+        identity,
         shareId,
-        () -> {
-          Optional<ShareRejections.AdministrativelyEnd> refusal =
-              refusalOf(
-                  identity,
-                  new Intent.AdministrativelyEndProfileShare(shareId),
-                  () -> mayViewShare(identity, shareId),
-                  Refusals.<ShareRejections.AdministrativelyEnd>hiddenAs(
-                          ShareRejections.ShareNotFound::new)
-                      .visibleAs(
-                          () ->
-                              structuralRefusal(
-                                  shareId, ShareRejections.StructuralShareCannotEnd::new))
-                      .reauthenticatedAs(ShareRejections.ReauthenticationRequired::new));
-          refusal.ifPresent(
-              rejection -> {
-                throw new MutationRejection(rejection);
-              });
-          // Authority first, input second: an unauthorized caller learns nothing from the reason.
-          if (reason == null || reason.isBlank()) {
-            throw new MutationRejection(new ShareRejections.ReasonRequired());
-          }
-        },
-        share ->
-            securityAuditEventRepository.append(
-                SecurityAuditEntry.builder()
-                    .operation("administrativelyEndProfileShare")
-                    .actorAccountId(identity.accountId())
-                    .reason(reason)
-                    .resource("profileId", share.getProfileId())
-                    .resource("householdId", share.getHouseholdId())
-                    .build()),
-        new EndRefusals<>(
-            ShareRejections.ShareNotActive::new, ShareRejections.StructuralShareCannotEnd::new));
+        EndSteps.<ShareRejections.AdministrativelyEnd>builder()
+            .authorize(
+                () -> {
+                  Optional<ShareRejections.AdministrativelyEnd> refusal =
+                      refusalOf(
+                          identity,
+                          new Intent.AdministrativelyEndProfileShare(shareId),
+                          () -> mayViewShare(identity, shareId),
+                          Refusals.<ShareRejections.AdministrativelyEnd>hiddenAs(
+                                  ShareRejections.ShareNotFound::new)
+                              .visibleAs(
+                                  () ->
+                                      structuralRefusal(
+                                          shareId, ShareRejections.StructuralShareCannotEnd::new))
+                              .reauthenticatedAs(ShareRejections.ReauthenticationRequired::new));
+                  refusal.ifPresent(
+                      rejection -> {
+                        throw new MutationRejection(rejection);
+                      });
+                  // Authority first, input second: an unauthorized caller learns nothing from the
+                  // reason.
+                  if (reason == null || reason.isBlank()) {
+                    throw new MutationRejection(new ShareRejections.ReasonRequired());
+                  }
+                })
+            .afterEnd(
+                share ->
+                    securityAuditEventRepository.append(
+                        SecurityAuditEntry.builder()
+                            .operation("administrativelyEndProfileShare")
+                            .actorAccountId(identity.accountId())
+                            .reason(reason)
+                            .resource("profileId", share.getProfileId())
+                            .resource("householdId", share.getHouseholdId())
+                            .build()))
+            .notActive(ShareRejections.ShareNotActive::new)
+            .structural(ShareRejections.StructuralShareCannotEnd::new)
+            .build());
   }
 
   /**
@@ -240,7 +257,7 @@ public class ProfileSharingService {
       ProfileShareStatus target) {
     return mutationTransactions.write(
         () -> {
-          requireShare(shareId);
+          requireShare(identity, shareId);
           Optional<ShareRejections.Decline> refusal =
               refusalOf(
                   identity,
@@ -251,8 +268,8 @@ public class ProfileSharingService {
               rejection -> {
                 throw new MutationRejection(rejection);
               });
-          if (!shareRepository.tryDeclinePending(shareId, target, clock.instant())) {
-            throw new MutationRejection(new ShareRejections.ShareNotPending());
+          if (!shareLifecycle.tryDeclinePending(shareId, target, clock.instant())) {
+            throw lifecycleRefusal(identity, shareId, ShareRejections.ShareNotPending::new);
           }
 
           return shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
@@ -261,9 +278,11 @@ public class ProfileSharingService {
   }
 
   private ProfileHouseholdShare acceptInTransaction(AuthenticatedIdentity identity, UUID shareId) {
-    var offer = requireShare(shareId);
+    var offer = requireShare(identity, shareId);
+    // A share whose Profile was deleted while this waited is gone, for every caller alike; nobody
+    // has been authorized yet.
     if (!profileRepository.lockByShareId(shareId)) {
-      throw new MutationRejection(new ShareRejections.ShareNotPending());
+      throw new MutationRejection(new ShareRejections.ShareNotFound());
     }
 
     decideRefusal(identity, new Intent.AcceptProfileShare(shareId), shareId)
@@ -282,20 +301,21 @@ public class ProfileSharingService {
                   throw new AuthorizationUnavailableException();
             };
     if (!stillAuthorized) {
-      return invalidateUnauthorizedOffer(shareId);
+      return invalidateUnauthorizedOffer(identity, shareId);
     }
 
-    if (!shareRepository.tryActivatePending(shareId, clock.instant())) {
-      throw new MutationRejection(notPending(shareId));
+    if (!shareLifecycle.tryActivatePending(shareId, clock.instant())) {
+      throw lifecycleRefusal(identity, shareId, () -> notPending(shareId));
     }
 
     return shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
   }
 
-  private ProfileHouseholdShare invalidateUnauthorizedOffer(UUID shareId) {
-    if (!shareRepository.tryInvalidatePending(
-        shareId, "offerer no longer authorized", clock.instant())) {
-      throw new MutationRejection(notPending(shareId));
+  private ProfileHouseholdShare invalidateUnauthorizedOffer(
+      AuthenticatedIdentity identity, UUID shareId) {
+    if (!shareLifecycle.tryInvalidatePending(
+        shareId, ProfileShareLifecycle.OFFERER_NO_LONGER_AUTHORIZED, clock.instant())) {
+      throw lifecycleRefusal(identity, shareId, () -> notPending(shareId));
     }
 
     return shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
@@ -315,27 +335,30 @@ public class ProfileSharingService {
       return Optional.empty();
     }
 
-    return Optional.of(
-        new ShareRejections.OfferInvalidated(share.getInvalidationReason().orElse("withdrawn")));
+    return Optional.of(new ShareRejections.OfferInvalidated());
   }
 
-  /** The lifecycle refusals an end can meet, typed for the verb that asked. */
-  private record EndRefusals<R>(
-      Supplier<? extends R> notActive, Supplier<? extends R> structural) {}
-
-  private <R> Outcome<ProfileHouseholdShare, R> endInTransaction(
-      UUID shareId,
+  /**
+   * What one way of ending a share does around the end itself: its authorization, its work after
+   * the end, and the lifecycle refusals it can meet, typed for the verb that asked.
+   */
+  @Builder
+  private record EndSteps<R>(
       Runnable authorize,
       Consumer<ProfileHouseholdShare> afterEnd,
-      EndRefusals<R> refusals) {
+      Supplier<? extends R> notActive,
+      Supplier<? extends R> structural) {}
+
+  private <R> Outcome<ProfileHouseholdShare, R> endInTransaction(
+      AuthenticatedIdentity identity, UUID shareId, EndSteps<R> steps) {
     return mutationTransactions.write(
         () -> {
-          requireShare(shareId);
+          requireShare(identity, shareId);
           profileRepository.lockSharedByShareId(shareId);
-          authorize.run();
+          steps.authorize().run();
           var now = clock.instant();
-          if (!shareRepository.tryEndActive(shareId, now)) {
-            throw new MutationRejection(refusals.notActive().get());
+          if (!shareLifecycle.tryEndActive(shareId, now)) {
+            throw lifecycleRefusal(identity, shareId, steps.notActive());
           }
 
           var share = shareRepository.findByIdAndReloadFromDatabase(shareId).orElseThrow();
@@ -352,23 +375,34 @@ public class ProfileSharingService {
                     registrationLifecycle.revokeAllByAccountAndHousehold(
                         visitor.getId(), share.getHouseholdId(), "share ended", now);
                   });
-          afterEnd.accept(share);
+          steps.afterEnd().accept(share);
           return share;
         },
         constraint -> {
           if (CHK_STRUCTURAL.equals(constraint)) {
-            return Optional.of(refusals.structural().get());
+            return Optional.of(steps.structural().get());
           }
 
           return Optional.empty();
         });
   }
 
-  /** A share nobody can find answers the same way for everyone: there is nothing to protect. */
-  private ProfileHouseholdShare requireShare(UUID shareId) {
+  /**
+   * A share nobody can find answers the same way for everyone: there is nothing to protect. A share
+   * that is over is found only by those who may still read it, the Profile's side and readers of
+   * the Household's share history, so its Household's HouseholdAdmins cannot tell it from a share
+   * deleted with its Profile.
+   */
+  private ProfileHouseholdShare requireShare(AuthenticatedIdentity identity, UUID shareId) {
     return shareRepository
         .findById(shareId)
+        .filter(share -> share.statusAt(clock.instant()).isLive() || maySeeOver(identity, share))
         .orElseThrow(() -> new MutationRejection(new ShareRejections.ShareNotFound()));
+  }
+
+  private boolean maySeeOver(AuthenticatedIdentity identity, ProfileHouseholdShare share) {
+    return mayViewHouseholdShareHistory(identity, share.getHouseholdId())
+        || mayViewProfileShares(identity, share.getProfileId());
   }
 
   /**
@@ -443,14 +477,29 @@ public class ProfileSharingService {
         Refusals.<ShareRejections.Accept>hiddenAs(ShareRejections.ShareNotFound::new));
   }
 
+  // A refusal names a share only to those who may read it as it stands now, as the share queries
+  // decide: the Profile's offering side, readers of the Household's share history, and the
+  // HouseholdAdmins of the Household it is into while the offer is pending or the share is active.
+  // Hosting the Profile elsewhere is not enough. The share is read again, past the copy this
+  // request read first, since another request may have ended or deleted it since.
   private boolean mayViewShare(AuthenticatedIdentity identity, UUID shareId) {
     return shareRepository
-        .findById(shareId)
+        .findByIdAndReloadFromDatabase(shareId)
         .map(
             share ->
-                mayViewProfile(identity, share.getProfileId())
-                    || mayViewHousehold(identity, share.getHouseholdId()))
+                maySeeOver(identity, share)
+                    || (share.statusAt(clock.instant()).isLive()
+                        && mayViewHousehold(identity, share.getHouseholdId())))
         .orElse(false);
+  }
+
+  // What became of a share is told only to a caller who may read it, even one Cedar allowed: an
+  // offerer may still cancel its pending offer after it stops managing the Profile, and must not
+  // learn from the refusal whether the share it offered is active.
+  private MutationRejection lifecycleRefusal(
+      AuthenticatedIdentity identity, UUID shareId, Supplier<?> refusal) {
+    return new MutationRejection(
+        mayViewShare(identity, shareId) ? refusal.get() : new ShareRejections.ShareNotFound());
   }
 
   private boolean mayViewProfile(AuthenticatedIdentity identity, UUID profileId) {
@@ -458,9 +507,32 @@ public class ProfileSharingService {
         authorizationService.decide(identity, new Intent.ViewProfileAdministration(profileId)));
   }
 
+  // Every share of a Profile is for its offering side; a HouseholdAdmin who only hosts it reads the
+  // share into their own Household from that Household's side. A Profile that no longer exists has
+  // no shares to read and no facts to decide on.
+  private boolean mayViewProfileShares(AuthenticatedIdentity identity, UUID profileId) {
+    return profileRepository.findById(profileId).isPresent()
+        && isAllowed(
+            authorizationService.decide(
+                identity, new Intent.ViewProfileShareHouseholds(profileId)));
+  }
+
   private boolean mayViewHousehold(AuthenticatedIdentity identity, UUID householdId) {
     return isAllowed(
         authorizationService.decide(identity, new Intent.ViewHouseholdAdministration(householdId)));
+  }
+
+  private boolean householdSideFollows(
+      AuthenticatedIdentity identity, ProfileShareChangedEvent change) {
+    var householdId = change.share().householdId();
+    return change.live()
+        ? mayViewHousehold(identity, householdId)
+        : mayViewHouseholdShareHistory(identity, householdId);
+  }
+
+  private boolean mayViewHouseholdShareHistory(AuthenticatedIdentity identity, UUID householdId) {
+    return isAllowed(
+        authorizationService.decide(identity, new Intent.ViewHouseholdShareHistory(householdId)));
   }
 
   private static boolean isAllowed(Decision<AuthorizationUnit> decision) {
@@ -471,24 +543,134 @@ public class ProfileSharingService {
     };
   }
 
-  /** A page of pending offers into one Household, newest first; hidden reads as empty. */
-  public ListPage<ProfileHouseholdShare> pendingShareOffers(
-      AuthenticatedIdentity identity, UUID householdId, PageRequest request) {
-    if (!mayViewHousehold(identity, householdId)) {
-      return ListPage.empty();
-    }
-
-    return Pager.page(pendingShareOffersList, householdId, request);
+  /**
+   * A page of the shares into one Household that the scope keeps, newest first; hidden reads as
+   * empty. Its HouseholdAdmins get only the offers still pending and the active shares; a reader of
+   * the Household's share history, a ServerAdmin, gets every status the scope keeps.
+   */
+  public ListPage<ProfileHouseholdShare> householdShares(
+      AuthenticatedIdentity identity, HouseholdSharesScope household, PageRequest request) {
+    return readableScope(identity, household)
+        .map(readable -> Pager.page(householdSharesList, readable, request))
+        .orElseGet(ListPage::empty);
   }
 
-  /** A page of every share of one Profile, newest first; hidden reads as empty. */
+  // The part of the scope that the reader may list: all of it for a reader of the Household's
+  // share history, its live shares for the Household's HouseholdAdmins, and nothing for others.
+  private Optional<HouseholdSharesScope> readableScope(
+      AuthenticatedIdentity identity, HouseholdSharesScope household) {
+    if (!mayViewHousehold(identity, household.householdId())) {
+      return Optional.empty();
+    }
+
+    if (mayViewHouseholdShareHistory(identity, household.householdId())) {
+      return Optional.of(household);
+    }
+
+    return household.keptToLive();
+  }
+
+  /**
+   * A page of one Profile's shares in the scope's statuses, newest first, for the Profile's
+   * offering side; hidden reads as empty.
+   */
   public ListPage<ProfileHouseholdShare> profileShares(
-      AuthenticatedIdentity identity, UUID profileId, PageRequest request) {
-    if (profileRepository.findById(profileId).isEmpty() || !mayViewProfile(identity, profileId)) {
+      AuthenticatedIdentity identity, ShareListScope profile, PageRequest request) {
+    if (!mayViewProfileShares(identity, profile.id())) {
       return ListPage.empty();
     }
 
-    return Pager.page(profileSharesList, profileId, request);
+    return Pager.page(profileSharesList, profile, request);
+  }
+
+  /**
+   * Where {@link #householdShares} lists the share for the reader, so a share change can say where
+   * the share goes; nothing when that list does not hold the share for them.
+   */
+  public Optional<Row<ProfileHouseholdShare>> householdShareRow(
+      AuthenticatedIdentity identity, HouseholdSharesScope household, UUID shareId) {
+    return readableScope(identity, household)
+        .flatMap(readable -> householdSharesList.rowOf(readable, shareId));
+  }
+
+  /**
+   * Where {@link #profileShares} lists the share for the reader, so a share change can say where
+   * the share goes; nothing when that list does not hold the share for them.
+   */
+  public Optional<Row<ProfileHouseholdShare>> profileShareRow(
+      AuthenticatedIdentity identity, ShareListScope profile, UUID shareId) {
+    if (!mayViewProfileShares(identity, profile.id())) {
+      return Optional.empty();
+    }
+
+    return profileSharesList.rowOf(profile, shareId);
+  }
+
+  /**
+   * Refuses a session that may not follow share changes, such as a session on a TV, with FORBIDDEN,
+   * or with AUTHORIZATION_UNAVAILABLE when no decision could be made.
+   */
+  public void requireViewProfileShareChanges(AuthenticatedIdentity identity) {
+    authorizationService.requireAllowed(identity, new Intent.ViewProfileShareChanges());
+  }
+
+  /**
+   * One committed share change as the reader may read it, decided as it is delivered. The reader
+   * gets it when they may read the shares into its Household or the shares of its Profile, as
+   * {@link #householdShares} and {@link #profileShares} decide; it then carries the share as it
+   * stands now, or no share once the share was deleted. The Household's HouseholdAdmins get the
+   * changes of a live share and none after it ends. The change that ends it reaches them as it was
+   * made, with nothing read later, unless they also read the share from the Profile's side or the
+   * Household's share history, as a ServerAdmin does, and get every change as it stands. An earlier
+   * change delivered once the share is over or deleted does not reach them; the deletion of a live
+   * share does, as the share's removal, while its Household still exists. A share deleted with its
+   * Profile is decided by its Household alone. Refuses a reader who may no longer follow share
+   * changes at all.
+   */
+  // Every read of one decision sees one snapshot. A Profile deleted after the read that finds it
+  // would otherwise be missing when authorization reads its facts, and the failed decision would
+  // end the reader's operation.
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+  public Optional<ShareChange> shareChange(
+      AuthenticatedIdentity identity, ProfileShareChangedEvent change) {
+    requireViewProfileShareChanges(identity);
+    var changed = change.share();
+    if (householdSideFollows(identity, change)) {
+      var shown =
+          change.ended() && !followsEveryChange(identity, changed)
+              ? ShareChange.endedAs(changed)
+              : asItStands(changed);
+      return Optional.of(shown).filter(_ -> stillShown(identity, change, shown));
+    }
+
+    if (mayViewProfileShares(identity, changed.profileId())) {
+      return Optional.of(asItStands(changed));
+    }
+
+    return Optional.empty();
+  }
+
+  // A change that waited while its share ended or was deleted would show the Household's
+  // HouseholdAdmins what came after; then only the change that ended or removed the share does.
+  // A deleted Household has no HouseholdAdmins left to tell of a removal. Household deletion ends
+  // the visits into it without the visiting Profiles' locks, so a Profile deletion beside it can
+  // commit the removal of a visit after the Household deletion committed its end, and only a
+  // session still carrying that Household's admin claims would hear it.
+  private boolean stillShown(
+      AuthenticatedIdentity identity, ProfileShareChangedEvent change, ShareChange shown) {
+    return change.ended()
+        || (change.removal() && householdRepository.existsById(change.share().householdId()))
+        || shown.share().filter(share -> share.statusAt(clock.instant()).isLive()).isPresent()
+        || followsEveryChange(identity, change.share());
+  }
+
+  private boolean followsEveryChange(AuthenticatedIdentity identity, ChangedShare changed) {
+    return mayViewHouseholdShareHistory(identity, changed.householdId())
+        || mayViewProfileShares(identity, changed.profileId());
+  }
+
+  private ShareChange asItStands(ChangedShare changed) {
+    return new ShareChange(changed.shareId(), shareRepository.findById(changed.shareId()));
   }
 
   /** The offerer's whole preflight: nothing else about the target Household leaks. */

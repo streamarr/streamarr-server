@@ -2,11 +2,15 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
+import static com.streamarr.server.support.PostgresLockTestSupport.backendPid;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
 import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -17,18 +21,15 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
-import com.streamarr.server.domain.pagination.Position;
-import com.streamarr.server.domain.pagination.SortValue;
+import com.streamarr.server.domain.auth.SystemActor;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.time.Duration;
@@ -72,7 +73,6 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
-  @Autowired private PositionCursorCodec positionCursors;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
 
@@ -102,11 +102,13 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(host),
             """
-            query { pendingShareOffers(householdId: "%s") { edges { node { id status } } } }
+            query { householdShares(householdId: "%s", statuses: [PENDING]) {
+              edges { node { id status } } } }
             """
                 .formatted(host.household().getId()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.pendingShareOffers.edges[0].node.id").value(shareId));
+        .andExpect(jsonPath("$.data.householdShares.edges.length()").value(1))
+        .andExpect(jsonPath("$.data.householdShares.edges[0].node.id").value(shareId));
 
     graphql(
             authTestSupport.accountBearer(host),
@@ -311,6 +313,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   void shouldPreserveExpiryWhenExpiredOffersOffererIsNoLongerAuthorized() throws Exception {
     var orphan = managedOrphan();
     var offerer = authTestSupport.createAdminIdentity();
+    // A ServerAdmin still finds an offer that is over and may decide it.
+    var decider = authTestSupport.createAdminIdentity();
     try {
       var response =
           graphql(
@@ -344,7 +348,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           });
 
       graphql(
-              authTestSupport.accountBearer(host),
+              authTestSupport.accountBearer(decider),
               """
               mutation { acceptProfileShare(input: {shareId: "%s"}) {
                 share { status } userErrors { __typename } } }
@@ -360,6 +364,7 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
       assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
       assertThat(stored.getInvalidationReason()).isEmpty();
     } finally {
+      authTestSupport.deleteIdentity(decider);
       authTestSupport.deleteIdentity(offerer);
     }
   }
@@ -438,6 +443,191 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should answer a declined offer as missing when the Household it was offered to asks before"
+          + " and after its Profile is deleted")
+  void shouldAnswerDeclinedOfferAsMissingWhenTargetHouseholdAsksBeforeAndAfterItsProfileIsDeleted()
+      throws Exception {
+    var orphan = unsharedManagedProfile();
+    var shareId = offer(orphan, host.household().getId());
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { rejectProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.rejectProfileShare.share.status").value("REJECTED"));
+
+    var whileKept = hostAnswersFor(shareId);
+    graphql(
+            authTestSupport.freshAccountBearer(owner),
+            """
+            mutation { deleteProfile(input: {profileId: "%s"}) {
+              deletedProfileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.deleteProfile.deletedProfileId").value(orphan.getId().toString()));
+    var afterDeletion = hostAnswersFor(shareId);
+
+    // The Household no longer sees the share, so nothing it asks tells whether the Profile is gone.
+    assertThat(whileKept)
+        .containsOnly(
+            "ShareNotFoundError", "ShareNotFoundError", "ShareNotFoundError", "ShareNotFoundError");
+    assertThat(afterDeletion).isEqualTo(whileKept);
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer a share as missing when a HouseholdAdmin who only hosts its Profile changes"
+          + " it, whether it is live, over, structural or not there at all")
+  void shouldAnswerShareAsMissingWhenHouseholdAdminWhoOnlyHostsItsProfileChangesIt()
+      throws Exception {
+    var visitor = owner.profile().getId();
+    var elsewhere = authTestSupport.createIdentity();
+    try {
+      var offered =
+          savedShare(
+              ProfileHouseholdShare.builder()
+                  .profileId(visitor)
+                  .householdId(elsewhere.household().getId())
+                  .status(ProfileShareStatus.PENDING)
+                  .offeredByAccountId(owner.account().getId())
+                  .expiresAt(Instant.now().plus(Duration.ofDays(1))));
+      var declined =
+          savedShare(
+              ProfileHouseholdShare.builder()
+                  .profileId(visitor)
+                  .householdId(elsewhere.household().getId())
+                  .status(ProfileShareStatus.REJECTED)
+                  .offeredByAccountId(owner.account().getId()));
+      savedShare(
+          ProfileHouseholdShare.builder()
+              .profileId(visitor)
+              .householdId(host.household().getId())
+              .status(ProfileShareStatus.ACTIVE));
+      var membership =
+          shareRepository
+              .findByProfileIdAndHouseholdIdAndStatus(
+                  visitor, owner.household().getId(), ProfileShareStatus.ACTIVE)
+              .orElseThrow()
+              .getId()
+              .toString();
+      var missing = hostAnswersFor(UUID.randomUUID().toString());
+
+      assertThat(missing).containsOnly("ShareNotFoundError");
+      assertThat(
+              List.of(
+                  hostAnswersFor(offered), hostAnswersFor(declined), hostAnswersFor(membership)))
+          .containsOnly(missing);
+    } finally {
+      authTestSupport.deleteIdentity(elsewhere);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer a share as missing when its offerer stopped managing the Profile and cancels"
+          + " it, whether it is active, over or not there at all")
+  void shouldAnswerShareAsMissingWhenOffererWhoStoppedManagingProfileCancelsIt() throws Exception {
+    var orphan = managedOrphan();
+    var coManager = authTestSupport.createHouseholdMemberIdentity(owner);
+    var elsewhere = authTestSupport.createIdentity();
+    try {
+      transactionTemplate.executeWithoutResult(
+          _ ->
+              profileManagerRepository.saveAndFlush(
+                  ProfileManager.builder()
+                      .accountId(coManager.account().getId())
+                      .profileId(orphan.getId())
+                      .build()));
+      var active = offer(orphan, host.household().getId());
+      accept(host, UUID.fromString(active));
+      var ended = offer(orphan, elsewhere.household().getId());
+      accept(elsewhere, UUID.fromString(ended));
+      graphql(
+              authTestSupport.accountBearer(elsewhere),
+              """
+              mutation { endProfileShare(input: {shareId: "%s"}) {
+                share { status } userErrors { __typename } } }
+              """
+                  .formatted(ended))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.data.endProfileShare.share.status").value("ENDED"));
+      graphql(
+              authTestSupport.accountBearer(owner),
+              """
+              mutation { relinquishProfileManagement(input: {profileId: "%s"}) {
+                profileId userErrors { __typename } } }
+              """
+                  .formatted(orphan.getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.relinquishProfileManagement.userErrors").isEmpty());
+
+      var answers =
+          List.of(
+              answerOf(owner, "cancelProfileShare", active),
+              answerOf(owner, "cancelProfileShare", ended),
+              answerOf(owner, "cancelProfileShare", UUID.randomUUID().toString()));
+
+      assertThat(answers)
+          .containsExactly("ShareNotFoundError", "ShareNotFoundError", "ShareNotFoundError");
+      assertThat(shareRepository.findById(UUID.fromString(active)).orElseThrow().getStatus())
+          .isEqualTo(ProfileShareStatus.ACTIVE);
+    } finally {
+      authTestSupport.deleteIdentity(elsewhere);
+      authTestSupport.deleteIdentity(coManager);
+    }
+  }
+
+  private String savedShare(ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> share) {
+    return transactionTemplate
+        .execute(_ -> shareRepository.saveAndFlush(share.build()))
+        .getId()
+        .toString();
+  }
+
+  /** What the host's HouseholdAdmin gets from every verb on the share, in one fixed order. */
+  private List<String> hostAnswersFor(String shareId) throws Exception {
+    var answers = new ArrayList<String>();
+    for (var verb :
+        List.of(
+            "acceptProfileShare", "rejectProfileShare", "cancelProfileShare", "endProfileShare")) {
+      answers.add(answerOf(host, verb, shareId));
+    }
+
+    return answers;
+  }
+
+  /** What one verb on the share answers the caller: the type of its first error, or FORBIDDEN. */
+  private String answerOf(AuthTestSupport.TestIdentity caller, String verb, String shareId)
+      throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(caller),
+                """
+                mutation { %s(input: {shareId: "%s"}) { userErrors { __typename } } }
+                """
+                    .formatted(verb, shareId))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper
+        .readTree(response)
+        .path("data")
+        .path(verb)
+        .path("userErrors")
+        .path(0)
+        .path("__typename")
+        .asString("FORBIDDEN");
+  }
+
+  @Test
   @DisplayName("Should return not-pending when another decision has already won")
   void shouldReturnNotPendingWhenAnotherDecisionAlreadyWon() throws Exception {
     var orphan = managedOrphan();
@@ -510,13 +700,122 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
         List.of(
             mutationResult(responses.getFirst(), "acceptProfileShare"),
             mutationResult(responses.getLast(), "rejectProfileShare"));
+    var decided = shareRepository.findById(shareId).orElseThrow().getStatus();
     assertThat(results).extracting(MutationResult::accepted).containsExactlyInAnyOrder(true, false);
+    assertThat(decided).isIn(ProfileShareStatus.ACTIVE, ProfileShareStatus.REJECTED);
+    // The loser answers as the share now reads to the Household: an active share that is no longer
+    // pending, or a rejected offer that it no longer sees at all.
     assertThat(results)
         .filteredOn(result -> !result.accepted())
         .extracting(MutationResult::errorType)
-        .containsExactly("ShareNotPendingError");
-    assertThat(shareRepository.findById(shareId).orElseThrow().getStatus())
-        .isIn(ProfileShareStatus.ACTIVE, ProfileShareStatus.REJECTED);
+        .containsExactly(
+            decided == ProfileShareStatus.ACTIVE ? "ShareNotPendingError" : "ShareNotFoundError");
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer share-not-found when the HouseholdAdmin's end loses to another end of the"
+          + " share")
+  void shouldAnswerShareNotFoundWhenHouseholdAdminsEndLosesToAnotherEnd() throws Exception {
+    var orphan = managedOrphan();
+    var shareId = UUID.fromString(offer(orphan, host.household().getId()));
+    accept(host, shareId);
+    var bearer = authTestSupport.accountBearer(host);
+    Callable<String> end =
+        () ->
+            graphql(
+                    bearer,
+                    """
+                    mutation { endProfileShare(input: {shareId: "%s"}) {
+                      share { status } userErrors { __typename } } }
+                    """
+                        .formatted(shareId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+    var results =
+        raceWhileShareLocked(shareId, end, end).stream()
+            .map(response -> mutationResult(response, "endProfileShare"))
+            .toList();
+
+    assertThat(results).extracting(MutationResult::accepted).containsExactlyInAnyOrder(true, false);
+    // The losing end finds the share over, and the Household no longer sees a share that is over.
+    assertThat(results)
+        .filteredOn(result -> !result.accepted())
+        .extracting(MutationResult::errorType)
+        .containsExactly("ShareNotFoundError");
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer share-not-found when the HouseholdAdmin's rejection waits while the offer is"
+          + " deleted")
+  void shouldAnswerShareNotFoundWhenHouseholdAdminsRejectionWaitsWhileOfferIsDeleted()
+      throws Exception {
+    var orphan = managedOrphan();
+    var shareId = UUID.fromString(offer(orphan, host.household().getId()));
+    var bearer = authTestSupport.accountBearer(host);
+
+    var response =
+        deleteWhileWaiting(
+            "profile_household_share",
+            shareId,
+            () ->
+                graphql(
+                        bearer,
+                        """
+                        mutation { rejectProfileShare(input: {shareId: "%s"}) {
+                          share { status } userErrors { __typename } } }
+                        """
+                            .formatted(shareId))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString());
+
+    assertThat(mutationResult(response, "rejectProfileShare").errorType())
+        .as("rejection in %s", response)
+        .isEqualTo("ShareNotFoundError");
+  }
+
+  @Test
+  @DisplayName(
+      "Should answer share-not-found when an unrelated Account's acceptance waits while the"
+          + " Profile is deleted")
+  void shouldAnswerShareNotFoundWhenUnrelatedAccountsAcceptanceWaitsWhileProfileIsDeleted()
+      throws Exception {
+    var orphan = managedOrphan();
+    var shareId = offer(orphan, host.household().getId());
+    var stranger = authTestSupport.createIdentity();
+    try {
+      var bearer = authTestSupport.accountBearer(stranger);
+
+      var response =
+          deleteWhileWaiting(
+              "profile",
+              orphan.getId(),
+              () ->
+                  graphql(
+                          bearer,
+                          """
+                          mutation { acceptProfileShare(input: {shareId: "%s"}) {
+                            share { status } userErrors { __typename } } }
+                          """
+                              .formatted(shareId))
+                      .andExpect(status().isOk())
+                      .andReturn()
+                      .getResponse()
+                      .getContentAsString());
+
+      // It may not read the share, so it gets the answer a share that never existed gets.
+      assertThat(mutationResult(response, "acceptProfileShare").errorType())
+          .as("acceptance in %s", response)
+          .isEqualTo("ShareNotFoundError");
+    } finally {
+      authTestSupport.deleteIdentity(stranger);
+    }
   }
 
   @Test
@@ -840,35 +1139,271 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
   @DisplayName(
       "Should reject a share cursor when it continues another Profile's or Household's list")
   void shouldRejectAShareCursorWhenItContinuesAnotherProfilesOrHouseholdsList() throws Exception {
-    var otherProfile =
-        positionCursors
-            .encode(
-                new ListIdentity("profile-shares", UUID.randomUUID()),
-                new Position(new SortValue.OfInstant(Instant.now()), UUID.randomUUID()))
-            .getValue();
-    var profileList =
-        positionCursors
-            .encode(
-                new ListIdentity("profile-shares", owner.profile().getId()),
-                new Position(new SortValue.OfInstant(Instant.now()), UUID.randomUUID()))
-            .getValue();
+    var profileCursor =
+        firstCursor(owner, "profileShares(profileId: \"%s\")".formatted(managedOrphan().getId()));
+    var householdCursor =
+        firstCursor(
+            owner, "householdShares(householdId: \"%s\")".formatted(owner.household().getId()));
 
+    assertCursorRefused(
+        owner,
+        "profileShares(profileId: \"%s\", after: \"%s\")"
+            .formatted(managedOrphan().getId(), profileCursor));
+    assertCursorRefused(
+        host,
+        "householdShares(householdId: \"%s\", after: \"%s\")"
+            .formatted(host.household().getId(), profileCursor));
+    assertCursorRefused(
+        host,
+        "householdShares(householdId: \"%s\", after: \"%s\")"
+            .formatted(host.household().getId(), householdCursor));
+  }
+
+  private String firstCursor(AuthTestSupport.TestIdentity reader, String list) throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(reader),
+                "query { list: %s { edges { cursor } } }".formatted(list))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var cursor = objectMapper.readTree(response).at("/data/list/edges/0/cursor").asString("");
+    assertThat(cursor).as("first cursor of %s", list).isNotEmpty();
+    return cursor;
+  }
+
+  private void assertCursorRefused(AuthTestSupport.TestIdentity reader, String list)
+      throws Exception {
     graphql(
-            authTestSupport.accountBearer(owner),
-            """
-            query { profileShares(profileId: "%s", after: "%s") { edges { node { id } } } }
-            """
-                .formatted(owner.profile().getId(), otherProfile))
+            authTestSupport.accountBearer(reader),
+            "query { %s { edges { node { id } } } }".formatted(list))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  @Test
+  @DisplayName("Should reject a Household share cursor when it continues other statuses")
+  void shouldRejectHouseholdShareCursorWhenItContinuesOtherStatuses() throws Exception {
+    offer(managedOrphan(), host.household().getId());
+    var pendingPage =
+        graphql(
+                authTestSupport.accountBearer(host),
+                """
+                query { householdShares(householdId: "%s", statuses: [PENDING]) {
+                  edges { cursor } } }
+                """
+                    .formatted(host.household().getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var cursor =
+        objectMapper
+            .readTree(pendingPage)
+            .path("data")
+            .path("householdShares")
+            .path("edges")
+            .path(0)
+            .path("cursor")
+            .asString();
+
     graphql(
             authTestSupport.accountBearer(host),
             """
-            query { pendingShareOffers(householdId: "%s", after: "%s") { edges { node { id } } } }
+            query { householdShares(householdId: "%s", statuses: [ACTIVE], after: "%s") {
+              edges { node { id } } } }
             """
-                .formatted(host.household().getId(), profileList))
+                .formatted(host.household().getId(), cursor))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  @Test
+  @DisplayName("Should keep only visitors' shares when a Household's shares are kept to visitors")
+  void shouldKeepOnlyVisitorsSharesWhenHouseholdsSharesAreKeptToVisitors() throws Exception {
+    var visitId = offer(managedOrphan(), host.household().getId());
+    var hostsOwnId =
+        shareRepository
+            .findByProfileIdAndHouseholdIdAndStatus(
+                host.profile().getId(), host.household().getId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow()
+            .getId()
+            .toString();
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            query {
+              visitors: householdShares(householdId: "%1$s", visitorsOnly: true) {
+                edges { node { id visitor } } }
+              every: householdShares(householdId: "%1$s", visitorsOnly: false) {
+                edges { node { id visitor } } }
+              unfiltered: householdShares(householdId: "%1$s") { edges { node { id } } }
+            }
+            """
+                .formatted(host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.visitors.edges[*].node.id", contains(visitId)))
+        .andExpect(jsonPath("$.data.visitors.edges[*].node.visitor", contains(true)))
+        .andExpect(
+            jsonPath("$.data.every.edges[*].node.id", containsInAnyOrder(visitId, hostsOwnId)))
+        .andExpect(
+            jsonPath(
+                "$.data.every.edges[?(@.node.id == '%s')].node.visitor".formatted(hostsOwnId),
+                contains(false)))
+        .andExpect(
+            jsonPath(
+                "$.data.unfiltered.edges[*].node.id", containsInAnyOrder(visitId, hostsOwnId)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a Household share cursor when it continues the list without its visitor"
+          + " filter")
+  void shouldRejectHouseholdShareCursorWhenItContinuesListWithoutItsVisitorFilter()
+      throws Exception {
+    offer(managedOrphan(), host.household().getId());
+    var visitorsPage =
+        graphql(
+                authTestSupport.accountBearer(host),
+                """
+                query { householdShares(householdId: "%s", visitorsOnly: true) {
+                  edges { cursor } } }
+                """
+                    .formatted(host.household().getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var cursor =
+        objectMapper.readTree(visitorsPage).at("/data/householdShares/edges/0/cursor").asString();
+
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            query { householdShares(householdId: "%s", after: "%s") { edges { node { id } } } }
+            """
+                .formatted(host.household().getId(), cursor))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("INVALID_CURSOR"));
+  }
+
+  @Test
+  @DisplayName("Should keep only the live shares when a Profile's shares are listed as live")
+  void shouldKeepOnlyLiveSharesWhenProfileSharesAreListedAsLive() throws Exception {
+    var orphan = managedOrphan();
+    var offered = offer(orphan, host.household().getId());
+    var declinedHost = authTestSupport.createIdentity();
+    try {
+      var declined = offer(orphan, declinedHost.household().getId());
+      graphql(
+              authTestSupport.accountBearer(declinedHost),
+              """
+              mutation { rejectProfileShare(input: {shareId: "%s"}) {
+                share { status } userErrors { __typename } } }
+              """
+                  .formatted(declined))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.data.rejectProfileShare.share.status").value("REJECTED"));
+
+      graphql(
+              authTestSupport.accountBearer(owner),
+              """
+              query {
+                live: profileShares(profileId: "%1$s", statuses: [PENDING, ACTIVE]) {
+                  edges { node { id status } } }
+                every: profileShares(profileId: "%1$s") { edges { node { id } } }
+              }
+              """
+                  .formatted(orphan.getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.live.edges.length()").value(2))
+          .andExpect(
+              jsonPath(
+                  "$.data.live.edges[?(@.node.id == '%s')].node.status".formatted(offered),
+                  contains("PENDING")))
+          .andExpect(
+              jsonPath("$.data.live.edges[?(@.node.id == '%s')]".formatted(declined)).isEmpty())
+          .andExpect(jsonPath("$.data.every.edges.length()").value(3));
+    } finally {
+      authTestSupport.deleteIdentity(declinedHost);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep a declined offer for a ServerAdmin and not for the Household's HouseholdAdmin"
+          + " when they list its shares in every status")
+  void shouldKeepDeclinedOfferForServerAdminAndNotForHouseholdAdminWhenTheyListEveryStatus()
+      throws Exception {
+    var shareId = offer(managedOrphan(), host.household().getId());
+    graphql(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { rejectProfileShare(input: {shareId: "%s"}) {
+              share { status } userErrors { __typename } } }
+            """
+                .formatted(shareId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.rejectProfileShare.share.status").value("REJECTED"));
+    var lists =
+        """
+        query {
+          every: householdShares(householdId: "%1$s") { edges { node { id status } } }
+          live: householdShares(householdId: "%1$s", statuses: [PENDING, ACTIVE]) {
+            edges { node { id status } } }
+          declined: householdShares(householdId: "%1$s", statuses: [REJECTED]) {
+            edges { node { id } } }
+        }
+        """
+            .formatted(host.household().getId());
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      graphql(authTestSupport.accountBearer(serverAdmin), lists)
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath(
+                  "$.data.every.edges[?(@.node.id == '%s')].node.status".formatted(shareId),
+                  contains("REJECTED")))
+          .andExpect(jsonPath("$.data.live.edges[*].node.status", everyItem(is("ACTIVE"))))
+          .andExpect(jsonPath("$.data.declined.edges[*].node.id", contains(shareId)));
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
+
+    // The Household's HouseholdAdmins list only offers still pending and active shares.
+    graphql(authTestSupport.accountBearer(host), lists)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.every.edges[*].node.status", everyItem(is("ACTIVE"))))
+        .andExpect(
+            jsonPath("$.data.every.edges[?(@.node.id == '%s')]".formatted(shareId)).isEmpty())
+        .andExpect(jsonPath("$.data.live.edges[*].node.status", everyItem(is("ACTIVE"))))
+        .andExpect(jsonPath("$.data.declined.edges").isEmpty());
+  }
+
+  @Test
+  @DisplayName("Should answer an empty list when a member of the Household lists its shares")
+  void shouldAnswerEmptyListWhenMemberOfHouseholdListsItsShares() throws Exception {
+    offer(managedOrphan(), host.household().getId());
+    var member = authTestSupport.createHouseholdMemberIdentity(host);
+
+    graphql(
+            authTestSupport.accountBearer(member),
+            """
+            query { householdShares(householdId: "%s") { edges { node { id } } } }
+            """
+                .formatted(host.household().getId()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.householdShares.edges").isEmpty());
   }
 
   @Test
@@ -992,6 +1527,48 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           .as("share row should be released by the race")
           .isTrue();
       connection.rollback();
+    }
+  }
+
+  /**
+   * Runs the mutation while this test holds the lock of one row of the table, then deletes the row
+   * under that lock and commits, so the mutation wakes to find it gone.
+   */
+  private String deleteWhileWaiting(String table, UUID rowId, Callable<String> mutation)
+      throws Exception {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      try (var lock =
+          connection.prepareStatement(
+              "SELECT id FROM %s WHERE id = ? FOR UPDATE".formatted(table))) {
+        lock.setObject(1, rowId);
+        try (var rows = lock.executeQuery()) {
+          assertThat(rows.next()).as("%s row %s exists", table, rowId).isTrue();
+        }
+      }
+
+      var holderPid = backendPid(connection);
+      var waiting = executor.submit(mutation);
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .untilAsserted(
+              () ->
+                  assertThat(waitersBehind(jdbcTemplate, holderPid, "%"))
+                      .as("the mutation should wait on the %s row", table)
+                      .isEqualTo(1));
+      try (var actor =
+              connection.prepareStatement("SELECT set_config('streamarr.actor_id', ?, true)");
+          var deletion =
+              connection.prepareStatement("DELETE FROM %s WHERE id = ?".formatted(table))) {
+        actor.setString(1, SystemActor.ID.toString());
+        actor.execute();
+        deletion.setObject(1, rowId);
+        assertThat(deletion.executeUpdate()).isEqualTo(1);
+      }
+
+      connection.commit();
+      return waiting.get(10, TimeUnit.SECONDS);
     }
   }
 
@@ -1240,30 +1817,52 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
 
       var stored = shareRepository.findById(shareId).orElseThrow();
       assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
-      assertThat(stored.getInvalidationReason()).contains("issuer disabled");
+      assertThat(stored.getInvalidationReason()).contains("offerer no longer authorized");
     } finally {
       authTestSupport.deleteIdentity(disabler);
       authTestSupport.deleteIdentity(offerer);
     }
   }
 
-  // ---- Expiry is a predicate: a stale PENDING offer is neither listed nor live.
+  // ---- Expiry is a predicate: a stale PENDING offer is listed as EXPIRED and is not live.
 
   @Test
-  @DisplayName("Should omit an expired offer when a Household lists its pending offers")
-  void shouldOmitExpiredOfferWhenHouseholdListsPendingOffers() throws Exception {
+  @DisplayName(
+      "Should list an expired offer as expired for a ServerAdmin and not for the Household's"
+          + " HouseholdAdmin when they list its shares")
+  void shouldListExpiredOfferAsExpiredForServerAdminAndNotForHouseholdAdminWhenTheyListItsShares()
+      throws Exception {
     var orphan = managedOrphan();
-    expire(UUID.fromString(offer(orphan, host.household().getId())));
+    var shareId = offer(orphan, host.household().getId());
+    expire(UUID.fromString(shareId));
+    var lists =
+        """
+        query {
+          pending: householdShares(householdId: "%1$s", statuses: [PENDING]) {
+            edges { node { id } } }
+          expired: householdShares(householdId: "%1$s", statuses: [EXPIRED]) {
+            edges { node { id status } } }
+        }
+        """
+            .formatted(host.household().getId());
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    try {
+      graphql(authTestSupport.accountBearer(serverAdmin), lists)
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(jsonPath("$.data.pending.edges.length()").value(0))
+          .andExpect(jsonPath("$.data.expired.edges[*].node.id", contains(shareId)))
+          .andExpect(jsonPath("$.data.expired.edges[*].node.status", contains("EXPIRED")));
+    } finally {
+      authTestSupport.deleteIdentity(serverAdmin);
+    }
 
-    graphql(
-            authTestSupport.accountBearer(host),
-            """
-            query { pendingShareOffers(householdId: "%s") { edges { node { id status } } } }
-            """
-                .formatted(host.household().getId()))
+    // An offer past its expiry is no longer pending, so it leaves the HouseholdAdmin's list.
+    graphql(authTestSupport.accountBearer(host), lists)
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
-        .andExpect(jsonPath("$.data.pendingShareOffers.edges.length()").value(0));
+        .andExpect(jsonPath("$.data.pending.edges.length()").value(0))
+        .andExpect(jsonPath("$.data.expired.edges.length()").value(0));
   }
 
   @Test

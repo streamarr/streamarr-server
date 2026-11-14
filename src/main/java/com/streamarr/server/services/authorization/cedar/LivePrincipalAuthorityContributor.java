@@ -4,6 +4,7 @@ import com.cedarpolicy.value.PrimBool;
 import com.streamarr.server.domain.auth.AccountAuthorityFacts;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -30,12 +31,21 @@ class LivePrincipalAuthorityContributor implements FactContributor {
   @Override
   public void contribute(
       AuthenticatedIdentity identity, AuthorizationCheck check, EntitySlice slice) {
-    authorityFacts(identity, check)
-        .ifPresent(
-            facts -> {
-              slice.principalAttribute(ENABLED, new PrimBool(facts.enabled()));
-              slice.principalAttribute(SERVER_ADMIN, new PrimBool(facts.serverAdmin()));
-            });
+    authorityFacts(identity, check).ifPresent(facts -> describe(slice, facts));
+  }
+
+  // A batch holds reads only, so the facts are read once, without the lock a write takes.
+  @Override
+  public void contributeEach(
+      AuthenticatedIdentity identity, Map<AuthorizationCheck, EntitySlice> slices) {
+    userAccountRepository
+        .findAuthorityFacts(identity.accountId())
+        .ifPresent(facts -> slices.values().forEach(slice -> describe(slice, facts)));
+  }
+
+  private static void describe(EntitySlice slice, AccountAuthorityFacts facts) {
+    slice.principalAttribute(ENABLED, new PrimBool(facts.enabled()));
+    slice.principalAttribute(SERVER_ADMIN, new PrimBool(facts.serverAdmin()));
   }
 
   private Optional<AccountAuthorityFacts> authorityFacts(

@@ -4,13 +4,16 @@ import static com.streamarr.server.fixtures.PaginationFixture.firstSeek;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.AuditFieldSetter;
+import com.streamarr.server.domain.auth.HouseholdShareFilter;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.domain.pagination.ListOrder;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.domain.pagination.SortValueKind;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -47,7 +50,13 @@ class FakeProfileHouseholdShareRepositoryTest {
       AuditFieldSetter.setCreatedOn(fake.save(share), CREATED_ON);
     }
 
-    var rows = fake.rowsPendingInHousehold(householdId, Instant.now(), firstSeek(OLDEST_FIRST, 10));
+    var rows =
+        fake.rowsIntoHousehold(
+            new HouseholdShareFilter(
+                householdId,
+                new ShareStatusFilter(Set.of(ProfileShareStatus.PENDING), Instant.now()),
+                false),
+            firstSeek(OLDEST_FIRST, 10));
 
     assertThat(rows).extracting(row -> row.item().getId()).containsExactly(LOW, HIGH);
   }
@@ -79,5 +88,26 @@ class FakeProfileHouseholdShareRepositoryTest {
               assertThat(offer.getLastModifiedOn()).isEqualTo(now);
               assertThat(offer.getInvalidationReason()).isEmpty();
             });
+  }
+
+  @Test
+  @DisplayName("Should leave an offer as stored when invalidating it after its time ran out")
+  void shouldLeaveOfferAsStoredWhenInvalidatingItAfterItsTimeRanOut() {
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var lapsedOffer =
+        fake.save(
+            ProfileHouseholdShare.builder()
+                .profileId(UUID.randomUUID())
+                .householdId(UUID.randomUUID())
+                .status(ProfileShareStatus.PENDING)
+                .offeredByAccountId(UUID.randomUUID())
+                .expiresAt(now)
+                .build());
+
+    var invalidated = fake.tryInvalidatePending(lapsedOffer.getId(), "offerer left", now);
+
+    assertThat(invalidated).isEmpty();
+    assertThat(lapsedOffer.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
+    assertThat(lapsedOffer.getInvalidationReason()).isEmpty();
   }
 }

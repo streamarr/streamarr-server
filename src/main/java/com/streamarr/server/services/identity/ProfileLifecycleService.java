@@ -15,6 +15,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -48,6 +49,7 @@ public class ProfileLifecycleService {
   private final ProfileManagerInvitationRepository managerInvitationRepository;
   private final AccountInvitationRepository accountInvitationRepository;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final AuthSessionRepository authSessionRepository;
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final MutationTransactions mutationTransactions;
@@ -101,6 +103,8 @@ public class ProfileLifecycleService {
             throw new MutationRejection(new TransferRejections.ProfileNotFound());
           }
 
+          shareLifecycle.announceMove(
+              command.profileId(), sourceHouseholdId, command.destinationHouseholdId());
           endHomeAvailability(command.profileId(), sourceHouseholdId, now);
           // Invalidate pending offers before creating the destination share to avoid a
           // uniqueness conflict.
@@ -154,7 +158,8 @@ public class ProfileLifecycleService {
 
     return mutationTransactions.write(
         () -> {
-          if (profileRepository.findById(profileId).isEmpty()) {
+          // Locked before its shares are read, so none ends unseen before they are announced.
+          if (!profileRepository.lockById(profileId)) {
             throw new MutationRejection(new TransferRejections.ProfileNotFound());
           }
 
@@ -166,6 +171,7 @@ public class ProfileLifecycleService {
                       authSessionRepository.clearProfileSelectionFromLiveSessions(
                           profileId, share.getHouseholdId()));
           invalidateProfileBoundArtifacts(profileId, PROFILE_DELETED, now);
+          shareLifecycle.announceDeletionWithProfile(profileId, now);
           if (!profileRepository.tryDeleteUnlinked(profileId)) {
             throw profileDeletionRejection(profileId);
           }
@@ -188,7 +194,7 @@ public class ProfileLifecycleService {
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
+        .ifPresent(share -> shareLifecycle.tryEndActive(share.getId(), now));
     authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId);
   }
 
@@ -202,7 +208,7 @@ public class ProfileLifecycleService {
       return;
     }
 
-    shareRepository.saveAndFlush(
+    shareLifecycle.create(
         ProfileHouseholdShare.builder()
             .profileId(profileId)
             .householdId(destinationHouseholdId)
@@ -214,7 +220,8 @@ public class ProfileLifecycleService {
   private void invalidateProfileBoundArtifacts(UUID profileId, String reason, Instant now) {
     accountInvitationRepository.invalidatePendingByProfileId(profileId, reason, now);
     managerInvitationRepository.invalidatePendingByProfileId(profileId, reason, now);
-    shareRepository.invalidatePendingByProfileId(profileId, reason, now);
+    // Read after any wait above, so an offer whose time ran out meanwhile is stored as expired.
+    shareLifecycle.invalidatePendingByProfileId(profileId, reason, clock.instant());
   }
 
   private Optional<TransferRejections.TransferProfile> localManagerRefusal(

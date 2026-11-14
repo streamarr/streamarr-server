@@ -10,9 +10,11 @@ import com.streamarr.server.services.authorization.ProfilePolicyTransition;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import org.springframework.security.access.AccessDeniedException;
 
 /**
@@ -121,6 +123,14 @@ public final class FakeAuthorizationService implements AuthorizationService {
       AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent) {
     intents.add(intent);
     return policyRule.apply(intent);
+  }
+
+  @Override
+  public Set<Intent.UnitIntent> allowedAmong(
+      AuthenticatedIdentity identity, Set<Intent.UnitIntent> intents) {
+    return intents.stream()
+        .filter(intent -> isAllowed(identity, intent))
+        .collect(Collectors.toSet());
   }
 
   /** Answers stored-proposal re-decisions for the given offerer instead of the unit rule. */

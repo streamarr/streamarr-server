@@ -1,0 +1,1550 @@
+package com.streamarr.server.graphql.subscriptions;
+
+import static com.streamarr.server.support.GraphQlResults.firstErrorCode;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
+import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
+import static com.streamarr.server.support.PostgresLockTestSupport.waitersBehind;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
+import static org.awaitility.Awaitility.await;
+
+import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileManager;
+import com.streamarr.server.domain.auth.ProfileManagerInvitation;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.SystemActor;
+import com.streamarr.server.fixtures.HouseholdFixture;
+import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.repositories.auth.HouseholdRepository;
+import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
+import com.streamarr.server.repositories.auth.ProfileManagerRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.auth.CreateAuthSessionCommand;
+import com.streamarr.server.services.auth.ProfileShareExpirySweeper;
+import com.streamarr.server.services.auth.RefreshTokenService;
+import com.streamarr.server.support.ActiveSubscriptions;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.GraphQlHttpTestClient;
+import com.streamarr.server.support.GraphQlTransportWsTestClient;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.net.URI;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.JsonNode;
+
+/**
+ * Each committed change of a Profile share reaches every open session that may read the share, with
+ * the fields the share queries show that reader, and no other session.
+ */
+@Tag("IntegrationTest")
+@DisplayName("Profile Share Subscription Integration Tests")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
+
+  private static final String FIELD = "profileShareChanged";
+  private static final String OPERATION = "shares";
+  private static final String SUBSCRIPTION =
+      """
+      subscription {
+        profileShareChanged {
+          shareId
+          share {
+            id status profileId householdId invalidationReason
+            profile { id name } visitor offeredByDisplayName household { id name }
+          }
+        }
+      }
+      """;
+  // The Household settings page that lists the visitors' active shares.
+  private static final String ACTIVE_VISITS =
+      """
+      subscription {
+        profileShareChanged {
+          shareId
+          share { id status }
+          householdSharesEdge(statuses: [ACTIVE], visitorsOnly: true) {
+            cursor orderKey node { id }
+          }
+        }
+      }
+      """;
+  // The Sharing page that lists a Profile's earlier offers and shares, beside a Household's list.
+  private static final String EARLIER_SHARES =
+      """
+      subscription {
+        profileShareChanged {
+          shareId
+          share { id status }
+          profileSharesEdge(statuses: [REJECTED, CANCELED, EXPIRED, INVALIDATED, ENDED]) {
+            cursor orderKey node { id }
+          }
+          householdSharesEdge { cursor orderKey node { id } }
+        }
+      }
+      """;
+
+  @LocalServerPort private int port;
+
+  @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private MeterRegistry meterRegistry;
+  @Autowired private ProfileRepository profileRepository;
+  @Autowired private ProfileManagerRepository profileManagerRepository;
+  @Autowired private ProfileHouseholdShareRepository shareRepository;
+  @Autowired private UserAccountRepository userAccountRepository;
+  @Autowired private TransactionTemplate transactionTemplate;
+  @Autowired private ProfileShareExpirySweeper expirySweeper;
+  @Autowired private HouseholdRepository householdRepository;
+  @Autowired private ProfileManagerInvitationRepository managerInvitationRepository;
+  @Autowired private RefreshTokenService refreshTokenService;
+  @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
+
+  private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
+  private final List<GraphQlTransportWsTestClient> sockets = new ArrayList<>();
+  private final List<UUID> households = new ArrayList<>();
+  private ActiveSubscriptions activeSubscriptions;
+  private GraphQlHttpTestClient http;
+  private AuthTestSupport.TestIdentity owner;
+  private AuthTestSupport.TestIdentity host;
+
+  @BeforeEach
+  void openClients() {
+    activeSubscriptions = new ActiveSubscriptions(meterRegistry);
+    http = new GraphQlHttpTestClient(URI.create("http://localhost:%d/graphql".formatted(port)));
+    owner = identity();
+    host = identity();
+  }
+
+  @AfterEach
+  void releaseResources() {
+    sockets.forEach(GraphQlTransportWsTestClient::close);
+    http.close();
+    activeSubscriptions.awaitNoneActive();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            households.forEach(
+                id -> householdRepository.findById(id).ifPresent(householdRepository::delete)));
+    identities.reversed().forEach(authTestSupport::deleteIdentity);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the offer, acceptance and end to both sides when a share runs its course")
+  void shouldDeliverTheOfferAcceptanceAndEndToBothSidesWhenAShareRunsItsCourse() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
+    var orphan = managedProfile();
+
+    var shareId = offer(orphan);
+    var offeredToHost = nextShare(hostSocket, shareId);
+    var offeredToOwner = nextShare(ownerSocket, shareId);
+    decide("acceptProfileShare", shareId);
+    var acceptedForHost = nextShare(hostSocket, shareId);
+    var acceptedForOwner = nextShare(ownerSocket, shareId);
+    decide("endProfileShare", shareId);
+    var endedForHost = nextShare(hostSocket, shareId);
+    var endedForOwner = nextShare(ownerSocket, shareId);
+
+    assertThat(List.of(offeredToHost, acceptedForHost, endedForHost))
+        .extracting(share -> share.path("status").asString())
+        .containsExactly("PENDING", "ACTIVE", "ENDED");
+    assertThat(List.of(offeredToOwner, acceptedForOwner, endedForOwner))
+        .extracting(share -> share.path("status").asString())
+        .containsExactly("PENDING", "ACTIVE", "ENDED");
+    assertThat(List.of(offeredToHost, acceptedForHost))
+        .hasSize(2)
+        .allSatisfy(
+            share -> {
+              assertThat(share.path("profile").path("name").asString()).isEqualTo(orphan.getName());
+              assertThat(share.path("offeredByDisplayName").asString())
+                  .isEqualTo(owner.account().getDisplayName());
+            });
+    // The Household's name belongs to the Profile's managers and ServerAdmins.
+    assertThat(offeredToHost.path("household").isNull()).isTrue();
+    // Once the share has ended, its Household no longer sees the Profile or who offered it.
+    assertPartiesHidden(endedForHost);
+    assertThat(List.of(offeredToOwner, endedForOwner))
+        .hasSize(2)
+        .allSatisfy(
+            share -> {
+              assertThat(share.path("profile").path("name").asString()).isEqualTo(orphan.getName());
+              assertThat(share.path("household").path("name").asString())
+                  .isEqualTo(host.household().getName());
+              // The offerer's name belongs to the target side, as in the share queries.
+              assertThat(share.path("offeredByDisplayName").isNull()).isTrue();
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a visitor from the Household's own Profile when a change reaches those who see"
+          + " the Profile")
+  void shouldTellVisitorFromHouseholdsOwnProfileWhenChangeReachesThoseWhoSeeProfile() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
+
+    var visitId = offer(managedProfile());
+    var visitForHost = nextShare(hostSocket, visitId);
+    var visitForOwner = nextShare(ownerSocket, visitId);
+    var ownId = createProfileAtHome(host);
+    var ownForHost = nextShare(hostSocket, ownId);
+
+    assertThat(List.of(visitForHost, visitForOwner, ownForHost))
+        .hasSize(3)
+        .allSatisfy(share -> assertThat(share.path("profile").isObject()).isTrue());
+    assertThat(visitForHost.path("visitor").isBoolean()).isTrue();
+    assertThat(visitForHost.path("visitor").asBoolean()).isTrue();
+    assertThat(visitForOwner.path("visitor").asBoolean()).isTrue();
+    assertThat(ownForHost.path("visitor").isBoolean()).isTrue();
+    assertThat(ownForHost.path("visitor").asBoolean()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should deliver a declined offer and a canceled offer when either side turns down")
+  void shouldDeliverADeclinedOfferAndACanceledOfferWhenEitherSideTurnsDown() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
+    var orphan = managedProfile();
+
+    var declinedId = offer(orphan);
+    decide("rejectProfileShare", declinedId);
+    var declinedForOwner = nextShareWithStatus(ownerSocket, declinedId, "REJECTED");
+    var declinedForHost = nextShareWithStatus(hostSocket, declinedId, "REJECTED");
+    var canceledId = offer(orphan);
+    cancel(canceledId);
+    var canceledForHost = nextShareWithStatus(hostSocket, canceledId, "CANCELED");
+    var canceledForOwner = nextShareWithStatus(ownerSocket, canceledId, "CANCELED");
+
+    assertThat(List.of(declinedForOwner, canceledForOwner))
+        .hasSize(2)
+        .allSatisfy(
+            share -> {
+              assertThat(share.path("profile").path("name").asString()).isEqualTo(orphan.getName());
+              assertThat(share.path("household").path("name").asString())
+                  .isEqualTo(host.household().getName());
+            });
+    // The Household still hears that the offer is over, so its client can take the row away.
+    assertPartiesHidden(declinedForHost);
+    assertPartiesHidden(canceledForHost);
+  }
+
+  @Test
+  @DisplayName(
+      "Should place an older visit after a newer one when the Household accepts the older offer"
+          + " last")
+  void shouldPlaceAnOlderVisitAfterANewerOneWhenTheHouseholdAcceptsTheOlderOfferLast() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host), ACTIVE_VISITS);
+    var olderId = offer(managedProfile());
+    var newerId = offer(managedProfile());
+    decide("acceptProfileShare", newerId);
+    nextChangeWithStatus(hostSocket, newerId, "ACTIVE");
+    var loaded = activeVisits(1);
+
+    decide("acceptProfileShare", olderId);
+    var olderEdge = nextChangeWithStatus(hostSocket, olderId, "ACTIVE").path("householdSharesEdge");
+    var listed = activeVisits(10);
+
+    assertThat(loaded.findValuesAsString("id")).containsExactly(newerId);
+    assertThat(listed.findValuesAsString("id")).containsExactly(newerId, olderId);
+    // The Household's lists put the newest share first, and order keys compare ascending, so the
+    // client places the older visit after the newer visit it already holds.
+    assertThat(olderEdge.path("orderKey").asString())
+        .isGreaterThan(loaded.at("/edges/0/orderKey").asString());
+    assertThat(olderEdge.path("orderKey").asString())
+        .isEqualTo(listed.at("/edges/1/orderKey").asString());
+    assertThat(olderEdge.path("cursor").asString())
+        .isEqualTo(listed.at("/edges/1/cursor").asString());
+  }
+
+  @Test
+  @DisplayName(
+      "Should place a declined offer among the Profile's earlier shares when the Household"
+          + " declines it")
+  void shouldPlaceADeclinedOfferAmongTheProfilesEarlierSharesWhenTheHouseholdDeclinesIt() {
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner), EARLIER_SHARES);
+    var profile = managedProfile();
+    var shareId = offer(profile);
+    var offered = nextChangeWithStatus(ownerSocket, shareId, "PENDING");
+
+    decide("rejectProfileShare", shareId);
+    var declined = nextChangeWithStatus(ownerSocket, shareId, "REJECTED");
+    var listed = earlierShares(profile);
+
+    // The list of earlier offers and shares holds no offer that still waits for an answer.
+    assertThat(offered.path("profileSharesEdge").isNull()).isTrue();
+    assertThat(listed.findValuesAsString("id")).containsExactly(shareId);
+    assertThat(declined.at("/profileSharesEdge/orderKey").asString())
+        .isEqualTo(listed.at("/edges/0/orderKey").asString());
+    assertThat(declined.at("/profileSharesEdge/cursor").asString())
+        .isEqualTo(listed.at("/edges/0/cursor").asString());
+    // The owner administers their own Household, not the one the Profile was offered to.
+    assertThat(declined.path("householdSharesEdge").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should take a declined offer off the Household's list when the Household declines it")
+  void shouldTakeADeclinedOfferOffTheHouseholdsListWhenTheHouseholdDeclinesIt() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host), EARLIER_SHARES);
+    var shareId = offer(managedProfile());
+    var offered = nextChangeWithStatus(hostSocket, shareId, "PENDING");
+
+    decide("rejectProfileShare", shareId);
+    var declined = nextChangeWithStatus(hostSocket, shareId, "REJECTED");
+
+    assertThat(offered.at("/householdSharesEdge/node/id").asString()).isEqualTo(shareId);
+    // A HouseholdAdmin's list of the shares into their Household holds no offer that is over.
+    assertThat(declined.path("householdSharesEdge").isNull()).isTrue();
+    // The host does not manage the Profile, so the Profile's shares are not theirs to list.
+    assertThat(declined.path("profileSharesEdge").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should deliver the withdrawn offer when the system invalidates it")
+  void shouldDeliverTheWithdrawnOfferWhenTheSystemInvalidatesIt() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var shareId = offer(managedProfile());
+    nextShare(hostSocket, shareId);
+    var serverAdmin = adminIdentity();
+
+    var disabled =
+        http.execute(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { disableAccount(input: {accountId: "%s"}) { userErrors { __typename } } }
+            """
+                .formatted(owner.account().getId()));
+    var invalidated = nextShare(hostSocket, shareId);
+
+    assertThat(disabled.path("errors").isMissingNode()).as("errors in %s", disabled).isTrue();
+    assertThat(invalidated.path("status").asString()).isEqualTo("INVALIDATED");
+    assertPartiesHidden(invalidated);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell only the Profile's side why the offer was withdrawn when its offerer stops"
+          + " managing the Profile")
+  void shouldTellOnlyTheProfilesSideWhyTheOfferWasWithdrawnWhenItsOffererStopsManagingTheProfile() {
+    var manager = authTestSupport.createHouseholdMemberIdentity(owner);
+    identities.add(manager);
+    var profile = managedProfile();
+    grantManagement(manager, profile);
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var managerSocket = subscribedSocket(authTestSupport.accountBearer(manager));
+    var shareId = offer(profile);
+    nextShare(hostSocket, shareId);
+    nextShare(managerSocket, shareId);
+
+    var relinquished =
+        http.execute(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { relinquishProfileManagement(input: {profileId: "%s"}) {
+              profileId userErrors { __typename } } }
+            """
+                .formatted(profile.getId()));
+    var forHost = nextShare(hostSocket, shareId);
+    var forManager = nextShare(managerSocket, shareId);
+
+    assertThat(relinquished.at("/data/relinquishProfileManagement/userErrors").isEmpty())
+        .as("relinquish in %s", relinquished)
+        .isTrue();
+    assertThat(forHost.path("status").asString()).isEqualTo("INVALIDATED");
+    // The reason tells what became of the offerer, which the Household no longer sees.
+    assertPartiesHidden(forHost);
+    assertThat(forManager.path("status").asString()).isEqualTo("INVALIDATED");
+    assertThat(forManager.path("invalidationReason").asString())
+        .isEqualTo("offering manager lost management");
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the withdrawn offer when its acceptance finds the offerer no longer"
+          + " authorized")
+  void shouldDeliverTheWithdrawnOfferWhenItsAcceptanceFindsTheOffererNoLongerAuthorized() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var shareId = offer(managedProfile());
+    nextShare(hostSocket, shareId);
+    // Disabled in the database alone, so the offer is still pending when the host accepts it.
+    var offerer = userAccountRepository.findById(owner.account().getId()).orElseThrow();
+    offerer.setEnabled(false);
+    userAccountRepository.saveAndFlush(offerer);
+
+    var accepted =
+        http.execute(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { acceptProfileShare(input: {shareId: "%s"}) { userErrors { __typename } } }
+            """
+                .formatted(shareId));
+    var withdrawn = nextShare(hostSocket, shareId);
+
+    assertThat(accepted.at("/data/acceptProfileShare/userErrors/0/__typename").asString())
+        .as("acceptance in %s", accepted)
+        .isEqualTo("OfferInvalidatedError");
+    assertThat(withdrawn.path("status").asString()).isEqualTo("INVALIDATED");
+    assertPartiesHidden(withdrawn);
+  }
+
+  @Test
+  @DisplayName("Should deliver EXPIRED when an offer's time runs out before anyone decides")
+  void shouldDeliverExpiredWhenAnOffersTimeRunsOutBeforeAnyoneDecides() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var shareId = offer(managedProfile());
+    nextShare(hostSocket, shareId);
+    var offer = shareRepository.findById(UUID.fromString(shareId)).orElseThrow();
+    offer.setExpiresAt(Instant.now().minusSeconds(1));
+    shareRepository.saveAndFlush(offer);
+
+    expirySweeper.sweep();
+
+    var expired = nextShare(hostSocket, shareId);
+    assertThat(expired.path("status").asString()).isEqualTo("EXPIRED");
+    assertPartiesHidden(expired);
+    assertThat(shareRepository.findById(offer.getId()).orElseThrow().getLastModifiedBy())
+        .isEqualTo(SystemActor.ID);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the removal of an active share to its Household when its Profile is deleted")
+  void shouldDeliverTheRemovalOfAnActiveShareToItsHouseholdWhenItsProfileIsDeleted() {
+    var orphan = managedProfile();
+    var shareId = offer(orphan);
+    decide("acceptProfileShare", shareId);
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
+    var stranger = identity();
+    var strangerSocket = subscribedSocket(authTestSupport.accountBearer(stranger));
+    var serverAdmin = adminIdentity();
+
+    // A ServerAdmin may delete a Profile that is still shared; its shares go with it.
+    var deleted =
+        http.execute(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { administrativelyDeleteProfile(input: {profileId: "%s", reason: "closing"}) {
+              profileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()));
+    assertThat(deleted.at("/data/administrativelyDeleteProfile/profileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    var removal = nextRemoval(hostSocket, shareId);
+    var visibleId = offer(managedProfile(), stranger);
+
+    assertThat(removal.path("shareId").asString()).isEqualTo(shareId);
+    // The managers lose the Profile with it: they get no removal, and their operation stays open.
+    assertThat(changesUntil(ownerSocket, visibleId))
+        .extracting(
+            change -> change.path("shareId").asString(), change -> change.path("share").isNull())
+        .isNotEmpty()
+        .doesNotContain(tuple(shareId, true));
+    assertThat(changesUntil(strangerSocket, visibleId))
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the removal to a ServerAdmin and not to the Household when the Profile of a"
+          + " declined offer is deleted")
+  void shouldDeliverRemovalToServerAdminAndNotToHouseholdWhenProfileOfDeclinedOfferIsDeleted() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
+    var serverAdmin = adminIdentity();
+    var serverAdminSocket = subscribedSocket(authTestSupport.accountBearer(serverAdmin));
+    // Only a Profile with no active or pending share may be deleted.
+    var orphan = unsharedManagedProfile();
+    var shareId = offer(orphan);
+    // Each change is read as it is delivered, so every side hears each step before the next one.
+    var sides = List.of(hostSocket, ownerSocket, serverAdminSocket);
+    sides.forEach(socket -> nextShare(socket, shareId));
+    decide("rejectProfileShare", shareId);
+    var declinedForHost = nextShare(hostSocket, shareId);
+    nextShare(ownerSocket, shareId);
+    var declinedForServerAdmin = nextShare(serverAdminSocket, shareId);
+    assertThat(List.of(declinedForHost, declinedForServerAdmin))
+        .extracting(share -> share.path("status").asString())
+        .containsOnly("REJECTED");
+
+    var deleted =
+        http.execute(
+            authTestSupport.freshAccountBearer(owner),
+            """
+            mutation { deleteProfile(input: {profileId: "%s"}) {
+              deletedProfileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()));
+    assertThat(deleted.at("/data/deleteProfile/deletedProfileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    var removal = nextRemoval(serverAdminSocket, shareId);
+    var laterId = offer(managedProfile());
+
+    // The decline was the Household's last change of the offer: it hears no removal after it.
+    assertPartiesHidden(declinedForHost);
+    assertThat(changesUntil(hostSocket, laterId))
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(shareId);
+    assertThat(declinedForServerAdmin.path("profile").path("name").asString())
+        .isEqualTo(orphan.getName());
+    assertThat(declinedForServerAdmin.path("offeredByDisplayName").asString())
+        .isEqualTo(owner.account().getDisplayName());
+    assertThat(removal.path("shareId").asString()).isEqualTo(shareId);
+    assertThat(changesUntil(ownerSocket, laterId))
+        .extracting(
+            change -> change.path("shareId").asString(), change -> change.path("share").isNull())
+        .isNotEmpty()
+        .doesNotContain(tuple(shareId, true));
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the withdrawn offer to its Household and nothing after it when the Profile of"
+          + " a pending offer is deleted")
+  void
+      shouldDeliverWithdrawnOfferToItsHouseholdAndNothingAfterWhenProfileOfPendingOfferIsDeleted() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var orphan = managedProfile();
+    var shareId = offer(orphan);
+    nextShare(hostSocket, shareId);
+    var serverAdmin = adminIdentity();
+
+    var deleted =
+        http.execute(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { administrativelyDeleteProfile(input: {profileId: "%s", reason: "closing"}) {
+              profileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()));
+    assertThat(deleted.at("/data/administrativelyDeleteProfile/profileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    var withdrawn = changesUntil(hostSocket, shareId).getLast();
+    var laterId = offer(managedProfile());
+
+    // The deletion withdrew the offer first; the Household hears that, and not the deletion.
+    assertThat(withdrawn.path("share").path("status").asString())
+        .as("change in %s", withdrawn)
+        .isEqualTo("INVALIDATED");
+    assertPartiesHidden(withdrawn.path("share"));
+    assertThat(changesUntil(hostSocket, laterId))
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the expiry and not the deletion to the Household when the Profile of an offer"
+          + " whose time ran out is deleted before the sweep")
+  void shouldDeliverExpiryAndNotDeletionToHouseholdWhenProfileOfLapsedOfferIsDeletedBeforeSweep() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    // An offer whose time ran out is no longer pending, so its Profile may be deleted, though the
+    // offer stays stored pending until the sweep reaches it.
+    var orphan = unsharedManagedProfile();
+    var shareId = offer(orphan);
+    nextShare(hostSocket, shareId);
+    var lapsed = shareRepository.findById(UUID.fromString(shareId)).orElseThrow();
+    lapsed.setExpiresAt(Instant.now().minusSeconds(1));
+    shareRepository.saveAndFlush(lapsed);
+
+    var deleted =
+        http.execute(
+            authTestSupport.freshAccountBearer(owner),
+            """
+            mutation { deleteProfile(input: {profileId: "%s"}) {
+              deletedProfileId userErrors { __typename } } }
+            """
+                .formatted(orphan.getId()));
+    assertThat(deleted.at("/data/deleteProfile/deletedProfileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    var ending = changesUntil(hostSocket, shareId).getLast();
+    var laterId = offer(managedProfile());
+
+    // The offer was over before its Profile went: the Household hears that it expired, and not
+    // that the Profile was deleted.
+    assertThat(ending.path("share").path("status").asString())
+        .as("change in %s", ending)
+        .isEqualTo("EXPIRED");
+    assertPartiesHidden(ending.path("share"));
+    assertThat(changesUntil(hostSocket, laterId))
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household once that a share is over when the Household ends it while a"
+          + " ServerAdmin deletes its Profile")
+  void shouldTellHouseholdOnceThatShareIsOverWhenHouseholdEndsItWhileItsProfileIsDeleted()
+      throws Exception {
+    var orphan = managedProfile();
+    var shareId = offer(orphan);
+    decide("acceptProfileShare", shareId);
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var serverAdmin = adminIdentity();
+    // The deletion withdraws the Profile's manager invitations after it has read its shares.
+    var invitationId = pendingManagerInvitation(orphan);
+
+    var deleted =
+        endWhileDeletionWaits(
+            row("profile_manager_invitation", invitationId),
+            () -> administrativelyDeleteProfile(serverAdmin, orphan),
+            shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/administrativelyDeleteProfile/profileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    // The Household hears the share end or hears it removed, and nothing after either.
+    var changes = changesUntil(hostSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .extracting(change -> change.path("shareId").asString())
+        .containsOnlyOnce(shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household once that a visit is over when the Household ends it while the"
+          + " visitor deletes their Account")
+  void shouldTellHouseholdOnceThatVisitIsOverWhenHouseholdEndsItWhileVisitorDeletesAccount()
+      throws Exception {
+    var visitor = authTestSupport.createHouseholdMemberIdentity(owner);
+    identities.add(visitor);
+    var shareId = activeVisit(visitor.profile());
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    // The deletion returns sessions that select the Profile at home to the Profile picker after
+    // it has read the Profile's shares.
+    var sessionId = sessionSelecting(owner, visitor.profile());
+
+    var deleted =
+        endWhileDeletionWaits(
+            row("auth_session", sessionId), () -> deleteMyAccount(visitor), shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/deleteMyAccount/accountId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(visitor.account().getId().toString());
+    var changes = changesUntil(hostSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .extracting(change -> change.path("shareId").asString())
+        .containsOnlyOnce(shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household once that a share is over when it ends while a ServerAdmin's"
+          + " deletion waits for the Profile")
+  void shouldTellHouseholdOnceThatShareIsOverWhenItEndsWhileDeletionWaitsForProfile()
+      throws Exception {
+    var orphan = managedProfile();
+    var shareId = offer(orphan);
+    decide("acceptProfileShare", shareId);
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var serverAdmin = adminIdentity();
+
+    var deleted =
+        endWhileDeletionWaitsForProfile(
+            orphan, () -> administrativelyDeleteProfile(serverAdmin, orphan), shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/administrativelyDeleteProfile/profileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    var changes = changesUntil(hostSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .extracting(change -> change.path("shareId").asString())
+        .containsOnlyOnce(shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household once that a visit is over when it ends while the visitor's"
+          + " Account deletion waits for their Profile")
+  void shouldTellHouseholdOnceThatVisitIsOverWhenItEndsWhileAccountDeletionWaitsForProfile()
+      throws Exception {
+    var visitor = authTestSupport.createHouseholdMemberIdentity(owner);
+    identities.add(visitor);
+    var shareId = activeVisit(visitor.profile());
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+
+    var deleted =
+        endWhileDeletionWaitsForProfile(visitor.profile(), () -> deleteMyAccount(visitor), shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/deleteMyAccount/accountId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(visitor.account().getId().toString());
+    var changes = changesUntil(hostSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .extracting(change -> change.path("shareId").asString())
+        .containsOnlyOnce(shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household only that an offer expired when its time runs out while a"
+          + " ServerAdmin deletes its Profile")
+  void shouldTellHouseholdOnlyThatOfferExpiredWhenItsTimeRunsOutWhileItsProfileIsDeleted()
+      throws Exception {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var orphan = managedProfile();
+    var shareId = offer(orphan);
+    nextShare(hostSocket, shareId);
+    var serverAdmin = adminIdentity();
+    // The deletion withdraws the Profile's manager invitations before its offers.
+    var invitationId = pendingManagerInvitation(orphan);
+
+    var deleted =
+        runOutWhileDeletionWaits(
+            row("profile_manager_invitation", invitationId),
+            () -> administrativelyDeleteProfile(serverAdmin, orphan),
+            shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/administrativelyDeleteProfile/profileId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(orphan.getId().toString());
+    assertHeardOnlyExpiry(changesUntil(hostSocket, laterId), shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household only that an offer expired when its time runs out while its"
+          + " offerer deletes their Account")
+  void shouldTellHouseholdOnlyThatOfferExpiredWhenItsTimeRunsOutWhileItsOffererDeletesAccount()
+      throws Exception {
+    var visitor = authTestSupport.createHouseholdMemberIdentity(owner);
+    identities.add(visitor);
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var shareId = offer(visitor, visitor.profile(), host.household().getId());
+    nextShare(hostSocket, shareId);
+    // The deletion revokes the Account's sessions before it withdraws the offers it made.
+    var sessionId = sessionSelecting(visitor, visitor.profile());
+
+    var deleted =
+        runOutWhileDeletionWaits(
+            row("auth_session", sessionId), () -> deleteMyAccount(visitor), shareId);
+    var laterId = offer(managedProfile());
+
+    assertThat(deleted.at("/data/deleteMyAccount/accountId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(visitor.account().getId().toString());
+    assertHeardOnlyExpiry(changesUntil(hostSocket, laterId), shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver the share's removal to the Profile's managers when its Household is deleted")
+  void shouldDeliverTheSharesRemovalToTheProfilesManagersWhenItsHouseholdIsDeleted() {
+    var ownerSocket = subscribedSocket(authTestSupport.accountBearer(owner));
+    var stranger = identity();
+    var strangerSocket = subscribedSocket(authTestSupport.accountBearer(stranger));
+    var empty =
+        transactionTemplate.execute(
+            _ ->
+                householdRepository.saveAndFlush(
+                    HouseholdFixture.defaultHouseholdBuilder().build()));
+    households.add(empty.getId());
+    var shareId = offer(managedProfile(), empty.getId());
+    nextShare(ownerSocket, shareId);
+    var serverAdmin = adminIdentity();
+
+    var deleted =
+        http.execute(
+            authTestSupport.freshAccountBearer(serverAdmin),
+            """
+            mutation { deleteEmptyHousehold(input: {householdId: "%s", reason: "closing"}) {
+              deletedHouseholdId userErrors { __typename } } }
+            """
+                .formatted(empty.getId()));
+    assertThat(deleted.at("/data/deleteEmptyHousehold/deletedHouseholdId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(empty.getId().toString());
+    var removal = nextRemoval(ownerSocket, shareId);
+    var visibleId = offer(managedProfile(), stranger);
+
+    assertThat(removal.path("shareId").asString()).isEqualTo(shareId);
+    assertThat(changesUntil(strangerSocket, visibleId))
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a moved HouseholdAdmin only that each share ended when a ServerAdmin deletes"
+          + " their former Household")
+  void shouldTellMovedHouseholdAdminOnlyThatEachShareEndedWhenTheirFormerHouseholdIsDeleted() {
+    var departing = identity();
+    var refuge = identity();
+    var departingSocket = subscribedSocket(authTestSupport.accountBearer(departing));
+    var visitId = activeVisit(managedProfile(), departing.household().getId());
+    var residentId = createProfileAtHome(departing);
+    nextShare(departingSocket, residentId);
+    // A Profile they manage elsewhere; its later offer marks the end of what the deletion sent.
+    var managed = managedProfile();
+    grantManagement(departing, managed);
+    var serverAdmin = adminIdentity();
+
+    var deleted = transferLastAccountAndDeleteHousehold(serverAdmin, departing, refuge);
+    assertThat(
+            deleted.at("/data/transferLastAccountAndDeleteHousehold/deletedHouseholdId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(departing.household().getId().toString());
+    var laterId = offer(managed);
+
+    // Their open session still carries the claims of the deleted Household's HouseholdAdmin: it
+    // hears each share into that Household end, and not that the share was deleted afterwards.
+    var changes = changesUntil(departingSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .filteredOn(
+            change -> List.of(visitId, residentId).contains(change.path("shareId").asString()))
+        .extracting(
+            change -> change.path("shareId").asString(),
+            change -> change.path("share").path("status").asString())
+        .containsExactlyInAnyOrder(tuple(visitId, "ENDED"), tuple(residentId, "ENDED"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a moved HouseholdAdmin only that each offer into their former Household ended"
+          + " when a ServerAdmin deletes it")
+  void shouldTellMovedHouseholdAdminOnlyThatEachOfferEndedWhenTheirFormerHouseholdIsDeleted() {
+    var departing = identity();
+    var refuge = identity();
+    var departingSocket = subscribedSocket(authTestSupport.accountBearer(departing));
+    var offerId = offer(managedProfile(), departing);
+    nextShare(departingSocket, offerId);
+    // An offer whose time ran out, still stored pending because the sweep has not reached it.
+    var lapsedId = offer(managedProfile(), departing);
+    nextShare(departingSocket, lapsedId);
+    var lapsed = shareRepository.findById(UUID.fromString(lapsedId)).orElseThrow();
+    lapsed.setExpiresAt(Instant.now().minusSeconds(1));
+    shareRepository.saveAndFlush(lapsed);
+    var managed = managedProfile();
+    grantManagement(departing, managed);
+    var serverAdmin = adminIdentity();
+
+    var deleted = transferLastAccountAndDeleteHousehold(serverAdmin, departing, refuge);
+    assertThat(
+            deleted.at("/data/transferLastAccountAndDeleteHousehold/deletedHouseholdId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(departing.household().getId().toString());
+    var laterId = offer(managed);
+
+    // The deletion withdraws the waiting offer and stores the lapsed one as expired before it
+    // deletes both with the Household: they hear each end without who was asking, and no removal.
+    var offerChanges =
+        changesUntil(departingSocket, laterId).stream()
+            .filter(
+                change -> List.of(offerId, lapsedId).contains(change.path("shareId").asString()))
+            .toList();
+    assertThat(offerChanges)
+        .as("changes in %s", offerChanges)
+        .extracting(
+            change -> change.path("shareId").asString(),
+            change -> change.path("share").path("status").asString())
+        .containsExactlyInAnyOrder(tuple(offerId, "INVALIDATED"), tuple(lapsedId, "EXPIRED"));
+    offerChanges.forEach(change -> assertPartiesHidden(change.path("share")));
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a moved HouseholdAdmin only that an offer expired when its time runs out while a"
+          + " ServerAdmin deletes their former Household")
+  void shouldTellMovedHouseholdAdminOnlyThatOfferExpiredWhenItsTimeRunsOutWhileHouseholdIsDeleted()
+      throws Exception {
+    var departing = identity();
+    var refuge = identity();
+    var departingSocket = subscribedSocket(authTestSupport.accountBearer(departing));
+    var shareId = offer(managedProfile(), departing);
+    nextShare(departingSocket, shareId);
+    var managed = managedProfile();
+    grantManagement(departing, managed);
+    var serverAdmin = adminIdentity();
+
+    // The deletion locks the Household before it withdraws the offers into it.
+    var deleted =
+        runOutWhileDeletionWaits(
+            row("household", departing.household().getId()),
+            () -> transferLastAccountAndDeleteHousehold(serverAdmin, departing, refuge),
+            shareId);
+    var laterId = offer(managed);
+
+    assertThat(
+            deleted.at("/data/transferLastAccountAndDeleteHousehold/deletedHouseholdId").asString())
+        .as("deletion in %s", deleted)
+        .isEqualTo(departing.household().getId().toString());
+    assertHeardOnlyExpiry(changesUntil(departingSocket, laterId), shareId);
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell a moved HouseholdAdmin only that a visit ended when a ServerAdmin deletes the"
+          + " visiting Profile while their former Household is deleted")
+  void shouldTellMovedHouseholdAdminOnlyThatVisitEndedWhenVisitorIsDeletedWithTheirHousehold()
+      throws Exception {
+    var departing = identity();
+    var refuge = identity();
+    var departingSocket = subscribedSocket(authTestSupport.accountBearer(departing));
+    var visiting = managedProfile();
+    var visitId = activeVisit(visiting, departing.household().getId());
+    // The Household deletion deletes its own Profiles after it has ended the visits into it.
+    var residentId =
+        shareRepository
+            .findById(UUID.fromString(createProfileAtHome(departing)))
+            .orElseThrow()
+            .getProfileId();
+    var managed = managedProfile();
+    grantManagement(departing, managed);
+    var serverAdmin = adminIdentity();
+
+    JsonNode householdDeleted;
+    JsonNode profileDeleted;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var held = lockRow(row("profile", residentId))) {
+      var deletingHousehold =
+          executor.submit(
+              () -> transferLastAccountAndDeleteHousehold(serverAdmin, departing, refuge));
+      awaitWaitersBehind(jdbcTemplate, held.backendPid(), 1);
+      // The Profile deletion reads the visit as still active, then waits for the Household
+      // deletion, which has ended it and goes on to commit first.
+      var deletingProfile =
+          executor.submit(() -> administrativelyDeleteProfile(serverAdmin, visiting));
+      awaitWaitersBehind(jdbcTemplate, held.backendPid(), 2);
+
+      held.release();
+      householdDeleted = deletingHousehold.get(10, TimeUnit.SECONDS);
+      profileDeleted = deletingProfile.get(10, TimeUnit.SECONDS);
+    }
+
+    var laterId = offer(managed);
+
+    assertThat(
+            householdDeleted
+                .at("/data/transferLastAccountAndDeleteHousehold/deletedHouseholdId")
+                .asString())
+        .as("deletion in %s", householdDeleted)
+        .isEqualTo(departing.household().getId().toString());
+    assertThat(profileDeleted.at("/data/administrativelyDeleteProfile/profileId").asString())
+        .as("deletion in %s", profileDeleted)
+        .isEqualTo(visiting.getId().toString());
+    var changes = changesUntil(departingSocket, laterId);
+    assertThat(changes)
+        .as("changes in %s", changes)
+        .filteredOn(change -> visitId.equals(change.path("shareId").asString()))
+        .extracting(change -> change.path("share").path("status").asString())
+        .containsExactly("ENDED");
+  }
+
+  @Test
+  @DisplayName("Should not deliver a share when the subscriber may not read it")
+  void shouldNotDeliverAShareWhenTheSubscriberMayNotReadIt() {
+    var stranger = identity();
+    var strangerSocket = subscribedSocket(authTestSupport.accountBearer(stranger));
+    var orphan = managedProfile();
+
+    var hiddenId = offer(orphan);
+    var visibleId = offer(orphan, stranger);
+
+    var received = changesUntil(strangerSocket, visibleId);
+    assertThat(received)
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(hiddenId);
+  }
+
+  @Test
+  @DisplayName("Should stop delivering a Profile's shares when the subscriber stops managing it")
+  void shouldStopDeliveringAProfilesSharesWhenTheSubscriberStopsManagingIt() {
+    var manager = authTestSupport.createHouseholdMemberIdentity(owner);
+    identities.add(manager);
+    var managerSocket = subscribedSocket(authTestSupport.accountBearer(manager));
+    var leaving = managedProfile();
+    var kept = managedProfile();
+    grantManagement(manager, leaving);
+    grantManagement(manager, kept);
+    var leavingShareId = offer(leaving);
+    var keptShareId = offer(kept);
+    nextShare(managerSocket, leavingShareId);
+    nextShare(managerSocket, keptShareId);
+
+    revokeManagement(manager, leaving);
+    decide("rejectProfileShare", leavingShareId);
+    decide("rejectProfileShare", keptShareId);
+
+    var received = changesUntil(managerSocket, keptShareId);
+    assertThat(received)
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(leavingShareId);
+    assertThat(received.getLast().path("share").path("status").asString()).isEqualTo("REJECTED");
+  }
+
+  @Test
+  @DisplayName(
+      "Should not deliver where else a Profile visits when a HouseholdAdmin only hosts the Profile")
+  void shouldNotDeliverWhereElseAProfileVisitsWhenAHouseholdAdminOnlyHostsTheProfile() {
+    var orphan = managedProfile();
+    var hostedId = offer(orphan);
+    decide("acceptProfileShare", hostedId);
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+
+    var elsewhereId = offer(orphan, identity());
+    var visibleId = offer(managedProfile());
+
+    var received = changesUntil(hostSocket, visibleId);
+    assertThat(received)
+        .extracting(change -> change.path("shareId").asString())
+        .isNotEmpty()
+        .doesNotContain(elsewhereId);
+  }
+
+  @Test
+  @DisplayName("Should refuse profileShareChanged with FORBIDDEN when the session is device-bound")
+  void shouldRefuseProfileShareChangedWithForbiddenWhenTheSessionIsDeviceBound() {
+    var socket = connect(authTestSupport.deviceBoundProfileBearer(host));
+
+    socket.subscribe(OPERATION, SUBSCRIPTION);
+
+    var refusal = socket.nextMessageFor(OPERATION);
+    assertThat(refusal.path("type").asString()).isEqualTo("next");
+    assertThat(firstErrorCode(refusal.path("payload"))).isEqualTo("FORBIDDEN");
+    assertThat(socket.nextMessageFor(OPERATION).path("type").asString()).isEqualTo("complete");
+    assertThat(activeSubscriptions.count(FIELD)).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should end profileShareChanged with FORBIDDEN at the next change when the Account is"
+          + " disabled after subscribing")
+  void shouldEndProfileShareChangedWithForbiddenWhenTheAccountIsDisabledAfterSubscribing() {
+    var socket = subscribedSocket(authTestSupport.accountBearer(host));
+    var account = userAccountRepository.findById(host.account().getId()).orElseThrow();
+    account.setEnabled(false);
+    userAccountRepository.saveAndFlush(account);
+
+    offer(managedProfile(), identity());
+
+    var ending = socket.nextMessageFor(OPERATION);
+    assertThat(ending.path("type").asString()).isEqualTo("error");
+    assertThat(ending.path("payload").path(0).path("extensions").path("code").asString())
+        .isEqualTo("FORBIDDEN");
+    activeSubscriptions.awaitCount(FIELD, 0);
+  }
+
+  @Test
+  @DisplayName("Should release profileShareChanged when the client completes the operation")
+  void shouldReleaseProfileShareChangedWhenTheClientCompletesTheOperation() {
+    var socket = subscribedSocket(authTestSupport.accountBearer(host));
+
+    socket.complete(OPERATION);
+
+    activeSubscriptions.awaitCount(FIELD, 0);
+    assertThat(activeSubscriptions.count(FIELD)).isZero();
+  }
+
+  @Test
+  @DisplayName("Should deliver nothing when an acceptance rolls back")
+  void shouldDeliverNothingWhenAnAcceptanceRollsBack() {
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var twin =
+        managedProfile(ProfileFixture.defaultProfileBuilder().name(host.profile().getName()));
+    var shareId = offer(twin);
+    nextShare(hostSocket, shareId);
+
+    var conflict =
+        http.execute(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { acceptProfileShare(input: {shareId: "%s"}) { userErrors { __typename } } }
+            """
+                .formatted(shareId));
+    decide("rejectProfileShare", shareId);
+
+    assertThat(conflict.at("/data/acceptProfileShare/userErrors/0/__typename").asString())
+        .isEqualTo("ShareNameConflictError");
+    assertThat(nextShare(hostSocket, shareId).path("status").asString()).isEqualTo("REJECTED");
+  }
+
+  private String offer(Profile profile) {
+    return offer(profile, host);
+  }
+
+  private String offer(Profile profile, AuthTestSupport.TestIdentity target) {
+    return offer(profile, target.household().getId());
+  }
+
+  private String offer(Profile profile, UUID householdId) {
+    return offer(owner, profile, householdId);
+  }
+
+  private String offer(AuthTestSupport.TestIdentity offerer, Profile profile, UUID householdId) {
+    var response =
+        http.execute(
+            authTestSupport.accountBearer(offerer),
+            """
+            mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+              share { id status } userErrors { __typename } } }
+            """
+                .formatted(profile.getId(), householdId));
+    var share = response.at("/data/offerProfileShare/share");
+    assertThat(share.path("status").asString()).as("offer in %s", response).isEqualTo("PENDING");
+    return share.path("id").asString();
+  }
+
+  // The host decides, or ends, a share into its own Household.
+  private void decide(String mutation, String shareId) {
+    var response =
+        http.execute(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { %s(input: {shareId: "%s"}) { share { status } userErrors { __typename } } }
+            """
+                .formatted(mutation, shareId));
+    assertThat(response.at("/data/%s/userErrors".formatted(mutation)).isEmpty())
+        .as("%s in %s", mutation, response)
+        .isTrue();
+  }
+
+  private void cancel(String shareId) {
+    var response =
+        http.execute(
+            authTestSupport.accountBearer(owner),
+            """
+            mutation { cancelProfileShare(input: {shareId: "%s"}) { userErrors { __typename } } }
+            """
+                .formatted(shareId));
+    assertThat(response.at("/data/cancelProfileShare/userErrors").isEmpty())
+        .as("cancel in %s", response)
+        .isTrue();
+  }
+
+  /**
+   * Holds a row the deletion writes once it has read the Profile's shares, has the host end the
+   * share while the deletion waits for that row, then lets the deletion finish; answers the
+   * deletion's response. The end either completes at once or waits for the deletion.
+   */
+  private JsonNode endWhileDeletionWaits(
+      RowLockTarget heldRow, Callable<JsonNode> deletion, String shareId) throws Exception {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var held = lockRow(heldRow)) {
+      var deleting = executor.submit(deletion);
+      awaitWaitersBehind(jdbcTemplate, held.backendPid(), 1);
+      var ending = executor.submit(() -> endAsHost(shareId));
+      await()
+          .atMost(Duration.ofSeconds(10))
+          .until(() -> ending.isDone() || waitersBehind(jdbcTemplate, held.backendPid(), "%") == 2);
+
+      held.release();
+      ending.get(10, TimeUnit.SECONDS);
+      return deleting.get(10, TimeUnit.SECONDS);
+    }
+  }
+
+  /**
+   * Holds the Profile's row FOR SHARE, so a deletion that locks the Profile waits there, and has
+   * the host end the share meanwhile: the end's own share lock on the Profile does not conflict, so
+   * the end commits while the deletion waits. Then lets the deletion finish; answers its response.
+   */
+  private JsonNode endWhileDeletionWaitsForProfile(
+      Profile profile, Callable<JsonNode> deletion, String shareId) throws Exception {
+    var profileRow =
+        RowLockTarget.builder()
+            .dataSource(dataSource)
+            .table("profile")
+            .rowId(profile.getId())
+            .shared(true)
+            .build();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var held = lockRow(profileRow)) {
+      var deleting = executor.submit(deletion);
+      awaitWaitersBehind(jdbcTemplate, held.backendPid(), 1);
+      var ended = executor.submit(() -> endAsHost(shareId)).get(10, TimeUnit.SECONDS);
+      assertThat(
+              shareRepository
+                  .findById(UUID.fromString(shareId))
+                  .map(ProfileHouseholdShare::getStatus))
+          .as("share while the deletion waits, after %s", ended)
+          .contains(ProfileShareStatus.ENDED);
+
+      held.release();
+      return deleting.get(10, TimeUnit.SECONDS);
+    }
+  }
+
+  /**
+   * Holds a row the deletion writes before it withdraws the offer, lets the offer's time run out
+   * while the deletion waits for that row, after the deletion first read the time, then lets the
+   * deletion finish; answers the deletion's response.
+   */
+  private JsonNode runOutWhileDeletionWaits(
+      RowLockTarget heldRow, Callable<JsonNode> deletion, String shareId) throws Exception {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var held = lockRow(heldRow)) {
+      var deleting = executor.submit(deletion);
+      awaitWaitersBehind(jdbcTemplate, held.backendPid(), 1);
+      var offer = shareRepository.findById(UUID.fromString(shareId)).orElseThrow();
+      offer.setExpiresAt(Instant.now());
+      shareRepository.saveAndFlush(offer);
+
+      held.release();
+      return deleting.get(10, TimeUnit.SECONDS);
+    }
+  }
+
+  // The host ends a share into its own Household, whatever the answer.
+  private JsonNode endAsHost(String shareId) {
+    return http.execute(
+        authTestSupport.accountBearer(host),
+        """
+        mutation { endProfileShare(input: {shareId: "%s"}) { userErrors { __typename } } }
+        """
+            .formatted(shareId));
+  }
+
+  private JsonNode administrativelyDeleteProfile(
+      AuthTestSupport.TestIdentity serverAdmin, Profile profile) {
+    return http.execute(
+        authTestSupport.freshAccountBearer(serverAdmin),
+        """
+        mutation { administrativelyDeleteProfile(input: {profileId: "%s", reason: "closing"}) {
+          profileId userErrors { __typename } } }
+        """
+            .formatted(profile.getId()));
+  }
+
+  private JsonNode deleteMyAccount(AuthTestSupport.TestIdentity identity) {
+    return http.execute(
+        authTestSupport.freshAccountBearer(identity),
+        """
+        mutation { deleteMyAccount(input: {confirmation: "DELETE"}) {
+          accountId userErrors { __typename } } }
+        """);
+  }
+
+  /** A ServerAdmin moves the Household's last Account to the refuge and deletes the Household. */
+  private JsonNode transferLastAccountAndDeleteHousehold(
+      AuthTestSupport.TestIdentity serverAdmin,
+      AuthTestSupport.TestIdentity departing,
+      AuthTestSupport.TestIdentity refuge) {
+    return http.execute(
+        authTestSupport.freshAccountBearer(serverAdmin),
+        """
+        mutation { transferLastAccountAndDeleteHousehold(input: {householdId: "%s",
+          destinationHouseholdId: "%s", reason: "closing"}) {
+          deletedHouseholdId userErrors { __typename } } }
+        """
+            .formatted(departing.household().getId(), refuge.household().getId()));
+  }
+
+  /** The owner's pending invitation for the host to manage the Profile too. */
+  private UUID pendingManagerInvitation(Profile profile) {
+    return transactionTemplate
+        .execute(
+            _ ->
+                managerInvitationRepository.saveAndFlush(
+                    ProfileManagerInvitation.builder()
+                        .profileId(profile.getId())
+                        .profileName(profile.getName())
+                        .inviterAccountId(owner.account().getId())
+                        .inviterDisplayName(owner.account().getDisplayName())
+                        .recipientAccountId(host.account().getId())
+                        .recipientEmail(host.account().getEmail())
+                        .expiresAt(Instant.now().plusSeconds(3600))
+                        .publicId(UUID.randomUUID().toString())
+                        .secretDigest(new byte[] {1})
+                        .build()))
+        .getId();
+  }
+
+  /** An active visit of the Profile to the host's Household, stored without announcing it. */
+  private String activeVisit(Profile profile) {
+    return activeVisit(profile, host.household().getId());
+  }
+
+  /** An active visit of the Profile to the Household, stored without announcing it. */
+  private String activeVisit(Profile profile, UUID householdId) {
+    return transactionTemplate
+        .execute(
+            _ ->
+                shareRepository.saveAndFlush(
+                    ProfileHouseholdShare.builder()
+                        .profileId(profile.getId())
+                        .householdId(householdId)
+                        .status(ProfileShareStatus.ACTIVE)
+                        .build()))
+        .getId()
+        .toString();
+  }
+
+  /** A live session of the identity's Account, in its own Household, that selects the Profile. */
+  private UUID sessionSelecting(AuthTestSupport.TestIdentity identity, Profile profile) {
+    return refreshTokenService
+        .createSession(
+            CreateAuthSessionCommand.builder()
+                .accountId(identity.account().getId())
+                .deviceName("living room")
+                .contextHouseholdId(identity.household().getId())
+                .selectedProfileId(profile.getId())
+                .build())
+        .session()
+        .getId();
+  }
+
+  private RowLockTarget row(String table, UUID rowId) {
+    return RowLockTarget.builder().dataSource(dataSource).table(table).rowId(rowId).build();
+  }
+
+  /** A Profile the HouseholdAdmin creates in their Household; answers its share there. */
+  private String createProfileAtHome(AuthTestSupport.TestIdentity admin) {
+    var response =
+        http.execute(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { createProfile(input: {householdId: "%s", name: "Pebble", kind: ADULT}) {
+              profile { id } userErrors { __typename } } }
+            """
+                .formatted(admin.household().getId()));
+    var profileId = response.at("/data/createProfile/profile/id").asString();
+    assertThat(profileId).as("creation in %s", response).isNotEmpty();
+    return shareRepository
+        .findByProfileIdAndHouseholdIdAndStatus(
+            UUID.fromString(profileId), admin.household().getId(), ProfileShareStatus.ACTIVE)
+        .orElseThrow()
+        .getId()
+        .toString();
+  }
+
+  private Profile managedProfile() {
+    return managedProfile(ProfileFixture.defaultProfileBuilder());
+  }
+
+  /** A Profile the owner manages, available nowhere. */
+  private Profile unsharedManagedProfile() {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  ProfileFixture.defaultProfileBuilder()
+                      .householdId(owner.household().getId())
+                      .build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(owner.account().getId())
+                  .profileId(profile.getId())
+                  .build());
+          return profile;
+        });
+  }
+
+  /** A Profile the owner manages, available in the owner's Household. */
+  private Profile managedProfile(Profile.ProfileBuilder<?, ?> builder) {
+    return transactionTemplate.execute(
+        _ -> {
+          var profile =
+              profileRepository.saveAndFlush(
+                  builder.householdId(owner.household().getId()).build());
+          profileManagerRepository.saveAndFlush(
+              ProfileManager.builder()
+                  .accountId(owner.account().getId())
+                  .profileId(profile.getId())
+                  .build());
+          shareRepository.saveAndFlush(
+              ProfileHouseholdShare.builder()
+                  .profileId(profile.getId())
+                  .householdId(owner.household().getId())
+                  .status(ProfileShareStatus.ACTIVE)
+                  .build());
+          return profile;
+        });
+  }
+
+  private void grantManagement(AuthTestSupport.TestIdentity manager, Profile profile) {
+    profileManagerRepository.saveAndFlush(
+        ProfileManager.builder()
+            .accountId(manager.account().getId())
+            .profileId(profile.getId())
+            .build());
+  }
+
+  private void revokeManagement(AuthTestSupport.TestIdentity manager, Profile profile) {
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            profileManagerRepository.findByProfileId(profile.getId()).stream()
+                .filter(grant -> grant.getAccountId().equals(manager.account().getId()))
+                .forEach(profileManagerRepository::delete));
+  }
+
+  private AuthTestSupport.TestIdentity identity() {
+    var identity = authTestSupport.createIdentity();
+    identities.add(identity);
+    return identity;
+  }
+
+  private AuthTestSupport.TestIdentity adminIdentity() {
+    var identity = authTestSupport.createAdminIdentity();
+    identities.add(identity);
+    return identity;
+  }
+
+  private GraphQlTransportWsTestClient subscribedSocket(String bearer) {
+    return subscribedSocket(bearer, SUBSCRIPTION);
+  }
+
+  private GraphQlTransportWsTestClient subscribedSocket(String bearer, String subscription) {
+    var before = activeSubscriptions.count(FIELD);
+    var socket = connect(bearer);
+    socket.subscribe(OPERATION, subscription);
+    activeSubscriptions.awaitCount(FIELD, (int) before + 1);
+    return socket;
+  }
+
+  // The first page of the visitors' active shares in the host's Household, as its settings show.
+  private JsonNode activeVisits(int first) {
+    var response =
+        http.execute(
+            authTestSupport.accountBearer(host),
+            """
+            query { householdShares(householdId: "%s", statuses: [ACTIVE], visitorsOnly: true,
+              first: %d) { edges { cursor orderKey node { id } } } }
+            """
+                .formatted(host.household().getId(), first));
+    assertThat(response.path("errors").isMissingNode()).as("errors in %s", response).isTrue();
+    return response.at("/data/householdShares");
+  }
+
+  // The Profile's earlier offers and shares, as the owner's Sharing page shows them.
+  private JsonNode earlierShares(Profile profile) {
+    var response =
+        http.execute(
+            authTestSupport.accountBearer(owner),
+            """
+            query { profileShares(profileId: "%s",
+              statuses: [REJECTED, CANCELED, EXPIRED, INVALIDATED, ENDED]) {
+              edges { cursor orderKey node { id } } } }
+            """
+                .formatted(profile.getId()));
+    assertThat(response.path("errors").isMissingNode()).as("errors in %s", response).isTrue();
+    return response.at("/data/profileShares");
+  }
+
+  private GraphQlTransportWsTestClient connect(String bearer) {
+    var socket = GraphQlTransportWsTestClient.connectWithBearer(port, bearer);
+    sockets.add(socket);
+    return socket;
+  }
+
+  // What the target Household's HouseholdAdmins still get once the offer or the share is over: the
+  // share's own fields, and none of the Profile's details, the offerer's name, or why the system
+  // withdrew the offer (ADR 0024).
+  private static void assertPartiesHidden(JsonNode share) {
+    assertThat(share.path("id").asString()).as("id in %s", share).isNotEmpty();
+    assertThat(share.path("profile").isNull()).as("profile in %s", share).isTrue();
+    assertThat(share.path("visitor").isNull()).as("visitor in %s", share).isTrue();
+    assertThat(share.path("offeredByDisplayName").isNull()).as("offerer in %s", share).isTrue();
+    assertThat(share.path("household").isNull()).as("household in %s", share).isTrue();
+    assertThat(share.path("invalidationReason").isNull()).as("reason in %s", share).isTrue();
+  }
+
+  // The offer was over before the deletion withdrew anything: its Household hears that it
+  // expired, without who was asking, and nothing else of it.
+  private static void assertHeardOnlyExpiry(List<JsonNode> changes, String shareId) {
+    var ofOffer =
+        changes.stream()
+            .filter(change -> shareId.equals(change.path("shareId").asString()))
+            .toList();
+    assertThat(ofOffer)
+        .as("changes in %s", changes)
+        .extracting(change -> change.path("share").path("status").asString())
+        .containsExactly("EXPIRED");
+    assertPartiesHidden(ofOffer.getFirst().path("share"));
+  }
+
+  private static JsonNode nextChange(GraphQlTransportWsTestClient socket) {
+    var message = socket.nextMessageFor(OPERATION);
+    assertThat(message.path("type").asString()).as("message %s", message).isEqualTo("next");
+    var payload = message.path("payload");
+    assertThat(payload.path("errors").isMissingNode()).as("errors in %s", payload).isTrue();
+    return payload.path("data").path(FIELD);
+  }
+
+  // The next change of one share, skipping changes of shares that this test set up.
+  private static JsonNode nextShare(GraphQlTransportWsTestClient socket, String shareId) {
+    return changesUntil(socket, shareId).getLast().path("share");
+  }
+
+  private static JsonNode nextShareWithStatus(
+      GraphQlTransportWsTestClient socket, String shareId, String status) {
+    return nextChangeWithStatus(socket, shareId, status).path("share");
+  }
+
+  private static JsonNode nextChangeWithStatus(
+      GraphQlTransportWsTestClient socket, String shareId, String status) {
+    while (true) {
+      var change = changesUntil(socket, shareId).getLast();
+      if (status.equals(change.path("share").path("status").asString())) {
+        return change;
+      }
+    }
+  }
+
+  // A change carries the share as it reads on delivery, so a change made before the deletion may
+  // still be on its way; the removal is the first change without the share.
+  private static JsonNode nextRemoval(GraphQlTransportWsTestClient socket, String shareId) {
+    while (true) {
+      var change = changesUntil(socket, shareId).getLast();
+      if (change.path("share").isNull()) {
+        return change;
+      }
+    }
+  }
+
+  // Every change up to and including the next change of the share, in delivery order.
+  private static List<JsonNode> changesUntil(GraphQlTransportWsTestClient socket, String shareId) {
+    var changes = new ArrayList<JsonNode>();
+    while (true) {
+      var change = nextChange(socket);
+      changes.add(change);
+      if (shareId.equals(change.path("shareId").asString())) {
+        return changes;
+      }
+    }
+  }
+}

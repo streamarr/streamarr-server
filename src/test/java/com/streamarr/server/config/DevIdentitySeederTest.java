@@ -3,6 +3,7 @@ package com.streamarr.server.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.security.PasswordEncoderConfig;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
@@ -11,6 +12,7 @@ import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.properties.Argon2Properties;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.auth.SetupService;
 import com.streamarr.server.support.LogCapture;
 import java.util.UUID;
@@ -31,7 +33,8 @@ class DevIdentitySeederTest {
           userAccountRepository,
           new FakeHouseholdRepository(),
           new FakeProfileRepository(),
-          new FakeProfileHouseholdShareRepository(),
+          new ProfileShareLifecycle(
+              new FakeProfileHouseholdShareRepository(), new CapturingEventPublisher()),
           bootstrapRepository,
           new FakeSessionProgressRepository(),
           new FakeWatchHistoryRepository(),

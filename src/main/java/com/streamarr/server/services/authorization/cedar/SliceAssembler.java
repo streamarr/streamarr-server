@@ -3,7 +3,9 @@ package com.streamarr.server.services.authorization.cedar;
 import com.cedarpolicy.value.PrimBool;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
@@ -44,16 +46,41 @@ class SliceAssembler {
   }
 
   EntitySlice assemble(AuthenticatedIdentity identity, AuthorizationCheck check) {
-    var slice = new EntitySlice(CedarIds.account(identity.accountId()), check.resource());
-    // Stamped on every slice, not through a fact family: the device forbid must see the flag on
-    // every action, and an absent fact would read as "not device-bound" — failing open.
-    slice.principalAttribute(
-        SignedPrincipalContextContributor.DEVICE_BOUND, new PrimBool(identity.deviceBound()));
+    var slice = newSlice(identity, check);
     check
         .action()
         .facts()
         .forEach(requirement -> contributors.get(requirement).contribute(identity, check, slice));
 
+    return slice;
+  }
+
+  /**
+   * The slice of each check, each contributor asked once for all the checks that need its fact, so
+   * a contributor that can read its fact for many resources at once does.
+   */
+  Map<AuthorizationCheck, EntitySlice> assembleEach(
+      AuthenticatedIdentity identity, Collection<AuthorizationCheck> checks) {
+    var slices = new HashMap<AuthorizationCheck, EntitySlice>();
+    checks.forEach(check -> slices.put(check, newSlice(identity, check)));
+    contributors.forEach(
+        (requirement, contributor) -> {
+          var needing = new HashMap<>(slices);
+          needing.keySet().removeIf(check -> !check.action().facts().contains(requirement));
+          if (!needing.isEmpty()) {
+            contributor.contributeEach(identity, needing);
+          }
+        });
+
+    return slices;
+  }
+
+  private static EntitySlice newSlice(AuthenticatedIdentity identity, AuthorizationCheck check) {
+    var slice = new EntitySlice(CedarIds.account(identity.accountId()), check.resource());
+    // Stamped on every slice, not through a fact family: the device forbid must see the flag on
+    // every action, and an absent fact would read as "not device-bound" — failing open.
+    slice.principalAttribute(
+        SignedPrincipalContextContributor.DEVICE_BOUND, new PrimBool(identity.deviceBound()));
     return slice;
   }
 }

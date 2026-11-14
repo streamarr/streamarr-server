@@ -4,10 +4,11 @@ import static com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus
 import static com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus.REVOKED;
 import static com.streamarr.server.jooq.generated.enums.DeviceRegistrationStatus.valueOf;
 import static com.streamarr.server.jooq.generated.tables.DeviceRegistration.DEVICE_REGISTRATION;
+import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static org.jooq.impl.DSL.inline;
 
 import com.streamarr.server.domain.auth.DeviceRegistration;
-import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.domain.auth.HouseholdRegistrationFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.JooqQueryHelper;
@@ -22,6 +23,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 
 @RequiredArgsConstructor
 public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistrationRepositoryCustom {
@@ -34,21 +36,29 @@ public class DeviceRegistrationRepositoryCustomImpl implements DeviceRegistratio
 
   @Override
   public List<Row<DeviceRegistration>> rowsInHousehold(
-      UUID householdId, DeviceRegistrationStatus status, Seek seek) {
+      HouseholdRegistrationFilter filter, Seek seek) {
     var keyset =
         Keyset.<OffsetDateTime>builder()
             .sortValue(DEVICE_REGISTRATION.CREATED_ON)
             .itemId(DEVICE_REGISTRATION.ID)
             .build();
-    var query =
-        keyset.rowsBeyond(
-            keyset.selectFrom(dsl, DEVICE_REGISTRATION),
-            DEVICE_REGISTRATION
-                .HOUSEHOLD_ID
-                .eq(householdId)
-                .and(DEVICE_REGISTRATION.STATUS.eq(inline(valueOf(status.name())))),
-            seek);
+    var kept =
+        DEVICE_REGISTRATION
+            .HOUSEHOLD_ID
+            .eq(filter.householdId())
+            .and(DEVICE_REGISTRATION.STATUS.eq(inline(valueOf(filter.status().name()))))
+            .and(filter.visitorsOnly() ? linkedByVisitor() : DSL.noCondition());
+    var query = keyset.rowsBeyond(keyset.selectFrom(dsl, DEVICE_REGISTRATION), kept, seek);
     return JooqQueryHelper.nativeRows(entityManager, query, DeviceRegistration.class, keyset);
+  }
+
+  /** Linked by an Account that is not a member of the registration's Household. */
+  private static Condition linkedByVisitor() {
+    return DSL.exists(
+        DSL.selectOne()
+            .from(USER_ACCOUNT)
+            .where(USER_ACCOUNT.ID.eq(DEVICE_REGISTRATION.AUTHORIZING_ACCOUNT_ID))
+            .and(USER_ACCOUNT.HOUSEHOLD_ID.ne(DEVICE_REGISTRATION.HOUSEHOLD_ID)));
   }
 
   @Override

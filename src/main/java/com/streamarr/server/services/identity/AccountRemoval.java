@@ -15,6 +15,8 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.Builder;
@@ -37,12 +39,14 @@ class AccountRemoval {
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileManagerInvitationRepository managerInvitationRepository;
   private final AccountInvitationRepository accountInvitationRepository;
   private final PasswordResetCodeRepository passwordResetCodeRepository;
   private final AuthSessionRepository authSessionRepository;
   private final DeviceRegistrationLifecycle registrationLifecycle;
+  private final Clock clock;
 
   /**
    * Moves the Account and its Personal Profile inside the caller's transaction; throws if either
@@ -60,9 +64,10 @@ class AccountRemoval {
     }
 
     profileRepository.rehomePersonalProfile(profileId, sourceHouseholdId, destinationHouseholdId);
+    shareLifecycle.announceMove(profileId, sourceHouseholdId, destinationHouseholdId);
 
     updateSourceHouseholdAccess(transfer);
-    shareRepository.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
+    shareLifecycle.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
   }
 
   private HouseholdRole destinationRole(UUID householdId) {
@@ -81,7 +86,7 @@ class AccountRemoval {
 
     var profileId = transfer.profileId();
     var sourceHouseholdId = transfer.sourceHouseholdId();
-    shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId);
+    shareLifecycle.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId);
     authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId);
   }
 
@@ -103,7 +108,9 @@ class AccountRemoval {
         account.getId(), "recipient deleted", now);
     managerInvitationRepository.invalidatePendingInvitedBy(
         account.getId(), "inviting manager deleted", now);
-    shareRepository.invalidatePendingOfferedBy(account.getId(), "offering manager deleted", now);
+    // Read after any wait above, so an offer whose time ran out meanwhile is stored as expired.
+    shareLifecycle.invalidatePendingOfferedBy(
+        account.getId(), "offering manager deleted", clock.instant());
 
     switch (deletion.profileDisposition()) {
       case ErasePersonalProfile() -> {
@@ -123,32 +130,37 @@ class AccountRemoval {
     var now = deletion.now();
     // The preserved Profile needs its replacement anchor before the person leaves it behind.
     profileManagerRepository.tryGrantDirectManagement(replacementManagerAccountId, profileId);
-    shareRepository.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId);
+    shareLifecycle.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId);
     deleteAccountRow(account);
     if (sourceHouseholdId.equals(destinationHouseholdId)) {
       return;
     }
 
     profileRepository.rehomePersonalProfile(profileId, sourceHouseholdId, destinationHouseholdId);
+    shareLifecycle.announceMove(profileId, sourceHouseholdId, destinationHouseholdId);
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
-    shareRepository.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
-    shareRepository.convertMembershipShareToVisitorShare(profileId, destinationHouseholdId);
+        .ifPresent(share -> shareLifecycle.tryEndActive(share.getId(), now));
+    shareLifecycle.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
+    shareLifecycle.convertMembershipShareToVisitorShare(profileId, destinationHouseholdId);
   }
 
   /** Deletes an unlinked Profile with its selections and pending Profile-bound artifacts. */
   void deleteProfile(UUID profileId, Instant now) {
+    // Locked before its shares are read, so none ends unseen before they are announced.
+    profileRepository.lockById(profileId);
     accountInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
     managerInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
-    shareRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
+    // Read after any wait above, so an offer whose time ran out meanwhile is stored as expired.
+    shareLifecycle.invalidatePendingByProfileId(profileId, PROFILE_DELETED, clock.instant());
     shareRepository
         .findByProfileIdAndStatus(profileId, ProfileShareStatus.ACTIVE)
         .forEach(
             share ->
                 authSessionRepository.clearProfileSelectionFromLiveSessions(
                     profileId, share.getHouseholdId()));
+    shareLifecycle.announceDeletionWithProfile(profileId, now);
     profileRepository.deleteById(profileId);
     profileRepository.flush();
   }
@@ -161,7 +173,7 @@ class AccountRemoval {
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareRepository.tryEndActive(share.getId(), now));
+        .ifPresent(share -> shareLifecycle.tryEndActive(share.getId(), now));
     authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId);
     authSessionRepository.clearHouseholdContextFromAccountSessions(accountId, sourceHouseholdId);
     registrationLifecycle.revokeAllByAccountAndHousehold(

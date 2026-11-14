@@ -8,6 +8,7 @@ import com.streamarr.server.domain.auth.AccountInvitationMode;
 import com.streamarr.server.domain.auth.AccountInvitationReoffer;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.CredentialAttemptMetadata;
 import com.streamarr.server.domain.auth.CredentialAttemptResult;
 import com.streamarr.server.domain.auth.CredentialKind;
@@ -20,6 +21,7 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
 import com.streamarr.server.exceptions.InvitationNotAcceptableException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAccountInvitationReofferRepository;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
@@ -40,6 +42,7 @@ import com.streamarr.server.properties.AuthTokenProperties;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AccountInvitationService.AcceptInvitationCommand;
 import com.streamarr.server.services.auth.AccountInvitationService.InvitationCodeCommand;
+import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import java.sql.SQLException;
 import java.time.Clock;
@@ -88,6 +91,7 @@ class AccountInvitationServiceTest {
   private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
   private final FakeCredentialAttemptRepository credentialAttempts =
       new FakeCredentialAttemptRepository();
+  private final CapturingEventPublisher shareEvents = new CapturingEventPublisher();
 
   private final AccountInvitationService service = serviceUsing(accounts);
 
@@ -193,6 +197,21 @@ class AccountInvitationServiceTest {
     assertThatThrownBy(() -> serviceWithoutGuardRow.accept(command))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("household_guard");
+  }
+
+  @Test
+  @DisplayName("Should announce the membership share when an invitation creates the Account")
+  void shouldAnnounceMembershipShareWhenInvitationCreatesAccount() {
+    var issued = pendingInvitation(pendingInvitationBuilder().build());
+
+    var account = service.accept(acceptCommand(issued.code())).account();
+
+    var membership =
+        shares
+            .findByProfileIdAndHouseholdIdAndStatus(
+                account.getPersonalProfileId(), account.getHouseholdId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow();
+    assertThat(announcedShares()).containsExactly(ChangedShare.of(membership));
   }
 
   @Test
@@ -325,6 +344,7 @@ class AccountInvitationServiceTest {
         managers,
         managerInvitations,
         shares,
+        new ProfileShareLifecycle(shares, shareEvents),
         reoffers,
         households,
         sessions,
@@ -433,7 +453,7 @@ class AccountInvitationServiceTest {
     var fixture = linkAcceptanceFixture();
     var removedHouseholdId = fixture.reofferHouseholdIds().getFirst();
     var retainedHouseholdId = fixture.reofferHouseholdIds().getLast();
-    assertThat(shares.tryEndActive(fixture.visitIds().getFirst(), NOW)).isTrue();
+    assertThat(shares.tryEndActive(fixture.visitIds().getFirst(), NOW)).isPresent();
     reoffers.findByInvitationId(invitations.findAll().getFirst().getId()).stream()
         .filter(reoffer -> reoffer.getHouseholdId().equals(removedHouseholdId))
         .forEach(reoffers::delete);
@@ -467,6 +487,38 @@ class AccountInvitationServiceTest {
         .filteredOn(share -> share.getStatus() == ProfileShareStatus.PENDING)
         .extracting(ProfileHouseholdShare::getOfferedByAccountId)
         .containsOnly(issuerAccountId);
+  }
+
+  @Test
+  @DisplayName("Should announce every share that LINK changes when it wins")
+  void shouldAnnounceEveryShareThatLinkChangesWhenItWins() {
+    var fixture = linkAcceptanceFixture();
+    var sharesBefore =
+        shares.findAll().stream()
+            .filter(share -> share.getProfileId().equals(fixture.profileId()))
+            .toList();
+
+    service.accept(acceptCommand(fixture.code()));
+
+    var reoffered =
+        shares.findAll().stream()
+            .filter(share -> fixture.reofferHouseholdIds().contains(share.getHouseholdId()))
+            .filter(share -> share.getStatus() == ProfileShareStatus.PENDING)
+            .toList();
+    // The home share, both visits and both pending offers change, and both reoffers are new; each
+    // is announced with the status the link left it in.
+    assertThat(announcedShares())
+        .containsExactlyInAnyOrderElementsOf(
+            Stream.concat(sharesBefore.stream(), reoffered.stream())
+                .map(ChangedShare::of)
+                .toList());
+    assertThat(reoffered).hasSize(fixture.reofferHouseholdIds().size());
+  }
+
+  private List<ChangedShare> announcedShares() {
+    return shareEvents.getEventsOfType(ProfileShareChangedEvent.class).stream()
+        .map(ProfileShareChangedEvent::share)
+        .toList();
   }
 
   private LinkAcceptanceFixture linkAcceptanceFixture() {

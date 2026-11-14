@@ -7,7 +7,10 @@ import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfilePolicyTransition;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 /** Stands in for the Cedar engine behind the facade with one rule per result family. */
@@ -65,5 +68,13 @@ public final class FakeAuthorizationDecider implements AuthorizationDecider {
       AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent) {
     intents.add(intent);
     return policyRule.apply(intent);
+  }
+
+  @Override
+  public Map<Intent.UnitIntent, Decision<AuthorizationUnit>> decideEach(
+      AuthenticatedIdentity identity, Set<Intent.UnitIntent> intents) {
+    var decisions = new HashMap<Intent.UnitIntent, Decision<AuthorizationUnit>>();
+    intents.forEach(intent -> decisions.put(intent, decide(identity, intent)));
+    return decisions;
   }
 }

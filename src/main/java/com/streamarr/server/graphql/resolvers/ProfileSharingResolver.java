@@ -5,10 +5,12 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
+import com.streamarr.server.graphql.cursor.ShareListCursors;
 import com.streamarr.server.graphql.dto.ProfileShareDetails;
 import com.streamarr.server.graphql.dto.ProfileSharePreview;
 import com.streamarr.server.graphql.inputs.AcceptProfileShareInput;
@@ -27,12 +29,14 @@ import com.streamarr.server.graphql.mutation.sharing.RejectProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
+import com.streamarr.server.services.identity.ShareListOrder;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 
 @DgsComponent
@@ -61,25 +65,33 @@ public class ProfileSharingResolver {
   }
 
   @DgsQuery
-  public Connection<ProfileShareDetails> pendingShareOffers(
-      @InputArgument String householdId, DataFetchingEnvironment dfe) {
-    var household = Ids.parseUuid(householdId);
-    var list = new ListIdentity("pending-share-offers", household);
+  public Connection<ProfileShareDetails> householdShares(
+      @InputArgument String householdId,
+      @InputArgument List<ProfileShareStatus> statuses,
+      @InputArgument Boolean visitorsOnly,
+      DataFetchingEnvironment dfe) {
+    var household =
+        ShareListCursors.householdScope(Ids.parseUuid(householdId), statuses, visitorsOnly);
+    var list = ShareListCursors.listOf(household);
     var page =
-        profileSharingService.pendingShareOffers(
+        profileSharingService.householdShares(
             authorizationService.currentIdentity(), household, pageRequest(list, dfe));
-    return relayConnectionAdapter.toConnection(page, list, this::details);
+    return relayConnectionAdapter.toKeyedConnection(
+        page.map(this::details), list, ShareListOrder.NEWEST_FIRST);
   }
 
   @DgsQuery
   public Connection<ProfileShareDetails> profileShares(
-      @InputArgument String profileId, DataFetchingEnvironment dfe) {
-    var profile = Ids.parseUuid(profileId);
-    var list = new ListIdentity("profile-shares", profile);
+      @InputArgument String profileId,
+      @InputArgument List<ProfileShareStatus> statuses,
+      DataFetchingEnvironment dfe) {
+    var profile = ShareListCursors.profileScope(Ids.parseUuid(profileId), statuses);
+    var list = ShareListCursors.listOf(profile);
     var page =
         profileSharingService.profileShares(
             authorizationService.currentIdentity(), profile, pageRequest(list, dfe));
-    return relayConnectionAdapter.toConnection(page, list, this::details);
+    return relayConnectionAdapter.toKeyedConnection(
+        page.map(this::details), list, ShareListOrder.NEWEST_FIRST);
   }
 
   @DgsMutation

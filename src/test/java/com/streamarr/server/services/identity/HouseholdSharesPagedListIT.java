@@ -23,10 +23,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 
+/**
+ * The pending offers into a Household, paged through its shares kept to PENDING: declining an offer
+ * takes it out of the list.
+ */
 @Tag("IntegrationTest")
-@DisplayName("Pending share offer paging")
-class PendingShareOffersPagedListIT
-    extends PagedListContract<ProfileHouseholdShare, PendingShareOffersPagedListIT.Scope> {
+@DisplayName("Household share paging")
+class HouseholdSharesPagedListIT
+    extends PagedListContract<ProfileHouseholdShare, HouseholdSharesPagedListIT.Scope> {
 
   private static final Instant NEWEST = Instant.parse("2026-10-20T12:00:00Z");
 
@@ -77,8 +81,13 @@ class PendingShareOffersPagedListIT
 
   @Override
   protected ListPage<ProfileHouseholdShare> page(Scope scope, PageRequest request) {
-    return profileSharing.pendingShareOffers(
-        auth.identityOf(scope.host()), scope.host().household().getId(), request);
+    return profileSharing.householdShares(
+        auth.identityOf(scope.host()),
+        new HouseholdSharesScope(
+            new ShareListScope(
+                scope.host().household().getId(), List.of(ProfileShareStatus.PENDING)),
+            false),
+        request);
   }
 
   @Override

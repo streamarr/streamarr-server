@@ -66,6 +66,7 @@ public class AccountInvitationService {
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileManagerInvitationRepository profileManagerInvitationRepository;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final AccountInvitationReofferRepository reofferRepository;
   private final HouseholdRepository householdRepository;
   private final AuthSessionRepository authSessionRepository;
@@ -288,7 +289,7 @@ public class AccountInvitationService {
               .build());
     }
 
-    shareRepository.saveAndFlush(
+    shareLifecycle.create(
         ProfileHouseholdShare.builder()
             .profileId(profile.getId())
             .householdId(householdId)
@@ -352,9 +353,9 @@ public class AccountInvitationService {
     invitationRepository.invalidatePendingByProfileId(profileId, PROFILE_LINKED_REASON, now);
     profileManagerInvitationRepository.invalidatePendingByProfileId(
         profileId, PROFILE_LINKED_REASON, now);
-    shareRepository.ensureActiveMembershipShare(profileId, householdId, now);
+    shareLifecycle.ensureActiveMembershipShare(profileId, householdId, now);
     endCurrentVisits(profileId, householdId, now);
-    shareRepository.invalidatePendingByProfileId(profileId, PROFILE_LINKED_REASON, now);
+    shareLifecycle.invalidatePendingByProfileId(profileId, PROFILE_LINKED_REASON, now);
     var reofferAccountId =
         profile.isRestricted() ? invitation.getIssuerAccountId() : account.getId();
     reoffer(
@@ -374,7 +375,7 @@ public class AccountInvitationService {
         continue;
       }
 
-      if (!shareRepository.tryEndActive(share.getId(), now)) {
+      if (!shareLifecycle.tryEndActive(share.getId(), now)) {
         throw new IllegalStateException(
             "Active Profile share %s could not be ended during Account linking"
                 .formatted(share.getId()));
@@ -387,7 +388,7 @@ public class AccountInvitationService {
 
   private void reoffer(ReofferPlan plan) {
     for (var target : plan.targets()) {
-      shareRepository.saveAndFlush(
+      shareLifecycle.create(
           ProfileHouseholdShare.builder()
               .profileId(plan.profileId())
               .householdId(target.getHouseholdId())

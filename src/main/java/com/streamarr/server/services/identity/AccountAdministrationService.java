@@ -13,6 +13,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -46,6 +47,7 @@ public class AccountAdministrationService {
   private final AccountInvitationRepository accountInvitationRepository;
   private final PasswordResetCodeRepository passwordResetCodeRepository;
   private final ProfileHouseholdShareRepository profileHouseholdShareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
 
@@ -261,15 +263,14 @@ public class AccountAdministrationService {
     return invalidated
         + switch (authorityLoss) {
           case ACCOUNT_DISABLED ->
-              profileHouseholdShareRepository.invalidatePendingOfferedBy(
-                  issuerAccountId, reason, now);
+              shareLifecycle.invalidatePendingOfferedBy(
+                  issuerAccountId, ProfileShareLifecycle.OFFERER_NO_LONGER_AUTHORIZED, now);
           case SERVER_ADMIN_REVOKED ->
-              invalidateUnauthorizedProfileShareOffers(issuerAccountId, reason, now);
+              invalidateUnauthorizedProfileShareOffers(issuerAccountId, now);
         };
   }
 
-  private int invalidateUnauthorizedProfileShareOffers(
-      UUID issuerAccountId, String reason, Instant now) {
+  private int invalidateUnauthorizedProfileShareOffers(UUID issuerAccountId, Instant now) {
     var invalidated = 0;
     var pendingOffers =
         profileHouseholdShareRepository.findByOfferedByAccountIdAndStatus(
@@ -280,7 +281,8 @@ public class AccountAdministrationService {
         continue;
       }
 
-      if (profileHouseholdShareRepository.tryInvalidatePending(offer.getId(), reason, now)) {
+      if (shareLifecycle.tryInvalidatePending(
+          offer.getId(), ProfileShareLifecycle.OFFERER_NO_LONGER_AUTHORIZED, now)) {
         invalidated++;
       }
     }

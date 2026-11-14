@@ -17,6 +17,10 @@ auth:
     memory-kib: 4096
     iterations: 1
     parallelism: 1
+  sharing:
+    # Tests seed offers whose time has already run out to check that reads call them EXPIRED, and
+    # run the expiry sweep themselves when they need the stored change.
+    expiry-sweep-interval: 365d
 
 streamarr:
   # Set on the shared test profile rather than per-test: a @TestPropertySource here would fork

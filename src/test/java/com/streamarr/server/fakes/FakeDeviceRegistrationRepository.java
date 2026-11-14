@@ -2,26 +2,49 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.domain.auth.HouseholdRegistrationFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.Seek;
 import com.streamarr.server.repositories.auth.DeviceRegistrationRepository;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 public class FakeDeviceRegistrationRepository extends FakeJpaRepository<DeviceRegistration>
     implements DeviceRegistrationRepository {
 
+  private final Function<UUID, Optional<UUID>> householdOfAccount;
+
+  /** No Account is known, so no registration counts as a visitor's. */
+  public FakeDeviceRegistrationRepository() {
+    this(_ -> Optional.empty());
+  }
+
+  /** Answers each Account's membership Household, so visitors' registrations can be told apart. */
+  public FakeDeviceRegistrationRepository(Function<UUID, Optional<UUID>> householdOfAccount) {
+    this.householdOfAccount = householdOfAccount;
+  }
+
   @Override
   public List<Row<DeviceRegistration>> rowsInHousehold(
-      UUID householdId, DeviceRegistrationStatus status, Seek seek) {
+      HouseholdRegistrationFilter filter, Seek seek) {
     return InMemoryKeyset.byCreationTime(
         database.values().stream()
-            .filter(registration -> householdId.equals(registration.getHouseholdId()))
-            .filter(registration -> registration.getStatus() == status)
+            .filter(registration -> filter.householdId().equals(registration.getHouseholdId()))
+            .filter(registration -> registration.getStatus() == filter.status())
+            .filter(registration -> !filter.visitorsOnly() || linkedByVisitor(registration))
             .toList(),
         seek);
+  }
+
+  private boolean linkedByVisitor(DeviceRegistration registration) {
+    return Optional.ofNullable(registration.getAuthorizingAccountId())
+        .flatMap(householdOfAccount)
+        .filter(household -> !household.equals(registration.getHouseholdId()))
+        .isPresent();
   }
 
   @Override

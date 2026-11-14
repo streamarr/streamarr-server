@@ -26,6 +26,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.identity.DeviceAdministrationService;
 import com.streamarr.server.services.identity.DeviceRejections;
+import com.streamarr.server.services.identity.HouseholdDevicesScope;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.ListPage;
@@ -273,11 +274,34 @@ class DeviceAdministrationResolverTest {
   }
 
   private void stubRegistrations(List<DeviceRegistration> registrations) {
-    when(deviceAdministrationService.householdDevices(
-            any(), eq(householdId), any(PageRequest.class)))
+    stubRegistrations(new HouseholdDevicesScope(householdId, false), registrations);
+  }
+
+  private void stubRegistrations(
+      HouseholdDevicesScope scope, List<DeviceRegistration> registrations) {
+    when(deviceAdministrationService.householdDevices(any(), eq(scope), any(PageRequest.class)))
         .thenAnswer(
             invocation ->
                 page(registrations, invocation.getArgument(2), DeviceRegistration::getId));
+  }
+
+  @Test
+  @DisplayName("Should list only visitors' Devices when visitorsOnly is set")
+  void shouldListOnlyVisitorsDevicesWhenVisitorsOnlyIsSet() {
+    stubThreeRegistrations();
+    stubRegistrations(
+        new HouseholdDevicesScope(householdId, true), List.of(registration("esn-visitor")));
+
+    List<String> visitors =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            householdDevicesQuery("visitorsOnly: true"), "data.householdDevices.edges[*].node.esn");
+    List<String> every =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            householdDevicesQuery("visitorsOnly: false"),
+            "data.householdDevices.edges[*].node.esn");
+
+    assertThat(visitors).containsExactly("esn-visitor");
+    assertThat(every).containsExactly("esn-1", "esn-2", "esn-3");
   }
 
   @ParameterizedTest
@@ -302,11 +326,32 @@ class DeviceAdministrationResolverTest {
             error -> assertThat(error.getExtensions()).containsEntry("code", "INVALID_CURSOR"));
   }
 
+  @Test
+  @DisplayName("Should reject a Device cursor when it continues the list of every Device")
+  void shouldRejectDeviceCursorWhenItContinuesListOfEveryDevice() {
+    stubThreeRegistrations();
+    stubRegistrations(
+        new HouseholdDevicesScope(householdId, true), List.of(registration("esn-visitor")));
+    String cursor =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            householdDevicesQuery("visitorsOnly: false, first: 1"),
+            "data.householdDevices.edges[0].cursor");
+
+    var result =
+        dgsQueryExecutor.execute(
+            householdDevicesQuery("visitorsOnly: true, after: \"%s\"".formatted(cursor)));
+
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(
+            error -> assertThat(error.getExtensions()).containsEntry("code", "INVALID_CURSOR"));
+  }
+
   static Stream<Arguments> cursorsFromOtherLists() {
     var otherHousehold = UUID.randomUUID();
     return Stream.of(
         Arguments.of(
-            new ListIdentity("household-devices", otherHousehold),
+            new ListIdentity("household-devices", new HouseholdDevicesScope(otherHousehold, false)),
             "{ householdDevices(householdId: \"%s\", after: \"%s\") { edges { node { esn } } } }"),
         Arguments.of(
             new ListIdentity("household-devices", otherHousehold),

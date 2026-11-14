@@ -53,6 +53,26 @@ public sealed interface Intent {
   /** Pending direct-manager invitations: ProfileManagers and live ServerAdmin only. */
   record ViewManagerInvitations(UUID profileId) implements UnitIntent {}
 
+  /**
+   * A Profile's shares into every Household and the name of each: the offering side only, meaning
+   * its ProfileManagers and live ServerAdmin. The Account of a self-managed Personal Profile is one
+   * of its ProfileManagers; the Account of a supervised one is not.
+   */
+  record ViewProfileShareHouseholds(UUID profileId) implements UnitIntent {}
+
+  /**
+   * A Household's share history, as ServerAdmin inspects it: every share into the Household at
+   * every status, with its Profile, its offerer and the Household's name. Live ServerAdmin only;
+   * administering the Household is not enough.
+   */
+  record ViewHouseholdShareHistory(UUID householdId) implements UnitIntent {}
+
+  /**
+   * Following the changes of the Profile shares the caller may read: any enabled Account, never a
+   * device-bound session. Each change is then decided against the reads of its own share.
+   */
+  record ViewProfileShareChanges() implements UnitIntent {}
+
   /** The live playback decision for the selected Profile in the context Household (ADR 0018). */
   record Playback() implements UnitIntent {}
 

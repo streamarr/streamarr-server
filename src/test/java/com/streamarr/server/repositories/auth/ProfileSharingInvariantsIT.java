@@ -6,14 +6,18 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.HouseholdShareFilter;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.pagination.ListOrder;
+import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.domain.pagination.SortValueKind;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -24,7 +28,9 @@ import com.streamarr.server.support.AuthTestSupportConfig;
 import com.streamarr.server.support.ConstraintViolations;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -132,11 +138,12 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
     var offer = pendingOffer(owner, host, now.minusSeconds(60));
 
     var declined =
-        transactionTemplate.<Boolean>execute(
+        transactionTemplate.execute(
             _ ->
                 shareRepository.tryDeclinePending(offer.getId(), ProfileShareStatus.REJECTED, now));
 
-    assertThat(declined).isTrue();
+    assertThat(declined)
+        .hasValueSatisfying(share -> assertThat(share.shareId()).isEqualTo(offer.getId()));
     assertThat(shareRepository.findById(offer.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileShareStatus.EXPIRED);
   }
@@ -159,7 +166,7 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
                 shareRepository.invalidatePendingOfferedBy(
                     owner.account().getId(), "issuer disabled", now));
 
-    assertThat(invalidated).isEqualTo(1);
+    assertThat(invalidated).extracting(ChangedShare::shareId).containsExactly(live.getId());
     var stored = shareRepository.findById(live.getId()).orElseThrow();
     assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
     assertThat(stored.getInvalidationReason()).contains("issuer disabled");
@@ -183,7 +190,8 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
                 shareRepository.invalidatePendingByProfileId(
                     owner.profile().getId(), "Profile linked to an Account", now));
 
-    assertThat(invalidated).isZero();
+    // The expired offer is recorded as expired, not invalidated.
+    assertThat(invalidated).extracting(ChangedShare::shareId).containsExactly(expired.getId());
     var stored = shareRepository.findById(expired.getId()).orElseThrow();
     assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.EXPIRED);
     assertThat(stored.statusAt(now)).isEqualTo(ProfileShareStatus.EXPIRED);
@@ -191,17 +199,91 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should omit an expired offer when a Household's pending offers are paged")
-  void shouldOmitExpiredOfferWhenHouseholdPendingOffersArePaged() {
+  @DisplayName("Should read an expired offer as expired when a Household's shares are filtered")
+  void shouldReadExpiredOfferAsExpiredWhenHouseholdSharesAreFiltered() {
     var owner = create();
     var host = create();
-    pendingOffer(owner, host, Instant.now().minusSeconds(60));
+    var now = Instant.now();
+    var expired = pendingOffer(owner, host, now.minusSeconds(60));
 
-    var rows =
-        shareRepository.rowsPendingInHousehold(
-            host.household().getId(), Instant.now(), firstSeek(NEWEST_FIRST, 10));
+    assertThat(sharesInto(host, now, ProfileShareStatus.PENDING)).isEmpty();
+    assertThat(sharesInto(host, now, ProfileShareStatus.EXPIRED)).containsExactly(expired.getId());
+  }
 
-    assertThat(rows).isEmpty();
+  @Test
+  @DisplayName("Should keep only the named statuses when a Household's shares are filtered")
+  void shouldKeepOnlyNamedStatusesWhenHouseholdSharesAreFiltered() {
+    var owner = create();
+    var host = create();
+    var now = Instant.now();
+    var byStatus = new EnumMap<ProfileShareStatus, UUID>(ProfileShareStatus.class);
+    for (var status : ProfileShareStatus.values()) {
+      byStatus.put(status, storedShare(createManagedAdultOrphan(owner), host, status, now));
+    }
+
+    var hostsOwnShare =
+        shareRepository
+            .findByProfileIdAndHouseholdIdAndStatus(
+                host.profile().getId(), host.household().getId(), ProfileShareStatus.ACTIVE)
+            .orElseThrow()
+            .getId();
+    for (var status : ProfileShareStatus.values()) {
+      var expected =
+          status == ProfileShareStatus.ACTIVE
+              ? List.of(byStatus.get(status), hostsOwnShare)
+              : List.of(byStatus.get(status));
+      assertThat(sharesInto(host, now, status))
+          .as(status.name())
+          .containsExactlyInAnyOrderElementsOf(expected);
+    }
+
+    assertThat(sharesInto(host, now, ProfileShareStatus.PENDING, ProfileShareStatus.REJECTED))
+        .containsExactlyInAnyOrder(
+            byStatus.get(ProfileShareStatus.PENDING), byStatus.get(ProfileShareStatus.REJECTED));
+    assertThat(sharesInto(host, now)).hasSize(ProfileShareStatus.values().length + 1);
+  }
+
+  @Test
+  @DisplayName("Should keep only the named statuses when a Profile's shares are filtered")
+  void shouldKeepOnlyNamedStatusesWhenProfileSharesAreFiltered() {
+    var owner = create();
+    var now = Instant.now();
+    var profile = createManagedAdultOrphan(owner);
+    var live = storedShare(profile, create(), ProfileShareStatus.PENDING, now);
+    var expired = storedShare(profile, create(), ProfileShareStatus.EXPIRED, now);
+    var stale = offerExpiringAt(profile, create(), now.minusSeconds(60));
+    var rejected = storedShare(profile, create(), ProfileShareStatus.REJECTED, now);
+
+    assertThat(sharesOf(profile, now, ProfileShareStatus.PENDING)).containsExactly(live);
+    assertThat(sharesOf(profile, now, ProfileShareStatus.EXPIRED))
+        .containsExactlyInAnyOrder(expired, stale);
+    assertThat(sharesOf(profile, now, ProfileShareStatus.REJECTED, ProfileShareStatus.PENDING))
+        .containsExactlyInAnyOrder(rejected, live);
+    // Its home availability is a share too, so naming no status keeps one more.
+    assertThat(sharesOf(profile, now)).hasSize(5);
+  }
+
+  @Test
+  @DisplayName("Should keep only visitors' shares when a Household's shares are kept to visitors")
+  void shouldKeepOnlyVisitorsSharesWhenHouseholdSharesAreKeptToVisitors() {
+    var owner = create();
+    var host = create();
+    var now = Instant.now();
+    var visiting =
+        storedShare(createManagedAdultOrphan(owner), host, ProfileShareStatus.PENDING, now);
+    var hostsOwn =
+        shareRepository
+            .findByProfileIdAndHouseholdIdAndStatus(
+                createManagedAdultOrphan(host).getId(),
+                host.household().getId(),
+                ProfileShareStatus.ACTIVE)
+            .orElseThrow()
+            .getId();
+
+    assertThat(visitorsSharesInto(host, now)).containsExactly(visiting);
+    // The visitor filter and the status filter must both keep a share.
+    assertThat(visitorsSharesInto(host, now, ProfileShareStatus.ACTIVE)).isEmpty();
+    assertThat(sharesInto(host, now)).contains(visiting, hostsOwn).hasSize(3);
   }
 
   // Hosting supervision checks and constraint evaluation order.
@@ -369,6 +451,70 @@ class ProfileSharingInvariantsIT extends AbstractIntegrationTest {
                     .offeredByAccountId(owner.account().getId())
                     .expiresAt(expiresAt)
                     .build()));
+  }
+
+  private UUID offerExpiringAt(
+      Profile profile, AuthTestSupport.TestIdentity host, Instant expiresAt) {
+    return transactionTemplate
+        .execute(
+            _ ->
+                shareRepository.saveAndFlush(
+                    ProfileHouseholdShare.builder()
+                        .profileId(profile.getId())
+                        .householdId(host.household().getId())
+                        .status(ProfileShareStatus.PENDING)
+                        .expiresAt(expiresAt)
+                        .build()))
+        .getId();
+  }
+
+  /** A share stored in the status; a stored PENDING offer is still live at {@code now}. */
+  private UUID storedShare(
+      Profile profile, AuthTestSupport.TestIdentity host, ProfileShareStatus status, Instant now) {
+    var base =
+        ProfileHouseholdShare.builder()
+            .profileId(profile.getId())
+            .householdId(host.household().getId())
+            .status(status)
+            .expiresAt(now.plusSeconds(3600));
+    var share =
+        switch (status) {
+          case ENDED -> base.endedAt(now);
+          case INVALIDATED -> base.invalidationReason("offerer no longer authorized");
+          case PENDING, ACTIVE, REJECTED, CANCELED, EXPIRED -> base.decidedAt(now);
+        };
+
+    return transactionTemplate.execute(_ -> shareRepository.saveAndFlush(share.build())).getId();
+  }
+
+  private List<UUID> sharesInto(
+      AuthTestSupport.TestIdentity host, Instant now, ProfileShareStatus... statuses) {
+    return keptBy(
+        new HouseholdShareFilter(
+            host.household().getId(), new ShareStatusFilter(Set.of(statuses), now), false));
+  }
+
+  private List<UUID> visitorsSharesInto(
+      AuthTestSupport.TestIdentity host, Instant now, ProfileShareStatus... statuses) {
+    return keptBy(
+        new HouseholdShareFilter(
+            host.household().getId(), new ShareStatusFilter(Set.of(statuses), now), true));
+  }
+
+  private List<UUID> keptBy(HouseholdShareFilter filter) {
+    return ids(shareRepository.rowsIntoHousehold(filter, firstSeek(NEWEST_FIRST, 20)));
+  }
+
+  private List<UUID> sharesOf(Profile profile, Instant now, ProfileShareStatus... statuses) {
+    return ids(
+        shareRepository.rowsOfProfile(
+            profile.getId(),
+            new ShareStatusFilter(Set.of(statuses), now),
+            firstSeek(NEWEST_FIRST, 20)));
+  }
+
+  private static List<UUID> ids(List<Row<ProfileHouseholdShare>> rows) {
+    return rows.stream().map(row -> row.item().getId()).toList();
   }
 
   private void restrict(UUID profileId) {

@@ -8,6 +8,7 @@ import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.domain.auth.EsnBlock;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -16,6 +17,8 @@ import com.streamarr.server.fakes.FakeEsnBlockRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
+import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
@@ -41,8 +44,10 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Device Administration Service Tests")
 class DeviceAdministrationServiceTest {
 
+  private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
   private final FakeDeviceRegistrationRepository registrations =
-      new FakeDeviceRegistrationRepository();
+      new FakeDeviceRegistrationRepository(
+          accountId -> accounts.findById(accountId).map(UserAccount::getHouseholdId));
   private final FakeEsnBlockRepository blocks = new FakeEsnBlockRepository();
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
@@ -239,12 +244,16 @@ class DeviceAdministrationServiceTest {
     blocks.save(EsnBlock.builder().esn("esn-2").householdId(householdId).reason("x").build());
     blocks.save(EsnBlock.builder().esn("esn-3").reason("server-wide").build());
 
-    assertThat(service.householdDevices(identity(), householdId, firstRows(10)).rows()).hasSize(1);
+    assertThat(
+            service.householdDevices(identity(), everyDeviceOf(householdId), firstRows(10)).rows())
+        .hasSize(1);
     assertThat(service.esnBlocks(identity(), householdId, firstRows(10)).rows()).hasSize(1);
     assertThat(service.serverEsnBlocks(identity(), firstRows(10)).rows()).hasSize(1);
 
     authorization.denyAll();
-    assertThat(service.householdDevices(identity(), householdId, firstRows(10)).rows()).isEmpty();
+    assertThat(
+            service.householdDevices(identity(), everyDeviceOf(householdId), firstRows(10)).rows())
+        .isEmpty();
     assertThat(service.esnBlocks(identity(), householdId, firstRows(10)).rows()).isEmpty();
     assertThat(service.serverEsnBlocks(identity(), firstRows(10)).rows()).isEmpty();
   }
@@ -255,8 +264,9 @@ class DeviceAdministrationServiceTest {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
     var currentIdentity = identity();
     var request = firstRows(10);
+    var devices = everyDeviceOf(householdId);
 
-    assertThatThrownBy(() -> service.householdDevices(currentIdentity, householdId, request))
+    assertThatThrownBy(() -> service.householdDevices(currentIdentity, devices, request))
         .isInstanceOf(AuthorizationUnavailableException.class);
     assertThatThrownBy(() -> service.esnBlocks(currentIdentity, householdId, request))
         .isInstanceOf(AuthorizationUnavailableException.class);
@@ -284,6 +294,42 @@ class DeviceAdministrationServiceTest {
         .isInstanceOf(AuthorizationUnavailableException.class);
     assertThatThrownBy(() -> service.unblockEsnServerWide(currentIdentity, "esn-3"))
         .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should keep only visitors' Devices when a Household's Devices are kept to visitors")
+  void shouldKeepOnlyVisitorsDevicesWhenHouseholdsDevicesAreKeptToVisitors() {
+    var member =
+        accounts.save(AccountFixture.defaultAccountBuilder().householdId(householdId).build());
+    var visitor = accounts.save(AccountFixture.defaultAccountBuilder().build());
+    var membersTv = linkedBy(member, "esn-member");
+    var visitorsTv = linkedBy(visitor, "esn-visitor");
+
+    var visitors =
+        service.householdDevices(
+            identity(), new HouseholdDevicesScope(householdId, true), firstRows(10));
+    var every = service.householdDevices(identity(), everyDeviceOf(householdId), firstRows(10));
+
+    assertThat(visitors.rows())
+        .extracting(row -> row.item().getId())
+        .containsExactly(visitorsTv.getId());
+    assertThat(every.rows())
+        .extracting(row -> row.item().getId())
+        .containsExactlyInAnyOrder(membersTv.getId(), visitorsTv.getId());
+  }
+
+  private DeviceRegistration linkedBy(UserAccount linker, String esn) {
+    return registrations.save(
+        DeviceRegistration.builder()
+            .esn(esn)
+            .displayName("Den TV")
+            .householdId(householdId)
+            .authorizingAccountId(linker.getId())
+            .build());
+  }
+
+  private static HouseholdDevicesScope everyDeviceOf(UUID householdId) {
+    return new HouseholdDevicesScope(householdId, false);
   }
 
   private DeviceRegistration activeRegistration(String esn) {

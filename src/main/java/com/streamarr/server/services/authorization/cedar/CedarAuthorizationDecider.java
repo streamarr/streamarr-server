@@ -17,10 +17,15 @@ import com.streamarr.server.services.authorization.Decision.FailureCause;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfilePolicyTransition;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -57,35 +62,78 @@ class CedarAuthorizationDecider implements AuthorizationDecider {
     return decide(identity, () -> intentPlanner.plan(intent));
   }
 
+  @Override
+  public Map<Intent.UnitIntent, Decision<AuthorizationUnit>> decideEach(
+      AuthenticatedIdentity identity, Set<Intent.UnitIntent> intents) {
+    try {
+      var plans = new HashMap<Intent.UnitIntent, IntentPlan<AuthorizationUnit>>();
+      intents.forEach(intent -> plans.put(intent, readPlan(identity, intent)));
+      var slices =
+          sliceAssembler.assembleEach(
+              identity, plans.values().stream().map(IntentPlan::check).toList());
+      var decisions = new HashMap<Intent.UnitIntent, Decision<AuthorizationUnit>>();
+      for (var planned : plans.entrySet()) {
+        var plan = planned.getValue();
+        decisions.put(planned.getKey(), decideOn(identity, plan, slices.get(plan.check())));
+      }
+
+      return decisions;
+    } catch (Exception e) {
+      Decision<AuthorizationUnit> failed = failClosedOn(e, "a batch of reads");
+      return intents.stream().collect(Collectors.toMap(Function.identity(), _ -> failed));
+    }
+  }
+
+  // A write is decided on facts it locks, one decision at a time; a batch reads its facts unlocked.
+  private IntentPlan<AuthorizationUnit> readPlan(
+      AuthenticatedIdentity identity, Intent.UnitIntent intent) {
+    var plan = intentPlanner.plan(identity, intent);
+    if (plan.check().action().authorizesWrite()) {
+      throw new IllegalArgumentException("A batch decides reads only: " + plan.check().action());
+    }
+
+    return plan;
+  }
+
   private <T> Decision<T> decide(AuthenticatedIdentity identity, Supplier<IntentPlan<T>> planning) {
     var authorizationContext = "unplanned intent";
     try {
       var plan = planning.get();
-      var check = plan.check();
-      authorizationContext = check.action().toString();
-      var slice = sliceAssembler.assemble(identity, check);
-      var entities = slice.entities();
-      var sliceViolation = sliceViolation(entities);
-      if (sliceViolation.isPresent()) {
-        return failClosed(FailureCause.INVALID_SLICE, check, sliceViolation.get());
-      }
+      authorizationContext = plan.check().action().toString();
+      return decideOn(identity, plan, sliceAssembler.assemble(identity, plan.check()));
+    } catch (Exception e) {
+      return failClosedOn(e, authorizationContext);
+    }
+  }
 
-      if (!check.action().requiresFreshReauthentication()) {
-        return evaluate(check, slice, entities, plan.value());
-      }
+  private <T> Decision<T> decideOn(
+      AuthenticatedIdentity identity, IntentPlan<T> plan, EntitySlice slice) throws AuthException {
+    var check = plan.check();
+    var entities = slice.entities();
+    var sliceViolation = sliceViolation(entities);
+    if (sliceViolation.isPresent()) {
+      return failClosed(FailureCause.INVALID_SLICE, check, sliceViolation.get());
+    }
 
-      return decideWithFreshness(identity, check, slice, entities, plan.value());
-    } catch (InvalidEntitySliceException e) {
+    if (!check.action().requiresFreshReauthentication()) {
+      return evaluate(check, slice, entities, plan.value());
+    }
+
+    return decideWithFreshness(identity, check, slice, entities, plan.value());
+  }
+
+  private <T> Decision<T> failClosedOn(Exception failure, String authorizationContext) {
+    if (failure instanceof InvalidEntitySliceException) {
       log.error(
           "Authorization failed closed for {} ({}): {}",
           authorizationContext,
           FailureCause.INVALID_SLICE,
-          e.getMessage());
+          failure.getMessage());
       return countFailClosed(FailureCause.INVALID_SLICE);
-    } catch (Exception e) {
-      log.error("Authorization failed closed for {} (ENGINE_FAILURE)", authorizationContext, e);
-      return countFailClosed(FailureCause.ENGINE_FAILURE);
     }
+
+    log.error("Authorization failed closed for {} (ENGINE_FAILURE)", authorizationContext, failure);
+    return countFailClosed(FailureCause.ENGINE_FAILURE);
   }
 
   /** The schema violations of an assembled slice, or empty when it validates. */

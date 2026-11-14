@@ -8,7 +8,10 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.StreamarrAuthenticationToken;
 import com.streamarr.server.services.auth.TokenScope;
 import java.time.Instant;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -80,6 +83,15 @@ public class SecurityContextAuthorizationService implements AuthorizationService
   public Decision<ProfilePolicyTransition> decide(
       AuthenticatedIdentity identity, Intent.ProfilePolicyChange intent) {
     return decider.decide(identity, intent);
+  }
+
+  @Override
+  public Set<Intent.UnitIntent> allowedAmong(
+      AuthenticatedIdentity identity, Set<Intent.UnitIntent> intents) {
+    return decider.decideEach(identity, intents).entrySet().stream()
+        .filter(decided -> AuthorizationService.allows(decided.getValue()))
+        .map(Map.Entry::getKey)
+        .collect(Collectors.toSet());
   }
 
   @Override

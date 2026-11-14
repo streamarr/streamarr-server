@@ -34,8 +34,10 @@ import com.streamarr.server.services.identity.AdministrationQueryService;
 import com.streamarr.server.services.identity.CredentialIssuanceService;
 import com.streamarr.server.services.identity.CredentialIssuanceService.IssueInvitationForProfileCommand;
 import com.streamarr.server.services.identity.CredentialRejections;
+import com.streamarr.server.services.identity.HouseholdSharesScope;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.SessionContextService;
+import com.streamarr.server.services.identity.ShareListScope;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.TestFixtureWork;
@@ -336,8 +338,10 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
 
     assertThat(
             profileSharingService
-                .pendingShareOffers(
-                    accountIdentity(targetAdmin), targetHouseholdId, paginationOptions())
+                .householdShares(
+                    accountIdentity(targetAdmin),
+                    pendingOffersInto(targetHouseholdId),
+                    paginationOptions())
                 .rows())
         .isEmpty();
   }
@@ -397,7 +401,8 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     var targetIdentity = accountIdentity(targetAdmin);
     var reoffer =
         profileSharingService
-            .pendingShareOffers(targetIdentity, targetHouseholdId, paginationOptions())
+            .householdShares(
+                targetIdentity, pendingOffersInto(targetHouseholdId), paginationOptions())
             .rows()
             .getFirst()
             .item();
@@ -524,7 +529,10 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
         .isEqualTo(AccountInvitationStatus.EXPIRED);
     var shareHistory =
         profileSharingService
-            .profileShares(accountIdentity(sourceAdmin), orphan.getId(), paginationOptions())
+            .profileShares(
+                accountIdentity(sourceAdmin),
+                new ShareListScope(orphan.getId(), List.of()),
+                paginationOptions())
             .rows()
             .stream()
             .map(Row::item)
@@ -860,6 +868,11 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
 
   private static PageRequest paginationOptions() {
     return PaginationFixture.firstRows(100);
+  }
+
+  private static HouseholdSharesScope pendingOffersInto(UUID householdId) {
+    return new HouseholdSharesScope(
+        new ShareListScope(householdId, List.of(ProfileShareStatus.PENDING)), false);
   }
 
   private static AcceptInvitationCommand acceptCommand(String code) {

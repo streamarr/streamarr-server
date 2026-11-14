@@ -86,7 +86,9 @@ class ProfileSharesPagedListIT
   @Override
   protected ListPage<ProfileHouseholdShare> page(Scope scope, PageRequest request) {
     return profileSharing.profileShares(
-        auth.identityOf(scope.owner()), scope.owner().profile().getId(), request);
+        auth.identityOf(scope.owner()),
+        new ShareListScope(scope.owner().profile().getId(), List.of()),
+        request);
   }
 
   @Override

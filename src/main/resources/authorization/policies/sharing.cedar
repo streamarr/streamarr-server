@@ -15,6 +15,47 @@ when {
    (principal has serverAdmin && principal.serverAdmin))
 };
 
+// The offering side sees every share of the Profile and the name of each Household it is into: its
+// managers and ServerAdmin. The Account of a self-managed Personal Profile manages it; the Account
+// of a supervised one does not. A HouseholdAdmin who only hosts the Profile sees only the share
+// into their own Household, from that Household's side (ADR 0024).
+@id("view-profile-share-households-as-manager-or-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"viewProfileShareHouseholds",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  ((resource has managedByPrincipal && resource.managedByPrincipal) ||
+   (principal has serverAdmin && principal.serverAdmin))
+};
+
+// A Household's share history, every share at every status with all it names, is ServerAdmin's to
+// inspect. Its HouseholdAdmins read its shares through viewHouseholdAdministration (ADR 0024).
+@id("view-household-share-history-as-live-server-admin")
+permit (
+  principal,
+  action == Streamarr::Action::"viewHouseholdShareHistory",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  principal has serverAdmin && principal.serverAdmin
+};
+
+// Any enabled Account may follow the changes of the shares it may read; each change is then decided
+// against the reads of its own share. A device-bound session follows none (devices.cedar).
+@id("view-profile-share-changes-as-enabled-account")
+permit (
+  principal,
+  action == Streamarr::Action::"viewProfileShareChanges",
+  resource
+)
+when {
+  principal has enabled && principal.enabled
+};
+
 // The target Household consents through its live HouseholdAdmins; ServerAdmin may act for them.
 // Lifecycle (pending, active, expiry) is the conditional transition's business, not authority's:
 // a decided offer answers with its typed lifecycle error, never a policy denial.
