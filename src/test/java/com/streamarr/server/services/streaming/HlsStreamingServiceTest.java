@@ -6867,6 +6867,30 @@ class HlsStreamingServiceTest {
     assertThat(runtimeRegistry.findById(command.streamSessionId())).isEmpty();
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should refuse direct play when an alternate audio track has no known end")
+  void shouldRefuseDirectPlayWhenAnAlternateAudioTrackHasNoKnownEnd(boolean explicitStart) {
+    var file =
+        seedMediaFileScanned(
+            directPlayableProbeWithAudioIn("eng", "fra").toBuilder()
+                .duration(Duration.ZERO)
+                .build(),
+            List.of(
+                new SourceStreamEnd(0, Duration.ofSeconds(60)),
+                new SourceStreamEnd(1, Duration.ofSeconds(60))));
+    var command =
+        directPlayCommandSelectingAudioTracks(file)
+            .startPosition(explicitStart ? Optional.of(Duration.ZERO) : Optional.empty())
+            .build();
+
+    var outcome = service.createSession(command);
+
+    assertThat(rejectionOf(outcome)).isEqualTo(new CreateStreamSessionRejection.NoMediaSegments());
+    assertThat(runtimeRegistry.findById(command.streamSessionId())).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   // An HLS stream session delivers its own audio track only, so its playlists end with that track.
   @Test
   @DisplayName(
