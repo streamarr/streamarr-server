@@ -153,13 +153,13 @@ class EncoderPresetSmokeTest {
         .containsAll(List.of(expectedX264Options.split(" ")));
   }
 
-  // Automatic resolves to SVT-AV1 preset 10, and veryfast is preset 11. SVT-AV1 writes no preset
+  // Automatic resolves to SVT-AV1 preset 9, and veryfast is preset 11. SVT-AV1 writes no preset
   // into its sequence header, so the encoded packets show it. The worker rebuilds the MP4
   // fragments, so compare packet hashes independently of their container headers. The packets must
   // also differ from an encode at SVT-AV1's default preset, which a worker that passes no preset
   // produces.
   @ParameterizedTest(name = "{0}")
-  @CsvSource({"AUTOMATIC, 10", "VERYFAST, 11"})
+  @CsvSource({"AUTOMATIC, 9", "VERYFAST, 11"})
   @DisplayName("Should reach FFmpeg when an AV1 job carries the server's encoder preset")
   void shouldReachFfmpegWhenAv1JobCarriesPreset(
       EncoderPresetChoice choice, int expectedSvtAv1Preset) throws Exception {

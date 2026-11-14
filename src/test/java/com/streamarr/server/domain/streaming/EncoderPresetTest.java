@@ -14,7 +14,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 class EncoderPresetTest {
 
   @ParameterizedTest(name = "{0} → {1}")
-  @CsvSource({"h264, FASTER", "hevc, VERYFAST", "av1, FASTER", "vp9, FASTER"})
+  @CsvSource({"h264, FASTER", "hevc, VERYFAST", "av1, FAST", "vp9, FASTER"})
   @DisplayName("Should resolve Automatic per video codec family when a variant job starts")
   void shouldResolveAutomaticPerVideoCodecFamilyWhenVariantJobStarts(
       String videoCodecFamily, EncoderPreset expected) {

@@ -76,8 +76,7 @@ class EncodingResolverTest {
     var setting = response.at("/data/encoderPresetSetting");
     assertThat(setting.path("preset").asString()).isEqualTo("AUTOMATIC");
     assertThat(setting.path("automatic"))
-        .isEqualTo(
-            mapper.valueToTree(Map.of("h264", "FASTER", "hevc", "VERYFAST", "av1", "FASTER")));
+        .isEqualTo(mapper.valueToTree(Map.of("h264", "FASTER", "hevc", "VERYFAST", "av1", "FAST")));
   }
 
   @Test
