@@ -331,8 +331,7 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
       StreamMeasurements.Builder measurements,
       List<StreamMeasurementIntervals> intervals) {
     return report(
-        result(media().setKeyframes(keyframes).setStreamMeasurements(measurements)),
-        intervals);
+        result(media().setKeyframes(keyframes).setStreamMeasurements(measurements)), intervals);
   }
 
   /** A report with the two keyframe positions that {@link #knownKeyframes()} counts. */
