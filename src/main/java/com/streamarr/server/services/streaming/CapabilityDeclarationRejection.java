@@ -49,14 +49,6 @@ public sealed interface CapabilityDeclarationRejection extends StartPlaybackSess
   record CodecLevelNotPositive(int videoEntry, int codecProfile)
       implements CapabilityDeclarationRejection {}
 
-  /** An H.264 codec profile names a maximum tier, and H.264 has no tier. */
-  record CodecTierNotApplicable(int videoEntry, int codecProfile)
-      implements CapabilityDeclarationRejection {}
-
-  /** An HEVC or AV1 codec profile names no maximum tier. */
-  record CodecTierMissing(int videoEntry, int codecProfile)
-      implements CapabilityDeclarationRejection {}
-
   /** The Dolby Vision profile is carried by another codec family than its capability entry. */
   record DolbyVisionProfileOutsideCodecFamily(int videoEntry, int dolbyVisionProfile)
       implements CapabilityDeclarationRejection {}

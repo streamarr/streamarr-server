@@ -657,7 +657,6 @@ class TenBitAndHdrEncodeTest {
                     VideoCodecProfileCapability.builder()
                         .profile(VideoCodecProfile.HEVC_MAIN)
                         .maxLevel(51)
-                        .maxTier(Optional.of(VideoCodecTier.MAIN))
                         .build()))
             .build();
 
@@ -1273,7 +1272,6 @@ class TenBitAndHdrEncodeTest {
                   VideoCodecProfileCapability.builder()
                       .profile(VideoCodecProfile.HEVC_MAIN)
                       .maxLevel(51)
-                      .maxTier(Optional.of(VideoCodecTier.MAIN))
                       .build()))
           .build();
     }

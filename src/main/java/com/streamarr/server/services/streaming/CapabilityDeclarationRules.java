@@ -4,18 +4,14 @@ import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
-import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
-import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioChannelsNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioDeliveryMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.AudioEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecLevelNotPositive;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfileOutsideCodecFamily;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecProfilesMissing;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierMissing;
-import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CodecTierNotApplicable;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.CompatibleBasesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DirectPlaySampleEntriesMissing;
 import com.streamarr.server.services.streaming.CapabilityDeclarationRejection.DolbyVisionLevelNotPositive;
@@ -123,25 +119,9 @@ final class CapabilityDeclarationRules {
       if (capability.maxLevel() <= 0) {
         rejections.add(new CodecLevelNotPositive(entryIndex, index));
       }
-
-      tierRejection(entryIndex, index, capability).ifPresent(rejections::add);
     }
 
     return rejections;
-  }
-
-  private static Optional<CapabilityDeclarationRejection> tierRejection(
-      int entryIndex, int profileIndex, VideoCodecProfileCapability capability) {
-    boolean hasTiers = capability.profile().codecFamily() != ProbedCodecFamily.H264;
-    if (hasTiers && capability.maxTier().isEmpty()) {
-      return Optional.of(new CodecTierMissing(entryIndex, profileIndex));
-    }
-
-    if (!hasTiers && capability.maxTier().isPresent()) {
-      return Optional.of(new CodecTierNotApplicable(entryIndex, profileIndex));
-    }
-
-    return Optional.empty();
   }
 
   private static Optional<CapabilityDeclarationRejection> compatibleBaseRejection(

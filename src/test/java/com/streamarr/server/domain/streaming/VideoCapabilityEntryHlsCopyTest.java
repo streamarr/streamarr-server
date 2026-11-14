@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.upToLevel;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -22,17 +23,15 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * ADR 0049's rule for an HLS stream copy: one video capability entry must accept every property of
  * the copy, and a probe version 5 outcome's unknown values fit as the ADR decides. The entry under
- * test plays HEVC Main up to Main tier level 5.1 and HEVC Main 10 up to High tier level 4.1, at up
- * to 10 bits, a 1920×1080 picture in either orientation and 30 fps.
+ * test plays HEVC Main up to level 5.1 and HEVC Main 10 up to level 4.1, at up to 10 bits, a
+ * 1920×1080 picture in either orientation and 30 fps.
  */
 @Tag("UnitTest")
 @DisplayName("Video Capability Entry HLS Copy Tests")
 class VideoCapabilityEntryHlsCopyTest {
 
-  private static final Map<VideoCodecProfile, ProfileLimit> PROFILE_LIMITS =
-      Map.of(
-          VideoCodecProfile.HEVC_MAIN, new ProfileLimit(51, VideoCodecTier.MAIN),
-          VideoCodecProfile.HEVC_MAIN_10, new ProfileLimit(41, VideoCodecTier.HIGH));
+  private static final Map<VideoCodecProfile, Integer> MAX_LEVELS =
+      Map.of(VideoCodecProfile.HEVC_MAIN, 51, VideoCodecProfile.HEVC_MAIN_10, 41);
   private static final int MAX_BIT_DEPTH = 10;
   private static final PictureSize MAX_SIZE = new PictureSize(1920, 1080);
   private static final PictureSize MAX_SIZE_DECLARED_PORTRAIT = new PictureSize(1080, 1920);
@@ -45,14 +44,8 @@ class VideoCapabilityEntryHlsCopyTest {
   private static VideoCapabilityEntry.VideoCapabilityEntryBuilder entryBuilder() {
     return hevcEntryBuilder()
         .codecProfiles(
-            PROFILE_LIMITS.entrySet().stream()
-                .map(
-                    limit ->
-                        VideoCodecProfileCapability.builder()
-                            .profile(limit.getKey())
-                            .maxLevel(limit.getValue().maxLevel())
-                            .maxTier(Optional.of(limit.getValue().maxTier()))
-                            .build())
+            MAX_LEVELS.entrySet().stream()
+                .map(entry -> upToLevel(entry.getKey(), entry.getValue()))
                 .toList())
         .maxBitDepth(MAX_BIT_DEPTH)
         .maxWidth(MAX_SIZE.width())
@@ -180,19 +173,19 @@ class VideoCapabilityEntryHlsCopyTest {
         Arguments.of("unknown picture size", fittingCopy().decodedSize(Optional.empty()).build()));
   }
 
-  // The known picture size and frame rate bound the decoder's work in place of the level and tier.
+  // The known picture size and frame rate bound the decoder's work in place of the level.
   @ParameterizedTest(name = "{0}")
-  @MethodSource("unknownLevelAndTier")
+  @MethodSource("unknownLevel")
   @DisplayName(
-      "Should fit an unknown codec level and tier only when the entry accepts the known picture size"
-          + " and frame rate")
-  void shouldFitAnUnknownCodecLevelAndTierOnlyWhenTheEntryAcceptsTheKnownPictureSizeAndFrameRate(
+      "Should fit an unknown codec level only when the entry accepts the known picture size and"
+          + " frame rate")
+  void shouldFitAnUnknownCodecLevelOnlyWhenTheEntryAcceptsTheKnownPictureSizeAndFrameRate(
       String scenario, VideoStreamCopy copy, boolean fits) {
     assertThat(ENTRY.acceptsHlsCopy(copy)).isEqualTo(fits);
   }
 
-  static Stream<Arguments> unknownLevelAndTier() {
-    var unknownLevelAndTier =
+  static Stream<Arguments> unknownLevel() {
+    var unknownLevel =
         Optional.of(
             VideoStreamProperties.builder()
                 .codecProfile(Optional.of(VideoCodecProfile.HEVC_MAIN_10))
@@ -201,28 +194,22 @@ class VideoCapabilityEntryHlsCopyTest {
     return Stream.of(
         Arguments.of(
             "known size and frame rate that fit",
-            fittingCopy().videoProperties(unknownLevelAndTier).build(),
+            fittingCopy().videoProperties(unknownLevel).build(),
             true),
         Arguments.of(
             "known frame rate above the maximum",
-            fittingCopy()
-                .videoProperties(unknownLevelAndTier)
-                .frameRate(OptionalDouble.of(60))
-                .build(),
+            fittingCopy().videoProperties(unknownLevel).frameRate(OptionalDouble.of(60)).build(),
             false),
         Arguments.of(
             "known size above the maximum",
             fittingCopy()
-                .videoProperties(unknownLevelAndTier)
+                .videoProperties(unknownLevel)
                 .decodedSize(Optional.of(new PictureSize(3840, 2160)))
                 .build(),
             false),
         Arguments.of(
             "unknown frame rate at a size that fits",
-            fittingCopy()
-                .videoProperties(unknownLevelAndTier)
-                .frameRate(OptionalDouble.empty())
-                .build(),
+            fittingCopy().videoProperties(unknownLevel).frameRate(OptionalDouble.empty()).build(),
             true));
   }
 
@@ -311,31 +298,20 @@ class VideoCapabilityEntryHlsCopyTest {
   }
 
   @Test
-  @DisplayName("Should refuse a tier when only another codec profile of the entry allows it")
-  void shouldRefuseATierWhenOnlyAnotherCodecProfileOfTheEntryAllowsIt() {
+  @DisplayName("Should accept a High tier copy when the entry accepts its codec profile and level")
+  void shouldAcceptAHighTierCopyWhenTheEntryAcceptsItsCodecProfileAndLevel() {
     var mainHighTier =
         fittingCopy()
             .videoProperties(
                 Optional.of(
                     codedAs(VideoCodecProfile.HEVC_MAIN)
-                        .level(OptionalInt.of(41))
-                        .tier(Optional.of(VideoCodecTier.HIGH))
-                        .build()
-                        .properties()))
-            .build();
-    var main10HighTier =
-        fittingCopy()
-            .videoProperties(
-                Optional.of(
-                    codedAs(VideoCodecProfile.HEVC_MAIN_10)
-                        .level(OptionalInt.of(41))
+                        .level(OptionalInt.of(51))
                         .tier(Optional.of(VideoCodecTier.HIGH))
                         .build()
                         .properties()))
             .build();
 
-    assertThat(ENTRY.acceptsHlsCopy(mainHighTier)).isFalse();
-    assertThat(ENTRY.acceptsHlsCopy(main10HighTier)).isTrue();
+    assertThat(ENTRY.acceptsHlsCopy(mainHighTier)).isTrue();
   }
 
   @Test
@@ -363,8 +339,6 @@ class VideoCapabilityEntryHlsCopyTest {
     return Coding.builder().profile(Optional.of(profile));
   }
 
-  record ProfileLimit(int maxLevel, @NonNull VideoCodecTier maxTier) {}
-
   @Builder(toBuilder = true)
   record Coding(
       @NonNull Optional<VideoCodecProfile> profile,
@@ -380,20 +354,15 @@ class VideoCapabilityEntryHlsCopyTest {
           .build();
     }
 
-    // A level or tier is bounded only by the maximums of the codec profile that it belongs to. An
-    // unknown level or tier is bounded by the picture size and frame rate instead.
+    // A level is bounded only by the maximum of the codec profile that it belongs to. An unknown
+    // level is bounded by the picture size and frame rate instead.
     boolean fits() {
-      var limit = profile.map(PROFILE_LIMITS::get);
-      if (limit.isEmpty()) {
+      var maxLevel = profile.map(MAX_LEVELS::get);
+      if (maxLevel.isEmpty()) {
         return false;
       }
 
-      var levelFits = level.isEmpty() || level.getAsInt() <= limit.get().maxLevel();
-      var tierFits =
-          tier.isEmpty()
-              || tier.get() == VideoCodecTier.MAIN
-              || limit.get().maxTier() == VideoCodecTier.HIGH;
-      return levelFits && tierFits;
+      return level.isEmpty() || level.getAsInt() <= maxLevel.get();
     }
   }
 

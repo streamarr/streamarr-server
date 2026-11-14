@@ -11,10 +11,8 @@ import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
-import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import java.util.List;
-import java.util.Optional;
 import java.util.OptionalInt;
 
 /**
@@ -70,15 +68,10 @@ public record ClientCapabilityDeclarationInput(
     }
   }
 
-  public record VideoCodecProfileCapabilityInput(
-      VideoCodecProfile profile, int maxLevel, VideoCodecTier maxTier) {
+  public record VideoCodecProfileCapabilityInput(VideoCodecProfile profile, int maxLevel) {
 
     VideoCodecProfileCapability toCapability() {
-      return VideoCodecProfileCapability.builder()
-          .profile(profile)
-          .maxLevel(maxLevel)
-          .maxTier(Optional.ofNullable(maxTier))
-          .build();
+      return VideoCodecProfileCapability.builder().profile(profile).maxLevel(maxLevel).build();
     }
   }
 
