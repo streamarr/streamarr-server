@@ -2037,13 +2037,13 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should carry the faster preset when an AV1 variant job starts")
-  void shouldCarryFasterPresetWhenAv1VariantJobStarts() {
+  @DisplayName("Should carry the fast preset when an AV1 variant job starts")
+  void shouldCarryFastPresetWhenAv1VariantJobStarts() {
     startedTranscodeSession("av1");
 
     assertThat(transcodeExecutor.getStartedRequests())
         .extracting(TranscodeRequest::encoderPreset)
-        .containsOnly(EncoderPreset.FASTER);
+        .containsOnly(EncoderPreset.FAST);
   }
 
   @Test
