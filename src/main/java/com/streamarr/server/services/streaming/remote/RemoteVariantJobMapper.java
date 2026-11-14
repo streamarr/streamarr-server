@@ -386,10 +386,9 @@ final class RemoteVariantJobMapper {
                 execution
                     .addAllSegmentStartTicks(starts.ticks())
                     .setSegmentStartTimeBase(fraction(starts.timeBase())));
-    if (holdsLastFrame(request) || padsWithSilence(request)) {
-      execution.setAdvertisedEnd(protobufDuration(request.advertisedEnd().orElseThrow()));
-    }
-
+    // Each job attempt carries the media end as the advertised end, a copy's included, and the
+    // last listed segment's audio ends there (ADR 0037, media end).
+    request.advertisedEnd().ifPresent(end -> execution.setAdvertisedEnd(protobufDuration(end)));
     return execution.build();
   }
 
