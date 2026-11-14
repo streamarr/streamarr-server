@@ -26,7 +26,8 @@ import lombok.NonNull;
  * writes, and a decision that copies the video holds 8-bit SDR (#397). {@code assumedSourceMatrix}
  * is the matrix with which every encode of the video reads the source, and is empty when {@link
  * MediaProbe#assumedSourceMatrix()} is. A decision that copies the video holds it for the encoded
- * lower variants beside the copy, and the copy's own job carries none (ADR 0013).
+ * lower variants beside the copy. The copy's own job carries it only when the copy lists the
+ * assumed source matrix rewrite (ADR 0013).
  */
 @Builder(toBuilder = true)
 public record TranscodeDecision(
