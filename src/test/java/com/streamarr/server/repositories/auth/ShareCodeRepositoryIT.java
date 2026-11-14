@@ -205,6 +205,28 @@ class ShareCodeRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should count only the codes live at the instant when a Household's codes are counted")
+  void shouldCountOnlyCodesLiveAtInstantWhenHouseholdsCodesAreCounted() {
+    var other = authTestSupport.createIdentity();
+    try {
+      insert(shareCodes.issue().digest(), now.plusSeconds(60));
+      insert(shareCodes.issue().digest(), now);
+      var spent = insert(shareCodes.issue().digest(), now.plusSeconds(60));
+      transactionTemplate.execute(_ -> shareCodeRepository.trySpend(spent, now));
+      var withdrawn = insert(shareCodes.issue().digest(), now.plusSeconds(60));
+      transactionTemplate.execute(_ -> shareCodeRepository.tryWithdraw(withdrawn, now));
+      insertFor(other.household().getId(), other.account().getId(), now.plusSeconds(60));
+
+      var counted = shareCodeRepository.countLiveInHousehold(host.household().getId(), now);
+
+      assertThat(counted).isOne();
+    } finally {
+      authTestSupport.deleteIdentity(other);
+    }
+  }
+
+  @Test
   @DisplayName("Should delete the codes of a Household when the Household is deleted")
   void shouldDeleteCodesOfHouseholdWhenHouseholdIsDeleted() {
     var other = authTestSupport.createIdentity();

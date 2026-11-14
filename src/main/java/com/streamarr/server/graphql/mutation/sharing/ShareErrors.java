@@ -3,6 +3,10 @@ package com.streamarr.server.graphql.mutation.sharing;
 import com.streamarr.server.graphql.mutation.InputPath;
 import com.streamarr.server.services.identity.ShareCodeRejections;
 import com.streamarr.server.services.identity.ShareRejections;
+import com.streamarr.server.services.serversettings.ChangeLifetimeRejection;
+import com.streamarr.server.services.serversettings.ChangeShareCodeLimitRejection;
+import com.streamarr.server.services.serversettings.LifetimeSetting;
+import com.streamarr.server.services.serversettings.ShareCodeLimitSetting;
 
 /** The exhaustive mappings from service rejection to schema error type, one per union. */
 public final class ShareErrors {
@@ -28,6 +32,8 @@ public final class ShareErrors {
     return switch (rejection) {
       case ShareCodeRejections.HouseholdNotFound _ ->
           new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
+      case ShareCodeRejections.ShareCodeLimitReached _ ->
+          new ShareCodeLimitReachedError("Withdraw a code before issuing another.");
     };
   }
 
@@ -46,6 +52,29 @@ public final class ShareErrors {
   public static LookUpShareCodeError toLookUpShareCodeError(ShareCodeRejections.LookUp rejection) {
     return switch (rejection) {
       case ShareCodeRejections.ShareCodeRefused _ -> shareCodeRefused("code");
+    };
+  }
+
+  /** The share code lifetime and the invitation lifetime refuse a change in the same words. */
+  public static ShareCodeLimitOutOfRangeError toShareCodeLimitError(
+      ChangeShareCodeLimitRejection rejection) {
+    return switch (rejection) {
+      case ChangeShareCodeLimitRejection.OutOfRange _ ->
+          new ShareCodeLimitOutOfRangeError(
+              "Choose from %d to %d codes."
+                  .formatted(
+                      ShareCodeLimitSetting.MINIMUM_CODES, ShareCodeLimitSetting.MAXIMUM_CODES),
+              InputPath.of("codes"));
+    };
+  }
+
+  public static LifetimeOutOfRangeError toLifetimeError(ChangeLifetimeRejection rejection) {
+    return switch (rejection) {
+      case ChangeLifetimeRejection.OutOfRange _ ->
+          new LifetimeOutOfRangeError(
+              "Choose from %d to %d hours."
+                  .formatted(LifetimeSetting.MINIMUM_HOURS, LifetimeSetting.MAXIMUM_HOURS),
+              InputPath.of("hours"));
     };
   }
 

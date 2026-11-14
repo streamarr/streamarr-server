@@ -78,6 +78,7 @@ public class AccountInvitationService {
   private final TransactionTemplate transactionTemplate;
   private final ConstraintViolationTranslator constraintViolationTranslator;
   private final CredentialCodeProperties properties;
+  private final InvitationLifetime invitationLifetime;
   private final Clock clock;
 
   /** What the code holder needs to decide; never the secret, never other Households' data. */
@@ -400,7 +401,7 @@ public class AccountInvitationService {
               .householdId(target.getHouseholdId())
               .status(ProfileShareStatus.PENDING)
               .offeredByAccountId(plan.offererAccountId())
-              .expiresAt(plan.now().plus(properties.invitationTtl()))
+              .expiresAt(plan.now().plus(invitationLifetime.invitationLifetime()))
               .build(),
           plan.now());
     }

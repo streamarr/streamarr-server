@@ -76,9 +76,12 @@ type Mutation {
     """
     Issue a share code for a Household, for its HouseholdAdmins and for ServerAdmins. The code
     expires after the server's share code lifetime, 7 days unless the server sets another, and the
-    answer is the only place it appears. A Household may hold several live codes. Issuing a code
-    invites an offer and consents to nothing: every offer still waits for a HouseholdAdmin to accept
-    or reject it. Everyone else gets HouseholdNotFoundError, and so does a device-bound session.
+    answer is the only place it appears. A Household may hold several live codes, up to the
+    server's share code limit, 10 unless the server sets another; at the limit the answer is
+    ShareCodeLimitReachedError until a code is spent, withdrawn or invalidated, or expires. Issuing
+    a code invites an offer and consents to nothing: every offer still waits for a HouseholdAdmin
+    to accept or reject it. Everyone else gets HouseholdNotFoundError, and so does a device-bound
+    session.
     """
     issueShareCode(input: IssueShareCodeInput!): IssueShareCodePayload
     """
@@ -129,6 +132,18 @@ type Mutation {
     markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload
     "Changes how long the server keeps read news and resolved requests. Requires a ServerAdmin."
     changeNotificationRetention(input: ChangeNotificationRetentionInput!): ChangeNotificationRetentionPayload
+    "Changes how long a share code issued from now on stays live. Requires a ServerAdmin."
+    changeShareCodeLifetime(input: ChangeShareCodeLifetimeInput!): ChangeShareCodeLifetimePayload
+    """
+    Changes how long an invitation or an offer of a Profile made from now on waits for its answer.
+    Requires a ServerAdmin.
+    """
+    changeInvitationLifetime(input: ChangeInvitationLifetimeInput!): ChangeInvitationLifetimePayload
+    """
+    Changes how many live share codes a Household may hold at once. A lower limit ends no live
+    code. Requires a ServerAdmin.
+    """
+    changeShareCodeLimit(input: ChangeShareCodeLimitInput!): ChangeShareCodeLimitPayload
 }
 
 enum ImageRefreshMode {

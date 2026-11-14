@@ -24,6 +24,7 @@ import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
+import com.streamarr.server.fakes.FakeServerSettingsRepository;
 import com.streamarr.server.fakes.FakeShareCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
@@ -32,7 +33,6 @@ import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
@@ -46,6 +46,7 @@ import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.PageRequest;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -101,13 +102,6 @@ class ProfileSharingServiceTest {
   void setUp() {
     var mutationTransactions =
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator());
-    var credentialCodes =
-        CredentialCodeProperties.builder()
-            .invitationTtl(INVITATION_TTL)
-            .passwordResetTtl(Duration.ofHours(1))
-            .shareCodeTtl(Duration.ofDays(7))
-            .replacementLockTimeout(Duration.ofSeconds(5))
-            .build();
     shareCodeService =
         new ShareCodeService(
             authorization,
@@ -118,7 +112,7 @@ class ProfileSharingServiceTest {
             attempts.gate(CLOCK),
             new HouseholdShareCodesList(shareCodes, CLOCK),
             codes,
-            credentialCodes,
+            new ServerSettingsService(authorization, new FakeServerSettingsRepository()),
             CLOCK);
     service =
         new ProfileSharingService(
@@ -132,7 +126,7 @@ class ProfileSharingServiceTest {
             new DeviceRegistrationLifecycle(registrations, sessions),
             audit,
             mutationTransactions,
-            credentialCodes,
+            () -> INVITATION_TTL,
             new HouseholdSharesList(shares, CLOCK),
             new ProfileSharesList(shares, CLOCK),
             shareCodeService,

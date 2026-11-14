@@ -102,6 +102,21 @@ public class ServerSettings extends TableImpl<ServerSettingsRecord> {
      */
     public final TableField<ServerSettingsRecord, Integer> NOTIFICATION_RETENTION_DAYS = createField(DSL.name("notification_retention_days"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("90"), SQLDataType.INTEGER)), this, "");
 
+    /**
+     * The column <code>public.server_settings.share_code_lifetime_hours</code>.
+     */
+    public final TableField<ServerSettingsRecord, Integer> SHARE_CODE_LIFETIME_HOURS = createField(DSL.name("share_code_lifetime_hours"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("168"), SQLDataType.INTEGER)), this, "");
+
+    /**
+     * The column <code>public.server_settings.invitation_lifetime_hours</code>.
+     */
+    public final TableField<ServerSettingsRecord, Integer> INVITATION_LIFETIME_HOURS = createField(DSL.name("invitation_lifetime_hours"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("168"), SQLDataType.INTEGER)), this, "");
+
+    /**
+     * The column <code>public.server_settings.share_code_limit</code>.
+     */
+    public final TableField<ServerSettingsRecord, Integer> SHARE_CODE_LIMIT = createField(DSL.name("share_code_limit"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("10"), SQLDataType.INTEGER)), this, "");
+
     private ServerSettings(Name alias, Table<ServerSettingsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -151,7 +166,10 @@ public class ServerSettings extends TableImpl<ServerSettingsRecord> {
         return Arrays.asList(
             Internal.createCheck(this, DSL.name("chk_server_settings_encoder_preset"), "((encoder_preset = ANY (ARRAY['AUTOMATIC'::text, 'SUPERFAST'::text, 'VERYFAST'::text, 'FASTER'::text, 'FAST'::text, 'MEDIUM'::text, 'SLOW'::text, 'SLOWER'::text, 'VERYSLOW'::text])))", true),
             Internal.createCheck(this, DSL.name("chk_server_settings_idle_segment_retention_minutes"), "(((idle_segment_retention_minutes >= 5) AND (idle_segment_retention_minutes <= 10080)))", true),
+            Internal.createCheck(this, DSL.name("chk_server_settings_invitation_lifetime_hours"), "(((invitation_lifetime_hours >= 1) AND (invitation_lifetime_hours <= 720)))", true),
             Internal.createCheck(this, DSL.name("chk_server_settings_notification_retention_days"), "(((notification_retention_days >= 1) AND (notification_retention_days <= 365)))", true),
+            Internal.createCheck(this, DSL.name("chk_server_settings_share_code_lifetime_hours"), "(((share_code_lifetime_hours >= 1) AND (share_code_lifetime_hours <= 720)))", true),
+            Internal.createCheck(this, DSL.name("chk_server_settings_share_code_limit"), "(((share_code_limit >= 1) AND (share_code_limit <= 100)))", true),
             Internal.createCheck(this, DSL.name("chk_server_settings_singleton"), "(singleton)", true)
         );
     }

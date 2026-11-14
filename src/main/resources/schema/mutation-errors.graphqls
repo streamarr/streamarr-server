@@ -308,6 +308,16 @@ type ShareCodeNotFoundError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
+"""
+The Household already holds as many live share codes as the server allows, so no code was issued.
+A code that is spent, withdrawn or invalidated, or that expires, makes room for another. Only a
+HouseholdAdmin of the Household or a ServerAdmin gets it: everyone else gets HouseholdNotFoundError.
+"""
+type ShareCodeLimitReachedError implements MutationError {
+    "Withdraw a code before issuing another."
+    message: String!
+}
+
 "The share code no longer works: it was spent, withdrawn or invalidated, or it expired."
 type ShareCodeNotLiveError implements InputMutationError & MutationError {
     message: String!
@@ -477,6 +487,28 @@ type IdleSegmentRetentionOutOfRangeError implements InputMutationError & Mutatio
 "The days lie outside the range that the Notification retention setting reports."
 type NotificationRetentionOutOfRangeError implements InputMutationError & MutationError {
     message: String!
+    inputPath: [String!]!
+}
+
+"""
+The codes lie outside the range that the share code limit reports, so the setting is unchanged.
+Only a ServerAdmin, who alone may change the limit, gets it.
+"""
+type ShareCodeLimitOutOfRangeError implements InputMutationError & MutationError {
+    "The range a ServerAdmin can choose from."
+    message: String!
+    "Names the codes input."
+    inputPath: [String!]!
+}
+
+"""
+The hours lie outside the range that the lifetime setting reports, so the setting is unchanged.
+Only a ServerAdmin, who alone may change a lifetime, gets it.
+"""
+type LifetimeOutOfRangeError implements InputMutationError & MutationError {
+    "The range a ServerAdmin can choose from."
+    message: String!
+    "Names the hours input."
     inputPath: [String!]!
 }
 

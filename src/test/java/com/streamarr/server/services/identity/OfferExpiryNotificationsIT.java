@@ -3,6 +3,7 @@ package com.streamarr.server.services.identity;
 import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
 import static com.streamarr.server.support.PostgresLockTestSupport.awaitWaitersBehind;
 import static com.streamarr.server.support.PostgresLockTestSupport.lockRow;
+import static com.streamarr.server.support.ServerSettingsTestSupport.resetServerSettings;
 import static com.streamarr.server.support.StoredNotificationRows.document;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
@@ -63,14 +64,13 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * The requests about an offer whose time runs out (ADR 0063 §Requests), on a clock the tests move
  * past the offer's expiry: a request reads as expired from its expiry on, and an offer that stops
- * waiting after it resolves its requests as expired, at the expiry. Offers last five minutes here,
- * so the moved clock stays inside the lifetime of the tokens and sockets the tests open.
+ * waiting after it resolves its requests as expired, at the expiry. An offer waits as long as the
+ * invitation lifetime setting says, longer than an access token lives, so a test opens a socket
+ * only once the clock is a second from the offer's expiry.
  */
 @Tag("IntegrationTest")
 @DisplayName("Offer Expiry Notifications Integration Tests")
-@SpringBootTest(
-    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = "auth.credential-codes.invitation-ttl=5m")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @Import(ControlledClockConfiguration.class)
 class OfferExpiryNotificationsIT extends AbstractIntegrationTest {
@@ -144,6 +144,7 @@ class OfferExpiryNotificationsIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    resetServerSettings(dsl);
     clock.advance(Duration.between(clock.instant(), Instant.now()));
     rows = new StoredNotificationRows(dsl);
     activeSubscriptions = new ActiveSubscriptions(meterRegistry);
@@ -275,6 +276,7 @@ class OfferExpiryNotificationsIT extends AbstractIntegrationTest {
   @DisplayName("Should deliver the request's expiry when the sweep stores the offer's expiry")
   void shouldDeliverTheRequestsExpiryWhenTheSweepStoresTheOffersExpiry() throws Exception {
     var offer = steps.offer(sam, kai(), riverside);
+    runAlmostOut(offer);
     var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
     runOut(offer);
 
@@ -301,7 +303,7 @@ class OfferExpiryNotificationsIT extends AbstractIntegrationTest {
   void shouldResolveTheRequestsAsDecidedAtTheAcceptanceWhenTheAcceptanceWaitedPastTheExpiry()
       throws Exception {
     var offer = steps.offer(sam, kai(), riverside);
-    clock.advance(Duration.between(clock.instant(), stored(offer).getExpiresAt().minusSeconds(1)));
+    runAlmostOut(offer);
     var socket = subscribedSocket(authTestSupport.accountBearer(riversideAdmin));
     var shareRow =
         RowLockTarget.builder()
@@ -352,6 +354,11 @@ class OfferExpiryNotificationsIT extends AbstractIntegrationTest {
   /** Moves the clock a second past the offer's expiry, as if its time ran out. */
   private void runOut(ProfileHouseholdShare offer) {
     clock.advance(Duration.between(clock.instant(), stored(offer).getExpiresAt().plusSeconds(1)));
+  }
+
+  /** Moves the clock to a second before the offer's expiry, while the offer still waits. */
+  private void runAlmostOut(ProfileHouseholdShare offer) {
+    clock.advance(Duration.between(clock.instant(), stored(offer).getExpiresAt().minusSeconds(1)));
   }
 
   private void demote(TestIdentity householdAdmin) {

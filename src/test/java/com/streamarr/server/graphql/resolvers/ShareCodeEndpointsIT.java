@@ -1,6 +1,8 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.jooq.generated.tables.ShareCode.SHARE_CODE;
+import static com.streamarr.server.support.ServerSettingsTestSupport.limitShareCodes;
+import static com.streamarr.server.support.ServerSettingsTestSupport.resetServerSettings;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -54,7 +56,11 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
               id householdId status issuedAt expiresAt endedAt issuedByDisplayName
             }
           }
-          userErrors { __typename ... on InputMutationError { message inputPath } }
+          userErrors {
+            __typename
+            ... on MutationError { message }
+            ... on InputMutationError { inputPath }
+          }
         }
       }
       """;
@@ -130,12 +136,82 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void setUp() {
+    resetServerSettings(dsl);
     host = identity();
   }
 
   @AfterEach
   void tearDown() {
+    resetServerSettings(dsl);
     identities.reversed().forEach(authTestSupport::deleteIdentity);
+  }
+
+  @Test
+  @DisplayName(
+      "Should ask to withdraw a code when the Household holds the server's limit of live codes")
+  void shouldAskToWithdrawACodeWhenHouseholdHoldsTheServersLimitOfLiveCodes() throws Exception {
+    limitShareCodes(dsl, 1);
+    var bearer = authTestSupport.accountBearer(host);
+    issue(bearer, host.household().getId());
+
+    var refused = issue(bearer, host.household().getId());
+
+    assertThat(refused.path("issued").isNull()).isTrue();
+    assertThat(refused.path("userErrors")).hasSize(1);
+    assertThat(refused.path("userErrors").path(0).path("__typename").asString())
+        .isEqualTo("ShareCodeLimitReachedError");
+    assertThat(refused.path("userErrors").path(0).path("message").asString())
+        .isEqualTo("Withdraw a code before issuing another.");
+    assertThat(liveCodesOf(host.household().getId())).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep every live code and refuse the next when a ServerAdmin lowers the limit below"
+          + " them")
+  void shouldKeepEveryLiveCodeAndRefuseTheNextWhenServerAdminLowersTheLimitBelowThem()
+      throws Exception {
+    var bearer = authTestSupport.accountBearer(host);
+    var householdId = host.household().getId();
+    issue(bearer, householdId);
+    issue(bearer, householdId);
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    identities.add(serverAdmin);
+    execute(
+        authTestSupport.accountBearer(serverAdmin),
+        "mutation { changeShareCodeLimit(input: {codes: 1}) { userErrors { __typename } } }",
+        Map.of());
+
+    var refused = issue(bearer, householdId);
+
+    assertThat(refused.path("userErrors").path(0).path("__typename").asString())
+        .isEqualTo("ShareCodeLimitReachedError");
+    assertThat(list(bearer))
+        .hasSize(2)
+        .allSatisfy(node -> assertThat(node.path("status").asString()).isEqualTo("LIVE"));
+  }
+
+  @Test
+  @DisplayName(
+      "Should issue a code that lasts the new lifetime when a ServerAdmin changed it before")
+  void shouldIssueCodeThatLastsTheNewLifetimeWhenServerAdminChangedItBefore() throws Exception {
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    identities.add(serverAdmin);
+    execute(
+        authTestSupport.accountBearer(serverAdmin),
+        "mutation { changeShareCodeLifetime(input: {hours: 2}) { userErrors { __typename } } }",
+        Map.of());
+
+    var shareCode =
+        issue(authTestSupport.accountBearer(host), host.household().getId())
+            .path("issued")
+            .path("shareCode");
+
+    assertThat(
+            Duration.between(
+                Instant.parse(shareCode.path("issuedAt").asString()),
+                Instant.parse(shareCode.path("expiresAt").asString())))
+        .isBetween(Duration.ofHours(2), Duration.ofHours(2).plusMinutes(1));
   }
 
   @Test
@@ -752,6 +828,16 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
             });
     assertThat(shareCodeRepository.findAll())
         .noneMatch(shareCode -> shareCode.getHouseholdId().equals(host.household().getId()));
+  }
+
+  private int liveCodesOf(UUID householdId) {
+    return dsl.fetchCount(
+        SHARE_CODE,
+        SHARE_CODE
+            .HOUSEHOLD_ID
+            .eq(householdId)
+            .and(SHARE_CODE.STATUS.eq(ShareCodeStatus.LIVE))
+            .and(SHARE_CODE.EXPIRES_AT.gt(OffsetDateTime.now(ZoneOffset.UTC))));
   }
 
   private JsonNode issue(String bearer, UUID householdId) throws Exception {

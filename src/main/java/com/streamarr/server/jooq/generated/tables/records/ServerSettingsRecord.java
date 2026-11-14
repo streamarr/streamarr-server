@@ -151,6 +151,48 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
         return (Integer) get(8);
     }
 
+    /**
+     * Setter for <code>public.server_settings.share_code_lifetime_hours</code>.
+     */
+    public void setShareCodeLifetimeHours(Integer value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>public.server_settings.share_code_lifetime_hours</code>.
+     */
+    public Integer getShareCodeLifetimeHours() {
+        return (Integer) get(9);
+    }
+
+    /**
+     * Setter for <code>public.server_settings.invitation_lifetime_hours</code>.
+     */
+    public void setInvitationLifetimeHours(Integer value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.server_settings.invitation_lifetime_hours</code>.
+     */
+    public Integer getInvitationLifetimeHours() {
+        return (Integer) get(10);
+    }
+
+    /**
+     * Setter for <code>public.server_settings.share_code_limit</code>.
+     */
+    public void setShareCodeLimit(Integer value) {
+        set(11, value);
+    }
+
+    /**
+     * Getter for <code>public.server_settings.share_code_limit</code>.
+     */
+    public Integer getShareCodeLimit() {
+        return (Integer) get(11);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -174,7 +216,7 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
     /**
      * Create a detached, initialised ServerSettingsRecord
      */
-    public ServerSettingsRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, Boolean singleton, String encoderPreset, Integer idleSegmentRetentionMinutes, Integer notificationRetentionDays) {
+    public ServerSettingsRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, Boolean singleton, String encoderPreset, Integer idleSegmentRetentionMinutes, Integer notificationRetentionDays, Integer shareCodeLifetimeHours, Integer invitationLifetimeHours, Integer shareCodeLimit) {
         super(ServerSettings.SERVER_SETTINGS);
 
         setId(id);
@@ -186,6 +228,9 @@ public class ServerSettingsRecord extends UpdatableRecordImpl<ServerSettingsReco
         setEncoderPreset(encoderPreset);
         setIdleSegmentRetentionMinutes(idleSegmentRetentionMinutes);
         setNotificationRetentionDays(notificationRetentionDays);
+        setShareCodeLifetimeHours(shareCodeLifetimeHours);
+        setInvitationLifetimeHours(invitationLifetimeHours);
+        setShareCodeLimit(shareCodeLimit);
         resetTouchedOnNotNull();
     }
 }
