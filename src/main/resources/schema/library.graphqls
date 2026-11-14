@@ -3,12 +3,16 @@ type Library {
     name: String
     backend: LibraryBackend!
     type: MediaType!
-    items(first: Int
-          after: String
-          last: Int
-          before: String
-          sort: MediaSort
-          filter: MediaFilter): MediaConnection!
+    items(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+        sort: MediaSort
+        filter: MediaFilter
+    ): MediaConnection!
     alphabetIndex: [AlphabetIndex!]!
     """
     Committed top-level movies or series, independent of filters and pagination. Seasons, episodes
@@ -41,7 +45,14 @@ type LibraryAdministration {
     library folder check fails, leaves the earlier skipped files. A file that the file watcher
     skips appears after the next scan.
     """
-    skippedFiles(first: Int, after: String, last: Int, before: String): SkippedFileConnection!
+    skippedFiles(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): SkippedFileConnection!
 }
 
 "A file that a scan found in its library's folder and skipped."

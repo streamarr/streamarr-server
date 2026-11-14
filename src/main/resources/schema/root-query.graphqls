@@ -13,21 +13,36 @@ type Query {
     first defaults to 20; after continues from an opaque cursor for this Profile and list.
     Authorizes from the signed selected-Profile token, including revalidation queries.
     """
-    continueWatching(first: Int, after: String): ContinueWatchingConnection!
+    continueWatching(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+    ): ContinueWatchingConnection!
     """
     The signed-in Account's Notifications, newest latestEventAt first. Forward-only: first
     defaults to 20, and after continues from an opaque cursor for this Account and list. Needs an
     Account session that is not device-bound, with or without a selected Profile. A device-bound
     session gets FORBIDDEN.
     """
-    notifications(first: Int, after: String): NotificationConnection!
+    notifications(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+    ): NotificationConnection!
     """
     How many of the signed-in Account's Notifications are unread, including the requests that
     still wait. The same access as notifications.
     """
     unreadNotificationCount: Int!
     householdAdministration(householdId: ID!): HouseholdAdministration
-    households(first: Int, after: String, last: Int, before: String): HouseholdAdministrationConnection!
+    households(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): HouseholdAdministrationConnection!
     accountAdministration(accountId: ID!): AccountAdministration
     """
     A Profile's administrative details: for its managers, for the HouseholdAdmins of a Household
@@ -43,12 +58,27 @@ type Query {
     is supervised manages none, so its list is empty. A visitor's row never says where it comes
     from. A device-bound session and a disabled Account get an empty list.
     """
-    householdProfiles(householdId: ID!, first: Int, after: String, last: Int, before: String): HouseholdProfileConnection!
+    householdProfiles(
+        householdId: ID!
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): HouseholdProfileConnection!
     """
     Every Account invitation, newest first. ServerAdmin work: everyone else, a device-bound session
     included, gets FORBIDDEN.
     """
-    accountInvitations(first: Int, after: String, last: Int, before: String): AccountInvitationConnection!
+    accountInvitations(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): AccountInvitationConnection!
     """
     Before an Account is invited for an existing Profile: the Profile, the Household it belongs to
     and the other Households where it is available. ServerAdmin work: everyone else, a device-bound
@@ -77,7 +107,17 @@ type Query {
     Profiles are left out. Leave it out, or pass false, to get both. Pass visitorsOnly: true with
     [PENDING, ACTIVE] for the Profiles shared with the Household, or waiting for its decision.
     """
-    householdShares(householdId: ID!, statuses: [ProfileShareStatus!], visitorsOnly: Boolean, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
+    householdShares(
+        householdId: ID!
+        statuses: [ProfileShareStatus!]
+        visitorsOnly: Boolean
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): ProfileShareConnection!
     """
     A Profile's shares into every Household, newest first, for its managers and ServerAdmins. The
     Account of a self-managed Personal Profile is one of its managers; the Account of a supervised
@@ -86,14 +126,31 @@ type Query {
     statuses keeps only shares in those statuses, as householdShares does: pass [PENDING, ACTIVE]
     for where the Profile is offered or available now.
     """
-    profileShares(profileId: ID!, statuses: [ProfileShareStatus!], first: Int, after: String, last: Int, before: String): ProfileShareConnection!
+    profileShares(
+        profileId: ID!
+        statuses: [ProfileShareStatus!]
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): ProfileShareConnection!
     """
     A Household's live share codes, newest first, for its HouseholdAdmins and for ServerAdmins:
     who issued each and when it expires, never the code. A code leaves the list once it is spent,
     withdrawn, invalidated or past its expiry. Everyone else gets an empty list, and so does a
     device-bound session.
     """
-    householdShareCodes(householdId: ID!, first: Int, after: String, last: Int, before: String): ShareCodeConnection!
+    householdShareCodes(
+        householdId: ID!
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): ShareCodeConnection!
     """
     A share code's current status and metadata, including after it leaves the live list; never
     the code itself. Only its Household's HouseholdAdmins and ServerAdmins may read it.
@@ -115,7 +172,15 @@ type Query {
     list, a HouseholdAdmin who only supervises the Profile included, as do a device-bound session
     and a Profile that does not exist.
     """
-    pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
+    pendingManagerInvitationsForProfile(
+        profileId: ID!
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): ManagerInvitationConnection!
     """
     Which Profiles giving this Profile the kind and Content Ceiling given would lock, before the
     change is made; maximumAllowedRatingAge null means no Content Ceiling. For whoever may make that
@@ -146,12 +211,27 @@ type Query {
     them, gets an empty list, as do a device-bound session, a disabled Account and a Profile that
     does not exist.
     """
-    profileManagers(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileManagerConnection!
+    profileManagers(
+        profileId: ID!
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): ProfileManagerConnection!
     """
     The pending invitations to manage a Profile that name the signed-in Account and that it may
     still answer, newest first. Empty for a device-bound session and for a disabled Account.
     """
-    pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
+    pendingManagerInvitations(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): ManagerInvitationConnection!
     """
     One invitation to manage a Profile, at any status, for the page where the Account it names
     accepts or declines it. Its named Account, the managers of its Profile and ServerAdmins read it;
@@ -169,17 +249,56 @@ type Query {
     linked: people who are not members of the Household. Leave it out, or pass false, to get every
     Device.
     """
-    householdDevices(householdId: ID!, visitorsOnly: Boolean, first: Int, after: String, last: Int, before: String): DeviceRegistrationConnection!
-    esnBlocks(householdId: ID!, first: Int, after: String, last: Int, before: String): EsnBlockConnection!
-    serverEsnBlocks(first: Int, after: String, last: Int, before: String): EsnBlockConnection!
+    householdDevices(
+        householdId: ID!
+        visitorsOnly: Boolean
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): DeviceRegistrationConnection!
+    esnBlocks(
+        householdId: ID!
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): EsnBlockConnection!
+    serverEsnBlocks(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): EsnBlockConnection!
     householdDeletionPreview(householdId: ID!): HouseholdDeletionPreview
-    securityAuditEvents(first: Int, after: String, last: Int, before: String): SecurityAuditEventConnection!
+    securityAuditEvents(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): SecurityAuditEventConnection!
     """
     A Profile's viewing activity, most recent first: for its managers, for a session whose selected
     Profile it is, and for ServerAdmins. Everyone else gets an empty list, as does a Profile that
     does not exist.
     """
-    profileActivity(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileActivityConnection!
+    profileActivity(
+        profileId: ID!
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): ProfileActivityConnection!
     encoderPresetSetting: EncoderPresetSetting!
     idleSegmentRetentionSetting: IdleSegmentRetentionSetting!
     "How long the server keeps read news and resolved requests. Requires a ServerAdmin."
