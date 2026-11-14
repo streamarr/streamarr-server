@@ -30,6 +30,8 @@ import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.properties.WatchProgressProperties;
 import com.streamarr.server.services.events.watchprogress.WatchStateChangedEvent;
+import java.time.Duration;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -105,6 +107,26 @@ class SessionProgressServiceTest {
     var mediaFile = buildMatchedMediaFile(movieRepository.save(buildMovie()).getId());
     mediaFile.setId(session.getMediaFileId());
     mediaFileRepository.save(mediaFile);
+  }
+
+  @Test
+  @DisplayName("Should mark watched at the fixed media end when the source continues beyond it")
+  void shouldMarkWatchedAtTheFixedMediaEndWhenTheSourceContinuesBeyondIt() {
+    var session =
+        StreamSessionFixture.defaultSessionBuilder()
+            .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
+            .fixedMediaEnd(Optional.of(Duration.ofSeconds(13)))
+            .build();
+    runtimeRegistry.save(session);
+    saveMediaFileForSession(session);
+
+    service.reportStreamSessionTimeline(
+        PROFILE_ID, session.getSessionId(), 13, PlaybackState.STOPPED);
+
+    assertThat(watchHistoryRepository.findAll())
+        .singleElement()
+        .satisfies(history -> assertThat(history.getDurationSeconds()).isEqualTo(13));
+    assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
   }
 
   private void markAsWatched(StreamSession session) {

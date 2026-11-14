@@ -112,10 +112,9 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments());
     }
 
-    if (command
-        .startPosition()
-        .filter(start -> start.compareTo(probe.duration()) >= 0)
-        .isPresent()) {
+    if (startsAtOrPast(command, probe.duration())
+        && command.fixedMediaEnd().isEmpty()
+        && probe.probedSessionAudioEnd().isEmpty()) {
       return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
     }
 
@@ -127,6 +126,11 @@ public class HlsStreamingService implements StreamingService {
     // Direct play uses no worker time, so it needs no connected worker (ADR 0045).
     var directPlay =
         transcodeDecisionService.decideDirectPlay(DirectPlayRequest.of(command, probe));
+    if (directPlay instanceof DirectPlayChoice.Accepted
+        && startsAtOrPast(command, probe.duration())) {
+      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    }
+
     if (directPlay instanceof DirectPlayChoice.Accepted(var container, var audioTrackPosition)) {
       var session =
           directPlaySession(command, mediaFile, probe)
@@ -169,7 +173,10 @@ public class HlsStreamingService implements StreamingService {
             .directPlayRefusals(directPlay.refusals())
             .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
             .build();
-    var candidate = transcodeDecisionService.decide(request);
+    var candidate =
+        transcodeDecisionService
+            .decide(request)
+            .or(() -> finishedEncodeCandidate(command, request));
     if (candidate.isEmpty()) {
       candidate = decideAfterStoppingALeftVariant(command.streamSessionId(), request);
     }
@@ -186,7 +193,10 @@ public class HlsStreamingService implements StreamingService {
 
     var admission = admission(request, decisionWithSessionAudio);
     var sessionId = command.streamSessionId();
-    var refusal = capacityRefusalFor(admission.decision());
+    var refusal =
+        resumesPastMediaEnd(command, probe, admission.decision())
+            ? Optional.<CapacityRefusal>empty()
+            : capacityRefusalFor(admission.decision());
     // A left variant only serves its own player's switch back, so it never keeps a new stream
     // session out (ADR 0019).
     if (refusal.isPresent() && isSlotShortage(refusal.get())) {
@@ -210,12 +220,22 @@ public class HlsStreamingService implements StreamingService {
             .authority(authority)
             .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
             .mediaProbe(probe)
+            .fixedMediaEnd(fixedMediaEndFor(command, probe, decision))
             .transcodeDecision(decision)
             .options(options)
             .variants(variants)
             .startPosition(command.startPosition().orElse(null))
             .createdAt(now)
             .build();
+    if (session.getNormalEnd().isPresent()) {
+      runtimeRegistry.save(session);
+      return Outcome.accepted(session);
+    }
+
+    if (startsAtOrPast(command, probe.duration())) {
+      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    }
+
     startAtTheStartSegment(session);
 
     try {
@@ -239,6 +259,38 @@ public class HlsStreamingService implements StreamingService {
         variants.size());
 
     return Outcome.accepted(session);
+  }
+
+  private static boolean startsAtOrPast(CreateStreamSessionCommand command, Duration end) {
+    return command.startPosition().filter(start -> start.compareTo(end) >= 0).isPresent();
+  }
+
+  private Optional<Duration> fixedMediaEndFor(
+      CreateStreamSessionCommand command, MediaProbe probe, TranscodeDecision decision) {
+    return command
+        .fixedMediaEnd()
+        .or(() -> MediaSegmentTimelines.endOfCopiedAudioSegment(probe, decision, properties));
+  }
+
+  private boolean resumesPastMediaEnd(
+      CreateStreamSessionCommand command, MediaProbe probe, TranscodeDecision decision) {
+    return fixedMediaEndFor(command, probe, decision)
+        .filter(end -> startsAtOrPast(command, end))
+        .isPresent();
+  }
+
+  // A finished resume needs a compatible format's grid, but no free encoder or job slot.
+  private Optional<TranscodeDecision> finishedEncodeCandidate(
+      CreateStreamSessionCommand command, TranscodeDecisionRequest request) {
+    if (command.startPosition().isEmpty()) {
+      return Optional.empty();
+    }
+
+    return verifiedEncodeCandidate(request)
+        .filter(
+            decision ->
+                resumesPastMediaEnd(
+                    command, request.source(), admission(request, decision).decision()));
   }
 
   // The first-listed variant's first job attempt starts at the segment that holds the start

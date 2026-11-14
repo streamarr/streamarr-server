@@ -10,6 +10,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
@@ -274,14 +275,18 @@ class HlsEncodedEndSmokeTest {
   // The client declares the source's H.264 and AAC, so it could copy either stream.
   @Test
   @DisplayName(
-      "Should carry audio in every segment after the audio's end when a client that copies both"
-          + " codecs plays a source whose audio ends two segments before its video")
-  void
-      shouldCarryAudioInEverySegmentAfterTheAudiosEndWhenACopyCapableClientPlaysAudioThatEndsFirst()
-          throws Exception {
+      "Should pad audio after its learned end when a copy-capable client falls back to an encode")
+  void shouldPadAudioAfterItsLearnedEndWhenACopyCapableClientFallsBackToAnEncode()
+      throws Exception {
     var source = generateSource("audio-ends-at-12-of-24.mp4", "24", 24, 12);
     var probe = probe(source);
-    var session = startedEncode(source, probe, decidedForACopyCapableClient(probe));
+    var learnedProbe =
+        probe.toBuilder()
+            .streamsWithLearnedEnds(Set.of(probe.audioStreams().getFirst().index()))
+            .build();
+    var session = startedEncode(source, learnedProbe, decidedForACopyCapableClient(learnedProbe));
+    assertThat(session.getTranscodeDecision().audioDecision().mode())
+        .isEqualTo(AudioMode.TRANSCODE);
     awaitFirstAttemptEnd(session);
 
     assertEveryAdvertisedSegmentIsServed(session);

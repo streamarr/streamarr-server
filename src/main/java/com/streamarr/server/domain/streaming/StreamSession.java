@@ -29,6 +29,7 @@ public class StreamSession {
   @NonNull private final PlaybackAuthority authority;
   @NonNull private final Path sourcePath;
   private final MediaProbe mediaProbe;
+  @NonNull @Builder.Default private final Optional<Duration> fixedMediaEnd = Optional.empty();
   // Null for a direct-play stream session, which starts no job attempt.
   private final TranscodeDecision transcodeDecision;
   private final StreamingOptions options;
@@ -99,6 +100,11 @@ public class StreamSession {
   /** Empty when playback starts at the beginning of the media. */
   public Optional<Duration> getStartPosition() {
     return Optional.ofNullable(startPosition);
+  }
+
+  /** The end shared by the stream session's playlists and job attempts. */
+  public Duration getMediaEnd() {
+    return fixedMediaEnd.orElseGet(mediaProbe::duration);
   }
 
   /**
@@ -255,11 +261,18 @@ public class StreamSession {
   }
 
   /**
-   * Where playback ends normally: the media end of a copy that ran short after every source stream
-   * ended (ADR 0052).
+   * Where playback has already ended normally: a resume at or beyond the fixed media end, or a copy
+   * that ran short after every source stream ended (ADR 0052).
    */
   public Optional<Duration> getNormalEnd() {
-    return getShortCopy().filter(ShortCopy::everySourceStreamEnded).map(ShortCopy::mediaEnd);
+    return getShortCopy()
+        .filter(ShortCopy::everySourceStreamEnded)
+        .map(ShortCopy::mediaEnd)
+        .or(() -> fixedMediaEnd.filter(this::startsAtOrPast));
+  }
+
+  private boolean startsAtOrPast(Duration end) {
+    return getStartPosition().filter(start -> start.compareTo(end) >= 0).isPresent();
   }
 
   /**
