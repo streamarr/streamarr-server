@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -383,11 +384,40 @@ class KeyframePacketScanExecutionTest {
     assertThat(scanRequests).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should refuse to build the execution when it has no event publisher")
+  void shouldRefuseToBuildTheExecutionWhenItHasNoEventPublisher() {
+    var withoutEventPublisher =
+        executionBuilderWithoutPublication().transactionManager(new FakeTransactionManager());
+
+    assertThatNullPointerException()
+        .isThrownBy(withoutEventPublisher::build)
+        .withMessageContaining("eventPublisher");
+  }
+
+  @Test
+  @DisplayName("Should refuse to build the execution when it has no transaction manager")
+  void shouldRefuseToBuildTheExecutionWhenItHasNoTransactionManager() {
+    var withoutTransactionManager = executionBuilderWithoutPublication().eventPublisher(events);
+
+    assertThatNullPointerException()
+        .isThrownBy(withoutTransactionManager::build)
+        .withMessageContaining("transactionManager");
+  }
+
   private static Stream<KeyframeKnowledge> keyframesThatNoPacketScanReports() {
     return Stream.of(packetScanRequired(), new KeyframeKnowledge.NotReported());
   }
 
   private KeyframePacketScanExecution execution() {
+    return executionBuilderWithoutPublication()
+        .eventPublisher(events)
+        .transactionManager(new FakeTransactionManager())
+        .build();
+  }
+
+  private KeyframePacketScanExecution.KeyframePacketScanExecutionBuilder
+      executionBuilderWithoutPublication() {
     return KeyframePacketScanExecution.builder()
         .reader(new PersistedProbeReader(outcomes))
         .scanner(
@@ -397,10 +427,7 @@ class KeyframePacketScanExecutionTest {
             })
         .fileSystem(FileSystems.getDefault())
         .outcomes(outcomes)
-        .eventPublisher(events)
-        .transactionManager(new FakeTransactionManager())
-        .meterRegistry(meterRegistry)
-        .build();
+        .meterRegistry(meterRegistry);
   }
 
   private long failedScans(String reason) {
