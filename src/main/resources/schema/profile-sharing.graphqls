@@ -139,6 +139,13 @@ extend type Subscription {
 type ProfileShareChange {
     shareId: ID!
     """
+    The whole number of offers waiting for this Household's answer when the change is delivered,
+    excluding expired offers even before their stored status changes. Zero when the Household
+    does not exist or the subscriber may not list its shares. This is the same count as
+    HouseholdAdministration.pendingOfferCount, independent of which pages the client loaded.
+    """
+    pendingOfferCount(householdId: ID!): Int!
+    """
     The share as the server reads it on delivery, or null once the share no longer exists, as when
     it was deleted with its Profile or its Household. The change that ends a share reaches a
     HouseholdAdmin who reads the share only from its Household as that change left it, never as
