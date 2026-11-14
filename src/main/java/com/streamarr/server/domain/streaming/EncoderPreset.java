@@ -22,7 +22,7 @@ public enum EncoderPreset {
    */
   public static EncoderPreset automaticFor(@NonNull String videoCodecFamily) {
     return switch (videoCodecFamily) {
-      case "h264", "av1" -> FASTER;
+      case "av1" -> FAST;
       case "hevc" -> VERYFAST;
       default -> FASTER;
     };
