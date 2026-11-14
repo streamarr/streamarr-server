@@ -15,6 +15,7 @@ import com.streamarr.server.repositories.auth.ServerBootstrapRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
+import java.time.Clock;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +56,7 @@ public class SetupService {
   private final SessionProgressRepository sessionProgressRepository;
   private final WatchHistoryRepository watchHistoryRepository;
   private final PasswordEncoder passwordEncoder;
+  private final Clock clock;
 
   public boolean isSetupComplete() {
     return serverBootstrapRepository.isClaimed();
@@ -99,7 +101,8 @@ public class SetupService {
             .householdId(household.getId())
             .status(ProfileShareStatus.ACTIVE)
             .structural(true)
-            .build());
+            .build(),
+        clock.instant());
 
     sessionProgressRepository.reassignProfile(LEGACY_PLACEHOLDER_PROFILE_ID, profile.getId());
     watchHistoryRepository.reassignProfile(LEGACY_PLACEHOLDER_PROFILE_ID, profile.getId());

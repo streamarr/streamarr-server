@@ -9,7 +9,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.MutableClock;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;

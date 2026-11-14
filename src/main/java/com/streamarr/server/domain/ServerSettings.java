@@ -31,4 +31,6 @@ public class ServerSettings extends BaseAuditableEntity<ServerSettings> {
   private EncoderPresetChoice encoderPreset = EncoderPresetChoice.AUTOMATIC;
 
   @Builder.Default private int idleSegmentRetentionMinutes = 60;
+
+  @Builder.Default private int notificationRetentionDays = 90;
 }

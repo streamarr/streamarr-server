@@ -34,10 +34,10 @@ import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.identity.ProfileLifecycleService.TransferProfileCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
@@ -88,6 +88,7 @@ class ProfileLifecycleServiceTest {
           accountInvitations,
           shares,
           new ProfileShareLifecycle(shares, shareEvents),
+          new NotificationDismissals(shares, managerInvitations, shareEvents),
           sessions,
           audit,
           new MutationTransactions(

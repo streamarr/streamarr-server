@@ -44,4 +44,7 @@ public interface ProfileManagerInvitationRepositoryCustom {
 
   /** Invalidates every PENDING invitation naming the recipient (deleted or ineligible). */
   int invalidatePendingByRecipientAccountId(UUID recipientAccountId, String reason, Instant now);
+
+  /** The ids of every invitation to manage the Profile, whatever its status, read as scalars. */
+  List<UUID> findIdsByProfileId(UUID profileId);
 }

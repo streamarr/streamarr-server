@@ -18,6 +18,9 @@ import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.ShareCode;
 import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.domain.notification.DismissalSelector;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.SubjectReference;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
@@ -26,6 +29,7 @@ import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
+import com.streamarr.server.fakes.FakeProfileManagerInvitationRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeShareCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
@@ -39,12 +43,16 @@ import com.streamarr.server.services.auth.ShareCodesFixture;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.events.notification.DismissNotificationsEvent;
+import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -69,6 +77,7 @@ class AccountAdministrationServiceTest {
   private final FakePasswordResetCodeRepository resetCodes = new FakePasswordResetCodeRepository();
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
+  private final CapturingEventPublisher events = new CapturingEventPublisher();
 
   private final AccountAdministrationService service =
       new AccountAdministrationService(
@@ -81,6 +90,7 @@ class AccountAdministrationServiceTest {
           resetCodes,
           shares,
           new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
+          new NotificationDismissals(shares, new FakeProfileManagerInvitationRepository(), events),
           new ShareCodeIssuerAuthority(shareCodes, accounts, authorization),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
@@ -384,6 +394,39 @@ class AccountAdministrationServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should dismiss only its waiting requests about the offers still pending into its Household"
+          + " when a HouseholdAdmin is demoted")
+  void
+      shouldDismissOnlyItsWaitingRequestsAboutOffersIntoItsHouseholdWhenAHouseholdAdminIsDemoted() {
+    target.setHouseholdRole(HouseholdRole.ADMIN);
+    var waiting = offerInto(target.getHouseholdId(), Instant.now().plus(Duration.ofHours(1)));
+    offerInto(target.getHouseholdId(), Instant.now().minusSeconds(1));
+    offerInto(UUID.randomUUID(), Instant.now().plus(Duration.ofHours(1)));
+
+    service.revokeHouseholdAdmin(identity(), target.getId());
+
+    assertThat(events.getEventsOfType(DismissNotificationsEvent.class))
+        .extracting(DismissNotificationsEvent::selector)
+        .containsExactly(
+            DismissalSelector.bySubject(Set.of(SubjectReference.profileShare(waiting.getId())))
+                .recipient(Optional.of(RecipientReference.account(target.getId())))
+                .kinds(Set.of(SharingNotificationKinds.PROFILE_SHARE_OFFERED))
+                .form(Optional.of(DismissalSelector.DismissedForm.WAITING_REQUESTS))
+                .build());
+  }
+
+  @Test
+  @DisplayName("Should dismiss nothing when a demoted Account's Household has no offer waiting")
+  void shouldDismissNothingWhenADemotedAccountsHouseholdHasNoOfferWaiting() {
+    target.setHouseholdRole(HouseholdRole.ADMIN);
+
+    service.revokeHouseholdAdmin(identity(), target.getId());
+
+    assertThat(events.getEventsOfType(DismissNotificationsEvent.class)).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should rename an Account without an authority audit when allowed")
   void shouldRenameAccountWithoutAuthorityAuditWhenAllowed() {
     assertThat(service.renameAccount(identity(), target.getId(), "  New Name  "))
@@ -553,6 +596,17 @@ class AccountAdministrationServiceTest {
             .issuerAccountId(issuerAccountId)
             .codeDigest(ShareCodesFixture.shareCodes().issue().digest())
             .expiresAt(Instant.now().plus(Duration.ofHours(1)))
+            .build());
+  }
+
+  private ProfileHouseholdShare offerInto(UUID householdId, Instant expiresAt) {
+    return shares.save(
+        ProfileHouseholdShare.builder()
+            .profileId(UUID.randomUUID())
+            .householdId(householdId)
+            .status(ProfileShareStatus.PENDING)
+            .offeredByAccountId(UUID.randomUUID())
+            .expiresAt(expiresAt)
             .build());
   }
 

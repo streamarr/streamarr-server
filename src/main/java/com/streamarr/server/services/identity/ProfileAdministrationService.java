@@ -60,6 +60,7 @@ public class ProfileAdministrationService {
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileShareLifecycle shareLifecycle;
+  private final NotificationDismissals notificationDismissals;
   private final HouseholdRepository householdRepository;
   private final UserAccountRepository userAccountRepository;
   private final AccountInvitationRepository accountInvitationRepository;
@@ -183,7 +184,8 @@ public class ProfileAdministrationService {
             .profileId(profile.getId())
             .householdId(command.householdId())
             .status(ProfileShareStatus.ACTIVE)
-            .build());
+            .build(),
+        clock.instant());
   }
 
   private Optional<ProfileRejections.CreateProfile> creationConstraintRejection(String constraint) {
@@ -419,6 +421,7 @@ public class ProfileAdministrationService {
           profileManagerInvitationRepository.invalidatePendingByProfileId(
               profileId, "Profile deleted", clock.instant());
           shareLifecycle.announceDeletionWithProfile(profileId, clock.instant());
+          notificationDismissals.profileDeleted(profileId);
           profileRepository.deleteById(profileId);
           profileRepository.flush();
           securityAuditEventRepository.append(

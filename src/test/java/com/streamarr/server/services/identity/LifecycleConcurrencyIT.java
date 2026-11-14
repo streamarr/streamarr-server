@@ -629,8 +629,12 @@ class LifecycleConcurrencyIT extends AbstractIntegrationTest {
                                   accountLifecycleService.transferAccount(
                                       authenticated(actor),
                                       transferTo(source.account(), firstDestination))),
+                          // The first transfer ends its Personal Profile's share into the
+                          // Household and tells the Household's other HouseholdAdmin, holding
+                          // that Account's row until it commits, so the second transfer queues
+                          // at its own move behind the first.
                           new Contender(
-                              COMMIT,
+                              ACCOUNT_TRANSFER,
                               () ->
                                   accountLifecycleService.transferAccount(
                                       authenticated(actor),

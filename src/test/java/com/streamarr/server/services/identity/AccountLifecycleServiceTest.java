@@ -43,10 +43,10 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.identity.AccountLifecycleService.AdministrativelyDeleteAccountCommand;
 import com.streamarr.server.services.identity.AccountLifecycleService.ProfileCleanup;
 import com.streamarr.server.services.identity.AccountLifecycleService.TransferAccountCommand;
@@ -108,6 +108,7 @@ class AccountLifecycleServiceTest {
               profiles,
               shares,
               new ProfileShareLifecycle(shares, shareEvents),
+              new NotificationDismissals(shares, managerInvitations, shareEvents),
               managers,
               managerInvitations,
               accountInvitations,

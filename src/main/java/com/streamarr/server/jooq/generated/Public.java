@@ -42,6 +42,7 @@ import com.streamarr.server.jooq.generated.tables.MovieCompany;
 import com.streamarr.server.jooq.generated.tables.MovieDirector;
 import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
+import com.streamarr.server.jooq.generated.tables.Notification;
 import com.streamarr.server.jooq.generated.tables.PasswordResetCode;
 import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Profile;
@@ -151,6 +152,7 @@ public class Public extends SchemaImpl {
             MovieDirector.MOVIE_DIRECTOR,
             MovieGenre.MOVIE_GENRE,
             MoviePerson.MOVIE_PERSON,
+            Notification.NOTIFICATION,
             PasswordResetCode.PASSWORD_RESET_CODE,
             Person.PERSON,
             Profile.PROFILE,

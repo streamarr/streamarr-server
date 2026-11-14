@@ -1,6 +1,6 @@
 package com.streamarr.server.graphql.subscriptions;
 
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;

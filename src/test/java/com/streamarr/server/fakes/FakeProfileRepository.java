@@ -69,6 +69,11 @@ public class FakeProfileRepository extends FakeJpaRepository<Profile> implements
   }
 
   @Override
+  public Optional<String> findNameById(UUID profileId) {
+    return findById(profileId).map(Profile::getName);
+  }
+
+  @Override
   public void lockProfileAvailabilityAcrossHouseholds(UUID profileId) {
     // Row-lock ordering is a PostgreSQL concern and has no in-memory fake equivalent.
   }

@@ -52,6 +52,20 @@ public interface UserAccountRepositoryCustom {
   Optional<AccountShareFacts> lockShareFacts(UUID accountId);
 
   /**
+   * The ids of the Household's HouseholdAdmins, enabled or not, held with a shared row lock in id
+   * order until the surrounding transaction ends, so none of them changes role or Household before
+   * the write that decided from them commits.
+   */
+  Set<UUID> lockHouseholdAdminIds(UUID householdId);
+
+  /**
+   * The Account that manages the Profile itself because the Profile is its unrestricted Personal
+   * Profile, with that Account's and the Profile's rows held by a shared lock until the surrounding
+   * transaction ends. Empty when no Account manages the Profile itself.
+   */
+  Optional<UUID> lockSelfManagerId(UUID profileId);
+
+  /**
    * ADR 0024 "may use a Household": the Account is a member, or its Personal Profile is actively
    * shared into the Household. Read live, as scalars.
    */

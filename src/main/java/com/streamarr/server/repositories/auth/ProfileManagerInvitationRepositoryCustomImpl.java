@@ -133,6 +133,14 @@ public class ProfileManagerInvitationRepositoryCustomImpl
         PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID.eq(recipientAccountId), reason, now);
   }
 
+  @Override
+  public List<UUID> findIdsByProfileId(UUID profileId) {
+    return dsl.select(PROFILE_MANAGER_INVITATION.ID)
+        .from(PROFILE_MANAGER_INVITATION)
+        .where(PROFILE_MANAGER_INVITATION.PROFILE_ID.eq(profileId))
+        .fetch(PROFILE_MANAGER_INVITATION.ID);
+  }
+
   private int invalidate(Condition scope, String reason, Instant now) {
     materializeExpiredPending(scope, now);
     return dsl.update(PROFILE_MANAGER_INVITATION)

@@ -38,10 +38,10 @@ import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.auth.ShareCodes;
 import com.streamarr.server.services.auth.ShareCodesFixture;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
@@ -1410,8 +1410,12 @@ class ProfileSharingServiceTest {
   void shouldDecideAChangeByItsHouseholdAloneWhenItsProfileNoLongerExists() {
     var removed =
         new ProfileShareChangedEvent(
-            new ChangedShare(
-                UUID.randomUUID(), UUID.randomUUID(), household.getId(), ProfileShareStatus.ACTIVE),
+            ChangedShare.builder()
+                .shareId(UUID.randomUUID())
+                .profileId(UUID.randomUUID())
+                .householdId(household.getId())
+                .status(ProfileShareStatus.ACTIVE)
+                .build(),
             true);
     authorization.decideUnitWith(
         intent ->

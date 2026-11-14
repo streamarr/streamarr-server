@@ -244,6 +244,15 @@ auth:
   sharing:
     expiry-sweep-interval: ${AUTH_SHARING_EXPIRY_SWEEP_INTERVAL:1m}
 
+notifications:
+  # How often the server deletes Notification history, the news that its recipient read and the
+  # requests that resolved, once its latest event is older than the retention period in the server
+  # settings (ADR 0063).
+  retention-sweep-initial-delay: ${NOTIFICATIONS_RETENTION_SWEEP_INITIAL_DELAY:5m}
+  retention-sweep-interval: ${NOTIFICATIONS_RETENTION_SWEEP_INTERVAL:24h}
+  # The most Notifications that one delete of the sweep deletes; each delete is its own transaction.
+  retention-sweep-batch-size: ${NOTIFICATIONS_RETENTION_SWEEP_BATCH_SIZE:500}
+
 streamarr:
   # The externally reachable base URL. Absent means device pairing is off; the server never
   # invents an address a container cannot know.

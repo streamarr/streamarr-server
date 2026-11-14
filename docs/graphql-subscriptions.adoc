@@ -4,8 +4,10 @@ Streamarr delivers live changes over GraphQL subscriptions.
 Every client with a selected Profile receives library status, additions and removals.
 Every client of a Profile receives that Profile's watch-state changes.
 Every signed-in client receives the changes to the Profile shares it may read.
+Every client of an Account session that is not device-bound receives the changes to that Account's Notifications.
 https://github.com/streamarr/streamarr-adr/blob/main/adr/0042-graphql-subscriptions-run-over-websocket-until-token-expiry.adoc[ADR 0042] records the decision.
-The schema descriptions in `src/main/resources/schema/root-subscription.graphqls` define each field, and `profile-sharing.graphqls` defines `profileShareChanged`.
+The schema descriptions in `src/main/resources/schema/root-subscription.graphqls` define each field, `profile-sharing.graphqls` defines `profileShareChanged`, and `notifications.graphqls` defines `notificationsChanged`.
+https://github.com/streamarr/streamarr-adr/blob/main/adr/0063-notifications-are-stored-per-recipient-as-requests-or-news.adoc[ADR 0063] records the Notifications.
 
 == Transport
 
@@ -51,6 +53,8 @@ A refused caller gets a `next` message with an error code, then `complete`.
 `libraryStatusChanged` refuses a caller who is not a ServerAdmin with `FORBIDDEN`.
 `profileShareChanged` needs no selected Profile.
 It refuses a device-bound session and a disabled Account with `FORBIDDEN`, and it decides again for each change, as <<Profile shares>> describes.
+`notificationsChanged` needs no selected Profile either.
+It refuses a device-bound session and a disabled Account with `FORBIDDEN`, once, when it opens, as <<Notifications>> describes.
 Every other field refuses a token without a selected Profile with `PROFILE_REQUIRED`.
 It refuses a caller without the ViewProfileActivity permission for that Profile with `FORBIDDEN`.
 `AUTHORIZATION_UNAVAILABLE` means the server could not decide; retry later.
@@ -338,6 +342,47 @@ When the edge is `null` and the change has no `errors`, the list no longer holds
 For example, the change that ends an offer or a share has a `null` `householdSharesEdge` for the target Household's HouseholdAdmins, because their list holds only offers that are `PENDING` and before their `expiresAt`, and `ACTIVE` shares.
 A change with `errors` removes nothing: the client keeps the share and runs its queries again.
 The server delivers one operation's changes in order, so the last change for a share carries its latest state.
+After every reconnect, the client subscribes and queries again.
+
+== Notifications
+
+`notificationsChanged` delivers each committed change to the signed-in Account's Notifications.
+A change arrives when a Notification is made or updated in place, when a request resolves because its offer was accepted, declined, canceled, replaced, invalidated or expired, when the Account marks Notifications read, and when Notifications are dismissed.
+A change that rolls back never arrives.
+Each change carries `notifications`, one entry for each Notification that the change touched, and `unreadNotificationCount`, the Account's unread count after the change.
+Each entry carries `notificationId` and `edge`, the same edge that the `notifications` query returns, read when the server delivers the change.
+A dismissed Notification arrives with a `null` edge.
+
+=== Who may subscribe
+
+An Account session may subscribe, with or without a selected Profile.
+The Account comes from the access token that opened the socket, and no argument names it.
+A device-bound session gets `FORBIDDEN`, and so does a disabled Account.
+The server decides this once, when the field opens.
+
+=== Who receives a change
+
+A change reaches every open socket of its recipient Account, including the socket of the client that made the change, and no other Account.
+The server reads each change from the Account's own Notifications and decides nothing about them again: a Notification shows what its recipient was told, whatever happened to the recipient's relationships since.
+An Account that is disabled after subscribing keeps receiving changes until its access token expires and the socket closes.
+
+=== What does not arrive
+
+Two deletions do not arrive: a deletion by retention, which deletes only read news and resolved requests and changes no unread count, and a deletion with the recipient Account, whose sessions end with it.
+The client reads `notifications` and `unreadNotificationCount` again after a reconnect.
+
+=== Expiry
+
+A request whose offer's time runs out reads as `EXPIRED` in the queries at once.
+Its change arrives when the server stores the expiry, every `AUTH_SHARING_EXPIRY_SWEEP_INTERVAL`, `1m` by default.
+A decision or a withdrawal made before the expiry that the server stores after it still replaces `EXPIRED`, and its change arrives like any other resolution.
+
+=== Building current state
+
+A client subscribes first and then queries `notifications` and `unreadNotificationCount`.
+It applies each entry by `notificationId`: it places the edge by its `orderKey`, and it removes the Notification only for a `null` edge with no error at that entry's path.
+It sets its unread count from `unreadNotificationCount` when that is not `null`.
+The server delivers one operation's changes in order, so the last change for a Notification carries its latest state.
 After every reconnect, the client subscribes and queries again.
 
 == Configuration

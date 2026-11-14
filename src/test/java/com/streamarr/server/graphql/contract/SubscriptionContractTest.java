@@ -26,9 +26,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * The subscription schema contract from ADR 0042: every field is nullable so a field error never
  * ends the operation, every field but the ServerAdmin fields and the share field requires a
- * selected Profile with ViewProfileActivity, the share field follows the share queries' reads, a
- * removed library is identified by id alone, a watch-state change lists its items, each nullable so
- * a failed item leaves the others intact, and every list edge a change carries is an OrderedEdge.
+ * selected Profile with ViewProfileActivity, the share field follows the share queries' reads, the
+ * Notifications field follows the Notifications queries' reads, a removed library is identified by
+ * id alone, a watch-state change lists its items, each nullable so a failed item leaves the others
+ * intact, and every list edge a change carries is an OrderedEdge.
  */
 @Tag("UnitTest")
 @DisplayName("Subscription Contract Tests")
@@ -38,6 +39,7 @@ class SubscriptionContractTest {
   private static final List<String> SERVER_ADMIN_FIELDS =
       List.of("libraryStatusChanged", "activeStreamsChanged");
   private static final String SHARE_FIELD = "profileShareChanged";
+  private static final String NOTIFICATIONS_FIELD = "notificationsChanged";
 
   @Test
   @DisplayName("Should name the transport and recovery when the Subscription type is documented")
@@ -87,12 +89,35 @@ class SubscriptionContractTest {
 
   @Test
   @DisplayName(
+      "Should take the Account from the socket's token and the reads of notifications when the"
+          + " Notifications field is documented")
+  void shouldTakeTheAccountFromTheSocketsTokenWhenTheNotificationsFieldIsDocumented() {
+    assertThat(descriptionOf(subscriptionField(NOTIFICATIONS_FIELD)))
+        .contains("access token that opened the socket")
+        .contains("The same access as notifications")
+        .contains("decided once when the field opens")
+        .doesNotContain("ViewProfileActivity");
+  }
+
+  @Test
+  @DisplayName(
+      "Should deliver a non-null list of nullable Notifications when a Notifications change is"
+          + " delivered")
+  void shouldDeliverANonNullListOfNullableNotificationsWhenANotificationsChangeIsDelivered() {
+    assertThat(objectType("NotificationsChange").getFieldDefinitions())
+        .extracting(field -> field.getName() + ": " + AstPrinter.printAst(field.getType()))
+        .containsExactly("notifications: [NotificationChange]!", "unreadNotificationCount: Int");
+  }
+
+  @Test
+  @DisplayName(
       "Should require a selected Profile and ViewProfileActivity when each other subscription field is documented")
   void
       shouldRequireSelectedProfileAndViewProfileActivityWhenEachOtherSubscriptionFieldIsDocumented() {
     assertThat(subscriptionFields())
         .filteredOn(field -> !SERVER_ADMIN_FIELDS.contains(field.getName()))
         .filteredOn(field -> !SHARE_FIELD.equals(field.getName()))
+        .filteredOn(field -> !NOTIFICATIONS_FIELD.equals(field.getName()))
         .isNotEmpty()
         .allSatisfy(
             field ->

@@ -34,6 +34,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * A live share code stays live only while the Account that issued it may still issue one for the
@@ -53,6 +54,7 @@ class ShareCodeIssuerAuthorityIT extends AbstractIntegrationTest {
   @Autowired private AccountLifecycleService accountLifecycle;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private final List<AuthTestSupport.TestIdentity> identities = new ArrayList<>();
   private AuthTestSupport.TestIdentity actor;
@@ -388,6 +390,46 @@ class ShareCodeIssuerAuthorityIT extends AbstractIntegrationTest {
     var offered = accepted(offerOwnProfile(offerer, code));
 
     accepted(accountAdministration.revokeHouseholdAdmin(fresh(actor), host.account().getId()));
+
+    assertThat(storedByCode(code).getStatus()).isEqualTo(ShareCodeStatus.SPENT);
+    assertThat(shareRepository.findById(offered.getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileShareStatus.PENDING);
+  }
+
+  /**
+   * The offer spends the code and then waits on the target Household's row, which its new share
+   * takes a key share of; the issuer is then disabled, which invalidates its codes. An offer that
+   * held the code and then waited for the issuer's Account would deadlock with it.
+   */
+  @Test
+  @DisplayName(
+      "Should keep the offer and its spent code when the issuer is disabled after the offer spent"
+          + " it")
+  void shouldKeepOfferAndItsSpentCodeWhenIssuerIsDisabledAfterTheOfferSpentIt() throws Exception {
+    secondAdminOf(host);
+    var offerer = track(authTestSupport.createIdentity());
+    var code = authTestSupport.shareCodeFor(host);
+    var targetHousehold =
+        PostgresLockTestSupport.RowLockTarget.builder()
+            .dataSource(dataSource)
+            .table("household")
+            .rowId(host.household().getId())
+            .build();
+
+    ProfileHouseholdShare offered;
+    try (var executor = TestFixtureWork.newExecutorRunningAsTestFixtureActor();
+        var household = PostgresLockTestSupport.lockRow(targetHousehold)) {
+      var offer = executor.submit(() -> offerOwnProfile(offerer, code));
+      PostgresLockTestSupport.awaitWaitersBehind(jdbcTemplate, household.backendPid(), 1);
+      var disabling =
+          executor.submit(
+              () -> accountAdministration.disableAccount(fresh(actor), host.account().getId()));
+      PostgresLockTestSupport.awaitWaitersBehind(jdbcTemplate, household.backendPid(), 2);
+
+      household.release();
+      offered = accepted(offer.get(10, TimeUnit.SECONDS));
+      accepted(disabling.get(10, TimeUnit.SECONDS));
+    }
 
     assertThat(storedByCode(code).getStatus()).isEqualTo(ShareCodeStatus.SPENT);
     assertThat(shareRepository.findById(offered.getId()).orElseThrow().getStatus())

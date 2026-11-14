@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
@@ -151,8 +152,13 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
 
     assertThat(expired)
         .contains(
-            new ChangedShare(
-                lapsed.getId(), profile.getId(), home.getId(), ProfileShareStatus.EXPIRED))
+            ChangedShare.builder()
+                .shareId(lapsed.getId())
+                .profileId(profile.getId())
+                .householdId(home.getId())
+                .status(ProfileShareStatus.EXPIRED)
+                .expiresAt(Optional.of(now.minusSeconds(1)))
+                .build())
         .extracting(ChangedShare::shareId)
         .doesNotContain(live.getId(), accepted.getId());
     assertSoftly(
@@ -163,6 +169,32 @@ class ProfileHouseholdShareRepositoryCustomImplIT extends AbstractIntegrationTes
           softly.assertThat(statusOf(live)).isEqualTo(ProfileShareStatus.PENDING);
           softly.assertThat(statusOf(accepted)).isEqualTo(ProfileShareStatus.ACTIVE);
         });
+  }
+
+  @Test
+  @DisplayName(
+      "Should find only the offers into the Household still pending at the instant when finding"
+          + " its pending offers")
+  void shouldFindOnlyTheOffersIntoTheHouseholdStillPendingWhenFindingItsPendingOffers() {
+    var now = Instant.parse("2026-08-21T12:00:00Z");
+    var home = householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var away = householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var elsewhere =
+        householdRepository.saveAndFlush(HouseholdFixture.defaultHouseholdBuilder().build());
+    var kai =
+        profileRepository.saveAndFlush(
+            ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    var ollie =
+        profileRepository.saveAndFlush(
+            ProfileFixture.defaultProfileBuilder().householdId(home.getId()).build());
+    var pending =
+        shareRepository.saveAndFlush(offer(kai.getId(), away.getId(), now.plusSeconds(60)));
+    shareRepository.saveAndFlush(offer(ollie.getId(), away.getId(), now.minusSeconds(1)));
+    shareRepository.saveAndFlush(offer(kai.getId(), elsewhere.getId(), now.plusSeconds(60)));
+
+    var found = shareRepository.findPendingOfferIdsInto(away.getId(), now);
+
+    assertThat(found).containsExactly(pending.getId());
   }
 
   private ProfileShareStatus statusOf(ProfileHouseholdShare share) {
