@@ -58,6 +58,12 @@ type Query {
     device-bound session.
     """
     householdShareCodes(householdId: ID!, first: Int, after: String, last: Int, before: String): ShareCodeConnection!
+    """
+    A share code's current status and metadata, including after it leaves the live list; never
+    the code itself. Only its Household's HouseholdAdmins and ServerAdmins may read it.
+    A missing code, an unauthorized caller or a device-bound session gets null.
+    """
+    shareCode(shareCodeId: ID!): ShareCode
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     """

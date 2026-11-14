@@ -200,6 +200,14 @@ public class ShareCodeService {
         shareCode -> new ShareCodeWithIssuer(shareCode, names.get(shareCode.getIssuerAccountId())));
   }
 
+  /** A code's metadata at any status; absent and hidden codes both read as empty. */
+  public Optional<ShareCodeWithIssuer> shareCode(AuthenticatedIdentity identity, UUID shareCodeId) {
+    return shareCodeRepository
+        .findById(shareCodeId)
+        .filter(code -> mayViewShareCodes(identity, code.getHouseholdId()))
+        .map(this::withIssuer);
+  }
+
   private NewShareCode store(AuthenticatedIdentity identity, UUID householdId, Instant now) {
     for (var draw = 0; draw < DRAWS; draw++) {
       var issued = shareCodes.issue();
