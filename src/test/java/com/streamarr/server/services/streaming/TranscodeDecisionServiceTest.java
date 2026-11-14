@@ -22,10 +22,12 @@ import com.streamarr.server.domain.streaming.AudioCapabilityEntry;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.BitstreamRewrite;
 import com.streamarr.server.domain.streaming.ChannelLayout;
 import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
+import com.streamarr.server.domain.streaming.DolbyVision;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
@@ -36,8 +38,10 @@ import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
+import com.streamarr.server.domain.streaming.MatrixCoefficients;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PictureSize;
+import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
@@ -46,7 +50,9 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
@@ -156,6 +162,255 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.assumedSourceMatrix()).contains(AssumedSourceMatrix.BT709);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"1920, 1080, BT709", "720, 480, BT601"})
+  @DisplayName("Should name the assumed matrix when a connected worker delivers the H.264 copy")
+  void shouldNameTheAssumedMatrixWhenAConnectedWorkerDeliversTheH264Copy(
+      int width, int height, AssumedSourceMatrix matrix) {
+    var source = sdr1080pSourceWithoutAMatrix().toBuilder().width(width).height(height).build();
+    var worker =
+        WorkerVideoCopySupport.builder()
+            .plannedOutput(true)
+            .bitstreamRewrites(Set.of(BitstreamRewrite.values()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .videoCopySupport(List.of(worker))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.assumedSourceMatrix()).contains(matrix);
+    assertThat(decision.videoBitstreamRewrites())
+        .extracting(Enum::name)
+        .containsExactly("NAME_ASSUMED_SOURCE_MATRIX");
+  }
+
+  @ParameterizedTest
+  @MethodSource("workersWithoutMatrixSupport")
+  @DisplayName("Should keep the untagged copy when no connected worker delivers the matrix rewrite")
+  void shouldKeepTheUntaggedCopyWhenNoConnectedWorkerDeliversTheMatrixRewrite(
+      List<WorkerVideoCopySupport> workers) {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(sdr1080pSourceWithoutAMatrix())
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .videoCopySupport(workers)
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.assumedSourceMatrix()).contains(AssumedSourceMatrix.BT709);
+    assertThat(decision.videoBitstreamRewrites()).isEmpty();
+  }
+
+  static Stream<List<WorkerVideoCopySupport>> workersWithoutMatrixSupport() {
+    return Stream.of(
+        List.of(),
+        List.of(
+            WorkerVideoCopySupport.builder()
+                .plannedOutput(true)
+                .bitstreamRewrites(Set.of())
+                .build()),
+        List.of(
+            WorkerVideoCopySupport.builder()
+                .plannedOutput(false)
+                .bitstreamRewrites(Set.of(BitstreamRewrite.values()))
+                .build()));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"HEVC, hevc, HEVC_MAIN", "AV1, av1, AV1_MAIN"})
+  @DisplayName("Should leave the matrix unnamed when copying a codec other than H.264")
+  void shouldLeaveTheMatrixUnnamedWhenCopyingACodecOtherThanH264(
+      ProbedCodecFamily family, String codec, VideoCodecProfile profile) {
+    var source =
+        probeBuilder(codec, "aac")
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .codecFamily(Optional.of(family))
+                        .codecString(Optional.of(SDR_CODEC_STRINGS.get(codec)))
+                        .videoProperties(
+                            Optional.of(
+                                VideoStreamProperties.builder()
+                                    .codecProfile(Optional.of(profile))
+                                    .codecLevel(OptionalInt.of(40))
+                                    .codecTier(Optional.of(VideoCodecTier.MAIN))
+                                    .firstFramesRead(true)
+                                    .build()))
+                        .build()))
+            .build();
+    var worker =
+        WorkerVideoCopySupport.builder()
+            .plannedOutput(true)
+            .bitstreamRewrites(Set.of(BitstreamRewrite.values()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(family))
+                    .encodableVideoCodecFamilies(Set.of(codec))
+                    .videoCopySupport(List.of(worker))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.assumedSourceMatrix()).contains(AssumedSourceMatrix.BT709);
+    assertThat(decision.videoBitstreamRewrites()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @MethodSource("colourFactsWithoutAnAssumption")
+  @DisplayName("Should leave the copy unchanged when the source needs no assumed matrix")
+  void shouldLeaveTheCopyUnchangedWhenTheSourceNeedsNoAssumedMatrix(
+      Optional<VideoStreamProperties> properties) {
+    var source =
+        probeBuilder("h264", "aac")
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .videoProperties(properties)
+                        .build()))
+            .build();
+    var worker =
+        WorkerVideoCopySupport.builder()
+            .plannedOutput(true)
+            .bitstreamRewrites(Set.of(BitstreamRewrite.values()))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .videoCopySupport(List.of(worker))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.assumedSourceMatrix()).isEmpty();
+    assertThat(decision.videoBitstreamRewrites()).isEmpty();
+  }
+
+  static Stream<Optional<VideoStreamProperties>> colourFactsWithoutAnAssumption() {
+    return Stream.of(
+        Optional.empty(),
+        Optional.of(
+            VideoPlaybackFactsFixture.h264HighPropertiesBuilder()
+                .matrixCoefficients(Optional.of(MatrixCoefficients.BT709))
+                .build()));
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName(
+      "Should require one worker for the complete copy when naming the matrix beside another rewrite")
+  void shouldRequireOneWorkerForTheCompleteCopyWhenNamingTheMatrixBesideAnotherRewrite(
+      boolean combined) {
+    var source = sdr1080pSourceWithoutAMatrix();
+    source =
+        source.toBuilder()
+            .videoPlaybackFacts(
+                Optional.of(
+                    VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+                        .streamIndex(0)
+                        .videoProperties(
+                            source.videoPlaybackFacts().orElseThrow().videoProperties())
+                        .dynamicRange(
+                            new VideoDynamicRange(
+                                CompatibleBase.SDR, Presence.PRESENT, new DolbyVision.Absent()))
+                        .build()))
+            .build();
+    var strips =
+        WorkerVideoCopySupport.builder()
+            .plannedOutput(true)
+            .bitstreamRewrites(Set.of(BitstreamRewrite.STRIP_HDR10_PLUS))
+            .build();
+    var names =
+        WorkerVideoCopySupport.builder()
+            .plannedOutput(true)
+            .bitstreamRewrites(
+                combined
+                    ? Set.of(
+                        BitstreamRewrite.STRIP_HDR10_PLUS,
+                        BitstreamRewrite.NAME_ASSUMED_SOURCE_MATRIX)
+                    : Set.of(BitstreamRewrite.NAME_ASSUMED_SOURCE_MATRIX))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .videoCopySupport(List.of(strips, names))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.videoBitstreamRewrites())
+        .containsExactlyElementsOf(
+            combined
+                ? List.of(
+                    BitstreamRewrite.STRIP_HDR10_PLUS, BitstreamRewrite.NAME_ASSUMED_SOURCE_MATRIX)
+                : List.of(BitstreamRewrite.STRIP_HDR10_PLUS));
+  }
+
+  @Test
+  @DisplayName("Should keep the measured copy cost when the copy names its assumed matrix")
+  void shouldKeepTheMeasuredCopyCostWhenTheCopyNamesItsAssumedMatrix() {
+    var source =
+        StreamMeasurementFixture.CopySource.builder()
+            .duration(Duration.ofSeconds(12))
+            .keyframeMillis(List.of(0L, 3_000L, 6_000L, 9_000L))
+            .videoBytes(List.of(100_000L, 100_000L, 100_000L, 100_000L))
+            .build()
+            .probeFrom(
+                sdr1080pSourceWithoutAMatrix().toBuilder()
+                    .bitrate(100_000_000L)
+                    .audioCodec(null)
+                    .audioChannels(OptionalInt.empty()));
+    var worker =
+        WorkerVideoCopySupport.builder()
+            .plannedOutput(true)
+            .bitstreamRewrites(Set.of(BitstreamRewrite.NAME_ASSUMED_SOURCE_MATRIX))
+            .build();
+
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(source)
+                    .capabilityDeclaration(declaring(H264))
+                    .encodableVideoCodecFamilies(Set.of("h264"))
+                    .viewerLimits(limitsIn(VideoQuality.FULL_HD_1080P))
+                    .videoCopySupport(List.of(worker))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.transcodeMode().copiesVideo()).isTrue();
+    assertThat(decision.videoBitstreamRewrites())
+        .containsExactly(BitstreamRewrite.NAME_ASSUMED_SOURCE_MATRIX);
   }
 
   private TranscodeDecision decideFor(MediaProbe source, VideoFormatConstraint constraint) {

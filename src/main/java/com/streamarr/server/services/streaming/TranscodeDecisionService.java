@@ -374,8 +374,22 @@ public class TranscodeDecisionService {
           when VideoCopyBandwidth.estimateExceedsSegmentCap(source, audio, playlist) ->
           segmentCapRefusal(StreamCopyRefusal.ESTIMATE_EXCEEDS_SEGMENT_CAP, countsRefusals);
       case PlanChoice.Accepted(var plan, var reasons) ->
-          new VideoCopyChoice.Copied(audio, plan, reasons);
+          new VideoCopyChoice.Copied(audio, withAssumedMatrixWhenSupported(request, plan), reasons);
     };
+  }
+
+  // Naming an assumed matrix is optional; every other rewrite remains required by the copy.
+  private static CopyPlan withAssumedMatrixWhenSupported(
+      TranscodeDecisionRequest request, CopyPlan plan) {
+    var source = request.source();
+    if (!"h264".equals(source.videoCodec()) || source.assumedSourceMatrix().isEmpty()) {
+      return plan;
+    }
+
+    var rewrites = new ArrayList<>(plan.bitstreamRewrites());
+    rewrites.add(BitstreamRewrite.NAME_ASSUMED_SOURCE_MATRIX);
+    var named = new CopyPlan(List.copyOf(rewrites), plan.dolbyVisionOutput());
+    return hasWorkerThatDeliversTheCopy(request, named) ? named : plan;
   }
 
   private VideoCopyChoice segmentCapRefusal(StreamCopyRefusal refusal, boolean countsRefusals) {

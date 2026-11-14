@@ -726,8 +726,7 @@ class RemoteVariantJobMapperTest {
         .isEqualTo(MatrixCoefficients.MATRIX_COEFFICIENTS_UNSPECIFIED);
   }
 
-  // A copy changes no sample, and the worker refuses a copy that names a matrix (ADR 0013). The
-  // copy's decision holds the matrix for the encoded lower variants beside it.
+  // An untagged copy still holds the matrix for the encoded lower variants beside it.
   @Test
   @DisplayName("Should leave the assumed matrix unspecified when the job copies the video")
   void shouldLeaveTheAssumedMatrixUnspecifiedWhenTheJobCopiesTheVideo() {
@@ -744,6 +743,33 @@ class RemoteVariantJobMapperTest {
     assertThat(video.getMode()).isEqualTo(VideoMode.VIDEO_MODE_COPY);
     assertThat(video.getAssumedSourceMatrix())
         .isEqualTo(MatrixCoefficients.MATRIX_COEFFICIENTS_UNSPECIFIED);
+  }
+
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @ParameterizedTest
+  @CsvSource({"BT709, MATRIX_COEFFICIENTS_BT709", "BT601, MATRIX_COEFFICIENTS_SMPTE170M"})
+  @DisplayName("Should send the assumed matrix when the copy lists its rewrite")
+  void shouldSendTheAssumedMatrixWhenTheCopyListsItsRewrite(
+      AssumedSourceMatrix matrix, MatrixCoefficients sent) {
+    var request =
+        copyAttempt()
+            .transcodeDecision(
+                copyDecisionBuilder()
+                    .assumedSourceMatrix(Optional.of(matrix))
+                    .videoBitstreamRewrites(
+                        List.of(
+                            com.streamarr.server.domain.streaming.BitstreamRewrite
+                                .NAME_ASSUMED_SOURCE_MATRIX))
+                    .build())
+            .build();
+
+    var video = mapper.map(request).getDecision().getVideo();
+
+    assertThat(video.getAssumedSourceMatrix()).isEqualTo(sent);
+    assertThat(video.getBitstreamRewritesList())
+        .containsExactly(BitstreamRewrite.BITSTREAM_REWRITE_NAME_ASSUMED_SOURCE_MATRIX);
+    assertThat(video.getOutputDynamicRange().getCompatibleBase())
+        .isEqualTo(CompatibleBase.COMPATIBLE_BASE_SDR);
   }
 
   private static TranscodeRequest encodeAttemptAssuming(Optional<AssumedSourceMatrix> assumed) {
