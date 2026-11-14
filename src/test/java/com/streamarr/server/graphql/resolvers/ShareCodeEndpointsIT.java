@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.jooq.generated.enums.ShareCodeStatus;
 import com.streamarr.server.repositories.auth.ShareCodeRepository;
 import com.streamarr.server.services.auth.ShareCodes;
 import com.streamarr.server.support.AuthTestSupport;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -72,6 +74,15 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
       query List($householdId: ID!) {
         householdShareCodes(householdId: $householdId) {
           edges { node { id status expiresAt issuedByDisplayName } }
+        }
+      }
+      """;
+
+  private static final String READ =
+      """
+      query Read($shareCodeId: ID!) {
+        shareCode(shareCodeId: $shareCodeId) {
+          id householdId status issuedAt expiresAt endedAt issuedByDisplayName
         }
       }
       """;
@@ -224,6 +235,69 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
         .containsExactly(serverAdmin.account().getDisplayName(), host.account().getDisplayName());
     assertThat(listed)
         .allSatisfy(node -> assertThat(node.path("expiresAt").asString()).isNotEmpty());
+  }
+
+  @ParameterizedTest
+  @EnumSource(ShareCodeStatus.class)
+  @DisplayName("Should read a code's current status when its HouseholdAdmin asks by id")
+  void shouldReadCodesCurrentStatusWhenItsHouseholdAdminAsksById(ShareCodeStatus codeStatus)
+      throws Exception {
+    var bearer = authTestSupport.accountBearer(host);
+    var issued = issue(bearer, host.household().getId());
+    var id = issuedId(issued);
+    var now = OffsetDateTime.now(ZoneOffset.UTC);
+    var expired = codeStatus == ShareCodeStatus.EXPIRED;
+    var storedStatus = expired ? ShareCodeStatus.LIVE : codeStatus;
+    var endedAt = storedStatus == ShareCodeStatus.LIVE ? null : now;
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.update(SHARE_CODE)
+                .set(SHARE_CODE.STATUS, storedStatus)
+                .set(SHARE_CODE.EXPIRES_AT, expired ? now.minusSeconds(1) : now.plusDays(1))
+                .set(SHARE_CODE.ENDED_AT, endedAt)
+                .where(SHARE_CODE.ID.eq(UUID.fromString(id)))
+                .execute());
+
+    var read = readCode(bearer, id);
+
+    assertThat(read.path("id").asString()).isEqualTo(id);
+    assertThat(read.path("householdId").asString()).isEqualTo(host.household().getId().toString());
+    assertThat(read.path("status").asString()).isEqualTo(codeStatus.name());
+    assertThat(read.path("issuedByDisplayName").asString())
+        .isEqualTo(host.account().getDisplayName());
+    assertThat(read.toString()).doesNotContain(issuedCode(issued));
+    if (codeStatus != ShareCodeStatus.LIVE) {
+      assertThat(list(bearer)).isEmpty();
+    }
+  }
+
+  @Test
+  @DisplayName("Should hide a code by id when the caller cannot view its Household's codes")
+  void shouldHideCodeByIdWhenCallerCannotViewItsHouseholdsCodes() throws Exception {
+    var id = issuedId(issue(authTestSupport.accountBearer(host), host.household().getId()));
+    var member = authTestSupport.createHouseholdMemberIdentity(host);
+    var stranger = identity();
+
+    assertThat(readCode(authTestSupport.accountBearer(member), id).isNull()).isTrue();
+    assertThat(readCode(authTestSupport.accountBearer(stranger), id).isNull()).isTrue();
+    assertThat(readCode(authTestSupport.deviceBoundProfileBearer(host), id).isNull()).isTrue();
+    assertThat(readCode(authTestSupport.accountBearer(host), UUID.randomUUID().toString()).isNull())
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should read a withdrawn code by id when a ServerAdmin asks for another Household")
+  void shouldReadWithdrawnCodeByIdWhenServerAdminAsksForAnotherHousehold() throws Exception {
+    var bearer = authTestSupport.accountBearer(host);
+    var id = issuedId(issue(bearer, host.household().getId()));
+    withdraw(bearer, id);
+    var serverAdmin = authTestSupport.createAdminIdentity();
+    identities.add(serverAdmin);
+
+    var read = readCode(authTestSupport.accountBearer(serverAdmin), id);
+
+    assertThat(read.path("status").asString()).isEqualTo("WITHDRAWN");
+    assertThat(read.path("endedAt").asString()).isNotEmpty();
   }
 
   @Test
@@ -639,6 +713,10 @@ class ShareCodeEndpointsIT extends AbstractIntegrationTest {
         .path("edges")
         .forEach(edge -> nodes.add(edge.path("node")));
     return nodes;
+  }
+
+  private JsonNode readCode(String bearer, String shareCodeId) throws Exception {
+    return execute(bearer, READ, Map.of("shareCodeId", shareCodeId)).path("data").path("shareCode");
   }
 
   private JsonNode page(String bearer, Map<String, Object> variables) throws Exception {

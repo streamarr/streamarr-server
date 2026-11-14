@@ -29,6 +29,7 @@ import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -60,6 +61,13 @@ public class ShareCodeResolver {
                 list,
                 ConnectionArguments.paginationOptions(paginationService, dfe, DEFAULT_PAGE_SIZE)));
     return relayConnectionAdapter.toConnection(page, list, this::details);
+  }
+
+  @DgsQuery
+  public Optional<ShareCodeDetails> shareCode(@InputArgument String shareCodeId) {
+    return shareCodeService
+        .shareCode(authorizationService.currentIdentity(), Ids.parseUuid(shareCodeId))
+        .map(this::details);
   }
 
   @DgsMutation

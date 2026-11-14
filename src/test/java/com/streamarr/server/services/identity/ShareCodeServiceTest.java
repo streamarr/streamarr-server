@@ -249,6 +249,41 @@ class ShareCodeServiceTest {
   }
 
   @Test
+  @DisplayName("Should read an ended code with its issuer when the caller may view its Household")
+  void shouldReadEndedCodeWithIssuerWhenCallerMayViewItsHousehold() {
+    var issued = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
+    accepted(service.withdrawShareCode(identity(), issued.getId()));
+
+    var read = service.shareCode(identity(), issued.getId()).orElseThrow();
+
+    assertThat(read.shareCode().getId()).isEqualTo(issued.getId());
+    assertThat(read.shareCode().statusAt(NOW)).isEqualTo(ShareCodeStatus.WITHDRAWN);
+    assertThat(read.issuedByDisplayName()).isEqualTo(issuer.getDisplayName());
+  }
+
+  @Test
+  @DisplayName("Should hide an existing or missing code when the caller may not view its Household")
+  void shouldHideExistingOrMissingCodeWhenCallerMayNotViewItsHousehold() {
+    var issued = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
+    authorization.denyAll();
+
+    assertThat(service.shareCode(identity(), issued.getId())).isEmpty();
+    assertThat(service.shareCode(identity(), UUID.randomUUID())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should fail closed when authorization is unavailable for a code read by id")
+  void shouldFailClosedWhenAuthorizationIsUnavailableForCodeReadById() {
+    var issued = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
+    authorization.failWith(Decision.FailureCause.EVALUATION_ERROR);
+    var caller = identity();
+    var id = issued.getId();
+
+    assertThatThrownBy(() -> service.shareCode(caller, id))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
   @DisplayName("Should list the codes newest first, without an issuer name, when it is deleted")
   void shouldListCodesNewestFirstWithoutIssuerNameWhenIssuerIsDeleted() {
     var older = accepted(service.issueShareCode(identity(), householdId)).shareCode().shareCode();
