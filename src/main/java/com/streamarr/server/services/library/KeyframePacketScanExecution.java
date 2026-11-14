@@ -57,8 +57,8 @@ public class KeyframePacketScanExecution {
   private final KeyframePacketScanner scanner;
   private final FileSystem fileSystem;
   private final MediaFileContainerInfoRepository outcomes;
-  private final ApplicationEventPublisher eventPublisher;
-  private final PlatformTransactionManager transactionManager;
+  @NonNull private final ApplicationEventPublisher eventPublisher;
+  @NonNull private final PlatformTransactionManager transactionManager;
   @NonNull private final MeterRegistry meterRegistry;
 
   public KeyframePacketScanResult execute(KeyframePacketScanTaskRequest request) {
