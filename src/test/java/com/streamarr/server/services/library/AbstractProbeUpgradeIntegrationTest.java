@@ -1,14 +1,19 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
+import static com.streamarr.server.support.OutcomeTestSupport.accepted;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.kagkarlsson.scheduler.Scheduler;
 import com.github.kagkarlsson.scheduler.event.AbstractSchedulerListener;
 import com.github.kagkarlsson.scheduler.task.ExecutionComplete;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ProbeFixture;
@@ -24,6 +29,7 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.OptionalDouble;
+import java.util.UUID;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
@@ -104,6 +110,20 @@ abstract class AbstractProbeUpgradeIntegrationTest extends AbstractIntegrationTe
     return ProbeSchedulerStarter.fromContext(applicationContext)
         .start(probeExecution, progress.probeAttemptListener(), clock)
         .scheduler();
+  }
+
+  /** The probe that a new stream session of the file plays from. */
+  MediaProbe playedProbe(UUID mediaFileId) {
+    var options = StreamingOptions.builder().quality(VideoQuality.AUTO).build();
+    var session =
+        accepted(
+            streaming.createSession(
+                createStreamSessionCommand(mediaFileId, UUID.randomUUID(), options)));
+    try {
+      return session.getMediaProbe();
+    } finally {
+      streaming.destroySession(session.getSessionId());
+    }
   }
 
   /** Signals each probe attempt and each library scan that ends. */
