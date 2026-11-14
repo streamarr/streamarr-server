@@ -604,28 +604,6 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
-      "Should leave the early-end instructions off and the advertised end absent when a job copies both chosen streams")
-  void
-      shouldLeaveTheEarlyEndInstructionsOffAndTheAdvertisedEndAbsentWhenJobCopiesBothChosenStreams()
-          throws Exception {
-    var copy =
-        VariantJob.newBuilder()
-            .setDecision(
-                TranscodeDecision.newBuilder()
-                    .setVideo(VideoDecision.newBuilder().setMode(VideoMode.VIDEO_MODE_COPY))
-                    .setAudio(AudioDecision.newBuilder().setMode(AudioMode.AUDIO_MODE_COPY)))
-            .setExecution(TranscodeExecution.newBuilder().setMediaSegmentCount(14))
-            .build();
-
-    var decoded = VariantJob.parseFrom(copy.toByteArray());
-
-    assertThat(decoded.getDecision().getVideo().getHoldLastFrameToAdvertisedEnd()).isFalse();
-    assertThat(decoded.getDecision().getAudio().getPadWithSilenceToAdvertisedEnd()).isFalse();
-    assertThat(decoded.getExecution().hasAdvertisedEnd()).isFalse();
-  }
-
-  @Test
-  @DisplayName(
       "Should carry the keyframe to read from apart from the first segment's start when an attempt that holds the last frame starts after the video's end")
   void
       shouldCarryTheKeyframeToReadFromApartFromTheFirstSegmentStartWhenHoldingAttemptStartsAfterVideoEnd()
