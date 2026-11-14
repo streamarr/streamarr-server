@@ -99,6 +99,7 @@ public class PlaybackSessionService implements AutoCloseable {
     private PlaybackFormatAttempt current;
     // Every format attempt starts at the start position until playback moves from it.
     private Optional<Duration> startPosition;
+    @Builder.Default private Optional<Duration> fixedMediaEnd = Optional.empty();
     private Instant lastAccessedAt;
     // The audio track that the viewer switched to during direct play, which every later format
     // attempt plays.
@@ -663,6 +664,7 @@ public class PlaybackSessionService implements AutoCloseable {
 
     try {
       if (allowsRecovery(playback)) {
+        retainCurrentMediaEnd(playback, failedId);
         locked(playback, () -> reserveAfterJobFailure(playback, failedId, reserve))
             .ifPresent(this::scheduleAfterChange);
       }
@@ -1033,7 +1035,33 @@ public class PlaybackSessionService implements AutoCloseable {
               .excludedEncodeCodecFamilies(Set.copyOf(playback.excludedEncodeCodecFamilies))
               .excludedEncodeFormats(Set.copyOf(playback.excludedEncodeFormats))
               .startPosition(playback.startPosition)
+              .fixedMediaEnd(playback.fixedMediaEnd)
               .audioTrackPosition(playback.audioTrackPosition);
+        });
+  }
+
+  // Retain the end before reserving recovery: creation can return and retire the old session
+  // while the replacement still waits in the executor's queue. Authorization stays outside the
+  // lock.
+  private void retainCurrentMediaEnd(PlaybackSession playback, UUID streamId) {
+    var mediaEnd =
+        streamingService
+            .accessSession(
+                PlaybackRequest.builder()
+                    .streamSessionId(streamId)
+                    .identity(playback.command.identity())
+                    .delivery(StreamDelivery.HLS)
+                    .build())
+            .flatMap(StreamSession::getFixedMediaEnd);
+    locked(
+        playback,
+        () -> {
+          if (!isCurrentAttempt(playback, streamId)) {
+            return false;
+          }
+
+          playback.fixedMediaEnd = playback.fixedMediaEnd.or(() -> mediaEnd);
+          return true;
         });
   }
 
@@ -1233,6 +1261,7 @@ public class PlaybackSessionService implements AutoCloseable {
   private static void adopt(
       PlaybackSession playback, StreamSession session, PlayingChoice choiceWhenEncoding) {
     playback.current = new PlaybackFormatAttempt.Ready(session);
+    playback.fixedMediaEnd = session.getFixedMediaEnd();
     playback.readyAttempts.add(session);
     playback.decisions.add(
         PlaybackDecision.of(playback.startedFormatAttempts, session, playback.pendingAttemptCause));

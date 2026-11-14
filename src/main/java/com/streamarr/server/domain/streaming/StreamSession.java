@@ -29,6 +29,7 @@ public class StreamSession {
   @NonNull private final PlaybackAuthority authority;
   @NonNull private final Path sourcePath;
   private final MediaProbe mediaProbe;
+  @NonNull @Builder.Default private final Optional<Duration> fixedMediaEnd = Optional.empty();
   // Null for a direct-play stream session, which starts no job attempt.
   private final TranscodeDecision transcodeDecision;
   private final StreamingOptions options;
@@ -119,11 +120,12 @@ public class StreamSession {
   /**
    * Where the media that the stream session delivers ends (ADR 0037, media end). An HLS stream
    * session delivers its own audio track only, and a direct-play stream session every audio track
-   * of the file.
+   * of the file. An HLS stream session's fixed media end, such as the end of the segment that holds
+   * its copied audio's last sample (ADR 0064), replaces the probe's.
    */
   public Duration getMediaEnd() {
     return switch (delivery) {
-      case HLS -> mediaProbe.mediaEnd();
+      case HLS -> fixedMediaEnd.orElseGet(mediaProbe::mediaEnd);
       case DIRECT_PLAY -> mediaProbe.directPlayMediaEnd();
     };
   }
@@ -267,11 +269,18 @@ public class StreamSession {
   }
 
   /**
-   * Where playback ends normally: the media end of a copy that ran short after every source stream
-   * ended (ADR 0052).
+   * Where playback has already ended normally: a resume at or beyond the fixed media end, or a copy
+   * that ran short after every source stream ended (ADR 0052).
    */
   public Optional<Duration> getNormalEnd() {
-    return getShortCopy().filter(ShortCopy::everySourceStreamEnded).map(ShortCopy::mediaEnd);
+    return getShortCopy()
+        .filter(ShortCopy::everySourceStreamEnded)
+        .map(ShortCopy::mediaEnd)
+        .or(() -> fixedMediaEnd.filter(this::startsAtOrPast));
+  }
+
+  private boolean startsAtOrPast(Duration end) {
+    return getStartPosition().filter(start -> start.compareTo(end) >= 0).isPresent();
   }
 
   /**

@@ -18,7 +18,9 @@ import lombok.NonNull;
  * {@code audioTrackPosition} names the audio track that the viewer chose, by its position, counting
  * from 0, among the file's audio tracks in stream order. When it is empty, the stream session plays
  * its own choice of track. {@code softwareEncodeCodecFamily} names the codec family that the stream
- * session encodes with the software encoder after a hardware encoder failure (ADR 0044).
+ * session encodes with the software encoder after a hardware encoder failure (ADR 0044). {@code
+ * fixedMediaEnd} carries a prior format attempt's copied-audio boundary so a different segment grid
+ * does not move the playback end.
  */
 @Builder
 public record CreateStreamSessionCommand(
@@ -31,6 +33,7 @@ public record CreateStreamSessionCommand(
     @NonNull Set<String> excludedEncodeCodecFamilies,
     @NonNull Set<EncodeFormat> excludedEncodeFormats,
     @NonNull Optional<Duration> startPosition,
+    @NonNull Optional<Duration> fixedMediaEnd,
     @NonNull OptionalInt audioTrackPosition,
     @NonNull Optional<String> softwareEncodeCodecFamily) {
   public CreateStreamSessionCommand {
@@ -45,6 +48,7 @@ public record CreateStreamSessionCommand(
     private Set<String> excludedEncodeCodecFamilies = Set.of();
     private Set<EncodeFormat> excludedEncodeFormats = Set.of();
     private Optional<Duration> startPosition = Optional.empty();
+    private Optional<Duration> fixedMediaEnd = Optional.empty();
     private OptionalInt audioTrackPosition = OptionalInt.empty();
     private Optional<String> softwareEncodeCodecFamily = Optional.empty();
 
@@ -59,6 +63,7 @@ public record CreateStreamSessionCommand(
           excludedEncodeCodecFamilies,
           excludedEncodeFormats,
           startPosition,
+          fixedMediaEnd,
           audioTrackPosition,
           softwareEncodeCodecFamily);
     }

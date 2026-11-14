@@ -357,6 +357,36 @@ class MediaProbeTest {
                     .build()));
   }
 
+  @Test
+  @DisplayName("Should distinguish stated and learned ends when choosing another audio track")
+  void shouldDistinguishStatedAndLearnedEndsWhenChoosingAnotherAudioTrack() {
+    var stated = audioIn("eng").index(1).endTime(Optional.of(Duration.ofSeconds(10))).build();
+    var unknown = audioIn("fra").index(2).endTime(Optional.empty()).build();
+    var learned =
+        List.of(
+            LearnedStreamEnd.builder()
+                .mediaFileId(UUID.randomUUID())
+                .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+                .streamIndex(1)
+                .endTime(Duration.ofSeconds(12))
+                .build(),
+            LearnedStreamEnd.builder()
+                .mediaFileId(UUID.randomUUID())
+                .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+                .streamIndex(2)
+                .endTime(Duration.ofSeconds(20))
+                .build());
+
+    var withEnds = probe(stated, unknown).withLearnedEndTimes(learned).withLearnedEndTimes(learned);
+
+    assertThat(withEnds.probedSessionAudioEnd()).contains(Duration.ofSeconds(10));
+    var switched = withEnds.withSessionAudioTrackAt(1);
+    assertThat(switched.audioStreams().getFirst().endTime()).contains(Duration.ofSeconds(20));
+    assertThat(switched.probedSessionAudioEnd()).isEmpty();
+    assertThat(switched.withSessionAudioTrackAt(0).probedSessionAudioEnd())
+        .contains(Duration.ofSeconds(10));
+  }
+
   private static MediaProbe probeOf(VideoPlaybackFacts.VideoPlaybackFactsBuilder facts) {
     return StreamSessionFixture.defaultProbeBuilder()
         .videoPlaybackFacts(Optional.of(facts.build()))

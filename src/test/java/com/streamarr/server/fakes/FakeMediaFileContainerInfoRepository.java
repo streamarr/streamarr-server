@@ -46,14 +46,16 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private Optional<ProbeOutcome.Success> defaultProbe = Optional.empty();
   private final Set<UUID> deletedMediaFiles = ConcurrentHashMap.newKeySet();
   private final MediaFileRowLocks rowLocks = new MediaFileRowLocks();
-  private Optional<FakeLearnedStreamEndRepository> learnedStreamEnds = Optional.empty();
+  private final List<FakeLearnedStreamEndRepository> learnedStreamEnds =
+      new CopyOnWriteArrayList<>();
 
   /**
    * Stores each stream end that a published keyframe packet scan read in {@code learned}, as the
-   * database stores it among the learned stream end times.
+   * database stores it among the learned stream end times. Every repository given here receives the
+   * ends, because the database keeps them in one table.
    */
   void storeScannedStreamEndsIn(FakeLearnedStreamEndRepository learned) {
-    learnedStreamEnds = Optional.of(learned);
+    learnedStreamEnds.add(learned);
   }
 
   /** Answers every media file id with this probe unless a row was stored for it. */
@@ -141,7 +143,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     }
 
     keyframes.put(mediaFileId, publication.keyframes());
-    learnedStreamEnds.ifPresent(learned -> storeScannedStreamEnds(learned, publication));
+    learnedStreamEnds.forEach(learned -> storeScannedStreamEnds(learned, publication));
     publication
         .streamMeasurements()
         .flatMap(

@@ -8,6 +8,8 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.upToLevel;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.media.LearnedStreamEnd;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
@@ -44,6 +46,7 @@ import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -51,6 +54,7 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.NonNull;
@@ -973,17 +977,37 @@ class TranscodeDecisionReasonTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("earlyEndingStreams")
-  @DisplayName(
-      "Should encode a delivered stream only when it ends at least one segment before the session's"
-          + " media end and another stream's end")
-  void
-      shouldEncodeADeliveredStreamOnlyWhenItEndsAtLeastOneSegmentBeforeTheSessionsMediaEndAndAnotherStreamsEnd(
-          Source source, boolean copiesVideo, AudioMode audio, List<DecisionReason> expected) {
+  @DisplayName("Should choose stream operations when known stream ends differ")
+  void shouldChooseStreamOperationsWhenKnownStreamEndsDiffer(
+      Source source, boolean copiesVideo, AudioMode audio, List<DecisionReason> expected) {
     var decision = decide(source.probe(), defaultDeclarationBuilder().build());
 
     assertThat(decision.transcodeMode().copiesVideo()).isEqualTo(copiesVideo);
     assertThat(decision.audioDecision().mode()).isEqualTo(audio);
     assertThat(decision.reasons()).containsExactlyElementsOf(expected);
+  }
+
+  @Test
+  @DisplayName("Should encode early-ending audio when only a job learned its end")
+  void shouldEncodeEarlyEndingAudioWhenOnlyAJobLearnedItsEnd() {
+    var source =
+        Source.builder()
+            .videoEnd(Duration.ofMinutes(10))
+            .build()
+            .probe()
+            .withLearnedEndTimes(
+                List.of(
+                    LearnedStreamEnd.builder()
+                        .mediaFileId(UUID.randomUUID())
+                        .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+                        .streamIndex(2)
+                        .endTime(Duration.ofSeconds(10))
+                        .build()));
+
+    var decision = decide(source, defaultDeclarationBuilder().build());
+
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.reasons()).containsExactly(DecisionReason.AUDIO_ENDS_EARLY);
   }
 
   // The source's container is 10 minutes long, cut into 6 s segments. Only its header states where
@@ -998,8 +1022,8 @@ class TranscodeDecisionReasonTest {
                 "audio that ends one segment before the video",
                 Source.builder().videoEnd(tenMinutes).audioEnd(oneSegmentEarlier).build()),
             true,
-            AudioMode.TRANSCODE,
-            List.of(DecisionReason.AUDIO_ENDS_EARLY)),
+            AudioMode.COPY,
+            List.of()),
         Arguments.of(
             Named.of(
                 "audio that ends just under one segment before the video",
@@ -1031,8 +1055,8 @@ class TranscodeDecisionReasonTest {
                     .secondAudioEnd(tenMinutes)
                     .build()),
             false,
-            AudioMode.TRANSCODE,
-            List.of(DecisionReason.VIDEO_ENDS_EARLY, DecisionReason.AUDIO_ENDS_EARLY)),
+            AudioMode.COPY,
+            List.of(DecisionReason.VIDEO_ENDS_EARLY)),
         Arguments.of(
             Named.of(
                 "video and audio that end together one segment before the container's duration,"
@@ -1060,8 +1084,8 @@ class TranscodeDecisionReasonTest {
                     .audioEnd(oneSegmentEarlier)
                     .build()),
             false,
-            AudioMode.TRANSCODE,
-            List.of(DecisionReason.VIDEO_CODEC_NOT_DECLARED, DecisionReason.AUDIO_ENDS_EARLY)));
+            AudioMode.COPY,
+            List.of(DecisionReason.VIDEO_CODEC_NOT_DECLARED)));
   }
 
   private TranscodeDecision decide(MediaProbe source, ClientCapabilityDeclaration client) {

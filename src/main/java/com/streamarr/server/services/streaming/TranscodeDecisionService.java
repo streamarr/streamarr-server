@@ -910,10 +910,11 @@ public class TranscodeDecisionService {
     return source.audioBitrate().orElse(AudioDecision.bitrateFor(source.audioCodec(), channels));
   }
 
-  // Only an encode can pad audio that ends early with silence up to the advertised end, so that
-  // every segment after the audio's end carries audio (ADR 0037, early ends).
+  // A job's learned end can reflect a read error, so it keeps the existing padded recovery instead
+  // of shortening the title as a header or scanned end does.
   private Optional<DecisionReason> audioEndRefusal(MediaProbe source) {
-    if (!source.sessionAudioEndsEarly(properties.targetSegmentDuration())) {
+    if (source.probedSessionAudioEnd().isPresent()
+        || !source.sessionAudioEndsEarly(properties.targetSegmentDuration())) {
       return Optional.empty();
     }
 
