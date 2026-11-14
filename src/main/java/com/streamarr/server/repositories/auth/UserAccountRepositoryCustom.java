@@ -81,6 +81,12 @@ public interface UserAccountRepositoryCustom {
   boolean tryLockEnabledServerAdmin(UUID accountId);
 
   /**
+   * Holds the Account row FOR UPDATE until the transaction ends, after any transaction that holds
+   * it to act on the Account's authority has committed; does nothing when there is no such Account.
+   */
+  void lockById(UUID accountId);
+
+  /**
    * Locks the Household's {@code household_guard} row (one per Household, created by V056's
    * trigger) and chooses the role for a newly accepted Account under that lock. The first Account
    * becomes HouseholdAdmin; later Accounts keep the invitation's requested role. Empty means the

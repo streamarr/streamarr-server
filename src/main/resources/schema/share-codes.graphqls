@@ -1,0 +1,85 @@
+# Share codes (ADR 0024 §Share codes; ADR 0026 shapes). A HouseholdAdmin, or a ServerAdmin, issues a
+# share code for one Household so that whoever holds it can offer a Profile to that Household. The
+# code appears once, in the answer to issuing it, and nothing shows it again.
+
+enum ShareCodeStatus {
+    "The code still works: an offer may present it until it expires."
+    LIVE
+    "An offer presented the code. A code admits one offer."
+    SPENT
+    "Withdrawn by a HouseholdAdmin of the Household or by a ServerAdmin."
+    WITHDRAWN
+    "Timed out before an offer presented it."
+    EXPIRED
+    """
+    Withdrawn by the system because the Account that issued it may no longer issue a share code for
+    the Household, as a HouseholdAdmin of it or as ServerAdmin, or was disabled or deleted.
+    """
+    INVALIDATED
+}
+
+"A share code as its Household's HouseholdAdmins and ServerAdmins see it: never the code itself."
+type ShareCode {
+    id: ID!
+    householdId: ID!
+    "LIVE reads as EXPIRED from expiresAt on."
+    status: ShareCodeStatus!
+    issuedAt: String!
+    expiresAt: String!
+    "When the code was spent, withdrawn or invalidated. Null while it is live, and for an expired code."
+    endedAt: String
+    "The display name of the Account that issued the code. Null once that Account is deleted."
+    issuedByDisplayName: String
+}
+
+type ShareCodeConnection {
+    edges: [ShareCodeEdge!]!
+    pageInfo: PageInfo!
+}
+
+type ShareCodeEdge {
+    node: ShareCode!
+    cursor: String!
+}
+
+"The code appears here once and never again."
+type IssuedShareCode {
+    shareCode: ShareCode!
+    "Eight letters in two groups of four, in the form of the code a person types to link a Device."
+    code: String!
+}
+
+input IssueShareCodeInput {
+    householdId: ID!
+}
+
+type IssueShareCodePayload {
+    issued: IssuedShareCode
+    userErrors: [IssueShareCodeError!]!
+}
+
+union IssueShareCodeError = HouseholdNotFoundError
+
+input WithdrawShareCodeInput {
+    shareCodeId: ID!
+}
+
+type WithdrawShareCodePayload {
+    shareCode: ShareCode
+    userErrors: [WithdrawShareCodeError!]!
+}
+
+union WithdrawShareCodeError = ShareCodeNotFoundError | ShareCodeNotLiveError
+
+input LookUpShareCodeInput {
+    "The code as the person typed it. Case, spaces and the hyphen do not matter."
+    code: String!
+}
+
+type LookUpShareCodePayload {
+    "The name of the Household the code was issued for. Null when the code is refused."
+    householdName: String
+    userErrors: [LookUpShareCodeError!]!
+}
+
+union LookUpShareCodeError = ShareCodeRefusedError

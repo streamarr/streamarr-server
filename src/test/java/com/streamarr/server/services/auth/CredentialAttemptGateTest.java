@@ -146,6 +146,24 @@ class CredentialAttemptGateTest {
   }
 
   @Test
+  @DisplayName(
+      "Should refuse a share code with its retry delay when the presenting Account is blocked")
+  void shouldRefuseShareCodeWithRetryDelayWhenPresentingAccountIsBlocked() {
+    repository.rejectReservations(Duration.ofSeconds(42));
+    var target =
+        CredentialAttemptMetadata.builder()
+            .kind(CredentialKind.SHARE_CODE)
+            .accountId(ACCOUNT_ID)
+            .ipAddress("192.0.2.30")
+            .build();
+
+    assertThatThrownBy(() -> gate.reserve(target))
+        .isInstanceOf(TooManyCredentialAttemptsException.class)
+        .extracting(failure -> ((RetryAfterAware) failure).retryAfter())
+        .isEqualTo(Duration.ofSeconds(42));
+  }
+
+  @Test
   @DisplayName("Should refuse a pairing code with its retry delay when the approver is blocked")
   void shouldRefusePairingCodeWithRetryDelayWhenApproverIsBlocked() {
     repository.rejectReservations(Duration.ofSeconds(42));

@@ -556,10 +556,10 @@ class ProfileSharePartiesIT extends AbstractIntegrationTest {
         graphql(
                 authTestSupport.accountBearer(offerer),
                 """
-                mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+                mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
                   share { id status } userErrors { __typename } } }
                 """
-                    .formatted(profile.getId(), target.household().getId()))
+                    .formatted(profile.getId(), authTestSupport.shareCodeFor(target)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"))

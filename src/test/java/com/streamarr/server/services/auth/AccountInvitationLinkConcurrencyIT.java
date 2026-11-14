@@ -37,6 +37,7 @@ import com.streamarr.server.services.identity.CredentialRejections;
 import com.streamarr.server.services.identity.HouseholdSharesScope;
 import com.streamarr.server.services.identity.ProfileSharingService;
 import com.streamarr.server.services.identity.SessionContextService;
+import com.streamarr.server.services.identity.ShareCodeCommand;
 import com.streamarr.server.services.identity.ShareListScope;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.support.AuthTestSupport;
@@ -309,6 +310,11 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
     var orphan = orphanAtHome();
     var targetHouseholdId = targetAdmin.household().getId();
     var code = pendingLinkInvitation(orphan, SHARE_RACE_EMAIL);
+    var shareCode =
+        ShareCodeCommand.builder()
+            .code(authTestSupport.shareCodeFor(targetAdmin))
+            .ipAddress("203.0.113.7")
+            .build();
     installShareInsertBarrier(orphan.getId(), targetHouseholdId);
 
     try (var insertBarrier = holdShareInsertBarrier();
@@ -317,7 +323,7 @@ class AccountInvitationLinkConcurrencyIT extends AbstractIntegrationTest {
           executor.submit(
               () ->
                   profileSharingService.offerProfileShare(
-                      accountIdentity(sourceAdmin), orphan.getId(), targetHouseholdId));
+                      accountIdentity(sourceAdmin), orphan.getId(), shareCode));
       var blockerPid = backendPid(insertBarrier);
       await().atMost(Duration.ofSeconds(5)).until(() -> blockedConnectionCount(blockerPid) == 1);
 

@@ -1,25 +1,58 @@
 package com.streamarr.server.graphql.mutation.sharing;
 
 import com.streamarr.server.graphql.mutation.InputPath;
+import com.streamarr.server.services.identity.ShareCodeRejections;
 import com.streamarr.server.services.identity.ShareRejections;
 
 /** The exhaustive mappings from service rejection to schema error type, one per union. */
 public final class ShareErrors {
 
   private static final String SHARE_ID = "shareId";
+  private static final String SHARE_CODE_ID = "shareCodeId";
+  private static final String PROFILE_ID = "profileId";
 
   private ShareErrors() {}
 
   public static OfferProfileShareError toOfferError(ShareRejections.Offer rejection) {
     return switch (rejection) {
       case ShareRejections.ProfileNotFound _ ->
-          new ProfileNotFoundError("No such Profile.", InputPath.of("profileId"));
-      case ShareRejections.HouseholdNotFound _ ->
-          new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
+          new ProfileNotFoundError("No such Profile.", InputPath.of(PROFILE_ID));
+      case ShareCodeRejections.ShareCodeRefused _ -> shareCodeRefused("shareCode");
       case ShareRejections.AlreadyShared _ ->
           new ProfileAlreadySharedError(
-              "That Profile is already available in that Household.", InputPath.of("householdId"));
+              "That Profile is already available in that Household.", InputPath.of(PROFILE_ID));
     };
+  }
+
+  public static IssueShareCodeError toIssueShareCodeError(ShareCodeRejections.Issue rejection) {
+    return switch (rejection) {
+      case ShareCodeRejections.HouseholdNotFound _ ->
+          new HouseholdNotFoundError("No such Household.", InputPath.of("householdId"));
+    };
+  }
+
+  public static WithdrawShareCodeError toWithdrawShareCodeError(
+      ShareCodeRejections.Withdraw rejection) {
+    return switch (rejection) {
+      case ShareCodeRejections.ShareCodeNotFound _ ->
+          new ShareCodeNotFoundError("No such share code.", InputPath.of(SHARE_CODE_ID));
+      case ShareCodeRejections.ShareCodeNotLive _ ->
+          new ShareCodeNotLiveError(
+              "This share code no longer works, so there is nothing to withdraw.",
+              InputPath.of(SHARE_CODE_ID));
+    };
+  }
+
+  public static LookUpShareCodeError toLookUpShareCodeError(ShareCodeRejections.LookUp rejection) {
+    return switch (rejection) {
+      case ShareCodeRejections.ShareCodeRefused _ -> shareCodeRefused("code");
+    };
+  }
+
+  /** One plain refusal for every code that does not work, wherever it was presented. */
+  private static ShareCodeRefusedError shareCodeRefused(String input) {
+    return new ShareCodeRefusedError(
+        "This share code does not work. Ask the Household for a new one.", InputPath.of(input));
   }
 
   public static AcceptProfileShareError toAcceptError(ShareRejections.Accept rejection) {

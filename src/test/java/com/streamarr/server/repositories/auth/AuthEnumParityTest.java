@@ -9,6 +9,7 @@ import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.auth.ShareCodeStatus;
 import java.util.Arrays;
 import java.util.List;
 import org.jooq.EnumType;
@@ -59,6 +60,15 @@ class AuthEnumParityTest {
 
   @Test
   @SuppressWarnings("checkstyle:fullyQualifiedName")
+  @DisplayName("Should keep share code status literals in sync when parity is checked")
+  void shouldKeepShareCodeStatusInSyncWhenParityIsChecked() {
+    assertParity(
+        names(ShareCodeStatus.values()),
+        literals(com.streamarr.server.jooq.generated.enums.ShareCodeStatus.values()));
+  }
+
+  @Test
+  @SuppressWarnings("checkstyle:fullyQualifiedName")
   @DisplayName("Should keep household role literals in sync")
   void shouldKeepHouseholdRoleInSync() {
     assertParity(
@@ -78,7 +88,8 @@ class AuthEnumParityTest {
             "ACCOUNT_INVITATION_CODE",
             "PASSWORD_RESET_CODE",
             "PROFILE_MANAGER_INVITATION_CODE",
-            "DEVICE_PAIRING_CODE");
+            "DEVICE_PAIRING_CODE",
+            "SHARE_CODE");
     assertParity(
         names(CredentialKind.values()),
         literals(com.streamarr.server.jooq.generated.enums.CredentialKind.values()));

@@ -20,7 +20,15 @@ type Query {
     profileAdministration(profileId: ID!): ProfileAdministration
     accountInvitations(first: Int, after: String, last: Int, before: String): AccountInvitationConnection!
     accountInvitationProfilePreview(profileId: ID!): AccountInvitationProfilePreview
-    profileSharePreview(profileId: ID!, householdId: ID!): ProfileSharePreview
+    """
+    What offering this Profile to the Household a share code names would mean: whether the Profile
+    would lock there, and whether its name conflicts with a Profile already there. Nothing else
+    about the Household. The code stays live. Each request is a credential attempt by the Account
+    that presents the code, counted as lookUpShareCode counts it. Null when the code does not work,
+    when the Profile does not exist, and when the caller may not offer it. A device-bound session
+    and a disabled Account get FORBIDDEN.
+    """
+    profileSharePreview(profileId: ID!, shareCode: String!): ProfileSharePreview
     """
     The Profiles offered or shared to a Household, newest first, for its HouseholdAdmins and for
     ServerAdmins. Everyone else gets an empty list. The HouseholdAdmins get only the offers still
@@ -43,6 +51,19 @@ type Query {
     for where the Profile is offered or available now.
     """
     profileShares(profileId: ID!, statuses: [ProfileShareStatus!], first: Int, after: String, last: Int, before: String): ProfileShareConnection!
+    """
+    A Household's live share codes, newest first, for its HouseholdAdmins and for ServerAdmins:
+    who issued each and when it expires, never the code. A code leaves the list once it is spent,
+    withdrawn, invalidated or past its expiry. Everyone else gets an empty list, and so does a
+    device-bound session.
+    """
+    householdShareCodes(householdId: ID!, first: Int, after: String, last: Int, before: String): ShareCodeConnection!
+    """
+    A share code's current status and metadata, including after it leaves the live list; never
+    the code itself. Only its Household's HouseholdAdmins and ServerAdmins may read it.
+    A missing code, an unauthorized caller or a device-bound session gets null.
+    """
+    shareCode(shareCodeId: ID!): ShareCode
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     """

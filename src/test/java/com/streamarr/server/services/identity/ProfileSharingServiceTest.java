@@ -6,19 +6,25 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.ChangedShare;
+import com.streamarr.server.domain.auth.CredentialAttemptResult;
+import com.streamarr.server.domain.auth.CredentialKind;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareCode;
+import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
+import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
+import com.streamarr.server.fakes.FakeShareCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -30,6 +36,8 @@ import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.auth.ShareCodes;
+import com.streamarr.server.services.auth.ShareCodesFixture;
 import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -51,6 +59,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -78,12 +88,38 @@ class ProfileSharingServiceTest {
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
 
+  private final FakeShareCodeRepository shareCodes = new FakeShareCodeRepository();
+  private final FakeCredentialAttemptRepository attempts = new FakeCredentialAttemptRepository();
+  private final ShareCodes codes = ShareCodesFixture.shareCodes();
+
   private Household household;
   private Profile profile;
+  private ShareCodeService shareCodeService;
   private ProfileSharingService service;
 
   @BeforeEach
   void setUp() {
+    var mutationTransactions =
+        new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator());
+    var credentialCodes =
+        CredentialCodeProperties.builder()
+            .invitationTtl(INVITATION_TTL)
+            .passwordResetTtl(Duration.ofHours(1))
+            .shareCodeTtl(Duration.ofDays(7))
+            .replacementLockTimeout(Duration.ofSeconds(5))
+            .build();
+    shareCodeService =
+        new ShareCodeService(
+            authorization,
+            shareCodes,
+            households,
+            accounts,
+            mutationTransactions,
+            attempts.gate(CLOCK),
+            new HouseholdShareCodesList(shareCodes, CLOCK),
+            codes,
+            credentialCodes,
+            CLOCK);
     service =
         new ProfileSharingService(
             authorization,
@@ -95,15 +131,12 @@ class ProfileSharingServiceTest {
             sessions,
             new DeviceRegistrationLifecycle(registrations, sessions),
             audit,
-            new MutationTransactions(
-                new FakeTransactionManager(), new ConstraintViolationTranslator()),
-            CredentialCodeProperties.builder()
-                .invitationTtl(INVITATION_TTL)
-                .passwordResetTtl(Duration.ofHours(1))
-                .replacementLockTimeout(Duration.ofSeconds(5))
-                .build(),
+            mutationTransactions,
+            credentialCodes,
             new HouseholdSharesList(shares, CLOCK),
             new ProfileSharesList(shares, CLOCK),
+            shareCodeService,
+            shareCodes,
             CLOCK);
     household = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
     profile = profiles.save(ProfileFixture.defaultProfileBuilder().build());
@@ -113,32 +146,133 @@ class ProfileSharingServiceTest {
   @DisplayName(
       "Should create a pending offer with its offerer and expiry when an offer is authorized")
   void shouldCreatePendingOfferWithOffererAndExpiryWhenOfferIsAuthorized() {
-    var offered = service.offerProfileShare(identity(), profile.getId(), household.getId());
+    var offered =
+        service.offerProfileShare(identity(), profile.getId(), presenting(shareCodeFor(household)));
 
     assertThat(offered).isInstanceOf(Outcome.Accepted.class);
-    var share =
-        offered.fold(
-            value -> value,
-            rejections -> {
-              throw new AssertionError("expected an accepted offer but got " + rejections);
-            });
+    var share = acceptedShare(offered);
     assertThat(share.getStatus()).isEqualTo(ProfileShareStatus.PENDING);
     assertThat(share.getOfferedByAccountId()).isEqualTo(identity().accountId());
     assertThat(share.getExpiresAt()).isEqualTo(NOW.plus(INVITATION_TTL));
   }
 
   @Test
-  @DisplayName("Should return not-found when the caller cannot view the offer targets")
-  void shouldReturnNotFoundWhenOfferTargetsAreHiddenByOracleRule() {
-    authorization.denyAll();
-    assertThat(
-            rejectionOf(service.offerProfileShare(identity(), profile.getId(), household.getId())))
-        .isInstanceOf(ShareRejections.ProfileNotFound.class);
+  @DisplayName("Should offer to the Household the code names and spend the code when it is live")
+  void shouldOfferToHouseholdCodeNamesAndSpendCodeWhenItIsLive() {
+    var elsewhere = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var code = shareCodeFor(elsewhere);
 
-    authorization.allowAll();
+    var share =
+        acceptedShare(service.offerProfileShare(identity(), profile.getId(), presenting(code)));
+
+    assertThat(share.getHouseholdId()).isEqualTo(elsewhere.getId());
+    assertThat(storedCode(code).getStatus()).isEqualTo(ShareCodeStatus.SPENT);
+    assertThat(storedCode(code).getEndedAt()).isEqualTo(NOW);
+    assertThat(attempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.metadata().kind()).isEqualTo(CredentialKind.SHARE_CODE);
+              assertThat(attempt.metadata().accountId()).isEqualTo(identity().accountId());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
+  }
+
+  @Test
+  @DisplayName("Should refuse an offer when it presents a code already spent")
+  void shouldRefuseOfferWhenItPresentsCodeAlreadySpent() {
+    var code = shareCodeFor(household);
+    var other = profiles.save(ProfileFixture.defaultProfileBuilder().name("Other").build());
+    acceptedShare(service.offerProfileShare(identity(), profile.getId(), presenting(code)));
+
+    assertThat(rejectionOf(service.offerProfileShare(identity(), other.getId(), presenting(code))))
+        .isEqualTo(new ShareCodeRejections.ShareCodeRefused());
+    assertThat(shares.findAll())
+        .extracting(ProfileHouseholdShare::getProfileId)
+        .containsExactly(profile.getId());
+    assertThat(attempts.attempts())
+        .extracting(FakeCredentialAttemptRepository.AttemptSnapshot::result)
+        .containsExactly(CredentialAttemptResult.SUCCEEDED, CredentialAttemptResult.FAILED);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(OfferEnding.class)
+  @DisplayName("Should refuse a spent code when its offer was canceled or rejected")
+  void shouldRefuseSpentCodeWhenItsOfferWasCanceledOrRejected(OfferEnding ending) {
+    var code = shareCodeFor(household);
+    var other = profiles.save(ProfileFixture.defaultProfileBuilder().name("Other").build());
+    var offer =
+        acceptedShare(service.offerProfileShare(identity(), profile.getId(), presenting(code)));
+    assertThat(ending.end(service, identity(), offer.getId())).isInstanceOf(Outcome.Accepted.class);
+
+    assertThat(rejectionOf(service.offerProfileShare(identity(), other.getId(), presenting(code))))
+        .isEqualTo(new ShareCodeRejections.ShareCodeRefused());
+    assertThat(shares.findAll())
+        .extracting(ProfileHouseholdShare::getProfileId)
+        .containsExactly(profile.getId());
+    assertThat(storedCode(code).getStatus()).isEqualTo(ShareCodeStatus.SPENT);
+  }
+
+  @Test
+  @DisplayName("Should refuse the offer and leave the code spent when it is spent after presenting")
+  void shouldRefuseOfferAndLeaveCodeSpentWhenItIsSpentAfterPresenting() {
+    var code = shareCodeFor(household);
+    // Another offer spends the code after this one presented it and before it writes.
+    authorization.decideUnitWith(
+        intent -> {
+          if (intent instanceof Intent.OfferProfileShare) {
+            shareCodes.trySpend(storedCode(code).getId(), NOW);
+          }
+
+          return allowed();
+        });
+
     assertThat(
-            rejectionOf(service.offerProfileShare(identity(), profile.getId(), UUID.randomUUID())))
-        .isInstanceOf(ShareRejections.HouseholdNotFound.class);
+            rejectionOf(service.offerProfileShare(identity(), profile.getId(), presenting(code))))
+        .isEqualTo(new ShareCodeRejections.ShareCodeRefused());
+    assertThat(shares.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should refuse the offer as not found and leave the code live when it is hidden")
+  void shouldRefuseOfferAsNotFoundAndLeaveCodeLiveWhenItIsHidden() {
+    var code = shareCodeFor(household);
+    authorization.decideUnitWith(
+        intent -> intent instanceof Intent.ViewShareCodeHousehold ? allowed() : denied());
+
+    assertThat(
+            rejectionOf(service.offerProfileShare(identity(), profile.getId(), presenting(code))))
+        .isInstanceOf(ShareRejections.ProfileNotFound.class);
+    assertThat(storedCode(code).statusAt(NOW)).isEqualTo(ShareCodeStatus.LIVE);
+    assertThat(shares.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should refuse in one way and offer nothing when the code was never issued")
+  void shouldRefuseInOneWayAndOfferNothingWhenCodeWasNeverIssued() {
+    assertThat(
+            rejectionOf(
+                service.offerProfileShare(identity(), profile.getId(), presenting(unissuedCode()))))
+        .isEqualTo(new ShareCodeRejections.ShareCodeRefused());
+    assertThat(shares.findAll()).isEmpty();
+    assertThat(attempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED));
+  }
+
+  @Test
+  @DisplayName("Should refuse an offer before counting an attempt when the session may not")
+  void shouldRefuseOfferBeforeCountingAttemptWhenSessionMayNot() {
+    var code = shareCodeFor(household);
+    authorization.decideUnitWith(
+        intent -> intent instanceof Intent.ViewShareCodeHousehold ? denied() : allowed());
+
+    assertThatThrownBy(
+            () -> service.offerProfileShare(identity(), profile.getId(), presenting(code)))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(attempts.attempts()).isEmpty();
+    assertThat(storedCode(code).statusAt(NOW)).isEqualTo(ShareCodeStatus.LIVE);
   }
 
   @Test
@@ -170,10 +304,11 @@ class ProfileSharingServiceTest {
   @Test
   @DisplayName("Should authorize inside the mutation transaction when a share is offered")
   void shouldAuthorizeInsideMutationTransactionWhenShareIsOffered() {
+    var code = shareCodeFor(household);
     authorization.decideUnitWith(ProfileSharingServiceTest::denyInsideMutationTransaction);
 
     assertThat(
-            rejectionOf(service.offerProfileShare(identity(), profile.getId(), household.getId())))
+            rejectionOf(service.offerProfileShare(identity(), profile.getId(), presenting(code))))
         .isInstanceOf(ShareRejections.ProfileNotFound.class);
   }
 
@@ -912,15 +1047,38 @@ class ProfileSharingServiceTest {
     shares.save(
         activeShareBuilder().profileId(twin.getId()).householdId(household.getId()).build());
 
+    var code = shareCodeFor(household);
+
     var preflight =
-        service.sharePreflight(identity(), profile.getId(), household.getId()).orElseThrow();
+        service.sharePreflight(identity(), profile.getId(), presenting(code)).orElseThrow();
 
     // A Kid is available there and this Adult has no PIN: it would lock; the name collides.
     assertThat(preflight.wouldLock()).isTrue();
     assertThat(preflight.nameConflict()).isTrue();
 
-    authorization.denyAll();
-    assertThat(service.sharePreflight(identity(), profile.getId(), household.getId())).isEmpty();
+    authorization.decideUnitWith(
+        intent -> intent instanceof Intent.OfferProfileShare ? denied() : allowed());
+    assertThat(service.sharePreflight(identity(), profile.getId(), presenting(code))).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should answer for the Household its share code names when two codes are presented")
+  void shouldAnswerForHouseholdItsShareCodeNamesWhenTwoCodesArePresented() {
+    var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+    shares.save(activeShareBuilder().profileId(kid.getId()).householdId(household.getId()).build());
+    var quiet = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+
+    var intoKidsHousehold =
+        service
+            .sharePreflight(identity(), profile.getId(), presenting(shareCodeFor(household)))
+            .orElseThrow();
+    var intoQuietHousehold =
+        service
+            .sharePreflight(identity(), profile.getId(), presenting(shareCodeFor(quiet)))
+            .orElseThrow();
+
+    assertThat(intoKidsHousehold.wouldLock()).isTrue();
+    assertThat(intoQuietHousehold.wouldLock()).isFalse();
   }
 
   @Test
@@ -929,9 +1087,56 @@ class ProfileSharingServiceTest {
     activeShare();
 
     var preflight =
-        service.sharePreflight(identity(), profile.getId(), household.getId()).orElseThrow();
+        service
+            .sharePreflight(identity(), profile.getId(), presenting(shareCodeFor(household)))
+            .orElseThrow();
 
     assertThat(preflight.nameConflict()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should keep the share code live and count one attempt when an offer is preflighted")
+  void shouldKeepShareCodeLiveAndCountOneAttemptWhenOfferIsPreflighted() {
+    var code = shareCodeFor(household);
+
+    service.sharePreflight(identity(), profile.getId(), presenting(code)).orElseThrow();
+
+    assertThat(storedCode(code).statusAt(NOW)).isEqualTo(ShareCodeStatus.LIVE);
+    assertThat(attempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.metadata().kind()).isEqualTo(CredentialKind.SHARE_CODE);
+              assertThat(attempt.metadata().accountId()).isEqualTo(identity().accountId());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
+  }
+
+  @Test
+  @DisplayName("Should answer nothing and count a failure when the preflight's share code fails")
+  void shouldAnswerNothingAndCountFailureWhenPreflightsShareCodeFails() {
+    var spent = shareCodeFor(household);
+    shareCodes.trySpend(storedCode(spent).getId(), NOW);
+
+    assertThat(service.sharePreflight(identity(), profile.getId(), presenting(spent))).isEmpty();
+    assertThat(service.sharePreflight(identity(), profile.getId(), presenting(unissuedCode())))
+        .isEmpty();
+    assertThat(attempts.attempts())
+        .hasSize(2)
+        .allSatisfy(
+            attempt -> assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED));
+  }
+
+  @Test
+  @DisplayName("Should refuse a preflight before counting an attempt when the session may not")
+  void shouldRefusePreflightBeforeCountingAttemptWhenSessionMayNot() {
+    var code = shareCodeFor(household);
+    authorization.decideUnitWith(
+        intent -> intent instanceof Intent.ViewShareCodeHousehold ? denied() : allowed());
+
+    assertThatThrownBy(() -> service.sharePreflight(identity(), profile.getId(), presenting(code)))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(attempts.attempts()).isEmpty();
   }
 
   @Test
@@ -1391,10 +1596,12 @@ class ProfileSharingServiceTest {
   @DisplayName("Should return not-found when an allowed principal offers a missing Profile")
   void shouldReturnNotFoundWhenAllowedPrincipalOffersMissingProfile() {
     authorization.allowAll();
+    var code = shareCodeFor(household);
+
     assertThat(
-            rejectionOf(
-                service.offerProfileShare(identity(), UUID.randomUUID(), household.getId())))
+            rejectionOf(service.offerProfileShare(identity(), UUID.randomUUID(), presenting(code))))
         .isInstanceOf(ShareRejections.ProfileNotFound.class);
+    assertThat(storedCode(code).statusAt(NOW)).isEqualTo(ShareCodeStatus.LIVE);
   }
 
   @Test
@@ -1402,7 +1609,10 @@ class ProfileSharingServiceTest {
       "Should answer an empty preview when an allowed principal previews a missing Profile")
   void shouldAnswerEmptyPreviewWhenAllowedPrincipalPreviewsMissingProfile() {
     authorization.allowAll();
-    assertThat(service.sharePreflight(identity(), UUID.randomUUID(), household.getId())).isEmpty();
+    assertThat(
+            service.sharePreflight(
+                identity(), UUID.randomUUID(), presenting(shareCodeFor(household))))
+        .isEmpty();
   }
 
   @Test
@@ -1450,6 +1660,60 @@ class ProfileSharingServiceTest {
   void shouldReturnShareNotFoundWhenAllowedPrincipalCancelsMissingShare() {
     assertThat(rejectionOf(service.cancelProfileShare(identity(), UUID.randomUUID())))
         .isInstanceOf(ShareRejections.ShareNotFound.class);
+  }
+
+  /** The ways an offer ends before anyone accepts it. */
+  enum OfferEnding {
+    CANCELED {
+      @Override
+      Outcome<ProfileHouseholdShare, ShareRejections.Decline> end(
+          ProfileSharingService service, AuthenticatedIdentity identity, UUID shareId) {
+        return service.cancelProfileShare(identity, shareId);
+      }
+    },
+    REJECTED {
+      @Override
+      Outcome<ProfileHouseholdShare, ShareRejections.Decline> end(
+          ProfileSharingService service, AuthenticatedIdentity identity, UUID shareId) {
+        return service.rejectProfileShare(identity, shareId);
+      }
+    };
+
+    abstract Outcome<ProfileHouseholdShare, ShareRejections.Decline> end(
+        ProfileSharingService service, AuthenticatedIdentity identity, UUID shareId);
+  }
+
+  /** A live share code for the Household, issued as a HouseholdAdmin issues one. */
+  private String shareCodeFor(Household target) {
+    return shareCodeService
+        .issueShareCode(identity(), target.getId())
+        .fold(
+            NewShareCode::code,
+            rejections -> {
+              throw new AssertionError("expected a share code but got " + rejections);
+            });
+  }
+
+  private static ShareCodeCommand presenting(String code) {
+    return ShareCodeCommand.builder().code(code).ipAddress("203.0.113.7").build();
+  }
+
+  private ShareCode storedCode(String code) {
+    return shareCodes.findByCodeDigest(codes.digestOf(code).orElseThrow()).orElseThrow();
+  }
+
+  /** A code in the right form that no Household was given. */
+  private String unissuedCode() {
+    return codes.issue().code();
+  }
+
+  private static ProfileHouseholdShare acceptedShare(
+      Outcome<ProfileHouseholdShare, ShareRejections.Offer> offered) {
+    return offered.fold(
+        share -> share,
+        rejections -> {
+          throw new AssertionError("expected an accepted offer but got " + rejections);
+        });
   }
 
   private static Object rejectionOf(Outcome<?, ?> outcome) {

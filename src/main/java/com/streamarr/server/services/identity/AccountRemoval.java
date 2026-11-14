@@ -47,6 +47,7 @@ class AccountRemoval {
   private final AuthSessionRepository authSessionRepository;
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final Clock clock;
+  private final ShareCodeIssuerAuthority shareCodeIssuers;
 
   /**
    * Moves the Account and its Personal Profile inside the caller's transaction; throws if either
@@ -68,6 +69,7 @@ class AccountRemoval {
 
     updateSourceHouseholdAccess(transfer);
     shareLifecycle.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
+    shareCodeIssuers.afterIssuerChanged(transfer.accountId(), now);
   }
 
   private HouseholdRole destinationRole(UUID householdId) {
@@ -111,6 +113,7 @@ class AccountRemoval {
     // Read after any wait above, so an offer whose time ran out meanwhile is stored as expired.
     shareLifecycle.invalidatePendingOfferedBy(
         account.getId(), "offering manager deleted", clock.instant());
+    shareCodeIssuers.beforeIssuerDeleted(account.getId(), now);
 
     switch (deletion.profileDisposition()) {
       case ErasePersonalProfile() -> {

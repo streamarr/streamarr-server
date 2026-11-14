@@ -66,6 +66,8 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
   private static final String WAITING_SHARE_TRANSITION = "update%profile_household_share";
   private static final String WAITING_SESSION_LOCK = "auth_session%for update";
   private static final String WAITING_PROFILE_LOCK = "profile%for share";
+  private static final String WAITING_ACCOUNT_DISABLEMENT = "update%user_account";
+  private static final String WAITING_MANAGER_REMOVAL = "delete%profile_manager";
   private static final String WAITING_COMMIT = "COMMIT";
   private static final Duration BOUND = Duration.ofSeconds(10);
 
@@ -104,7 +106,7 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
   @DisplayName("Should serialize a Kid share activation when a selection is in flight")
   void shouldSerializeKidShareActivationWhenSelectionIsInFlight() throws Exception {
     var kid = managedKid();
-    var shareId = offerAsOwner(kid, host.household().getId());
+    var shareId = offerAsOwner(kid, host);
     var hostBearer = authTestSupport.accountBearer(host);
 
     var racedSelectionStatus =
@@ -150,7 +152,7 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
       "Should leave no selection of an ended Profile when selection races share termination")
   void shouldLeaveNoSelectionOfEndedProfileWhenSelectionRacesShareTermination() throws Exception {
     var orphan = managedOrphan();
-    var shareId = offerAsOwner(orphan, host.household().getId());
+    var shareId = offerAsOwner(orphan, host);
     accept(host, shareId);
     var sessionId = host.session().getId();
     var hostBearer = authTestSupport.accountBearer(host);
@@ -223,7 +225,7 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
     var offerer = authTestSupport.createAdminIdentity();
     var disabler = authTestSupport.createAdminIdentity();
     try {
-      var shareId = offer(authTestSupport.accountBearer(offerer), orphan, host.household().getId());
+      var shareId = offer(authTestSupport.accountBearer(offerer), orphan, host);
       var hostBearer = authTestSupport.accountBearer(host);
       var disablerBearer = authTestSupport.freshAccountBearer(disabler);
 
@@ -265,7 +267,8 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
                                     .andReturn()
                                     .getResponse()
                                     .getContentAsString());
-                var revokedBeforeRelease = completedWithin(disablement, Duration.ofSeconds(2));
+                var revokedBeforeRelease =
+                    finishedBeforeWaitingOn(disablement, WAITING_ACCOUNT_DISABLEMENT);
                 if (revokedBeforeRelease) {
                   assertThat(
                           objectMapper
@@ -312,10 +315,12 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
   // ---- Share termination versus direct management removal.
 
   @Test
-  @DisplayName("Should not end a share after the actor's direct management is removed")
-  void shouldNotEndShareAfterActorsDirectManagementIsRemoved() throws Exception {
+  @DisplayName(
+      "Should not end a share after the actor's direct management is removed when the removal"
+          + " races the end")
+  void shouldNotEndShareAfterActorsDirectManagementIsRemovedWhenRemovalRacesEnd() throws Exception {
     var orphan = managedOrphan();
-    var shareId = offerAsOwner(orphan, host.household().getId());
+    var shareId = offerAsOwner(orphan, host);
     accept(host, shareId);
     makeHostMemberWithReplacementAdmin();
     var manager =
@@ -361,7 +366,7 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
                                 });
                             return null;
                           });
-              var removedBeforeRelease = completedWithin(removal, Duration.ofSeconds(2));
+              var removedBeforeRelease = finishedBeforeWaitingOn(removal, WAITING_MANAGER_REMOVAL);
 
               held.release().run();
               outcomeOf(end, "share termination after manager removal");
@@ -509,28 +514,37 @@ class ProfileSharingRaceIT extends AbstractIntegrationTest {
         .get(0, int.class);
   }
 
-  private static boolean completedWithin(Future<?> future, Duration timeout) throws Exception {
+  /**
+   * Waits until the work finishes or a backend waits on a lock at the statement it was expected to
+   * wait at, and answers whether it finished.
+   */
+  private boolean finishedBeforeWaitingOn(Future<?> work, String queryFragment) {
     try {
-      future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-      return true;
-    } catch (TimeoutException _) {
-      return false;
+      await().atMost(BOUND).until(() -> work.isDone() || waitingOn(queryFragment) > 0);
+    } catch (ConditionTimeoutException timeout) {
+      throw new AssertionError(
+          "neither finished nor waiting on '" + queryFragment + "'. Activity:\n" + activity(),
+          timeout);
     }
+
+    return work.isDone();
   }
 
-  private UUID offerAsOwner(Profile profile, UUID householdId) throws Exception {
-    return offer(authTestSupport.accountBearer(owner), profile, householdId);
+  private UUID offerAsOwner(Profile profile, AuthTestSupport.TestIdentity target) throws Exception {
+    return offer(authTestSupport.accountBearer(owner), profile, target);
   }
 
-  private UUID offer(String bearer, Profile profile, UUID householdId) throws Exception {
+  /** Offers the Profile with a code that the target HouseholdAdmin issues for their Household. */
+  private UUID offer(String bearer, Profile profile, AuthTestSupport.TestIdentity target)
+      throws Exception {
     var response =
         graphql(
                 bearer,
                 """
-                mutation { offerProfileShare(input: {profileId: "%s", householdId: "%s"}) {
+                mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
                   share { id status } userErrors { __typename } } }
                 """
-                    .formatted(profile.getId(), householdId))
+                    .formatted(profile.getId(), authTestSupport.shareCodeFor(target)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andExpect(jsonPath("$.data.offerProfileShare.share.status").value("PENDING"))

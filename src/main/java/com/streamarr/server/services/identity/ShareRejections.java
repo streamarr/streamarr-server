@@ -5,7 +5,9 @@ public final class ShareRejections {
 
   private ShareRejections() {}
 
-  public sealed interface Offer permits ProfileNotFound, HouseholdNotFound, AlreadyShared {}
+  /** An offer names its Household only by a share code, so a code that fails is refused as one. */
+  public sealed interface Offer
+      permits ProfileNotFound, ShareCodeRejections.ShareCodeRefused, AlreadyShared {}
 
   public sealed interface Accept
       permits ShareNotFound, ShareNotPending, OfferInvalidated, NoEligibleAdmin, NameConflict {}
@@ -24,8 +26,6 @@ public final class ShareRejections {
           ReasonRequired {}
 
   public record ProfileNotFound() implements Offer {}
-
-  public record HouseholdNotFound() implements Offer {}
 
   /**
    * The Profile is already available in that Household; a pending offer is replaced, not refused.

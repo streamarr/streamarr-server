@@ -29,7 +29,9 @@ public enum CredentialKind implements EnumType {
 
     PROFILE_MANAGER_INVITATION_CODE("PROFILE_MANAGER_INVITATION_CODE"),
 
-    DEVICE_PAIRING_CODE("DEVICE_PAIRING_CODE");
+    DEVICE_PAIRING_CODE("DEVICE_PAIRING_CODE"),
+
+    SHARE_CODE("SHARE_CODE");
 
     private final String literal;
 

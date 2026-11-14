@@ -164,6 +164,28 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "Should keep the code out of the answer when an acceptance names a field the input lacks")
+  void shouldKeepCodeOutOfAnswerWhenAcceptanceNamesFieldInputLacks() throws Exception {
+    var orphan = managedOrphan();
+    var code = issueManagerInvitation(orphan).code();
+
+    var response =
+        graphql(
+                authTestSupport.accountBearer(recipient),
+                """
+                mutation { acceptManagerInvitation(input: {code: "%s", profileId: "%s"}) {
+                  invitation { status } } }
+                """
+                    .formatted(code, orphan.getId()))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(response).contains("profileId").doesNotContain(code);
+  }
+
+  @Test
+  @DisplayName(
       "Should throttle a GraphQL acceptance with a retry hint when wrong secrets exceed the limit")
   void shouldThrottleGraphQlAcceptanceWithRetryHintWhenWrongSecretsExceedLimit() throws Exception {
     var issued = issueManagerInvitation(managedOrphan());

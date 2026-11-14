@@ -33,7 +33,8 @@ class CredentialAttemptPolicyTest {
     assertThat(provider.policyFor(kind))
         .isEqualTo(
             STANDARD.toBuilder()
-                .resetFailuresOnSuccess(kind != CredentialKind.DEVICE_PAIRING_CODE)
+                .resetFailuresOnSuccess(
+                    kind != CredentialKind.DEVICE_PAIRING_CODE && kind != CredentialKind.SHARE_CODE)
                 .build());
   }
 

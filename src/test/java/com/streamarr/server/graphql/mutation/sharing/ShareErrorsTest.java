@@ -3,7 +3,9 @@ package com.streamarr.server.graphql.mutation.sharing;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
+import com.streamarr.server.services.identity.ShareCodeRejections;
 import com.streamarr.server.services.identity.ShareRejections;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -21,12 +23,67 @@ class ShareErrorsTest {
               .assertThat(ShareErrors.toOfferError(new ShareRejections.ProfileNotFound()))
               .isExactlyInstanceOf(ProfileNotFoundError.class);
           softly
-              .assertThat(ShareErrors.toOfferError(new ShareRejections.HouseholdNotFound()))
-              .isExactlyInstanceOf(HouseholdNotFoundError.class);
+              .assertThat(ShareErrors.toOfferError(new ShareCodeRejections.ShareCodeRefused()))
+              .isExactlyInstanceOf(ShareCodeRefusedError.class);
           softly
               .assertThat(ShareErrors.toOfferError(new ShareRejections.AlreadyShared()))
               .isExactlyInstanceOf(ProfileAlreadySharedError.class);
         });
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse as a lookup does, on the share code input, when an offer's code fails")
+  void shouldRefuseAsLookupDoesOnShareCodeInputWhenOffersCodeFails() {
+    assertThat(ShareErrors.toOfferError(new ShareCodeRejections.ShareCodeRefused()))
+        .isEqualTo(
+            new ShareCodeRefusedError(
+                "This share code does not work. Ask the Household for a new one.",
+                List.of("shareCode")));
+  }
+
+  @Test
+  @DisplayName("Should point at the Profile when it is already available where the code leads")
+  void shouldPointAtProfileWhenItIsAlreadyAvailableWhereCodeLeads() {
+    assertThat(ShareErrors.toOfferError(new ShareRejections.AlreadyShared()))
+        .isEqualTo(
+            new ProfileAlreadySharedError(
+                "That Profile is already available in that Household.", List.of("profileId")));
+  }
+
+  @Test
+  @DisplayName("Should name the Household input when issuing a share code fails")
+  void shouldNameHouseholdInputWhenIssuingShareCodeFails() {
+    assertThat(ShareErrors.toIssueShareCodeError(new ShareCodeRejections.HouseholdNotFound()))
+        .isEqualTo(new HouseholdNotFoundError("No such Household.", List.of("householdId")));
+  }
+
+  @Test
+  @DisplayName("Should name the share code input when withdrawing a share code fails")
+  void shouldNameShareCodeInputWhenWithdrawingShareCodeFails() {
+    assertSoftly(
+        softly -> {
+          softly
+              .assertThat(
+                  ShareErrors.toWithdrawShareCodeError(new ShareCodeRejections.ShareCodeNotFound()))
+              .isEqualTo(new ShareCodeNotFoundError("No such share code.", List.of("shareCodeId")));
+          softly
+              .assertThat(
+                  ShareErrors.toWithdrawShareCodeError(new ShareCodeRejections.ShareCodeNotLive()))
+              .isInstanceOf(ShareCodeNotLiveError.class)
+              .extracting(error -> ((ShareCodeNotLiveError) error).inputPath())
+              .isEqualTo(List.of("shareCodeId"));
+        });
+  }
+
+  @Test
+  @DisplayName("Should refuse in plain words naming no Household when a looked-up code fails")
+  void shouldRefuseInPlainWordsNamingNoHouseholdWhenLookedUpCodeFails() {
+    assertThat(ShareErrors.toLookUpShareCodeError(new ShareCodeRejections.ShareCodeRefused()))
+        .isEqualTo(
+            new ShareCodeRefusedError(
+                "This share code does not work. Ask the Household for a new one.",
+                List.of("code")));
   }
 
   @Test

@@ -167,7 +167,8 @@ type ProfileSharePreview {
 
 input OfferProfileShareInput {
     profileId: ID!
-    householdId: ID!
+    "The share code the target Household gave out. It names the Household, and the offer spends it."
+    shareCode: String!
 }
 
 type OfferProfileSharePayload {
@@ -177,7 +178,7 @@ type OfferProfileSharePayload {
 
 union OfferProfileShareError =
     ProfileNotFoundError
-  | HouseholdNotFoundError
+  | ShareCodeRefusedError
   | ProfileAlreadySharedError
 
 input AcceptProfileShareInput {
