@@ -12,9 +12,23 @@ type Me {
     "The Household this session is using: the membership Household, or a visited one."
     contextHousehold: HouseholdSummary!
     "Every Household the Account may use: its membership Household first, then the ones its Personal Profile is shared into."
-    usableHouseholds(first: Int, after: String, last: Int, before: String): UsableHouseholdConnection!
+    usableHouseholds(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): UsableHouseholdConnection!
     "The Profile picker of the context Household."
-    selectableProfiles(first: Int, after: String, last: Int, before: String): SelectableProfileConnection!
+    selectableProfiles(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): SelectableProfileConnection!
     "The Profile this session has selected, as the Profile picker shows it; null until it selects one."
     selectedProfile: SelectableProfile
     "The selected Profile's own language preferences; null without a selected Profile."
@@ -29,7 +43,14 @@ type Me {
     Account whose own Personal Profile is supervised manages none, and being a HouseholdAdmin or a
     ServerAdmin adds none. Empty for a device-bound session and for a disabled Account.
     """
-    managedProfiles(first: Int, after: String, last: Int, before: String): ManagedProfileConnection!
+    managedProfiles(
+        "How many rows to request. Maximum 500."
+        first: Int
+        after: String
+        "How many rows to request. Maximum 500."
+        last: Int
+        before: String
+    ): ManagedProfileConnection!
 }
 
 enum HouseholdRole {
