@@ -6,16 +6,18 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * The stream end times that job attempts learned where a container header states none (ADR 0037,
- * early ends). They are kept apart from the probe results, so a new probe never discards them.
+ * The stream end times that job attempts learned where a container header states none, and the ones
+ * that a keyframe packet scan read (ADR 0037, early ends). They are kept apart from the probe
+ * results, so a new probe never discards them. A keyframe packet scan stores its end times with its
+ * keyframes ({@link MediaFileContainerInfoRepositoryCustom#publishKeyframePacketScan}).
  */
 public interface LearnedStreamEndRepository {
 
   /**
    * Stores the learned end time while the file's stored probe outcome holds its snapshot, unless
    * one is already stored for the same stream of that snapshot: the first learned end time stays.
-   * One learned for another snapshot of the file is replaced. Returns whether the end time was
-   * stored.
+   * One learned for another snapshot of the file is replaced. The end time is stored as a job
+   * attempt's, never as a scanned one. Returns whether the end time was stored.
    */
   boolean store(LearnedStreamEnd learned);
 

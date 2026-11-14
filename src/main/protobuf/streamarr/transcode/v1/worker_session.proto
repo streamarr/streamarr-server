@@ -786,12 +786,14 @@ message SourceStreamWithoutSamples {
   google.protobuf.Duration read_from = 2;
 }
 
-// This message reports where one chosen source stream ended.
+// This message reports where one source stream ended.
 message SourceStreamEnd {
   // This field holds the stream's ProbeStreamInfo.index.
   optional uint32 stream_index = 1;
-  // This field holds the end of the stream's last sample, on seek_position's
-  // timeline. The worker reads it from the source, not from the probe.
+  // This field holds the latest end of the stream's samples, on seek_position's
+  // timeline, which is the timeline of ProbeKeyframePositionsPart. A sample
+  // ends at its presentation time plus its duration. The worker reads it from
+  // the source's packets, not from the container header.
   google.protobuf.Duration end_time = 2;
 }
 
@@ -1534,6 +1536,13 @@ message ProbeMediaInfo {
   bool stream_titles_omitted = 6;
   // The worker leaves this field out when it measured no stream (ADR 0054).
   StreamMeasurements stream_measurements = 7;
+  // This field lists, at most once each, where the chosen video stream and each
+  // audio stream ends, as a keyframe packet scan read their packets. Probe
+  // version 9 and later report it, only beside KeyframePositions of a
+  // PACKET_SCAN. A packet without a presentation time counts at its decode
+  // time. The worker leaves out a stream whose end it could not read or whose
+  // end is not above zero. ADR 0037, early ends, lists what the server refuses.
+  repeated SourceStreamEnd stream_ends = 8;
 }
 
 message ProbeAttemptResult {

@@ -126,6 +126,22 @@ public class MediaFileLearnedStreamEndRecord extends UpdatableRecordImpl<MediaFi
         return (Integer) get(6);
     }
 
+    /**
+     * Setter for
+     * <code>public.media_file_learned_stream_end.from_packet_scan</code>.
+     */
+    public void setFromPacketScan(Boolean value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.media_file_learned_stream_end.from_packet_scan</code>.
+     */
+    public Boolean getFromPacketScan() {
+        return (Boolean) get(7);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -149,7 +165,7 @@ public class MediaFileLearnedStreamEndRecord extends UpdatableRecordImpl<MediaFi
     /**
      * Create a detached, initialised MediaFileLearnedStreamEndRecord
      */
-    public MediaFileLearnedStreamEndRecord(UUID mediaFileId, Integer streamIndex, Long sourceSize, Long sourceModifiedEpochSecond, Integer sourceModifiedNanos, Long endSeconds, Integer endNanos) {
+    public MediaFileLearnedStreamEndRecord(UUID mediaFileId, Integer streamIndex, Long sourceSize, Long sourceModifiedEpochSecond, Integer sourceModifiedNanos, Long endSeconds, Integer endNanos, Boolean fromPacketScan) {
         super(MediaFileLearnedStreamEnd.MEDIA_FILE_LEARNED_STREAM_END);
 
         setMediaFileId(mediaFileId);
@@ -159,6 +175,7 @@ public class MediaFileLearnedStreamEndRecord extends UpdatableRecordImpl<MediaFi
         setSourceModifiedNanos(sourceModifiedNanos);
         setEndSeconds(endSeconds);
         setEndNanos(endNanos);
+        setFromPacketScan(fromPacketScan);
         resetTouchedOnNotNull();
     }
 }

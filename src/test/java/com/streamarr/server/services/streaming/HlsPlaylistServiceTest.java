@@ -7,6 +7,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.assertj.core.api.Assertions.within;
 
+import com.streamarr.server.domain.media.LearnedStreamEnd;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.BitstreamRewrite;
@@ -28,6 +30,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.Presence;
 import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -45,6 +48,7 @@ import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
 import com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture;
 import com.streamarr.server.properties.StreamingProperties;
+import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -342,6 +346,332 @@ class HlsPlaylistServiceTest {
         .contains("#EXTINF:6.500000,\n")
         .contains("#EXTINF:5.500001,\n")
         .contains("#EXT-X-TARGETDURATION:7\n");
+  }
+
+  // The last segment opens at 12 s and runs to the audio's end at 14.25 s, not to the 30 s that the
+  // header states.
+  @Test
+  @DisplayName(
+      "Should end a stream copy's last segment at the scanned media end when the container header"
+          + " overstates the source's length")
+  void
+      shouldEndAStreamCopysLastSegmentAtTheScannedMediaEndWhenTheContainerHeaderOverstatesTheSourcesLength() {
+    var session =
+        StreamSessionFixture.defaultSessionBuilder().mediaProbe(truncatedSource()).build();
+
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
+
+    assertThat(playlist)
+        .containsSubsequence(
+            "#EXTINF:6.000000,\n", "#EXTINF:6.000000,\n", "#EXTINF:2.250000,\n", "#EXT-X-ENDLIST")
+        .contains("#EXT-X-TARGETDURATION:6\n")
+        .doesNotContain("segment3.m4s");
+  }
+
+  // An encode pads up to the end that it advertises, so a player that moves from a copied variant
+  // to an encoded one at the tail must find the same end in both playlists.
+  @Test
+  @DisplayName(
+      "Should end an encoded stream session where a stream copy of the same source ends when the"
+          + " container header overstates the source's length")
+  void
+      shouldEndAnEncodedStreamSessionWhereAStreamCopyOfTheSameSourceEndsWhenTheHeaderOverstatesTheLength() {
+    var copy = StreamSessionFixture.defaultSessionBuilder().mediaProbe(truncatedSource()).build();
+    var encode =
+        StreamSessionFixture.defaultSessionBuilder()
+            .transcodeDecision(StreamSessionFixture.fullTranscodeDecision("h264"))
+            .mediaProbe(truncatedSource())
+            .build();
+
+    var copyPlaylist =
+        service.generateMediaPlaylist(copy, StreamSession.defaultVariant(), "test-token");
+    var encodePlaylist =
+        service.generateMediaPlaylist(encode, StreamSession.defaultVariant(), "test-token");
+
+    assertThat(advertisedEnd(encodePlaylist))
+        .isEqualByComparingTo(advertisedEnd(copyPlaylist))
+        .isEqualByComparingTo("14.25");
+  }
+
+  // A keyframe packet scan read that the picture ends at 14 s and the session's audio at 16 s. A
+  // copy cannot pad, so its playlist lists the audio after the last picture. The second audio track
+  // runs to 19 s, as the container does, but the session does not deliver it. No stream ends a
+  // whole segment before another, so the transcode decision copies this source.
+  @Test
+  @DisplayName(
+      "Should end a stream copy's last segment at the audio's end when the session's audio"
+          + " outlasts the video")
+  void shouldEndAStreamCopysLastSegmentAtTheAudiosEndWhenTheSessionsAudioOutlastsTheVideo() {
+    var scanned = scannedEndBuilder();
+    var probe =
+        StreamSessionFixture.defaultProbeBuilder()
+            .duration(Duration.ofSeconds(19))
+            .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
+            .streams(
+                List.of(
+                    streamEndingAt("video", 0, Duration.ofSeconds(19)),
+                    streamEndingAt("audio", 1, Duration.ofSeconds(19)),
+                    streamEndingAt("audio", 2, Duration.ofSeconds(19))))
+            .build()
+            .withLearnedEndTimes(
+                List.of(
+                    scanned.streamIndex(0).endTime(Duration.ofSeconds(14)).build(),
+                    scanned.streamIndex(1).endTime(Duration.ofSeconds(16)).build(),
+                    scanned.streamIndex(2).endTime(Duration.ofSeconds(19)).build()));
+    var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
+
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
+
+    assertThat(playlist)
+        .containsSubsequence(
+            "#EXTINF:6.000000,\n", "#EXTINF:6.000000,\n", "#EXTINF:4.000000,\n", "#EXT-X-ENDLIST")
+        .contains("#EXT-X-TARGETDURATION:6\n");
+  }
+
+  // A worker of an earlier probe version reports no stream end with its packet scan. The header's
+  // own stream ends never move the media's end, and an unknown end is never read as zero.
+  @Test
+  @DisplayName(
+      "Should end a stream copy's last segment at the container's duration when the server"
+          + " learned no stream's end")
+  void shouldEndAStreamCopysLastSegmentAtTheContainersDurationWhenTheServerLearnedNoStreamsEnd() {
+    var probe =
+        StreamSessionFixture.defaultProbeBuilder()
+            .duration(Duration.ofSeconds(30))
+            .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
+            .streams(
+                List.of(
+                    streamEndingAt("video", 0, Duration.ofSeconds(14)),
+                    streamEndingAt("audio", 1, Duration.ofSeconds(16))))
+            .build();
+    var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
+
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
+
+    assertThat(playlist)
+        .containsSubsequence(
+            "#EXTINF:6.000000,\n", "#EXTINF:6.000000,\n", "#EXTINF:18.000000,\n", "#EXT-X-ENDLIST")
+        .contains("#EXT-X-TARGETDURATION:18\n");
+  }
+
+  // A job attempt whose FFmpeg stopped at a read error reported 12.291 s and 12.251 s as the ends
+  // of a 20 s source. The source is whole, so its playlist must still list all of it.
+  @Test
+  @DisplayName(
+      "Should end a stream copy's last segment at the container's duration when only a job attempt"
+          + " learned where the streams end")
+  void shouldEndAStreamCopysLastSegmentAtTheContainersDurationWhenOnlyAJobAttemptLearnedTheEnds() {
+    var attemptLearned = scannedEndBuilder().fromPacketScan(false);
+    var probe =
+        StreamSessionFixture.defaultProbeBuilder()
+            .duration(Duration.ofSeconds(20))
+            .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
+            .streams(
+                List.of(
+                    StreamInfo.builder().index(0).codecType("video").build(),
+                    StreamInfo.builder().index(1).codecType("audio").build()))
+            .build()
+            .withLearnedEndTimes(
+                List.of(
+                    attemptLearned.streamIndex(0).endTime(Duration.ofMillis(12_291)).build(),
+                    attemptLearned.streamIndex(1).endTime(Duration.ofMillis(12_251)).build()));
+    var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
+
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
+
+    assertThat(playlist)
+        .containsSubsequence(
+            "#EXTINF:6.000000,\n", "#EXTINF:6.000000,\n", "#EXTINF:8.000000,\n", "#EXT-X-ENDLIST");
+  }
+
+  // A healthy Matroska file: its container states 14.014 s, and the scan read the audio's last
+  // packet to 14.009 s, where the last decoded sample ends at 14.01356 s. The header is not wrong
+  // by 5 ms, the packet times are, so the playlist must still cover the audio.
+  @Test
+  @DisplayName(
+      "Should end a stream copy's last segment at the container's duration when the scanned end"
+          + " lies less than 1 s before it")
+  void shouldEndAStreamCopysLastSegmentAtTheContainersDurationWhenTheScannedEndLiesJustBeforeIt() {
+    var scanned = scannedEndBuilder();
+    var probe =
+        StreamSessionFixture.defaultProbeBuilder()
+            .duration(Duration.ofMillis(14_014))
+            .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
+            .streams(
+                List.of(
+                    streamEndingAt("video", 0, Duration.ofMillis(14_014)),
+                    streamEndingAt("audio", 1, Duration.ofMillis(14_014))))
+            .build()
+            .withLearnedEndTimes(
+                List.of(
+                    scanned.streamIndex(0).endTime(Duration.ofSeconds(13)).build(),
+                    scanned.streamIndex(1).endTime(Duration.ofMillis(14_009)).build()));
+    var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
+
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
+
+    assertThat(advertisedEnd(playlist)).isEqualByComparingTo("14.014");
+  }
+
+  // The audio's last sample ends at 14.083333333 s. A list that counted down would end at 14.083 s.
+  @Test
+  @DisplayName(
+      "Should end a stream copy's last segment at or after the scanned media end when the end"
+          + " falls between two milliseconds")
+  void shouldEndAStreamCopysLastSegmentAtOrAfterTheScannedMediaEndWhenItFallsBetweenMilliseconds() {
+    var scanned = scannedEndBuilder();
+    var probe =
+        StreamSessionFixture.defaultProbeBuilder()
+            .duration(Duration.ofSeconds(30))
+            .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
+            .streams(
+                List.of(
+                    streamEndingAt("video", 0, Duration.ofSeconds(30)),
+                    streamEndingAt("audio", 1, Duration.ofSeconds(30))))
+            .build()
+            .withLearnedEndTimes(
+                List.of(
+                    scanned.streamIndex(0).endTime(Duration.ofSeconds(12, 83_333_333)).build(),
+                    scanned.streamIndex(1).endTime(Duration.ofSeconds(14, 83_333_333)).build()));
+    var session = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
+
+    var playlist =
+        service.generateMediaPlaylist(session, StreamSession.defaultVariant(), "test-token");
+
+    assertThat(advertisedEnd(playlist)).isEqualByComparingTo("14.084");
+  }
+
+  // A copy's segments open at the source keyframes, and an encode's on the plain grid, which merges
+  // a final slot shorter than 2 s. The two lists differ in shape, and both must still end at the
+  // scanned media end, or a player that changes variant at the tail finds two ends.
+  @ParameterizedTest(name = "keyframes at {0} ms, media end at {1} ms")
+  @MethodSource("scannedSourcesWhoseCopyAndEncodeListsDiffer")
+  @DisplayName(
+      "Should end a stream copy and an encode of one source at the same scanned media end when"
+          + " their segment lists differ")
+  void shouldEndAStreamCopyAndAnEncodeOfOneSourceAtTheSameScannedMediaEndWhenTheirListsDiffer(
+      List<Long> keyframeMillis, long mediaEndMillis) {
+    var probe = sourceScannedToEndAt(keyframeMillis, Duration.ofMillis(mediaEndMillis));
+    var copy = StreamSessionFixture.defaultSessionBuilder().mediaProbe(probe).build();
+    var encode =
+        StreamSessionFixture.defaultSessionBuilder()
+            .transcodeDecision(StreamSessionFixture.fullTranscodeDecision("h264"))
+            .mediaProbe(probe)
+            .build();
+
+    var copyPlaylist =
+        service.generateMediaPlaylist(copy, StreamSession.defaultVariant(), "test-token");
+    var encodePlaylist =
+        service.generateMediaPlaylist(encode, StreamSession.defaultVariant(), "test-token");
+
+    var mediaEnd = BigDecimal.valueOf(mediaEndMillis, 3);
+    assertThat(advertisedEnd(copyPlaylist)).isEqualByComparingTo(mediaEnd);
+    assertThat(advertisedEnd(encodePlaylist)).isEqualByComparingTo(mediaEnd);
+    assertThat(segmentDurations(copyPlaylist)).isNotEqualTo(segmentDurations(encodePlaylist));
+  }
+
+  static Stream<Arguments> scannedSourcesWhoseCopyAndEncodeListsDiffer() {
+    return Stream.of(
+        // The encode merges its 1.5 s final slot; the copy's last keyframe opens a 2.3 s segment.
+        Arguments.of(List.of(0L, 5_500L, 11_200L), 13_500L),
+        // The copy's keyframe at 12.4 s presents less than 2 s before the end and opens no segment.
+        Arguments.of(List.of(0L, 5_500L, 12_400L), 14_250L),
+        // The copy holds two slots without a keyframe in one long segment.
+        Arguments.of(List.of(0L, 4_100L, 17_900L), 20_333L));
+  }
+
+  private static List<String> segmentDurations(String playlist) {
+    return playlist.lines().filter(line -> line.startsWith("#EXTINF:")).toList();
+  }
+
+  // A source whose header states 60 s, and whose keyframe packet scan read the given keyframes and
+  // where its video and audio end.
+  private static MediaProbe sourceScannedToEndAt(List<Long> keyframeMillis, Duration mediaEnd) {
+    var scanned = scannedEndBuilder();
+    var positions =
+        KeyframePositions.builder()
+            .streamIndex(0)
+            .timeBaseNumerator(1)
+            .timeBaseDenominator(1_000)
+            .source(KeyframePositionSource.PACKET_SCAN)
+            .keyframes(
+                keyframeMillis.stream().map(time -> new KeyframePosition(time, time)).toList())
+            .build();
+    return StreamSessionFixture.defaultProbeBuilder()
+        .duration(Duration.ofSeconds(60))
+        .keyframes(new KeyframeKnowledge.Known(positions))
+        .streams(
+            List.of(
+                streamEndingAt("video", 0, Duration.ofSeconds(60)),
+                streamEndingAt("audio", 1, Duration.ofSeconds(60))))
+        .build()
+        .withLearnedEndTimes(
+            List.of(
+                scanned.streamIndex(0).endTime(mediaEnd.minusMillis(83)).build(),
+                scanned.streamIndex(1).endTime(mediaEnd).build()));
+  }
+
+  private static LearnedStreamEnd.LearnedStreamEndBuilder scannedEndBuilder() {
+    return LearnedStreamEnd.builder()
+        .mediaFileId(UUID.randomUUID())
+        .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+        .fromPacketScan(true);
+  }
+
+  // The sum of a media playlist's EXTINF durations, which is where its last segment ends.
+  private static BigDecimal advertisedEnd(String playlist) {
+    return playlist
+        .lines()
+        .filter(line -> line.startsWith("#EXTINF:"))
+        .map(line -> new BigDecimal(line.substring("#EXTINF:".length(), line.length() - 1)))
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+  }
+
+  // A file cut near 14 s. Its header still states 30 s for the container and for each stream. A
+  // keyframe packet scan read where the packets of each stream end: the video at 14.166 s and the
+  // audio at 14.25 s.
+  private static MediaProbe truncatedSource() {
+    var scanned = scannedEndBuilder();
+    return StreamSessionFixture.defaultProbeBuilder()
+        .duration(Duration.ofSeconds(30))
+        .keyframes(new KeyframeKnowledge.Known(scannedPositions()))
+        .streams(
+            List.of(
+                streamEndingAt("video", 0, Duration.ofSeconds(30)),
+                streamEndingAt("audio", 1, Duration.ofSeconds(30))))
+        .build()
+        .withLearnedEndTimes(
+            List.of(
+                scanned.streamIndex(0).endTime(Duration.ofMillis(14_166)).build(),
+                scanned.streamIndex(1).endTime(Duration.ofMillis(14_250)).build()));
+  }
+
+  private static StreamInfo streamEndingAt(String codecType, int index, Duration endTime) {
+    return StreamInfo.builder()
+        .index(index)
+        .codecType(codecType)
+        .endTime(Optional.of(endTime))
+        .build();
+  }
+
+  // Keyframes at 0, 6 and 12 s, as a keyframe packet scan of a file cut near 14 s stores them.
+  private static KeyframePositions scannedPositions() {
+    return KeyframePositions.builder()
+        .streamIndex(0)
+        .timeBaseNumerator(1)
+        .timeBaseDenominator(1_000)
+        .source(KeyframePositionSource.PACKET_SCAN)
+        .keyframes(
+            List.of(
+                new KeyframePosition(0, 0),
+                new KeyframePosition(6_000, 6_000),
+                new KeyframePosition(12_000, 12_000)))
+        .build();
   }
 
   @ParameterizedTest(name = "{0}")

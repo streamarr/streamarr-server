@@ -26,8 +26,10 @@ public interface MediaFileContainerInfoRepositoryCustom {
 
   /**
    * Stores what a packet scan learned on the outcome that asked for the scan, in one guarded
-   * update. Returns {@code false} without writing unless the stored outcome still needs a packet
-   * scan for the publication's source snapshot and probe version.
+   * update, and stores each stream end time that the scan read among the file's learned stream end
+   * times (ADR 0037, early ends), in place of one learned earlier for the same stream. Returns
+   * {@code false} without writing unless the stored outcome still needs a packet scan for the
+   * publication's source snapshot and probe version.
    */
   boolean publishKeyframePacketScan(KeyframePacketScanPublication publication);
 

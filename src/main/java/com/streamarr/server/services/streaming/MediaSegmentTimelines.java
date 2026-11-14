@@ -12,14 +12,16 @@ import java.util.Optional;
 
 /**
  * The one derivation of a probed media file's media segment timeline, shared by the media playlist
- * and every job attempt so that both advertise the same media segments.
+ * and every job attempt so that both advertise the same media segments. Every timeline of a stream
+ * session ends at the session probe's {@link MediaProbe#mediaEnd}, whether its variants copy or
+ * encode.
  */
 final class MediaSegmentTimelines {
 
   private MediaSegmentTimelines() {}
 
   static MediaSegmentTimeline.PlainGrid of(MediaProbe probe, StreamingProperties properties) {
-    return new MediaSegmentTimeline.PlainGrid(probe.duration(), properties.targetSegmentDuration());
+    return new MediaSegmentTimeline.PlainGrid(probe.mediaEnd(), properties.targetSegmentDuration());
   }
 
   /**

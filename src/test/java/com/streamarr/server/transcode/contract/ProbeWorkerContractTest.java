@@ -33,6 +33,7 @@ import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
+import com.streamarr.transcode.v1.SourceStreamEnd;
 import com.streamarr.transcode.v1.StartProbeCommand;
 import com.streamarr.transcode.v1.VideoDynamicRange;
 import com.streamarr.transcode.v1.WorkerCapabilities;
@@ -448,6 +449,38 @@ class ProbeWorkerContractTest {
     assertThat(decoded.getStreams(0).getEndTime()).isEqualTo(videoEnd);
     assertThat(decoded.getStreams(1).getEndTime()).isEqualTo(earlyAudioEnd);
     assertThat(decoded.getStreams(2).hasEndTime()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the field number and type that workers build against when publishing the"
+          + " scanned stream ends")
+  void shouldKeepTheFieldNumberAndTypeThatWorkersBuildAgainstWhenPublishingTheScannedStreamEnds() {
+    var streamEnds = ProbeMediaInfo.getDescriptor().findFieldByName("stream_ends");
+
+    assertThat(streamEnds.getNumber()).isEqualTo(8);
+    assertThat(streamEnds.isRepeated()).isTrue();
+    assertThat(streamEnds.getMessageType()).isEqualTo(SourceStreamEnd.getDescriptor());
+  }
+
+  @Test
+  @DisplayName(
+      "Should carry each scanned stream end and leave out a stream whose end is unknown when"
+          + " returning a packet scan's result")
+  void shouldCarryEachScannedStreamEndAndLeaveOutAStreamWhoseEndIsUnknown() throws Exception {
+    var videoEnd =
+        SourceStreamEnd.newBuilder()
+            .setStreamIndex(0)
+            .setEndTime(Duration.newBuilder().setSeconds(14).setNanos(166_666_666))
+            .build();
+    var scanned = ProbeMediaInfo.newBuilder().addStreamEnds(videoEnd).build();
+    var withoutEnds = ProbeMediaInfo.getDefaultInstance();
+
+    var decodedScanned = ProbeMediaInfo.parseFrom(scanned.toByteArray());
+    var decodedWithoutEnds = ProbeMediaInfo.parseFrom(withoutEnds.toByteArray());
+
+    assertThat(decodedScanned.getStreamEndsList()).containsExactly(videoEnd);
+    assertThat(decodedWithoutEnds.getStreamEndsList()).isEmpty();
   }
 
   @Test
