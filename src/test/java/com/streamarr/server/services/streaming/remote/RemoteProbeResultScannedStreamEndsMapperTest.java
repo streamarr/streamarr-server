@@ -12,8 +12,8 @@ import com.streamarr.server.fixtures.WorkerProbeResultFixture;
 import com.streamarr.transcode.v1.KeyframePacketScanReason;
 import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
@@ -184,12 +184,10 @@ class RemoteProbeResultScannedStreamEndsMapperTest {
   }
 
   private static ProbeAttemptReport report(int version, ProbeMediaInfo.Builder media) {
-    return new ProbeAttemptReport(
-        ProbeAttemptResult.newBuilder().setProbeVersion(version).setMedia(media).build(),
-        List.of(
-            ProbeKeyframePositionsPart.newBuilder()
-                .addAllPresentationTimeDeltas(List.of(0L, 180_000L))
-                .addAllDecodeTimeDeltas(List.of(0L, 180_000L))
-                .build()));
+    return ProbeAttemptReport.newBuilder()
+        .setResult(ProbeAttemptResult.newBuilder().setProbeVersion(version).setMedia(media))
+        .addAllKeyframePresentationTimeDeltas(List.of(0L, 180_000L))
+        .addAllKeyframeDecodeTimeDeltas(List.of(0L, 180_000L))
+        .build();
   }
 }
