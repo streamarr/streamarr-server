@@ -7,7 +7,10 @@ public final class ShareRejections {
 
   /** An offer names its Household only by a share code, so a code that fails is refused as one. */
   public sealed interface Offer
-      permits ProfileNotFound, ShareCodeRejections.ShareCodeRefused, AlreadyShared {}
+      permits ProfileNotFound,
+          ProfileRejections.ManagersOnly,
+          ShareCodeRejections.ShareCodeRefused,
+          AlreadyShared {}
 
   public sealed interface Accept
       permits ShareNotFound, ShareNotPending, OfferInvalidated, NoEligibleAdmin, NameConflict {}

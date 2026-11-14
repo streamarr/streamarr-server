@@ -35,6 +35,13 @@ type ProfileAdministration {
     ServerAdmin who does not manage it included.
     """
     readerAuthority: ProfileAuthority
+    """
+    The Profile's own language preferences, for its managers, for ServerAdmins and for a session
+    that has the Profile selected; Me.languagePreferences reads them for the selected Profile too.
+    Null for everyone else, a HouseholdAdmin who only administers or supervises the Profile
+    included.
+    """
+    languagePreferences: ProfileLanguagePreferences
 }
 
 "One Profile an Account manages, in Household settings' list of them."
@@ -219,6 +226,7 @@ type RenameProfilePayload {
 "The refusals renameProfile may answer with, in userErrors."
 union RenameProfileError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ProfileNameRequiredError
   | ProfileNameTakenError
 
@@ -239,7 +247,7 @@ type SetProfilePicturePayload {
 }
 
 "The refusals setProfilePicture may answer with, in userErrors."
-union SetProfilePictureError = ProfileNotFoundError
+union SetProfilePictureError = ProfileNotFoundError | ProfileManagersOnlyError
 
 "What changeProfileKind takes."
 input ChangeProfileKindInput {
@@ -260,6 +268,7 @@ type ChangeProfileKindPayload {
 "The refusals changeProfileKind may answer with, in userErrors."
 union ChangeProfileKindError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ReauthenticationRequiredError
   | ProfileRequiresEligibleManagerError
   | RestrictedAccountCannotAdministerError
@@ -288,6 +297,7 @@ type SetProfileMaximumAllowedRatingAgePayload {
 "The refusals setProfileMaximumAllowedRatingAge may answer with, in userErrors."
 union SetProfileMaximumAllowedRatingAgeError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ReauthenticationRequiredError
   | ProfileRequiresEligibleManagerError
   | RestrictedAccountCannotAdministerError
@@ -314,6 +324,7 @@ type RemoveProfileMaximumAllowedRatingAgePayload {
 "The refusals removeProfileMaximumAllowedRatingAge may answer with, in userErrors."
 union RemoveProfileMaximumAllowedRatingAgeError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ReauthenticationRequiredError
   | ProfileRequiresEligibleManagerError
   | RestrictedAccountCannotAdministerError
@@ -337,7 +348,10 @@ type SetProfilePinPayload {
 }
 
 "The refusals setProfilePin may answer with, in userErrors."
-union SetProfilePinError = ProfileNotFoundError | InvalidProfilePinError
+union SetProfilePinError =
+    ProfileNotFoundError
+  | ProfileManagersOnlyError
+  | InvalidProfilePinError
 
 "What removeProfilePin takes."
 input RemoveProfilePinInput {
@@ -354,7 +368,10 @@ type RemoveProfilePinPayload {
 }
 
 "The refusals removeProfilePin may answer with, in userErrors."
-union RemoveProfilePinError = ProfileNotFoundError | ProfilePinRequiredError
+union RemoveProfilePinError =
+    ProfileNotFoundError
+  | ProfileManagersOnlyError
+  | ProfilePinRequiredError
 
 "What administrativelyResetProfilePin takes."
 input AdministrativelyResetProfilePinInput {
@@ -384,6 +401,33 @@ union AdministrativelyResetProfilePinError =
   | ReasonRequiredError
   | ReauthenticationRequiredError
 
+"What setProfileLanguagePreferences takes: the Profile's own language preferences, all of them."
+input SetProfileLanguagePreferencesInput {
+    "The Profile whose language preferences change."
+    profileId: ID!
+    "At most five languages, none twice, in the order the Profile prefers them."
+    audioLanguages: [Language!]!
+    "The language of the subtitles the Profile prefers; null for none."
+    subtitleLanguage: Language
+    "When a subtitle track starts on."
+    subtitleMode: SubtitleMode!
+}
+
+"What setProfileLanguagePreferences answers: the change when it is made, and why when it is refused."
+type SetProfileLanguagePreferencesPayload {
+    "The Profile's language preferences as they are after the change; null when it was refused."
+    languagePreferences: ProfileLanguagePreferences
+    "Why the change was refused; empty when it was made."
+    userErrors: [SetProfileLanguagePreferencesError!]!
+}
+
+"The refusals setProfileLanguagePreferences may answer with, in userErrors."
+union SetProfileLanguagePreferencesError =
+    ProfileNotFoundError
+  | ProfileManagersOnlyError
+  | TooManyAudioLanguagesError
+  | RepeatedAudioLanguageError
+
 "What deleteProfile takes."
 input DeleteProfileInput {
     "The Profile to delete."
@@ -401,5 +445,6 @@ type DeleteProfilePayload {
 "The refusals deleteProfile may answer with, in userErrors."
 union DeleteProfileError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ProfileNotDeletableError
   | ReauthenticationRequiredError

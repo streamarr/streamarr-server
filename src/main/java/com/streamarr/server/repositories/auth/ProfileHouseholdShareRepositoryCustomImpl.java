@@ -26,6 +26,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -235,6 +236,17 @@ public class ProfileHouseholdShareRepositoryCustomImpl
             entityManager, query, ProfileHouseholdShare.class, BY_CREATION)
         .stream()
         .findFirst();
+  }
+
+  @Override
+  public Map<UUID, Integer> countIntoHouseholds(Set<UUID> householdIds, ShareStatusFilter filter) {
+    var shares = DSL.count();
+    return dsl.select(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, shares)
+        .from(PROFILE_HOUSEHOLD_SHARE)
+        .where(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID.in(householdIds))
+        .and(keptBy(filter))
+        .groupBy(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID)
+        .fetchMap(PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, shares);
   }
 
   private List<Row<ProfileHouseholdShare>> rowsBeyond(Condition scope, Seek seek) {

@@ -91,6 +91,7 @@ class ProfileManagerAdministrationServiceTest {
   private ProfileManagerAdministrationService serviceAt(Clock clock) {
     return new ProfileManagerAdministrationService(
         authorization,
+        new ProfileAuthorityExplanation(authorization, profiles, accounts),
         invitations,
         new ProfileManagerInvitationLifecycle(invitations, new CapturingEventPublisher()),
         managers,

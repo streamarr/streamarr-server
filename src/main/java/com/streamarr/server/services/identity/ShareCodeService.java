@@ -266,8 +266,8 @@ public class ShareCodeService {
   /** A caller who may not see the Household's share codes learns nothing about the Household. */
   private <R> AuthorizationRefusal.Response<R> hiddenUnlessViewer(
       AuthenticatedIdentity identity, UUID householdId, Supplier<? extends R> hidden) {
-    return new AuthorizationRefusal.Response<>(
-        () -> mayViewShareCodes(identity, householdId), hidden, Optional.empty());
+    return AuthorizationRefusal.Response.hiddenUnless(
+        () -> mayViewShareCodes(identity, householdId), hidden);
   }
 
   private boolean mayViewShareCodes(AuthenticatedIdentity identity, UUID householdId) {

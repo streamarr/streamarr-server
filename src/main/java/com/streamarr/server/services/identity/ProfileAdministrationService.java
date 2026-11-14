@@ -10,6 +10,7 @@ import com.streamarr.server.domain.auth.ProfilePolicyTarget;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.domain.language.ProfileLanguagePreferences;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
@@ -19,6 +20,7 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.repositories.language.LanguagePreferenceRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfilePinHasher;
@@ -28,17 +30,15 @@ import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfilePolicyTransition;
 import com.streamarr.server.services.authorization.ProfileSafetyRule;
+import com.streamarr.server.services.language.PreferredAudioLanguagesRule;
 import com.streamarr.server.services.mutation.MutationRejection;
 import com.streamarr.server.services.mutation.MutationTransactions;
 import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.BooleanSupplier;
-import java.util.function.Supplier;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -58,6 +58,7 @@ public class ProfileAdministrationService {
       "chk_restricted_account_holds_no_authority";
 
   private final AuthorizationService authorizationService;
+  private final ProfileAuthorityExplanation authorityExplanation;
   private final ProfileRepository profileRepository;
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileHouseholdShareRepository shareRepository;
@@ -70,6 +71,7 @@ public class ProfileAdministrationService {
   private final ProfileManagerInvitationRepository managerInvitationRepository;
   private final LeavingManagerProposals leavingManagerProposals;
   private final SecurityAuditEventRepository securityAuditEventRepository;
+  private final LanguagePreferenceRepository languagePreferenceRepository;
   private final ProfilePinHasher profilePinHasher;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
@@ -124,9 +126,9 @@ public class ProfileAdministrationService {
         refusalOf(
             identity,
             intent,
-            () -> mayViewHousehold(identity, command.householdId()),
-            ProfileRejections.HouseholdNotFound::new,
-            Optional.empty());
+            AuthorizationRefusal.Response.hiddenUnless(
+                () -> mayViewHousehold(identity, command.householdId()),
+                ProfileRejections.HouseholdNotFound::new));
     if (refusal.isPresent()) {
       throw new MutationRejection(refusal.get());
     }
@@ -349,14 +351,7 @@ public class ProfileAdministrationService {
       return Outcome.rejected(new ProfileRejections.ProfileNotFound());
     }
 
-    var intent = new Intent.AdministrativelyResetProfilePin(profileId);
-    Optional<ProfileRejections.AdministrativelyResetProfilePin> refusal =
-        refusalOf(
-            identity,
-            intent,
-            () -> mayViewProfile(identity, profileId),
-            ProfileRejections.ProfileNotFound::new,
-            Optional.of(ProfileRejections.ReauthenticationRequired::new));
+    var refusal = resetRefusal(identity, profileId);
     if (refusal.isPresent()) {
       return Outcome.rejected(refusal.get());
     }
@@ -372,13 +367,7 @@ public class ProfileAdministrationService {
             throw new MutationRejection(new ProfileRejections.ProfileNotFound());
           }
 
-          Optional<ProfileRejections.AdministrativelyResetProfilePin> authoritativeRefusal =
-              refusalOf(
-                  identity,
-                  intent,
-                  () -> mayViewProfile(identity, profileId),
-                  ProfileRejections.ProfileNotFound::new,
-                  Optional.of(ProfileRejections.ReauthenticationRequired::new));
+          var authoritativeRefusal = resetRefusal(identity, profileId);
           if (authoritativeRefusal.isPresent()) {
             throw new MutationRejection(authoritativeRefusal.get());
           }
@@ -399,6 +388,42 @@ public class ProfileAdministrationService {
         _ -> Optional.empty());
   }
 
+  /**
+   * Replaces the Profile's own language preferences for one of its managers, whether or not its
+   * session has the Profile selected: a manager edits the Profile, and the preferences are the
+   * Profile's (ADR 0024 §ProfileManager). Only a caller that may make the change learns what is
+   * wrong with the audio languages; anyone else gets the refusal it would get for any languages.
+   */
+  public Outcome<ProfileLanguagePreferences, ProfileRejections.SetProfileLanguagePreferences>
+      setProfileLanguagePreferences(
+          AuthenticatedIdentity identity, UUID profileId, ProfileLanguagePreferences preferences) {
+    return mutationTransactions.write(
+        () -> {
+          if (!profileRepository.lockById(profileId)) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+
+          var refusal =
+              editRefusal(identity, new Intent.SetProfileLanguagePreferences(profileId), profileId);
+          if (refusal.isPresent()) {
+            throw new MutationRejection(refusal.get());
+          }
+
+          var refused = PreferredAudioLanguagesRule.rejectionOf(preferences.audioLanguages());
+          if (refused.isPresent()) {
+            throw new MutationRejection(
+                new ProfileRejections.PreferredAudioLanguagesRefused(refused.get()));
+          }
+
+          if (!languagePreferenceRepository.trySetProfilePreferences(profileId, preferences)) {
+            throw new MutationRejection(new ProfileRejections.ProfileNotFound());
+          }
+
+          return preferences;
+        },
+        _ -> Optional.empty());
+  }
+
   public Outcome<UUID, ProfileRejections.DeleteProfile> deleteProfile(
       AuthenticatedIdentity identity, UUID profileId) {
     return mutationTransactions.write(
@@ -411,10 +436,11 @@ public class ProfileAdministrationService {
               refusalOf(
                   identity,
                   new Intent.DeleteProfile(profileId),
-                  // Deletion denial uses the visibility-dependent typed rejection below.
-                  () -> false,
-                  () -> deletionRejection(identity, profileId),
-                  Optional.of(ProfileRejections.ReauthenticationRequired::new));
+                  AuthorizationRefusal.Response.<ProfileRejections.DeleteProfile>hiddenUnless(
+                          () -> mayViewProfile(identity, profileId),
+                          ProfileRejections.ProfileNotFound::new)
+                      .visibleAs(() -> Optional.of(deletionRefusal(identity, profileId)))
+                      .reauthenticatedAs(ProfileRejections.ReauthenticationRequired::new));
           if (refusal.isPresent()) {
             throw new MutationRejection(refusal.get());
           }
@@ -513,40 +539,57 @@ public class ProfileAdministrationService {
       case Decision.Failed<ProfilePolicyTransition> _ ->
           throw new AuthorizationUnavailableException();
       case Decision.Denied<ProfilePolicyTransition>(var reason) ->
-          throw switch (reason) {
-            case REAUTHENTICATION_REQUIRED ->
-                new MutationRejection(new ProfileRejections.ReauthenticationRequired());
-            case POLICY -> {
-              if (mayViewProfile(identity, profileId)) {
-                yield new AccessDeniedException("Not allowed.");
-              }
-
-              yield new MutationRejection(new ProfileRejections.ProfileNotFound());
-            }
-          };
+          throw new MutationRejection(
+              AuthorizationRefusal.of(
+                  reason,
+                  AuthorizationRefusal.Response.<ProfileRejections.ChangeProfilePolicy>hiddenUnless(
+                          () -> mayViewProfile(identity, profileId),
+                          ProfileRejections.ProfileNotFound::new)
+                      .visibleAs(() -> authorityExplanation.managersOnly(identity, profileId))
+                      .reauthenticatedAs(ProfileRejections.ReauthenticationRequired::new)));
     };
   }
 
-  /** The shared error contract for ordinary edits: FORBIDDEN when visible, not-found when not. */
-  private Optional<ProfileRejections.ProfileNotFound> editRefusal(
+  /**
+   * The shared error contract for ordinary edits: not-found when the caller may not read the
+   * Profile; when it may, why only the Profile's managers may make the change, or FORBIDDEN.
+   */
+  private Optional<ProfileRejections.EditRefusal> editRefusal(
       AuthenticatedIdentity identity, Intent.UnitIntent intent, UUID profileId) {
     return refusalOf(
         identity,
         intent,
-        () -> mayViewProfile(identity, profileId),
-        ProfileRejections.ProfileNotFound::new,
-        Optional.empty());
+        AuthorizationRefusal.Response.<ProfileRejections.EditRefusal>hiddenUnless(
+                () -> mayViewProfile(identity, profileId), ProfileRejections.ProfileNotFound::new)
+            .visibleAs(() -> authorityExplanation.managersOnly(identity, profileId)));
+  }
+
+  // A caller that may read the Profile learns why it may not delete it: only its managers may, or
+  // what deletion needs.
+  private ProfileRejections.DeleteProfile deletionRefusal(
+      AuthenticatedIdentity identity, UUID profileId) {
+    return authorityExplanation
+        .managersOnly(identity, profileId)
+        .map(ProfileRejections.DeleteProfile.class::cast)
+        .orElseGet(ProfileRejections.ProfileNotDeletable::new);
+  }
+
+  private Optional<ProfileRejections.AdministrativelyResetProfilePin> resetRefusal(
+      AuthenticatedIdentity identity, UUID profileId) {
+    return refusalOf(
+        identity,
+        new Intent.AdministrativelyResetProfilePin(profileId),
+        AuthorizationRefusal.Response
+            .<ProfileRejections.AdministrativelyResetProfilePin>hiddenUnless(
+                () -> mayViewProfile(identity, profileId), ProfileRejections.ProfileNotFound::new)
+            .reauthenticatedAs(ProfileRejections.ReauthenticationRequired::new));
   }
 
   private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity,
       Intent.UnitIntent intent,
-      BooleanSupplier mayView,
-      Supplier<? extends R> denied,
-      Optional<? extends Supplier<? extends R>> reauthenticationRequired) {
-    return AuthorizationRefusal.from(
-        authorizationService.decide(identity, intent),
-        new AuthorizationRefusal.Response<>(mayView, denied, reauthenticationRequired));
+      AuthorizationRefusal.Response<R> response) {
+    return AuthorizationRefusal.from(authorizationService.decide(identity, intent), response);
   }
 
   /**
@@ -571,15 +614,6 @@ public class ProfileAdministrationService {
     }
 
     return Optional.empty();
-  }
-
-  private ProfileRejections.DeleteProfile deletionRejection(
-      AuthenticatedIdentity identity, UUID profileId) {
-    // A caller who may see the Profile's administration learns why deletion is
-    // refused; anyone else learns nothing beyond not-found.
-    return mayViewProfile(identity, profileId)
-        ? new ProfileRejections.ProfileNotDeletable()
-        : new ProfileRejections.ProfileNotFound();
   }
 
   private boolean mayViewProfile(AuthenticatedIdentity identity, UUID profileId) {

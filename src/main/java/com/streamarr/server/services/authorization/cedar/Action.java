@@ -246,6 +246,12 @@ enum Action {
       Authorizes.WRITE,
       FreshReauthentication.REQUIRED,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  SET_PROFILE_LANGUAGE_PREFERENCES(
+      "setProfileLanguagePreferences",
+      ResourceKind.PROFILE,
+      Authorizes.WRITE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.PROFILE_MANAGEMENT),
   DELETE_PROFILE(
       "deleteProfile",
       ResourceKind.PROFILE,

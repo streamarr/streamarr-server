@@ -4,6 +4,7 @@ import com.streamarr.server.graphql.mutation.MutationError;
 
 public sealed interface RemoveProfileMaximumAllowedRatingAgeError extends MutationError
     permits ProfileNotFoundError,
+        ProfileManagersOnlyError,
         ReauthenticationRequiredError,
         ProfileRequiresEligibleManagerError,
         RestrictedAccountCannotAdministerError,

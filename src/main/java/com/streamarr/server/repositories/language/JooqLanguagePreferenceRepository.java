@@ -45,18 +45,33 @@ public class JooqLanguagePreferenceRepository implements LanguagePreferenceRepos
     return dsl.select(PROFILE.AUDIO_LANGUAGES, PROFILE.SUBTITLE_LANGUAGE, PROFILE.SUBTITLE_MODE)
         .from(PROFILE)
         .where(PROFILE.ID.eq(profileId))
-        .fetchOptional(
-            row ->
-                ProfileLanguagePreferences.builder()
-                    .audioLanguages(
-                        Arrays.stream(row.get(PROFILE.AUDIO_LANGUAGES))
-                            .map(Language::valueOf)
-                            .toList())
-                    .subtitleLanguage(
-                        Optional.ofNullable(row.get(PROFILE.SUBTITLE_LANGUAGE))
-                            .map(Language::valueOf))
-                    .subtitleMode(SubtitlePreferenceMode.valueOf(row.get(PROFILE.SUBTITLE_MODE)))
-                    .build());
+        .fetchOptional(JooqLanguagePreferenceRepository::toPreferences);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Map<UUID, ProfileLanguagePreferences> findProfilePreferences(Collection<UUID> profileIds) {
+    var preferences = new HashMap<UUID, ProfileLanguagePreferences>();
+    if (profileIds.isEmpty()) {
+      return preferences;
+    }
+
+    dsl.select(
+            PROFILE.ID, PROFILE.AUDIO_LANGUAGES, PROFILE.SUBTITLE_LANGUAGE, PROFILE.SUBTITLE_MODE)
+        .from(PROFILE)
+        .where(PROFILE.ID.in(profileIds))
+        .forEach(row -> preferences.put(row.value1(), toPreferences(row)));
+    return preferences;
+  }
+
+  private static ProfileLanguagePreferences toPreferences(Record row) {
+    return ProfileLanguagePreferences.builder()
+        .audioLanguages(
+            Arrays.stream(row.get(PROFILE.AUDIO_LANGUAGES)).map(Language::valueOf).toList())
+        .subtitleLanguage(
+            Optional.ofNullable(row.get(PROFILE.SUBTITLE_LANGUAGE)).map(Language::valueOf))
+        .subtitleMode(SubtitlePreferenceMode.valueOf(row.get(PROFILE.SUBTITLE_MODE)))
+        .build();
   }
 
   @Override

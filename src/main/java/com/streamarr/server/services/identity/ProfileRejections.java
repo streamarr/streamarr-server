@@ -1,6 +1,7 @@
 package com.streamarr.server.services.identity;
 
 import com.streamarr.server.domain.auth.Household;
+import com.streamarr.server.services.language.SetLanguagePreferencesRejection;
 import java.util.Optional;
 import lombok.NonNull;
 
@@ -22,37 +23,74 @@ public final class ProfileRejections {
           ProfileManagerNotEligible,
           MaximumAllowedRatingAgeInvalid {}
 
-  public sealed interface RenameProfile
-      permits ProfileNotFound, ProfileNameRequired, ProfileNameTaken {}
+  /** How an ordinary edit refuses a caller that may not make it. */
+  public sealed interface EditRefusal
+      extends RenameProfile,
+          SetProfilePicture,
+          SetProfilePin,
+          RemoveProfilePin,
+          SetProfileLanguagePreferences
+      permits ProfileNotFound, ManagersOnly {}
 
-  public sealed interface SetProfilePicture permits ProfileNotFound {}
+  public sealed interface RenameProfile
+      permits EditRefusal, ProfileNameRequired, ProfileNameTaken {}
+
+  public sealed interface SetProfilePicture permits EditRefusal {}
 
   public sealed interface ChangeProfilePolicy
       permits ProfileNotFound,
+          ManagersOnly,
           ReauthenticationRequired,
           EligibleManagerRequired,
           RestrictedAccountAuthority,
           HostingHouseholdLacksEligibleAdmin,
           MaximumAllowedRatingAgeInvalid {}
 
-  public sealed interface SetProfilePin permits ProfileNotFound, PinMalformed {}
+  public sealed interface SetProfilePin permits EditRefusal, PinMalformed {}
 
-  public sealed interface RemoveProfilePin permits ProfileNotFound, WouldLockProfile {}
+  public sealed interface RemoveProfilePin permits EditRefusal, WouldLockProfile {}
 
   public sealed interface AdministrativelyResetProfilePin
       permits ProfileNotFound, PinMalformed, ReasonRequired, ReauthenticationRequired {}
 
   public sealed interface DeleteProfile
-      permits ProfileNotFound, ProfileNotDeletable, ReauthenticationRequired {}
+      permits ProfileNotFound, ManagersOnly, ProfileNotDeletable, ReauthenticationRequired {}
+
+  public sealed interface SetProfileLanguagePreferences
+      permits EditRefusal, PreferredAudioLanguagesRefused {}
 
   public record ProfileNotFound()
-      implements RenameProfile,
-          SetProfilePicture,
+      implements EditRefusal, ChangeProfilePolicy, AdministrativelyResetProfilePin, DeleteProfile {}
+
+  /**
+   * Only the Profile's managers may do this, and the caller, who still reads the Profile as a
+   * HouseholdAdmin where it is available, or as the one its session's token says it was, does not
+   * manage it; the reason says what it is to the Profile now (ADR 0024 §HouseholdAdmin). It goes
+   * only to a caller that may read the Profile, so it tells nothing that caller could not read.
+   */
+  public record ManagersOnly(@NonNull ManagersOnlyReason reason)
+      implements EditRefusal,
           ChangeProfilePolicy,
-          SetProfilePin,
-          RemoveProfilePin,
-          AdministrativelyResetProfilePin,
-          DeleteProfile {}
+          DeleteProfile,
+          ManagerRejections.Invite,
+          ShareRejections.Offer {}
+
+  /** What a caller refused with {@link ManagersOnly} is to the Profile now. */
+  public enum ManagersOnlyReason {
+    /** It supervises the restricted Profile there, and supervision does not cover this. */
+    NOT_MANAGER,
+    /** The Profile is unrestricted, so it administers the Profile there without supervising it. */
+    NOT_RESTRICTED,
+    /**
+     * Its session's token was issued while it was a HouseholdAdmin there, and it no longer is, so
+     * it reads the Profile only until that token is renewed (ADR 0024 §Stateless JWT snapshots).
+     */
+    NOT_HOUSEHOLD_ADMIN
+  }
+
+  /** The Profile may not keep the audio languages, for the reason the language rule gives. */
+  public record PreferredAudioLanguagesRefused(@NonNull SetLanguagePreferencesRejection reason)
+      implements SetProfileLanguagePreferences {}
 
   public record HouseholdNotFound() implements CreateProfile {}
 

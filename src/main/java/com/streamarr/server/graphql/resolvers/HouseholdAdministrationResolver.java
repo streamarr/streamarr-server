@@ -11,6 +11,8 @@ import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dataloaders.AdministrationAccountsLoaderKey;
+import com.streamarr.server.graphql.dataloaders.PendingOfferCountDataLoader;
+import com.streamarr.server.graphql.dataloaders.ReaderLoaderKey;
 import com.streamarr.server.graphql.dto.AccountAdministration;
 import com.streamarr.server.graphql.dto.HouseholdAdministration;
 import com.streamarr.server.graphql.inputs.CreateHouseholdInput;
@@ -28,6 +30,7 @@ import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.services.pagination.ServerScope;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
 import org.dataloader.DataLoader;
@@ -79,6 +82,15 @@ public class HouseholdAdministrationResolver {
         .load(new AdministrationAccountsLoaderKey(household.id(), request))
         .thenApply(
             page -> relayConnectionAdapter.toConnection(page, list, AccountAdministration::from));
+  }
+
+  @DgsData(parentType = "HouseholdAdministration", field = "pendingOfferCount")
+  public CompletableFuture<Integer> pendingOfferCount(DataFetchingEnvironment dfe) {
+    HouseholdAdministration household = dfe.getSource();
+    DataLoader<ReaderLoaderKey<UUID>, Integer> loader =
+        dfe.getDataLoader(PendingOfferCountDataLoader.NAME);
+    return loader.load(
+        new ReaderLoaderKey<>(authorizationService.currentIdentity(), household.id()));
   }
 
   @DgsMutation

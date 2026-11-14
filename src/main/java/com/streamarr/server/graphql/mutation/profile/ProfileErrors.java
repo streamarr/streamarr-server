@@ -36,6 +36,7 @@ public final class ProfileErrors {
       @NonNull ProfileRejections.RenameProfile rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
+      case ProfileRejections.ManagersOnly managersOnly -> ProfileManagersOnlyError.of(managersOnly);
       case ProfileRejections.ProfileNameRequired _ -> nameRequired();
       case ProfileRejections.ProfileNameTaken _ -> nameTaken();
     };
@@ -45,6 +46,7 @@ public final class ProfileErrors {
       @NonNull ProfileRejections.SetProfilePicture rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
+      case ProfileRejections.ManagersOnly managersOnly -> ProfileManagersOnlyError.of(managersOnly);
     };
   }
 
@@ -52,6 +54,7 @@ public final class ProfileErrors {
       @NonNull ProfileRejections.ChangeProfilePolicy rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
+      case ProfileRejections.ManagersOnly managersOnly -> ProfileManagersOnlyError.of(managersOnly);
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
       case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
       case ProfileRejections.RestrictedAccountAuthority _ ->
@@ -67,6 +70,7 @@ public final class ProfileErrors {
       @NonNull ProfileRejections.ChangeProfilePolicy rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
+      case ProfileRejections.ManagersOnly managersOnly -> ProfileManagersOnlyError.of(managersOnly);
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
       case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
       case ProfileRejections.RestrictedAccountAuthority _ ->
@@ -82,6 +86,7 @@ public final class ProfileErrors {
           @NonNull ProfileRejections.ChangeProfilePolicy rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
+      case ProfileRejections.ManagersOnly managersOnly -> ProfileManagersOnlyError.of(managersOnly);
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
       case ProfileRejections.EligibleManagerRequired _ -> profileRequiresEligibleManager();
       case ProfileRejections.RestrictedAccountAuthority _ ->
@@ -97,6 +102,7 @@ public final class ProfileErrors {
       @NonNull ProfileRejections.SetProfilePin rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
+      case ProfileRejections.ManagersOnly managersOnly -> ProfileManagersOnlyError.of(managersOnly);
       case ProfileRejections.PinMalformed _ -> pinMalformed();
     };
   }
@@ -105,6 +111,7 @@ public final class ProfileErrors {
       @NonNull ProfileRejections.RemoveProfilePin rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
+      case ProfileRejections.ManagersOnly managersOnly -> ProfileManagersOnlyError.of(managersOnly);
       case ProfileRejections.WouldLockProfile(var household) ->
           household
               .map(
@@ -132,6 +139,7 @@ public final class ProfileErrors {
       @NonNull ProfileRejections.DeleteProfile rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
+      case ProfileRejections.ManagersOnly managersOnly -> ProfileManagersOnlyError.of(managersOnly);
       case ProfileRejections.ProfileNotDeletable _ ->
           new ProfileNotDeletableError(
               "Deletion needs an unlinked, unshared Profile with you as its only manager and no"

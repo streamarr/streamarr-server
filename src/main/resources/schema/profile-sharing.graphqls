@@ -56,6 +56,18 @@ type ProfileShare {
     """
     offeredByDisplayName: String
     """
+    Whether the requesting Account made this offer: true for the manager or ServerAdmin that
+    offered the Profile, false for every other reader, the Profile's other managers included, and
+    for a share the system made. Shown to the same readers as profile: the Profile's managers and
+    ServerAdmins at every status, and the target Household's HouseholdAdmins only while the offer
+    is PENDING and not past its expiresAt, or the share is ACTIVE. Null for everyone else, so once
+    the share is over that Household's side hears nothing about who was asking, even when it made
+    the offer itself. It tells the reader only whether it made the offer itself;
+    offeredByDisplayName names the Account that made it, to that field's readers. The Account that
+    made an offer may withdraw it while it is PENDING; cancelProfileShare says who else may.
+    """
+    offeredByReader: Boolean
+    """
     The Household the Profile is offered or shared to, at every status. Shown to the Profile's
     managers and to ServerAdmins. Null for everyone else, including that Household's
     HouseholdAdmins. The Account of a self-managed Personal Profile is one of its managers; the
@@ -127,6 +139,13 @@ extend type Subscription {
 type ProfileShareChange {
     shareId: ID!
     """
+    The whole number of offers waiting for this Household's answer when the change is delivered,
+    excluding expired offers even before their stored status changes. Zero when the Household
+    does not exist or the subscriber may not list its shares. This is the same count as
+    HouseholdAdministration.pendingOfferCount, independent of which pages the client loaded.
+    """
+    pendingOfferCount(householdId: ID!): Int!
+    """
     The share as the server reads it on delivery, or null once the share no longer exists, as when
     it was deleted with its Profile or its Household. The change that ends a share reaches a
     HouseholdAdmin who reads the share only from its Household as that change left it, never as
@@ -184,6 +203,7 @@ type OfferProfileSharePayload {
 
 union OfferProfileShareError =
     ProfileNotFoundError
+  | ProfileManagersOnlyError
   | ShareCodeRefusedError
   | ProfileAlreadySharedError
 

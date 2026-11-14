@@ -6,6 +6,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.domain.auth.ShareCode;
+import com.streamarr.server.domain.auth.ShareStatusFilter;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -33,14 +34,17 @@ import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,6 +68,7 @@ public class ProfileSharingService {
   private static final String CHK_STRUCTURAL = "chk_structural_share_persists";
 
   private final AuthorizationService authorizationService;
+  private final ProfileAuthorityExplanation authorityExplanation;
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileShareLifecycle shareLifecycle;
   private final ProfileRepository profileRepository;
@@ -111,8 +116,9 @@ public class ProfileSharingService {
         refusalOf(
             identity,
             new Intent.OfferProfileShare(profileId),
-            () -> mayViewProfile(identity, profileId),
-            Refusals.<ShareRejections.Offer>hiddenAs(ShareRejections.ProfileNotFound::new));
+            AuthorizationRefusal.Response.<ShareRejections.Offer>hiddenUnless(
+                    () -> mayViewProfile(identity, profileId), ShareRejections.ProfileNotFound::new)
+                .visibleAs(() -> authorityExplanation.managersOnly(identity, profileId)));
     refusal.ifPresent(
         rejection -> {
           throw new MutationRejection(rejection);
@@ -193,8 +199,9 @@ public class ProfileSharingService {
                       refusalOf(
                           identity,
                           new Intent.EndProfileShare(shareId),
-                          () -> mayViewShare(identity, shareId),
-                          Refusals.<ShareRejections.End>hiddenAs(ShareRejections.ShareNotFound::new)
+                          AuthorizationRefusal.Response.<ShareRejections.End>hiddenUnless(
+                                  () -> mayViewShare(identity, shareId),
+                                  ShareRejections.ShareNotFound::new)
                               .visibleAs(
                                   () ->
                                       structuralRefusal(
@@ -223,8 +230,9 @@ public class ProfileSharingService {
                       refusalOf(
                           identity,
                           new Intent.AdministrativelyEndProfileShare(shareId),
-                          () -> mayViewShare(identity, shareId),
-                          Refusals.<ShareRejections.AdministrativelyEnd>hiddenAs(
+                          AuthorizationRefusal.Response
+                              .<ShareRejections.AdministrativelyEnd>hiddenUnless(
+                                  () -> mayViewShare(identity, shareId),
                                   ShareRejections.ShareNotFound::new)
                               .visibleAs(
                                   () ->
@@ -303,8 +311,8 @@ public class ProfileSharingService {
               refusalOf(
                   identity,
                   intent,
-                  () -> mayViewShare(identity, shareId),
-                  Refusals.<ShareRejections.Decline>hiddenAs(ShareRejections.ShareNotFound::new));
+                  AuthorizationRefusal.Response.hiddenUnless(
+                      () -> mayViewShare(identity, shareId), ShareRejections.ShareNotFound::new));
           refusal.ifPresent(
               rejection -> {
                 throw new MutationRejection(rejection);
@@ -448,59 +456,11 @@ public class ProfileSharingService {
         || mayViewProfileShares(identity, share.getProfileId());
   }
 
-  /**
-   * How an operation reports authorization denials (ADR 0026 resource visibility rules): hidden
-   * when the caller may not view the resource, a typed refusal when it may and the resource's own
-   * state explains the denial, FORBIDDEN otherwise.
-   */
-  private record Refusals<R>(
-      Supplier<? extends R> hidden,
-      Supplier<Optional<R>> visible,
-      Optional<Supplier<? extends R>> reauthenticationRequired) {
-
-    static <R> Refusals<R> hiddenAs(Supplier<? extends R> hidden) {
-      return new Refusals<>(hidden, Optional::empty, Optional.empty());
-    }
-
-    Refusals<R> visibleAs(Supplier<Optional<R>> explained) {
-      return new Refusals<>(hidden, explained, reauthenticationRequired);
-    }
-
-    Refusals<R> reauthenticatedAs(Supplier<? extends R> stepUp) {
-      return new Refusals<>(hidden, visible, Optional.of(stepUp));
-    }
-  }
-
   private <R> Optional<R> refusalOf(
       AuthenticatedIdentity identity,
       Intent.UnitIntent intent,
-      BooleanSupplier mayView,
-      Refusals<R> refusals) {
-    return switch (authorizationService.decide(identity, intent)) {
-      case Decision.Allowed<AuthorizationUnit> _ -> Optional.empty();
-      case Decision.Failed<AuthorizationUnit> _ -> throw new AuthorizationUnavailableException();
-      case Decision.Denied<AuthorizationUnit>(var reason) ->
-          switch (reason) {
-            case REAUTHENTICATION_REQUIRED ->
-                Optional.of(
-                    refusals
-                        .reauthenticationRequired()
-                        .orElseThrow(AuthorizationUnavailableException::new)
-                        .get());
-            case POLICY -> {
-              if (!mayView.getAsBoolean()) {
-                yield Optional.of(refusals.hidden().get());
-              }
-
-              var explained = refusals.visible().get();
-              if (explained.isPresent()) {
-                yield explained;
-              }
-
-              throw new AccessDeniedException("Not allowed.");
-            }
-          };
-    };
+      AuthorizationRefusal.Response<R> response) {
+    return AuthorizationRefusal.from(authorizationService.decide(identity, intent), response);
   }
 
   /** Explains to an authorized viewer that a share required by Account membership cannot end. */
@@ -516,8 +476,8 @@ public class ProfileSharingService {
     return refusalOf(
         identity,
         intent,
-        () -> mayViewShare(identity, shareId),
-        Refusals.<ShareRejections.Accept>hiddenAs(ShareRejections.ShareNotFound::new));
+        AuthorizationRefusal.Response.hiddenUnless(
+            () -> mayViewShare(identity, shareId), ShareRejections.ShareNotFound::new));
   }
 
   // A refusal names a share only to those who may read it as it stands now, as the share queries
@@ -611,6 +571,36 @@ public class ProfileSharingService {
     }
 
     return household.keptToLive();
+  }
+
+  /**
+   * How many offers into each Household wait for its decision, counted from the offers that {@link
+   * #householdShares} lists kept to PENDING; a Household whose shares the reader may not list
+   * counts none.
+   */
+  public Map<UUID, Integer> pendingOfferCounts(
+      AuthenticatedIdentity identity, Set<UUID> householdIds) {
+    var listed = householdsWhoseSharesReaderLists(identity, householdIds);
+    var counts =
+        listed.isEmpty()
+            ? Map.<UUID, Integer>of()
+            : shareRepository.countIntoHouseholds(
+                listed, new ShareStatusFilter(Set.of(ProfileShareStatus.PENDING), clock.instant()));
+    return householdIds.stream()
+        .collect(Collectors.toMap(Function.identity(), id -> counts.getOrDefault(id, 0)));
+  }
+
+  // A reader of the server's Households lists the shares into each of them, so one decision
+  // covers a page of Households; anyone else is decided Household by Household.
+  private Set<UUID> householdsWhoseSharesReaderLists(
+      AuthenticatedIdentity identity, Set<UUID> householdIds) {
+    if (isAllowed(authorizationService.decide(identity, new Intent.ViewHouseholds()))) {
+      return householdIds;
+    }
+
+    return householdIds.stream()
+        .filter(householdId -> mayViewHousehold(identity, householdId))
+        .collect(Collectors.toSet());
   }
 
   /**
