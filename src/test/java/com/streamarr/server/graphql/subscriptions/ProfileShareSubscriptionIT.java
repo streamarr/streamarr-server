@@ -105,6 +105,16 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
       }
       """;
 
+  private static final String PENDING_OFFER_COUNT =
+      """
+      subscription {
+        profileShareChanged {
+          shareId
+          pendingOfferCount(householdId: "%s")
+        }
+      }
+      """;
+
   @LocalServerPort private int port;
 
   @Autowired private AuthTestSupport authTestSupport;
@@ -147,6 +157,48 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
             households.forEach(
                 id -> householdRepository.findById(id).ifPresent(householdRepository::delete)));
     identities.reversed().forEach(authTestSupport::deleteIdentity);
+  }
+
+  @Test
+  @DisplayName("Should carry the whole current pending count when each share change is delivered")
+  void shouldCarryTheWholeCurrentPendingCountWhenEachShareChangeIsDelivered() {
+    var waiting = offer(managedProfile());
+    var expired = offer(managedProfile());
+    var expiredShare = shareRepository.findById(UUID.fromString(expired)).orElseThrow();
+    expiredShare.setExpiresAt(Instant.now().minusSeconds(1));
+    shareRepository.saveAndFlush(expiredShare);
+    var socket =
+        subscribedSocket(
+            authTestSupport.accountBearer(host),
+            PENDING_OFFER_COUNT.formatted(host.household().getId()));
+
+    var offered = offer(managedProfile());
+    var withOffer = changesUntil(socket, offered).getLast();
+    decide("acceptProfileShare", offered);
+    var withAcceptance = changesUntil(socket, offered).getLast();
+    cancel(waiting);
+    var withCancellation = changesUntil(socket, waiting).getLast();
+    var another = offer(managedProfile());
+    var withAnotherOffer = changesUntil(socket, another).getLast();
+
+    assertThat(List.of(withOffer, withAcceptance, withCancellation, withAnotherOffer))
+        .extracting(change -> change.path("pendingOfferCount").asInt())
+        .containsExactly(2, 1, 0, 1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should hide another Household's pending count when a Profile manager receives its change")
+  void shouldHideAnotherHouseholdsPendingCountWhenAProfileManagerReceivesItsChange() {
+    offer(managedProfile());
+    var socket =
+        subscribedSocket(
+            authTestSupport.accountBearer(owner),
+            PENDING_OFFER_COUNT.formatted(host.household().getId()));
+
+    var offered = offer(managedProfile());
+
+    assertThat(changesUntil(socket, offered).getLast().path("pendingOfferCount").asInt()).isZero();
   }
 
   @Test

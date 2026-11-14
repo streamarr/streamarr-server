@@ -7,6 +7,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.cursor.ShareListCursors;
 import com.streamarr.server.graphql.dto.KeyedEdge;
@@ -24,6 +25,7 @@ import graphql.schema.DataFetchingEnvironment;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.reactivestreams.Publisher;
@@ -52,6 +54,14 @@ public class ProfileShareSubscriptionResolver {
                     .shareChange(identity, event)
                     .map(change -> ProfileShareChangeDetails.from(change, clock.instant()))
                     .ifPresent(sink::next));
+  }
+
+  @DgsData(parentType = "ProfileShareChange")
+  public int pendingOfferCount(@InputArgument String householdId) {
+    var id = Ids.parseUuid(householdId);
+    return profileSharingService
+        .pendingOfferCounts(authorizationService.currentIdentity(), Set.of(id))
+        .get(id);
   }
 
   @DgsData(parentType = "ProfileShareChange")
