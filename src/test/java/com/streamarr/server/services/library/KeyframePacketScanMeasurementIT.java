@@ -39,13 +39,13 @@ import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
 import com.streamarr.transcode.v1.MeasuredStream;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeRequest;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import com.streamarr.transcode.v1.StreamMeasurementSource;
 import com.streamarr.transcode.v1.StreamMeasurements;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -275,17 +275,6 @@ class KeyframePacketScanMeasurementIT extends AbstractProbeSchedulerIntegrationT
   }
 
   private static void replyWithMeasurement(LoopbackProbeWorker worker, ProbeRequest scan) {
-    sendKeyframes(worker, scan);
-    worker.sendStreamMeasurementPart(
-        measurementPart(scan, VIDEO)
-            .addAllKeyframeIntervalBytes(inEveryInterval(VIDEO_BYTES_PER_INTERVAL))
-            .addAllKeyframeIntervalPacketCounts(inEveryInterval(VIDEO_PACKETS_PER_INTERVAL))
-            .build());
-    worker.sendStreamMeasurementPart(
-        measurementPart(scan, AUDIO)
-            .addAllKeyframeIntervalBytes(inEveryInterval(AUDIO_BYTES_PER_INTERVAL))
-            .addAllKeyframeIntervalPacketCounts(inEveryInterval(AUDIO_PACKETS_PER_INTERVAL))
-            .build());
     var measurement =
         StreamMeasurements.newBuilder()
             .setSource(StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_KEYFRAME_PACKET_SCAN)
@@ -305,37 +294,41 @@ class KeyframePacketScanMeasurementIT extends AbstractProbeSchedulerIntegrationT
                     .setTimeBaseNumerator(1)
                     .setTimeBaseDenominator(48_000)
                     .setMeasuredDuration(1_024L * AUDIO_PACKETS_PER_INTERVAL * KEYFRAME_COUNT));
-    worker.reply(answer(scan, scannedMedia().setStreamMeasurements(measurement)));
-  }
-
-  private static void replyWithoutMeasurement(LoopbackProbeWorker worker, ProbeRequest scan) {
-    sendKeyframes(worker, scan);
-    worker.reply(answer(scan, scannedMedia()));
-  }
-
-  private static void sendKeyframes(LoopbackProbeWorker worker, ProbeRequest scan) {
-    var deltas = new ArrayList<>(inEveryInterval(TICKS_PER_KEYFRAME_INTERVAL));
-    deltas.set(0, 0L);
-    worker.sendKeyframePositionsPart(
-        ProbeKeyframePositionsPart.newBuilder()
-            .setProbeAttemptId(scan.getProbeAttemptId())
-            .addAllPresentationTimeDeltas(deltas)
-            .addAllDecodeTimeDeltas(deltas)
+    worker.report(
+        reportWithKeyframes(answer(scan, scannedMedia().setStreamMeasurements(measurement)))
+            .addStreamMeasurementIntervals(
+                StreamMeasurementIntervals.newBuilder()
+                    .setStreamIndex(VIDEO)
+                    .addAllKeyframeIntervalBytes(inEveryInterval(VIDEO_BYTES_PER_INTERVAL))
+                    .addAllKeyframeIntervalPacketCounts(
+                        inEveryInterval(VIDEO_PACKETS_PER_INTERVAL)))
+            .addStreamMeasurementIntervals(
+                StreamMeasurementIntervals.newBuilder()
+                    .setStreamIndex(AUDIO)
+                    .addAllKeyframeIntervalBytes(inEveryInterval(AUDIO_BYTES_PER_INTERVAL))
+                    .addAllKeyframeIntervalPacketCounts(
+                        inEveryInterval(AUDIO_PACKETS_PER_INTERVAL)))
             .build());
   }
 
-  private static ProbeStreamMeasurementPart.Builder measurementPart(
-      ProbeRequest scan, int streamIndex) {
-    return ProbeStreamMeasurementPart.newBuilder()
-        .setProbeAttemptId(scan.getProbeAttemptId())
-        .setStreamIndex(streamIndex);
+  private static void replyWithoutMeasurement(LoopbackProbeWorker worker, ProbeRequest scan) {
+    worker.report(reportWithKeyframes(answer(scan, scannedMedia())).build());
+  }
+
+  private static ProbeAttemptReport.Builder reportWithKeyframes(ProbeAttemptResult result) {
+    var deltas = new ArrayList<>(inEveryInterval(TICKS_PER_KEYFRAME_INTERVAL));
+    deltas.set(0, 0L);
+    return ProbeAttemptReport.newBuilder()
+        .setResult(result)
+        .addAllKeyframePresentationTimeDeltas(deltas)
+        .addAllKeyframeDecodeTimeDeltas(deltas);
   }
 
   private static <T> List<T> inEveryInterval(T value) {
     return Collections.nCopies(KEYFRAME_COUNT, value);
   }
 
-  // The video stream and the audio stream, with the keyframes that the scan sent in parts.
+  // The video stream and audio stream, with the keyframes that the scan includes in its report.
   private static ProbeMediaInfo.Builder scannedMedia() {
     return WorkerProbeResultFixture.version4MediaBuilder()
         .addStreams(ProbeStreamInfo.newBuilder().setIndex(AUDIO).setCodecType("audio"))
