@@ -25,6 +25,8 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.media.LearnedStreamEnd;
+import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.AudioCodec;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
@@ -47,6 +49,7 @@ import com.streamarr.server.domain.streaming.ProbedCodecFamily;
 import com.streamarr.server.domain.streaming.ShortCopy;
 import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamDelivery;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -2083,6 +2086,116 @@ class StreamingResolverTest {
                 + STUB_SERVICE.getAllSessions().iterator().next().getSessionId()
                 + "/multivariant.m3u8?t=");
     assertThat(streamUrl.substring(streamUrl.indexOf("?t=") + 3)).matches("[A-Za-z0-9._-]+");
+  }
+
+  // A file that was written to a pipe states no duration, so its header reads as zero. A token
+  // that lasted only the idle retention would expire while the player still reads the playlist.
+  @Test
+  @DisplayName(
+      "Should keep a playback token valid through the scanned media end when the container header"
+          + " states no duration")
+  void shouldKeepAPlaybackTokenValidThroughTheScannedMediaEndWhenTheHeaderStatesNoDuration() {
+    var session = buildSession(UUID.randomUUID());
+    var scanned = scannedEndIn(session);
+    var probe =
+        session.getMediaProbe().toBuilder()
+            .duration(Duration.ZERO)
+            .streams(List.of(StreamInfo.builder().index(1).codecType("video").build()))
+            .build()
+            .withLearnedEndTimes(
+                List.of(scanned.streamIndex(1).endTime(Duration.ofMinutes(95)).build()));
+
+    var lifetime = playbackTokenLifetimeOf(sessionBuilderLike(session).mediaProbe(probe).build());
+
+    assertThat(lifetime).isEqualTo(Duration.ofMinutes(95).plus(Duration.ofHours(1)));
+  }
+
+  // A direct-play stream session sends the whole file, and a player that can select an audio track
+  // inside it switches to the longer track without telling the server (ADR 0045).
+  @Test
+  @DisplayName(
+      "Should keep a direct-play token valid through the end of the file's longest audio track"
+          + " when the session's audio track ends earlier")
+  void shouldKeepADirectPlayTokenValidThroughTheEndOfTheFilesLongestAudioTrack() {
+    var session = buildSession(UUID.randomUUID());
+    var directPlay =
+        sessionBuilderLike(session)
+            .transcodeDecision(null)
+            .delivery(StreamDelivery.DIRECT_PLAY)
+            .sourceContainer(SourceContainer.MATROSKA)
+            .mediaProbe(probeWhoseSecondAudioTrackEndsLater(session))
+            .directPlayAudioTrackPosition(OptionalInt.of(0))
+            .build();
+
+    var lifetime = playbackTokenLifetimeOf(directPlay);
+
+    assertThat(lifetime).isEqualTo(Duration.ofMinutes(150).plus(Duration.ofHours(1)));
+  }
+
+  // An HLS stream session sends its own audio track only.
+  @Test
+  @DisplayName(
+      "Should keep an HLS token valid through the end of the session's own audio track when another"
+          + " audio track ends later")
+  void shouldKeepAnHlsTokenValidThroughTheEndOfTheSessionsOwnAudioTrack() {
+    var session = buildSession(UUID.randomUUID());
+    var hls =
+        sessionBuilderLike(session)
+            .mediaProbe(probeWhoseSecondAudioTrackEndsLater(session))
+            .build();
+
+    var lifetime = playbackTokenLifetimeOf(hls);
+
+    assertThat(lifetime).isEqualTo(Duration.ofMinutes(60).plus(Duration.ofHours(1)));
+  }
+
+  // The header states 150 min. A keyframe packet scan read the video and the session's audio track
+  // to 60 min, and the file's second audio track to 150 min.
+  private static MediaProbe probeWhoseSecondAudioTrackEndsLater(StreamSession session) {
+    var scanned = scannedEndIn(session);
+    return session.getMediaProbe().toBuilder()
+        .duration(Duration.ofMinutes(150))
+        .streams(
+            List.of(
+                StreamInfo.builder().index(1).codecType("video").build(),
+                audioStreamBuilder("aac").index(2).build(),
+                audioStreamBuilder("aac").index(3).build()))
+        .build()
+        .withLearnedEndTimes(
+            List.of(
+                scanned.streamIndex(1).endTime(Duration.ofMinutes(60)).build(),
+                scanned.streamIndex(2).endTime(Duration.ofMinutes(60)).build(),
+                scanned.streamIndex(3).endTime(Duration.ofMinutes(150)).build()));
+  }
+
+  // The session's probe names stream 1 as its chosen video stream.
+  private static LearnedStreamEnd.LearnedStreamEndBuilder scannedEndIn(StreamSession session) {
+    return LearnedStreamEnd.builder()
+        .mediaFileId(session.getMediaFileId())
+        .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+        .fromPacketScan(true);
+  }
+
+  private Duration playbackTokenLifetimeOf(StreamSession session) {
+    STUB_SERVICE.setNextResult(session);
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createPlaybackSession(input: {mediaFileId: "%s", capabilities: %s}) {
+                playbackSession { currentFormatAttempt { ... on ReadyPlaybackFormatAttempt { streamSession { streamUrl } } } }
+              }
+            }
+            """,
+            UUID.randomUUID(), CAPABILITIES);
+
+    String streamUrl =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            mutation,
+            "data.createPlaybackSession.playbackSession.currentFormatAttempt.streamSession.streamUrl");
+
+    var decoded = decodeToken(streamUrl.substring(streamUrl.indexOf("?t=") + 3));
+    return Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt());
   }
 
   private static Jwt decodeToken(String token) {
