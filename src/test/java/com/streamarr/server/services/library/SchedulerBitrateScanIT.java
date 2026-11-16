@@ -689,15 +689,12 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
     probe(packetScanRequired()).execute(files.getLast(), ProbePriority.BACKGROUND);
     var order = new CopyOnWriteArrayList<String>();
     var execution =
-        KeyframePacketScanExecution.builder()
-            .reader(reader)
+        keyframePacketScanExecution.toBuilder()
             .scanner(
                 _ -> {
                   order.add("keyframe packet scan");
                   return copyableOutcome(OptionalLong.empty());
                 })
-            .fileSystem(FileSystems.getDefault())
-            .outcomes(outcomes)
             .meterRegistry(meterRegistry)
             .build();
 

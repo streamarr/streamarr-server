@@ -142,6 +142,12 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
 
     keyframes.put(mediaFileId, publication.keyframes());
     learnedStreamEnds.ifPresent(learned -> storeScannedStreamEnds(learned, publication));
+    publication
+        .streamMeasurements()
+        .flatMap(
+            measured ->
+                measurementFollowing(publication.snapshot(), publication.keyframes(), measured))
+        .ifPresent(stored -> measurements.put(mediaFileId, stored));
     return true;
   }
 
@@ -194,13 +200,19 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
         .map(StoredMeasurement::measurements);
   }
 
-  // PostgreSQL stores a measurement only beside known keyframe positions, and lists its streams by
-  // stream index.
   private void replaceMeasurement(
       ProbePublication publication, KeyframeKnowledge keyframes, StreamMeasurements measured) {
     measurements.remove(publication.mediaFileId());
+    measurementFollowing(publication.snapshot(), keyframes, measured)
+        .ifPresent(stored -> measurements.put(publication.mediaFileId(), stored));
+  }
+
+  // PostgreSQL stores a measurement only beside known keyframe positions, and lists its streams by
+  // stream index.
+  private static Optional<StoredMeasurement> measurementFollowing(
+      SourceFileSnapshot snapshot, KeyframeKnowledge keyframes, StreamMeasurements measured) {
     if (!(keyframes instanceof KeyframeKnowledge.Known(var positions))) {
-      return;
+      return Optional.empty();
     }
 
     var byStreamIndex =
@@ -209,9 +221,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
             measured.streams().stream()
                 .sorted(Comparator.comparingInt(MeasuredStream::streamIndex))
                 .toList());
-    measurements.put(
-        publication.mediaFileId(),
-        new StoredMeasurement(publication.snapshot(), positionsDigest(positions), byStreamIndex));
+    return Optional.of(new StoredMeasurement(snapshot, positionsDigest(positions), byStreamIndex));
   }
 
   // PostgreSQL's digest covers the chosen stream, its time base and the times, not their source.

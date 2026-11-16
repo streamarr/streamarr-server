@@ -12,9 +12,11 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
@@ -164,6 +166,84 @@ public interface StreamMeasurementRepositoryContract {
   }
 
   @Test
+  @DisplayName(
+      "Should read the scan's measurement when a keyframe packet scan publishes one with its"
+          + " keyframe positions")
+  default void shouldReadScansMeasurementWhenPacketScanPublishesOneWithItsKeyframePositions() {
+    var mediaFileId = createMediaFile();
+    repository().publish(publication(mediaFileId, 1, awaitingPacketScan()));
+
+    var published =
+        repository()
+            .publishKeyframePacketScan(
+                scanPublication(mediaFileId)
+                    .keyframes(scannedKeyframes())
+                    .streamMeasurements(Optional.of(scannedMeasurement()))
+                    .build());
+
+    assertThat(published).isTrue();
+    assertThat(repository().findStreamMeasurements(mediaFileId)).contains(scannedMeasurement());
+  }
+
+  @Test
+  @DisplayName(
+      "Should read no measurement when a keyframe packet scan publishes keyframe positions"
+          + " without one")
+  default void shouldReadNoMeasurementWhenPacketScanPublishesKeyframePositionsWithoutOne() {
+    var mediaFileId = createMediaFile();
+    repository().publish(publication(mediaFileId, 1, awaitingPacketScan()));
+
+    repository()
+        .publishKeyframePacketScan(
+            scanPublication(mediaFileId).keyframes(scannedKeyframes()).build());
+
+    assertThat(repository().findStreamMeasurements(mediaFileId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should store none of the scan's measurement when the keyframe packet scan read another"
+          + " source snapshot than the stored outcome's")
+  default void shouldStoreNoneOfScansMeasurementWhenPacketScanReadAnotherSourceSnapshot() {
+    var mediaFileId = createMediaFile();
+    repository().publish(publication(mediaFileId, 1, awaitingPacketScan()));
+
+    var published =
+        repository()
+            .publishKeyframePacketScan(
+                scanPublication(mediaFileId)
+                    .snapshot(CHANGED_SNAPSHOT)
+                    .keyframes(scannedKeyframes())
+                    .streamMeasurements(Optional.of(scannedMeasurement()))
+                    .build());
+
+    assertThat(published).isFalse();
+    assertThat(repository().findStreamMeasurements(mediaFileId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should store unavailable keyframes without the scan's measurement when a keyframe packet"
+          + " scan publishes a measurement beside them")
+  default void shouldStoreUnavailableKeyframesWithoutScansMeasurementWhenScanPublishesBoth() {
+    var mediaFileId = createMediaFile();
+    repository().publish(publication(mediaFileId, 1, awaitingPacketScan()));
+    var unavailable = new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.NO_KEYFRAMES);
+
+    var published =
+        repository()
+            .publishKeyframePacketScan(
+                scanPublication(mediaFileId)
+                    .keyframes(unavailable)
+                    .streamMeasurements(Optional.of(scannedMeasurement()))
+                    .build());
+
+    assertThat(published).isTrue();
+    assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(unavailable);
+    assertThat(repository().findStreamMeasurements(mediaFileId)).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should list the measured streams by stream index whatever order they arrived in")
   default void shouldListMeasuredStreamsByStreamIndexWhateverOrderTheyArrivedIn() {
     var mediaFileId = createMediaFile();
@@ -184,6 +264,33 @@ public interface StreamMeasurementRepositoryContract {
     var mediaFileId = createMediaFile();
 
     assertThat(repository().findStreamMeasurements(mediaFileId)).isEmpty();
+  }
+
+  // The video stream and the audio stream of an outcome whose keyframes need a packet scan.
+  private static ProbeOutcome.Success awaitingPacketScan() {
+    return successBuilder()
+        .keyframes(
+            new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX))
+        .build();
+  }
+
+  private static KeyframeKnowledge scannedKeyframes() {
+    return new KeyframeKnowledge.Known(positions(90_000, KeyframePositionSource.PACKET_SCAN));
+  }
+
+  private static StreamMeasurements scannedMeasurement() {
+    return new StreamMeasurements(
+        StreamMeasurementSource.KEYFRAME_PACKET_SCAN,
+        List.of(StreamMeasurementFixture.video(), StreamMeasurementFixture.audio()));
+  }
+
+  /** A scan of the outcome that {@link #publication} stores at probe version 1. */
+  private static KeyframePacketScanPublication.KeyframePacketScanPublicationBuilder scanPublication(
+      UUID mediaFileId) {
+    return KeyframePacketScanPublication.builder()
+        .mediaFileId(mediaFileId)
+        .snapshot(MEASURED_SNAPSHOT)
+        .probeVersion(1);
   }
 
   private static ProbePublication publication(
