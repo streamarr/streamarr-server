@@ -31,6 +31,8 @@ final class RemoteProbeResultMapper {
   private final RemoteKeyframeKnowledgeMapper keyframeMapper = new RemoteKeyframeKnowledgeMapper();
   private final RemoteStreamMeasurementsMapper streamMeasurementsMapper =
       new RemoteStreamMeasurementsMapper();
+  private final RemoteScannedStreamEndsMapper scannedStreamEndsMapper =
+      new RemoteScannedStreamEndsMapper();
   private final RemotePlaybackFactsMapper playbackFactsMapper =
       new RemotePlaybackFactsMapper(RemoteProbeResultMapper::toDuration);
 
@@ -86,6 +88,7 @@ final class RemoteProbeResultMapper {
         .streamMeasurements(
             streamMeasurementsMapper.map(
                 media, keyframes, report.getStreamMeasurementIntervalsList()))
+        .scannedStreamEnds(scannedStreamEndsMapper.map(media, keyframes, result.getProbeVersion()))
         .build();
   }
 

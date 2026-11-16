@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.KeyframesUnavailableReason;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.KeyframePacketScanTaskRequest;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
@@ -22,6 +23,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
@@ -114,6 +116,7 @@ public class KeyframePacketScanExecution {
             .snapshot(request.snapshot())
             .probeVersion(request.probeVersion())
             .keyframes(keyframes.get())
+            .streamEnds(scannedStreamEnds(outcome))
             .build());
     return new KeyframePacketScanResult.Completed();
   }
@@ -137,7 +140,14 @@ public class KeyframePacketScanExecution {
           Optional.of(
               new KeyframeKnowledge.Unavailable(
                   KeyframesUnavailableReason.PACKET_SCAN_MEDIA_ERROR));
-      case ProbeOutcome.Success(_, _, var keyframes, _, _, _) -> reportedKeyframes(keyframes);
+      case ProbeOutcome.Success success -> reportedKeyframes(success.keyframes());
+    };
+  }
+
+  private static List<SourceStreamEnd> scannedStreamEnds(ProbeOutcome outcome) {
+    return switch (outcome) {
+      case ProbeOutcome.Failure _ -> List.of();
+      case ProbeOutcome.Success success -> success.scannedStreamEnds();
     };
   }
 

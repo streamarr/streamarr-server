@@ -13,6 +13,7 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.NonNull;
@@ -25,7 +26,8 @@ import lombok.NonNull;
  * names one. {@code audioChannelLayout} is the first audio stream's channel layout as ffprobe names
  * it, and is empty when the probe stored none, which every version before 7 does. {@code
  * sourceSnapshot} names the source file that the stored outcome describes, and is empty for a probe
- * that playback did not read from a stored outcome.
+ * that playback did not read from a stored outcome. {@code scannedEndTimes} holds, by stream index,
+ * each end time that a keyframe packet scan read from the stream's packets.
  */
 @Builder(toBuilder = true)
 public record MediaProbe(
@@ -45,7 +47,18 @@ public record MediaProbe(
     @NonNull KeyframeKnowledge keyframes,
     @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts,
     @NonNull Optional<StreamMeasurements> streamMeasurements,
-    @NonNull Optional<SourceFileSnapshot> sourceSnapshot) {
+    @NonNull Optional<SourceFileSnapshot> sourceSnapshot,
+    @NonNull Map<Integer, Duration> scannedEndTimes) {
+
+  /**
+   * The least time by which a container's duration must run past the scanned media end before the
+   * server reads the file as cut short. A healthy file's packets can end a little before its last
+   * sample does: a Matroska file counts packet times in whole milliseconds, and a track's last
+   * packet can state less time than its frame decodes to. The differences measured with the pinned
+   * FFmpeg were 0.7 ms (FLAC) and 4.56 ms (AC-3), so 1 s is far more than any audio frame, and far
+   * less than the error that a cut file's header makes.
+   */
+  static final Duration LEAST_HEADER_OVERSTATEMENT = Duration.ofSeconds(1);
 
   // ffprobe's names for PGS, VobSub and DVB subtitles.
   private static final Set<String> IMAGE_SUBTITLE_CODECS =
@@ -66,6 +79,8 @@ public record MediaProbe(
     if (streams == null) {
       streams = List.of();
     }
+
+    scannedEndTimes = Map.copyOf(scannedEndTimes);
   }
 
   // Lombok builder defaults — its generated setters assign them
@@ -78,6 +93,7 @@ public record MediaProbe(
     private Optional<VideoPlaybackFacts> videoPlaybackFacts = Optional.empty();
     private Optional<StreamMeasurements> streamMeasurements = Optional.empty();
     private Optional<SourceFileSnapshot> sourceSnapshot = Optional.empty();
+    private Map<Integer, Duration> scannedEndTimes = Map.of();
   }
 
   /**
@@ -325,6 +341,63 @@ public record MediaProbe(
   }
 
   /**
+   * Where the media that a stream session delivers ends: the later of the end times that a keyframe
+   * packet scan read from the packets of the chosen video stream and of the session's audio stream,
+   * or the video's alone in a file without audio (ADR 0037, early ends). Every variant's media
+   * playlist and every job attempt end there, so a stream that ends first is held or padded up to
+   * it, and no copy is advertised past it. While no scan has read the end time of one of those
+   * streams, the media ends at the container's duration. An end time that only the container header
+   * states for a stream never moves the media's end, and neither does one that a job attempt
+   * reported: an attempt's FFmpeg can stop at a read error and still complete, where a scan fails.
+   * The container's duration also stands while it runs less than {@link
+   * #LEAST_HEADER_OVERSTATEMENT} past the scanned end, so a healthy file is never advertised
+   * shorter than its header states. The end counts up to the next whole millisecond, the unit of
+   * the segment list, so the list never ends before the last sample does.
+   */
+  public Duration mediaEnd() {
+    var end =
+        scannedMediaEnd().filter(scannedEnd -> !headerAgreesWith(scannedEnd)).orElse(duration);
+    return countedUpToAWholeMillisecond(end);
+  }
+
+  private static Duration countedUpToAWholeMillisecond(Duration time) {
+    var countedDown = Duration.ofMillis(time.toMillis());
+    if (countedDown.equals(time)) {
+      return time;
+    }
+
+    return countedDown.plusMillis(1);
+  }
+
+  // A scanned end past the container's duration replaces it: that header understates the file.
+  private boolean headerAgreesWith(Duration scannedEnd) {
+    var overstatement = duration.minus(scannedEnd);
+    return !overstatement.isNegative() && overstatement.compareTo(LEAST_HEADER_OVERSTATEMENT) < 0;
+  }
+
+  private Optional<Duration> scannedMediaEnd() {
+    var videoEnd = chosenVideoStream().flatMap(this::scannedEndTimeOf);
+    var sessionAudio = audioStreams().stream().findFirst();
+    if (videoEnd.isEmpty() || sessionAudio.isEmpty()) {
+      return videoEnd;
+    }
+
+    return scannedEndTimeOf(sessionAudio.get()).map(audioEnd -> laterOf(audioEnd, videoEnd.get()));
+  }
+
+  private static Duration laterOf(Duration first, Duration second) {
+    if (first.compareTo(second) > 0) {
+      return first;
+    }
+
+    return second;
+  }
+
+  private Optional<Duration> scannedEndTimeOf(StreamInfo stream) {
+    return Optional.ofNullable(scannedEndTimes.get(stream.index()));
+  }
+
+  /**
    * Whether the chosen video stream ends at least {@code margin} before another stream of the
    * source ends, by their probed end times (ADR 0037, early ends). The probe states end times for
    * audio and video streams only. A stream whose end time the probe does not state never ends
@@ -357,26 +430,38 @@ public record MediaProbe(
   }
 
   /**
-   * This probe with each learned end time in place of the end time that a stream's container header
-   * does not state (ADR 0037, early ends). A stated end time stays.
+   * This probe with each learned end time as its stream's end time (ADR 0037, early ends). An end
+   * time that a keyframe packet scan read replaces the end time that the container header states,
+   * because the header of a truncated file states the length of the whole file. An end time that a
+   * job attempt learned only fills an end time that the header does not state, because the
+   * attempt's FFmpeg can stop at a read error and still complete. Only the end times that a
+   * keyframe packet scan read count toward {@link #mediaEnd}.
    */
   public MediaProbe withLearnedEndTimes(@NonNull List<LearnedStreamEnd> learned) {
     var learnedByIndex =
         learned.stream()
+            .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, Function.identity()));
+    var scannedByIndex =
+        learned.stream()
+            .filter(LearnedStreamEnd::fromPacketScan)
             .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, LearnedStreamEnd::endTime));
     var withLearned =
         streams.stream().map(stream -> withLearnedEndTime(stream, learnedByIndex)).toList();
-    return toBuilder().streams(withLearned).build();
+    return toBuilder().streams(withLearned).scannedEndTimes(scannedByIndex).build();
   }
 
   private static StreamInfo withLearnedEndTime(
-      StreamInfo stream, Map<Integer, Duration> learnedByIndex) {
+      StreamInfo stream, Map<Integer, LearnedStreamEnd> learnedByIndex) {
     var learned = learnedByIndex.get(stream.index());
-    if (stream.endTime().isPresent() || learned == null) {
+    if (learned == null) {
       return stream;
     }
 
-    return stream.toBuilder().endTime(Optional.of(learned)).build();
+    if (stream.endTime().isPresent() && !learned.fromPacketScan()) {
+      return stream;
+    }
+
+    return stream.toBuilder().endTime(Optional.of(learned.endTime())).build();
   }
 
   /** Whether the probe lists the stream and its container header states no end time for it. */

@@ -99,6 +99,12 @@ public class MediaFileLearnedStreamEnd extends TableImpl<MediaFileLearnedStreamE
      */
     public final TableField<MediaFileLearnedStreamEndRecord, Integer> END_NANOS = createField(DSL.name("end_nanos"), SQLDataType.INTEGER.nullable(false), this, "");
 
+    /**
+     * The column
+     * <code>public.media_file_learned_stream_end.from_packet_scan</code>.
+     */
+    public final TableField<MediaFileLearnedStreamEndRecord, Boolean> FROM_PACKET_SCAN = createField(DSL.name("from_packet_scan"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN)), this, "");
+
     private MediaFileLearnedStreamEnd(Name alias, Table<MediaFileLearnedStreamEndRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

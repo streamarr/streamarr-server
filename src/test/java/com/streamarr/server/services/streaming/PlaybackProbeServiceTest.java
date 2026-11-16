@@ -11,11 +11,16 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
+import com.streamarr.server.domain.streaming.KeyframePosition;
+import com.streamarr.server.domain.streaming.KeyframePositionSource;
+import com.streamarr.server.domain.streaming.KeyframePositions;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.StreamInfo;
+import com.streamarr.server.domain.task.KeyframePacketScanPublication;
 import com.streamarr.server.domain.task.ProbeAttemptFailure;
 import com.streamarr.server.domain.task.ProbeInputs;
 import com.streamarr.server.domain.task.ProbePublication;
@@ -154,12 +159,53 @@ class PlaybackProbeServiceTest {
           .isEqualTo(Optional.empty());
     }
 
+    // The header of a truncated file states the length of the whole file, 30 s here. A keyframe
+    // packet scan read where the stream's packets really end.
     @Test
-    @DisplayName("Should keep the header's end time when an end was also learned for the stream")
-    void shouldKeepTheHeadersEndTimeWhenAnEndWasAlsoLearnedForTheStream() {
+    @DisplayName(
+        "Should read a scanned end time in place of the header's end time when a keyframe packet"
+            + " scan read the stream's end")
+    void shouldReadAScannedEndTimeInPlaceOfTheHeadersEndTimeWhenAPacketScanReadTheStreamsEnd() {
+      publishAudioAndVideoNeedingAPacketScan(Duration.ofSeconds(30));
+      publishPacketScanThatReadTheAudioEndAt(Duration.ofSeconds(14));
+
+      var probe = probeOf(service().read(mediaFileId));
+
+      assertThat(probe.audioStreams())
+          .singleElement()
+          .extracting(StreamInfo::endTime)
+          .isEqualTo(Optional.of(Duration.ofSeconds(14)));
+    }
+
+    // A job attempt learns an end only for a stream whose header states none. A later probe of the
+    // same file can state an end that the earlier probe did not. The attempt's FFmpeg can stop at a
+    // read error and still complete, so the end that the attempt learned can lie before the end
+    // that the header states.
+    @Test
+    @DisplayName(
+        "Should keep the header's end time when a job attempt learned an earlier end for the stream")
+    void shouldKeepTheHeadersEndTimeWhenAJobAttemptLearnedAnEarlierEndForTheStream() {
       outcomes.store(
           audioAndVideo(REQUESTED_INPUTS.snapshot(), Optional.of(Duration.ofSeconds(30))));
-      learnedStreamEnds.store(learnedEnd(REQUESTED_INPUTS.snapshot(), 1, Duration.ofSeconds(20)));
+      var stored =
+          learnedStreamEnds.store(
+              learnedEnd(REQUESTED_INPUTS.snapshot(), 1, Duration.ofSeconds(14)));
+
+      var probe = probeOf(service().read(mediaFileId));
+
+      assertThat(stored).isTrue();
+      assertThat(probe.audioStreams())
+          .singleElement()
+          .extracting(StreamInfo::endTime)
+          .isEqualTo(Optional.of(Duration.ofSeconds(30)));
+    }
+
+    @Test
+    @DisplayName("Should keep the header's end time when no end was learned for the stream")
+    void shouldKeepTheHeadersEndTimeWhenNoEndWasLearnedForTheStream() {
+      outcomes.store(
+          audioAndVideo(REQUESTED_INPUTS.snapshot(), Optional.of(Duration.ofSeconds(30))));
+      learnedStreamEnds.store(learnedEnd(REQUESTED_INPUTS.snapshot(), 0, Duration.ofSeconds(14)));
 
       var probe = probeOf(service().read(mediaFileId));
 
@@ -672,6 +718,67 @@ class PlaybackProbeServiceTest {
                             .build())
                     .build()))
         .build();
+  }
+
+  // The outcome that a probe of the requested snapshot publishes for a file without a keyframe
+  // index: a video stream, and an audio stream at index 1 whose header states the given end time.
+  private void publishAudioAndVideoNeedingAPacketScan(Duration audioEnd) {
+    var published =
+        outcomes.publish(
+            ProbePublication.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(REQUESTED_INPUTS.snapshot())
+                .probeVersion(ProbeVersion.CURRENT)
+                .outcome(
+                    ProbeOutcome.Success.builder()
+                        .container(
+                            ProbeContainer.builder()
+                                .duration(Optional.of(Duration.ofSeconds(73)))
+                                .build())
+                        .streams(
+                            List.of(
+                                StreamInfo.builder()
+                                    .index(0)
+                                    .codecType("video")
+                                    .codec(Optional.of("h264"))
+                                    .build(),
+                                StreamInfo.builder()
+                                    .index(1)
+                                    .codecType("audio")
+                                    .codec(Optional.of("aac"))
+                                    .endTime(Optional.of(audioEnd))
+                                    .build()))
+                        .keyframes(
+                            new KeyframeKnowledge.PacketScanRequired(
+                                KeyframePacketScanReason.NO_CONTAINER_INDEX))
+                        .build())
+                .build());
+
+    assertThat(published).isTrue();
+  }
+
+  // A keyframe packet scan of the requested snapshot that read where the audio stream at index 1
+  // ends.
+  private void publishPacketScanThatReadTheAudioEndAt(Duration audioEnd) {
+    var published =
+        outcomes.publishKeyframePacketScan(
+            KeyframePacketScanPublication.builder()
+                .mediaFileId(mediaFileId)
+                .snapshot(REQUESTED_INPUTS.snapshot())
+                .probeVersion(ProbeVersion.CURRENT)
+                .keyframes(
+                    new KeyframeKnowledge.Known(
+                        KeyframePositions.builder()
+                            .streamIndex(0)
+                            .timeBaseNumerator(1)
+                            .timeBaseDenominator(1_000)
+                            .source(KeyframePositionSource.PACKET_SCAN)
+                            .keyframes(List.of(new KeyframePosition(0, 0)))
+                            .build()))
+                .streamEnds(List.of(new SourceStreamEnd(1, audioEnd)))
+                .build());
+
+    assertThat(published).isTrue();
   }
 
   private MediaFileStreamInfo videoStream(String codec) {
