@@ -9,7 +9,7 @@
     </parent>
     <groupId>com.streamarr</groupId>
     <artifactId>server</artifactId>
-    <version>0.0.11-SNAPSHOT</version>
+    <version>0.0.11</version>
     <name>Streamarr-Server</name>
     <description>Streamarr, the open source media server system.</description>
     <properties>
