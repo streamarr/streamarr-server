@@ -343,8 +343,10 @@ The worker contract lets a job that encodes audio name its output channel layout
 The server names the output layout of every audio encode, and sets no sample rate or bit depth yet.
 Version 8 adds the maximum frame rate of the chosen video stream: the highest rate that its presentation times show over 1 to 24 consecutive frame intervals, or the base rate its declared rates agree on when no time proves a faster one, or none when the worker cannot measure it or the stream is interlaced.
 For a Dolby Vision stream, version 8 also adds the enhancement layer that the RPUs' NLQ parameters describe, none, MEL or FEL, and MaxCLL and MaxFALL from the first RPU's level 6 block.
+Version 9 adds where the chosen video stream and each audio stream ends, which a keyframe packet scan reads from the stream's packets and reports beside the keyframe positions.
+A stream session ends at the latest of those ends among the streams that it delivers, in place of the duration that the container header states.
 Version 2 is unused.
-The server requests version 8.
+The server requests version 9.
 After the version rises, the server scans each library that holds a result of an earlier version at startup.
 Playback keeps using a file's earlier result until the scan stores the file's new result.
 

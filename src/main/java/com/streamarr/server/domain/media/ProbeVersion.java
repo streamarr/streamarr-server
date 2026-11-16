@@ -15,7 +15,7 @@ public final class ProbeVersion {
   // scanned stream ends below. Each version includes the facts of every earlier version. Version 2
   // is unused. V097 deleted every result before version 4; an earlier result stays playable until
   // the re-scan stores the file's current result.
-  public static final int CURRENT = 8;
+  public static final int CURRENT = 9;
 
   public static final int FIRST_TO_REPORT_CHAPTERS = 4;
 
