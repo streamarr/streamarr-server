@@ -25,6 +25,7 @@ import com.streamarr.server.jooq.generated.tables.MovieDirector;
 import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
 import com.streamarr.server.jooq.generated.tables.PasswordResetCode;
+import com.streamarr.server.jooq.generated.tables.PlaybackReport;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare;
 import com.streamarr.server.jooq.generated.tables.ProfileManager;
 import com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation;
@@ -96,6 +97,7 @@ public class Indexes {
     public static final Index IDX_MOVIE_PERSON_MOVIE_ID = Internal.createIndex(DSL.name("idx_movie_person_movie_id"), MoviePerson.MOVIE_PERSON, new OrderField[] { MoviePerson.MOVIE_PERSON.MOVIE_ID }, false);
     public static final Index IDX_MOVIE_PERSON_PERSON_ID = Internal.createIndex(DSL.name("idx_movie_person_person_id"), MoviePerson.MOVIE_PERSON, new OrderField[] { MoviePerson.MOVIE_PERSON.PERSON_ID }, false);
     public static final Index IDX_PASSWORD_RESET_CODE_ISSUER = Internal.createIndex(DSL.name("idx_password_reset_code_issuer"), PasswordResetCode.PASSWORD_RESET_CODE, new OrderField[] { PasswordResetCode.PASSWORD_RESET_CODE.ISSUER_ACCOUNT_ID }, false);
+    public static final Index IDX_PLAYBACK_REPORT_SHARED_AT = Internal.createIndex(DSL.name("idx_playback_report_shared_at"), PlaybackReport.PLAYBACK_REPORT, new OrderField[] { PlaybackReport.PLAYBACK_REPORT.SHARED_AT, PlaybackReport.PLAYBACK_REPORT.ID }, false);
     public static final Index IDX_PM_INVITATION_PROFILE = Internal.createIndex(DSL.name("idx_pm_invitation_profile"), ProfileManagerInvitation.PROFILE_MANAGER_INVITATION, new OrderField[] { ProfileManagerInvitation.PROFILE_MANAGER_INVITATION.PROFILE_ID }, false);
     public static final Index IDX_PM_INVITATION_RECIPIENT = Internal.createIndex(DSL.name("idx_pm_invitation_recipient"), ProfileManagerInvitation.PROFILE_MANAGER_INVITATION, new OrderField[] { ProfileManagerInvitation.PROFILE_MANAGER_INVITATION.RECIPIENT_ACCOUNT_ID }, false);
     public static final Index IDX_PROFILE_HOUSEHOLD_SHARE_HOUSEHOLD_STATUS = Internal.createIndex(DSL.name("idx_profile_household_share_household_status"), ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE, new OrderField[] { ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.HOUSEHOLD_ID, ProfileHouseholdShare.PROFILE_HOUSEHOLD_SHARE.STATUS }, false);

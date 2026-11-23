@@ -180,6 +180,14 @@ final class IntentPlanner {
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_IDLE_SEGMENT_RETENTION));
       case Intent.ChangeIdleSegmentRetention _ ->
           unitPlan(AuthorizationCheck.onServer(Action.CHANGE_IDLE_SEGMENT_RETENTION));
+      case Intent.SharePlaybackReport _ ->
+          unitPlan(
+              AuthorizationCheck.onProfile(
+                  Action.SHARE_PLAYBACK_REPORT, identity.playbackAuthority().profileId()));
+      case Intent.ViewPlaybackReports _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.VIEW_PLAYBACK_REPORTS));
+      case Intent.MarkPlaybackReportRead _ ->
+          unitPlan(AuthorizationCheck.onServer(Action.MARK_PLAYBACK_REPORT_READ));
       case Intent.ViewActiveStreams _ ->
           unitPlan(AuthorizationCheck.onServer(Action.VIEW_ACTIVE_STREAMS));
     };

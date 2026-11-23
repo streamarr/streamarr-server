@@ -438,6 +438,25 @@ enum Action {
       "viewActiveStreams",
       ResourceKind.SERVER,
       Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  SHARE_PLAYBACK_REPORT(
+      "sharePlaybackReport",
+      ResourceKind.PROFILE,
+      Authorizes.WRITE,
+      FactRequirement.SIGNED_PRINCIPAL_CONTEXT,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY,
+      FactRequirement.CONTEXT_HOUSEHOLD_ACCESS,
+      FactRequirement.SESSION_LIVENESS,
+      FactRequirement.PROFILE_AVAILABILITY),
+  VIEW_PLAYBACK_REPORTS(
+      "viewPlaybackReports",
+      ResourceKind.SERVER,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  MARK_PLAYBACK_REPORT_READ(
+      "markPlaybackReportRead",
+      ResourceKind.SERVER,
+      Authorizes.WRITE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY);
 
   private static final String ACTION_TYPE = "Streamarr::Action";

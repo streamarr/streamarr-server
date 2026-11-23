@@ -11,6 +11,7 @@ import com.streamarr.server.jooq.generated.tables.AccountInvitation.AccountInvit
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
 import com.streamarr.server.jooq.generated.tables.LanguageOverride.LanguageOverridePath;
+import com.streamarr.server.jooq.generated.tables.PlaybackReport.PlaybackReportPath;
 import com.streamarr.server.jooq.generated.tables.ProfileHouseholdShare.ProfileHouseholdSharePath;
 import com.streamarr.server.jooq.generated.tables.ProfileManager.ProfileManagerPath;
 import com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.ProfileManagerInvitationPath;
@@ -263,6 +264,19 @@ public class Profile extends TableImpl<ProfileRecord> {
             _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE.getInverseKey());
 
         return _authSession;
+    }
+
+    private transient PlaybackReportPath _playbackReport;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.playback_report</code> table
+     */
+    public PlaybackReportPath playbackReport() {
+        if (_playbackReport == null)
+            _playbackReport = new PlaybackReportPath(this, null, Keys.PLAYBACK_REPORT__FK_PLAYBACK_REPORT_PROFILE.getInverseKey());
+
+        return _playbackReport;
     }
 
     private transient ProfileManagerInvitationPath _profileManagerInvitation;

@@ -16,6 +16,7 @@ import com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MediaFi
 import com.streamarr.server.jooq.generated.tables.MediaFileLearnedStreamEnd.MediaFileLearnedStreamEndPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileProbeTaskRequest.MediaFileProbeTaskRequestPath;
 import com.streamarr.server.jooq.generated.tables.MediaFileStreamMeasurement.MediaFileStreamMeasurementPath;
+import com.streamarr.server.jooq.generated.tables.PlaybackReport.PlaybackReportPath;
 import com.streamarr.server.jooq.generated.tables.SessionProgress.SessionProgressPath;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileRecord;
 
@@ -236,6 +237,19 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
             _library = new LibraryPath(this, Keys.MEDIA_FILE__FK_LIBRARY, null);
 
         return _library;
+    }
+
+    private transient PlaybackReportPath _playbackReport;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.playback_report</code> table
+     */
+    public PlaybackReportPath playbackReport() {
+        if (_playbackReport == null)
+            _playbackReport = new PlaybackReportPath(this, null, Keys.PLAYBACK_REPORT__FK_PLAYBACK_REPORT_MEDIA_FILE.getInverseKey());
+
+        return _playbackReport;
     }
 
     private transient SessionProgressPath _sessionProgress;

@@ -27,11 +27,13 @@ when {
   resource has pinRequired && (!resource.pinRequired || context.pinVerified)
 };
 
-// ADR 0018's live playback authority: every flag is read live for this request.
+// ADR 0018's live playback authority: every flag is read live for this request. A viewer shares a
+// playback report with the Server Admin under the same authority, because the report is about the
+// playback session that the selected Profile owns (#751).
 @id("playback-while-session-account-household-and-share-are-live")
 permit (
   principal,
-  action == Streamarr::Action::"playback",
+  action in [Streamarr::Action::"playback", Streamarr::Action::"sharePlaybackReport"],
   resource
 )
 when {

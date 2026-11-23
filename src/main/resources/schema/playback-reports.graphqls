@@ -1,0 +1,308 @@
+# Shared playback reports (#751, ADR 0013). A viewer shares a report about their own playback session from
+# the Playback Data panel. Only a ServerAdmin reads reports. The server deletes a report 30 days after it was
+# shared.
+
+"""
+A report that a viewer shared with the Server Admin from the Playback Data panel: the server's decisions for
+the viewer's playback session and the player's figures, both as they stood when the viewer shared it, and the
+viewer's note.
+"""
+type PlaybackReport {
+    id: ID!
+    "When the viewer shared the report, as an ISO-8601 instant."
+    sharedAt: String!
+    "When a ServerAdmin first marked the report read, as an ISO-8601 instant. Null while the report is unread."
+    readAt: String
+    "The Profile that shared the report."
+    profileId: ID!
+    profileName: String!
+    playbackSessionId: ID!
+    "The stream session of the format attempt whose figures the player captured."
+    streamSessionId: ID!
+    "Null once the media file is removed from its library."
+    mediaFileId: ID
+    "The viewer's note. Null when the viewer sent none."
+    note: String
+    requestedChoice: VideoQuality!
+    "The playback choice that the captured format attempt played (ADR 0052)."
+    playbackChoice: VideoQuality!
+    "The decision of each format attempt that had started when the server received the report, the initial format first."
+    decisions: [PlaybackDecision!]!
+    player: PlayerFigures!
+    "The client capability declaration that the playback session carried (ADR 0049)."
+    capabilityDeclaration: ClientCapabilityDeclaration!
+}
+
+"What the client's player and display accepted, as the client declared it when the playback session started."
+type ClientCapabilityDeclaration {
+    video: [VideoCapabilityEntry!]!
+    audio: [AudioCapabilityEntry!]!
+}
+
+"One group of video values and maximums that the player accepts together for one codec family."
+type VideoCapabilityEntry {
+    codecFamily: VideoCodecFamily!
+    codecProfiles: [VideoCodecProfileCapability!]!
+    maxBitDepth: Int!
+    maxWidth: Int!
+    maxHeight: Int!
+    maxFrameRate: Float!
+    compatibleBases: [DeclaredCompatibleBase!]!
+    dolbyVisionProfiles: [DolbyVisionProfileCapability!]!
+    hdr10Plus: Boolean!
+    hls: Boolean!
+    directPlayContainers: [SourceContainer!]!
+    directPlaySampleEntries: [VideoSampleEntry!]!
+}
+
+type VideoCodecProfileCapability {
+    profile: VideoCodecProfile!
+    maxLevel: Int!
+    "Null for an H.264 profile, which has no tier."
+    maxTier: VideoCodecTier
+}
+
+type DolbyVisionProfileCapability {
+    profile: DolbyVisionProfile!
+    maxLevel: Int!
+}
+
+type AudioCapabilityEntry {
+    codec: AudioCodec!
+    maxChannels: Int!
+    hls: Boolean!
+    directPlayContainers: [SourceContainer!]!
+}
+
+"""
+The figures that the player showed in its Playback Data panel. A figure is null when the player did not know it.
+display and audioOutput come from a TV client, screen and browser from a web client. A bitrate is in bits per
+second.
+"""
+type PlayerFigures {
+    qualityStep: PlayerQualityStep
+    observedBitrate: Float
+    bufferSeconds: Float
+    droppedFrames: Int
+    stalls: Int
+    resolution: PictureSize
+    "The video codec that the player decodes, as the player names it."
+    videoCodec: String
+    hdrMode: PlayerHdrMode
+    audio: PlayerAudio
+    display: PlayerDisplay
+    audioOutput: PlayerAudioOutput
+    screen: PlayerScreen
+    browser: PlayerBrowser
+}
+
+"The HLS quality step that the player picked: step number of count, the largest step first."
+type PlayerQualityStep {
+    number: Int!
+    count: Int!
+    "The step's picture height."
+    height: Int!
+    "The step's bitrate, in bits per second."
+    bitrate: Int!
+}
+
+type PictureSize {
+    width: Int!
+    height: Int!
+}
+
+"The dynamic range that a player or display reports for what it shows."
+enum PlayerHdrMode {
+    SDR
+    "High dynamic range in a format that the player or display does not name."
+    HDR
+    HDR10
+    HDR10_PLUS
+    HLG
+    DOLBY_VISION
+}
+
+type PlayerAudio {
+    "The audio codec that the player decodes, as the player names it."
+    codec: String!
+    "Null when the player did not know the channel count."
+    channels: Int
+    "Null when the player did not know whether the audio carries Dolby Atmos."
+    dolbyAtmos: Boolean
+}
+
+"""
+The display mode that the TV switched to, and whether it matched the content's dynamic range and frame rate.
+A figure is null when the TV did not report it, as while it switches modes. width and height are null together.
+"""
+type PlayerDisplay {
+    width: Int
+    height: Int
+    hdrMode: PlayerHdrMode
+    "In hertz."
+    refreshRate: Float
+    dynamicRangeMatched: Boolean
+    frameRateMatched: Boolean
+}
+
+"Where the TV sends its audio, such as HDMI, and how many channels that output accepts."
+type PlayerAudioOutput {
+    route: String!
+    channels: Int!
+}
+
+"The browser's screen: its size in CSS pixels, its pixel ratio and whether it reports HDR."
+type PlayerScreen {
+    width: Int!
+    height: Int!
+    pixelRatio: Float!
+    hdr: Boolean!
+}
+
+type PlayerBrowser {
+    name: String!
+    version: String!
+}
+
+type PlaybackReportConnection {
+    edges: [PlaybackReportEdge!]!
+    pageInfo: PageInfo!
+}
+
+type PlaybackReportEdge {
+    node: PlaybackReport!
+    cursor: String!
+}
+
+input SharePlaybackReportInput {
+    "A playback session of the selected Profile. Another viewer's playback session reads as closed."
+    playbackSessionId: ID!
+    """
+    The stream session of the format attempt that the Playback Data panel showed when the viewer pressed Share.
+    A stream session that is not one of the playback session's started format attempts reads as closed.
+    """
+    streamSessionId: ID!
+    """
+    A new UUID that the client makes for each press of Share and sends again when it resends after a lost answer.
+    A playback session keeps one report for each submission ID, so a resend returns the stored report. A resend
+    after the playback session closed reads as closed, as any report does.
+    """
+    submissionId: ID!
+    "At most 280 characters. A blank note counts as none."
+    note: String
+    "The figures that the Playback Data panel showed when the viewer pressed Share."
+    player: PlayerFiguresInput!
+}
+
+"""
+The figures that the Playback Data panel showed. Leave out a figure that the player did not know. Text holds at
+most 64 characters. A count is zero or more, and a size, a channel count, a refresh rate and a pixel ratio are
+above zero.
+"""
+input PlayerFiguresInput {
+    qualityStep: PlayerQualityStepInput
+    "In bits per second."
+    observedBitrate: Float
+    bufferSeconds: Float
+    droppedFrames: Int
+    stalls: Int
+    resolution: PictureSizeInput
+    videoCodec: String
+    hdrMode: PlayerHdrMode
+    audio: PlayerAudioInput
+    "The TV's display mode. A TV client sends it."
+    display: PlayerDisplayInput
+    "The TV's audio output. A TV client sends it."
+    audioOutput: PlayerAudioOutputInput
+    "The browser's screen. A web client sends it."
+    screen: PlayerScreenInput
+    "The browser. A web client sends it."
+    browser: PlayerBrowserInput
+}
+
+"Step number of count, from 1. bitrate is in bits per second."
+input PlayerQualityStepInput {
+    number: Int!
+    count: Int!
+    height: Int!
+    bitrate: Int!
+}
+
+input PictureSizeInput {
+    width: Int!
+    height: Int!
+}
+
+"Leave out channels or dolbyAtmos when the player does not know it."
+input PlayerAudioInput {
+    codec: String!
+    channels: Int
+    dolbyAtmos: Boolean
+}
+
+"""
+Leave out a figure that the TV did not report, as while it switches modes. Send width and height together. A TV
+that shows HDR without naming its format sends hdrMode HDR.
+"""
+input PlayerDisplayInput {
+    width: Int
+    height: Int
+    hdrMode: PlayerHdrMode
+    "In hertz."
+    refreshRate: Float
+    dynamicRangeMatched: Boolean
+    frameRateMatched: Boolean
+}
+
+input PlayerAudioOutputInput {
+    route: String!
+    channels: Int!
+}
+
+input PlayerScreenInput {
+    width: Int!
+    height: Int!
+    pixelRatio: Float!
+    hdr: Boolean!
+}
+
+input PlayerBrowserInput {
+    name: String!
+    version: String!
+}
+
+type SharePlaybackReportPayload {
+    playbackReportId: ID
+    userErrors: [SharePlaybackReportError!]!
+}
+
+union SharePlaybackReportError = InvalidIdError | PlaybackSessionClosedError | PlaybackReportNoteTooLongError | PlayerFigureInvalidError
+
+"The note holds more characters than maximumLength."
+type PlaybackReportNoteTooLongError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+    maximumLength: Int!
+}
+
+"A player figure is out of range. inputPath names the figure."
+type PlayerFigureInvalidError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}
+
+input MarkPlaybackReportReadInput {
+    playbackReportId: ID!
+}
+
+type MarkPlaybackReportReadPayload {
+    playbackReport: PlaybackReport
+    userErrors: [MarkPlaybackReportReadError!]!
+}
+
+union MarkPlaybackReportReadError = InvalidIdError | PlaybackReportNotFoundError
+
+type PlaybackReportNotFoundError implements InputMutationError & MutationError {
+    message: String!
+    inputPath: [String!]!
+}

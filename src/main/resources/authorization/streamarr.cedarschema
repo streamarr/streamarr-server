@@ -127,6 +127,11 @@ namespace Streamarr {
     resource: Profile,
     context: {},
   };
+  action sharePlaybackReport appliesTo {
+    principal: Account,
+    resource: Profile,
+    context: {},
+  };
   action viewProfileActivity appliesTo {
     principal: Account,
     resource: Profile,
@@ -426,7 +431,17 @@ namespace Streamarr {
     resource: Server,
     context: {},
   };
+  action viewPlaybackReports in serverAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
   action changeIdleSegmentRetention in serverAdministration appliesTo {
+    principal: Account,
+    resource: Server,
+    context: {},
+  };
+  action markPlaybackReportRead in serverAdministration appliesTo {
     principal: Account,
     resource: Server,
     context: {},

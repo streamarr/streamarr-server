@@ -230,6 +230,18 @@ public sealed interface Intent {
   /** Change how long the server keeps idle stream sessions; a whole-surface gate. */
   record ChangeIdleSegmentRetention() implements UnitIntent {}
 
+  /**
+   * Share a playback report about the selected Profile's own playback session with the Server
+   * Admin, under the same live facts as playback.
+   */
+  record SharePlaybackReport() implements UnitIntent {}
+
+  /** Read the shared playback reports and their unread count; a whole-surface gate. */
+  record ViewPlaybackReports() implements UnitIntent {}
+
+  /** Mark a shared playback report read; a whole-surface gate. */
+  record MarkPlaybackReportRead() implements UnitIntent {}
+
   /** See every active stream on the server and why it plays as it does; a whole-surface gate. */
   record ViewActiveStreams() implements UnitIntent {}
 }
