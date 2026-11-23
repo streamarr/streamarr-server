@@ -224,7 +224,10 @@ public class TranscodeDecisionService {
             .audioStreamIndex(audioStreamIndex(source, audioDecision))
             .dynamicRangeChoice(request.viewerLimits().dynamicRangeChoice())
             .softwareEncoder(
-                encodeCodecProfile.isPresent() && request.softwareEncodeCodecFamily().isPresent())
+                encodeCodecProfile
+                    .map(EncodeCodecProfile::codecFamilyName)
+                    .filter(request::encodesInSoftware)
+                    .isPresent())
             .videoEncodeFormat(encode.map(EncodeChoice::format).orElse(EncodeFormat.SDR_8_BIT))
             .assumedSourceMatrix(source.assumedSourceMatrix())
             .build());
@@ -976,7 +979,8 @@ public class TranscodeDecisionService {
         .filter(
             profile ->
                 request
-                    .softwareEncodeCodecFamily()
+                    .softwareContinuation()
+                    .map(SoftwareContinuation::codecFamily)
                     .map(profile.codecFamilyName()::equals)
                     .orElse(true))
         .flatMap(profile -> fittingEncodes(request, profile))
@@ -1021,18 +1025,34 @@ public class TranscodeDecisionService {
   }
 
   // Any format beyond 8-bit SDR needs one encoder of the codec family that lists every feature the
-  // format needs. A format that failed earlier in the playback session stays out.
+  // format needs. A codec family that encodes in software needs one of its encoders even for 8-bit
+  // SDR, because a worker runs a software encode only on a software encoder of the codec family
+  // (ADR 0044). A format that failed earlier in the playback session stays out. A software
+  // continuation keeps the failed encode's range, so every format in another range stays out of it
+  // (ADR 0013). A 10-bit SDR encode may also continue in 8-bit SDR, and its 10 bits come first as
+  // in any encode.
   private static List<EncodeFormat> encodeFormats(
       TranscodeDecisionRequest request,
       EncodeCodecProfile profile,
       List<WorkerVerifiedEncoder> encoders) {
+    if (request.encodesInSoftware(profile.codecFamilyName())
+        && !hasAnEncoderOf(profile, encoders)) {
+      return List.of();
+    }
+
     return permittedEncodeFormats(encodeFitting(request), profile).stream()
-        .filter(format -> !request.excludedEncodeFormats().contains(format))
+        .filter(request::mayEncode)
         .filter(
             format ->
                 isWrittenByAnEncoder(
                     format.encodeFeaturesFrom(sourceBase(request.source())), profile, encoders))
         .toList();
+  }
+
+  private static boolean hasAnEncoderOf(
+      EncodeCodecProfile profile, List<WorkerVerifiedEncoder> encoders) {
+    return encoders.stream()
+        .anyMatch(encoder -> encoder.backend().codecFamily().equals(profile.codecFamilyName()));
   }
 
   // 8-bit SDR needs no feature, so the encodable codec families alone decide it.
@@ -1060,14 +1080,17 @@ public class TranscodeDecisionService {
         && source.videoPlaybackFacts().map(facts -> facts.bitDepth().orElse(8) >= 10).orElse(false);
   }
 
-  // The codec families that a worker encodes in hardware, then H.264, then the rest (ADR 0009).
+  // The codec families that a worker encodes in hardware, then H.264, then the rest (ADR 0009). A
+  // codec family that the request encodes in software is not encoded in hardware.
   private static List<EncodeCodecProfile> codecPreference(TranscodeDecisionRequest request) {
     var hardwareEncodable = request.hardwareEncodableVideoCodecFamilies();
     var encodedInHardware =
         COMPRESSING_BETTER_THAN_H264.stream()
             .collect(
                 Collectors.partitioningBy(
-                    profile -> hardwareEncodable.contains(profile.codecFamilyName())));
+                    profile ->
+                        hardwareEncodable.contains(profile.codecFamilyName())
+                            && !request.encodesInSoftware(profile.codecFamilyName())));
     return Stream.of(
             encodedInHardware.get(true),
             List.of(EncodeCodecProfile.H264_HIGH),

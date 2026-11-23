@@ -13,6 +13,8 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.a
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.declarationBuilderFor;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libsvtav1;
+import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -27,6 +29,8 @@ import com.streamarr.server.domain.streaming.ClientCapabilityDeclaration;
 import com.streamarr.server.domain.streaming.CompatibleBase;
 import com.streamarr.server.domain.streaming.DecisionReason;
 import com.streamarr.server.domain.streaming.EncodeCodecProfile;
+import com.streamarr.server.domain.streaming.EncodeFormat;
+import com.streamarr.server.domain.streaming.EncoderBackend;
 import com.streamarr.server.domain.streaming.Fraction;
 import com.streamarr.server.domain.streaming.FrameRateRule;
 import com.streamarr.server.domain.streaming.FrameRateRuleInputs;
@@ -46,7 +50,10 @@ import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
 import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
+import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
+import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
 import com.streamarr.server.fixtures.HardwareEncodedFamiliesAndExpectedEncode;
 import com.streamarr.server.fixtures.ProbeFixture;
 import com.streamarr.server.fixtures.StreamMeasurementFixture;
@@ -1184,7 +1191,9 @@ class TranscodeDecisionServiceTest {
                     .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                     .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
                     .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
-                    .softwareEncodeCodecFamily(Optional.of("h264"))
+                    .videoEncoders(List.of(libx264()))
+                    .softwareContinuation(
+                        Optional.of(new SoftwareContinuation("h264", EncodeFormat.SDR_8_BIT)))
                     .build())
             .orElseThrow();
 
@@ -1202,7 +1211,8 @@ class TranscodeDecisionServiceTest {
                 .capabilityDeclaration(declaring(AV1, H264))
                 .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
                 .encodableVideoCodecFamilies(Set.of("av1"))
-                .softwareEncodeCodecFamily(Optional.of("h264"))
+                .softwareContinuation(
+                    Optional.of(new SoftwareContinuation("h264", EncodeFormat.SDR_8_BIT)))
                 .build());
 
     assertThat(decision).isEmpty();
@@ -1223,6 +1233,187 @@ class TranscodeDecisionServiceTest {
             .orElseThrow();
 
     assertThat(decision.softwareEncoder()).isFalse();
+  }
+
+  // A codec family whose hardware encoder failed earlier in the playback session encodes on its
+  // software encoder, so it no longer comes first as a codec family encoded in hardware (ADR 0009).
+  @Test
+  @DisplayName(
+      "Should encode H.264 before a codec family when its hardware encoder failed earlier in the"
+          + " playback session")
+  void shouldEncodeH264BeforeACodecFamilyWhenItsHardwareEncoderFailedEarlier() {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("hevc", "aac"))
+                    .capabilityDeclaration(declaring(AV1, H264))
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
+                    .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                    .videoEncoders(List.of(libsvtav1()))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.softwareEncoder()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should encode a codec family with the software encoder when its hardware encoder failed"
+          + " earlier in the playback session")
+  void shouldEncodeACodecFamilyWithTheSoftwareEncoderWhenItsHardwareEncoderFailedEarlier() {
+    var decision =
+        service
+            .decide(
+                TranscodeDecisionRequest.builder()
+                    .source(probe("hevc", "aac"))
+                    .capabilityDeclaration(declaring(AV1))
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                    .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
+                    .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                    .videoEncoders(List.of(libsvtav1()))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoCodecFamily()).isEqualTo("av1");
+    assertThat(decision.softwareEncoder()).isTrue();
+  }
+
+  // A worker runs a software encode only on a software encoder of its codec family (ADR 0044), so
+  // without one the codec family has no encode, not even in 8-bit SDR.
+  @Test
+  @DisplayName(
+      "Should decide nothing when a codec family's hardware encoder failed earlier in the playback"
+          + " session and no software encoder of the family is listed")
+  void
+      shouldDecideNothingWhenNoSoftwareEncoderIsListedForAFamilyWhoseHardwareEncoderFailedEarlier() {
+    var decision =
+        service.decide(
+            TranscodeDecisionRequest.builder()
+                .source(probe("hevc", "aac"))
+                .capabilityDeclaration(declaring(AV1))
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .encodableVideoCodecFamilies(EVERY_VIDEO_CODEC_FAMILY)
+                .hardwareEncodableVideoCodecFamilies(Set.of("av1"))
+                .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                .videoEncoders(List.of(libx264()))
+                .build());
+
+    assertThat(decision).isEmpty();
+  }
+
+  // ADR 0013: a software continuation keeps the failed encode's range and bit depth, so the
+  // decision plans that format alone and nothing when no software encoder writes it.
+  @Test
+  @DisplayName(
+      "Should decide nothing when no software encoder writes the range of the PQ encode that a"
+          + " software continuation continues")
+  void shouldDecideNothingWhenNoSoftwareEncoderWritesTheSoftwareContinuationsRange() {
+    var decision =
+        service.decide(
+            softwareContinuationOfA10BitSource(
+                    CompatibleBase.PQ,
+                    EncodeFormat.hdr(VideoRange.PQ),
+                    Set.of(VideoEncodeFeature.TEN_BIT))
+                .build());
+
+    assertThat(decision).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should plan PQ at 10 bits with the software encoder when it writes the range of the PQ"
+          + " encode that a software continuation continues")
+  void shouldPlanPqAt10BitsWhenTheSoftwareEncoderWritesTheSoftwareContinuationsRange() {
+    var decision =
+        service
+            .decide(
+                softwareContinuationOfA10BitSource(
+                        CompatibleBase.PQ,
+                        EncodeFormat.hdr(VideoRange.PQ),
+                        Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.hdr(VideoRange.PQ));
+    assertThat(decision.softwareEncoder()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should plan 8-bit SDR when a software continuation continues an 8-bit SDR encode of an"
+          + " HDR10 source and the software encoder writes PQ")
+  void shouldPlan8BitSdrWhenASoftwareContinuationContinuesAnSdrEncodeAndTheSoftwareWritesPq() {
+    var decision =
+        service
+            .decide(
+                softwareContinuationOfA10BitSource(
+                        CompatibleBase.PQ,
+                        EncodeFormat.SDR_8_BIT,
+                        Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.SDR_8_BIT);
+  }
+
+  // 8-bit SDR keeps the range of a 10-bit SDR encode (ADR 0013).
+  @Test
+  @DisplayName(
+      "Should plan 8-bit SDR with the software encoder when a software continuation continues a"
+          + " 10-bit SDR encode and no software encoder writes 10 bits")
+  void shouldPlan8BitSdrWhenASoftwareContinuationContinuesA10BitSdrEncodeWithout10BitSoftware() {
+    var decision =
+        service
+            .decide(
+                softwareContinuationOfA10BitSource(
+                        CompatibleBase.SDR, EncodeFormat.SDR_10_BIT, Set.of())
+                    .build())
+            .orElseThrow();
+
+    assertThat(decision.videoEncodeFormat()).isEqualTo(EncodeFormat.SDR_8_BIT);
+    assertThat(decision.softwareEncoder()).isTrue();
+  }
+
+  // An AV1 encode of a 10-bit HEVC source in the compatible base for a client that declares AV1
+  // with SDR and PQ at 10 bits, continued on a software AV1 encoder that lists the encode features.
+  private TranscodeDecisionRequest.TranscodeDecisionRequestBuilder
+      softwareContinuationOfA10BitSource(
+          CompatibleBase sourceBase,
+          EncodeFormat failedEncodeFormat,
+          Set<VideoEncodeFeature> softwareAv1Features) {
+    var tenBit =
+        VideoPlaybackFactsFixture.sdrH264FactsBuilder()
+            .streamIndex(0)
+            .codecFamily(Optional.of(HEVC))
+            .bitDepth(OptionalInt.of(10))
+            .codecString(Optional.of("hvc1.2.4.L120.90"))
+            .dynamicRange(VideoPlaybackFactsFixture.rangeWithoutEnhancement(sourceBase))
+            .build();
+    var hdrAv1 =
+        av1EntryBuilder().compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ)).build();
+    var softwareAv1 =
+        WorkerVerifiedEncoder.builder()
+            .backend(
+                EncoderBackend.builder()
+                    .codecFamily("av1")
+                    .encoder("libsvtav1")
+                    .kind(EncoderBackend.Kind.SOFTWARE)
+                    .build())
+            .keyframeVerified(true)
+            .encodeFeatures(softwareAv1Features)
+            .build();
+    return TranscodeDecisionRequest.builder()
+        .source(probeBuilder("hevc", "aac").videoPlaybackFacts(Optional.of(tenBit)).build())
+        .capabilityDeclaration(defaultDeclarationBuilder().video(List.of(hdrAv1)).build())
+        .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+        .encodableVideoCodecFamilies(Set.of("av1"))
+        .videoEncoders(List.of(softwareAv1))
+        .softwareContinuation(Optional.of(new SoftwareContinuation("av1", failedEncodeFormat)));
   }
 
   @ParameterizedTest(name = "{0}")

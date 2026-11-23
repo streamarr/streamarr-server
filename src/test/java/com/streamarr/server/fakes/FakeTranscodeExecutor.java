@@ -105,6 +105,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       throw new TranscodeException("No connected transcode worker runs the pinned encoder");
     }
 
+    if (request.transcodeDecision().softwareEncoder() && accepting.isEmpty()) {
+      throw new TranscodeException("No connected transcode worker runs this software encode");
+    }
+
     // A start that no target advertises an encoder for runs on an eligible target.
     var runningTarget = accepting.or(() -> firstWithFreeJobSlot(candidateTargets(request)));
     var handle = doStart(request, runningTarget);
@@ -486,7 +490,12 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       return executionTargets(decision).isEmpty() ? 0 : UNBOUNDED_SLOTS;
     }
 
-    var slots = Math.min(availableSlots(), freeJobSlotsOn(executionTargets(decision)));
+    var targets = executionTargets(decision);
+    if (decision.softwareEncoder() && targets.isEmpty()) {
+      return 0;
+    }
+
+    var slots = Math.min(availableSlots(), freeJobSlotsOn(targets));
     return Math.min(slots, encodeSlots(decision.videoCodecFamily()));
   }
 
@@ -651,7 +660,8 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
             && writesThePlannedOutput(target, decision);
   }
 
-  // A target's advertised encoder must list every encode feature that the planned output needs.
+  // A target's advertised encoder must list every encode feature that the planned output needs. As
+  // a worker does, a target runs a software encode only on a software encoder of its codec family.
   private boolean writesThePlannedOutput(ExecutionTargetId target, TranscodeDecision decision) {
     var sourceBase =
         decision
@@ -661,7 +671,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     var needed = decision.videoEncodeFormat().encodeFeaturesFrom(sourceBase);
     return advertisedEncoder(target, decision)
         .map(encoder -> encoder.encodeFeatures().containsAll(needed))
-        .orElse(needed.isEmpty());
+        .orElse(needed.isEmpty() && !decision.softwareEncoder());
   }
 
   @Override

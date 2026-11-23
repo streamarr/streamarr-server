@@ -95,6 +95,7 @@ import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoEncodeFeature;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.domain.streaming.VideoRange;
 import com.streamarr.server.domain.streaming.VideoSampleEntry;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.domain.streaming.WorkerVerifiedEncoder;
@@ -154,6 +155,7 @@ import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -7890,6 +7892,292 @@ class HlsStreamingServiceTest {
     assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
     upload(switchingId, "1080p", "1080p/segment1.m4s");
     assertThat(left.switched().get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  // A software continuation keeps the failed encode's range (ADR 0013), so an 8-bit SDR encode on
+  // the freed worker would not continue a PQ encode and stopping the left variant would only cost
+  // its player the switch back.
+  @Test
+  @DisplayName(
+      "Should keep a left variant on a worker without PQ when a PQ encode continues in software"
+          + " and the only worker whose software encoder writes PQ is busy")
+  void shouldKeepALeftVariantOnAWorkerWithoutPqWhenAPqEncodeContinuesInSoftware() throws Exception {
+    var left = keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy();
+    var switching = left.session();
+    var switchingId = switching.getSessionId();
+    transcodeExecutor.setTargetSoftwareEncoders(AV1_WORKER, List.of(libsvtav1()));
+    transcodeExecutor.setTargetSoftwareEncoders(
+        new ExecutionTargetId("pq-worker"),
+        List.of(
+            WorkerVerifiedEncoder.builder()
+                .backend(libsvtav1().backend())
+                .keyframeVerified(true)
+                .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                .build()));
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .capabilityDeclaration(
+                    av1Declaration(List.of(CompatibleBase.SDR, CompatibleBase.PQ)))
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .softwareContinuation(
+                    Optional.of(new SoftwareContinuation("av1", EncodeFormat.hdr(VideoRange.PQ))))
+                .build());
+
+    assertThat(rejectionOf(outcome))
+        .isInstanceOf(CreateStreamSessionRejection.TranscodeCapacityUnavailable.class);
+    assertThat(transcodeExecutor.isRunning(switchingId, "480p")).isTrue();
+    assertThat(switching.getVariantHandles()).containsOnlyKeys("480p", "1080p");
+    upload(switchingId, "1080p", "1080p/segment1.m4s");
+    assertThat(left.switched().get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  // 8-bit SDR keeps the range of a 10-bit SDR encode (ADR 0013), so the left variant on the worker
+  // without 10 bits makes room for the software continuation, as it does for an ordinary encode.
+  @Test
+  @DisplayName(
+      "Should continue a 10-bit SDR encode in 8-bit SDR on a worker without 10 bits when a left"
+          + " variant stopped there frees its slot and the only worker whose software encoder"
+          + " writes 10 bits is busy")
+  void
+      shouldContinueA10BitSdrEncodeIn8BitSdrOnAWorkerWithout10BitsWhenAStoppedLeftVariantFreesIt() {
+    var left = keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy();
+    var switchingId = left.session().getSessionId();
+    transcodeExecutor.setTargetSoftwareEncoders(AV1_WORKER, List.of(libsvtav1()));
+    transcodeExecutor.setTargetSoftwareEncoders(
+        new ExecutionTargetId("pq-worker"),
+        List.of(
+            WorkerVerifiedEncoder.builder()
+                .backend(libsvtav1().backend())
+                .keyframeVerified(true)
+                .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                .build()));
+    probeResults.setDefaultProbe(
+        hevcMain10Probe(
+            new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent())));
+
+    var continued =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .capabilityDeclaration(av1Declaration(List.of(CompatibleBase.SDR)))
+                    .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                    .softwareContinuation(
+                        Optional.of(new SoftwareContinuation("av1", EncodeFormat.SDR_10_BIT)))
+                    .build()));
+
+    var started = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(started.sessionId()).isEqualTo(continued.getSessionId());
+    assertThat(started.transcodeDecision().videoEncodeFormat()).isEqualTo(EncodeFormat.SDR_8_BIT);
+    assertThat(started.transcodeDecision().softwareEncoder()).isTrue();
+    assertThat(
+            transcodeExecutor.runningExecutionTarget(started.sessionId(), started.variantLabel()))
+        .contains(AV1_WORKER);
+    assertThat(transcodeExecutor.isRunning(switchingId, "480p")).isFalse();
+  }
+
+  // A codec family whose hardware encoder failed earlier in the playback session encodes on its
+  // software encoder, so the encode plans only what that encoder writes (ADR 0044).
+  @Test
+  @DisplayName(
+      "Should encode 8-bit SDR on the software encoder when the codec family's hardware encoder"
+          + " failed earlier in the playback session and only that hardware encoder writes 10 bits")
+  void shouldEncode8BitSdrOnTheSoftwareEncoderWhenOnlyTheFailedHardwareEncoderWrites10Bits() {
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("av1"));
+    transcodeExecutor.setExecutionTargets(List.of(AV1_WORKER));
+    transcodeExecutor.setTargetEncoders(
+        AV1_WORKER,
+        List.of(
+            WorkerVerifiedEncoder.builder()
+                .backend(av1Nvenc().backend())
+                .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT))
+                .build()));
+    transcodeExecutor.setTargetSoftwareEncoders(AV1_WORKER, List.of(libsvtav1()));
+    probeResults.setDefaultProbe(
+        hevcMain10Probe(
+            new VideoDynamicRange(CompatibleBase.SDR, Presence.ABSENT, new DolbyVision.Absent())));
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .capabilityDeclaration(av1Declaration(List.of(CompatibleBase.SDR)))
+                    .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().videoEncodeFormat())
+        .isEqualTo(EncodeFormat.SDR_8_BIT);
+    assertThat(session.getTranscodeDecision().softwareEncoder()).isTrue();
+  }
+
+  // The decision after the stop reads the freed worker's encoders again, and the hardware encoder
+  // that failed earlier in the playback session stays out of them there too (ADR 0044).
+  @Test
+  @DisplayName(
+      "Should encode 8-bit SDR with the software encoder on a worker that a stopped left variant"
+          + " frees when its hardware encoder writes PQ but failed earlier in the playback session")
+  void
+      shouldEncode8BitSdrWithTheSoftwareEncoderOnAFreedWorkerWhenItsHardwareEncoderFailedEarlier() {
+    var left = keepALeftVariantOnAnSdrAv1WorkerWhileTheOnlyPqWorkerIsBusy();
+    var switchingId = left.session().getSessionId();
+    transcodeExecutor.setTargetEncoders(
+        AV1_WORKER,
+        List.of(
+            WorkerVerifiedEncoder.builder()
+                .backend(av1Nvenc().backend())
+                .keyframeVerified(true)
+                .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                .build()));
+    transcodeExecutor.setTargetSoftwareEncoders(AV1_WORKER, List.of(libsvtav1()));
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+
+    var session =
+        accepted(
+            service.createSession(
+                createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                    .capabilityDeclaration(
+                        av1Declaration(List.of(CompatibleBase.SDR, CompatibleBase.PQ)))
+                    .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                    .build()));
+
+    assertThat(session.getTranscodeDecision().videoEncodeFormat())
+        .isEqualTo(EncodeFormat.SDR_8_BIT);
+    assertThat(session.getTranscodeDecision().softwareEncoder()).isTrue();
+    var started = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(started.sessionId()).isEqualTo(session.getSessionId());
+    assertThat(
+            transcodeExecutor.runningExecutionTarget(started.sessionId(), started.variantLabel()))
+        .contains(AV1_WORKER);
+    assertThat(transcodeExecutor.isRunning(switchingId, "480p")).isFalse();
+  }
+
+  // A worker runs a software encode only on a software encoder of its codec family (ADR 0044). The
+  // failed hardware encoder still writes what the client plays, so the client's declaration is not
+  // what refuses the stream session: no worker can take its encode.
+  @Test
+  @DisplayName(
+      "Should refuse for lack of capacity when the codec family's hardware encoder failed earlier"
+          + " in the playback session and no worker has a software encoder of the family")
+  void
+      shouldRefuseForLackOfCapacityWhenNoWorkerHasASoftwareEncoderOfTheFamilyWhoseHardwareEncoderFailed() {
+    useAnHdr10SourceAndAnAv1WorkerWithoutASoftwareEncoder();
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .capabilityDeclaration(av1Declaration(List.of(CompatibleBase.SDR)))
+                .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                .build());
+
+    assertThat(outcome)
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_software_encoder_after_hardware_failure")).isOne();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  // The client played the encode that the continuation continues, and a worker stops offering a
+  // hardware encoder that failed before it reports the failure (ADR 0044).
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("av1EncodersOfAWorkerWithoutASoftwareAv1Encoder")
+  @DisplayName(
+      "Should refuse a software continuation for lack of capacity when no worker has a software"
+          + " encoder of its codec family")
+  void shouldRefuseASoftwareContinuationForLackOfCapacityWhenNoWorkerHasASoftwareEncoderOfItsFamily(
+      List<WorkerVerifiedEncoder> av1Encoders) {
+    useAnHdr10SourceAndAnAv1WorkerWithoutASoftwareEncoder();
+    transcodeExecutor.setTargetEncoders(AV1_WORKER, av1Encoders);
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .capabilityDeclaration(av1Declaration(List.of(CompatibleBase.SDR)))
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .softwareContinuation(
+                    Optional.of(new SoftwareContinuation("av1", EncodeFormat.SDR_8_BIT)))
+                .build());
+
+    assertThat(outcome)
+        .isEqualTo(
+            Outcome.rejected(new CreateStreamSessionRejection.TranscodeCapacityUnavailable(3)));
+    assertThat(capacityRefusals("no_software_encoder_after_hardware_failure")).isOne();
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
+  static Stream<Arguments> av1EncodersOfAWorkerWithoutASoftwareAv1Encoder() {
+    return Stream.of(
+        Arguments.of(
+            Named.of("the worker still offers the failed hardware encoder", List.of(av1Nvenc()))),
+        Arguments.of(Named.of("the worker withdrew the failed hardware encoder", List.of())));
+  }
+
+  // The failed hardware encoder writes no PQ, so it could not encode for a client that takes AV1
+  // only in PQ either.
+  @Test
+  @DisplayName(
+      "Should refuse for no eligible video format when the codec family's hardware encoder failed"
+          + " earlier in the playback session and that encoder cannot write what the client plays")
+  void
+      shouldRefuseForNoEligibleVideoFormatWhenTheFailedHardwareEncoderCannotWriteWhatTheClientPlays() {
+    useAnHdr10SourceAndAnAv1WorkerWithoutASoftwareEncoder();
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .capabilityDeclaration(av1Declaration(List.of(CompatibleBase.PQ)))
+                .excludedHardwareEncodeCodecFamilies(Set.of("av1"))
+                .build());
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(capacityRefusals("no_software_encoder_after_hardware_failure")).isZero();
+  }
+
+  // Only a software encoder that writes the failed encode's range continues it (ADR 0013). The
+  // codec family has a software encoder, so the hardware encoder that still writes PQ does not
+  // stand in for it.
+  @Test
+  @DisplayName(
+      "Should refuse a PQ software continuation for no eligible video format when the codec"
+          + " family's software encoder writes no PQ and its hardware encoder does")
+  void shouldRefuseAPqSoftwareContinuationForNoEligibleVideoFormatWhenOnlyTheHardwareWritesPq() {
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("av1"));
+    transcodeExecutor.setExecutionTargets(List.of(AV1_WORKER));
+    transcodeExecutor.setTargetEncoders(
+        AV1_WORKER,
+        List.of(
+            WorkerVerifiedEncoder.builder()
+                .backend(av1Nvenc().backend())
+                .keyframeVerified(true)
+                .encodeFeatures(Set.of(VideoEncodeFeature.TEN_BIT, VideoEncodeFeature.PQ))
+                .build()));
+    transcodeExecutor.setTargetSoftwareEncoders(AV1_WORKER, List.of(libsvtav1()));
+    probeResults.setDefaultProbe(hdr10HevcProbe());
+
+    var outcome =
+        service.createSession(
+            createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+                .capabilityDeclaration(
+                    av1Declaration(List.of(CompatibleBase.SDR, CompatibleBase.PQ)))
+                .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+                .softwareContinuation(
+                    Optional.of(new SoftwareContinuation("av1", EncodeFormat.hdr(VideoRange.PQ))))
+                .build());
+
+    assertThat(outcome)
+        .isEqualTo(Outcome.rejected(new CreateStreamSessionRejection.NoEligibleVideoFormat()));
+    assertThat(capacityRefusals("no_software_encoder_after_hardware_failure")).isZero();
+  }
+
+  // The worker's hardware AV1 encoder lists no encode feature, and the worker has no software AV1
+  // encoder. The source is HDR10 HEVC.
+  private void useAnHdr10SourceAndAnAv1WorkerWithoutASoftwareEncoder() {
+    transcodeExecutor.setEncodableVideoCodecFamilies(Set.of("av1"));
+    transcodeExecutor.setExecutionTargets(List.of(AV1_WORKER));
+    transcodeExecutor.setTargetEncoders(AV1_WORKER, List.of(av1Nvenc()));
+    probeResults.setDefaultProbe(hdr10HevcProbe());
   }
 
   // An SDR AV1 session keeps 480p as its left variant on the AV1 worker without PQ while it
