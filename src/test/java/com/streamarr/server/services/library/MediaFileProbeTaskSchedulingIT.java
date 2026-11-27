@@ -37,6 +37,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
@@ -159,35 +160,53 @@ class MediaFileProbeTaskSchedulingIT extends AbstractIntegrationTest {
       "Should recover watcher scheduling when the database recovers without another file event")
   void shouldRecoverWatcherSchedulingWhenTheDatabaseRecoversWithoutAnotherFileEvent()
       throws Exception {
+    var backingOffWorker = new CompletableFuture<Thread>();
+    var rejectionEnded = new CountDownLatch(1);
     var watcher =
-        new DirectoryWatchingService(
-            libraries, _ -> true, libraryManagementService, ignoredFileValidator);
+        DirectoryWatchingService.builder()
+            .libraryRepository(libraries)
+            .fileStabilityChecker(_ -> true)
+            .libraryManagementService(libraryManagementService)
+            .ignoredFileValidator(ignoredFileValidator)
+            .sleeper(
+                _ -> {
+                  if (backingOffWorker.complete(Thread.currentThread())) {
+                    rejectionEnded.await();
+                    return;
+                  }
+
+                  // A second back-off means the retry failed too. It parks until stopWatching
+                  // interrupts it, so the failing retry does not run again without a pause.
+                  new CountDownLatch(1).await();
+                })
+            .build();
     try {
       watcher.addDirectory(directory);
       try (var _ = rejectProbeTaskRequests()) {
         Files.writeString(path, "replacement media");
-        await()
-            .atMost(Duration.ofSeconds(10))
-            .until(
-                () ->
-                    Boolean.TRUE.equals(
-                        jdbc.queryForObject(
-                            "SELECT is_called FROM adversarial_probe_request_attempt",
-                            Boolean.class)));
+        assertThat(backingOffWorker)
+            .as("the watcher backs off after the rejected request")
+            .succeedsWithin(REQUEST_BOUND);
+        assertThat(
+                jdbc.queryForObject(
+                    "SELECT is_called FROM adversarial_probe_request_attempt", Boolean.class))
+            .isTrue();
         assertThat(scheduledRequest()).isEmpty();
       }
 
+      rejectionEnded.countDown();
+
+      // Each stability check runs on its own thread, which ends once the retry has returned.
+      assertThat(backingOffWorker.resultNow().join(REQUEST_BOUND))
+          .as("the worker that backed off ends after one retry")
+          .isTrue();
       var replacementSize = Files.size(path);
-      await()
-          .atMost(Duration.ofSeconds(10))
-          .untilAsserted(
-              () ->
-                  assertThat(scheduledRequest())
-                      .hasValueSatisfying(
-                          request -> {
-                            assertThat(request.mediaFileId()).isEqualTo(mediaFile.getId());
-                            assertThat(request.snapshot().size()).isEqualTo(replacementSize);
-                          }));
+      assertThat(scheduledRequest())
+          .hasValueSatisfying(
+              request -> {
+                assertThat(request.mediaFileId()).isEqualTo(mediaFile.getId());
+                assertThat(request.snapshot().size()).isEqualTo(replacementSize);
+              });
     } finally {
       watcher.stopWatching();
     }

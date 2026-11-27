@@ -12,6 +12,7 @@ import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.support.AuthTestSupport;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -22,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -280,6 +282,39 @@ class DirectPlaySourceIT extends AbstractIntegrationTest {
       assertThat(lastBytesOf(body))
           .contains(OPENED_FILE_MARKER)
           .doesNotContain(SWAPPED_FILE_MARKER);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should close the connection short of the promised length when the file shrinks mid-answer")
+  void shouldCloseConnectionShortOfPromisedLengthWhenFileShrinksMidAnswer() throws Exception {
+    var source = largeSparseSource(directory.resolve("movie.mkv"), OPENED_FILE_MARKER);
+    startDirectPlay(source, SourceContainer.MP4);
+
+    var response =
+        client.send(get("source.mp4").build(), HttpResponse.BodyHandlers.ofInputStream());
+    try (var reader = Executors.newVirtualThreadPerTaskExecutor();
+        var body = response.body()) {
+      assertThat(body.readNBytes(1024)).hasSize(1024);
+      // The file is far larger than every socket buffer, so the server is still short of the new
+      // end when the file shrinks.
+      shrink(source, LARGE_SOURCE_LENGTH / 2);
+
+      var restOfBody = reader.submit(() -> body.transferTo(OutputStream.nullOutputStream()));
+
+      assertThat(response.headers().firstValue("Content-Length"))
+          .hasValue(String.valueOf(LARGE_SOURCE_LENGTH));
+      assertThat(restOfBody)
+          .failsWithin(Duration.ofSeconds(30))
+          .withThrowableThat()
+          .withCauseInstanceOf(IOException.class);
+    }
+  }
+
+  private static void shrink(Path path, long length) throws IOException {
+    try (var file = new RandomAccessFile(path.toFile(), "rw")) {
+      file.setLength(length);
     }
   }
 

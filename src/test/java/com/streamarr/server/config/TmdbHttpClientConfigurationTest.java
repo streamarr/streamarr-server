@@ -2,6 +2,8 @@ package com.streamarr.server.config;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +41,9 @@ class TmdbHttpClientConfigurationTest {
 
   private static final Duration PROBE_TIMEOUT = Duration.ofMillis(200);
   private static final Duration LOCAL_SERVER_TIMEOUT = Duration.ofSeconds(2);
+  // Longer than the 2 s ceiling of the backoff the client uses when no Retry-After arrives, so a
+  // client that ignored the header would retry too early.
+  private static final Duration RETRY_AFTER = Duration.ofSeconds(3);
 
   private final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
 
@@ -147,6 +152,49 @@ class TmdbHttpClientConfigurationTest {
                   assertThat(methanol.interceptors())
                       .anyMatch(RateLimitingInterceptor.class::isInstance));
     }
+  }
+
+  @Test
+  @DisplayName("Should not retry before the delay TMDB asks for when it answers too many requests")
+  void shouldNotRetryBeforeTheDelayTmdbAsksForWhenItAnswersTooManyRequests() throws Exception {
+    wireMock.stubFor(
+        get("/movie/3")
+            .inScenario("rate limited with a delay")
+            .whenScenarioStateIs(STARTED)
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", String.valueOf(RETRY_AFTER.toSeconds())))
+            .willSetStateTo("retried"));
+    wireMock.stubFor(
+        get("/movie/3")
+            .inScenario("rate limited with a delay")
+            .whenScenarioStateIs("retried")
+            .willReturn(aResponse().withStatus(200)));
+    var request =
+        HttpRequest.newBuilder()
+            .uri(URI.create(wireMock.baseUrl() + "/movie/3"))
+            .timeout(LOCAL_SERVER_TIMEOUT)
+            .GET()
+            .build();
+
+    try (var cache = HttpCache.newBuilder().cacheOnMemory(1024).build()) {
+      var client = new TmdbHttpClientConfiguration().tmdbHttpClient(1000, 30, cache);
+
+      var response = client.send(request, HttpResponse.BodyHandlers.discarding());
+
+      assertThat(response.statusCode()).isEqualTo(200);
+    }
+
+    var arrivals =
+        wireMock.findAll(getRequestedFor(urlEqualTo("/movie/3"))).stream()
+            .map(arrival -> arrival.getLoggedDate().toInstant())
+            .sorted()
+            .toList();
+    assertThat(arrivals).hasSize(2);
+    assertThat(Duration.between(arrivals.getFirst(), arrivals.getLast()))
+        .as("wait between the 429 and its retry")
+        .isGreaterThanOrEqualTo(RETRY_AFTER);
   }
 
   @Test

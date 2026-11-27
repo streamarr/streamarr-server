@@ -150,9 +150,11 @@ class WebSocketSlowClientIT extends AbstractIntegrationTest {
           .isEqualTo("HEALTHY");
       stalled.resumeReading();
       assertThat(stalled.awaitClosure().statusCode()).isEqualTo(4101);
+      activeSubscriptions.awaitCount(STATUS_FIELD, 1);
 
       try (var recovered = GraphQlTransportWsTestClient.connectWithBearer(port, bearer)) {
         recovered.subscribe("status", STATUS_SUBSCRIPTION);
+        activeSubscriptions.awaitCount(STATUS_FIELD, 2);
         var current =
             http.execute(
                     bearer, "query { libraries { id administration { status scanCompletedOn } } }")

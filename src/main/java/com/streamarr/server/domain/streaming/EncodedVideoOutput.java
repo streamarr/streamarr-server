@@ -1,6 +1,5 @@
 package com.streamarr.server.domain.streaming;
 
-import com.streamarr.server.exceptions.UnsupportedVideoEncodeException;
 import java.util.Comparator;
 import java.util.Optional;
 import lombok.Builder;

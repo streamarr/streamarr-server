@@ -1,6 +1,7 @@
 package com.streamarr.server.domain.streaming;
 
 import java.util.Arrays;
+import java.util.function.IntUnaryOperator;
 import lombok.NonNull;
 
 /**
@@ -18,6 +19,17 @@ public final class KeyframeIntervalCounts {
   /** The counts as unsigned 32-bit values, in interval order. The array is copied. */
   public static KeyframeIntervalCounts ofUnsigned(int @NonNull [] unsignedCounts) {
     return new KeyframeIntervalCounts(unsignedCounts.clone());
+  }
+
+  /**
+   * One count for each of {@code intervalCount} intervals, each read once from {@code
+   * unsignedCountOf} by its interval as an unsigned 32-bit value.
+   */
+  public static KeyframeIntervalCounts ofUnsigned(
+      int intervalCount, @NonNull IntUnaryOperator unsignedCountOf) {
+    var unsignedCounts = new int[intervalCount];
+    Arrays.setAll(unsignedCounts, unsignedCountOf);
+    return new KeyframeIntervalCounts(unsignedCounts);
   }
 
   public static KeyframeIntervalCounts of(long @NonNull ... counts) {

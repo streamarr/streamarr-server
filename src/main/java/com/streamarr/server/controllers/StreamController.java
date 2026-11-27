@@ -12,10 +12,12 @@ import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.SegmentDelivery;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentNames;
+import com.streamarr.server.services.streaming.StoredSegment;
 import com.streamarr.server.services.streaming.StreamingService;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.InputStream;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 @RestController
 @RequestMapping("/api/stream")
@@ -93,9 +96,18 @@ public class StreamController {
       responseCode = "200",
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(
+      responseCode = "206",
+      description = "The requested byte range",
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
-  public ResponseEntity<byte[]> getInitSegment(@PathVariable UUID sessionId) {
+  public ResponseEntity<Resource> getInitSegment(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
     if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
@@ -111,9 +123,18 @@ public class StreamController {
       responseCode = "200",
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(
+      responseCode = "206",
+      description = "The requested byte range",
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
-  public ResponseEntity<byte[]> getSegment(
+  public ResponseEntity<Resource> getSegment(
       @PathVariable UUID sessionId, @PathVariable String segmentName) {
     validatePathSegment(segmentName);
     var session = findSession(sessionId);
@@ -151,10 +172,19 @@ public class StreamController {
       responseCode = "200",
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(
+      responseCode = "206",
+      description = "The requested byte range",
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
   @ApiResponse(responseCode = "400", description = "Invalid segment path", content = @Content)
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
   @ApiResponse(responseCode = "503", description = "Segment unavailable", content = @Content)
-  public ResponseEntity<byte[]> getVariantInitSegment(
+  public ResponseEntity<Resource> getVariantInitSegment(
       @PathVariable UUID sessionId, @PathVariable String variantLabel) {
     validatePathSegment(variantLabel);
     var session = findSession(sessionId);
@@ -180,8 +210,17 @@ public class StreamController {
       responseCode = "200",
       content =
           @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
+  @ApiResponse(
+      responseCode = "206",
+      description = "The requested byte range",
+      content =
+          @Content(mediaType = "video/mp4", schema = @Schema(type = "string", format = "binary")))
   @ApiResponse(responseCode = "404", description = "Stream resource not found", content = @Content)
-  public ResponseEntity<byte[]> getVariantSegment(
+  @ApiResponse(
+      responseCode = "416",
+      description = "The requested range lies outside the segment",
+      content = @Content)
+  public ResponseEntity<Resource> getVariantSegment(
       @PathVariable UUID sessionId,
       @PathVariable String variantLabel,
       @PathVariable String segmentName) {
@@ -248,16 +287,12 @@ public class StreamController {
     }
 
     var resource = new OpenedSourceResource(source.get());
-    // Spring's own 416 still writes the whole file as its body.
-    if (range != null && !isSatisfiable(range, resource)) {
-      return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-          .header(HttpHeaders.CONTENT_RANGE, "bytes */" + resource.contentLength())
-          .build();
-    }
-
-    return ResponseEntity.ok()
-        .contentType(MediaType.parseMediaType(source.get().container().getMediaType()))
-        .body(resource);
+    return unsatisfiableRangeAnswer(range, resource, resource.contentLength())
+        .orElseGet(
+            () ->
+                ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(source.get().container().getMediaType()))
+                    .body(resource));
   }
 
   /**
@@ -291,15 +326,27 @@ public class StreamController {
   private Optional<DirectPlaySource> openSource(UUID sessionId, String extension) {
     requireTokenBoundTo(sessionId);
     var source = directPlaySources.open(sessionId, authorizationService.currentIdentity());
-    source.ifPresent(StreamController::closeWhenRequestCompletes);
+    source.ifPresent(opened -> closeWhenRequestCompletes(DirectPlaySource.class, opened::close));
     return source.filter(opened -> opened.container().getExtension().equals(extension));
   }
 
   // Spring writes the body after this controller returns, so the request's end closes the file.
-  private static void closeWhenRequestCompletes(DirectPlaySource source) {
+  private static void closeWhenRequestCompletes(Class<?> opened, Runnable close) {
     RequestContextHolder.currentRequestAttributes()
-        .registerDestructionCallback(
-            DirectPlaySource.class.getName(), source::close, RequestAttributes.SCOPE_REQUEST);
+        .registerDestructionCallback(opened.getName(), close, RequestAttributes.SCOPE_REQUEST);
+  }
+
+  // Spring's own 416 still writes the whole resource as its body.
+  private static Optional<ResponseEntity<Resource>> unsatisfiableRangeAnswer(
+      String range, Resource resource, long length) {
+    if (range == null || isSatisfiable(range, resource)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+            .header(HttpHeaders.CONTENT_RANGE, "bytes */" + length)
+            .build());
   }
 
   private static boolean isSatisfiable(String range, Resource resource) {
@@ -311,11 +358,10 @@ public class StreamController {
     }
   }
 
-  private ResponseEntity<byte[]> serveSegment(
+  private ResponseEntity<Resource> serveSegment(
       UUID sessionId, String variantLabel, String segmentName) {
     return switch (deliveryCoordinator.deliver(sessionId, variantLabel, segmentName)) {
-      case SegmentDelivery.Ready(byte[] data) ->
-          ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
+      case SegmentDelivery.Ready(var segment) -> segmentAnswer(segment);
       case SegmentDelivery.SessionEnded() -> ResponseEntity.notFound().build();
       case SegmentDelivery.Cancelled() ->
           ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
@@ -324,6 +370,21 @@ public class StreamController {
       case SegmentDelivery.Unrecoverable() ->
           ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
     };
+  }
+
+  private static ResponseEntity<Resource> segmentAnswer(StoredSegment segment) {
+    closeWhenRequestCompletes(StoredSegment.class, segment::close);
+    var request = currentRequest();
+    var resource = new StoredSegmentResource(segment);
+    var range = request.getHeader(HttpHeaders.RANGE);
+    return unsatisfiableRangeAnswer(range, resource, segment.length())
+        .or(() -> TomcatSendfile.answer(request, segment, MP4_MEDIA_TYPE))
+        .orElseGet(() -> ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(resource));
+  }
+
+  private static HttpServletRequest currentRequest() {
+    return ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
+        .getRequest();
   }
 
   private boolean hasNoVariant(StreamSession session, String variantLabel) {
@@ -399,6 +460,44 @@ public class StreamController {
     @Override
     public String getDescription() {
       return "direct-play source " + getFilename();
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return this == other;
+    }
+
+    @Override
+    public int hashCode() {
+      return System.identityHashCode(this);
+    }
+  }
+
+  /**
+   * Serves the segment that the request opened. Spring reads one stream for each range, and each
+   * stream starts at the segment's first byte.
+   */
+  private static final class StoredSegmentResource extends AbstractResource {
+
+    private final StoredSegment segment;
+
+    private StoredSegmentResource(StoredSegment segment) {
+      this.segment = segment;
+    }
+
+    @Override
+    public InputStream getInputStream() {
+      return segment.newInputStream();
+    }
+
+    @Override
+    public long contentLength() {
+      return segment.length();
+    }
+
+    @Override
+    public String getDescription() {
+      return "stored segment";
     }
 
     @Override

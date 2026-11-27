@@ -54,7 +54,8 @@ public final class LastWatchedExpression {
             .from(EPISODE)
             .innerJoin(SEASON)
             .on(EPISODE.SEASON_ID.eq(SEASON.ID))
-            .where(episodes);
+            .where(episodes)
+            .and(MediaFileConditions.hasFiles(EPISODE.ID));
     return greatest(
         latestCompletionAt(profileId, COMPLETION.COLLECTABLE_ID.in(episodeIds)),
         latestProgressAt(profileId, PROGRESS_FILE.MEDIA_ID.in(episodeIds)));

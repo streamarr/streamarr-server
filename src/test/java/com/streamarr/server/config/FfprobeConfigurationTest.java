@@ -41,6 +41,20 @@ class FfprobeConfigurationTest {
               "streaming.remote.source-root=/media");
 
   @Test
+  @DisplayName(
+      "Should bound a bitrate scan chunk by the measured keyframe interval limit of probe reports"
+          + " when the limit is configured")
+  void shouldBoundBitrateScanChunkByMeasuredKeyframeIntervalLimitOfProbeReportsWhenConfigured() {
+    contextRunner
+        .withPropertyValues(
+            "streaming.worker-session.probe-report.measured-keyframe-interval-limit=1234")
+        .run(
+            context ->
+                assertThat(context.getBean(BitrateScanner.class).measuredKeyframeIntervalLimit())
+                    .isEqualTo(1_234));
+  }
+
+  @Test
   @DisplayName("Should use worker probing when the server starts")
   void shouldUseWorkerProbingWhenTheServerStarts() {
     contextRunner.run(

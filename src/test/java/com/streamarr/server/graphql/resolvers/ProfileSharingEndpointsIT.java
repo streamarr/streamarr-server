@@ -234,8 +234,8 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
           .andExpect(
               jsonPath("$.data.acceptProfileShare.userErrors[0].message")
                   .value(
-                      "This offer was withdrawn (offerer no longer authorized) and can no longer"
-                          + " be accepted."));
+                      "This share invitation was withdrawn and can't be accepted. Reload the page"
+                          + " to see if other share invitations are available."));
       assertThat(shareRepository.findById(shareId).orElseThrow().getStatus())
           .isEqualTo(ProfileShareStatus.INVALIDATED);
 
@@ -457,13 +457,18 @@ class ProfileSharingEndpointsIT extends AbstractIntegrationTest {
             authTestSupport.accountBearer(owner),
             """
             mutation { cancelProfileShare(input: {shareId: "%s"}) {
-              share { status } userErrors { __typename } } }
+              share { status } userErrors { __typename ... on MutationError { message } } } }
             """
                 .formatted(shareId))
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.data.cancelProfileShare.userErrors[0].__typename")
-                .value("ShareNotPendingError"));
+                .value("ShareNotPendingError"))
+        .andExpect(
+            jsonPath("$.data.cancelProfileShare.userErrors[0].message")
+                .value(
+                    "This share invitation can't be canceled anymore. Reload the page to see what"
+                        + " changed."));
   }
 
   @Test

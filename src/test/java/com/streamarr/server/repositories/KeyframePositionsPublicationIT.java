@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories;
 
+import static com.streamarr.server.jooq.generated.tables.MediaFileContainerInfo.MEDIA_FILE_CONTAINER_INFO;
 import static com.streamarr.server.jooq.generated.tables.MediaFileKeyframePositions.MEDIA_FILE_KEYFRAME_POSITIONS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,6 +26,7 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.media.MediaFileContainerInfoRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.probe.PersistedProbeReader;
+import com.streamarr.server.support.ConstraintViolations;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -39,6 +41,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -56,6 +60,8 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
   private static final long TICKS_PER_SECOND = 90_000;
   // Two frames at 24 fps: the presentation delay that B-frame reordering gives a keyframe.
   private static final long B_FRAME_PRESENTATION_DELAY = 7_500;
+  private static final String UNAVAILABLE_REASON_CHECK =
+      "media_file_container_info_keyframes_unavailable_reason_check";
 
   @Autowired private MediaFileContainerInfoRepository repository;
   @Autowired private MediaFileRepository mediaFileRepository;
@@ -101,20 +107,56 @@ class KeyframePositionsPublicationIT extends AbstractIntegrationTest {
     assertThat(positionsRowCount(file.getId())).isZero();
   }
 
-  @Test
-  @DisplayName("Should store unavailable keyframes without positions")
-  void shouldStoreUnavailableKeyframesWithoutPositions() {
+  @ParameterizedTest
+  @EnumSource(KeyframesUnavailableReason.class)
+  @DisplayName("Should store the reason without positions when keyframes are unavailable")
+  void shouldStoreTheReasonWithoutPositionsWhenKeyframesAreUnavailable(
+      KeyframesUnavailableReason reason) {
     var file = createMediaFile();
-    var outcome =
-        success(
-            new KeyframeKnowledge.Unavailable(
-                KeyframesUnavailableReason.KEYFRAME_WITHOUT_TIMESTAMP));
+    var outcome = success(new KeyframeKnowledge.Unavailable(reason));
 
     repository.publish(publication(file.getId(), SNAPSHOT_A, outcome));
 
     assertThat(reader.find(file.getId()))
         .hasValueSatisfying(stored -> assertThat(stored.outcome()).isEqualTo(outcome));
     assertThat(positionsRowCount(file.getId())).isZero();
+  }
+
+  @Test
+  @DisplayName("Should refuse a stored unavailable reason when the server does not know the reason")
+  void shouldRefuseAStoredUnavailableReasonWhenTheServerDoesNotKnowTheReason() {
+    var file = createMediaFile();
+    repository.publish(
+        publication(
+            file.getId(),
+            SNAPSHOT_A,
+            success(
+                new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.TOO_MANY_KEYFRAMES))));
+
+    assertThatThrownBy(
+            () ->
+                transactionTemplate.executeWithoutResult(
+                    _ ->
+                        dsl.update(MEDIA_FILE_CONTAINER_INFO)
+                            .set(MEDIA_FILE_CONTAINER_INFO.KEYFRAMES_UNAVAILABLE_REASON, "UNKNOWN")
+                            .where(MEDIA_FILE_CONTAINER_INFO.MEDIA_FILE_ID.eq(file.getId()))
+                            .execute()))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .extracting(ConstraintViolations::constraintName)
+        .isEqualTo(UNAVAILABLE_REASON_CHECK);
+  }
+
+  // V126 only adds a value to the list, so every existing row satisfies the widened check.
+  @Test
+  @DisplayName("Should leave the unavailable reason check unvalidated when V126 widens it")
+  void shouldLeaveTheUnavailableReasonCheckUnvalidatedWhenV126WidensIt() {
+    var validated =
+        jdbc.queryForList(
+            "SELECT convalidated FROM pg_constraint WHERE conname = ?",
+            Boolean.class,
+            UNAVAILABLE_REASON_CHECK);
+
+    assertThat(validated).containsExactly(false);
   }
 
   @Test

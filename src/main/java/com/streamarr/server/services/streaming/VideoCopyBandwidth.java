@@ -23,8 +23,8 @@ import lombok.NonNull;
 /**
  * What a video copy costs beside the stream session's audio: the AVERAGE-BANDWIDTH that the
  * multivariant playlist advertises for the copy and the cost that the viewer's maximum bitrate
- * bounds (ADR 0050, ADR 0054), the BANDWIDTH that a measured copy advertises, and whether a
- * measured copy's media segments fit the segment cap (ADR 0037).
+ * bounds (ADR 0050, ADR 0054), the BANDWIDTH that a measured copy advertises, and whether a copy's
+ * media segments fit the segment cap, by their measured sizes or by an estimate (ADR 0037).
  */
 final class VideoCopyBandwidth {
 
@@ -40,6 +40,8 @@ final class VideoCopyBandwidth {
           "aac", new AudioEncoder(1_024, 1_024, AAC_SAMPLE_RATES),
           "ac3", new AudioEncoder(1_536, 256, AC3_SAMPLE_RATES),
           "eac3", new AudioEncoder(1_536, 256, AC3_SAMPLE_RATES));
+
+  private static final BigDecimal UNMEASURED_SEGMENT_RATE_FACTOR = BigDecimal.TWO;
 
   private VideoCopyBandwidth() {}
 
@@ -103,7 +105,9 @@ final class VideoCopyBandwidth {
    * Whether a measured segment of the copy, with the stream session's audio for the same interval,
    * exceeds the segment cap (ADR 0037). Copied audio without a measurement counts nothing, so the
    * measured video alone bounds the segment. False when the server did not measure the copied video
-   * over the source's keyframe positions: the worker's own cap check then fails the attempt.
+   * over the source's keyframe positions. {@link #estimateExceedsSegmentCap} bounds a copy whose
+   * video has no measurement. For a measurement that does not follow the keyframe positions, the
+   * worker's own cap check fails the attempt.
    */
   static boolean exceedsSegmentCap(
       @NonNull MediaProbe source,
@@ -121,6 +125,56 @@ final class VideoCopyBandwidth {
     return SegmentCap.isExceededBy(
         CopySegmentSizes.video(video.get(), playlist),
         audioSegmentSizes(source, audio, positions.get(), playlist));
+  }
+
+  /**
+   * Whether, without a measurement of the copied video, a segment's estimate exceeds the segment
+   * cap (ADR 0037). Each segment's estimate is twice the copy's unmeasured cost, which holds the
+   * stream session's audio, over the segment's EXTINF duration. The factor of two allows for a
+   * segment whose rate lies above the file's average, and for the segment's framing and the heap
+   * cost of its samples. When the probe knows no container bitrate, the file's size over the
+   * playlist's duration stands in for it. False when the server measured the copied video, which
+   * {@link #exceedsSegmentCap} bounds instead.
+   */
+  static boolean estimateExceedsSegmentCap(
+      @NonNull MediaProbe source,
+      @NonNull AudioDecision audio,
+      @NonNull CopyMediaPlaylist playlist) {
+    if (measuredVideo(source).isPresent()) {
+      return false;
+    }
+
+    var bytesPerSecond =
+        BigDecimal.valueOf(unmeasuredCost(source, audio, containerOrFileBitrate(source, playlist)))
+            .multiply(UNMEASURED_SEGMENT_RATE_FACTOR)
+            .divide(BigDecimal.valueOf(Byte.SIZE));
+    var estimates =
+        playlist.segments().stream()
+            .map(
+                segment ->
+                    new SegmentSize(
+                        bytesPerSecond.multiply(segment.extinfSeconds()),
+                        segment.extinfSeconds(),
+                        BigInteger.ZERO))
+            .toList();
+    return SegmentCap.isExceededBy(estimates, List.of());
+  }
+
+  /**
+   * The container bitrate, or without one the source file's size over the playlist's duration. Zero
+   * when the server knows neither, or no stream copy lists the playlist.
+   */
+  private static long containerOrFileBitrate(MediaProbe source, CopyMediaPlaylist playlist) {
+    if (source.bitrate() > 0 || !playlist.isKnown()) {
+      return source.bitrate();
+    }
+
+    return source
+        .sourceSnapshot()
+        .map(
+            snapshot ->
+                averageBitRate(BigInteger.valueOf(snapshot.size()), playlist.durationSeconds()))
+        .orElse(0L);
   }
 
   private static List<SegmentSize> audioSegmentSizes(
@@ -181,15 +235,20 @@ final class VideoCopyBandwidth {
   }
 
   private static long unmeasuredCost(MediaProbe source, AudioDecision audio) {
+    return unmeasuredCost(source, audio, source.bitrate());
+  }
+
+  private static long unmeasuredCost(
+      MediaProbe source, AudioDecision audio, long containerBitrate) {
     var copiesAudio = audio.mode() == AudioMode.COPY;
     var videoBitrate = copiedStreamBitrate(source);
     if (videoBitrate.isEmpty() && copiesAudio) {
-      return Math.max(source.bitrate(), audio.bitrate());
+      return Math.max(containerBitrate, audio.bitrate());
     }
 
-    var averageBandwidth = videoBitrate.orElse(source.bitrate()) + audio.bitrate();
+    var averageBandwidth = videoBitrate.orElse(containerBitrate) + audio.bitrate();
     if (copiesAudio && source.audioBitrate().isEmpty()) {
-      return Math.max(averageBandwidth, source.bitrate());
+      return Math.max(averageBandwidth, containerBitrate);
     }
 
     return averageBandwidth;

@@ -27,10 +27,12 @@ import com.streamarr.server.fakes.FakeLearnedStreamEndRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.filepath.FilepathCodec;
+import com.streamarr.server.services.streaming.ContainedFailureMetrics;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.LearnedStreamEndListener;
@@ -70,7 +72,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import lombok.Builder;
 import lombok.NonNull;
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -83,18 +86,20 @@ import org.springframework.context.ApplicationEventPublisher;
 class WorkerPlaybackRecoveryIT {
 
   private static final UUID SOURCE_NAMESPACE = UUID.randomUUID();
+  private static final int WORKER_SLOTS = 2;
 
-  @TempDir Path tempDir;
+  @TempDir static Path tempDir;
 
-  private final WorkerEvents events = new WorkerEvents();
+  private static final WorkerEvents events = new WorkerEvents();
+  private static Path mediaRoot;
+  private static LocalSegmentStore segments;
+  private static WorkerSessionServer server;
+  private static WorkerContainerFixture worker;
   private Path sourceRoot;
-  private LocalSegmentStore segments;
-  private WorkerSessionServer server;
-  private WorkerContainerFixture worker;
 
-  @BeforeEach
-  void startWorker() throws Exception {
-    sourceRoot = Files.createDirectory(tempDir.resolve("media"));
+  @BeforeAll
+  static void startWorker() throws Exception {
+    mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     segments = new LocalSegmentStore(tempDir.resolve("segments"));
     server =
         WorkerSessionServer.builder()
@@ -107,15 +112,26 @@ class WorkerPlaybackRecoveryIT {
         WorkerContainerFixture.builder()
             .workerSessions(server)
             .sourceNamespaceId(SOURCE_NAMESPACE)
-            .sourceRoot(sourceRoot)
-            .availableSlots(2)
+            .sourceRoot(mediaRoot)
+            .availableSlots(WORKER_SLOTS)
             .build();
     server.start();
     worker.start();
   }
 
-  @AfterEach
-  void stopWorker() {
+  // Every test writes movie.mp4, so each test writes into its own directory of the shared source
+  // root. Closing a rig stops its job attempts, which frees their slots before close returns.
+  @BeforeEach
+  void startFromAnIdleWorker() throws IOException {
+    events.removeListeners();
+    assertThat(server.availableSlots(SOURCE_NAMESPACE))
+        .as("free slots of the shared worker; a leftover encode would hold one")
+        .isEqualTo(WORKER_SLOTS);
+    sourceRoot = Files.createDirectory(mediaRoot.resolve(UUID.randomUUID().toString()));
+  }
+
+  @AfterAll
+  static void stopWorker() {
     try (var _ = server;
         var _ = worker) {
       // Closes the worker, then the server that it connects to.
@@ -316,7 +332,7 @@ class WorkerPlaybackRecoveryIT {
 
   private ProbeOutcome.Success probe(Path source) {
     var outcome =
-        new RemoteFfprobeService(server, SOURCE_NAMESPACE, source.getParent())
+        new RemoteFfprobeService(server, SOURCE_NAMESPACE, mediaRoot)
             .probe(
                 ProbeExecutionRequest.builder()
                     .sourcePath(source)
@@ -442,6 +458,10 @@ class WorkerPlaybackRecoveryIT {
       listen(type, published::add);
       return published;
     }
+
+    private void removeListeners() {
+      listeners.clear();
+    }
   }
 
   private final class PlaybackRig implements AutoCloseable {
@@ -456,7 +476,7 @@ class WorkerPlaybackRecoveryIT {
 
     private PlaybackRig(PlayedSource played) {
       var source = played.file();
-      var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE, source.getParent());
+      var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE, mediaRoot);
       var probes = new FakeMediaFileContainerInfoRepository();
       var files = new FakeMediaFileRepository();
       var file =
@@ -517,7 +537,9 @@ class WorkerPlaybackRecoveryIT {
               .maximumFormatAttempts(3)
               .build();
       events.listen(VideoCopyOutputMismatchEvent.class, sessions::onVideoCopyOutputMismatch);
-      learning = new LearnedStreamEndListener(registry, learnedEnds, new SimpleMeterRegistry());
+      learning =
+          new LearnedStreamEndListener(
+              registry, learnedEnds, new ContainedFailureMetrics(new SimpleMeterRegistry()));
       events.listen(JobAttemptCompletedEvent.class, learning::onJobAttemptCompleted);
       var shortCopies = new ShortCopyListener(lifecycle.lifecycle(), events);
       events.listen(JobAttemptCompletedEvent.class, shortCopies::onJobAttemptCompleted);
@@ -554,9 +576,8 @@ class WorkerPlaybackRecoveryIT {
     }
 
     private byte[] deliver(StreamSession session, String variant, String name) {
-      var result = delivery.deliver(session.getSessionId(), variant, variant + "/" + name);
-      assertThat(result).isInstanceOf(SegmentDelivery.Ready.class);
-      return ((SegmentDelivery.Ready) result).data();
+      return StoredSegments.bytes(
+          delivery.deliver(session.getSessionId(), variant, variant + "/" + name));
     }
 
     private MediaProbe readProbe() {

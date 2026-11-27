@@ -14,6 +14,7 @@ import com.streamarr.server.exceptions.ProbeExecutionException;
 import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeRequest;
 import java.nio.file.Path;
 import java.util.UUID;

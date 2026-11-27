@@ -103,6 +103,7 @@ class WatchStatusDataLoaderTest {
     var seasonEpisode =
         episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
     var seasonFile = mediaFileRepository.save(buildMatchedMediaFile(seasonEpisode.getId()));
+    seasonEpisode.addFile(seasonFile);
     sessionProgressRepository.save(
         progressBuilder(PROFILE_ID, seasonFile.getId()).positionSeconds(300).build());
 
@@ -112,6 +113,7 @@ class WatchStatusDataLoaderTest {
     var seriesEpisode =
         episodeRepository.save(Episode.builder().episodeNumber(1).season(seriesSeason).build());
     var seriesFile = mediaFileRepository.save(buildMatchedMediaFile(seriesEpisode.getId()));
+    seriesEpisode.addFile(seriesFile);
     sessionProgressRepository.save(
         progressBuilder(PROFILE_ID, seriesFile.getId()).positionSeconds(300).build());
 

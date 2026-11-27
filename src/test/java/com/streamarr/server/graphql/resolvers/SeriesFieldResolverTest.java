@@ -118,7 +118,7 @@ class SeriesFieldResolverTest {
     var season = Season.builder().title("Season 1").seasonNumber(1).build();
     season.setId(UUID.randomUUID());
 
-    when(seriesService.findSeasons(series.getId())).thenReturn(List.of(season));
+    when(seriesService.findSeasonsWithFiles(series.getId())).thenReturn(List.of(season));
 
     Integer seasonNumber =
         dgsQueryExecutor.executeAndExtractJsonPath(

@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.VideoStreamProperties;
 import com.streamarr.server.exceptions.ProbeContractViolationException;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeChapter;
 import com.streamarr.transcode.v1.ProbeContainerInfo;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
@@ -34,7 +35,7 @@ final class RemoteProbeResultMapper {
       new RemotePlaybackFactsMapper(RemoteProbeResultMapper::toDuration);
 
   ProbeOutcome map(ProbeAttemptReport report) {
-    var result = report.result();
+    var result = report.getResult();
     if (result.hasMedia()) {
       return success(report);
     }
@@ -47,7 +48,7 @@ final class RemoteProbeResultMapper {
   }
 
   private ProbeOutcome.Success success(ProbeAttemptReport report) {
-    var result = report.result();
+    var result = report.getResult();
     var media = result.getMedia();
     if (media.getStreamsList().stream()
         .noneMatch(stream -> "video".equals(stream.getCodecType()))) {
@@ -60,7 +61,7 @@ final class RemoteProbeResultMapper {
         media.getStreamsList().stream()
             .map(stream -> stream(stream, result.getProbeVersion()))
             .toList();
-    var keyframes = keyframeMapper.map(media, report.keyframePositionsParts());
+    var keyframes = keyframeMapper.map(media, report);
     var chosenVideoStream =
         reportsPlaybackFacts
             ? Optional.of(playbackFactsMapper.chosenVideoStream(media, streams))
@@ -83,7 +84,8 @@ final class RemoteProbeResultMapper {
         .chosenVideoStream(chosenVideoStream)
         .streamTitlesOmitted(titleOmission(media, reportsPlaybackFacts))
         .streamMeasurements(
-            streamMeasurementsMapper.map(media, keyframes, report.streamMeasurementParts()))
+            streamMeasurementsMapper.map(
+                media, keyframes, report.getStreamMeasurementIntervalsList()))
         .build();
   }
 

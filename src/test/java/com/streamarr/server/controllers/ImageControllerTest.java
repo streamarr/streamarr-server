@@ -1,8 +1,15 @@
 package com.streamarr.server.controllers;
 
+import static com.streamarr.server.fakes.TestImages.OPAQUE_TEAL;
+import static com.streamarr.server.fakes.TestImages.alphaOfCornerPixel;
+import static com.streamarr.server.fakes.TestImages.centrePixelOf;
+import static com.streamarr.server.fakes.TestImages.createGifImage;
+import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static com.streamarr.server.fixtures.ArtworkStepsAttemptFixture.attemptFor;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Named.named;
 import static org.springframework.http.HttpHeaders.IF_NONE_MATCH;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -22,11 +29,16 @@ import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -73,6 +85,79 @@ class ImageControllerTest {
 
     assertThat(result.getResponse().getContentType()).isEqualTo("image/jpeg");
     assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(imageData);
+  }
+
+  @Test
+  @DisplayName(
+      "Should serve every variant as a transparent PNG when artwork has transparent pixels")
+  void shouldServeEveryVariantAsTransparentPngWhenArtworkHasTransparentPixels() throws Exception {
+    var companyId = UUID.randomUUID();
+    var logo =
+        imageService.processImage(
+            createPngImageWithTransparentBorder(),
+            ImageType.LOGO,
+            companyId,
+            ImageEntityType.COMPANY);
+    imageService.saveImages(logo.images(), attemptFor(logo.images()));
+
+    for (var image :
+        imageRepository.findByEntityIdAndEntityType(companyId, ImageEntityType.COMPANY)) {
+      var response =
+          mockMvc
+              .perform(get("/api/images/{imageId}", image.getId()))
+              .andExpect(status().isOk())
+              .andReturn()
+              .getResponse();
+
+      assertThat(response.getContentType())
+          .as("%s content type", image.getVariant())
+          .isEqualTo("image/png");
+      assertThat(alphaOfCornerPixel(response.getContentAsByteArray()))
+          .as("%s corner alpha", image.getVariant())
+          .isZero();
+      assertThat(centrePixelOf(response.getContentAsByteArray()))
+          .as("%s centre pixel", image.getVariant())
+          .isEqualTo(OPAQUE_TEAL);
+    }
+  }
+
+  @Test
+  @DisplayName("Should answer image/png when a file named .jpg holds PNG bytes")
+  void shouldAnswerImagePngWhenFileNamedJpgHoldsPngBytes() throws Exception {
+    var image = createImageWithFile(createSolidPngImage(16, 16, 0x00A0A0));
+
+    var result =
+        mockMvc
+            .perform(get("/api/images/{imageId}", image.getId()))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertThat(result.getResponse().getContentType()).isEqualTo("image/png");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("storedBytesThatAreNeitherJpegNorPng")
+  @DisplayName("Should answer application/octet-stream when stored bytes are neither JPEG nor PNG")
+  void shouldAnswerOctetStreamWhenStoredBytesAreNeitherJpegNorPng(byte[] storedBytes)
+      throws Exception {
+    var image = createImageWithFile(storedBytes);
+
+    var result =
+        mockMvc
+            .perform(get("/api/images/{imageId}", image.getId()))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertThat(result.getResponse().getContentType()).isEqualTo("application/octet-stream");
+  }
+
+  private static Stream<Named<byte[]>> storedBytesThatAreNeitherJpegNorPng() {
+    var png = createSolidPngImage(16, 16, 0x00A0A0);
+    return Stream.of(
+        named("an empty file", new byte[0]),
+        named("a GIF", createGifImage()),
+        named("a PNG signature cut one byte short", Arrays.copyOf(png, 7)),
+        named("a JPEG start-of-image marker alone", new byte[] {(byte) 0xFF, (byte) 0xD8}));
   }
 
   @Test

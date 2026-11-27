@@ -1,17 +1,25 @@
 package com.streamarr.server.services.streaming.local;
 
+import com.google.common.io.MoreFiles;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.exceptions.UnsupportedSegmentFolderException;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.SegmentNames;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.StoredSegment;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.file.DirectoryStream;
+import java.nio.ByteBuffer;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
+import java.nio.file.NotDirectoryException;
 import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,22 +30,38 @@ public class LocalSegmentStore implements SegmentStore {
 
   private final Path baseDir;
   private final ConcurrentHashMap<UUID, Path> sessionDirs = new ConcurrentHashMap<>();
-  private final MutexFactory<Path> initializationSegmentLocks = new MutexFactory<>();
+  private final MutexFactory<Path> publicationLocks = new MutexFactory<>();
 
   public LocalSegmentStore(Path baseDir) {
+    if (!deletesWithoutFollowingSoftLinks(baseDir)) {
+      throw new UnsupportedSegmentFolderException(baseDir);
+    }
+
     this.baseDir = baseDir;
   }
 
+  // MoreFiles.deleteRecursively deletes nothing on a file system without secure directory streams.
+  private static boolean deletesWithoutFollowingSoftLinks(Path segmentFolder) {
+    try (var entries = Files.newDirectoryStream(Files.createDirectories(segmentFolder))) {
+      return entries instanceof SecureDirectoryStream;
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed to open segment folder: " + segmentFolder, e);
+    }
+  }
+
   @Override
-  public byte[] readSegment(UUID sessionId, String segmentName) {
-    var segmentPath = resolveSegmentPath(sessionId, segmentName);
+  public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
+    var segmentPath = findSegmentPath(sessionId, segmentName);
+    if (segmentPath.isEmpty()) {
+      return Optional.empty();
+    }
 
     try {
-      return Files.readAllBytes(segmentPath);
-    } catch (NoSuchFileException e) {
-      throw new TranscodeException("Segment not found: " + segmentName, e);
+      return Optional.of(OpenedSegmentFile.open(segmentPath.get()));
+    } catch (NoSuchFileException _) {
+      return Optional.empty();
     } catch (IOException e) {
-      throw new UncheckedIOException("Failed to read segment: " + segmentName, e);
+      throw new UncheckedIOException("Failed to open segment: " + segmentName, e);
     }
   }
 
@@ -47,10 +71,10 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   @Override
-  public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
+  public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
     try {
       Files.createDirectories(baseDir);
-      var temporary = PreparedSegmentFile.create(baseDir, data);
+      var temporary = PreparedSegmentFile.create(baseDir);
       return new LocalPreparedSegment(sessionId, segmentName, temporary);
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to prepare segment: " + segmentName, e);
@@ -71,32 +95,76 @@ public class LocalSegmentStore implements SegmentStore {
     }
 
     @Override
-    public SegmentPublication publish() {
-      getOutputDirectory(sessionId);
-      var segmentPath = resolveSegmentPath(sessionId, segmentName);
+    public void append(ByteBuffer bytes) {
       try {
-        Files.createDirectories(segmentPath.getParent());
-        if (SegmentNames.isInitSegment(segmentName)) {
-          return publishInitialization(segmentPath);
-        }
+        temporary.append(bytes);
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to write segment upload: " + segmentName, e);
+      }
+    }
 
-        temporary.publishTo(segmentPath);
-        return SegmentPublication.PUBLISHED;
+    @Override
+    public SegmentPublication publish() {
+      getOutputDirectory();
+      var segmentPath = resolveSegmentPath();
+      try {
+        createOrReuseFolder(segmentPath.getParent());
+        return publishOnce(segmentPath);
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
       }
     }
 
-    private SegmentPublication publishInitialization(Path segmentPath) throws IOException {
+    private Path getOutputDirectory() {
+      var sessionDir = sessionDirs.computeIfAbsent(sessionId, _ -> createSessionDirectory());
+
+      try {
+        // A soft link can take this folder's place after the store created it. A variant folder
+        // created through that soft link would sit outside the segment folder.
+        requireFolder(sessionDir);
+        return sessionDir;
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to reuse session directory", e);
+      }
+    }
+
+    private Path createSessionDirectory() {
+      var dir = baseDir.resolve(sessionId.toString());
+
+      try {
+        createOrReuseFolder(dir);
+        return dir;
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to create session directory", e);
+      }
+    }
+
+    private Path resolveSegmentPath() {
+      return findSegmentPath(sessionId, segmentName)
+          .orElseThrow(
+              () -> new TranscodeException("No output directory for session: " + sessionId));
+    }
+
+    private SegmentPublication publishOnce(Path segmentPath) throws IOException {
       // Only this store writes a session's directory, so serializing publications per path makes
       // the first one create-if-absent on any volume that can rename.
-      var lock = initializationSegmentLocks.getMutex(segmentPath);
+      var lock = publicationLocks.getMutex(segmentPath);
       lock.lock();
       try {
-        return temporary.publishUnlessStored(segmentPath);
+        return publishInitializationOrMediaSegment(segmentPath);
       } finally {
         lock.unlock();
       }
+    }
+
+    private SegmentPublication publishInitializationOrMediaSegment(Path segmentPath)
+        throws IOException {
+      if (SegmentNames.isInitSegment(segmentName)) {
+        return temporary.publishUnlessStored(segmentPath);
+      }
+
+      temporary.publishWhenNothingIsStored(segmentPath);
+      return SegmentPublication.PUBLISHED;
     }
 
     @Override
@@ -106,22 +174,6 @@ public class LocalSegmentStore implements SegmentStore {
       } catch (IOException e) {
         throw new UncheckedIOException("Failed to clean up segment upload: " + segmentName, e);
       }
-    }
-  }
-
-  public Path getOutputDirectory(UUID sessionId) {
-    return sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
-  }
-
-  public Path getOutputDirectory(UUID sessionId, String variantLabel) {
-    var sessionDir = getOutputDirectory(sessionId);
-    var variantDir = sessionDir.resolve(variantLabel);
-
-    try {
-      Files.createDirectories(variantDir);
-      return variantDir;
-    } catch (IOException e) {
-      throw new UncheckedIOException("Failed to create variant directory", e);
     }
   }
 
@@ -143,11 +195,6 @@ public class LocalSegmentStore implements SegmentStore {
     sessionDirs.clear();
   }
 
-  private Path resolveSegmentPath(UUID sessionId, String segmentName) {
-    return findSegmentPath(sessionId, segmentName)
-        .orElseThrow(() -> new TranscodeException("No output directory for session: " + sessionId));
-  }
-
   /**
    * Empty until the session's first published segment creates the directory — in remote mode that's
    * the worker's first upload, so absence is a normal pre-startup state, not an error.
@@ -166,27 +213,28 @@ public class LocalSegmentStore implements SegmentStore {
     return Optional.of(resolved);
   }
 
-  private Path createSessionDirectory(UUID sessionId) {
-    var dir = baseDir.resolve(sessionId.toString());
-
+  // Files.createDirectories accepts a soft link to a folder in the folder's place, and the store
+  // would then write through that soft link.
+  private static void createOrReuseFolder(Path folder) throws IOException {
     try {
-      Files.createDirectories(dir);
-      return dir;
-    } catch (IOException e) {
-      throw new UncheckedIOException("Failed to create session directory", e);
+      Files.createDirectory(folder);
+    } catch (FileAlreadyExistsException _) {
+      requireFolder(folder);
+    }
+  }
+
+  private static void requireFolder(Path path) throws IOException {
+    var attributes =
+        Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+    if (!attributes.isDirectory()) {
+      throw new NotDirectoryException(path.toString());
     }
   }
 
   private void deleteDirectoryRecursively(Path dir) {
-    try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
-      for (var entry : stream) {
-        if (!Files.isDirectory(entry)) {
-          Files.deleteIfExists(entry);
-          continue;
-        }
-        deleteDirectoryRecursively(entry);
-      }
-      Files.deleteIfExists(dir);
+    try {
+      // Deletes a soft link itself, never what it points to.
+      MoreFiles.deleteRecursively(dir);
     } catch (IOException e) {
       log.warn("Failed to clean up session directory: {}", dir, e);
     }

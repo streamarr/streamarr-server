@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.media;
 
 import static com.streamarr.server.jooq.generated.tables.Episode.EPISODE;
 
+import com.streamarr.server.repositories.MediaFileConditions;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,7 @@ public class EpisodeRepositoryCustomImpl implements EpisodeRepositoryCustom {
     return dsl.select(EPISODE.ID, EPISODE.SEASON_ID)
         .from(EPISODE)
         .where(EPISODE.SEASON_ID.in(seasonIds))
+        .and(MediaFileConditions.hasFiles(EPISODE.ID))
         .fetchGroups(EPISODE.SEASON_ID, EPISODE.ID);
   }
 }

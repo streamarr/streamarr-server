@@ -17,10 +17,11 @@ import com.streamarr.transcode.v1.BitrateScanChunkResult;
 import com.streamarr.transcode.v1.BitrateScanChunkStream;
 import com.streamarr.transcode.v1.BitrateScanChunkStreams;
 import com.streamarr.transcode.v1.BitrateScanCopyChangesPackets;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeFailure;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
@@ -139,11 +140,8 @@ class RemoteBitrateScanChunkMapperTest {
   @DisplayName("Should report a media error when the worker cannot read the chunk to its end")
   void shouldReportAMediaErrorWhenTheWorkerCannotReadTheChunkToItsEnd() {
     var report =
-        new ProbeAttemptReport(
-            ProbeAttemptResult.newBuilder()
-                .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
-                .build(),
-            List.of());
+        report(
+            ProbeAttemptResult.newBuilder().setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA));
 
     assertThat(mapper.map(chunk(), report))
         .isEqualTo(new BitrateScanChunkOutcome.MediaError(ProbeError.INVALID_MEDIA));
@@ -154,11 +152,9 @@ class RemoteBitrateScanChunkMapperTest {
       "Should leave the chunk waiting for a worker when the worker had no free unit for it")
   void shouldLeaveTheChunkWaitingForAWorkerWhenTheWorkerHadNoFreeUnitForIt() {
     var report =
-        new ProbeAttemptReport(
+        report(
             ProbeAttemptResult.newBuilder()
-                .setFailure(ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY)
-                .build(),
-            List.of());
+                .setFailure(ProbeFailure.PROBE_FAILURE_NO_FREE_CAPACITY));
     var chunk = chunk();
 
     assertThatThrownBy(() -> mapper.map(chunk, report))
@@ -214,7 +210,7 @@ class RemoteBitrateScanChunkMapperTest {
             .setEndTime(firstPresentationTime + 1_024));
   }
 
-  private static List<ProbeStreamMeasurementPart> audioParts() {
+  private static List<StreamMeasurementIntervals> audioParts() {
     return List.of(intervals(VIDEO, 600, 400), intervals(AUDIO, 30, 70));
   }
 
@@ -234,12 +230,8 @@ class RemoteBitrateScanChunkMapperTest {
     return Stream.of(
         arguments(
             "a probe result",
-            new ProbeAttemptReport(
-                ProbeAttemptResult.newBuilder().setMedia(ProbeMediaInfo.newBuilder()).build(),
-                List.of())),
-        arguments(
-            "no outcome",
-            new ProbeAttemptReport(ProbeAttemptResult.getDefaultInstance(), List.of())),
+            report(ProbeAttemptResult.newBuilder().setMedia(ProbeMediaInfo.newBuilder()))),
+        arguments("no outcome", report(ProbeAttemptResult.newBuilder())),
         arguments("no result", report(BitrateScanChunkResult.getDefaultInstance(), List.of())),
         arguments(
             "a copy change in a stream it was not asked to measure",
@@ -349,22 +341,29 @@ class RemoteBitrateScanChunkMapperTest {
   }
 
   /**
-   * One part with these bytes in consecutive intervals, and one packet in each interval that holds
-   * bytes.
+   * One stream with these bytes in consecutive intervals, and one packet in each interval that
+   * holds bytes.
    */
-  private static ProbeStreamMeasurementPart intervals(int streamIndex, int... bytes) {
-    var part = ProbeStreamMeasurementPart.newBuilder().setStreamIndex(streamIndex);
+  private static StreamMeasurementIntervals intervals(int streamIndex, int... bytes) {
+    var intervals = StreamMeasurementIntervals.newBuilder().setStreamIndex(streamIndex);
     for (var intervalBytes : bytes) {
-      part.addKeyframeIntervalBytes(intervalBytes)
+      intervals
+          .addKeyframeIntervalBytes(intervalBytes)
           .addKeyframeIntervalPacketCounts(Math.min(intervalBytes, 1));
     }
 
-    return part.build();
+    return intervals.build();
   }
 
   private static ProbeAttemptReport report(
-      BitrateScanChunkResult result, List<ProbeStreamMeasurementPart> parts) {
-    return new ProbeAttemptReport(
-        ProbeAttemptResult.newBuilder().setBitrateScanChunk(result).build(), List.of(), parts);
+      BitrateScanChunkResult result, List<StreamMeasurementIntervals> intervals) {
+    return ProbeAttemptReport.newBuilder()
+        .setResult(ProbeAttemptResult.newBuilder().setBitrateScanChunk(result))
+        .addAllStreamMeasurementIntervals(intervals)
+        .build();
+  }
+
+  private static ProbeAttemptReport report(ProbeAttemptResult.Builder result) {
+    return ProbeAttemptReport.newBuilder().setResult(result).build();
   }
 }

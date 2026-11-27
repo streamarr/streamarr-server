@@ -6,6 +6,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.concurrency.NanoClock;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
+import com.streamarr.server.services.streaming.ContainedFailureMetrics;
 import com.streamarr.server.services.streaming.HardwareEncoderFailureListener;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.HlsStreamingService;
@@ -30,6 +31,7 @@ import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.local.FileStoreSegmentFolderSpace;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.local.SegmentFolderLeftovers;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.file.Path;
 import org.springframework.context.ApplicationEventPublisher;
@@ -55,7 +57,13 @@ public class StreamingConfig {
 
   @Bean
   public LocalSegmentStore segmentStore(StreamingProperties properties) {
-    return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
+    // The store creates the folder, so the server decides whether it owns a folder that exists.
+    // Nothing uses the store before this method returns, so the folder holds nothing of it yet.
+    var store = new LocalSegmentStore(Path.of(properties.segmentBasePath()));
+    properties
+        .ownedSegmentFolder()
+        .ifPresent(segmentFolder -> new SegmentFolderLeftovers(segmentFolder).delete());
+    return store;
   }
 
   @Bean
@@ -155,8 +163,8 @@ public class StreamingConfig {
   public LearnedStreamEndListener learnedStreamEndListener(
       RuntimeStreamSessionRegistry runtimeRegistry,
       LearnedStreamEndRepository learnedStreamEnds,
-      MeterRegistry meterRegistry) {
-    return new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, meterRegistry);
+      ContainedFailureMetrics containedFailures) {
+    return new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, containedFailures);
   }
 
   @Bean

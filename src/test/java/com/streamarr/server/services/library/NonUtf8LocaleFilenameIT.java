@@ -18,9 +18,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
-import org.testcontainers.utility.MountableFile;
 
 /**
  * Reproduces the locale-dependent filename corruption the shipped container hits, and pins the
@@ -72,17 +72,18 @@ class NonUtf8LocaleFilenameIT {
   static void probeFilenamesUnderAnAsciiLocale() throws Exception {
     container =
         new GenericContainer<>(JDK_IMAGE)
-            .withCopyFileToContainer(
-                MountableFile.forHostPath(codeSourceOf(LibraryManagementService.class)),
-                "/app/classes")
-            .withCopyFileToContainer(
-                MountableFile.forHostPath(codeSourceOf(NonUtf8LocaleFilenameIT.class)),
-                "/app/test-classes")
-            .withCopyFileToContainer(
-                MountableFile.forHostPath(codeSourceOf(MediaSourceRef.class)),
-                "/app/lib/transcode-contract.jar")
-            .withCopyFileToContainer(
-                MountableFile.forHostPath(codeSourceOf(Message.class)), "/app/lib/protobuf.jar")
+            .withFileSystemBind(
+                codeSourceOf(LibraryManagementService.class), "/app/classes", BindMode.READ_ONLY)
+            .withFileSystemBind(
+                codeSourceOf(NonUtf8LocaleFilenameIT.class),
+                "/app/test-classes",
+                BindMode.READ_ONLY)
+            .withFileSystemBind(
+                codeSourceOf(MediaSourceRef.class),
+                "/app/lib/transcode-contract.jar",
+                BindMode.READ_ONLY)
+            .withFileSystemBind(
+                codeSourceOf(Message.class), "/app/lib/protobuf.jar", BindMode.READ_ONLY)
             .withEnv("LC_ALL", "POSIX")
             .withEnv("LANG", "POSIX")
             .withCommand("sleep", "infinity");
@@ -261,7 +262,7 @@ class NonUtf8LocaleFilenameIT {
     return new String(Base64.getDecoder().decode(value), UTF_8);
   }
 
-  private static Path codeSourceOf(Class<?> type) throws URISyntaxException {
-    return Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
+  private static String codeSourceOf(Class<?> type) throws URISyntaxException {
+    return Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
   }
 }

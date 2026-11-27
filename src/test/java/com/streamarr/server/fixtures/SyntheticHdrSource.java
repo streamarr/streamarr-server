@@ -102,7 +102,7 @@ public record SyntheticHdrSource(
                 "-framerate",
                 String.valueOf(FRAME_RATE),
                 "-i",
-                "/media/" + sourceRoot.relativize(elementary),
+                worker.containerPath(elementary),
                 "-c",
                 "copy"));
     muxing.addAll(List.of("-tag:v", "hvc1", "-f", "mp4"));

@@ -3,46 +3,78 @@ package com.streamarr.server.services.metadata;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 
 import com.github.mizosoft.methanol.HttpCache;
+import com.github.tomakehurst.wiremock.verification.LoggedRequest;
 import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.exceptions.ImageDownloadException;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
+import com.streamarr.server.services.metadata.tmdb.TmdbSearchResult;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.support.BoundedTask;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.net.http.HttpTimeoutException;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
 @DisplayName("TMDB HTTP Service Integration Tests")
 class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
 
+  private static final int DOWNLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
+  // Longer than the 2 s ceiling of the backoff the client uses when no Retry-After arrives, so a
+  // client that ignored the header would retry too early.
+  private static final Duration RETRY_AFTER = Duration.ofSeconds(3);
+
   @DynamicPropertySource
-  static void configureRateLimitAndTimeout(DynamicPropertyRegistry registry) {
-    registry.add("tmdb.api.requests-per-second", () -> "1000");
+  static void configureRequestTimeout(DynamicPropertyRegistry registry) {
     registry.add("tmdb.api.request-timeout-seconds", () -> "2");
   }
 
   @Autowired private TheMovieDatabaseHttpService service;
 
   @Autowired private HttpCache tmdbHttpCache;
+
+  @Autowired
+  @Qualifier("tmdb")
+  private HttpClient tmdbClient;
+
+  @Autowired
+  @Qualifier("tmdbImage")
+  private HttpClient tmdbImageClient;
+
+  @Autowired private ObjectMapper objectMapper;
+
+  @Autowired private Clock clock;
 
   @BeforeEach
   void resetStubs() throws IOException {
@@ -657,8 +689,9 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should retry image download when rate limited")
-  void shouldRetryImageDownloadWhenRateLimited() throws Exception {
+  @DisplayName(
+      "Should retry the image download after the delay the host asks for when rate limited")
+  void shouldRetryTheImageDownloadAfterTheDelayTheHostAsksForWhenRateLimited() throws Exception {
     var imageBytes = new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0};
 
     wireMock.stubFor(
@@ -668,7 +701,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
             .willReturn(
                 aResponse()
                     .withStatus(429)
-                    .withHeader("Retry-After", "0")
+                    .withHeader("Retry-After", String.valueOf(RETRY_AFTER.toSeconds()))
                     .withHeader("Content-Type", "application/json")
                     .withBody(
                         """
@@ -689,6 +722,69 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
     var result = service.downloadImage("/rate-limited.jpg");
 
     assertThat(result).isEqualTo(imageBytes);
+    var arrivals =
+        wireMock.findAll(getRequestedFor(urlPathEqualTo("/rate-limited.jpg"))).stream()
+            .map(arrival -> arrival.getLoggedDate().toInstant())
+            .sorted()
+            .toList();
+    assertThat(arrivals).hasSize(2);
+    assertThat(Duration.between(arrivals.getFirst(), arrivals.getLast()))
+        .as("wait between the 429 and its retry")
+        .isGreaterThanOrEqualTo(RETRY_AFTER);
+  }
+
+  @Test
+  @DisplayName(
+      "Should download the image over HTTP/2 while metadata calls stay on HTTP/1.1 when the host offers HTTP/2")
+  void shouldDownloadTheImageOverHttp2WhileMetadataCallsStayOnHttp11WhenTheHostOffersHttp2()
+      throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/poster.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withBody(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0})));
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {"page": 1, "results": [], "total_results": 0, "total_pages": 0}
+                        """)));
+
+    service.downloadImage("/poster.jpg");
+    service.searchForMovie(VideoFileParserResult.builder().title("Any").build());
+
+    assertThat(protocolsTheHostSaw("/poster.jpg")).as("image download").containsExactly("HTTP/2.0");
+    assertThat(protocolsTheHostSaw("/search/movie"))
+        .as("metadata call")
+        .containsExactly("HTTP/1.1");
+  }
+
+  @Test
+  @DisplayName("Should fail the image download when the host answers after the request timeout")
+  void shouldFailTheImageDownloadWhenTheHostAnswersAfterTheRequestTimeout() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/slow.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withFixedDelay(3000)
+                    .withBody(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0})));
+
+    assertThatThrownBy(() -> service.downloadImage("/slow.jpg"))
+        .isInstanceOf(HttpTimeoutException.class);
+  }
+
+  private List<String> protocolsTheHostSaw(String path) {
+    return wireMock.findAll(getRequestedFor(urlPathEqualTo(path))).stream()
+        .map(LoggedRequest::getProtocol)
+        .toList();
   }
 
   @Test
@@ -720,6 +816,137 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
               assertThat(failure.getStatusCode()).isEqualTo(429);
               assertThat(failure.getRetryAfter()).contains(Duration.ZERO);
             });
+  }
+
+  @Test
+  @DisplayName("Should return the image when its body is exactly the download limit")
+  void shouldReturnImageWhenItsBodyIsExactlyTheDownloadLimit() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/at-limit.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Length", String.valueOf(DOWNLOAD_LIMIT_BYTES))
+                    .withBody(new byte[DOWNLOAD_LIMIT_BYTES])));
+
+    var result = service.downloadImage("/at-limit.jpg");
+
+    assertThat(result).hasSize(DOWNLOAD_LIMIT_BYTES);
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail the download without waiting for the body to end when it passes the download limit")
+  void shouldFailDownloadWithoutWaitingForBodyToEndWhenItPassesTheDownloadLimit() throws Exception {
+    var bodyEnd = new CountDownLatch(1);
+    var host = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    host.createContext(
+        "/endless.jpg",
+        sendBytesThenHold(DOWNLOAD_LIMIT_BYTES + 1, new CountDownLatch(1), bodyEnd));
+    host.start();
+    try {
+      var hostImageService = hostImageService(host);
+
+      assertThatThrownBy(
+              () ->
+                  BoundedTask.runWithin(
+                      Duration.ofSeconds(30), () -> hostImageService.downloadImage("/endless.jpg")))
+          .isInstanceOfSatisfying(
+              ImageDownloadException.class,
+              failure -> assertThat(failure.getStatusCode()).isEqualTo(200));
+    } finally {
+      bodyEnd.countDown();
+      host.stop(0);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should report the interrupt when the download is interrupted while reading the body")
+  void shouldReportTheInterruptWhenDownloadIsInterruptedWhileReadingTheBody() throws Exception {
+    var bodySent = new CountDownLatch(1);
+    var bodyEnd = new CountDownLatch(1);
+    var host = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    host.createContext("/stalled.jpg", sendBytesThenHold(DOWNLOAD_LIMIT_BYTES, bodySent, bodyEnd));
+    host.start();
+    try (var download =
+        BoundedTask.start(() -> hostImageService(host).downloadImage("/stalled.jpg"))) {
+      // The host's write returns only once the download has read most of the body, so the
+      // download now waits inside the body for the byte past the limit.
+      assertThat(bodySent.await(30, TimeUnit.SECONDS)).isTrue();
+
+      download.interrupt();
+
+      assertThatThrownBy(() -> download.await(Duration.ofSeconds(30)))
+          .isInstanceOf(InterruptedException.class);
+    } finally {
+      bodyEnd.countDown();
+      host.stop(0);
+    }
+  }
+
+  private TheMovieDatabaseHttpService hostImageService(HttpServer host) {
+    return new TheMovieDatabaseHttpService(
+        "",
+        wireMock.baseUrl(),
+        "http://127.0.0.1:" + host.getAddress().getPort(),
+        tmdbClient,
+        tmdbImageClient,
+        objectMapper,
+        clock);
+  }
+
+  // Sends a chunked body of the given length and keeps it open until the latch opens, so a reader
+  // that waits for the end of the body waits until then.
+  private static HttpHandler sendBytesThenHold(
+      int length, CountDownLatch bodySent, CountDownLatch bodyEnd) {
+    return exchange -> {
+      exchange.sendResponseHeaders(200, 0);
+      exchange.getResponseBody().write(new byte[length]);
+      exchange.getResponseBody().flush();
+      bodySent.countDown();
+      try {
+        bodyEnd.await();
+      } catch (InterruptedException _) {
+        Thread.currentThread().interrupt();
+      } finally {
+        exchange.close();
+      }
+    };
+  }
+
+  @Test
+  @DisplayName(
+      "Should fail the download before reading the body when the host declares more than the download limit")
+  void shouldFailDownloadBeforeReadingBodyWhenHostDeclaresMoreThanTheDownloadLimit() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/declared-over-limit.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Length", String.valueOf(DOWNLOAD_LIMIT_BYTES + 1))
+                    .withBody(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0})));
+
+    assertThatThrownBy(() -> service.downloadImage("/declared-over-limit.jpg"))
+        .isInstanceOfSatisfying(
+            ImageDownloadException.class,
+            failure -> assertThat(failure.getStatusCode()).isEqualTo(200));
+  }
+
+  @Test
+  @DisplayName("Should report a network error when the body ends before its declared length")
+  void shouldReportANetworkErrorWhenBodyEndsBeforeItsDeclaredLength() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/cut-short.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Length", "1000")
+                    .withBody(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0})));
+
+    assertThatThrownBy(() -> service.downloadImage("/cut-short.jpg"))
+        .isInstanceOf(IOException.class)
+        .isNotInstanceOf(ImageDownloadException.class);
   }
 
   @Test
@@ -773,7 +1000,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
     cachedUris.clear();
     tmdbHttpCache.uris().forEachRemaining(cachedUris::add);
     assertThat(cachedUris)
-        .as("Image download should not enter cache due to NO_STORE on request")
+        .as("Image download should not enter the metadata cache")
         .noneMatch(uri -> uri.getPath().contains("/cached-poster.jpg"));
   }
 
@@ -872,72 +1099,81 @@ class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
   @Test
   @DisplayName("Should complete concurrent requests when intermittently rate limited")
   void shouldCompleteConcurrentRequestsWhenIntermittentlyRateLimited() throws Exception {
-    var rateLimitStub =
-        wireMock.stubFor(
-            get(urlPathEqualTo("/search/movie"))
-                .atPriority(1)
-                .willReturn(
-                    aResponse()
-                        .withStatus(429)
-                        .withHeader("Retry-After", "1")
-                        .withHeader("Content-Type", "application/json")
-                        .withBody(
-                            """
+    var titles = IntStream.rangeClosed(1, 20).mapToObj(caller -> "Caller " + caller).toList();
+    titles.forEach(this::stubSearchRateLimitedOnce);
+
+    var futures = new ArrayList<Future<TmdbSearchResults>>();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (var title : titles) {
+        var parserResult = VideoFileParserResult.builder().title(title).build();
+        futures.add(executor.submit(() -> service.searchForMovie(parserResult)));
+      }
+    }
+
+    var servedStatuses =
+        wireMock.getAllServeEvents().stream()
+            .map(event -> event.getResponse().getStatus())
+            .toList();
+    assertThat(Collections.frequency(servedStatuses, 429))
+        .as("every caller is rate limited once before it is answered")
+        .isEqualTo(titles.size());
+    for (var caller = 0; caller < titles.size(); caller++) {
+      assertThat(futures.get(caller).get().getResults())
+          .extracting(TmdbSearchResult::getTitle)
+          .containsExactly(titles.get(caller));
+    }
+  }
+
+  // A scenario per title rate limits every concurrent caller exactly once, whatever the order in
+  // which their requests arrive.
+  private void stubSearchRateLimitedOnce(String title) {
+    var scenario = "Rate limited " + title;
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .withQueryParam("query", equalTo(title))
+            .inScenario(scenario)
+            .whenScenarioStateIs(STARTED)
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
                         {"status_message":"Your request count is over the allowed limit.","status_code":25}
-                        """)));
+                        """))
+            .willSetStateTo("Recovered"));
 
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
-            .atPriority(10)
+            .withQueryParam("query", equalTo(title))
+            .inScenario(scenario)
+            .whenScenarioStateIs("Recovered")
             .willReturn(
                 aResponse()
                     .withStatus(200)
                     .withHeader("Content-Type", "application/json")
                     .withBody(
                         """
-                    {
-                      "page": 1,
-                      "results": [
                         {
-                          "id": 1,
-                          "title": "Recovered",
-                          "adult": false,
-                          "popularity": 1.0,
-                          "vote_count": 0,
-                          "vote_average": 0,
-                          "video": false
+                          "page": 1,
+                          "results": [
+                            {
+                              "id": 1,
+                              "title": "%s",
+                              "adult": false,
+                              "popularity": 1.0,
+                              "vote_count": 0,
+                              "vote_average": 0,
+                              "video": false
+                            }
+                          ],
+                          "total_results": 1,
+                          "total_pages": 1
                         }
-                      ],
-                      "total_results": 1,
-                      "total_pages": 1
-                    }
-                    """)));
-
-    var futures = new ArrayList<Future<TmdbSearchResults>>();
-
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < 20; i++) {
-        futures.add(
-            executor.submit(
-                () -> {
-                  var parserResult =
-                      VideoFileParserResult.builder().title("Test").year("2020").build();
-                  return service.searchForMovie(parserResult);
-                }));
-      }
-
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(() -> assertThat(wireMock.getServeEvents().getRequests()).isNotEmpty());
-
-      wireMock.removeStubMapping(rateLimitStub);
-    }
-
-    for (var future : futures) {
-      var results = future.get();
-      assertThat(results.getResults()).hasSize(1);
-      assertThat(results.getResults().getFirst().getTitle()).isEqualTo("Recovered");
-    }
+                        """
+                            .formatted(title))));
   }
 
   @Test

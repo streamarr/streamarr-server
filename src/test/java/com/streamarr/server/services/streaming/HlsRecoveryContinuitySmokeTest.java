@@ -17,6 +17,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
@@ -49,6 +50,7 @@ class HlsRecoveryContinuitySmokeTest {
       Path.of("src/test/resources/BigBuckBunny_320x180_10s.mp4").toAbsolutePath();
   private static final int SEGMENT_DURATION_SECONDS = 2;
 
+  private Path segmentFolder;
   private LocalSegmentStore segmentStore;
   private RemoteTranscodeExecutor transcodeExecutor;
   private WorkerStreamingSmokeFixture workerFixture;
@@ -66,7 +68,8 @@ class HlsRecoveryContinuitySmokeTest {
     var sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
     testVideo = Files.copy(TEST_VIDEO, sourceRoot.resolve(TEST_VIDEO.getFileName()));
     var segmentBaseDir = Files.createDirectory(temporaryDirectory.resolve("segments"));
-    segmentStore = new LocalSegmentStore(segmentBaseDir.resolve("server"));
+    segmentFolder = segmentBaseDir.resolve("server");
+    segmentStore = new LocalSegmentStore(segmentFolder);
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)
@@ -115,6 +118,7 @@ class HlsRecoveryContinuitySmokeTest {
                     .properties(properties)
                     .build())
             .build();
+    workerFixture.creditUploadsTo(lifecycle);
     coordinator =
         SegmentDeliveryCoordinator.builder()
             .segmentStore(segmentStore)
@@ -187,7 +191,7 @@ class HlsRecoveryContinuitySmokeTest {
             () ->
                 segmentStore.segmentExists(sessionId, "init.mp4")
                     && segmentStore.segmentExists(sessionId, "segment0.m4s"));
-    var storedInitialization = segmentStore.readSegment(sessionId, "init.mp4");
+    var storedInitialization = StoredSegments.bytes(segmentStore, sessionId, "init.mp4");
 
     killProducerAndDropSegmentsFrom(session, 1);
 
@@ -196,7 +200,8 @@ class HlsRecoveryContinuitySmokeTest {
     assertThat(delivery)
         .as("the replacement attempt's initialization segment matched the stored one")
         .isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(segmentStore.readSegment(sessionId, "init.mp4")).isEqualTo(storedInitialization);
+    assertThat(StoredSegments.bytes(segmentStore, sessionId, "init.mp4"))
+        .isEqualTo(storedInitialization);
     var recoveredMedia = decodableMediaFile(sessionId, "segment1.m4s");
 
     assertThat(workerFixture.worker().decodedVideoFrameCount(recoveredMedia))
@@ -232,9 +237,9 @@ class HlsRecoveryContinuitySmokeTest {
                 !transcodeExecutor.isRunning(
                     session.getSessionId(), StreamSession.defaultVariant()));
 
-    var outputDir = segmentStore.getOutputDirectory(session.getSessionId());
+    var sessionFolder = segmentFolder.resolve(session.getSessionId().toString());
     for (var index = firstMissingIndex; index < 16; index++) {
-      Files.deleteIfExists(outputDir.resolve(SegmentNames.mediaSegmentName(index)));
+      Files.deleteIfExists(sessionFolder.resolve(SegmentNames.mediaSegmentName(index)));
     }
   }
 

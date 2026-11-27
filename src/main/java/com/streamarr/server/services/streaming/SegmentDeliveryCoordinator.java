@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import java.util.Optional;
 import java.util.UUID;
@@ -54,12 +53,18 @@ public class SegmentDeliveryCoordinator {
   }
 
   private SegmentDelivery completed(SegmentRequest request, SegmentDelivery outcome) {
-    if (outcome instanceof SegmentDelivery.Ready) {
-      producerLifecycle.segmentDelivered(request);
-      producerLifecycle.completeVariantSwitch(request);
+    if (!(outcome instanceof SegmentDelivery.Ready(var segment))) {
+      return outcome;
     }
 
-    return outcome;
+    try {
+      producerLifecycle.segmentDelivered(request);
+      producerLifecycle.completeVariantSwitch(request);
+      return outcome;
+    } catch (RuntimeException e) {
+      segment.close();
+      throw e;
+    }
   }
 
   private Optional<SegmentDelivery> refusal(UUID sessionId, String segmentName) {
@@ -133,19 +138,10 @@ public class SegmentDeliveryCoordinator {
   }
 
   private SegmentDelivery tryRead(UUID sessionId, String segmentName) {
-    if (!segmentStore.segmentExists(sessionId, segmentName)) {
-      return null;
-    }
-
-    try {
-      return new SegmentDelivery.Ready(segmentStore.readSegment(sessionId, segmentName));
-    } catch (TranscodeException e) {
-      // A concurrent destroy can remove the segment between the existence check and the read. The
-      // store reports that disappearance as TranscodeException, so re-observe the session state.
-      log.debug(
-          "Segment read raced a concurrent destroy: session {} name {}", sessionId, segmentName, e);
-      return null;
-    }
+    return segmentStore
+        .openSegment(sessionId, segmentName)
+        .map(SegmentDelivery.Ready::new)
+        .orElse(null);
   }
 
   private boolean tryAwait(HeldSegmentRequests.Wake wake, SegmentRequest request) {

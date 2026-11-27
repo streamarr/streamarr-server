@@ -26,9 +26,17 @@ public class FakeEpisodeRepository extends FakeJpaRepository<Episode> implements
   }
 
   @Override
+  public List<Episode> findBySeasonIdAndFilesIsNotEmptyOrderByEpisodeNumber(UUID seasonId) {
+    return findBySeasonIdOrderByEpisodeNumber(seasonId).stream()
+        .filter(episode -> !episode.getFiles().isEmpty())
+        .toList();
+  }
+
+  @Override
   public Map<UUID, List<UUID>> findEpisodeIdsBySeasonIds(Collection<UUID> seasonIds) {
     return database.values().stream()
         .filter(episode -> inSeasons(episode, seasonIds))
+        .filter(episode -> !episode.getFiles().isEmpty())
         .collect(
             Collectors.groupingBy(
                 ep -> ep.getSeason().getId(),

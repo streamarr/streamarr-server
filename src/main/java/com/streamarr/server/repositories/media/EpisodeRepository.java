@@ -12,5 +12,7 @@ public interface EpisodeRepository extends JpaRepository<Episode, UUID>, Episode
 
   List<Episode> findBySeasonIdOrderByEpisodeNumber(UUID seasonId);
 
+  List<Episode> findBySeasonIdAndFilesIsNotEmptyOrderByEpisodeNumber(UUID seasonId);
+
   Optional<Episode> findBySeasonIdAndEpisodeNumber(UUID seasonId, int episodeNumber);
 }

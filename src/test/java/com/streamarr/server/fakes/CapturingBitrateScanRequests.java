@@ -1,7 +1,7 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.task.BitrateScanPriority;
 import com.streamarr.server.domain.task.BitrateScanTaskRequest;
-import com.streamarr.server.services.library.BitrateScanPriority;
 import com.streamarr.server.services.library.BitrateScanRequests;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;

@@ -344,8 +344,14 @@ class HoldBackIT {
   void shouldHoldBackNoStreamCopyWhoseLeadDoesNotCoverALongMergedSegmentBeyondItsNextOne()
       throws Exception {
     var worker = registerWorker();
+    // Without a measurement, the 162 s merged segment's estimate is twice the 3,000,000 bit/s
+    // container bitrate over its duration: 121,500,000 bytes, within the 128 MiB segment cap, so
+    // the first variant copies (ADR 0037).
     probeResults.setDefaultProbe(
-        defaultProbeBuilder().keyframes(keyframesWithAMergedSegmentFrom78Seconds()).build());
+        defaultProbeBuilder()
+            .keyframes(keyframesWithAMergedSegmentFrom78Seconds())
+            .bitrate(3_000_000L)
+            .build());
     var copying = startPlayingTheFirstVariant(worker);
     registry.updatePlaybackState(copying.sessionId(), 0, PlaybackState.PAUSED);
 

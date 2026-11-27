@@ -42,10 +42,13 @@ tmdb:
     base-url: http://127.0.0.1:9
 
 # Integration tests that need probe executions build their own scheduler against the test
-# database; the shared context only records probe requests. Artwork schedulers run in every
-# integration test context (RunningArtworkPrioritySchedulersConfiguration).
+# database; the shared context only records probe requests. Artwork and library-operation
+# schedulers run in every integration test context (RunningArtworkPrioritySchedulersConfiguration,
+# RunningLibraryOperationSchedulerConfiguration).
 db-scheduler:
   enabled: false
+  # Schedulers find an execution stored by another client at their next poll, so poll often.
+  polling-interval: 100ms
 
 # Scans that wait for their probes check stored results often, so tests finish soon after a result.
 probe:

@@ -300,6 +300,14 @@ class LibraryItemPlacementIT extends AbstractIntegrationTest {
                           .title("Episode")
                           .episodeNumber(1)
                           .library(library)
+                          .files(
+                              Set.of(
+                                  MediaFile.builder()
+                                      .libraryId(library.getId())
+                                      .status(MediaFileStatus.MATCHED)
+                                      .filename("episode.mkv")
+                                      .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
+                                      .build()))
                           .season(
                               seasons.saveAndFlush(
                                   Season.builder()

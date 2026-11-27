@@ -1,8 +1,12 @@
 package com.streamarr.server.properties;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Optional;
 import lombok.Builder;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -33,6 +37,9 @@ public record StreamingProperties(
     // while the job attempt resumes (ADR 0044, hold-back).
     Duration holdBackHighWater,
     Duration holdBackLowWater) {
+
+  private static final Path SHARED_SEGMENT_FOLDER =
+      Path.of(System.getProperty("java.io.tmpdir"), "streamarr-segments");
 
   public StreamingProperties {
     if (maxConcurrentTranscodes == null) {
@@ -120,8 +127,35 @@ public record StreamingProperties(
     }
 
     if (segmentBasePath == null || segmentBasePath.isBlank()) {
-      segmentBasePath =
-          Path.of(System.getProperty("java.io.tmpdir"), "streamarr-segments").toString();
+      segmentBasePath = SHARED_SEGMENT_FOLDER.toString();
+    }
+  }
+
+  /**
+   * The segment folder when only this server uses it. Every server process on a machine that names
+   * no segment folder uses the same one in the system's temporary folder, so that folder is no
+   * server's own.
+   */
+  public Optional<Path> ownedSegmentFolder() {
+    var segmentFolder = Path.of(segmentBasePath);
+    if (isSharedSegmentFolder(segmentFolder)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(segmentFolder);
+  }
+
+  // Another spelling of the shared folder's path, or a soft link to it, names the same folder.
+  private static boolean isSharedSegmentFolder(Path segmentFolder) {
+    try {
+      return Files.isSameFile(segmentFolder, SHARED_SEGMENT_FOLDER);
+    } catch (NoSuchFileException _) {
+      // One of the two is missing. At its start the server has created the named folder, so the
+      // missing one is the shared folder, which cannot be the named one.
+      return false;
+    } catch (IOException _) {
+      // The server cannot tell the two apart, so it deletes nothing in the named folder.
+      return true;
     }
   }
 

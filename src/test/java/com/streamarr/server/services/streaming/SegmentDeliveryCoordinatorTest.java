@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.MediaSegmentUploadFixture.publishedByRunningJobAttempt;
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.SegmentRequestFixture.earliestArrivingSegmentRequestBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultLadderSessionBuilder;
@@ -11,6 +12,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.sessionWithDura
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.h264Nvenc;
 import static com.streamarr.server.fixtures.WorkerVerifiedEncoderFixture.libx264;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.awaitility.Awaitility.await;
 
@@ -19,13 +21,13 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.ProbeFixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.StreamingRigFixture.StreamingRig;
 import com.streamarr.server.properties.StreamingProperties;
@@ -34,6 +36,8 @@ import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantHardwareEncoderFailedEvent;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -112,9 +116,14 @@ class SegmentDeliveryCoordinatorTest {
         .eventPublisher(events);
   }
 
-  // Stores the segment, then wakes the requests held on its variant, as a worker's upload does.
+  // Stores the segment, credits a media segment to the job attempt that runs its variant, then
+  // wakes the requests held on the variant, as a worker's upload does.
   private void upload(UUID sessionId, String segmentName, byte[] data) {
     segmentStore.addSegment(sessionId, segmentName, data);
+    runtimeRegistry
+        .findById(sessionId)
+        .flatMap(session -> publishedByRunningJobAttempt(session, segmentName, transcodeExecutor))
+        .ifPresent(lifecycle::mediaSegmentPublished);
     heldRequests().wakeVariant(sessionId, variantOf(segmentName));
   }
 
@@ -255,8 +264,7 @@ class SegmentDeliveryCoordinatorTest {
     var delivery =
         coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment0.m4s");
 
-    assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(((SegmentDelivery.Ready) delivery).data()).containsExactly(0x47);
+    assertThat(StoredSegments.bytes(delivery)).containsExactly(0x47);
   }
 
   @Test
@@ -382,8 +390,7 @@ class SegmentDeliveryCoordinatorTest {
     trapStore.releaseTrap.countDown();
     exhauster.join(5000);
 
-    assertThat(outcome.get()).isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(((SegmentDelivery.Ready) outcome.get()).data()).containsExactly(0x47);
+    assertThat(StoredSegments.bytes(outcome.get())).containsExactly(0x47);
   }
 
   // ADR 0052: no job attempt can make a segment past a short copy's normal end, and a refusal
@@ -402,7 +409,8 @@ class SegmentDeliveryCoordinatorTest {
 
     try (var pastTheEnd = deliveryHeldWithoutDeadline(sessionId, "segment2.m4s")) {
       assertThat(coordinator.deliver(sessionId, StreamSession.defaultVariant(), "segment1.m4s"))
-          .isEqualTo(new SegmentDelivery.Ready(new byte[] {2}));
+          .extracting(StoredSegments::bytes)
+          .isEqualTo(new byte[] {2});
       assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
       destroy(sessionId);
       assertThat(pastTheEnd.await(Duration.ofSeconds(2)))
@@ -515,26 +523,6 @@ class SegmentDeliveryCoordinatorTest {
     var delivery = deliverAsync(sixtySecondSession.getSessionId(), "segment10.m4s");
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
-  }
-
-  @Test
-  @DisplayName("Should report the session as ended when a destroy wins between existence and read")
-  void shouldReportSessionEndedWhenADestroyWinsBetweenExistenceAndRead() {
-    var throwingStore =
-        new FakeSegmentStore() {
-          @Override
-          public byte[] readSegment(UUID sessionId, String segmentName) {
-            throw new TranscodeException("Segment not found: " + segmentName);
-          }
-        };
-    var sessionId = UUID.randomUUID();
-    throwingStore.addSegment(sessionId, "segment0.m4s", new byte[] {0x47});
-    var rig = rigWith(transcodeExecutor, throwingStore);
-
-    var delivery =
-        rig.coordinator().deliver(sessionId, StreamSession.defaultVariant(), "segment0.m4s");
-
-    assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
   }
 
   @Test
@@ -1522,6 +1510,78 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(runningVariants(session)).containsExactly("480p");
   }
 
+  // The player seeks forward to segment 96, back to segment 10 and forward again to segment 101.
+  // The job attempt at segment 10 is 91 media segments behind the last request. Segment 97, one
+  // relocation gap before that request, is a segment of the earlier job attempt at segment 96.
+  @Test
+  @DisplayName(
+      "Should relocate the variant to the requested media segment when only an earlier job attempt"
+          + " stored the media segment one relocation gap before it")
+  void
+      shouldRelocateTheVariantToTheRequestedMediaSegmentWhenOnlyAnEarlierJobAttemptStoredTheMediaSegmentOneRelocationGapBeforeIt()
+          throws Exception {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    var forward = heldDelivery(sessionId, "segment96.m4s");
+    for (var index = 96; index <= 100; index++) {
+      upload(sessionId, "segment" + index + ".m4s", new byte[] {1});
+    }
+
+    assertThat(forward.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    var back = heldDelivery(sessionId, "segment10.m4s");
+    upload(sessionId, "segment10.m4s", new byte[] {1});
+    assertThat(back.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+
+    var forwardAgain = heldDelivery(sessionId, "segment101.m4s");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 96, 10, 101);
+    upload(sessionId, "segment101.m4s", new byte[] {1});
+    assertThat(forwardAgain.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
+  // The player seeks forward to segment 96 and back to segment 90, then plays on without another
+  // seek. The job attempt at segment 90 has stored segments 90 to 96 when the player, which takes
+  // segments 97 to 100 from the store, asks for segment 101. Segment 97, one relocation gap before
+  // that request, is still only a segment of the earlier job attempt at segment 96.
+  @Test
+  @DisplayName(
+      "Should relocate the variant to the requested media segment when playback after a seek back"
+          + " passes the media segments that an earlier job attempt stored")
+  void
+      shouldRelocateTheVariantToTheRequestedMediaSegmentWhenPlaybackAfterASeekBackPassesTheMediaSegmentsThatAnEarlierJobAttemptStored()
+          throws Exception {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    var forward = heldDelivery(sessionId, "segment96.m4s");
+    for (var index = 96; index <= 100; index++) {
+      upload(sessionId, "segment" + index + ".m4s", new byte[] {1});
+    }
+
+    assertThat(forward.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    var back = heldDelivery(sessionId, "segment90.m4s");
+    for (var index = 90; index <= 96; index++) {
+      upload(sessionId, "segment" + index + ".m4s", new byte[] {1});
+    }
+
+    assertThat(back.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+    for (var index = 97; index <= 100; index++) {
+      assertThat(
+              coordinator.deliver(
+                  sessionId, StreamSession.defaultVariant(), "segment" + index + ".m4s"))
+          .isInstanceOf(SegmentDelivery.Ready.class);
+    }
+
+    var next = heldDelivery(sessionId, "segment101.m4s");
+
+    assertThat(transcodeExecutor.getStartedRequests())
+        .extracting(TranscodeRequest::startSequenceNumber)
+        .containsExactly(0, 96, 90, 101);
+    upload(sessionId, "segment101.m4s", new byte[] {1});
+    assertThat(next.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
+  }
+
   @Test
   @DisplayName(
       "Should answer a held request as unrecoverable without restarting its variant when a request for another video variant stops that variant")
@@ -1690,8 +1750,10 @@ class SegmentDeliveryCoordinatorTest {
     for (var index = 0; index < deliveredSegments; index++) {
       var segmentName = "480p/" + SegmentNames.mediaSegmentName(index);
       upload(session.getSessionId(), segmentName, new byte[] {1});
-      assertThat(coordinator.deliver(session.getSessionId(), "480p", segmentName))
-          .isInstanceOf(SegmentDelivery.Ready.class);
+      assertThat(
+              StoredSegments.bytes(
+                  coordinator.deliver(session.getSessionId(), "480p", segmentName)))
+          .containsExactly(1);
     }
 
     return session;
@@ -2760,6 +2822,27 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(switched.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
   }
 
+  @Test
+  @DisplayName(
+      "Should close the switched variant's first media segment when stopping the variant that the player left fails unexpectedly")
+  void
+      shouldCloseTheSwitchedVariantsFirstMediaSegmentWhenStoppingTheVariantThatThePlayerLeftFailsUnexpectedly() {
+    var failing = new UnexpectedStopFailureExecutor();
+    transcodeExecutor = failing;
+    var rig = rigWith(failing);
+    lifecycle = rig.lifecycle();
+    coordinator = rig.coordinator();
+    var sessionId = ladderSessionPlayingFirstListedVariant(3).getSessionId();
+    var switched = heldDelivery(sessionId, "1080p", "1080p/segment3.m4s");
+    failing.failStopsOf(sessionId);
+
+    upload(sessionId, "1080p/segment3.m4s", new byte[] {3});
+
+    assertThatThrownBy(() -> switched.get(2, TimeUnit.SECONDS))
+        .hasCauseInstanceOf(UncheckedIOException.class);
+    assertThat(segmentStore.openSegmentCount()).isZero();
+  }
+
   /**
    * Holds one request's thread at the session mutex once the given condition holds, so a second
    * request can run between the first request's steps.
@@ -2867,7 +2950,9 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
-  /** Blocks one specific thread at segmentExists while the armed condition holds, exactly once. */
+  /**
+   * Blocks one specific thread at a segment lookup while the armed condition holds, exactly once.
+   */
   private static final class TrapSegmentStore extends FakeSegmentStore {
 
     private final CountDownLatch reachedTrap = new CountDownLatch(1);
@@ -2883,14 +2968,23 @@ class SegmentDeliveryCoordinatorTest {
 
     @Override
     public boolean segmentExists(UUID sessionId, String segmentName) {
+      trapArmedThread();
+      return super.segmentExists(sessionId, segmentName);
+    }
+
+    @Override
+    public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
+      trapArmedThread();
+      return super.openSegment(sessionId, segmentName);
+    }
+
+    private void trapArmedThread() {
       if (Thread.currentThread() == trappedThread
           && trapCondition.getAsBoolean()
           && tripped.compareAndSet(false, true)) {
         reachedTrap.countDown();
         awaitTrapRelease();
       }
-
-      return super.segmentExists(sessionId, segmentName);
     }
 
     private void awaitTrapRelease() {
@@ -2927,13 +3021,16 @@ class SegmentDeliveryCoordinatorTest {
     }
 
     @Override
-    public byte[] readSegment(UUID sessionId, String segmentName) {
-      if (segmentName.equals(trappedSegmentName) && tripped.compareAndSet(false, true)) {
+    public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
+      var opened = super.openSegment(sessionId, segmentName);
+      if (opened.isPresent()
+          && segmentName.equals(trappedSegmentName)
+          && tripped.compareAndSet(false, true)) {
         reachedTrap.countDown();
         awaitRelease();
       }
 
-      return super.readSegment(sessionId, segmentName);
+      return opened;
     }
 
     private void awaitRelease() {
@@ -2986,6 +3083,26 @@ class SegmentDeliveryCoordinatorTest {
       } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
       }
+    }
+  }
+
+  /** Fails every later stop of one stream session's variants with a failure no caller expects. */
+  private static final class UnexpectedStopFailureExecutor extends FakeTranscodeExecutor {
+
+    private volatile UUID failingSessionId;
+
+    private void failStopsOf(UUID sessionId) {
+      failingSessionId = sessionId;
+    }
+
+    @Override
+    public void stopVariant(UUID sessionId, String variantLabel) {
+      if (sessionId.equals(failingSessionId)) {
+        throw new UncheckedIOException(
+            new IOException("Simulated unexpected variant stop failure"));
+      }
+
+      super.stopVariant(sessionId, variantLabel);
     }
   }
 

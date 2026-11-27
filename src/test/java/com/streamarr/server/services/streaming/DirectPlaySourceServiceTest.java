@@ -8,11 +8,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.SourceContainer;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.exceptions.FileShrankException;
 import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.properties.RemoteTranscodeProperties;
 import com.sun.management.UnixOperatingSystemMXBean;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.io.EOFException;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
@@ -123,7 +123,7 @@ class DirectPlaySourceServiceTest {
       Files.write(sourceFile, new byte[] {1});
       var stream = source.newInputStream();
 
-      assertThatThrownBy(stream::readAllBytes).isInstanceOf(EOFException.class);
+      assertThatThrownBy(stream::readAllBytes).isInstanceOf(FileShrankException.class);
     }
   }
 

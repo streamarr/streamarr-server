@@ -39,7 +39,7 @@ class RemoteProbeDeadlineIT {
     var source = getClass().getResource("/BigBuckBunny_320x180_10s.mp4");
     assertThat(source).isNotNull();
     Files.copy(Path.of(source.toURI()), mediaRoot.resolve("next.mp4"));
-    var configuration = serverConfigurationBuilder().probeTimeout(Duration.ofSeconds(2)).build();
+    var configuration = serverConfigurationBuilder().probeTimeout(Duration.ofSeconds(1)).build();
     try (var calls = Executors.newVirtualThreadPerTaskExecutor();
         var server =
             WorkerSessionServer.builder()
@@ -85,8 +85,12 @@ class RemoteProbeDeadlineIT {
           .atMost(5, TimeUnit.SECONDS)
           .untilAsserted(
               () -> {
-                assertThat(worker.probeRunning()).isFalse();
-                assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+                assertThat(worker.probeRunning())
+                    .as("the worker must stop the hung native probe")
+                    .isFalse();
+                assertThat(server.availableSlots(SOURCE_NAMESPACE_ID))
+                    .as("the worker must stay connected with its free slot")
+                    .isEqualTo(1);
               });
 
       var outcome = service.probe(request("next.mp4"));

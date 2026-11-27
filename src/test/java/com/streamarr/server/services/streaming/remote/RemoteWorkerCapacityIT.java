@@ -84,7 +84,7 @@ class RemoteWorkerCapacityIT {
                   .until(
                       () -> server.dispatchProbe(nextRequest),
                       ProbeDispatch.Dispatched.class::isInstance));
-      var result = next.get(10, TimeUnit.SECONDS).result();
+      var result = next.get(10, TimeUnit.SECONDS).getResult();
 
       assertThat(worker.probeRunning())
           .as("The unit returns only after the cancelled probe stops")

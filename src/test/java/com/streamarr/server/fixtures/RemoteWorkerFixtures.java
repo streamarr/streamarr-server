@@ -1,10 +1,10 @@
 package com.streamarr.server.fixtures;
 
-import com.streamarr.server.services.streaming.remote.ProbeAttemptReport;
 import com.streamarr.server.services.streaming.remote.ProbeDispatch;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
 import com.streamarr.transcode.v1.EncoderKind;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.VideoCodecFamily;

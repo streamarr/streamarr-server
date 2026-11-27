@@ -16,6 +16,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.exceptions.TranscodeLimitReachedException;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.events.library.UnmeasuredCopyStartedEvent;
 import com.streamarr.server.services.serversettings.ServerSettingsService;
 import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.RequestedVariantChangedEvent;
@@ -767,27 +768,41 @@ public class ProducerLifecycleService {
       stopLeftVariantOfAnotherStreamSession(sessionId, shortage);
     }
 
-    return withSessionLock(
-        sessionId,
-        () -> {
-          var current =
-              runtimeRegistry
-                  .findById(sessionId)
-                  .orElseThrow(() -> new SessionNotFoundException(sessionId));
-          try (var _ =
-              transcodeLimit
-                  .tryReserve(current)
-                  .orElseThrow(() -> new TranscodeLimitReachedException(sessionId))) {
-            startVariant(current, firstListedVariant(current), current.getCurrentSegment());
-            if (runtimeRegistry.findById(sessionId).isEmpty()) {
-              throw new SessionNotFoundException(sessionId);
-            }
+    var started =
+        withSessionLock(
+            sessionId,
+            () -> {
+              var current =
+                  runtimeRegistry
+                      .findById(sessionId)
+                      .orElseThrow(() -> new SessionNotFoundException(sessionId));
+              try (var _ =
+                  transcodeLimit
+                      .tryReserve(current)
+                      .orElseThrow(() -> new TranscodeLimitReachedException(sessionId))) {
+                startVariant(current, firstListedVariant(current), current.getCurrentSegment());
+                if (runtimeRegistry.findById(sessionId).isEmpty()) {
+                  throw new SessionNotFoundException(sessionId);
+                }
 
-            runtimeRegistry.save(current);
-          }
+                runtimeRegistry.save(current);
+              }
 
-          return current;
-        });
+              return current;
+            });
+    publishUnmeasuredCopyStart(started);
+    return started;
+  }
+
+  // Published after the copy's job attempt is dispatched and outside the session mutex. A worker
+  // accepts no bitrate scan chunk from the start of a job attempt, so no chunk of the scan that
+  // the library then moves forward starts on the job attempt's worker (ADR 0054).
+  private void publishUnmeasuredCopyStart(StreamSession session) {
+    if (!copiesVideo(session) || session.getMediaProbe().streamMeasurements().isPresent()) {
+      return;
+    }
+
+    eventPublisher.publishEvent(new UnmeasuredCopyStartedEvent(session.getMediaFileId()));
   }
 
   private static String firstListedVariant(StreamSession session) {
@@ -1707,10 +1722,10 @@ public class ProducerLifecycleService {
   /**
    * A running encoder produces segments sequentially from its start segment. A requested media
    * segment needs the variant's encoder relocated when it lies behind that start (it will never be
-   * produced) or so far ahead of produced output that waiting would stall the player longer than
-   * restarting. A request past the last segment with source media counts as one for that segment,
-   * where a job attempt starts. An initialization segment and a variant without a job attempt never
-   * relocate.
+   * produced) or so far ahead of that job attempt's own output that waiting would stall the player
+   * longer than restarting. A segment that an earlier job attempt stored is not that output. A
+   * request past the last segment with source media counts as one for that segment, where a job
+   * attempt starts. An initialization segment and a variant without a job attempt never relocate.
    */
   private boolean requiresRelocation(
       StreamSession session, String variantLabel, String segmentName) {
@@ -1732,8 +1747,7 @@ public class ProducerLifecycleService {
       return false;
     }
 
-    return !segmentStore.segmentExists(
-        session.getSessionId(), SegmentNames.siblingName(segmentName, probeIndex));
+    return !seekPriority.runningJobAttemptHasStored(session, variantLabel, probeIndex);
   }
 
   // A relocation restarts only the requested variant (ADR 0019).

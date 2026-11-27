@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.MediaSegmentUploadFixture.publishedByRunningJobAttempt;
 import static com.streamarr.server.fixtures.SeekPriorityFixture.seekPriorityBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.mintHandle;
@@ -12,6 +13,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
@@ -123,7 +125,7 @@ class ProducerLifecyclePositioningRaceTest {
     }
 
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
-    assertThat(segmentStore.readSegment(session.getSessionId(), "segment100.m4s"))
+    assertThat(StoredSegments.bytes(segmentStore, session.getSessionId(), "segment100.m4s"))
         .containsExactly(0x47);
   }
 
@@ -149,6 +151,8 @@ class ProducerLifecyclePositioningRaceTest {
       try {
         raceGate.awaitBlocked();
         segmentStore.addSegment(session.getSessionId(), "segment96.m4s", new byte[] {0x47});
+        publishedByRunningJobAttempt(session, "segment96.m4s", transcodeExecutor)
+            .ifPresent(lifecycle::mediaSegmentPublished);
       } finally {
         raceGate.release();
       }

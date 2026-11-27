@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
+import com.streamarr.server.fixtures.WorkerProbeReporter;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.server.services.streaming.remote.protocol.WorkerIdentityMetadata;
@@ -49,7 +50,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import lombok.Builder;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -150,44 +155,92 @@ class MeshMediaHandlerIT {
     }
   }
 
-  @ParameterizedTest(name = "{0}")
-  @ValueSource(strings = {"/media/probe", "/media/segment"})
-  @DisplayName("Should return verified media when the standalone worker image handles the request")
-  void shouldReturnVerifiedMediaWhenStandaloneWorkerImageHandlesTheRequest(
-      String path, @TempDir Path tempDir) throws Exception {
-    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
-    var clip = MeshMediaHandlerIT.class.getResource("/BigBuckBunny_320x180_10s.mp4");
-    assertThat(clip).isNotNull();
-    Files.copy(Path.of(clip.toURI()), mediaRoot.resolve("mesh-fixture.mkv"));
+  @Nested
+  @DisplayName("Standalone Worker Image")
+  class StandaloneWorkerImage {
 
-    try (var rig = Rig.builder().withoutWorker(true).build();
-        var worker =
-            WorkerContainerFixture.builder()
-                .workerSessions(rig.server)
-                .sourceNamespaceId(MeshValidationServer.SOURCE_ID)
-                .sourceRoot(mediaRoot)
-                .build()) {
-      worker.start();
+    private static final int STANDALONE_WORKER_SLOTS = 1;
+
+    @TempDir static Path standaloneWorkerDirectory;
+
+    private static Rig standaloneWorkerRig;
+    private static WorkerContainerFixture standaloneWorker;
+
+    @BeforeAll
+    static void startStandaloneWorker() throws Exception {
+      var mediaRoot = Files.createDirectory(standaloneWorkerDirectory.resolve("media"));
+      var clip = MeshMediaHandlerIT.class.getResource("/BigBuckBunny_320x180_10s.mp4");
+      assertThat(clip).isNotNull();
+      Files.copy(Path.of(clip.toURI()), mediaRoot.resolve("mesh-fixture.mkv"));
+      standaloneWorkerRig = Rig.builder().withoutWorker(true).build();
+      standaloneWorker =
+          WorkerContainerFixture.builder()
+              .workerSessions(standaloneWorkerRig.server)
+              .sourceNamespaceId(MeshValidationServer.SOURCE_ID)
+              .sourceRoot(mediaRoot)
+              .availableSlots(STANDALONE_WORKER_SLOTS)
+              .build();
+      standaloneWorker.start();
       await()
           .atMost(10, TimeUnit.SECONDS)
           .until(
               () ->
-                  !rig.server
+                  !standaloneWorkerRig
+                      .server
                       .eligibleWorkers(MeshValidationServer.SOURCE_ID, streamCopyDecision())
                       .isEmpty());
+    }
 
-      var response = rig.requestMedia(path);
+    @AfterAll
+    static void stopStandaloneWorker() throws Exception {
+      try {
+        if (standaloneWorker != null) {
+          standaloneWorker.close();
+        }
+      } finally {
+        if (standaloneWorkerRig != null) {
+          standaloneWorkerRig.close();
+        }
+      }
+    }
+
+    // The server frees a stopped job's slot and a finished probe's unit before the handler answers.
+    @BeforeEach
+    void requireIdleStandaloneWorker() {
+      assertThat(isStandaloneWorkerIdle())
+          .as("the previous test left the shared worker's slot and probe unit free")
+          .isTrue();
+    }
+
+    @Test
+    @DisplayName("Should confirm real media when the standalone worker image probes the fixture")
+    void shouldConfirmRealMediaWhenTheStandaloneWorkerImageProbesTheFixture() throws Exception {
+      var response = standaloneWorkerRig.probe();
 
       assertThat(response.statusCode()).isEqualTo(200);
-      if (path.equals("/media/probe")) {
-        assertThat(new String(response.body(), StandardCharsets.UTF_8))
-            .isEqualTo("MEDIA_PROBE_COMPLETED");
-        return;
-      }
+      assertThat(response.body()).isEqualTo("MEDIA_PROBE_COMPLETED");
+    }
 
+    @Test
+    @DisplayName(
+        "Should return decodable fMP4 when the standalone worker image transcodes the fixture")
+    void shouldReturnDecodableFmp4WhenTheStandaloneWorkerImageTranscodesTheFixture(
+        @TempDir Path tempDir) throws Exception {
+      var response = standaloneWorkerRig.requestMedia("/media/segment");
+
+      assertThat(response.statusCode()).isEqualTo(200);
       assertThat(Fmp4Fixture.firstBoxType(response.body())).isEqualTo("ftyp");
       var media = Files.write(tempDir.resolve("mesh-media.mp4"), response.body());
-      assertThat(worker.decodedVideoFrameCount(media)).isPositive();
+      assertThat(standaloneWorker.decodedVideoFrameCount(media)).isPositive();
+    }
+
+    private static boolean isStandaloneWorkerIdle() {
+      var server = standaloneWorkerRig.server;
+      return server.availableSlots(MeshValidationServer.SOURCE_ID) == STANDALONE_WORKER_SLOTS
+          && server
+                  .probeCapacity(MeshValidationServer.SOURCE_ID, ProbeVersion.CURRENT)
+                  .runningProbes()
+              == 0;
     }
   }
 
@@ -234,7 +287,14 @@ class MeshMediaHandlerIT {
               .usePlaintext()
               .intercept(MetadataUtils.newAttachHeadersInterceptor(headers))
               .build();
-      worker = new ProbeWorker(media, segments);
+      var identity =
+          WorkerIdentity.newBuilder()
+              .setWorkerId(toProto(workerId))
+              .setBootId(toProto(UUID.randomUUID()))
+              .build();
+      worker =
+          new ProbeWorker(
+              media, segments, WorkerProbeReporter.builder().channel(channel).worker(identity));
       if (withoutWorker) {
         return;
       }
@@ -244,10 +304,7 @@ class MeshMediaHandlerIT {
           EstablishWorkerSessionRequest.newBuilder()
               .setRegistration(
                   WorkerRegistration.newBuilder()
-                      .setWorker(
-                          WorkerIdentity.newBuilder()
-                              .setWorkerId(toProto(workerId))
-                              .setBootId(toProto(UUID.randomUUID())))
+                      .setWorker(identity)
                       .setAvailableSlots(1)
                       .setBackgroundProbeCapacity(1)
                       .setKeyframePacketScanCapacity(1)
@@ -296,33 +353,40 @@ class MeshMediaHandlerIT {
 
     private final ProbeMediaInfo media;
     private final MeshSegmentStore segments;
+    // Lacks the worker session until the server accepts it.
+    private final WorkerProbeReporter.WorkerProbeReporterBuilder reporter;
     private final CompletableFuture<Void> accepted = new CompletableFuture<>();
     private final CompletableFuture<VariantJob> started = new CompletableFuture<>();
     private final CompletableFuture<Uuid> stopped = new CompletableFuture<>();
     private StreamObserver<EstablishWorkerSessionRequest> requests;
 
-    private ProbeWorker(ProbeMediaInfo media, MeshSegmentStore segments) {
+    private ProbeWorker(
+        ProbeMediaInfo media,
+        MeshSegmentStore segments,
+        WorkerProbeReporter.WorkerProbeReporterBuilder reporter) {
       this.media = media;
       this.segments = segments;
+      this.reporter = reporter;
     }
 
     @Override
     public void onNext(EstablishWorkerSessionResponse response) {
       if (response.hasSessionAccepted()) {
+        reporter.workerSessionId(response.getSessionAccepted().getWorkerSessionId());
         accepted.complete(null);
         return;
       }
 
       if (response.hasStartProbe()) {
         var request = response.getStartProbe().getRequest();
-        requests.onNext(
-            EstablishWorkerSessionRequest.newBuilder()
-                .setProbeResult(
-                    ProbeAttemptResult.newBuilder()
-                        .setProbeAttemptId(request.getProbeAttemptId())
-                        .setProbeVersion(request.getProbeVersion())
-                        .setMedia(media))
-                .build());
+        reporter
+            .build()
+            .report(
+                ProbeAttemptResult.newBuilder()
+                    .setProbeAttemptId(request.getProbeAttemptId())
+                    .setProbeVersion(request.getProbeVersion())
+                    .setMedia(media)
+                    .build());
         return;
       }
 

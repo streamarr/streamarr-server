@@ -5,6 +5,7 @@ type Season {
     overview: String
     airDate: String
     series: Series!
+    "Episodes with at least one associated media file, in episode-number order."
     episodes: [Episode]!
     images(type: ImageType): [Image]!
     "The selected Profile's state of this season. Null when the request has no selected Profile."

@@ -26,6 +26,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.WorkerContainerFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.streaming.SegmentNames;
@@ -265,9 +266,11 @@ class CopiedTrackAudioStepIT {
         .atMost(Duration.ofSeconds(60))
         .until(() -> !executor.isRunning(sessionId, StreamSession.defaultVariant()));
     var media = new ByteArrayOutputStream();
-    media.writeBytes(segmentStore.readSegment(sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME));
+    media.writeBytes(
+        StoredSegments.bytes(segmentStore, sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME));
     for (var index = 0; index < timeline.mediaSegmentCount(); index++) {
-      media.writeBytes(segmentStore.readSegment(sessionId, SegmentNames.mediaSegmentName(index)));
+      media.writeBytes(
+          StoredSegments.bytes(segmentStore, sessionId, SegmentNames.mediaSegmentName(index)));
     }
 
     return Files.write(tempDir.resolve(sessionId + ".mp4"), media.toByteArray());

@@ -80,7 +80,7 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should leave no active token on session when refresh races revocation")
-  void shouldLeaveNoActiveTokenOnSessionWhenRefreshRacesRevocation() {
+  void shouldLeaveNoActiveTokenOnSessionWhenRefreshRacesRevocation() throws InterruptedException {
     account = authTestSupport.createAccount();
 
     for (int round = 0; round < ROUNDS; round++) {
@@ -169,7 +169,8 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
         .isInstanceOf(TokenReuseDetectedException.class);
   }
 
-  private void raceRefreshAgainstRevocation(String rawToken, UUID sessionId) {
+  private void raceRefreshAgainstRevocation(String rawToken, UUID sessionId)
+      throws InterruptedException {
     try (var executor = TestFixtureWork.newFixedThreadPoolRunningAsTestFixtureActor(2)) {
       var startLatch = new CountDownLatch(1);
       var doneLatch = new CountDownLatch(2);
@@ -180,9 +181,9 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
       executor.submit(guarded(startLatch, doneLatch, errors, () -> revokeAndSweep(sessionId)));
 
       startLatch.countDown();
-      await()
-          .atMost(Duration.ofSeconds(10))
-          .untilAsserted(() -> assertThat(doneLatch.getCount()).isZero());
+      assertThat(doneLatch.await(10, TimeUnit.SECONDS))
+          .as("refresh and revocation both finished")
+          .isTrue();
 
       // Refresh may legitimately reject (it lost the race); nothing should fail unexpectedly —
       // no deadlock, and revocation never fails.

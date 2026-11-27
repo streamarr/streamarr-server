@@ -2,6 +2,8 @@ package com.streamarr.server.controllers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -26,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -198,6 +201,42 @@ class StreamControllerIT extends AbstractIntegrationTest {
     mockMvc
         .perform(get("/api/stream/{id}/segment0.m4s", session.getSessionId()).param("t", token))
         .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("Should answer a stored segment's bytes and length when requested over HTTP")
+  void shouldAnswerStoredSegmentsBytesAndLengthWhenRequestedOverHttp() throws Exception {
+    var session = StreamSessionFixture.buildActiveSession();
+    var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
+    STUB_SERVICE.addSession(session);
+    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.m4s", segmentData);
+
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/segment0.m4s", session.getSessionId())
+                .param("t", playbackToken(session.getSessionId())))
+        .andExpect(status().isOk())
+        .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "video/mp4"))
+        .andExpect(header().longValue(HttpHeaders.CONTENT_LENGTH, 4))
+        .andExpect(content().bytes(segmentData));
+  }
+
+  @Test
+  @DisplayName("Should answer the requested bytes of a stored segment when a range is requested")
+  void shouldAnswerRequestedBytesOfStoredSegmentWhenRangeIsRequested() throws Exception {
+    var session = StreamSessionFixture.buildActiveSession();
+    STUB_SERVICE.addSession(session);
+    FAKE_SEGMENT_STORE.addSegment(
+        session.getSessionId(), "segment0.m4s", new byte[] {0x47, 0x00, 0x11, 0x10});
+
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/segment0.m4s", session.getSessionId())
+                .param("t", playbackToken(session.getSessionId()))
+                .header(HttpHeaders.RANGE, "bytes=1-2"))
+        .andExpect(status().isPartialContent())
+        .andExpect(header().string(HttpHeaders.CONTENT_RANGE, "bytes 1-2/4"))
+        .andExpect(content().bytes(new byte[] {0x00, 0x11}));
   }
 
   @Test

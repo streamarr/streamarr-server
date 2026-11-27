@@ -2,6 +2,8 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
+import static com.streamarr.server.services.streaming.remote.LiveWorkerConnectionRegistryFixture.report;
+import static com.streamarr.server.services.streaming.remote.LiveWorkerConnectionRegistryFixture.reportingSession;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,7 +26,9 @@ import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -56,6 +60,8 @@ class WorkerProbeCapacityTest {
           .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
           .eventPublisher(new CapturingEventPublisher())
           .build();
+  // The identity that registered each worker session, which a report call of the session names.
+  private final Map<UUID, WorkerIdentity> registeredWorkers = new ConcurrentHashMap<>();
 
   @Test
   @DisplayName(
@@ -314,7 +320,8 @@ class WorkerProbeCapacityTest {
   @DisplayName(
       "Should send no new probe until the running probes fall below the capacities when"
           + " the worker lowers them")
-  void shouldSendNoNewProbeUntilTheRunningProbesFallBelowTheCapacitiesWhenTheWorkerLowersThem() {
+  void shouldSendNoNewProbeUntilTheRunningProbesFallBelowTheCapacitiesWhenTheWorkerLowersThem()
+      throws Exception {
     var sessionId =
         registerSession(Worker.builder().backgroundProbeCapacity(3).playbackSlots(1).build());
     var running = IntStream.range(0, 3).mapToObj(_ -> probe().build()).toList();
@@ -327,14 +334,14 @@ class WorkerProbeCapacityTest {
 
     assertThat(registry.dispatchProbe(probe().build()))
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, invalidMedia(running.get(0)))).isTrue();
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, invalidMedia(running.get(1)))).isTrue();
+    assertThat(reports(sessionId, invalidMedia(running.get(0)))).isTrue();
+    assertThat(reports(sessionId, invalidMedia(running.get(1)))).isTrue();
     assertThat(registry.dispatchProbe(probe().build()))
         .as("The one probe that still runs uses the whole lowered capacity")
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, invalidMedia(running.get(2)))).isTrue();
+    assertThat(reports(sessionId, invalidMedia(running.get(2)))).isTrue();
     assertDispatched(registry.dispatchProbe(probe().build()));
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, invalidMedia(runningScan))).isTrue();
+    assertThat(reports(sessionId, invalidMedia(runningScan))).isTrue();
     assertThat(registry.dispatchProbe(scan().build()))
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
   }
@@ -482,15 +489,14 @@ class WorkerProbeCapacityTest {
 
   @Test
   @DisplayName("Should count a deferred probe when the worker reports no free capacity for it")
-  void shouldCountADeferredProbeWhenTheWorkerReportsNoFreeCapacityForIt() {
+  void shouldCountADeferredProbeWhenTheWorkerReportsNoFreeCapacityForIt() throws Exception {
     var sessionId =
         registerSession(Worker.builder().backgroundProbeCapacity(1).playbackSlots(1).build());
     var request = probe().build();
     assertDispatched(registry.dispatchProbe(request));
 
     assertThat(
-            registry.completeProbe(
-                WORKER_ID,
+            reports(
                 sessionId,
                 ProbeAttemptResult.newBuilder()
                     .setProbeAttemptId(request.getProbeAttemptId())
@@ -530,25 +536,36 @@ class WorkerProbeCapacityTest {
   }
 
   private UUID registerSession(Worker worker, CapturingResponses responses) {
-    return registry.register(
-        worker.workerId(),
-        WorkerRegistration.newBuilder()
-            .setWorker(
-                WorkerIdentity.newBuilder()
-                    .setWorkerId(toProto(worker.workerId()))
-                    .setBootId(toProto(UUID.randomUUID())))
-            .setCapabilities(
-                WorkerCapabilities.newBuilder()
-                    .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
-                    .addProbeVersions(worker.probeVersion()))
-            .setAvailableSlots(worker.playbackSlots())
-            .setBackgroundProbeCapacity(worker.backgroundProbeCapacity())
-            .setPlaybackProbeCapacity(worker.playbackProbeCapacity())
-            .setKeyframePacketScanCapacity(worker.keyframePacketScanCapacity())
-            .setBackgroundProbeCapacityControl(
-                BackgroundProbeCapacityControl.BACKGROUND_PROBE_CAPACITY_CONTROL_ADAPTIVE)
-            .build(),
-        responses);
+    var identity =
+        WorkerIdentity.newBuilder()
+            .setWorkerId(toProto(worker.workerId()))
+            .setBootId(toProto(UUID.randomUUID()))
+            .build();
+    var sessionId =
+        registry.register(
+            worker.workerId(),
+            WorkerRegistration.newBuilder()
+                .setWorker(identity)
+                .setCapabilities(
+                    WorkerCapabilities.newBuilder()
+                        .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
+                        .addProbeVersions(worker.probeVersion()))
+                .setAvailableSlots(worker.playbackSlots())
+                .setBackgroundProbeCapacity(worker.backgroundProbeCapacity())
+                .setPlaybackProbeCapacity(worker.playbackProbeCapacity())
+                .setKeyframePacketScanCapacity(worker.keyframePacketScanCapacity())
+                .setBackgroundProbeCapacityControl(
+                    BackgroundProbeCapacityControl.BACKGROUND_PROBE_CAPACITY_CONTROL_ADAPTIVE)
+                .build(),
+            responses);
+    registeredWorkers.put(sessionId, identity);
+    return sessionId;
+  }
+
+  /** Whether the server answers the report call that holds the result of the session's worker. */
+  private boolean reports(UUID sessionId, ProbeAttemptResult result) throws Exception {
+    return report(registry, reportingSession(sessionId, registeredWorkers.get(sessionId)), result)
+        .isAnswered();
   }
 
   private static ProbeCapacityChanged capacityChanged(

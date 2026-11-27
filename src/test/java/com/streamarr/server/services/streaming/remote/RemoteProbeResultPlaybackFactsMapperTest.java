@@ -28,8 +28,8 @@ import com.streamarr.transcode.v1.Fraction;
 import com.streamarr.transcode.v1.FrameRateRuleResult;
 import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
@@ -399,13 +399,11 @@ class RemoteProbeResultPlaybackFactsMapperTest {
                                           KeyframePositionSource
                                               .KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX)
                                       .setKeyframeCount(1))));
-      return new ProbeAttemptReport(
-          result,
-          List.of(
-              ProbeKeyframePositionsPart.newBuilder()
-                  .addPresentationTimeDeltas(0)
-                  .addDecodeTimeDeltas(0)
-                  .build()));
+      return ProbeAttemptReport.newBuilder()
+          .setResult(result)
+          .addKeyframePresentationTimeDeltas(0)
+          .addKeyframeDecodeTimeDeltas(0)
+          .build();
     }
 
     @SuppressWarnings("checkstyle:fullyQualifiedName")
@@ -720,6 +718,6 @@ class RemoteProbeResultPlaybackFactsMapperTest {
   }
 
   private static ProbeAttemptReport report(ProbeAttemptResult result) {
-    return new ProbeAttemptReport(result, List.of());
+    return ProbeAttemptReport.newBuilder().setResult(result).build();
   }
 }

@@ -27,8 +27,8 @@ import org.springframework.test.context.ContextConfiguration;
 
 /**
  * Runs with {@code OTEL_METRICS_EXPORTER=otlp}, which turns the OpenTelemetry SDK's metric exporter
- * back on. The SDK then exports every 100 ms, so anything it sends besides Micrometer's export
- * reaches the collector many times between two registry steps.
+ * back on. A test flushes the SDK, which then exports at once everything it would send besides
+ * Micrometer's export.
  */
 @DisplayName("Metric Export With SDK Exporter Integration Tests")
 @ContextConfiguration(initializers = MetricExportWithSdkExporterIT.DeploymentVariables.class)
@@ -50,8 +50,8 @@ class MetricExportWithSdkExporterIT extends AbstractObservabilityProfileIntegrat
     COLLECTOR.close();
   }
 
-  // An instrument of the SDK's own gives its exporter something to send at every interval, so a
-  // wait can require SDK exports collected after a test's step.
+  // An instrument of the SDK's own gives each flush something to export, so a test can tell that
+  // the SDK's exporter is on.
   @BeforeEach
   void registerSdkSentinel() {
     sdkSentinel =
@@ -71,11 +71,6 @@ class MetricExportWithSdkExporterIT extends AbstractObservabilityProfileIntegrat
     return COLLECTOR;
   }
 
-  @Override
-  Set<String> exportersToAwait() {
-    return Set.of(MICROMETER, OPENTELEMETRY_SDK);
-  }
-
   @Test
   @DisplayName("Should stop exporting a meter when it is removed from the registry")
   void shouldStopExportingAMeterWhenItIsRemovedFromTheRegistry() throws Exception {
@@ -87,22 +82,33 @@ class MetricExportWithSdkExporterIT extends AbstractObservabilityProfileIntegrat
     productionSpeed.record(2.5);
     var beforeRemoval =
         exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position());
-    assertThat(workersOf(beforeRemoval)).contains(worker);
+    assertThat(workersOf(beforeRemoval))
+        .as("workers of the production speed meter in the export collected before its removal")
+        .contains(worker);
 
     meterRegistry.remove(productionSpeed);
-    var afterRemoval = exportsCollectedAfter(COLLECTOR.metricExports().position());
+    var removalPosition = COLLECTOR.metricExports().position();
+    flushTheSdksMetrics();
+    var afterRemoval = exportsCollectedAfter(removalPosition);
 
     assertThat(afterRemoval)
+        .extracting(OtlpExports::exporter)
+        .as("exporters of the exports collected after the removal")
+        .contains(Optional.of(MICROMETER), Optional.of(OPENTELEMETRY_SDK));
+    assertThat(afterRemoval)
         .flatMap(MetricExportWithSdkExporterIT::workersOf)
+        .as("workers of the production speed meter in the exports collected after its removal")
         .doesNotContain(worker);
   }
 
   @Test
   @DisplayName("Should export JVM metrics from one instrumentation when the SDK exporter is on")
   void shouldExportJvmMetricsFromOneInstrumentationWhenTheSdkExporterIsOn() throws Exception {
-    exportOfTheServersMetersCollectedAfter(COLLECTOR.metricExports().position());
+    flushTheSdksMetrics();
+    firstExportOfTheReadyServer();
 
     var exports = COLLECTOR.metricExports().all();
+    assertThat(exports).extracting(OtlpExports::exporter).contains(Optional.of(OPENTELEMETRY_SDK));
     assertThat(scopesExporting(exports, name -> name.startsWith("jvm.")))
         .hasSize(1)
         .isEqualTo(scopesExporting(exports, STARTUP_METER::equals));

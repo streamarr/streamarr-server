@@ -12,7 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record ArtworkSchedulingProperties(Integer primaryThreads, Integer backgroundThreads) {
 
   private static final int DEFAULT_PRIMARY_THREADS = 16;
-  private static final int DEFAULT_BACKGROUND_THREADS = 4;
+  private static final int DEFAULT_BACKGROUND_THREADS = 16;
 
   public ArtworkSchedulingProperties {
     if (primaryThreads == null) {

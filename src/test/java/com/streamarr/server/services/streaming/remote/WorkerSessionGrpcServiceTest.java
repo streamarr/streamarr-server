@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming.remote;
 
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.hardwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.keyframeVerifiedHardwareEncoder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
@@ -13,24 +12,27 @@ import static com.streamarr.transcode.v1.JobAttemptFailure.JOB_ATTEMPT_FAILURE_S
 import static com.streamarr.transcode.v1.JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.UnknownFieldSet;
 import com.streamarr.server.domain.streaming.SourceEndedEarly;
 import com.streamarr.server.domain.streaming.SourceStreamEnd;
-import com.streamarr.server.exceptions.ProbeContractViolationException;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.ForwardingPreparedSegment;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HeldSegmentRequests;
 import com.streamarr.server.services.streaming.SegmentNames;
-import com.streamarr.server.services.streaming.SegmentPublication;
+import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.WorkerVerifiedCodecFamilies;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
+import com.streamarr.server.services.streaming.events.MediaSegmentPublishedEvent;
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
+import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
@@ -42,15 +44,9 @@ import com.streamarr.transcode.v1.JobAttemptStopped;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCapacityChanged;
-import com.streamarr.transcode.v1.ProbeFailure;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
-import com.streamarr.transcode.v1.ProbeRequest;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadLimitReached;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
-import com.streamarr.transcode.v1.StreamMeasurementSource;
-import com.streamarr.transcode.v1.StreamMeasurements;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
@@ -71,49 +67,33 @@ import io.grpc.Context;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.nio.ByteBuffer;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.UnaryOperator;
-import java.util.stream.LongStream;
-import java.util.stream.Stream;
 import lombok.Builder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Worker Session gRPC Service Tests")
 class WorkerSessionGrpcServiceTest {
 
-  // worker_session.proto bounds the keyframe positions of one probe attempt to 1,048,576 entries.
-  private static final int MAXIMUM_KEYFRAME_POSITIONS_PER_PROBE = 1_048_576;
-  // worker_session.proto bounds each list of a keyframe positions part to 4,096 entries.
-  private static final int MAXIMUM_ENTRIES_PER_PART = 4_096;
-  // worker_session.proto bounds the measurement parts of one probe attempt to 8,388,608 entries.
-  private static final int MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE = 8_388_608;
-  // worker_session.proto bounds the streams that the measurement parts of one attempt name to
-  // 1,024.
-  private static final int MAXIMUM_MEASURED_STREAMS_PER_PROBE = 1_024;
-  private static final int VIDEO_STREAM = 0;
-  private static final int AUDIO_STREAM = 1;
   private static final String ENCODER_BACKEND_MISMATCH_METRIC =
       "streamarr.streaming.encoder_backend_mismatches";
   private static final String MISSING_ENCODER_METRIC = "streamarr.streaming.missing_encoder";
@@ -124,38 +104,34 @@ class WorkerSessionGrpcServiceTest {
 
   @Test
   @DisplayName(
-      "Should complete a probe when its result arrives on the authenticated worker session")
-  void shouldCompleteProbeWhenItsResultArrivesOnAuthenticatedWorkerSession() throws Exception {
-    var workerId = UUID.randomUUID();
-    var sourceNamespaceId = UUID.randomUUID();
-    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
-    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
-    var session = workerSession(service, workerId, new IgnoringResponseObserver());
-    var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
-    registration
-        .setBackgroundProbeCapacity(1)
-        .setKeyframePacketScanCapacity(1)
-        .getCapabilitiesBuilder()
-        .addProbeVersions(1);
-    session.onNext(
-        EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
-    var request =
-        ProbeRequest.newBuilder()
-            .setProbeAttemptId(toProto(UUID.randomUUID()))
-            .setProbeVersion(1)
-            .setSource(variantJob(sourceNamespaceId).getSource())
-            .build();
-    var attempt = dispatched(registry.dispatchProbe(request));
-    var result =
-        ProbeAttemptResult.newBuilder()
-            .setProbeAttemptId(request.getProbeAttemptId())
-            .setProbeVersion(1)
-            .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
-            .build();
+      "Should keep the worker session and leave the probe pending when a worker sends a probe"
+          + " result as a session event")
+  void shouldKeepWorkerSessionAndLeaveProbePendingWhenWorkerSendsProbeResultAsSessionEvent()
+      throws Exception {
+    var worker = ReportingWorker.connectedTo(WorkerSessionServerConfiguration.builder());
+    var probe = worker.dispatch();
+    var report = ReportingWorker.invalidMedia(probe.request()).build();
 
-    session.onNext(EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build());
+    worker.send(
+        EstablishWorkerSessionRequest.parseFrom(formerProbeResultEvent(report.getResult())));
 
-    assertThat(attempt.get(1, TimeUnit.SECONDS).result()).isEqualTo(result);
+    assertThat(probe.outcome()).as("The probe waits for its probe timeout").isNotDone();
+    assertThat(worker.sessionEnd()).as("The server keeps the worker session").isNotDone();
+    assertThat(worker.isConnected()).isTrue();
+    assertThat(worker.report(probe.request(), report).isAnswered())
+        .as("The report call still completes the probe")
+        .isTrue();
+    assertThat(probe.outcome().get(1, TimeUnit.SECONDS)).isEqualTo(report);
+  }
+
+  // A worker built before the report call sends its probe result as field 6 of the session event,
+  // a number that the contract reserves.
+  private static ByteString formerProbeResultEvent(ProbeAttemptResult result) {
+    return UnknownFieldSet.newBuilder()
+        .addField(
+            6, UnknownFieldSet.Field.newBuilder().addLengthDelimited(result.toByteString()).build())
+        .build()
+        .toByteString();
   }
 
   @Test
@@ -226,446 +202,6 @@ class WorkerSessionGrpcServiceTest {
 
     assertThat(registry.hardwareEncodableVideoCodecFamilies(sourceNamespaceId)).isEmpty();
     assertThat(registry.encodableVideoCodecFamilies(sourceNamespaceId)).containsExactly("h264");
-  }
-
-  @Test
-  @DisplayName(
-      "Should report keyframe positions parts with the probe result when a worker sends them before the result")
-  void shouldReportKeyframePositionsPartsWithProbeResultWhenWorkerSendsThemBeforeResult()
-      throws Exception {
-    var probe = SessionProbe.dispatch();
-    var first = keyframePositionsPart(probe.request(), 2);
-    var second = keyframePositionsPart(probe.request(), 1);
-
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(first));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(second));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
-
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS))
-        .isEqualTo(
-            new ProbeAttemptReport(
-                probe.result(), List.of(keyframePositionsPart(probe.request(), 3))));
-  }
-
-  @Test
-  @DisplayName(
-      "Should report the same keyframe positions when a worker sends them in 1,025 single-entry parts")
-  void shouldReportSameKeyframePositionsWhenWorkerSendsThemIn1025SingleEntryParts()
-      throws Exception {
-    var onePart = SessionProbe.dispatch();
-    onePart.send(
-        EstablishWorkerSessionRequest.newBuilder()
-            .setProbeKeyframePositionsPart(keyframePositionsPart(onePart.request(), 1_025)));
-    onePart.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(onePart.result()));
-    var singleEntryParts = SessionProbe.dispatch();
-    var singleEntryPart = keyframePositionsPart(singleEntryParts.request(), 1);
-
-    for (var sent = 0; sent < 1_025; sent++) {
-      singleEntryParts.send(
-          EstablishWorkerSessionRequest.newBuilder()
-              .setProbeKeyframePositionsPart(singleEntryPart));
-    }
-
-    singleEntryParts.send(
-        EstablishWorkerSessionRequest.newBuilder().setProbeResult(singleEntryParts.result()));
-
-    assertThat(withoutAttemptIds(singleEntryParts.attempt().get(1, TimeUnit.SECONDS)))
-        .isEqualTo(withoutAttemptIds(onePart.attempt().get(1, TimeUnit.SECONDS)));
-  }
-
-  @Test
-  @DisplayName(
-      "Should report no keyframe positions parts when a worker sends them for another probe attempt")
-  void shouldReportNoKeyframePositionsPartsWhenWorkerSendsThemForAnotherProbeAttempt()
-      throws Exception {
-    var probe = SessionProbe.dispatch();
-    var otherAttempt =
-        probe.request().toBuilder().setProbeAttemptId(toProto(UUID.randomUUID())).build();
-
-    probe.send(
-        EstablishWorkerSessionRequest.newBuilder()
-            .setProbeKeyframePositionsPart(keyframePositionsPart(otherAttempt, 1)));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
-
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).keyframePositionsParts()).isEmpty();
-  }
-
-  @Test
-  @DisplayName(
-      "Should fail a probe when a worker sends more keyframe positions than one probe allows")
-  void shouldFailProbeWhenWorkerSendsMoreKeyframePositionsThanOneProbeAllows() throws Exception {
-    var probe = SessionProbe.dispatch();
-    var fullPart = keyframePositionsPart(probe.request(), MAXIMUM_ENTRIES_PER_PART);
-
-    for (var sent = 0;
-        sent < MAXIMUM_KEYFRAME_POSITIONS_PER_PROBE / MAXIMUM_ENTRIES_PER_PART;
-        sent++) {
-      probe.send(
-          EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(fullPart));
-    }
-
-    probe.send(
-        EstablishWorkerSessionRequest.newBuilder()
-            .setProbeKeyframePositionsPart(keyframePositionsPart(probe.request(), 1)));
-
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
-
-    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
-        .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeContractViolationException.class);
-  }
-
-  @ParameterizedTest
-  @CsvSource({"4097,0", "0,4097"})
-  @DisplayName(
-      "Should fail a probe when a keyframe positions part holds more entries than the contract allows")
-  void shouldFailProbeWhenKeyframePositionsPartHoldsMoreEntriesThanContractAllows(
-      int presentationTimes, int decodeTimes) throws Exception {
-    var probe = SessionProbe.dispatch();
-    var part = ProbeKeyframePositionsPart.newBuilder().setProbeAttemptId(probe.attemptId());
-    LongStream.range(0, presentationTimes).forEach(part::addPresentationTimeDeltas);
-    LongStream.range(0, decodeTimes).forEach(part::addDecodeTimeDeltas);
-
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeKeyframePositionsPart(part));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
-
-    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
-        .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeContractViolationException.class);
-  }
-
-  @Test
-  @DisplayName("Should fail a probe when the lists of one keyframe positions part differ in length")
-  void shouldFailProbeWhenListsOfOneKeyframePositionsPartDifferInLength() throws Exception {
-    var probe = SessionProbe.dispatch();
-    var longerPresentationTimes =
-        ProbeKeyframePositionsPart.newBuilder()
-            .setProbeAttemptId(probe.attemptId())
-            .addPresentationTimeDeltas(90_000)
-            .addPresentationTimeDeltas(90_000)
-            .addDecodeTimeDeltas(90_000);
-    var longerDecodeTimes =
-        ProbeKeyframePositionsPart.newBuilder()
-            .setProbeAttemptId(probe.attemptId())
-            .addPresentationTimeDeltas(90_000)
-            .addDecodeTimeDeltas(90_000)
-            .addDecodeTimeDeltas(90_000);
-
-    probe.send(
-        EstablishWorkerSessionRequest.newBuilder()
-            .setProbeKeyframePositionsPart(longerPresentationTimes));
-    probe.send(
-        EstablishWorkerSessionRequest.newBuilder()
-            .setProbeKeyframePositionsPart(longerDecodeTimes));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
-
-    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
-        .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeContractViolationException.class);
-  }
-
-  @Test
-  @DisplayName(
-      "Should join each stream's measurement parts in order when a worker interleaves the streams")
-  void shouldJoinEachStreamsMeasurementPartsInOrderWhenWorkerInterleavesStreams() throws Exception {
-    var probe = SessionProbe.dispatch();
-
-    probe.sendMeasurementPart(
-        probe
-            .measurementPart(VIDEO_STREAM)
-            .addAllKeyframeIntervalBytes(List.of(1, 2))
-            .addAllKeyframeIntervalPacketCounts(List.of(11, 12)));
-    probe.sendMeasurementPart(
-        probe
-            .measurementPart(AUDIO_STREAM)
-            .addKeyframeIntervalBytes(7)
-            .addKeyframeIntervalPacketCounts(17));
-    probe.sendMeasurementPart(
-        probe
-            .measurementPart(VIDEO_STREAM)
-            .addKeyframeIntervalBytes(3)
-            .addKeyframeIntervalPacketCounts(13));
-    probe.sendMeasuredResult();
-
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
-        .containsExactly(
-            probe
-                .measurementPart(VIDEO_STREAM)
-                .addAllKeyframeIntervalBytes(List.of(1, 2, 3))
-                .addAllKeyframeIntervalPacketCounts(List.of(11, 12, 13))
-                .build(),
-            probe
-                .measurementPart(AUDIO_STREAM)
-                .addKeyframeIntervalBytes(7)
-                .addKeyframeIntervalPacketCounts(17)
-                .build());
-  }
-
-  @Test
-  @DisplayName(
-      "Should report no measurement parts when a worker sends them for another probe attempt")
-  void shouldReportNoMeasurementPartsWhenWorkerSendsThemForAnotherProbeAttempt() throws Exception {
-    var probe = SessionProbe.dispatch();
-
-    probe.sendMeasurementPart(
-        withEntries(probe.measurementPart(VIDEO_STREAM), 1)
-            .setProbeAttemptId(toProto(UUID.randomUUID())));
-    probe.sendMeasuredResult();
-
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
-  }
-
-  @Test
-  @DisplayName(
-      "Should accept a measurement part when it holds exactly as many entries as one part allows")
-  void shouldAcceptMeasurementPartWhenItHoldsExactlyAsManyEntriesAsOnePartAllows()
-      throws Exception {
-    var probe = SessionProbe.dispatch();
-
-    probe.sendMeasurementPart(
-        withEntries(probe.measurementPart(VIDEO_STREAM), MAXIMUM_ENTRIES_PER_PART));
-    probe.sendMeasuredResult();
-
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
-        .singleElement()
-        .extracting(ProbeStreamMeasurementPart::getKeyframeIntervalBytesCount)
-        .isEqualTo(MAXIMUM_ENTRIES_PER_PART);
-  }
-
-  @Test
-  @DisplayName(
-      "Should fail a probe when a measurement part holds more entries than one part allows")
-  void shouldFailProbeWhenMeasurementPartHoldsMoreEntriesThanOnePartAllows() throws Exception {
-    var probe = SessionProbe.dispatch();
-
-    probe.sendMeasurementPart(
-        withEntries(probe.measurementPart(VIDEO_STREAM), MAXIMUM_ENTRIES_PER_PART + 1));
-    probe.sendMeasuredResult();
-
-    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
-        .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeContractViolationException.class);
-  }
-
-  @Test
-  @DisplayName(
-      "Should accept measurement parts when they hold exactly as many entries as one probe allows")
-  void shouldAcceptMeasurementPartsWhenTheyHoldExactlyAsManyEntriesAsOneProbeAllows()
-      throws Exception {
-    var probe = SessionProbe.dispatch();
-
-    sendFullMeasurementParts(probe, MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE);
-    probe.sendMeasuredResult();
-
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
-        .singleElement()
-        .extracting(ProbeStreamMeasurementPart::getKeyframeIntervalBytesCount)
-        .isEqualTo(MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE);
-  }
-
-  @Test
-  @DisplayName(
-      "Should fail a probe when a worker sends more measurement entries than one probe allows")
-  void shouldFailProbeWhenWorkerSendsMoreMeasurementEntriesThanOneProbeAllows() throws Exception {
-    var probe = SessionProbe.dispatch();
-
-    sendFullMeasurementParts(probe, MAXIMUM_MEASUREMENT_ENTRIES_PER_PROBE);
-    probe.sendMeasurementPart(withEntries(probe.measurementPart(AUDIO_STREAM), 1));
-    probe.sendMeasuredResult();
-
-    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
-        .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeContractViolationException.class);
-  }
-
-  @Test
-  @DisplayName(
-      "Should fail a probe when a measurement part counts packets for other intervals than its"
-          + " bytes")
-  void shouldFailProbeWhenMeasurementPartCountsPacketsForOtherIntervalsThanItsBytes()
-      throws Exception {
-    var probe = SessionProbe.dispatch();
-
-    probe.sendMeasurementPart(
-        probe
-            .measurementPart(VIDEO_STREAM)
-            .addAllKeyframeIntervalBytes(List.of(1, 2))
-            .addAllKeyframeIntervalPacketCounts(List.of(1, 1, 1)));
-    probe.sendMeasuredResult();
-
-    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
-        .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeContractViolationException.class);
-  }
-
-  @Test
-  @DisplayName("Should fail a probe when a measurement part holds no entries")
-  void shouldFailProbeWhenMeasurementPartHoldsNoEntries() throws Exception {
-    var probe = SessionProbe.dispatch();
-
-    probe.sendMeasurementPart(probe.measurementPart(VIDEO_STREAM));
-    probe.sendMeasuredResult();
-
-    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
-        .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeContractViolationException.class);
-  }
-
-  @Test
-  @DisplayName(
-      "Should accept measurement parts when they name exactly as many streams as one probe allows")
-  void shouldAcceptMeasurementPartsWhenTheyNameExactlyAsManyStreamsAsOneProbeAllows()
-      throws Exception {
-    var probe = SessionProbe.dispatch();
-
-    for (var streamIndex = 0; streamIndex < MAXIMUM_MEASURED_STREAMS_PER_PROBE; streamIndex++) {
-      probe.sendMeasurementPart(withEntries(probe.measurementPart(streamIndex), 1));
-    }
-
-    probe.sendMeasurementPart(withEntries(probe.measurementPart(VIDEO_STREAM), 1));
-    probe.sendMeasuredResult();
-
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts())
-        .hasSize(MAXIMUM_MEASURED_STREAMS_PER_PROBE)
-        .first()
-        .extracting(ProbeStreamMeasurementPart::getKeyframeIntervalBytesCount)
-        .isEqualTo(2);
-  }
-
-  @Test
-  @DisplayName("Should fail a probe when measurement parts name more streams than one probe allows")
-  void shouldFailProbeWhenMeasurementPartsNameMoreStreamsThanOneProbeAllows() throws Exception {
-    var probe = SessionProbe.dispatch();
-
-    for (var streamIndex = 0; streamIndex <= MAXIMUM_MEASURED_STREAMS_PER_PROBE; streamIndex++) {
-      probe.sendMeasurementPart(withEntries(probe.measurementPart(streamIndex), 1));
-    }
-
-    probe.sendMeasuredResult();
-
-    assertThatThrownBy(() -> probe.attempt().get(1, TimeUnit.SECONDS))
-        .isInstanceOf(ExecutionException.class)
-        .hasCauseInstanceOf(ProbeContractViolationException.class);
-  }
-
-  @ParameterizedTest(name = "{0}")
-  @MethodSource("measurementPartsOfUnmeasuredResult")
-  @DisplayName("Should discard the measurement parts when the result reports no measurement")
-  void shouldDiscardMeasurementPartsWhenResultReportsNoMeasurement(
-      String parts, UnaryOperator<ProbeStreamMeasurementPart.Builder> fill) throws Exception {
-    var probe = SessionProbe.dispatch();
-
-    probe.sendMeasurementPart(fill.apply(probe.measurementPart(VIDEO_STREAM)));
-    probe.send(EstablishWorkerSessionRequest.newBuilder().setProbeResult(probe.result()));
-
-    assertThat(probe.attempt().get(1, TimeUnit.SECONDS).streamMeasurementParts()).isEmpty();
-  }
-
-  static Stream<Arguments> measurementPartsOfUnmeasuredResult() {
-    return Stream.of(
-        arguments(
-            "a part that keeps the contract",
-            (UnaryOperator<ProbeStreamMeasurementPart.Builder>) part -> withEntries(part, 1)),
-        arguments(
-            "a part that breaks the contract",
-            UnaryOperator.<ProbeStreamMeasurementPart.Builder>identity()));
-  }
-
-  private static void sendFullMeasurementParts(SessionProbe probe, int entries) {
-    for (var sent = 0; sent < entries / MAXIMUM_ENTRIES_PER_PART; sent++) {
-      probe.sendMeasurementPart(
-          withEntries(probe.measurementPart(VIDEO_STREAM), MAXIMUM_ENTRIES_PER_PART));
-    }
-  }
-
-  /** Adds this many keyframe intervals to the part, each with no bytes and no packets. */
-  private static ProbeStreamMeasurementPart.Builder withEntries(
-      ProbeStreamMeasurementPart.Builder part, int entries) {
-    var zeros = Collections.nCopies(entries, 0);
-    return part.addAllKeyframeIntervalBytes(zeros).addAllKeyframeIntervalPacketCounts(zeros);
-  }
-
-  private static List<ProbeKeyframePositionsPart> withoutAttemptIds(ProbeAttemptReport report) {
-    return report.keyframePositionsParts().stream()
-        .map(part -> part.toBuilder().clearProbeAttemptId().build())
-        .toList();
-  }
-
-  private static ProbeKeyframePositionsPart keyframePositionsPart(
-      ProbeRequest request, int keyframes) {
-    var part =
-        ProbeKeyframePositionsPart.newBuilder().setProbeAttemptId(request.getProbeAttemptId());
-    for (var keyframe = 0; keyframe < keyframes; keyframe++) {
-      part.addPresentationTimeDeltas(90_000).addDecodeTimeDeltas(90_000);
-    }
-
-    return part.build();
-  }
-
-  private record SessionProbe(
-      StreamObserver<EstablishWorkerSessionRequest> session,
-      ProbeRequest request,
-      Future<ProbeAttemptReport> attempt) {
-
-    private static SessionProbe dispatch() throws Exception {
-      var workerId = UUID.randomUUID();
-      var sourceNamespaceId = UUID.randomUUID();
-      var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
-      var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
-      var session = workerSession(service, workerId, new IgnoringResponseObserver());
-      var registration = registration(worker(workerId), sourceNamespaceId).toBuilder();
-      registration
-          .setBackgroundProbeCapacity(1)
-          .setKeyframePacketScanCapacity(1)
-          .getCapabilitiesBuilder()
-          .addProbeVersions(1);
-      session.onNext(
-          EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build());
-      var request =
-          ProbeRequest.newBuilder()
-              .setProbeAttemptId(toProto(UUID.randomUUID()))
-              .setProbeVersion(1)
-              .setSource(variantJob(sourceNamespaceId).getSource())
-              .build();
-      return new SessionProbe(session, request, dispatched(registry.dispatchProbe(request)));
-    }
-
-    private Uuid attemptId() {
-      return request.getProbeAttemptId();
-    }
-
-    private ProbeAttemptResult result() {
-      return ProbeAttemptResult.newBuilder()
-          .setProbeAttemptId(request.getProbeAttemptId())
-          .setProbeVersion(1)
-          .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
-          .build();
-    }
-
-    private void send(EstablishWorkerSessionRequest.Builder event) {
-      session.onNext(event.build());
-    }
-
-    private ProbeStreamMeasurementPart.Builder measurementPart(int streamIndex) {
-      return ProbeStreamMeasurementPart.newBuilder()
-          .setProbeAttemptId(attemptId())
-          .setStreamIndex(streamIndex);
-    }
-
-    private void sendMeasurementPart(ProbeStreamMeasurementPart.Builder part) {
-      send(EstablishWorkerSessionRequest.newBuilder().setProbeStreamMeasurementPart(part));
-    }
-
-    private void sendMeasuredResult() {
-      var media =
-          result().getMedia().toBuilder()
-              .setStreamMeasurements(
-                  StreamMeasurements.newBuilder()
-                      .setSource(StreamMeasurementSource.STREAM_MEASUREMENT_SOURCE_SAMPLE_TABLE));
-      send(
-          EstablishWorkerSessionRequest.newBuilder()
-              .setProbeResult(result().toBuilder().setMedia(media)));
-    }
   }
 
   @Test
@@ -1678,15 +1214,183 @@ class WorkerSessionGrpcServiceTest {
     assertThat(response.completed()).isTrue();
     assertThat(response.response().getAcceptedLengthBytes()).isEqualTo(segmentData.length);
     assertThat(
-            segmentStore.readSegment(
+            StoredSegments.bytes(
+                segmentStore,
                 fromProto(job.getStreamSessionId()),
                 job.getVariant().getVariantLabel() + "/segment0.m4s"))
         .isEqualTo(segmentData);
   }
 
   @Test
-  @DisplayName("Should reject an upload when ownership is lost during publication")
-  void shouldRejectUploadWhenOwnershipIsLostDuringPublication() throws Exception {
+  @DisplayName("Should leave no file behind when the worker abandons an upload part-way")
+  void shouldLeaveNoFileBehindWhenWorkerAbandonsUploadPartWay(@TempDir Path segmentFolder)
+      throws Exception {
+    var segmentStore = new LocalSegmentStore(segmentFolder);
+    var started = startedUpload(segmentStore, new RecordingUploadResponseObserver(), 8);
+    started.upload().onNext(dataFrame(new byte[] {1, 2, 3, 4}));
+
+    started.upload().onError(Status.CANCELLED.asRuntimeException());
+
+    assertThat(segmentFolder).isEmptyDirectory();
+    assertThat(segmentStore.segmentExists(started.streamSessionId(), started.segmentName()))
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName("Should leave no file behind when an upload sends more bytes than it declared")
+  void shouldLeaveNoFileBehindWhenUploadSendsMoreBytesThanItDeclared(@TempDir Path segmentFolder)
+      throws Exception {
+    var response = new RecordingUploadResponseObserver();
+    var started = startedUpload(new LocalSegmentStore(segmentFolder), response, 4);
+    started.upload().onNext(dataFrame(new byte[] {1, 2, 3}));
+
+    started.upload().onNext(dataFrame(new byte[] {4, 5}));
+
+    assertThat(Status.fromThrowable(response.error()).getCode())
+        .isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThat(segmentFolder).isEmptyDirectory();
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject an upload once when it sends more bytes than it declared and its temporary"
+          + " file cannot be discarded")
+  void
+      shouldRejectUploadOnceWhenItSendsMoreBytesThanItDeclaredAndItsTemporaryFileCannotBeDiscarded()
+          throws Exception {
+    var response = new RecordingUploadResponseObserver();
+    var started = startedUpload(new CloseFailingSegmentStore(), response, 4);
+    started.upload().onNext(dataFrame(new byte[] {1, 2, 3}));
+
+    started.upload().onNext(dataFrame(new byte[] {4, 5}));
+
+    assertThat(response.errorCount()).isEqualTo(1);
+    assertThat(Status.fromThrowable(response.error()).getCode())
+        .isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThat(uploadDiscardFailures(started.meterRegistry())).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should report one storage failure as the first data message arrives when an upload's bytes"
+          + " cannot be written")
+  void shouldReportOneStorageFailureAsTheFirstDataMessageArrivesWhenUploadsBytesCannotBeWritten()
+      throws Exception {
+    var response = new RecordingUploadResponseObserver();
+    var started = startedUpload(new WriteFailingSegmentStore(), response, 4);
+
+    started.upload().onNext(dataFrame(new byte[] {1, 2}));
+
+    assertThat(response.errorCount()).isEqualTo(1);
+    assertThat(Status.fromThrowable(response.error()).getCode()).isEqualTo(Status.Code.INTERNAL);
+    started.upload().onNext(dataFrame(new byte[] {3, 4}));
+    started.upload().onCompleted();
+    assertThat(response.errorCount()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should report one storage failure when an upload's storage cannot be prepared")
+  void shouldReportOneStorageFailureWhenUploadsStorageCannotBePrepared() throws Exception {
+    var response = new RecordingUploadResponseObserver();
+    var unpreparable =
+        new FakeSegmentStore() {
+          @Override
+          public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+            throw new IllegalStateException("Simulated storage outage");
+          }
+        };
+
+    var started = startedUpload(unpreparable, response, 4);
+    started.upload().onNext(dataFrame(new byte[] {1, 2, 3, 4}));
+    started.upload().onCompleted();
+
+    assertThat(response.errorCount()).isEqualTo(1);
+    assertThat(Status.fromThrowable(response.error()).getCode()).isEqualTo(Status.Code.INTERNAL);
+  }
+
+  // An upload whose metadata, declaring the content length, has reached the server.
+  private static StartedUpload startedUpload(
+      SegmentStore segmentStore,
+      StreamObserver<UploadSegmentResponse> response,
+      int contentLengthBytes)
+      throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var worker = worker(workerId);
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.registryMeteredBy(meterRegistry);
+    var workerSessionId =
+        registry.register(
+            workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isPresent();
+    var upload = upload(new WorkerSessionGrpcService(registry, segmentStore), workerId, response);
+    upload.onNext(
+        UploadSegmentRequest.newBuilder()
+            .setMetadata(
+                metadataBuilder(workerSessionId, worker, job)
+                    .setContentLengthBytes(contentLengthBytes))
+            .build());
+    return StartedUpload.builder()
+        .upload(upload)
+        .streamSessionId(fromProto(job.getStreamSessionId()))
+        .segmentName(job.getVariant().getVariantLabel() + "/segment0.m4s")
+        .meterRegistry(meterRegistry)
+        .build();
+  }
+
+  private static UploadSegmentRequest dataFrame(byte[] data) {
+    return UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(data)).build();
+  }
+
+  private static double uploadDiscardFailures(SimpleMeterRegistry meterRegistry) {
+    return meterRegistry
+        .counter("streamarr.streaming.contained_failures", "operation", "segment_upload_discard")
+        .count();
+  }
+
+  @Builder
+  private record StartedUpload(
+      StreamObserver<UploadSegmentRequest> upload,
+      UUID streamSessionId,
+      String segmentName,
+      SimpleMeterRegistry meterRegistry) {}
+
+  private static final class WriteFailingSegmentStore extends FakeSegmentStore {
+
+    @Override
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+      return new ForwardingPreparedSegment(super.prepareSegment(sessionId, segmentName)) {
+        @Override
+        public void append(ByteBuffer bytes) {
+          throw new IllegalStateException("Simulated segment write failure");
+        }
+      };
+    }
+  }
+
+  private static final class CloseFailingSegmentStore extends FakeSegmentStore {
+
+    @Override
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+      return failingOnClose(super.prepareSegment(sessionId, segmentName));
+    }
+  }
+
+  private static SegmentStore.PreparedSegment failingOnClose(
+      SegmentStore.PreparedSegment prepared) {
+    return new ForwardingPreparedSegment(prepared) {
+      @Override
+      public void close() {
+        prepared.close();
+        throw new IllegalStateException("Simulated prepared segment cleanup failure");
+      }
+    };
+  }
+
+  @Test
+  @DisplayName("Should reject an upload when ownership is lost before its data arrives")
+  void shouldRejectUploadWhenOwnershipIsLostBeforeItsDataArrives() throws Exception {
     var segmentStore = new BlockingSegmentStore();
 
     var result = uploadThatLosesOwnership(segmentStore);
@@ -1708,6 +1412,7 @@ class WorkerSessionGrpcServiceTest {
     assertThat(result.response().errorCount()).isEqualTo(1);
     assertThat(Status.fromThrowable(result.response().error()).getCode())
         .isEqualTo(Status.Code.INTERNAL);
+    assertThat(uploadDiscardFailures(result.meterRegistry())).isEqualTo(1);
   }
 
   private static OwnershipLossResult uploadThatLosesOwnership(BlockingSegmentStore segmentStore)
@@ -1715,7 +1420,8 @@ class WorkerSessionGrpcServiceTest {
     var workerId = UUID.randomUUID();
     var sourceNamespaceId = UUID.randomUUID();
     var worker = worker(workerId);
-    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var meterRegistry = new SimpleMeterRegistry();
+    var registry = LiveWorkerConnectionRegistryFixture.registryMeteredBy(meterRegistry);
     var workerSessionId =
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
@@ -1725,16 +1431,21 @@ class WorkerSessionGrpcServiceTest {
     var response = new RecordingUploadResponseObserver();
     var segmentData = ByteString.copyFromUtf8("segment");
     var upload = upload(service, workerId, response);
-    upload.onNext(
+    var metadata =
         UploadSegmentRequest.newBuilder()
             .setMetadata(
                 metadataBuilder(workerSessionId, worker, job)
                     .setContentLengthBytes(segmentData.size()))
-            .build());
-    upload.onNext(UploadSegmentRequest.newBuilder().setData(segmentData).build());
+            .build();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var publication = executor.submit(upload::onCompleted);
+      var publication =
+          executor.submit(
+              () -> {
+                upload.onNext(metadata);
+                upload.onNext(UploadSegmentRequest.newBuilder().setData(segmentData).build());
+                upload.onCompleted();
+              });
       try {
         assertThat(segmentStore.awaitPreparation(Duration.ofSeconds(5))).isTrue();
         registry.disconnect(workerId, workerSessionId);
@@ -1745,14 +1456,20 @@ class WorkerSessionGrpcServiceTest {
       }
     }
 
-    return new OwnershipLossResult(
-        response,
-        fromProto(job.getStreamSessionId()),
-        job.getVariant().getVariantLabel() + "/segment0.m4s");
+    return OwnershipLossResult.builder()
+        .response(response)
+        .streamSessionId(fromProto(job.getStreamSessionId()))
+        .segmentName(job.getVariant().getVariantLabel() + "/segment0.m4s")
+        .meterRegistry(meterRegistry)
+        .build();
   }
 
+  @Builder
   private record OwnershipLossResult(
-      RecordingUploadResponseObserver response, UUID streamSessionId, String segmentName) {}
+      RecordingUploadResponseObserver response,
+      UUID streamSessionId,
+      String segmentName,
+      SimpleMeterRegistry meterRegistry) {}
 
   private enum ReportedEncoderBackend {
     DIFFERENT(
@@ -1921,11 +1638,21 @@ class WorkerSessionGrpcServiceTest {
         .isEqualTo(reconnected);
   }
 
-  @ParameterizedTest
-  @ValueSource(booleans = {true, false})
-  @DisplayName("Should publish a job attempt's progress only when its worker session runs it")
-  void shouldPublishAJobAttemptsProgressOnlyWhenItsWorkerSessionRunsIt(boolean running)
-      throws Exception {
+  // A report need not carry an output end: a held encode's keyframe search runs before FFmpeg
+  // writes, and FFmpeg writes nothing while an attempt's audio input reads on after the audio's
+  // last packet. Each such report counts the bytes read instead.
+  @ParameterizedTest(name = "running: {0}, the report carries {1}")
+  @CsvSource({
+    "true, KEYFRAME_SEARCH_BYTES_READ",
+    "false, KEYFRAME_SEARCH_BYTES_READ",
+    "true, FFMPEG_BYTES_READ",
+    "false, FFMPEG_BYTES_READ"
+  })
+  @DisplayName(
+      "Should publish a job attempt's progress, whichever bytes read its report carries, only when"
+          + " its worker session runs it")
+  void shouldPublishAJobAttemptsProgressOnlyWhenItsWorkerSessionRunsIt(
+      boolean running, BytesRead bytesRead) throws Exception {
     var events = new CapturingEventPublisher();
     var registry =
         LiveWorkerConnectionRegistry.builder()
@@ -1950,9 +1677,8 @@ class WorkerSessionGrpcServiceTest {
     connection.onNext(
         EstablishWorkerSessionRequest.newBuilder()
             .setJobAttemptProgress(
-                JobAttemptProgress.newBuilder()
-                    .setJobAttemptId(job.getJobAttemptId())
-                    .setKeyframeSearchBytesRead(65_536))
+                bytesRead.in(
+                    JobAttemptProgress.newBuilder().setJobAttemptId(job.getJobAttemptId())))
             .build());
 
     var progressed =
@@ -1963,6 +1689,24 @@ class WorkerSessionGrpcServiceTest {
             .build();
     assertThat(events.getEventsOfType(JobAttemptProgressedEvent.class))
         .isEqualTo(running ? List.of(progressed) : List.of());
+  }
+
+  /** The bytes read that a progress report without an output end carries. */
+  private enum BytesRead {
+    KEYFRAME_SEARCH_BYTES_READ {
+      @Override
+      JobAttemptProgress.Builder in(JobAttemptProgress.Builder progress) {
+        return progress.setKeyframeSearchBytesRead(65_536);
+      }
+    },
+    FFMPEG_BYTES_READ {
+      @Override
+      JobAttemptProgress.Builder in(JobAttemptProgress.Builder progress) {
+        return progress.setFfmpegBytesRead(65_536);
+      }
+    };
+
+    abstract JobAttemptProgress.Builder in(JobAttemptProgress.Builder progress);
   }
 
   @Test
@@ -2008,6 +1752,56 @@ class WorkerSessionGrpcServiceTest {
     var stored = new MediaSegmentStoredEvent(fromProto(job.getStreamSessionId()));
     assertThat(events.getEventsOfType(MediaSegmentStoredEvent.class))
         .containsExactly(stored, stored);
+  }
+
+  @Test
+  @DisplayName(
+      "Should accept and credit the second upload and keep the first stored bytes when a media"
+          + " segment is uploaded twice")
+  void shouldAcceptAndCreditSecondUploadAndKeepFirstStoredBytesWhenMediaSegmentIsUploadedTwice(
+      @TempDir Path segmentFolder) throws Exception {
+    var events = new CapturingEventPublisher();
+    var registry =
+        LiveWorkerConnectionRegistry.builder()
+            .configuration(WorkerSessionServerConfiguration.builder().build())
+            .meterRegistry(new SimpleMeterRegistry())
+            .heldRequests(new HeldSegmentRequests(new SimpleMeterRegistry()))
+            .eventPublisher(events)
+            .build();
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var worker = worker(workerId);
+    var workerSessionId =
+        registry.register(
+            workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isPresent();
+    var segmentStore = new LocalSegmentStore(segmentFolder);
+    var service = new WorkerSessionGrpcService(registry, segmentStore);
+
+    for (var segmentBytes : List.of(new byte[] {1}, new byte[] {2})) {
+      var response = new SuccessfulUploadResponseObserver();
+      var upload = upload(service, workerId, response);
+      upload.onNext(
+          UploadSegmentRequest.newBuilder()
+              .setMetadata(
+                  metadataBuilder(workerSessionId, worker, job)
+                      .setSegmentName("segment0.m4s")
+                      .setContentLengthBytes(1))
+              .build());
+      upload.onNext(
+          UploadSegmentRequest.newBuilder().setData(ByteString.copyFrom(segmentBytes)).build());
+      upload.onCompleted();
+      assertThat(response.completed()).isTrue();
+    }
+
+    assertThat(
+            StoredSegments.bytes(
+                segmentStore, fromProto(job.getStreamSessionId()), "720p/segment0.m4s"))
+        .containsExactly(1);
+    assertThat(events.getEventsOfType(MediaSegmentPublishedEvent.class))
+        .extracting(MediaSegmentPublishedEvent::segmentIndex)
+        .containsExactly(0, 0);
   }
 
   // ADR 0037: each chunk of a media segment upload restarts the stall clock, so a large merged
@@ -2184,20 +1978,8 @@ class WorkerSessionGrpcServiceTest {
   private static final class CloseFailingBlockingSegmentStore extends BlockingSegmentStore {
 
     @Override
-    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
-      var prepared = super.prepareSegment(sessionId, segmentName, data);
-      return new PreparedSegment() {
-        @Override
-        public SegmentPublication publish() {
-          return prepared.publish();
-        }
-
-        @Override
-        public void close() {
-          prepared.close();
-          throw new IllegalStateException("Simulated prepared segment cleanup failure");
-        }
-      };
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+      return failingOnClose(super.prepareSegment(sessionId, segmentName));
     }
   }
 

@@ -25,13 +25,14 @@ class ArtworkSchedulingPropertiesTest {
   static class ArtworkSchedulingPropertiesConfiguration {}
 
   @Test
-  @DisplayName("Should run sixteen primary and four background threads when nothing is configured")
-  void shouldRunSixteenPrimaryAndFourBackgroundThreadsWhenNothingIsConfigured() {
+  @DisplayName(
+      "Should run sixteen primary and sixteen background threads when nothing is configured")
+  void shouldRunSixteenPrimaryAndSixteenBackgroundThreadsWhenNothingIsConfigured() {
     var properties = ArtworkSchedulingProperties.builder().build();
 
     assertThat(properties)
         .isEqualTo(
-            ArtworkSchedulingProperties.builder().primaryThreads(16).backgroundThreads(4).build());
+            ArtworkSchedulingProperties.builder().primaryThreads(16).backgroundThreads(16).build());
   }
 
   @Test

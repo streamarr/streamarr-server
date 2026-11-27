@@ -45,7 +45,6 @@ public record LibraryOperationSchedulerStarter(
   public LibraryOperationScheduler start(SchedulerListener listener) {
     var properties = UnstartedSchedulerConfiguration.schedulerProperties(environment);
     properties.setShutdownMaxWait(shutdownMaxWait);
-    properties.setPollingInterval(Duration.ofMillis(100));
     var scheduler =
         LibraryOperationScheduler.builder()
             .schedulerProperties(properties)

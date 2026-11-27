@@ -1,21 +1,26 @@
 # Maven releases
 
-Release Please owns the Maven version, changelog, release tag, and GitHub release.
+Release Please owns the Maven version, generated changelog, release tag, and draft GitHub release.
 The pinned reusable workflows in [`streamarr/streamarr-workflows`](https://github.com/streamarr/streamarr-workflows) own release automation, release validation, and final image publication. Server image builds and native checks stay in this repository.
-The architectural decision and alternatives are recorded in [ADR 0034](https://github.com/streamarr/streamarr-adr/pull/10).
+The release automation is recorded in [ADR 0034](https://github.com/streamarr/streamarr-adr/blob/main/adr/0034-release-please-owns-maven-release-versions.adoc); [ADR 0059](https://github.com/streamarr/streamarr-adr/blob/main/adr/0059-releases-stay-draft-until-their-notes-are-curated.adoc) adds the draft-publication gate for Streamarr repositories using Release Please.
 The serialized workflow runs after pushes to `main`; `always-update` refreshes the open release PR against the current base.
 Release PRs stay open until a maintainer chooses to merge them. The repository ruleset requires an up-to-date branch and successful build, Sonar, and Snyk checks.
-Merging a release PR is the single manual release gate: Release Please creates its Git tag and publishes the GitHub release automatically.
-This follows [Release Please's documented release PR lifecycle](https://github.com/googleapis/release-please#whats-a-release-pr), using its default published-release behavior.
+Merging a release PR fixes its version and revision and creates a draft GitHub release. A maintainer curates that draft's notes and publishes it separately.
+The Maven package enables Release Please's native `draft` and `force-tag-creation` settings. Creating the tag immediately gives subsequent version calculations a fixed baseline while the release remains unpublished. See [Release Please's configuration documentation](https://github.com/googleapis/release-please/blob/v17.6.0/docs/manifest-releaser.md).
 Only development snapshot PRs use GitHub auto-merge, under the same required checks. Snapshot updates do not create GitHub releases.
 
 ## Cut and publish a release
 
-Review the maintained release PR's version, changelog, and required checks when ready to cut a release.
+Review the maintained release PR's version, included changes, and required checks when ready to cut a release.
 Squash-merge that PR with its generated `chore(main): release X` title and an empty commit body.
-Release Please then tags the merged revision and publishes its GitHub release. The release App creates the GitHub release, allowing its publication event to trigger the container publisher automatically.
+Release Please then tags the merged revision and creates a draft GitHub release with generated notes. The tag is visible immediately; the GitHub release and stable image tags remain unpublished.
 Release Please also prepares the next Maven snapshot PR for auto-merge after its required checks pass.
-Choose the version and review the notes before merging. Each release records a fixed version and source revision; later commits belong to subsequent release PRs and do not move its tag.
+Each release records a fixed version and source revision; later commits belong to subsequent release PRs and do not move its tag.
+
+Open the draft on GitHub's **Releases** page and curate its description. Use a release-wide summary and sections such as Features, Bug Fixes, and Housekeeping, as in [v0.0.10](https://github.com/streamarr/streamarr-server/releases/tag/v0.0.10).
+Edit the draft GitHub release, not the generated release PR or `CHANGELOG.md`. Normal Release Please runs have already processed the merged PR and leave the draft's edited notes intact. The generated changelog remains the commit-level record; curated notes are not copied back into it.
+Keep the draft's generated tag and stable-release classification. When the notes are ready, click **Publish release**. The stable release's `released` event starts **Release Publisher**, which builds and publishes the images.
+Creating the tag or draft and editing its notes do not start stable image publication. Main CI continues publishing commit and snapshot images independently.
 
 The release publisher checks that the tag is stable SemVer, the tagged commit belongs to `main`, and the POM version matches the tag.
 Both architectures build that validated commit locally and verify the server and Cedar engine before pushing a native image. The image metadata records the Maven version and Git revision. Native jobs upload digest receipts; the shared publisher combines those exact images after both jobs succeed. Main CI also waits for the arm64 HLS smoke check before its native push, and all required CI checks before final publication.
@@ -61,7 +66,7 @@ Local tests cover workflow inputs and gates, build-before-push behavior, and nat
 Reusable workflows are pinned to a reviewed commit and maintained by Renovate. Merge the shared workflow change before adopting its commit here. The shared repository pins the official Release Please action; upstream owns the Maven engine and its tests.
 The action's documented `skip-github-pull-request` and `skip-github-release` inputs separate publication from PR preparation. Between those phases, **Verify merged releases were processed** checks for merged PRs still labeled `autorelease: pending` and fails with recovery instructions.
 
-Re-run **Release Please** with `workflow_dispatch` after an API failure; it reconciles already merged PRs and pending releases.
+Re-run **Release Please** with `workflow_dispatch` after an API failure; it reconciles already merged PRs and pending releases. Wait for that workflow to finish successfully before editing the draft's notes.
 If it reports an unprocessed merged release PR, restore that PR's original release title and structured release body before retrying. A pending release must be processed before another release PR is prepared.
 Re-run **Release Publisher** with the already-published release's tag after an image publishing failure.
 Correct a failed required check through the normal PR workflow; keep the release PR pending until the ruleset allows it to merge.

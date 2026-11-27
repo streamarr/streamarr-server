@@ -30,7 +30,8 @@ public sealed interface ArtworkFailure {
 
   /**
    * Network errors, {@code 408}, {@code 429} and {@code 5xx} answers, storage and database errors
-   * are retryable. Other {@code 4xx} answers and an undecodable image are terminal.
+   * are retryable. Other {@code 4xx} answers, a body over the download limit and an undecodable
+   * image are terminal.
    */
   static ArtworkFailure classify(@NonNull Throwable cause) {
     return switch (cause) {

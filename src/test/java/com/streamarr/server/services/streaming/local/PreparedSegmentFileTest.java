@@ -3,9 +3,15 @@ package com.streamarr.server.services.streaming.local;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Jimfs;
+import com.google.common.primitives.Bytes;
 import com.streamarr.server.services.streaming.SegmentPublication;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.WritableByteChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -13,42 +19,35 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
 @DisplayName("Prepared Segment File Tests")
 class PreparedSegmentFileTest {
 
   private static final Path DIRECTORY = Path.of("segments");
-  private static final Path TARGET = DIRECTORY.resolve("session/720p/segment0.m4s");
   private static final Path INITIALIZATION_TARGET = DIRECTORY.resolve("session/720p/init.mp4");
+  private static final String UPLOAD_NAME = "\\.upload-\\d+\\.tmp";
 
-  @Test
-  @DisplayName("Should fall back to a replacement move when atomic move is unavailable")
-  void shouldFallBackToReplacementMoveWhenAtomicMoveIsUnavailable() throws Exception {
-    var files = new InMemoryFileOperations();
-    var expected = "complete segment".getBytes();
-    var prepared = PreparedSegmentFile.create(files, DIRECTORY, expected);
-
-    prepared.publishTo(TARGET);
-
-    assertThat(files.bytesAt(TARGET)).containsExactly(expected);
-    assertThat(files.hasTemporaryFile()).isFalse();
-  }
-
+  // The temporary file is on the default file system and the target on another one. Java moves
+  // a file between two file systems by copying it, and refuses to call that move atomic.
   @Test
   @DisplayName(
-      "Should publish through a replacement move when nothing is stored and atomic move is unavailable")
-  void shouldPublishThroughReplacementMoveWhenNothingIsStoredAndAtomicMoveIsUnavailable()
-      throws Exception {
-    var files = new InMemoryFileOperations();
-    var expected = "ftyp moov from encoder A".getBytes();
-    var prepared = PreparedSegmentFile.create(files, DIRECTORY, expected);
+      "Should fail the publication and store nothing when the volume cannot move a file atomically")
+  void shouldFailPublicationAndStoreNothingWhenVolumeCannotMoveFileAtomically(
+      @TempDir Path temporaryDirectory) throws Exception {
+    try (var otherVolume = Jimfs.newFileSystem(Configuration.unix())) {
+      var target = otherVolume.getPath("/segment0.m4s");
+      var prepared = PreparedSegmentFile.create(temporaryDirectory);
+      prepared.append(ByteBuffer.wrap("complete segment".getBytes()));
 
-    var publication = prepared.publishUnlessStored(INITIALIZATION_TARGET);
+      assertThatThrownBy(() -> prepared.publishWhenNothingIsStored(target))
+          .isInstanceOf(AtomicMoveNotSupportedException.class);
+      prepared.close();
 
-    assertThat(publication).isEqualTo(SegmentPublication.PUBLISHED);
-    assertThat(files.bytesAt(INITIALIZATION_TARGET)).containsExactly(expected);
-    assertThat(files.hasTemporaryFile()).isFalse();
+      assertThat(target).doesNotExist();
+      assertThat(temporaryDirectory).isEmptyDirectory();
+    }
   }
 
   @Test
@@ -56,9 +55,8 @@ class PreparedSegmentFileTest {
   void shouldKeepStoredBytesWhenTargetAlreadyHoldsDifferentOnes() throws Exception {
     var files = new InMemoryFileOperations();
     var stored = "ftyp moov from encoder A".getBytes();
-    PreparedSegmentFile.create(files, DIRECTORY, stored).publishUnlessStored(INITIALIZATION_TARGET);
-    var differing =
-        PreparedSegmentFile.create(files, DIRECTORY, "ftyp moov from encoder B".getBytes());
+    prepared(files, stored).publishUnlessStored(INITIALIZATION_TARGET);
+    var differing = prepared(files, "ftyp moov from encoder B".getBytes());
 
     var publication = differing.publishUnlessStored(INITIALIZATION_TARGET);
 
@@ -67,55 +65,92 @@ class PreparedSegmentFileTest {
   }
 
   @Test
-  @DisplayName("Should suppress cleanup failure when the temporary write fails")
-  void shouldSuppressCleanupFailureWhenTemporaryWriteFails() {
+  @DisplayName(
+      "Should fail the preparation with the creation's own failure when the temporary file cannot"
+          + " be created")
+  void shouldFailPreparationWithCreationsOwnFailureWhenTemporaryFileCannotBeCreated() {
     var files = new InMemoryFileOperations();
-    files.failWrite = true;
-    files.failDelete = true;
+    files.failCreate = true;
 
-    assertThatThrownBy(() -> PreparedSegmentFile.create(files, DIRECTORY, new byte[] {0x47}))
+    assertThatThrownBy(() -> PreparedSegmentFile.create(files, DIRECTORY))
         .isInstanceOf(IOException.class)
-        .hasMessage("temporary write failed")
-        .satisfies(
-            failure ->
-                assertThat(failure.getSuppressed())
-                    .singleElement()
-                    .satisfies(
-                        suppressed -> {
-                          assertThat(suppressed).isInstanceOf(IOException.class);
-                          assertThat(suppressed.getMessage()).isEqualTo("temporary cleanup failed");
-                        }));
+        .hasMessage("temporary create failed");
+  }
+
+  @Test
+  @DisplayName(
+      "Should delete the temporary file when closing its failed channel fails after a failed write")
+  void shouldDeleteTemporaryFileWhenClosingItsFailedChannelFailsAfterFailedWrite()
+      throws Exception {
+    var files = new InMemoryFileOperations();
+    var prepared = PreparedSegmentFile.create(files, DIRECTORY);
+    files.failWrite = true;
+    files.failClose = true;
+    assertThatThrownBy(() -> prepared.append(ByteBuffer.wrap(new byte[] {0x47})))
+        .isInstanceOf(IOException.class);
+
+    assertThatThrownBy(prepared::close).isInstanceOf(IOException.class);
+
+    assertThat(files.hasUploadFile()).isFalse();
+  }
+
+  private static PreparedSegmentFile prepared(InMemoryFileOperations files, byte[] data)
+      throws IOException {
+    var prepared = PreparedSegmentFile.create(files, DIRECTORY);
+    prepared.append(ByteBuffer.wrap(data));
+    return prepared;
   }
 
   private static final class InMemoryFileOperations implements PreparedSegmentFile.FileOperations {
 
-    private final Path temporary = DIRECTORY.resolve("upload.tmp");
     private final Map<Path, byte[]> contents = new HashMap<>();
+    private boolean failCreate;
     private boolean failWrite;
-    private boolean failDelete;
+    private boolean failClose;
 
     @Override
-    public Path createTemporary(Path directory) {
-      contents.put(temporary, new byte[0]);
-      return temporary;
-    }
-
-    @Override
-    public void write(Path path, byte[] data) throws IOException {
-      if (failWrite) {
-        throw new IOException("temporary write failed");
+    public WritableByteChannel createNew(Path path) throws IOException {
+      if (failCreate) {
+        throw new IOException("temporary create failed");
       }
-      contents.put(path, data.clone());
+
+      if (contents.containsKey(path)) {
+        throw new FileAlreadyExistsException(path.toString());
+      }
+
+      contents.put(path, new byte[0]);
+      return new WritableByteChannel() {
+        private boolean open = true;
+
+        @Override
+        public int write(ByteBuffer source) throws IOException {
+          if (failWrite) {
+            throw new IOException("temporary write failed");
+          }
+
+          var written = new byte[source.remaining()];
+          source.get(written);
+          contents.merge(path, written, Bytes::concat);
+          return written.length;
+        }
+
+        @Override
+        public boolean isOpen() {
+          return open;
+        }
+
+        @Override
+        public void close() throws IOException {
+          open = false;
+          if (failClose) {
+            throw new IOException("temporary close failed");
+          }
+        }
+      };
     }
 
     @Override
-    public void moveAtomically(Path source, Path target) throws IOException {
-      throw new AtomicMoveNotSupportedException(
-          source.toString(), target.toString(), "atomic moves disabled");
-    }
-
-    @Override
-    public void moveReplacing(Path source, Path target) {
+    public void moveAtomically(Path source, Path target) {
       contents.put(target, contents.remove(source));
     }
 
@@ -130,10 +165,7 @@ class PreparedSegmentFileTest {
     }
 
     @Override
-    public void delete(Path path) throws IOException {
-      if (failDelete) {
-        throw new IOException("temporary cleanup failed");
-      }
+    public void delete(Path path) {
       contents.remove(path);
     }
 
@@ -141,8 +173,9 @@ class PreparedSegmentFileTest {
       return contents.get(path);
     }
 
-    private boolean hasTemporaryFile() {
-      return contents.containsKey(temporary);
+    private boolean hasUploadFile() {
+      return contents.keySet().stream()
+          .anyMatch(path -> path.getFileName().toString().matches(UPLOAD_NAME));
     }
   }
 }

@@ -1168,14 +1168,26 @@
         "responses": {
           "200": {
             "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
               "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
                 }
               }
             },
-            "description": "OK"
+            "description": "The image. Its media type is read from its bytes. Artwork is stored as JPEG or PNG. A file stored before that rule can hold other bytes, such as an empty file, and is answered as application/octet-stream."
           },
           "304": {
             "description": "Not modified"
@@ -1249,8 +1261,22 @@
             },
             "description": "OK"
           },
+          "206": {
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The requested byte range"
+          },
           "404": {
             "description": "Stream resource not found"
+          },
+          "416": {
+            "description": "The requested range lies outside the segment"
           },
           "503": {
             "description": "Segment unavailable"
@@ -1591,11 +1617,25 @@
             },
             "description": "OK"
           },
+          "206": {
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The requested byte range"
+          },
           "400": {
             "description": "Invalid segment path"
           },
           "404": {
             "description": "Stream resource not found"
+          },
+          "416": {
+            "description": "The requested range lies outside the segment"
           },
           "503": {
             "description": "Segment unavailable"
@@ -1666,11 +1706,25 @@
             },
             "description": "OK"
           },
+          "206": {
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The requested byte range"
+          },
           "400": {
             "description": "Invalid segment path"
           },
           "404": {
             "description": "Stream resource not found"
+          },
+          "416": {
+            "description": "The requested range lies outside the segment"
           },
           "503": {
             "description": "Segment unavailable"
@@ -1820,11 +1874,25 @@
             },
             "description": "OK"
           },
+          "206": {
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The requested byte range"
+          },
           "400": {
             "description": "Invalid segment path"
           },
           "404": {
             "description": "Stream resource not found"
+          },
+          "416": {
+            "description": "The requested range lies outside the segment"
           },
           "503": {
             "description": "Segment unavailable"

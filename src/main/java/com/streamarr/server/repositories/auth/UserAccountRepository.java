@@ -11,8 +11,6 @@ import org.springframework.stereotype.Repository;
 public interface UserAccountRepository
     extends JpaRepository<UserAccount, UUID>, UserAccountRepositoryCustom {
 
-  Optional<UserAccount> findByEmailIgnoreCase(String email);
-
   List<UserAccount> findByHouseholdId(UUID householdId);
 
   Optional<UserAccount> findByPersonalProfileId(UUID profileId);

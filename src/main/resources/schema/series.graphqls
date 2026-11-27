@@ -16,6 +16,7 @@ type Series implements BaseCollectable {
     cast: [Person]!
     directors: [Person]!
     genres: [Genre]!
+    "Seasons containing at least one episode with an associated media file, in season-number order."
     seasons: [Season]!
     files: [MediaFile]!
     images(type: ImageType): [Image]!

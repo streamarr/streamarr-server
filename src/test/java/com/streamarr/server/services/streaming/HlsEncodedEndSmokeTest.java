@@ -63,6 +63,7 @@ class HlsEncodedEndSmokeTest {
 
   @TempDir private Path temporaryDirectory;
   private Path sourceRoot;
+  private Path segmentFolder;
   private LocalSegmentStore segmentStore;
   private WorkerStreamingSmokeFixture workerFixture;
   private RemoteTranscodeExecutor transcodeExecutor;
@@ -76,7 +77,8 @@ class HlsEncodedEndSmokeTest {
   @BeforeEach
   void setUp() throws Exception {
     sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
-    segmentStore = new LocalSegmentStore(temporaryDirectory.resolve("segments"));
+    segmentFolder = temporaryDirectory.resolve("segments");
+    segmentStore = new LocalSegmentStore(segmentFolder);
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)
@@ -111,6 +113,7 @@ class HlsEncodedEndSmokeTest {
                     .properties(properties)
                     .build())
             .build();
+    workerFixture.creditUploadsTo(lifecycle);
     coordinator =
         SegmentDeliveryCoordinator.builder()
             .segmentStore(segmentStore)
@@ -333,7 +336,7 @@ class HlsEncodedEndSmokeTest {
     await()
         .atMost(10, TimeUnit.SECONDS)
         .until(() -> session.getLastSegmentWithSourceMedia().isPresent());
-    Files.delete(segmentStore.getOutputDirectory(session.getSessionId()).resolve("segment4.m4s"));
+    Files.delete(segmentFolder.resolve(session.getSessionId().toString()).resolve("segment4.m4s"));
 
     assertThat(deliveryOf(session, "segment4.m4s"))
         .succeedsWithin(DELIVERY_BOUND)
@@ -427,10 +430,11 @@ class HlsEncodedEndSmokeTest {
   }
 
   private Path generateSixChannelSource(int audioSeconds) throws Exception {
+    var tone = sourceRoot.resolve("six-channel-tone.m4a");
     workerFixture
         .worker()
         .generateMedia(
-            sourceRoot.resolve("six-channel-tone.m4a"),
+            tone,
             List.of(
                 "-f",
                 "lavfi",
@@ -456,7 +460,7 @@ class HlsEncodedEndSmokeTest {
                 "-stream_loop",
                 "-1",
                 "-i",
-                "/media/six-channel-tone.m4a",
+                workerFixture.worker().containerPath(tone),
                 "-map",
                 "0:v",
                 "-map",

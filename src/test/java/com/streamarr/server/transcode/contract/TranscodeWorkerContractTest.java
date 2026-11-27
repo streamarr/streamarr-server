@@ -88,14 +88,17 @@ import org.junit.jupiter.api.Test;
 class TranscodeWorkerContractTest {
   @Test
   @DisplayName(
-      "Should expose one reverse worker session and one segment upload stream when validating the protocol")
-  void shouldExposeOneReverseWorkerSessionAndOneSegmentUploadStreamWhenValidatingProtocol() {
+      "Should expose only the worker session, segment upload and probe report calls when"
+          + " validating the protocol")
+  void shouldExposeOnlyTheWorkerSessionSegmentUploadAndProbeReportCallsWhenValidatingProtocol() {
     var service = TranscodeWorkerServiceGrpc.getServiceDescriptor();
 
-    assertThat(service.getMethods()).hasSize(2);
+    assertThat(service.getMethods()).hasSize(3);
     assertThat(TranscodeWorkerServiceGrpc.getEstablishWorkerSessionMethod().getType())
         .isEqualTo(MethodType.BIDI_STREAMING);
     assertThat(TranscodeWorkerServiceGrpc.getUploadSegmentMethod().getType())
+        .isEqualTo(MethodType.CLIENT_STREAMING);
+    assertThat(TranscodeWorkerServiceGrpc.getReportProbeAttemptMethod().getType())
         .isEqualTo(MethodType.CLIENT_STREAMING);
   }
 
@@ -1132,6 +1135,24 @@ class TranscodeWorkerContractTest {
 
   @Test
   @DisplayName(
+      "Should carry the bytes that FFmpeg has read and no output time when an attempt reports its reading as progress")
+  void shouldCarryTheBytesThatFfmpegHasReadAndNoOutputTimeWhenAnAttemptReportsItsReadingAsProgress()
+      throws Exception {
+    var reading =
+        JobAttemptProgress.newBuilder()
+            .setJobAttemptId(uuid(UUID.randomUUID()))
+            .setFfmpegBytesRead(3_005_026_741L)
+            .build();
+
+    var parsed = JobAttemptProgress.parseFrom(reading.toByteArray());
+
+    assertThat(parsed.getFfmpegBytesRead()).isEqualTo(3_005_026_741L);
+    assertThat(parsed.hasOutputEnd()).isFalse();
+    assertThat(parsed.getKeyframeSearchBytesRead()).isZero();
+  }
+
+  @Test
+  @DisplayName(
       "Should keep the field numbers and types that workers build against when publishing the progress report")
   void shouldKeepTheFieldNumbersAndTypesThatWorkersBuildAgainstWhenPublishingTheProgressReport() {
     var event =
@@ -1150,6 +1171,11 @@ class TranscodeWorkerContractTest {
     assertThat(progress.findFieldByName("keyframe_search_bytes_read").getNumber()).isEqualTo(3);
     assertThat(progress.findFieldByName("keyframe_search_bytes_read").getType())
         .isEqualTo(Type.UINT64);
+    assertThat(progress.findFieldByName("ffmpeg_bytes_read"))
+        .as("the field that counts the bytes that an attempt's FFmpeg has read")
+        .isNotNull();
+    assertThat(progress.findFieldByName("ffmpeg_bytes_read").getNumber()).isEqualTo(4);
+    assertThat(progress.findFieldByName("ffmpeg_bytes_read").getType()).isEqualTo(Type.UINT64);
   }
 
   @Test
@@ -1173,7 +1199,6 @@ class TranscodeWorkerContractTest {
             "probe_version",
             "probe_versions",
             "start_probe",
-            "probe_result",
             "accepted_length_bytes",
             "encoder_preset")
         .doesNotContain(

@@ -3,10 +3,14 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.WORKER_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
+import static com.streamarr.server.services.streaming.remote.LiveWorkerConnectionRegistryFixture.report;
+import static com.streamarr.server.services.streaming.remote.LiveWorkerConnectionRegistryFixture.reportingSession;
+import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.fromProto;
 import static com.streamarr.server.services.streaming.remote.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Named.named;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
@@ -19,6 +23,8 @@ import com.streamarr.transcode.v1.CancelProbeCommand;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
+import com.streamarr.transcode.v1.ProbeAttemptReportMetadata;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCancelReason;
 import com.streamarr.transcode.v1.ProbeFailure;
@@ -102,10 +108,11 @@ class WorkerProbeDispatchTest {
     secondRegistration.getWorkerBuilder().setWorkerId(toProto(secondWorker));
     secondRegistration.getCapabilitiesBuilder().addProbeVersions(1);
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var secondResponses = new CapturingResponses();
     var secondSession =
         Context.current()
             .withValue(WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID, secondWorker)
-            .call(() -> service.establishWorkerSession(new CapturingResponses()));
+            .call(() -> service.establishWorkerSession(secondResponses));
     secondSession.onNext(
         EstablishWorkerSessionRequest.newBuilder().setRegistration(secondRegistration).build());
     var request = probe().build();
@@ -116,7 +123,13 @@ class WorkerProbeDispatchTest {
             .setProbeVersion(1)
             .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
             .build();
-    var event = EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build();
+    var report = ProbeAttemptReport.newBuilder().setResult(result).build();
+    var reportMetadata =
+        ProbeAttemptReportMetadata.newBuilder()
+            .setWorkerSessionId(
+                secondResponses.values.getFirst().getSessionAccepted().getWorkerSessionId())
+            .setWorker(secondRegistration.getWorker())
+            .setProbeAttemptId(request.getProbeAttemptId());
     var metadata =
         SegmentUploadMetadata.newBuilder()
             .setWorker(oldRegistration.getWorker())
@@ -152,11 +165,13 @@ class WorkerProbeDispatchTest {
         assertThat(replacing)
             .as("The replacement must still wait for the old session's segment publication")
             .isNotDone();
-        var receiving = executor.submit(() -> secondSession.onNext(event));
-        assertThat(pending.get(1, TimeUnit.SECONDS).result())
+        var reporting =
+            executor.submit(
+                () -> ReportCall.open(service, secondWorker).report(reportMetadata, report));
+        assertThat(pending.get(1, TimeUnit.SECONDS).getResult())
             .as("The other worker's reply must complete its probe while the replacement waits")
             .isEqualTo(result);
-        receiving.get(1, TimeUnit.SECONDS);
+        reporting.get(1, TimeUnit.SECONDS);
         assertThat(publishing).as("The held segment publication must still be blocked").isNotDone();
       } finally {
         releasePublication.countDown();
@@ -221,7 +236,10 @@ class WorkerProbeDispatchTest {
 
     var decoded = ProbeAttemptResult.parseFrom(reply.build().toByteArray());
 
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, decoded)).isFalse();
+    assertThat(
+            report(registry, reportingSession(sessionId, registration.getWorker()), decoded)
+                .isAnswered())
+        .isFalse();
     assertThatThrownBy(() -> pending.get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasCauseInstanceOf(ProbeExecutionException.class);
@@ -498,9 +516,12 @@ class WorkerProbeDispatchTest {
             .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
             .build();
 
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, result)).isTrue();
+    assertThat(
+            report(registry, reportingSession(sessionId, registration.getWorker()), result)
+                .isAnswered())
+        .isTrue();
 
-    assertThat(attempt.get(1, TimeUnit.SECONDS).result()).isEqualTo(result);
+    assertThat(attempt.get(1, TimeUnit.SECONDS).getResult()).isEqualTo(result);
     assertThat(runningProbes(registry, 2)).isZero();
     assertThat(registry.dispatchProbe(probe().setProbeVersion(2).build()))
         .isInstanceOf(ProbeDispatch.Dispatched.class);
@@ -518,7 +539,7 @@ class WorkerProbeDispatchTest {
       "Should fail the pending probe as misconfigured without accepting data when its reply has"
           + " another version")
   void shouldFailPendingProbeAsMisconfiguredWithoutAcceptingDataWhenItsReplyHasAnotherVersion(
-      int requestedVersion, int reportedVersion, String diagnostic) {
+      int requestedVersion, int reportedVersion, String diagnostic) throws Exception {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(requestedVersion);
@@ -532,7 +553,10 @@ class WorkerProbeDispatchTest {
             .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
             .build();
 
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, result)).isFalse();
+    assertThat(
+            report(registry, reportingSession(sessionId, registration.getWorker()), result)
+                .isAnswered())
+        .isFalse();
 
     assertThatThrownBy(() -> attempt.get(1, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
@@ -596,7 +620,8 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName(
       "Should retain probe capacity after cancellation until the worker acknowledges termination")
-  void shouldRetainProbeCapacityAfterCancellationUntilWorkerAcknowledgesTermination() {
+  void shouldRetainProbeCapacityAfterCancellationUntilWorkerAcknowledgesTermination()
+      throws Exception {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
@@ -617,14 +642,11 @@ class WorkerProbeDispatchTest {
     assertThat(runningProbes(registry, 1)).isEqualTo(1);
     assertThat(registry.dispatchProbe(probe().build()))
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.WORKERS_BUSY));
-    var reply =
-        ProbeAttemptResult.newBuilder()
-            .setProbeAttemptId(request.getProbeAttemptId())
-            .setProbeVersion(1)
-            .setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED)
-            .build();
 
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isTrue();
+    assertThat(
+            registry.endProbeAttemptWithoutReport(
+                WORKER_ID, sessionId, fromProto(request.getProbeAttemptId())))
+        .isTrue();
 
     assertThat(attempt).isCancelled();
     assertThat(runningProbes(registry, 1)).isZero();
@@ -678,6 +700,69 @@ class WorkerProbeDispatchTest {
 
   @Test
   @DisplayName(
+      "Should end a canceled probe attempt on the worker's event, and send no cancel command for"
+          + " it afterwards, when the cancel command waits for a concurrent segment publication")
+  void shouldEndCanceledAttemptOnWorkersEventWhenCancelCommandWaitsForConcurrentPublication()
+      throws Exception {
+    var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
+    var registration = registration().setAvailableSlots(2);
+    registration.getCapabilitiesBuilder().addProbeVersions(1);
+    var responses = new CapturingResponses();
+    var sessionId = registry.register(WORKER_ID, registration.build(), responses);
+    var request = probe().build();
+    var attempt = dispatched(registry.dispatchProbe(request));
+    var job =
+        VariantJob.newBuilder()
+            .setJobAttemptId(toProto(UUID.randomUUID()))
+            .setSource(source())
+            .build();
+    assertThat(registry.dispatch(job)).isPresent();
+    var metadata =
+        SegmentUploadMetadata.newBuilder()
+            .setWorker(registration.getWorker())
+            .setWorkerSessionId(toProto(sessionId))
+            .setJobAttemptId(job.getJobAttemptId())
+            .build();
+    var entered = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publishing =
+          executor.submit(
+              () ->
+                  registry.publishIfAuthorized(
+                      WORKER_ID, metadata, () -> holdPublication(entered, release)));
+      try {
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        // The cancel command needs the connection's monitor, which the publication holds.
+        var canceling = executor.submit(() -> attempt.cancel(true));
+        await().atMost(5, TimeUnit.SECONDS).until(attempt::isCancelled);
+
+        var ended =
+            executor
+                .submit(
+                    () ->
+                        registry.endProbeAttemptWithoutReport(
+                            WORKER_ID, sessionId, fromProto(request.getProbeAttemptId())))
+                .get(5, TimeUnit.SECONDS);
+
+        assertThat(ended).isTrue();
+        release.countDown();
+        assertThat(canceling.get(5, TimeUnit.SECONDS)).isTrue();
+      } finally {
+        release.countDown();
+      }
+
+      assertThat(publishing.get(5, TimeUnit.SECONDS)).contains(SegmentPublication.PUBLISHED);
+    }
+
+    assertThat(responses.values).noneMatch(EstablishWorkerSessionResponse::hasCancelProbe);
+    assertThat(responses.errors).isEmpty();
+    assertThat(runningProbes(registry, 1)).isZero();
+  }
+
+  @Test
+  @DisplayName(
       "Should preserve the original pending probe when the same attempt is dispatched again")
   void shouldPreserveOriginalPendingProbeWhenSameAttemptIsDispatchedAgain() throws Exception {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
@@ -698,8 +783,11 @@ class WorkerProbeDispatchTest {
             .setProbeVersion(1)
             .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
             .build();
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isTrue();
-    assertThat(original.get(1, TimeUnit.SECONDS).result()).isEqualTo(reply);
+    assertThat(
+            report(registry, reportingSession(sessionId, registration.getWorker()), reply)
+                .isAnswered())
+        .isTrue();
+    assertThat(original.get(1, TimeUnit.SECONDS).getResult()).isEqualTo(reply);
     assertThat(responses.values.stream().filter(EstablishWorkerSessionResponse::hasStartProbe))
         .hasSize(1);
     assertThat(runningProbes(registry, 1)).isZero();
@@ -764,28 +852,35 @@ class WorkerProbeDispatchTest {
     var request = probe().build();
     var pending = dispatched(registry.dispatchProbe(request));
     var reply = invalidMediaReply(request);
+    var session = reportingSession(sessionId, registration.getWorker());
 
     var accepted =
         switch (mismatch) {
-          case WORKER -> registry.completeProbe(UUID.randomUUID(), sessionId, reply);
-          case SESSION -> registry.completeProbe(WORKER_ID, UUID.randomUUID(), reply);
+          case WORKER ->
+              report(
+                  registry,
+                  reportingSession(sessionId, registration(UUID.randomUUID()).getWorker()),
+                  reply);
+          case SESSION ->
+              report(
+                  registry, reportingSession(UUID.randomUUID(), registration.getWorker()), reply);
           case ATTEMPT ->
-              registry.completeProbe(
-                  WORKER_ID,
-                  sessionId,
+              report(
+                  registry,
+                  session,
                   reply.toBuilder().setProbeAttemptId(toProto(UUID.randomUUID())).build());
         };
 
-    assertThat(accepted).isFalse();
+    assertThat(accepted.isAnswered()).isFalse();
     assertThat(pending).isNotDone();
     assertThat(runningProbes(registry, 1)).isEqualTo(1);
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isTrue();
-    assertThat(pending.get(1, TimeUnit.SECONDS).result()).isEqualTo(reply);
+    assertThat(report(registry, session, reply).isAnswered()).isTrue();
+    assertThat(pending.get(1, TimeUnit.SECONDS).getResult()).isEqualTo(reply);
   }
 
   @Test
   @DisplayName("Should reject a repeated reply when its probe already completed")
-  void shouldRejectRepeatedReplyWhenItsProbeAlreadyCompleted() {
+  void shouldRejectRepeatedReplyWhenItsProbeAlreadyCompleted() throws Exception {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
@@ -793,9 +888,10 @@ class WorkerProbeDispatchTest {
     var request = probe().build();
     dispatched(registry.dispatchProbe(request));
     var reply = invalidMediaReply(request);
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isTrue();
+    var session = reportingSession(sessionId, registration.getWorker());
+    assertThat(report(registry, session, reply).isAnswered()).isTrue();
 
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isFalse();
+    assertThat(report(registry, session, reply).isAnswered()).isFalse();
   }
 
   @Test
@@ -839,7 +935,7 @@ class WorkerProbeDispatchTest {
   @Test
   @DisplayName(
       "Should reserve a cancelled attempt across workers until termination is acknowledged")
-  void shouldReserveCancelledAttemptAcrossWorkersUntilTerminationIsAcknowledged() {
+  void shouldReserveCancelledAttemptAcrossWorkersUntilTerminationIsAcknowledged() throws Exception {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
@@ -855,20 +951,18 @@ class WorkerProbeDispatchTest {
     assertThat(registry.dispatchProbe(request))
         .as("A free worker must not start an attempt another worker is still cancelling")
         .isEqualTo(new ProbeDispatch.Refused(ProbeRefusal.ATTEMPT_IN_PROGRESS));
-    var acknowledgement =
-        ProbeAttemptResult.newBuilder()
-            .setProbeAttemptId(request.getProbeAttemptId())
-            .setProbeVersion(1)
-            .setFailure(ProbeFailure.PROBE_FAILURE_CANCELLED)
-            .build();
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, acknowledgement)).isTrue();
+    assertThat(
+            registry.endProbeAttemptWithoutReport(
+                WORKER_ID, sessionId, fromProto(request.getProbeAttemptId())))
+        .isTrue();
     assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Dispatched.class);
   }
 
   @ParameterizedTest
   @ValueSource(ints = {1, 2})
   @DisplayName("Should release an attempt reservation when the worker replies with any version")
-  void shouldReleaseAttemptReservationWhenWorkerRepliesWithAnyVersion(int replyVersion) {
+  void shouldReleaseAttemptReservationWhenWorkerRepliesWithAnyVersion(int replyVersion)
+      throws Exception {
     var registry = LiveWorkerConnectionRegistryFixture.defaultRegistry();
     var registration = registration();
     registration.getCapabilitiesBuilder().addProbeVersions(1);
@@ -882,7 +976,10 @@ class WorkerProbeDispatchTest {
             .setFailure(ProbeFailure.PROBE_FAILURE_INVALID_MEDIA)
             .build();
 
-    assertThat(registry.completeProbe(WORKER_ID, sessionId, reply)).isEqualTo(replyVersion == 1);
+    assertThat(
+            report(registry, reportingSession(sessionId, registration.getWorker()), reply)
+                .isAnswered())
+        .isEqualTo(replyVersion == 1);
 
     assertThat(registry.dispatchProbe(request)).isInstanceOf(ProbeDispatch.Dispatched.class);
   }
@@ -953,11 +1050,17 @@ class WorkerProbeDispatchTest {
     var replacement = dispatched(registry.dispatchProbe(request));
     var reply = invalidMediaReply(request);
 
-    assertThat(registry.completeProbe(WORKER_ID, oldSession, reply)).isFalse();
+    assertThat(
+            report(registry, reportingSession(oldSession, registration.getWorker()), reply)
+                .isAnswered())
+        .isFalse();
 
     assertThat(replacement).isNotDone();
-    assertThat(registry.completeProbe(WORKER_ID, replacementSession, reply)).isTrue();
-    assertThat(replacement.get(1, TimeUnit.SECONDS).result()).isEqualTo(reply);
+    assertThat(
+            report(registry, reportingSession(replacementSession, registration.getWorker()), reply)
+                .isAnswered())
+        .isTrue();
+    assertThat(replacement.get(1, TimeUnit.SECONDS).getResult()).isEqualTo(reply);
   }
 
   private WorkerRegistration.Builder registration(UUID workerId) {

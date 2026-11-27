@@ -17,6 +17,7 @@ import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.VideoPlaybackFacts;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -154,12 +155,16 @@ public class ProbeFixture {
             .build());
   }
 
-  /** One value of each keyframe knowledge that does not hold the source's keyframe positions. */
+  /**
+   * Each keyframe knowledge that does not hold the source's keyframe positions, with every reason
+   * that leaves the keyframes unavailable.
+   */
   public static Stream<KeyframeKnowledge> keyframesThatAreNotKnown() {
-    return Stream.of(
-        new KeyframeKnowledge.NotReported(),
-        new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX),
-        new KeyframeKnowledge.Unavailable(KeyframesUnavailableReason.KEYFRAME_WITHOUT_TIMESTAMP));
+    return Stream.concat(
+        Stream.of(
+            new KeyframeKnowledge.NotReported(),
+            new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX)),
+        Arrays.stream(KeyframesUnavailableReason.values()).map(KeyframeKnowledge.Unavailable::new));
   }
 
   private static List<StreamInfo> streams(MediaProbe probe) {

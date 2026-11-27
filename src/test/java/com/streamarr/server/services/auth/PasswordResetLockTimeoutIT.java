@@ -21,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.PessimisticLockingFailureException;
 
 /**
@@ -29,6 +30,8 @@ import org.springframework.dao.PessimisticLockingFailureException;
  */
 @Tag("IntegrationTest")
 @DisplayName("Password Reset Lock Timeout Integration Tests")
+// The same properties as CredentialIssuanceLockTimeoutIT, so both classes share one cached context.
+@SpringBootTest(properties = "auth.credential-codes.replacement-lock-timeout=500ms")
 class PasswordResetLockTimeoutIT extends AbstractIntegrationTest {
 
   @Autowired private PasswordResetService passwordResetService;
@@ -70,11 +73,16 @@ class PasswordResetLockTimeoutIT extends AbstractIntegrationTest {
                         .build());
                 return null;
               });
-
-      assertThatThrownBy(() -> redemption.get(10, TimeUnit.SECONDS))
+      // Longer than the configured 500 ms lock timeout and shorter than the 5 s default. The
+      // message names the canceled statement and the relation of the row PostgreSQL waited for.
+      assertThatThrownBy(() -> redemption.get(3, TimeUnit.SECONDS))
           .isInstanceOf(ExecutionException.class)
           .cause()
-          .isInstanceOf(PessimisticLockingFailureException.class);
+          .isInstanceOf(PessimisticLockingFailureException.class)
+          .hasMessageContainingAll(
+              "for update",
+              "canceling statement due to lock timeout",
+              "in relation \"user_account\"");
       assertThat(passwordHashOf(account.getId())).isEqualTo(passwordHashBefore);
       assertThat(resetCodeRepository.findById(code.getId()).orElseThrow().getStatus())
           .isEqualTo(PasswordResetCodeStatus.PENDING);

@@ -40,6 +40,7 @@ class WorkerSessionServerTest {
     var cancellationTimeout = defaults.probeCancellationTimeout();
     var startReportTimeout = defaults.startReportTimeout();
     var keepalive = defaults.keepalive();
+    var probeReportLimits = defaults.probeReportLimits();
 
     assertThatThrownBy(
             () ->
@@ -51,7 +52,8 @@ class WorkerSessionServerTest {
                     bitrateScanChunkTimeout,
                     cancellationTimeout,
                     startReportTimeout,
-                    keepalive))
+                    keepalive,
+                    probeReportLimits))
         .hasMessageContaining("address");
   }
 

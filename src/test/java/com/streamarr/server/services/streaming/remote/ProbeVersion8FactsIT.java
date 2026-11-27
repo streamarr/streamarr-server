@@ -145,7 +145,7 @@ class ProbeVersion8FactsIT extends AbstractIntegrationTest {
                 .build();
         try (var result = BoundedTask.start(() -> service.probe(request))) {
           var dispatched = worker.nextResponse().getStartProbe().getRequest();
-          worker.reply(
+          worker.report(
               ProbeAttemptResult.newBuilder()
                   .setProbeAttemptId(dispatched.getProbeAttemptId())
                   .setProbeVersion(dispatched.getProbeVersion())

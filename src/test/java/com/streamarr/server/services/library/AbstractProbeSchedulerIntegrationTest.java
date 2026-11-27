@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -154,6 +155,11 @@ abstract class AbstractProbeSchedulerIntegrationTest extends AbstractIntegration
 
   ProbeSchedulerStarter probeSchedulerStarter() {
     return ProbeSchedulerStarter.fromContext(applicationContext);
+  }
+
+  /** How long a scan scheduler from {@link #scanSchedulerBuilder()} waits between polls. */
+  Duration scanSchedulerPollingInterval() {
+    return UnstartedSchedulerConfiguration.schedulerProperties(environment).getPollingInterval();
   }
 
   // The scheduler polls at its polling interval; a test that advanced its clock polls at once.

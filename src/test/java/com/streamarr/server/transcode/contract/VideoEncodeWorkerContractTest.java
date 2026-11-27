@@ -13,6 +13,7 @@ import com.streamarr.transcode.v1.ContentLightLevel;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.EncoderKind;
 import com.streamarr.transcode.v1.MasteringDisplayColorVolume;
+import com.streamarr.transcode.v1.MatrixCoefficients;
 import com.streamarr.transcode.v1.Presence;
 import com.streamarr.transcode.v1.VideoCodecFamily;
 import com.streamarr.transcode.v1.VideoCodecProfile;
@@ -153,6 +154,29 @@ class VideoEncodeWorkerContractTest {
             tuple("VIDEO_ENCODE_FEATURE_PQ", 2),
             tuple("VIDEO_ENCODE_FEATURE_HLG", 3),
             tuple("VIDEO_ENCODE_FEATURE_DOLBY_VISION_TO_PQ", 4));
+  }
+
+  // ADR 0013: a job names the assumed source matrix as BT709 or SMPTE170M, and UNSPECIFIED is the
+  // value of a job that names none.
+  @Test
+  @DisplayName(
+      "Should keep the assumed source matrix's field number, type and values when publishing the"
+          + " video encode contract")
+  void
+      shouldKeepTheAssumedSourceMatrixsFieldNumberTypeAndValuesWhenPublishingTheVideoEncodeContract() {
+    assertThat(fields(VideoDecision.getDescriptor(), "assumed_source_matrix"))
+        .containsExactly(tuple("assumed_source_matrix", 22, Type.ENUM, false));
+    assertThat(
+            VideoDecision.getDescriptor()
+                .findFieldByName("assumed_source_matrix")
+                .getEnumType()
+                .getFullName())
+        .isEqualTo(MatrixCoefficients.getDescriptor().getFullName());
+    assertThat(values(MatrixCoefficients.getDescriptor()))
+        .contains(
+            tuple("MATRIX_COEFFICIENTS_UNSPECIFIED", 0),
+            tuple("MATRIX_COEFFICIENTS_BT709", 2),
+            tuple("MATRIX_COEFFICIENTS_SMPTE170M", 5));
   }
 
   private static VideoDecision.Builder av1Encode() {

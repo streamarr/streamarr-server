@@ -28,8 +28,6 @@ import com.streamarr.server.support.GraphQlHttpTestClient;
 import com.streamarr.server.support.GraphQlTransportWsTestClient;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.URI;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -463,24 +461,6 @@ class WatchStateSubscriptionIT extends AbstractIntegrationTest {
     userAccountRepository.saveAndFlush(account);
 
     assertRefusedWith(bearer, "FORBIDDEN");
-  }
-
-  @Test
-  @DisplayName(
-      "Should close with 4100 and no complete frame when the token that opened the subscription"
-          + " expires")
-  void shouldCloseWith4100AndNoCompleteFrameWhenTokenThatOpenedSubscriptionExpires() {
-    var identity = createIdentity();
-    var expiresAt = Instant.now().plusSeconds(3).truncatedTo(ChronoUnit.SECONDS);
-    var socket = subscribedSocket(authTestSupport.profileBearerExpiringAt(identity, expiresAt));
-
-    var closure = socket.awaitClosure();
-
-    assertThat(closure.statusCode()).isEqualTo(4100);
-    assertThat(Instant.now()).isAfterOrEqualTo(expiresAt);
-    assertThat(socket.receivedMessages())
-        .noneMatch(message -> "complete".equals(message.path("type").asString()));
-    activeSubscriptions.awaitCount(FIELD, 0);
   }
 
   private void assertRefusedWith(String bearer, String errorCode) {

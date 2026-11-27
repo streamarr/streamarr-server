@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static com.streamarr.server.domain.streaming.StreamMeasurements.CURRENT_VERSION;
+import static com.streamarr.server.fixtures.BitrateScanChunkFixture.repeated;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.jooq.generated.tables.MediaFileBitrateScanChunk.MEDIA_FILE_BITRATE_SCAN_CHUNK;
@@ -21,13 +22,11 @@ import com.streamarr.server.domain.streaming.BitrateScanChunkOutcome;
 import com.streamarr.server.domain.streaming.BitrateScanChunkRequest;
 import com.streamarr.server.domain.streaming.ChosenVideoStream;
 import com.streamarr.server.domain.streaming.Fraction;
-import com.streamarr.server.domain.streaming.KeyframeIntervalCounts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
 import com.streamarr.server.domain.streaming.KeyframePositionSource;
 import com.streamarr.server.domain.streaming.KeyframePositions;
-import com.streamarr.server.domain.streaming.MeasuredChunkStream;
 import com.streamarr.server.domain.streaming.MeasuredStream;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
@@ -46,6 +45,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.BitrateScanChunkFixture;
 import com.streamarr.server.fixtures.LoopbackProbeWorker;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.fixtures.VideoPlaybackFactsFixture;
@@ -60,9 +60,10 @@ import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.transcode.v1.BitrateScanChunkResult;
 import com.streamarr.transcode.v1.BitrateScanChunkStream;
 import com.streamarr.transcode.v1.BitrateScanChunkStreams;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeRequest;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -73,7 +74,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -569,15 +569,14 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
         chunk.getPresentationTimeDeltasList().stream().mapToLong(Long::longValue).sum()
             + TICKS_PER_KEYFRAME;
     var streams = BitrateScanChunkStreams.newBuilder();
+    var report = ProbeAttemptReport.newBuilder();
     for (var index : chunk.getMeasuredStreamIndexesList()) {
       var bytes = bytesPerInterval(index);
-      worker.sendStreamMeasurementPart(
-          ProbeStreamMeasurementPart.newBuilder()
-              .setProbeAttemptId(request.getProbeAttemptId())
+      report.addStreamMeasurementIntervals(
+          StreamMeasurementIntervals.newBuilder()
               .setStreamIndex(index)
               .addAllKeyframeIntervalBytes(Collections.nCopies(intervals, (int) bytes))
-              .addAllKeyframeIntervalPacketCounts(Collections.nCopies(intervals, 1))
-              .build());
+              .addAllKeyframeIntervalPacketCounts(Collections.nCopies(intervals, 1)));
       streams.addStreams(
           BitrateScanChunkStream.newBuilder()
               .setStreamIndex(index)
@@ -589,11 +588,13 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
               .setEndTime(end));
     }
 
-    worker.reply(
-        ProbeAttemptResult.newBuilder()
-            .setProbeAttemptId(request.getProbeAttemptId())
-            .setProbeVersion(request.getProbeVersion())
-            .setBitrateScanChunk(BitrateScanChunkResult.newBuilder().setMeasured(streams))
+    worker.report(
+        report
+            .setResult(
+                ProbeAttemptResult.newBuilder()
+                    .setProbeAttemptId(request.getProbeAttemptId())
+                    .setProbeVersion(request.getProbeVersion())
+                    .setBitrateScanChunk(BitrateScanChunkResult.newBuilder().setMeasured(streams)))
             .build());
   }
 
@@ -771,28 +772,7 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
 
   // A worker that measures every interval of each requested stream with one packet.
   private static BitrateScanChunkOutcome measured(BitrateScanChunkRequest chunk) {
-    var intervals = chunk.keyframes().size();
-    var first = chunk.keyframes().getFirst().presentationTime();
-    var end =
-        chunk
-            .end()
-            .map(KeyframePosition::presentationTime)
-            .orElse(chunk.keyframes().getLast().presentationTime() + TICKS_PER_KEYFRAME);
-    return new BitrateScanChunkOutcome.Measured(
-        chunk.measuredStreamIndexes().stream()
-            .map(
-                index ->
-                    MeasuredChunkStream.builder()
-                        .streamIndex(index)
-                        .measuredBytes(bytesPerInterval(index) * intervals)
-                        .packetCount(intervals)
-                        .timeBaseNumerator(1)
-                        .timeBaseDenominator(90_000)
-                        .packetTimes(Optional.of(new MeasuredChunkStream.PacketTimes(first, end)))
-                        .keyframeIntervalBytes(repeated(bytesPerInterval(index), intervals))
-                        .keyframeIntervalPacketCounts(repeated(1, intervals))
-                        .build())
-            .toList());
+    return BitrateScanChunkFixture.measured(chunk, SchedulerBitrateScanIT::bytesPerInterval);
   }
 
   // A worker that leaves the audio stream out of a later chunk.
@@ -820,12 +800,6 @@ class SchedulerBitrateScanIT extends AbstractProbeSchedulerIntegrationTest {
     }
 
     return AUDIO_BYTES_PER_INTERVAL;
-  }
-
-  private static KeyframeIntervalCounts repeated(long count, int intervals) {
-    var counts = new long[intervals];
-    Arrays.fill(counts, count);
-    return KeyframeIntervalCounts.of(counts);
   }
 
   private static KeyframePosition keyframe(int index) {

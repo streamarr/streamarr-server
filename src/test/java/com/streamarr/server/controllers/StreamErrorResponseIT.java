@@ -7,6 +7,7 @@ import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.StoredSegment;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.support.AuthTestSupport;
@@ -14,6 +15,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -171,7 +173,7 @@ class StreamErrorResponseIT extends AbstractIntegrationTest {
   private static final class UnreachableSegmentStore implements SegmentStore {
 
     @Override
-    public byte[] readSegment(UUID sessionId, String segmentName) {
+    public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
       throw new IllegalStateException(FAILURE_DETAIL);
     }
 
@@ -181,7 +183,7 @@ class StreamErrorResponseIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
       throw new IllegalStateException(FAILURE_DETAIL);
     }
 

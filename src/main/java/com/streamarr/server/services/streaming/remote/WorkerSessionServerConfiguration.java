@@ -15,7 +15,8 @@ public record WorkerSessionServerConfiguration(
     Duration bitrateScanChunkTimeout,
     Duration probeCancellationTimeout,
     Duration startReportTimeout,
-    WorkerSessionKeepalive keepalive) {
+    WorkerSessionKeepalive keepalive,
+    ProbeReportLimits probeReportLimits) {
 
   public WorkerSessionServerConfiguration {
     probeTimeout = requireNonNullElse(probeTimeout, Duration.ofMinutes(1));
@@ -24,6 +25,7 @@ public record WorkerSessionServerConfiguration(
     probeCancellationTimeout = requireNonNullElse(probeCancellationTimeout, Duration.ofSeconds(5));
     startReportTimeout = requireNonNullElse(startReportTimeout, Duration.ofSeconds(10));
     keepalive = requireNonNullElse(keepalive, WorkerSessionKeepalive.DEFAULT);
+    probeReportLimits = requireNonNullElse(probeReportLimits, ProbeReportLimits.DEFAULT);
 
     if (probeTimeout.isZero() || probeTimeout.isNegative()) {
       throw new IllegalArgumentException("Worker probe timeout must be positive");

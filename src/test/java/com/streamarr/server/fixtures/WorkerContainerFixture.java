@@ -28,6 +28,8 @@ import org.testcontainers.images.builder.Transferable;
 public final class WorkerContainerFixture implements AutoCloseable {
 
   private static final String RMS_LEVEL = "RMS level dB: ";
+  private static final Object HOST_PORT_EXPOSURE = new Object();
+  private static final String FFMPEG_BODY = "/tmp/scripted-ffmpeg-body";
 
   private final WorkerSessionServer workerSessions;
   private final UUID sourceNamespaceId;
@@ -77,7 +79,13 @@ public final class WorkerContainerFixture implements AutoCloseable {
             "Select a worker image in worker-image.env, STREAMARR_WORKER_IMAGE or streamarr.worker.image")
         .isNotBlank();
     makeMediaReadable();
-    Testcontainers.exposeHostPorts(workerSessions.port());
+    // Testcontainers marks a port exposed before it starts the SSH container that forwards it. A
+    // worker that starts meanwhile is created without the host name that reaches the server. Only
+    // a JVM's first exposure starts that container, so the race shows when a test runs on its own.
+    synchronized (HOST_PORT_EXPOSURE) {
+      Testcontainers.exposeHostPorts(workerSessions.port());
+    }
+
     container =
         new GenericContainer<>(image)
             .withLogConsumer(new Slf4jLogConsumer(log).withPrefix("worker-" + workerId))
@@ -107,15 +115,17 @@ public final class WorkerContainerFixture implements AutoCloseable {
             printf '%s\\0' "$@" > "/tmp/command-$attempt"
             printf '%s' "$$" > "/tmp/producer-$attempt.tmp"
             mv "/tmp/producer-$attempt.tmp" "/tmp/producer-$attempt"
-        __FFMPEG_BODY__
+            source __FFMPEG_BODY__
             break
           fi
         done
         exec ffmpeg "$@"
         """
-            .replace("__FFMPEG_BODY__", ffmpegScript == null ? "" : ffmpegScript.indent(4));
+            .replace("__FFMPEG_BODY__", FFMPEG_BODY);
     container
         .withCopyToContainer(Transferable.of(script, 0755), "/tmp/scripted-ffmpeg")
+        .withCopyToContainer(
+            Transferable.of(ffmpegScript == null ? "" : ffmpegScript, 0644), FFMPEG_BODY)
         .withEnv("TRANSCODE_WORKER_FFMPEG_PATH", "/tmp/scripted-ffmpeg");
     for (var recording : RecordedStream.values()) {
       container.withCopyToContainer(
@@ -160,6 +170,17 @@ public final class WorkerContainerFixture implements AutoCloseable {
   }
 
   /**
+   * Replaces the started worker's scripted FFmpeg body. Each media-producing command reads the body
+   * when it runs, so every command that starts after this returns runs the new body, while one
+   * already running keeps the body it read. Call it only while no media-producing command can
+   * start. The copy is not atomic: a command that starts during it can find no body and run the
+   * image's FFmpeg, or run part of the new body.
+   */
+  public void replaceFfmpegScript(String ffmpegScript) {
+    container.copyFileToContainer(Transferable.of(ffmpegScript, 0644), FFMPEG_BODY);
+  }
+
+  /**
    * Writes media that the worker image's FFmpeg makes from {@code inputArguments} to {@code
    * target}, a path under the source root, where the worker can read it.
    */
@@ -172,6 +193,11 @@ public final class WorkerContainerFixture implements AutoCloseable {
     assertThat(result.getExitCode()).as("Generate media: %s", result.getStderr()).isZero();
     container.copyFileFromContainer(output, target.toString());
     return target;
+  }
+
+  /** The path at which the worker reads {@code media}, a path under the source root. */
+  public String containerPath(Path media) {
+    return "/media/" + sourceRoot.relativize(media);
   }
 
   public Optional<List<String>> commandFor(UUID attemptId) throws Exception {

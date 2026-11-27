@@ -7,6 +7,8 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
@@ -83,14 +85,18 @@ class SeriesResolverIT extends AbstractIntegrationTest {
   void shouldReturnSeasonsOrderedBySeasonNumberWhenSeriesQueried() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
     var series = createSeries(library);
-    seasonRepository.saveAllAndFlush(
-        List.of(
-            createSeason(library, series, 2),
-            createSeason(library, series, 3),
-            createSeason(library, series, 4),
-            createSeason(library, series, 0),
-            createSeason(library, series, 1),
-            createSeason(library, series, 5)));
+    var savedSeasons =
+        seasonRepository.saveAllAndFlush(
+            List.of(
+                createSeason(library, series, 2),
+                createSeason(library, series, 3),
+                createSeason(library, series, 4),
+                createSeason(library, series, 0),
+                createSeason(library, series, 1),
+                createSeason(library, series, 5)));
+
+    episodeRepository.saveAllAndFlush(
+        savedSeasons.stream().map(season -> createEpisode(library, season, 1)).toList());
 
     var result =
         dgsQueryExecutor.execute(
@@ -244,6 +250,14 @@ class SeriesResolverIT extends AbstractIntegrationTest {
         .title("Episode %d".formatted(episodeNumber))
         .library(library)
         .season(season)
+        .files(
+            Set.of(
+                MediaFile.builder()
+                    .libraryId(library.getId())
+                    .status(MediaFileStatus.MATCHED)
+                    .filename("episode.mkv")
+                    .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
+                    .build()))
         .build();
   }
 }

@@ -20,6 +20,14 @@ public interface UserAccountRepositoryCustom {
   void refresh(UserAccount account);
 
   /**
+   * The Account whose email equals {@code email} under PostgreSQL's {@code lower()}, the comparison
+   * {@code uq_user_account_email} enforces. Not a derived query: Spring Data derives {@code
+   * IgnoreCase} with {@code upper()}, which folds some letters, such as U+0130 and U+0131,
+   * differently.
+   */
+  Optional<UserAccount> findByEmailIgnoreCase(String email);
+
+  /**
    * The Accounts beyond each Household's seek, keyed by Household, ordered by lowercased display
    * name, then ID.
    */

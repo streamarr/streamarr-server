@@ -7,5 +7,6 @@ import java.util.UUID;
 
 public interface EpisodeRepositoryCustom {
 
+  /** Episode IDs with at least one file, grouped by season. */
   Map<UUID, List<UUID>> findEpisodeIdsBySeasonIds(Collection<UUID> seasonIds);
 }

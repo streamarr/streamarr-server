@@ -2,8 +2,10 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.support.PostgresLockTestSupport.awaitLatch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import com.streamarr.server.domain.media.LearnedStreamEnd;
@@ -20,6 +22,7 @@ import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
+import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -30,6 +33,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -44,8 +49,12 @@ import org.springframework.dao.DataAccessResourceFailureException;
 class LearnedStreamEndListenerTest {
 
   private static final Duration HEADER_VIDEO_END = Duration.ofSeconds(64);
+  // A close that waited for a held store would never return.
+  private static final Duration CLOSE_RETURN_BOUND = Duration.ofSeconds(10);
   private static final SourceStreamEnd AUDIO_END =
       new SourceStreamEnd(1, Duration.ofMillis(84_021));
+  private static final SourceStreamEnd SECOND_AUDIO_END =
+      new SourceStreamEnd(2, Duration.ofSeconds(80));
 
   @TempDir private Path temporaryDirectory;
 
@@ -56,8 +65,10 @@ class LearnedStreamEndListenerTest {
   private final FakeLearnedStreamEndRepository learnedStreamEnds =
       new FakeLearnedStreamEndRepository(probeOutcomes);
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+  private final ContainedFailureMetrics containedFailures =
+      new ContainedFailureMetrics(meterRegistry);
   private final LearnedStreamEndListener listener =
-      new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, meterRegistry);
+      new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, containedFailures);
   private Path source;
   private SourceFileSnapshot probedSnapshot;
 
@@ -65,6 +76,14 @@ class LearnedStreamEndListenerTest {
   void writeTheProbedSource() throws IOException {
     source = Files.write(temporaryDirectory.resolve("movie.mkv"), new byte[] {1, 2, 3});
     probedSnapshot = snapshotOf(source);
+  }
+
+  @Test
+  @DisplayName("Should reject missing contained failure metrics when the listener is created")
+  void shouldRejectMissingContainedFailureMetricsWhenTheListenerIsCreated() {
+    assertThatThrownBy(() -> new LearnedStreamEndListener(runtimeRegistry, learnedStreamEnds, null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("containedFailures");
   }
 
   @Test
@@ -155,19 +174,19 @@ class LearnedStreamEndListenerTest {
       "Should count each end it fails to store and let the completion finish when the database"
           + " refuses the write")
   void shouldCountEachEndItFailsToStoreAndLetTheCompletionFinishWhenTheDatabaseRefusesTheWrite() {
-    var session = savedSession(probeOf(Optional.of(probedSnapshot)));
+    var session = savedSession(probeWithTwoStreamsThatStateNoEnd());
     var withoutDatabase =
         new LearnedStreamEndListener(
-            runtimeRegistry, new UnavailableLearnedStreamEndRepository(), meterRegistry);
+            runtimeRegistry, new UnavailableLearnedStreamEndRepository(), containedFailures);
 
     assertThatCode(
             () -> {
-              withoutDatabase.onJobAttemptCompleted(completion(session, AUDIO_END));
+              withoutDatabase.onJobAttemptCompleted(
+                  completion(session, List.of(AUDIO_END, SECOND_AUDIO_END)));
               withoutDatabase.close();
             })
         .doesNotThrowAnyException();
-    assertThat(meterRegistry.get("streamarr.streaming.learned_stream_end_store_failures").counter())
-        .satisfies(failures -> assertThat(failures.count()).isEqualTo(1));
+    assertThat(storeFailures()).isEqualTo(2);
   }
 
   @Test
@@ -176,19 +195,104 @@ class LearnedStreamEndListenerTest {
           + " write")
   void shouldReturnToTheWorkersReportBeforeTheEndIsStoredWhenTheDatabaseHoldsTheWrite() {
     var session = savedSession(probeOf(Optional.of(probedSnapshot)));
-    var writeReleased = new CountDownLatch(1);
-    var holding =
-        new LearnedStreamEndListener(
-            runtimeRegistry,
-            new HeldLearnedStreamEndRepository(learnedStreamEnds, writeReleased),
-            meterRegistry);
+    var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
+    var holding = new LearnedStreamEndListener(runtimeRegistry, held, containedFailures);
 
     assertTimeoutPreemptively(
         Duration.ofSeconds(5), () -> holding.onJobAttemptCompleted(completion(session, AUDIO_END)));
-    writeReleased.countDown();
+    held.release();
     holding.close();
 
     assertThat(learnedStreamEnds.findFor(session.getMediaFileId(), probedSnapshot)).hasSize(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should cancel the store and close while the database still holds the write when the server"
+          + " shuts down")
+  void shouldCancelTheStoreAndCloseWhileTheDatabaseStillHoldsTheWriteWhenTheServerShutsDown()
+      throws Exception {
+    var session = savedSession(probeOf(Optional.of(probedSnapshot)));
+    var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
+    var holding = new LearnedStreamEndListener(runtimeRegistry, held, containedFailures);
+    holding.onJobAttemptCompleted(completion(session, AUDIO_END));
+    awaitLatch(held.storing);
+
+    BoundedTask.runWithin(CLOSE_RETURN_BOUND, holding::close);
+    held.awaitTheStoringThreadsEnd();
+
+    assertThat(learnedStreamEnds.findFor(session.getMediaFileId(), probedSnapshot)).isEmpty();
+    assertThat(storeFailures()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "Should store the end that a later completion reports when a shutdown cancelled the store"
+          + " of an earlier completion")
+  void shouldStoreTheEndThatALaterCompletionReportsWhenAShutdownCancelledTheStoreOfAnEarlierOne()
+      throws Exception {
+    var session = savedSession(probeOf(Optional.of(probedSnapshot)));
+    var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
+    var stoppedServer = new LearnedStreamEndListener(runtimeRegistry, held, containedFailures);
+    stoppedServer.onJobAttemptCompleted(completion(session, AUDIO_END));
+    awaitLatch(held.storing);
+    BoundedTask.runWithin(CLOSE_RETURN_BOUND, stoppedServer::close);
+    held.awaitTheStoringThreadsEnd();
+    var storedByTheStoppedServer =
+        learnedStreamEnds.findFor(session.getMediaFileId(), probedSnapshot);
+
+    learnFromCompletion(completion(session, AUDIO_END));
+
+    assertThat(storedByTheStoppedServer).isEmpty();
+    assertThat(learnedStreamEnds.findFor(session.getMediaFileId(), probedSnapshot))
+        .extracting(LearnedStreamEnd::endTime)
+        .containsExactly(AUDIO_END.endTime());
+  }
+
+  @Test
+  @DisplayName(
+      "Should store no further end of the completion when a shutdown cancelled the store of its"
+          + " first end")
+  void shouldStoreNoFurtherEndOfTheCompletionWhenAShutdownCancelledTheStoreOfItsFirstEnd()
+      throws Exception {
+    var session = savedSession(probeWithTwoStreamsThatStateNoEnd());
+    var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
+    var holding = new LearnedStreamEndListener(runtimeRegistry, held, containedFailures);
+    holding.onJobAttemptCompleted(completion(session, List.of(AUDIO_END, SECOND_AUDIO_END)));
+    awaitLatch(held.storing);
+
+    BoundedTask.runWithin(CLOSE_RETURN_BOUND, holding::close);
+    held.awaitTheStoringThreadsEnd();
+
+    assertThat(held.storeCalls()).isOne();
+  }
+
+  @Test
+  @DisplayName(
+      "Should cancel the store at once and keep the interrupt when its own close is interrupted")
+  void shouldCancelTheStoreAtOnceAndKeepTheInterruptWhenItsOwnCloseIsInterrupted()
+      throws Exception {
+    var session = savedSession(probeOf(Optional.of(probedSnapshot)));
+    var held = new HeldLearnedStreamEndRepository(learnedStreamEnds);
+    var holding = new LearnedStreamEndListener(runtimeRegistry, held, containedFailures);
+    holding.onJobAttemptCompleted(completion(session, AUDIO_END));
+    awaitLatch(held.storing);
+    boolean closingThreadKeptItsInterrupt;
+
+    try (var shutdown =
+        BoundedTask.start(
+            () -> {
+              Thread.currentThread().interrupt();
+              holding.close();
+              return Thread.currentThread().isInterrupted();
+            })) {
+      closingThreadKeptItsInterrupt = shutdown.await(CLOSE_RETURN_BOUND);
+    }
+
+    held.awaitTheStoringThreadsEnd();
+    assertThat(closingThreadKeptItsInterrupt).isTrue();
+    assertThat(learnedStreamEnds.findFor(session.getMediaFileId(), probedSnapshot)).isEmpty();
+    assertThat(storeFailures()).isZero();
   }
 
   @Test
@@ -236,18 +340,33 @@ class LearnedStreamEndListenerTest {
     listener.close();
   }
 
-  // Holds each write until the test releases it, as a database lock would.
-  private record HeldLearnedStreamEndRepository(
-      LearnedStreamEndRepository delegate, CountDownLatch writeReleased)
-      implements LearnedStreamEndRepository {
+  /**
+   * Holds each write until the test releases it, as a database lock does. A write that is
+   * interrupted fails as a JDBC statement does when its thread is interrupted.
+   */
+  private static final class HeldLearnedStreamEndRepository implements LearnedStreamEndRepository {
+
+    private final LearnedStreamEndRepository delegate;
+    private final CountDownLatch storing = new CountDownLatch(1);
+    private final CountDownLatch writeReleased = new CountDownLatch(1);
+    private final AtomicReference<Thread> storingThread = new AtomicReference<>();
+    private final AtomicInteger storeCalls = new AtomicInteger();
+
+    private HeldLearnedStreamEndRepository(LearnedStreamEndRepository delegate) {
+      this.delegate = delegate;
+    }
 
     @Override
     public boolean store(LearnedStreamEnd learned) {
+      storeCalls.incrementAndGet();
+      storingThread.set(Thread.currentThread());
+      storing.countDown();
       try {
         writeReleased.await();
-      } catch (InterruptedException _) {
+      } catch (InterruptedException interrupted) {
         Thread.currentThread().interrupt();
-        return false;
+        throw new DataAccessResourceFailureException(
+            "The connection closed at the interrupt.", interrupted);
       }
 
       return delegate.store(learned);
@@ -256,6 +375,20 @@ class LearnedStreamEndListenerTest {
     @Override
     public List<LearnedStreamEnd> findFor(UUID mediaFileId, SourceFileSnapshot snapshot) {
       return delegate.findFor(mediaFileId, snapshot);
+    }
+
+    private void release() {
+      writeReleased.countDown();
+    }
+
+    private int storeCalls() {
+      return storeCalls.get();
+    }
+
+    // The listener decides on the storing thread whether the write failed, after the write
+    // returns, so the thread's end is the only signal that it has decided.
+    private void awaitTheStoringThreadsEnd() throws InterruptedException {
+      assertThat(storingThread.get().join(CLOSE_RETURN_BOUND)).isTrue();
     }
   }
 
@@ -302,17 +435,44 @@ class LearnedStreamEndListenerTest {
         .build();
   }
 
+  // A video stream whose header states its end, and two audio streams whose headers state none.
+  private MediaProbe probeWithTwoStreamsThatStateNoEnd() {
+    return defaultProbeBuilder()
+        .sourceSnapshot(Optional.of(probedSnapshot))
+        .streams(
+            List.of(
+                StreamInfo.builder()
+                    .index(0)
+                    .codecType("video")
+                    .endTime(Optional.of(HEADER_VIDEO_END))
+                    .build(),
+                StreamInfo.builder().index(1).codecType("audio").build(),
+                StreamInfo.builder().index(2).codecType("audio").build()))
+        .build();
+  }
+
+  private double storeFailures() {
+    return meterRegistry
+        .counter("streamarr.streaming.contained_failures", "operation", "learned_stream_end_store")
+        .count();
+  }
+
   private static SourceFileSnapshot snapshotOf(Path file) throws IOException {
     return SourceFileSnapshot.of(Files.readAttributes(file, BasicFileAttributes.class));
   }
 
   private static JobAttemptCompletedEvent completion(
       StreamSession session, SourceStreamEnd streamEnd) {
+    return completion(session, List.of(streamEnd));
+  }
+
+  private static JobAttemptCompletedEvent completion(
+      StreamSession session, List<SourceStreamEnd> streamEnds) {
     return JobAttemptCompletedEvent.builder()
         .streamSessionId(session.getSessionId())
         .jobAttemptId(UUID.randomUUID())
         .variantLabel(StreamSession.defaultVariant())
-        .streamEnds(List.of(streamEnd))
+        .streamEnds(streamEnds)
         .build();
   }
 }

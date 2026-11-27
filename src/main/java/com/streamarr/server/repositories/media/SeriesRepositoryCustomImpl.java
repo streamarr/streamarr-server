@@ -28,6 +28,7 @@ import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.repositories.LastWatchedExpression;
+import com.streamarr.server.repositories.MediaFileConditions;
 import com.streamarr.server.repositories.WatchStateConditions;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
@@ -200,7 +201,8 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             .from(EPISODE)
             .innerJoin(SEASON)
             .on(EPISODE.SEASON_ID.eq(SEASON.ID))
-            .where(SEASON.SERIES_ID.eq(BASE_COLLECTABLE.ID).and(episodeCondition)));
+            .where(SEASON.SERIES_ID.eq(BASE_COLLECTABLE.ID).and(episodeCondition))
+            .and(MediaFileConditions.hasFiles(EPISODE.ID)));
   }
 
   private static Field<OffsetDateTime> lastWatchedAt(MediaFilter filter) {

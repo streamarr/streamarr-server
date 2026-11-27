@@ -45,6 +45,6 @@ public class SeriesFieldResolver {
   @DgsData(parentType = "Series", field = "seasons")
   public List<Season> seasons(DataFetchingEnvironment dfe) {
     Series series = dfe.getSource();
-    return seriesService.findSeasons(series.getId());
+    return seriesService.findSeasonsWithFiles(series.getId());
   }
 }

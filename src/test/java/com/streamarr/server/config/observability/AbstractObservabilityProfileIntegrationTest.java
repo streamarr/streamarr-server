@@ -1,20 +1,20 @@
 package com.streamarr.server.config.observability;
 
-import static com.streamarr.server.config.observability.OtlpExports.MICROMETER;
 import static com.streamarr.server.config.observability.OtlpExports.carryingMeter;
 import static com.streamarr.server.config.observability.OtlpExports.fromMicrometer;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
+import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Tag;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
 import org.springframework.test.context.ActiveProfiles;
@@ -36,9 +36,18 @@ abstract class AbstractObservabilityProfileIntegrationTest extends AbstractInteg
   /** A meter the server registers at startup: an export carrying it exports the server's meters. */
   static final String STARTUP_METER = "streamarr.probes.waiting";
 
+  /**
+   * A meter Spring Boot registers once the server is ready. The meters that binders such as the
+   * connection pool's add are registered before it, so an export carrying it carries them too.
+   */
+  static final String READY_METER = "application.ready.time";
+
+  @Autowired private AutoConfiguredOpenTelemetrySdk openTelemetrySdk;
+
   @DynamicPropertySource
   static void exportOften(DynamicPropertyRegistry registry) {
-    registry.add("otel.metric.export.interval", () -> "100");
+    // The SDK exports metrics only when a test flushes it: a flush fails while an export runs.
+    registry.add("otel.metric.export.interval", () -> "3600000");
     registry.add("otel.bsp.schedule.delay", () -> "100");
     registry.add("otel.blrp.schedule.delay", () -> "100");
     registry.add("management.otlp.metrics.export.step", () -> "1s");
@@ -61,24 +70,24 @@ abstract class AbstractObservabilityProfileIntegrationTest extends AbstractInteg
 
   abstract RecordingOtlpCollector collector();
 
-  /** The exporters that must each send two exports before a wait for collected exports ends. */
-  Set<String> exportersToAwait() {
-    return Set.of(MICROMETER);
-  }
-
   /**
-   * Waits until every exporter in {@link #exportersToAwait} has sent two exports after {@code
-   * position}, Micrometer's carrying the server's meters, and returns the metric exports collected
-   * after it. Each exporter's first export after the position may have been collected before it and
-   * is left out: an exporter collects its next export only after it has sent the previous one.
+   * Waits until Micrometer has sent two exports of the server's meters after {@code position}, and
+   * returns the metric exports collected after it: every export received after the position but
+   * Micrometer's first. Micrometer may have collected that one before the position, since it
+   * collects its next export only after it has sent the previous one. The SDK exports only when a
+   * test flushes it, so each SDK export received after the position was collected after it.
    */
   List<ExportMetricsServiceRequest> exportsCollectedAfter(int position)
       throws InterruptedException {
     var exports =
-        collector().metricExports().awaitAfter(position, this::eachAwaitedExporterSentTwice);
-    return byExporter(exports).values().stream()
-        .flatMap(exporterExports -> exporterExports.stream().skip(1))
-        .toList();
+        collector()
+            .metricExports()
+            .awaitAfter(
+                position,
+                received -> carryingMeter(fromMicrometer(received), STARTUP_METER).size() >= 2);
+    var collectedAfter = new ArrayList<>(exports);
+    collectedAfter.remove(fromMicrometer(exports).getFirst());
+    return List.copyOf(collectedAfter);
   }
 
   /**
@@ -89,24 +98,32 @@ abstract class AbstractObservabilityProfileIntegrationTest extends AbstractInteg
     return carryingMeter(fromMicrometer(exportsCollectedAfter(position)), STARTUP_METER).getFirst();
   }
 
-  private boolean eachAwaitedExporterSentTwice(List<ExportMetricsServiceRequest> received) {
-    var byExporter = byExporter(received);
-    return exportersToAwait().stream()
-        .allMatch(
-            exporter -> {
-              var sent = byExporter.getOrDefault(Optional.of(exporter), List.of());
-              if (exporter.equals(MICROMETER)) {
-                sent = carryingMeter(sent, STARTUP_METER);
-              }
-
-              return sent.size() >= 2;
-            });
+  /**
+   * Waits for, and returns, the first export of the server's meters that Micrometer collected once
+   * the server was ready. It arrives within one step of that, so only a context's first test waits.
+   * The registry builds the resource of its exports when it is created, and {@code
+   * OtlpMetricsEndpointConfiguration} fixes the metrics URL and headers when the server starts, so
+   * this export carries the same ones as every later export.
+   */
+  ExportMetricsServiceRequest firstExportOfTheReadyServer() throws InterruptedException {
+    var exports =
+        collector()
+            .metricExports()
+            .awaitAfter(
+                0, received -> !carryingMeter(fromMicrometer(received), READY_METER).isEmpty());
+    return carryingMeter(fromMicrometer(exports), READY_METER).getFirst();
   }
 
-  private static Map<Optional<String>, List<ExportMetricsServiceRequest>> byExporter(
-      List<ExportMetricsServiceRequest> exports) {
-    return exports.stream()
-        .collect(
-            Collectors.groupingBy(OtlpExports::exporter, LinkedHashMap::new, Collectors.toList()));
+  /**
+   * Has each metric reader of the OpenTelemetry SDK collect and export what the SDK holds, and
+   * returns once those exports have completed. A failed export still completes the flush, so a test
+   * that needs an SDK export checks that the collector received one.
+   */
+  void flushTheSdksMetrics() {
+    var flush = openTelemetrySdk.getOpenTelemetrySdk().getSdkMeterProvider().forceFlush();
+
+    assertThat(flush.join(EXPORT_WAIT.toMillis(), TimeUnit.MILLISECONDS).isSuccess())
+        .as("The OpenTelemetry SDK flushed its metrics")
+        .isTrue();
   }
 }

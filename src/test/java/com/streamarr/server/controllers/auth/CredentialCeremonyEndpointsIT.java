@@ -56,8 +56,8 @@ import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.ServerScope;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.HibernateWorkCounter;
 import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
-import jakarta.persistence.EntityManagerFactory;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -69,7 +69,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import javax.sql.DataSource;
 import lombok.Builder;
-import org.hibernate.SessionFactory;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -79,6 +78,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -122,7 +122,7 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
   @Autowired private PositionCursorCodec positionCursors;
   @Autowired private DataSource dataSource;
   @Autowired private JdbcTemplate jdbcTemplate;
-  @Autowired private EntityManagerFactory entityManagerFactory;
+  @Autowired private HibernateWorkCounter hibernateWork;
 
   private AuthTestSupport.TestIdentity serverAdmin;
 
@@ -388,27 +388,21 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     issueInvitation("bounded-two@example.com");
     issueInvitation("bounded-three@example.com");
     issueInvitation("bounded-four@example.com");
-    var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
-    var previouslyEnabled = statistics.isStatisticsEnabled();
-    statistics.setStatisticsEnabled(true);
-    statistics.clear();
 
-    try {
-      graphql(
-              authTestSupport.accountBearer(serverAdmin),
-              """
-              query { accountInvitations(first: 1) { edges { node { recipientEmail } } } }
-              """)
-          .andExpect(status().isOk())
-          .andExpect(jsonPath("$.errors").doesNotExist())
-          .andExpect(jsonPath("$.data.accountInvitations.edges.length()").value(1));
+    var counted =
+        hibernateWork.countAs(
+            serverAdmin,
+            () ->
+                graphql(
+                        authTestSupport.accountBearer(serverAdmin),
+                        """
+                        query { accountInvitations(first: 1) { edges { node { recipientEmail } } } }
+                        """)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.errors").doesNotExist())
+                    .andExpect(jsonPath("$.data.accountInvitations.edges.length()").value(1)));
 
-      assertThat(statistics.getEntityStatistics(AccountInvitation.class.getName()).getLoadCount())
-          .isLessThanOrEqualTo(2);
-    } finally {
-      statistics.clear();
-      statistics.setStatisticsEnabled(previouslyEnabled);
-    }
+    assertThat(counted.loaded(AccountInvitation.class)).isLessThanOrEqualTo(2);
   }
 
   @Test
@@ -1000,6 +994,43 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
     }
   }
 
+  // U+0130, a capital I with a dot, is i under PostgreSQL's lower().
+  @ParameterizedTest
+  @CsvSource({
+    "invitee@example.com, Invitee@Example.COM",
+    "invitee@example.com, \u0130nvitee@example.com",
+    "\u0130nvitee@example.com, invitee@example.com"
+  })
+  @DisplayName("Should refuse the invitation when an Account's email differs from it only in case")
+  void shouldRefuseInvitationWhenAccountEmailDiffersFromItOnlyInCase(
+      String storedEmail, String recipientEmail) throws Exception {
+    authTestSupport.createAccount(builder -> builder.email(storedEmail));
+
+    requestInvitation(recipientEmail)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.issueAccountInvitationWithNewProfile.userErrors[0].__typename")
+                .value("EmailAlreadyUsedError"));
+
+    assertThat(invitationRepository.findAll()).isEmpty();
+  }
+
+  // U+0131, a dotless i, stays itself under lower(): the address is not invitee@example.com.
+  @Test
+  @DisplayName(
+      "Should issue the invitation when the email differs from an Account's by a dotless i")
+  void shouldIssueInvitationWhenEmailDiffersFromAccountByDotlessI() throws Exception {
+    authTestSupport.createAccount(builder -> builder.email("invitee@example.com"));
+
+    requestInvitation("\u0131nvitee@example.com")
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.issueAccountInvitationWithNewProfile.userErrors").isEmpty())
+        .andExpect(
+            jsonPath("$.data.issueAccountInvitationWithNewProfile.issued.code").isNotEmpty());
+  }
+
   @Test
   @DisplayName("Should throttle reset redemption when a wrong secret is presented repeatedly")
   void shouldThrottleResetRedemptionWhenWrongSecretIsPresentedRepeatedly() throws Exception {
@@ -1415,6 +1446,18 @@ class CredentialCeremonyEndpointsIT extends AbstractIntegrationTest {
         .householdId(serverAdmin.household().getId())
         .profileName("Invitee")
         .profileKind(ProfileKind.ADULT);
+  }
+
+  /** Issues a MEMBER invitation with a new Adult Profile, leaving the answer to the caller. */
+  private ResultActions requestInvitation(String email) throws Exception {
+    return graphql(
+        authTestSupport.accountBearer(serverAdmin),
+        """
+        mutation { issueAccountInvitationWithNewProfile(input: {recipientEmail: "%s",
+          householdId: "%s", householdRole: MEMBER, profileName: "Invitee",
+          profileKind: ADULT}) { issued { code } userErrors { __typename } } }
+        """
+            .formatted(email, serverAdmin.household().getId()));
   }
 
   private String issueInvitation(InvitationSpec invitation) throws Exception {

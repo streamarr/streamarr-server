@@ -67,6 +67,55 @@ class BitrateScanChunksTest {
         .isEqualTo(new BitrateScanChunks.PlannedChunk(4_096, 904));
   }
 
+  @ParameterizedTest(name = "limit={0}, measured streams={1}")
+  @MethodSource("measuredKeyframeIntervalLimits")
+  @DisplayName(
+      "Should hold as many keyframes as keep the intervals of every measured stream within the"
+          + " measured keyframe interval limit, and at least one, when the file is small for its"
+          + " duration")
+  void shouldHoldAsManyKeyframesAsKeepEveryMeasuredStreamWithinLimitWhenFileIsSmallForItsDuration(
+      int measuredKeyframeIntervalLimit, int measuredStreamCount, int expectedKeyframes) {
+    // Small for its duration, so the duration share of one gibibyte never ends a chunk.
+    var file =
+        fileBuilder(5_000, 3, Optional.of(Duration.ofSeconds(5_000)))
+            .measuredStreamCount(measuredStreamCount)
+            .measuredKeyframeIntervalLimit(measuredKeyframeIntervalLimit)
+            .build();
+
+    assertThat(BitrateScanChunks.next(file, 0))
+        .isEqualTo(new BitrateScanChunks.PlannedChunk(0, expectedKeyframes));
+  }
+
+  private static Stream<Arguments> measuredKeyframeIntervalLimits() {
+    return Stream.of(
+        arguments(1_000, 1, 1_000),
+        arguments(1_000, 4, 250),
+        // One more keyframe would make 1,002 intervals.
+        arguments(1_000, 3, 333),
+        arguments(999, 4, 249),
+        // A chunk holds at least one keyframe, although its three intervals exceed the limit.
+        arguments(2, 3, 1),
+        arguments(8_191, 2, 4_095),
+        arguments(8_192, 2, 4_096),
+        // The limit allows more keyframes than one chunk ever holds.
+        arguments(1_000_000, 2, 4_096));
+  }
+
+  @Test
+  @DisplayName(
+      "Should span the file's duration share of one gibibyte when the measured keyframe interval"
+          + " limit allows more keyframes")
+  void shouldSpanFilesDurationShareOfOneGibibyteWhenMeasuredKeyframeIntervalLimitAllowsMore() {
+    var file =
+        fileBuilder(100, FOUR_GIB, Optional.of(Duration.ofSeconds(100)))
+            .measuredStreamCount(2)
+            .measuredKeyframeIntervalLimit(50)
+            .build();
+
+    assertThat(BitrateScanChunks.next(file, 0))
+        .isEqualTo(new BitrateScanChunks.PlannedChunk(0, 24));
+  }
+
   @ParameterizedTest(name = "container duration={0}")
   @MethodSource("durations")
   @DisplayName(
@@ -107,6 +156,8 @@ class BitrateScanChunksTest {
             .positions(positions)
             .size(FOUR_GIB)
             .containerDuration(Optional.of(Duration.ofMillis(100_100)))
+            .measuredStreamCount(1)
+            .measuredKeyframeIntervalLimit(1_000_000)
             .build();
 
     // A quarter of 3,000 ticks is 750 ticks, which 24 intervals of 30 ticks stay below.
@@ -135,7 +186,15 @@ class BitrateScanChunksTest {
 
   private static BitrateScanChunks.File file(
       int keyframes, long size, Optional<Duration> containerDuration) {
+    return fileBuilder(keyframes, size, containerDuration).build();
+  }
+
+  /** A file whose one measured stream stays far below the measured keyframe interval limit. */
+  private static BitrateScanChunks.File.FileBuilder fileBuilder(
+      int keyframes, long size, Optional<Duration> containerDuration) {
     return BitrateScanChunks.File.builder()
+        .measuredStreamCount(1)
+        .measuredKeyframeIntervalLimit(1_000_000)
         .positions(
             KeyframePositions.builder()
                 .streamIndex(0)
@@ -146,8 +205,7 @@ class BitrateScanChunksTest {
                     IntStream.range(0, keyframes).mapToObj(index -> keyframe(index)).toList())
                 .build())
         .size(size)
-        .containerDuration(containerDuration)
-        .build();
+        .containerDuration(containerDuration);
   }
 
   private static KeyframePosition keyframe(int index) {

@@ -53,6 +53,15 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
+  public Optional<UserAccount> findByEmailIgnoreCase(String email) {
+    var query =
+        dsl.selectFrom(USER_ACCOUNT).where(lower(USER_ACCOUNT.EMAIL).eq(lower(DSL.val(email))));
+
+    return JooqQueryHelper.nativeQuery(entityManager, query, UserAccount.class).stream()
+        .findFirst();
+  }
+
+  @Override
   public Map<UUID, List<Row<UserAccount>>> rowsBeyond(Map<UUID, Seek> seeksByHousehold) {
     var rows = new LinkedHashMap<UUID, List<Row<UserAccount>>>();
     seeksByHousehold.keySet().forEach(householdId -> rows.put(householdId, new ArrayList<>()));

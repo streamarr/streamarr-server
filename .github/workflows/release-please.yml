@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   release:
-    uses: streamarr/streamarr-workflows/.github/workflows/release-please.yml@4f248f00cffecd547583dc70a0abab492775eecf
+    uses: streamarr/streamarr-workflows/.github/workflows/release-please.yml@adea5cf60a91421f977012b4d37f890a6322bebd
     secrets:
       app-client-id: ${{ secrets.ORG_STREAMARR_RELEASE_CLIENT_ID }}
       app-private-key: ${{ secrets.ORG_STREAMARR_RELEASE_PRIVATE_KEY }}

@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
@@ -22,6 +24,7 @@ import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -255,7 +258,19 @@ class WatchStateMutationIT extends AbstractIntegrationTest {
 
   private Episode createEpisode(Season season) {
     return episodeRepository.saveAndFlush(
-        Episode.builder().episodeNumber(1).season(season).library(library).build());
+        Episode.builder()
+            .episodeNumber(1)
+            .season(season)
+            .library(library)
+            .files(
+                Set.of(
+                    MediaFile.builder()
+                        .libraryId(library.getId())
+                        .status(MediaFileStatus.MATCHED)
+                        .filename("episode.mkv")
+                        .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
+                        .build()))
+            .build());
   }
 
   enum ItemKind {

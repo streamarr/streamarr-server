@@ -11,8 +11,8 @@ public class BlockingSegmentStore extends FakeSegmentStore {
   private final CountDownLatch continuePreparing = new CountDownLatch(1);
 
   @Override
-  public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
-    var prepared = super.prepareSegment(sessionId, segmentName, data);
+  public PreparedSegment prepareSegment(UUID sessionId, String segmentName) {
+    var prepared = super.prepareSegment(sessionId, segmentName);
     preparing.countDown();
     try {
       if (!continuePreparing.await(5, TimeUnit.SECONDS)) {

@@ -414,7 +414,8 @@ public final class Fmp4Fixture {
   public static byte[] withInitializationSegment(
       SegmentStore segmentStore, UUID sessionId, byte[] mediaSegment) {
     var media = new ByteArrayOutputStream();
-    media.writeBytes(segmentStore.readSegment(sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME));
+    media.writeBytes(
+        StoredSegments.bytes(segmentStore, sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME));
     media.writeBytes(mediaSegment);
     return media.toByteArray();
   }
@@ -423,6 +424,6 @@ public final class Fmp4Fixture {
   public static byte[] withInitializationSegment(
       SegmentStore segmentStore, UUID sessionId, String mediaSegmentName) {
     return withInitializationSegment(
-        segmentStore, sessionId, segmentStore.readSegment(sessionId, mediaSegmentName));
+        segmentStore, sessionId, StoredSegments.bytes(segmentStore, sessionId, mediaSegmentName));
   }
 }

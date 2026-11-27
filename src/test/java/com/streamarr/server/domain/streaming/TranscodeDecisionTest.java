@@ -84,8 +84,8 @@ class TranscodeDecisionTest {
         .hasMessageContaining("videoSource");
   }
 
-  // The builder defaults the entry refusals, the audio stream index and the HDR choice, so only the
-  // canonical constructor can receive null for them.
+  // The builder defaults the entry refusals, the audio stream index, the HDR choice and the assumed
+  // matrix, so only the canonical constructor can receive null for them.
   @ParameterizedTest(name = "{0}")
   @MethodSource("decisionsConstructedWithoutAValue")
   @DisplayName("Should refuse a decision when its constructor receives no value for a component")
@@ -118,7 +118,8 @@ class TranscodeDecisionTest {
                         OptionalInt.empty(),
                         Optional.empty(),
                         false,
-                        EncodeFormat.SDR_8_BIT)),
+                        EncodeFormat.SDR_8_BIT,
+                        Optional.empty())),
         Arguments.of(
             "audioStreamIndex",
             (ThrowingCallable)
@@ -137,7 +138,8 @@ class TranscodeDecisionTest {
                         null,
                         Optional.empty(),
                         false,
-                        EncodeFormat.SDR_8_BIT)),
+                        EncodeFormat.SDR_8_BIT,
+                        Optional.empty())),
         Arguments.of(
             "dynamicRangeChoice",
             (ThrowingCallable)
@@ -156,7 +158,28 @@ class TranscodeDecisionTest {
                         OptionalInt.empty(),
                         null,
                         false,
-                        EncodeFormat.SDR_8_BIT)));
+                        EncodeFormat.SDR_8_BIT,
+                        Optional.empty())),
+        Arguments.of(
+            "assumedSourceMatrix",
+            (ThrowingCallable)
+                () ->
+                    new TranscodeDecision(
+                        TranscodeMode.FULL_TRANSCODE,
+                        "h264",
+                        Optional.empty(),
+                        audio,
+                        subtitles,
+                        Optional.empty(),
+                        List.of(),
+                        Optional.empty(),
+                        List.of(),
+                        List.of(),
+                        OptionalInt.empty(),
+                        Optional.empty(),
+                        false,
+                        EncodeFormat.SDR_8_BIT,
+                        null)));
   }
 
   @Test

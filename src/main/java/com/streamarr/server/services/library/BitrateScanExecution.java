@@ -20,6 +20,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -108,12 +109,21 @@ public class BitrateScanExecution {
     };
   }
 
-  static BitrateScanChunks.File fileOf(BitrateScanInputs inputs) {
+  private BitrateScanChunks.File fileOf(BitrateScanInputs inputs) {
     return BitrateScanChunks.File.builder()
         .positions(inputs.positions())
         .size(inputs.key().snapshot().size())
         .containerDuration(inputs.containerDuration())
+        .measuredStreamCount(measuredStreamIndexes(inputs).size())
+        .measuredKeyframeIntervalLimit(scanner.measuredKeyframeIntervalLimit())
         .build();
+  }
+
+  // The chosen video stream and every audio stream.
+  private static List<Integer> measuredStreamIndexes(BitrateScanInputs inputs) {
+    return Stream.concat(
+            Stream.of(inputs.positions().streamIndex()), inputs.audioStreamIndexes().stream())
+        .toList();
   }
 
   private BitrateScanResult storeChunk(
@@ -146,9 +156,7 @@ public class BitrateScanExecution {
         .attemptId(UUID.randomUUID())
         .measurementVersion(inputs.key().measurementVersion())
         .chosenVideoStreamIndex(positions.streamIndex())
-        .measuredStreamIndexes(
-            Stream.concat(Stream.of(positions.streamIndex()), inputs.audioStreamIndexes().stream())
-                .toList())
+        .measuredStreamIndexes(measuredStreamIndexes(inputs))
         .timeBaseNumerator(positions.timeBaseNumerator())
         .timeBaseDenominator(positions.timeBaseDenominator())
         .keyframes(BitrateScanChunks.keyframesOf(positions, chunk))

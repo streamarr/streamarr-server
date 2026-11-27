@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.nio.channels.FileChannel;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.AccessMode;
 import java.nio.file.CopyOption;
@@ -14,6 +15,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
+import java.nio.file.SecureDirectoryStream;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
@@ -34,7 +36,7 @@ import java.util.function.Supplier;
 /**
  * A FileSystem wrapper that throws a configurable RuntimeException during Files.walk() iteration.
  * Used to test error handling when file system traversal fails mid-stream, and to run a hook before
- * each access check.
+ * each access check or before each file opens by path.
  *
  * <p>Jimfs cannot simulate permission errors, so this wrapper intercepts directory stream iteration
  * and throws the configured exception after each directory stream returns a set number of entries.
@@ -48,7 +50,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
   private final int entriesBeforeFailure;
   private final Function<Path, Optional<IOException>> laterAttributeReadFailure;
   private final Set<Path> pathsWithReadAttributes = ConcurrentHashMap.newKeySet();
-  private final Consumer<Path> beforeAccessCheck;
+  private final Hooks hooks;
 
   public ThrowingFileSystemWrapper(FileSystem delegate) {
     this(
@@ -98,7 +100,22 @@ public class ThrowingFileSystemWrapper extends FileSystem {
         () -> new IllegalStateException("The directory streams of this wrapper never fail"),
         Integer.MAX_VALUE,
         _ -> Optional.empty(),
-        beforeAccessCheck);
+        new Hooks(beforeAccessCheck, _ -> {}));
+  }
+
+  /**
+   * Returns a wrapper that never fails and runs {@code beforeFileOpens} with each path before a
+   * file opens by that path, as {@link java.nio.file.Files#newByteChannel} and {@link
+   * FileChannel#open} do. A file that opens through a secure directory stream runs no hook.
+   */
+  public static ThrowingFileSystemWrapper runningBeforeEachFileOpens(
+      FileSystem delegate, Consumer<Path> beforeFileOpens) {
+    return new ThrowingFileSystemWrapper(
+        delegate,
+        () -> new IllegalStateException("The directory streams of this wrapper never fail"),
+        Integer.MAX_VALUE,
+        _ -> Optional.empty(),
+        new Hooks(_ -> {}, beforeFileOpens));
   }
 
   private ThrowingFileSystemWrapper(
@@ -111,7 +128,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
       Supplier<RuntimeException> exceptionSupplier,
       int entriesBeforeFailure,
       Function<Path, Optional<IOException>> laterAttributeReadFailure) {
-    this(delegate, exceptionSupplier, entriesBeforeFailure, laterAttributeReadFailure, _ -> {});
+    this(delegate, exceptionSupplier, entriesBeforeFailure, laterAttributeReadFailure, Hooks.NONE);
   }
 
   private ThrowingFileSystemWrapper(
@@ -119,13 +136,18 @@ public class ThrowingFileSystemWrapper extends FileSystem {
       Supplier<RuntimeException> exceptionSupplier,
       int entriesBeforeFailure,
       Function<Path, Optional<IOException>> laterAttributeReadFailure,
-      Consumer<Path> beforeAccessCheck) {
+      Hooks hooks) {
     this.delegate = delegate;
     this.exceptionSupplier = exceptionSupplier;
     this.entriesBeforeFailure = entriesBeforeFailure;
     this.laterAttributeReadFailure = laterAttributeReadFailure;
-    this.beforeAccessCheck = beforeAccessCheck;
+    this.hooks = hooks;
     this.throwingProvider = new ThrowingFileSystemProvider(delegate.provider(), this);
+  }
+
+  private record Hooks(Consumer<Path> beforeAccessCheck, Consumer<Path> beforeFileOpens) {
+
+    private static final Hooks NONE = new Hooks(_ -> {}, _ -> {});
   }
 
   private void throwIfALaterAttributeReadFails(Path path) throws IOException {
@@ -354,6 +376,10 @@ public class ThrowingFileSystemWrapper extends FileSystem {
     public DirectoryStream<Path> newDirectoryStream(
         Path dir, DirectoryStream.Filter<? super Path> filter) throws IOException {
       var delegateStream = delegate.newDirectoryStream(unwrap(dir), filter);
+      if (delegateStream instanceof SecureDirectoryStream<Path> secureStream) {
+        return new ThrowingSecureDirectoryStream(secureStream, fileSystem);
+      }
+
       return new ThrowingDirectoryStream(delegateStream, fileSystem);
     }
 
@@ -381,7 +407,16 @@ public class ThrowingFileSystemWrapper extends FileSystem {
     public SeekableByteChannel newByteChannel(
         Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs)
         throws IOException {
+      fileSystem.hooks.beforeFileOpens().accept(unwrap(path));
       return delegate.newByteChannel(unwrap(path), options, attrs);
+    }
+
+    @Override
+    public FileChannel newFileChannel(
+        Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs)
+        throws IOException {
+      fileSystem.hooks.beforeFileOpens().accept(unwrap(path));
+      return delegate.newFileChannel(unwrap(path), options, attrs);
     }
 
     @Override
@@ -421,7 +456,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
 
     @Override
     public void checkAccess(Path path, AccessMode... modes) throws IOException {
-      fileSystem.beforeAccessCheck.accept(unwrap(path));
+      fileSystem.hooks.beforeAccessCheck().accept(unwrap(path));
       delegate.checkAccess(unwrap(path), modes);
     }
 
@@ -469,6 +504,72 @@ public class ThrowingFileSystemWrapper extends FileSystem {
     @Override
     public void close() throws IOException {
       delegate.close();
+    }
+  }
+
+  // Code that refuses a file system without secure directory streams accepts this wrapper when the
+  // wrapped file system has them.
+  private static final class ThrowingSecureDirectoryStream extends ThrowingDirectoryStream
+      implements SecureDirectoryStream<Path> {
+
+    private final SecureDirectoryStream<Path> secureDelegate;
+    private final ThrowingFileSystemWrapper wrapper;
+
+    ThrowingSecureDirectoryStream(
+        SecureDirectoryStream<Path> delegate, ThrowingFileSystemWrapper fileSystem) {
+      super(delegate, fileSystem);
+      this.secureDelegate = delegate;
+      this.wrapper = fileSystem;
+    }
+
+    @Override
+    public SecureDirectoryStream<Path> newDirectoryStream(Path path, LinkOption... options)
+        throws IOException {
+      return new ThrowingSecureDirectoryStream(
+          secureDelegate.newDirectoryStream(ThrowingFileSystemProvider.unwrap(path), options),
+          wrapper);
+    }
+
+    @Override
+    public SeekableByteChannel newByteChannel(
+        Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs)
+        throws IOException {
+      return secureDelegate.newByteChannel(ThrowingFileSystemProvider.unwrap(path), options, attrs);
+    }
+
+    @Override
+    public void deleteFile(Path path) throws IOException {
+      secureDelegate.deleteFile(ThrowingFileSystemProvider.unwrap(path));
+    }
+
+    @Override
+    public void deleteDirectory(Path path) throws IOException {
+      secureDelegate.deleteDirectory(ThrowingFileSystemProvider.unwrap(path));
+    }
+
+    @Override
+    public void move(Path source, SecureDirectoryStream<Path> targetFolder, Path target)
+        throws IOException {
+      var unwrappedTargetFolder =
+          targetFolder instanceof ThrowingSecureDirectoryStream wrapped
+              ? wrapped.secureDelegate
+              : targetFolder;
+      secureDelegate.move(
+          ThrowingFileSystemProvider.unwrap(source),
+          unwrappedTargetFolder,
+          ThrowingFileSystemProvider.unwrap(target));
+    }
+
+    @Override
+    public <V extends FileAttributeView> V getFileAttributeView(Class<V> type) {
+      return secureDelegate.getFileAttributeView(type);
+    }
+
+    @Override
+    public <V extends FileAttributeView> V getFileAttributeView(
+        Path path, Class<V> type, LinkOption... options) {
+      return secureDelegate.getFileAttributeView(
+          ThrowingFileSystemProvider.unwrap(path), type, options);
     }
   }
 

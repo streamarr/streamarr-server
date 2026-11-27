@@ -1,10 +1,19 @@
 package com.streamarr.server.services.metadata;
 
+import static com.streamarr.server.fakes.TestImages.createBlackGrayscalePngImage;
+import static com.streamarr.server.fakes.TestImages.createGifImage;
+import static com.streamarr.server.fakes.TestImages.createPngImageWithTransparentBorder;
+import static com.streamarr.server.fakes.TestImages.createQuadrantPngImage;
 import static com.streamarr.server.fakes.TestImages.createSolidPngImage;
 import static com.streamarr.server.fakes.TestImages.createTestImage;
+import static com.streamarr.server.fakes.TestImages.createTransparentPngImage;
+import static com.streamarr.server.fakes.TestImages.createVerticalBandsPngImage;
+import static com.streamarr.server.fakes.TestImages.decode;
+import static com.streamarr.server.fakes.TestImages.formatNameOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.data.Offset.offset;
+import static org.junit.jupiter.api.Named.named;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
@@ -17,16 +26,22 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.exceptions.ImageProcessingException;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.io.InputStream;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import javax.imageio.ImageIO;
 import lombok.Builder;
 import net.coobird.thumbnailator.Thumbnails;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Image Variant Service Tests")
@@ -54,9 +69,7 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.width()).isEqualTo(185);
+    assertThat(smallVariant(variants).width()).isEqualTo(185);
   }
 
   @Test
@@ -66,9 +79,7 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.width()).isEqualTo(300);
+    assertThat(smallVariant(variants).width()).isEqualTo(300);
   }
 
   @Test
@@ -78,9 +89,7 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.ambientColors())
+    assertThat(smallVariant(variants).ambientColors())
         .isEqualTo(
             Optional.of(
                 AmbientColors.builder()
@@ -139,9 +148,59 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
-    var small =
-        variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.blurHash()).isNotBlank();
+    assertThat(smallVariant(variants).blurHash()).isNotBlank();
+  }
+
+  @Test
+  @DisplayName("Should hash a thumbnail fitted within 128 pixels when the small variant is wider")
+  void shouldHashThumbnailFittedWithin128PixelsWhenSmallVariantIsWider() {
+    var imageData = createVerticalBandsPngImage(300, 169);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the 128x72
+    // Thumbnailator thumbnail of the 300x169 small variant, and LQI#MwvKQX#2j[fPf7fRfQfQfQfQ for
+    // the small variant itself. Thumbnails squashed to 128x128 or scaled to 128 pixels high hash
+    // differently.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("LRIq$8znQX#LofjZf7jbfQfQfQfQ");
+  }
+
+  @Test
+  @DisplayName("Should hash a thumbnail fitted within 128 pixels when the small variant is taller")
+  void shouldHashThumbnailFittedWithin128PixelsWhenSmallVariantIsTaller() {
+    var imageData = createVerticalBandsPngImage(185, 278);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the 85x128
+    // Thumbnailator thumbnail of the 185x278 small variant, and LRI#MvznQX#2j[fQf7fRfQfQfQfQ for
+    // the small variant itself. Thumbnails squashed to 128x128 or scaled to 128 pixels wide hash
+    // differently.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("LTIqy0z.QX#LoLfPf7fRfQfQfQfQ");
+  }
+
+  @Test
+  @DisplayName("Should hash the small variant itself when it fits within 128 pixels")
+  void shouldHashSmallVariantItselfWhenItFitsWithin128Pixels() {
+    var imageData = createQuadrantPngImage(92, 60);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.LOGO);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the fixture's
+    // own 92x60 pixels, and L=Iq#x|DjsJ.MoNFayofa#ayfQfQ for a 128x83 enlargement of them.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("L=Iq#x|Do0J.MoRiayofa#ayfQfQ");
+  }
+
+  @Test
+  @DisplayName("Should hash the small variant itself when it is one pixel high")
+  void shouldHashSmallVariantItselfWhenItIsOnePixelHigh() {
+    var imageData = createSolidPngImage(300, 1, 0xC0392B);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
+
+    // The reference encoder (blurhash 2.0.5 on npm, 4x3 components) gives this for the fixture's
+    // own 300x1 red pixels, and L00000fQfQfQfQfQfQfQfQfQfQfQ for a black 128x1 strip.
+    assertThat(smallVariant(variants).blurHash()).isEqualTo("L~M2rujtfQjt}YjtfQjt}YjtfQjt");
   }
 
   @Test
@@ -159,15 +218,36 @@ class ImageVariantServiceTest {
     }
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("imagesWithTransparentPixels")
+  @DisplayName("Should encode every variant so that it decodes when image has transparent pixels")
+  void shouldEncodeEveryVariantSoThatItDecodesWhenImageHasTransparentPixels(byte[] imageData) {
+    var variants = imageVariantService.generateVariants(imageData, ImageType.LOGO);
+
+    assertThat(variants)
+        .hasSize(4)
+        .allSatisfy(
+            variant -> assertThat(decode(variant.data())).as(variant.variant().name()).isNotNull());
+  }
+
+  private static Stream<Named<byte[]>> imagesWithTransparentPixels() {
+    return Stream.of(
+        named("a transparent border", createPngImageWithTransparentBorder()),
+        named("every pixel transparent", createTransparentPngImage()));
+  }
+
   @ParameterizedTest
   @EnumSource(ImageType.class)
-  @DisplayName("Should generate four variants when given any ImageType")
-  void shouldGenerateFourVariantsWhenGivenAnyImageType(ImageType imageType) {
+  @DisplayName("Should generate four JPEG variants that decode when given any ImageType")
+  void shouldGenerateFourJpegVariantsThatDecodeWhenGivenAnyImageType(ImageType imageType) {
     var imageData = createTestImage(600, 900);
 
     var variants = imageVariantService.generateVariants(imageData, imageType);
 
-    assertThat(variants).hasSize(4);
+    assertThat(variants)
+        .hasSize(4)
+        .allSatisfy(variant -> assertThat(formatNameOf(variant.data())).isEqualTo("jpeg"))
+        .allSatisfy(variant -> assertThat(decode(variant.data())).isNotNull());
   }
 
   @Test
@@ -291,6 +371,11 @@ class ImageVariantServiceTest {
     assertThat(variant.toString()).contains("dataLength=0");
   }
 
+  private static ImageVariantService.GeneratedVariant smallVariant(
+      List<ImageVariantService.GeneratedVariant> variants) {
+    return variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
+  }
+
   private static GeneratedVariantBuilder defaultVariantBuilder() {
     return emptyVariantBuilder()
         .variant(ImageSize.SMALL)
@@ -330,27 +415,91 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should throw when image data is corrupt")
-  void shouldThrowWhenImageDataIsCorrupt() {
-    assertThatThrownBy(
-            () -> imageVariantService.generateVariants(new byte[] {0, 1, 2}, ImageType.POSTER))
+  @DisplayName("Should throw when image data is neither JPEG nor PNG")
+  void shouldThrowWhenImageDataIsNeitherJpegNorPng() {
+    var imageData = createGifImage();
+
+    assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
         .isInstanceOf(ImageProcessingException.class);
   }
 
   @Test
-  @DisplayName("Should wrap IOException when image reading fails")
-  void shouldWrapIOExceptionWhenImageReadingFails() {
-    var imageData = new byte[] {1, 2, 3};
+  @DisplayName("Should throw when image data is corrupt")
+  void shouldThrowWhenImageDataIsCorrupt() {
+    var pngCutAfterItsSignature = Arrays.copyOf(createSolidPngImage(600, 900, 0x00A0A0), 16);
+
+    assertThatThrownBy(
+            () -> imageVariantService.generateVariants(pngCutAfterItsSignature, ImageType.POSTER))
+        .isInstanceOf(ImageProcessingException.class);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"7680, 4320", "4320, 7680"})
+  @DisplayName("Should generate variants when the image has exactly 8K's pixel count")
+  void shouldGenerateVariantsWhenImageHasExactly8KsPixelCount(int width, int height) {
+    var imageData = createBlackGrayscalePngImage(width, height);
+
+    var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
+
+    assertThat(variants)
+        .filteredOn(variant -> variant.variant() == ImageSize.ORIGINAL)
+        .singleElement()
+        .satisfies(
+            original -> {
+              assertThat(original.width()).isEqualTo(width);
+              assertThat(original.height()).isEqualTo(height);
+            });
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject the image from its header when it declares one row more than 8K's pixel count")
+  void shouldRejectImageFromItsHeaderWhenItDeclaresOneRowMoreThan8KsPixelCount() {
+    // The 8-byte signature and the 25-byte IHDR chunk, with no pixel data to decode after them.
+    var pngCutAfterItsHeader = Arrays.copyOf(createBlackGrayscalePngImage(7680, 4321), 33);
+
+    assertThatThrownBy(
+            () -> imageVariantService.generateVariants(pngCutAfterItsHeader, ImageType.BACKDROP))
+        .isInstanceOf(ImageProcessingException.class)
+        .hasMessageContaining("7680x4321");
+  }
+
+  @Test
+  @DisplayName("Should reject the image when resizing makes a variant with more than 8K's pixels")
+  void shouldRejectImageWhenResizingMakesAVariantWithMoreThan8KsPixels() {
+    // A backdrop's large variant is 1280 pixels wide, so 4 x 82 pixels grow to 1280 x 26240.
+    var imageData = createBlackGrayscalePngImage(4, 82);
+
+    assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.BACKDROP))
+        .isInstanceOf(ImageProcessingException.class)
+        .hasMessageContaining("1280x26240");
+  }
+
+  @Test
+  @DisplayName("Should throw when no reader decodes the image data")
+  void shouldThrowWhenNoReaderDecodesImageData() {
+    var imageData = createTestImage(600, 900);
 
     try (var mockedImageIO = mockStatic(ImageIO.class)) {
       mockedImageIO
-          .when(() -> ImageIO.read(any(InputStream.class)))
-          .thenThrow(new IOException("disk error"));
+          .when(() -> ImageIO.getImageReaders(any()))
+          .thenReturn(Collections.emptyIterator());
 
       assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
-          .isInstanceOf(ImageProcessingException.class)
-          .hasCauseInstanceOf(IOException.class);
+          .isInstanceOf(ImageProcessingException.class);
     }
+  }
+
+  @Test
+  @DisplayName("Should wrap IOException when the pixel data is cut short")
+  void shouldWrapIOExceptionWhenPixelDataIsCutShort() {
+    var png = createSolidPngImage(600, 900, 0x00A0A0);
+    var pngCutInItsPixelData = Arrays.copyOf(png, png.length / 2);
+
+    assertThatThrownBy(
+            () -> imageVariantService.generateVariants(pngCutInItsPixelData, ImageType.POSTER))
+        .isInstanceOf(ImageProcessingException.class)
+        .hasCauseInstanceOf(IOException.class);
   }
 
   @SuppressWarnings("unchecked")

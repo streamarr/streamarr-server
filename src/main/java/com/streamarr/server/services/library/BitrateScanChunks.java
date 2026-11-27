@@ -18,7 +18,7 @@ import lombok.NonNull;
 final class BitrateScanChunks {
 
   static final long TARGET_CHUNK_BYTES = 1L << 30;
-  // One chunk's intervals then fit one stream measurement part, which holds at most 4,096 entries.
+  // The worker contract bounds each keyframe list of one BitrateScanChunk at 4,096 entries.
   static final int MAXIMUM_KEYFRAME_INTERVALS = 4_096;
 
   private BitrateScanChunks() {}
@@ -28,27 +28,35 @@ final class BitrateScanChunks {
    */
   record PlannedChunk(int firstKeyframeInterval, int keyframeIntervalCount) {}
 
-  /** What the plan reads from the file. */
+  /**
+   * What the plan reads from the file, and from the scanner that measures its chunks: how many
+   * streams a chunk measures, and the most keyframe intervals, summed over those streams, that the
+   * scanner takes back from one chunk.
+   */
   @Builder
   record File(
       @NonNull KeyframePositions positions,
       long size,
-      @NonNull Optional<Duration> containerDuration) {}
+      @NonNull Optional<Duration> containerDuration,
+      int measuredStreamCount,
+      int measuredKeyframeIntervalLimit) {}
 
   /**
-   * The chunk from {@code firstKeyframeInterval}. It holds at least one interval and at most {@link
-   * #MAXIMUM_KEYFRAME_INTERVALS}, and grows interval by interval while its decode-time span stays
-   * below the file's duration share of {@link #TARGET_CHUNK_BYTES}. The last interval runs to the
-   * end of the file. When the container's duration is unknown, the last keyframe's decode time
-   * stands in for it.
+   * The chunk from {@code firstKeyframeInterval}. It holds at least one interval, at most {@link
+   * #MAXIMUM_KEYFRAME_INTERVALS}, and no more than keep the intervals of every measured stream
+   * within the file's measured keyframe interval limit. Within those bounds it grows interval by
+   * interval while its decode-time span stays below the file's duration share of {@link
+   * #TARGET_CHUNK_BYTES}. The last interval runs to the end of the file. When the container's
+   * duration is unknown, the last keyframe's decode time stands in for it.
    */
   static PlannedChunk next(File file, int firstKeyframeInterval) {
     var keyframes = file.positions().keyframes();
     var start = keyframes.get(firstKeyframeInterval).decodeTime();
     var target = targetSpan(file);
+    var mostIntervals = mostIntervals(file);
     var end = firstKeyframeInterval + 1;
     while (end < keyframes.size()
-        && end - firstKeyframeInterval < MAXIMUM_KEYFRAME_INTERVALS
+        && end - firstKeyframeInterval < mostIntervals
         && BigInteger.valueOf(endOf(file, end + 1))
                 .subtract(BigInteger.valueOf(start))
                 .compareTo(target)
@@ -57,6 +65,14 @@ final class BitrateScanChunks {
     }
 
     return new PlannedChunk(firstKeyframeInterval, end - firstKeyframeInterval);
+  }
+
+  // The chunk's outcome holds one interval of every measured stream for each of its keyframes.
+  private static int mostIntervals(File file) {
+    return Math.clamp(
+        file.measuredKeyframeIntervalLimit() / file.measuredStreamCount(),
+        1,
+        MAXIMUM_KEYFRAME_INTERVALS);
   }
 
   /** How many keyframe intervals from the first the stored chunks cover without a gap. */

@@ -6,18 +6,18 @@ import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.repositories.media.LearnedStreamEndRepository;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import lombok.NonNull;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.Ordered;
@@ -31,28 +31,26 @@ import org.springframework.transaction.TransactionException;
  */
 public class LearnedStreamEndListener implements AutoCloseable {
 
-  private static final String STORE_FAILURES_METRIC =
-      "streamarr.streaming.learned_stream_end_store_failures";
+  // A store is one short transaction, so an end already handed to the store is kept. A store that
+  // still waits after this time waits for the media file's row or for a pooled connection, which
+  // can take a minute. A shutdown does not wait for that.
+  private static final Duration CLOSE_BOUND = Duration.ofSeconds(1);
 
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final LearnedStreamEndRepository learnedStreamEnds;
-  private final Counter storeFailures;
+  private final ContainedFailureMetrics containedFailures;
   // The listener runs inside the worker's completion report. A store can wait on the media file's
   // row lock, and waiting there would hold back every later report from that worker.
   private final ExecutorService learning = Executors.newVirtualThreadPerTaskExecutor();
+  private volatile boolean storesCancelled;
 
   public LearnedStreamEndListener(
       @NonNull RuntimeStreamSessionRegistry runtimeRegistry,
       @NonNull LearnedStreamEndRepository learnedStreamEnds,
-      @NonNull MeterRegistry meterRegistry) {
+      @NonNull ContainedFailureMetrics containedFailures) {
     this.runtimeRegistry = runtimeRegistry;
     this.learnedStreamEnds = learnedStreamEnds;
-    storeFailures =
-        Counter.builder(STORE_FAILURES_METRIC)
-            .description(
-                "Stream end times that a completed job attempt reported but the database did not"
-                    + " store")
-            .register(meterRegistry);
+    this.containedFailures = containedFailures;
   }
 
   /**
@@ -111,14 +109,20 @@ public class LearnedStreamEndListener implements AutoCloseable {
       return;
     }
 
-    learned.forEach(this::store);
+    learned.stream().takeWhile(_ -> !storesCancelled).forEach(this::store);
   }
 
+  // A store that close cancelled is no failure of the database: a later attempt that reads the
+  // stream's last sample reports the end again.
   private void store(LearnedStreamEnd learned) {
     try {
       learnedStreamEnds.store(learned);
     } catch (DataAccessException | TransactionException _) {
-      storeFailures.increment();
+      if (storesCancelled) {
+        return;
+      }
+
+      containedFailures.countLearnedStreamEndStoreFailure();
     }
   }
 
@@ -134,9 +138,25 @@ public class LearnedStreamEndListener implements AutoCloseable {
     }
   }
 
-  /** Waits for every end already handed to the store; later completions learn nothing. */
+  /**
+   * Waits one second for the ends already handed to the store, then cancels the stores that still
+   * run. Later completions learn nothing.
+   */
   @Override
   public void close() {
-    learning.close();
+    learning.shutdown();
+    try {
+      if (!learning.awaitTermination(CLOSE_BOUND.toMillis(), TimeUnit.MILLISECONDS)) {
+        cancelStores();
+      }
+    } catch (InterruptedException _) {
+      cancelStores();
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  private void cancelStores() {
+    storesCancelled = true;
+    learning.shutdownNow();
   }
 }

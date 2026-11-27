@@ -13,7 +13,6 @@ import com.streamarr.transcode.v1.ContentLightLevel;
 import com.streamarr.transcode.v1.DolbyVisionAbsent;
 import com.streamarr.transcode.v1.DolbyVisionConfiguration;
 import com.streamarr.transcode.v1.DolbyVisionPresent;
-import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.FieldOrder;
 import com.streamarr.transcode.v1.Fraction;
@@ -25,6 +24,7 @@ import com.streamarr.transcode.v1.MatroskaStatistics;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.OutputFrameRateBasis;
 import com.streamarr.transcode.v1.Presence;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
 import com.streamarr.transcode.v1.ProbeCancelReason;
 import com.streamarr.transcode.v1.ProbeChapter;
@@ -177,9 +177,9 @@ class ProbeWorkerContractTest {
             .setProbeVersion(3)
             .setMedia(media)
             .build();
-    var event = EstablishWorkerSessionRequest.newBuilder().setProbeResult(result).build();
+    var report = ProbeAttemptReport.newBuilder().setResult(result).build();
 
-    var decoded = EstablishWorkerSessionRequest.parseFrom(event.toByteArray()).getProbeResult();
+    var decoded = ProbeAttemptReport.parseFrom(report.toByteArray()).getResult();
 
     assertThat(decoded).isEqualTo(result);
     assertThat(decoded.getMedia().getStreamsList())

@@ -94,12 +94,18 @@ jobs:
         run: python3 -m unittest discover -s .github/actions/pack-build/test -p 'test_*.py'
 
   application:
-    name: Build and test application (${{ matrix.suite }})
+    name: Build and test application (${{ matrix.suite }}${{ matrix.shard && format(', shard {0}', matrix.shard) }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # One integration job per shard, from 1 to ci.integration.shards in pom.xml.
       matrix:
-        suite: [ unit, integration ]
+        include:
+          - suite: unit
+          - suite: integration
+            shard: 1
+          - suite: integration
+            shard: 2
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -111,26 +117,43 @@ jobs:
         run: bash .github/actions/require-worker-image.sh
 
       - name: Set up JDK 25
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           java-version: '25'
           distribution: 'zulu'
           cache: maven
 
+      # The Prometheus Compose test checks that the Compose file's Prometheus stores the server's
+      # export. Main always runs it. Other builds leave it out when their changes touch none of its
+      # inputs: a pull request's files, or a dispatched branch's changes since it left main.
+      - name: Detect changes to the Prometheus Compose test's inputs
+        id: prometheus_compose_inputs
+        if: matrix.suite == 'integration' && github.ref != 'refs/heads/main'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            changed:
+              - '.github/workflows/ci.yml'
+              - 'docker-compose.yml'
+              - 'pom.xml'
+              - 'src/main/resources/application*.yml'
+              - 'src/test/resources/application*.yml'
+              - 'src/test/resources/junit-platform.properties'
+              - 'src/main/java/com/streamarr/server/config/observability/**'
+              - 'src/main/java/com/streamarr/server/services/library/ScanProbesWaiting.java'
+              - 'src/test/java/com/streamarr/server/AbstractIntegrationTest.java'
+              - 'src/test/java/com/streamarr/server/config/observability/**'
+
       - name: Build and test
         run: >-
           ./mvnw --batch-mode verify -Pci-${{ matrix.suite }}
           -Dcheckstyle.skip=${{ matrix.suite == 'integration' }}
-
-      # These real-worker tests prove playback continuity across producer replacement.
-      - name: Run HLS smoke tests
-        if: matrix.suite == 'unit'
-        run: >-
-          ./mvnw --batch-mode test -Dsurefire.excludedGroups= -Dgroups=SmokeTest
-          -Djacoco.skip=true -Dcheckstyle.skip=true -Dspotless.check.skip=true
+          -Dspotless.check.skip=${{ matrix.suite == 'integration' }}
+          ${{ matrix.shard && format('-Dci.integration.shard={0}', matrix.shard) }}
+          ${{ steps.prometheus_compose_inputs.outputs.changed == 'false' && '-Dgroups=!PrometheusComposeTest' || '' }}
 
       - name: Fingerprint compiled classes
-        run: python3 .github/actions/coverage.py fingerprint ${{ matrix.suite }}
+        run: python3 .github/actions/coverage.py fingerprint ${{ matrix.suite }} ${{ matrix.shard }}
 
       - name: Upload unit coverage and compiled classes
         if: matrix.suite == 'unit'
@@ -152,14 +175,41 @@ jobs:
         if: matrix.suite == 'integration'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: application-tests-integration
+          name: application-tests-integration-${{ matrix.shard }}
+          # Every shard writes its own summary, and the analysis job reads only the class reports.
           path: |
             target/failsafe-reports/
-            target/jacoco-output/jacoco-integration-tests.exec
-            target/ci-integration-classes.sha256
+            !target/failsafe-reports/failsafe-summary.xml
+            target/jacoco-output/jacoco-integration-${{ matrix.shard }}-tests.exec
+            target/ci-integration-${{ matrix.shard }}-classes.sha256
           if-no-files-found: error
           compression-level: 1
           retention-days: 7
+
+  smoke:
+    name: Run HLS smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require standalone worker image
+        run: bash .github/actions/require-worker-image.sh
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
+        with:
+          java-version: '25'
+          distribution: 'zulu'
+          cache: maven
+
+      # These real-worker tests prove playback continuity across producer replacement.
+      - name: Run HLS smoke tests
+        run: >-
+          ./mvnw --batch-mode test -Dsurefire.excludedGroups= -Dgroups=SmokeTest
+          -Djacoco.skip=true -Dcheckstyle.skip=true -Dspotless.check.skip=true
 
   analysis:
     name: Verify combined coverage and analyze
@@ -172,7 +222,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up JDK 25
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           java-version: '25'
           distribution: 'zulu'
@@ -261,7 +311,7 @@ jobs:
 
       - name: Set up JDK 25
         if: matrix.architecture == 'arm64'
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           java-version: '25'
           distribution: 'zulu'
@@ -313,7 +363,7 @@ jobs:
 
   build:
     name: build
-    needs: [ changes, contracts, application, analysis, package_image ]
+    needs: [ changes, contracts, application, smoke, analysis, package_image ]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5

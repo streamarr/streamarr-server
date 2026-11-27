@@ -6,8 +6,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 
 /**
- * Restarts a job attempt's stall clock each time its worker reports that the output advanced, so a
- * producer of a long merged segment is not taken for stalled while it works (ADR 0037).
+ * Restarts a job attempt's stall clock each time its worker reports that the attempt advanced, so a
+ * producer of a long merged segment, or one whose FFmpeg reads the source without writing, is not
+ * taken for stalled while it works (ADR 0037).
  */
 @RequiredArgsConstructor
 public class JobAttemptProgressListener {

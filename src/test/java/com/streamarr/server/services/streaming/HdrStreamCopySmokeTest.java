@@ -37,6 +37,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.DolbyVisionConfigurationBox;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.Fmp4Fixture.SeiMessage;
+import com.streamarr.server.fixtures.StoredSegments;
 import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.fixtures.SyntheticHdrSource;
 import com.streamarr.server.properties.StreamingProperties;
@@ -104,13 +105,14 @@ class HdrStreamCopySmokeTest {
   private RemoteTranscodeExecutor transcodeExecutor;
   private WorkerStreamingSmokeFixture workerFixture;
   private Path sourceRoot;
+  private Path segmentFolder;
   @TempDir private Path temporaryDirectory;
 
   @BeforeEach
   void setUp() throws Exception {
     sourceRoot = Files.createDirectory(temporaryDirectory.resolve("media"));
-    segmentStore =
-        new LocalSegmentStore(Files.createDirectory(temporaryDirectory.resolve("segments")));
+    segmentFolder = Files.createDirectory(temporaryDirectory.resolve("segments"));
+    segmentStore = new LocalSegmentStore(segmentFolder);
     workerFixture =
         WorkerStreamingSmokeFixture.builder()
             .sourceRoot(sourceRoot)
@@ -139,6 +141,7 @@ class HdrStreamCopySmokeTest {
             .runtimeRegistry(sessionRegistry)
             .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
             .build();
+    workerFixture.creditUploadsTo(rig.lifecycle());
     coordinator = rig.coordinator();
     mediaFileRepository = new FakeMediaFileRepository();
     probeRepository = new FakeMediaFileContainerInfoRepository();
@@ -445,13 +448,15 @@ class HdrStreamCopySmokeTest {
             .findFirst()
             .orElseThrow();
     var initialization =
-        segmentStore.readSegment(
+        StoredSegments.bytes(
+            segmentStore,
             sessionId,
             SegmentNames.storedSegmentName(label, SegmentNames.INITIALIZATION_SEGMENT_NAME));
     var playable = new ByteArrayOutputStream();
     playable.writeBytes(initialization);
     playable.writeBytes(
-        segmentStore.readSegment(sessionId, SegmentNames.storedSegmentName(label, first)));
+        StoredSegments.bytes(
+            segmentStore, sessionId, SegmentNames.storedSegmentName(label, first)));
     return new EncodedSegment(initialization, playable.toByteArray());
   }
 
@@ -562,7 +567,7 @@ class HdrStreamCopySmokeTest {
     await("the copy's last media segment, " + lastSegment)
         .atMost(DELIVERY_LIMIT)
         .until(() -> segmentStore.segmentExists(sessionId, lastSegment));
-    return segmentStore.readSegment(sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME);
+    return StoredSegments.bytes(segmentStore, sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME);
   }
 
   // Stops the finished attempt, drops its initialization segment and the replaced media segment,
@@ -573,9 +578,9 @@ class HdrStreamCopySmokeTest {
     await()
         .atMost(Duration.ofSeconds(10))
         .until(() -> !transcodeExecutor.isRunning(sessionId, StreamSession.defaultVariant()));
-    var outputDirectory = segmentStore.getOutputDirectory(sessionId);
-    Files.delete(outputDirectory.resolve(SegmentNames.INITIALIZATION_SEGMENT_NAME));
-    Files.delete(outputDirectory.resolve(SegmentNames.mediaSegmentName(REPLACED_SEGMENT)));
+    var sessionFolder = segmentFolder.resolve(sessionId.toString());
+    Files.delete(sessionFolder.resolve(SegmentNames.INITIALIZATION_SEGMENT_NAME));
+    Files.delete(sessionFolder.resolve(SegmentNames.mediaSegmentName(REPLACED_SEGMENT)));
 
     var delivery =
         coordinator.deliver(
@@ -588,7 +593,7 @@ class HdrStreamCopySmokeTest {
         .atMost(DELIVERY_LIMIT)
         .until(
             () -> segmentStore.segmentExists(sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME));
-    return segmentStore.readSegment(sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME);
+    return StoredSegments.bytes(segmentStore, sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME);
   }
 
   private void assertWithoutDolbyVisionUnits(StreamSession session, int segment) {
@@ -612,8 +617,8 @@ class HdrStreamCopySmokeTest {
   private List<List<Integer>> segmentSamples(StreamSession session, int segment) {
     var sessionId = session.getSessionId();
     return Fmp4Fixture.sampleNalUnitTypes(
-        segmentStore.readSegment(sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME),
-        segmentStore.readSegment(sessionId, SegmentNames.mediaSegmentName(segment)));
+        StoredSegments.bytes(segmentStore, sessionId, SegmentNames.INITIALIZATION_SEGMENT_NAME),
+        StoredSegments.bytes(segmentStore, sessionId, SegmentNames.mediaSegmentName(segment)));
   }
 
   private int mediaSegmentCount(StreamSession session) {

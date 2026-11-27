@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.ProbeFixture.keyframesEvery;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.SOURCE_NAMESPACE_ID;
-import static com.streamarr.server.fixtures.RemoteWorkerFixtures.dispatched;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.plaintextChannelBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.serverConfigurationBuilder;
 import static com.streamarr.server.fixtures.RemoteWorkerFixtures.softwareEncoder;
@@ -41,9 +40,7 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
-import com.streamarr.transcode.v1.MediaSourceRef;
-import com.streamarr.transcode.v1.ProbeAttemptResult;
-import com.streamarr.transcode.v1.ProbeRequest;
+import com.streamarr.transcode.v1.ProbeCapacityChanged;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VideoCodecFamily;
@@ -77,6 +74,8 @@ import org.springframework.context.ApplicationEventPublisher;
 @DisplayName("Remote Format Failure Integration Tests")
 @Timeout(30)
 class RemoteFormatFailureIT {
+
+  private static final int PROBE_VERSION = 1;
 
   @Test
   @DisplayName(
@@ -643,6 +642,7 @@ class RemoteFormatFailureIT {
     private final StreamObserver<EstablishWorkerSessionRequest> requests;
     private final List<VariantJob> jobs = new CopyOnWriteArrayList<>();
     private final LinkedBlockingQueue<VariantJob> received = new LinkedBlockingQueue<>();
+    private int backgroundProbeCapacity = 1;
 
     private TestWorker(WorkerSessionServer server) throws Exception {
       this(server, UUID.randomUUID());
@@ -691,13 +691,13 @@ class RemoteFormatFailureIT {
                               .setBootId(toProto(UUID.randomUUID())))
                       .setCapabilities(
                           WorkerCapabilities.newBuilder()
-                              .addProbeVersions(1)
+                              .addProbeVersions(PROBE_VERSION)
                               .addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID))
                               .addVideoEncoders(
                                   softwareEncoder(
                                       VideoCodecFamily.VIDEO_CODEC_FAMILY_H264, "libx264")))
                       .setAvailableSlots(2)
-                      .setBackgroundProbeCapacity(1)
+                      .setBackgroundProbeCapacity(backgroundProbeCapacity)
                       .setKeyframePacketScanCapacity(1))
               .build());
       accepted.get(5, TimeUnit.SECONDS);
@@ -723,26 +723,26 @@ class RemoteFormatFailureIT {
               .build());
     }
 
-    private void awaitProcessed(WorkerSessionServer server) throws Exception {
-      // The stream processes messages in order; a completed probe behind the failures is a barrier.
-      var request =
-          ProbeRequest.newBuilder()
-              .setProbeAttemptId(toProto(UUID.randomUUID()))
-              .setProbeVersion(1)
-              .setSource(
-                  MediaSourceRef.newBuilder()
-                      .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
-                      .setRelativeKey("barrier.mkv"))
-              .build();
-      var probe = dispatched(server.dispatchProbe(request));
+    // The server reads a session's messages in order, so once it reports the capacity that this
+    // message changes, it has read the failures before the message. The session sends nothing back
+    // for a failure that it ignores, so no hook can replace the wait.
+    private void awaitProcessed(WorkerSessionServer server) {
+      var changed =
+          server.probeCapacity(SOURCE_NAMESPACE_ID, PROBE_VERSION).backgroundProbeCapacity() + 1;
+      backgroundProbeCapacity++;
       requests.onNext(
           EstablishWorkerSessionRequest.newBuilder()
-              .setProbeResult(
-                  ProbeAttemptResult.newBuilder()
-                      .setProbeAttemptId(request.getProbeAttemptId())
-                      .setProbeVersion(1))
+              .setProbeCapacityChanged(
+                  ProbeCapacityChanged.newBuilder()
+                      .setBackgroundProbeCapacity(backgroundProbeCapacity)
+                      .setKeyframePacketScanCapacity(1))
               .build());
-      probe.get(5, TimeUnit.SECONDS);
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(
+              () ->
+                  server.probeCapacity(SOURCE_NAMESPACE_ID, PROBE_VERSION).backgroundProbeCapacity()
+                      == changed);
     }
 
     @Override

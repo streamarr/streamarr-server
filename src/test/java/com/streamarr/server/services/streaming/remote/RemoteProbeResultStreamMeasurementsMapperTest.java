@@ -11,12 +11,12 @@ import com.streamarr.transcode.v1.KeyframePacketScanReason;
 import com.streamarr.transcode.v1.KeyframePositionSource;
 import com.streamarr.transcode.v1.KeyframePositions;
 import com.streamarr.transcode.v1.MeasuredStream;
+import com.streamarr.transcode.v1.ProbeAttemptReport;
 import com.streamarr.transcode.v1.ProbeAttemptResult;
-import com.streamarr.transcode.v1.ProbeKeyframePositionsPart;
 import com.streamarr.transcode.v1.ProbeKeyframes;
 import com.streamarr.transcode.v1.ProbeMediaInfo;
 import com.streamarr.transcode.v1.ProbeStreamInfo;
-import com.streamarr.transcode.v1.ProbeStreamMeasurementPart;
+import com.streamarr.transcode.v1.StreamMeasurementIntervals;
 import com.streamarr.transcode.v1.StreamMeasurementSource;
 import com.streamarr.transcode.v1.StreamMeasurements;
 import java.util.List;
@@ -40,9 +40,7 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
   @Test
   @DisplayName("Should report no measurement when the worker measured no stream")
   void shouldReportNoMeasurementWhenWorkerMeasuredNoStream() {
-    var report =
-        new ProbeAttemptReport(
-            result(media().setKeyframes(knownKeyframes())), List.of(keyframePart()));
+    var report = report(result(media().setKeyframes(knownKeyframes())), List.of());
 
     var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(report);
 
@@ -55,14 +53,13 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
           + " stream and every audio stream")
   void shouldAcceptMeasurementWithoutAnotherVideoStreamWhenItCoversChosenVideoAndEveryAudio() {
     var report =
-        new ProbeAttemptReport(
+        report(
             result(
                 media()
                     .addStreams(
                         ProbeStreamInfo.newBuilder().setIndex(COVER_ART).setCodecType("video"))
                     .setKeyframes(knownKeyframes())
                     .setStreamMeasurements(measurements(video(30), audio(3)))),
-            List.of(keyframePart()),
             List.of(intervals(VIDEO, 10, 20), intervals(AUDIO, 1, 2)));
 
     var outcome = (ProbeOutcome.Success) new RemoteProbeResultMapper().map(report);
@@ -82,11 +79,11 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
         report(
             measurements(video(30).setPacketCount(5), audio(3).setPacketCount(7)),
             List.of(
-                part(VIDEO)
+                intervalsOf(VIDEO)
                     .addAllKeyframeIntervalBytes(List.of(10, 20))
                     .addAllKeyframeIntervalPacketCounts(List.of(2, 3))
                     .build(),
-                part(AUDIO)
+                intervalsOf(AUDIO)
                     .addAllKeyframeIntervalBytes(List.of(1, 2))
                     .addAllKeyframeIntervalPacketCounts(List.of(3, 4))
                     .build()));
@@ -107,7 +104,7 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
         report(
             measurements(video(30).setPacketCount(0x1_0000_0001L), audio(3)),
             List.of(
-                part(VIDEO)
+                intervalsOf(VIDEO)
                     .addAllKeyframeIntervalBytes(List.of(10, 20))
                     .addAllKeyframeIntervalPacketCounts(List.of(-1, 2))
                     .build(),
@@ -171,17 +168,18 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
     return Stream.of(
         arguments(
             "no keyframe positions",
-            new ProbeAttemptReport(
-                result(
-                    media()
-                        .setKeyframes(
-                            ProbeKeyframes.newBuilder()
-                                .setPacketScanRequired(
-                                    KeyframePacketScanReason
-                                        .KEYFRAME_PACKET_SCAN_REASON_NO_CONTAINER_INDEX))
-                        .setStreamMeasurements(measurements(video(30)))),
-                List.of(),
-                List.of(intervals(VIDEO, 30))),
+            ProbeAttemptReport.newBuilder()
+                .setResult(
+                    result(
+                        media()
+                            .setKeyframes(
+                                ProbeKeyframes.newBuilder()
+                                    .setPacketScanRequired(
+                                        KeyframePacketScanReason
+                                            .KEYFRAME_PACKET_SCAN_REASON_NO_CONTAINER_INDEX))
+                            .setStreamMeasurements(measurements(video(30)))))
+                .addStreamMeasurementIntervals(intervals(VIDEO, 30))
+                .build(),
             "Worker probe measured streams without keyframe positions"),
         arguments(
             "a stream measured twice",
@@ -250,7 +248,7 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
             report(
                 measurements(video(30)),
                 List.of(
-                    part(VIDEO)
+                    intervalsOf(VIDEO)
                         .addAllKeyframeIntervalBytes(List.of(10, 20))
                         .addKeyframeIntervalPacketCounts(2)
                         .build())),
@@ -260,7 +258,7 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
             report(
                 measurements(video(30)),
                 List.of(
-                    part(VIDEO)
+                    intervalsOf(VIDEO)
                         .addAllKeyframeIntervalBytes(List.of(10, 20))
                         .addAllKeyframeIntervalPacketCounts(List.of(1, 1, 0))
                         .build())),
@@ -270,7 +268,7 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
             report(
                 measurements(video(30)),
                 List.of(
-                    part(VIDEO)
+                    intervalsOf(VIDEO)
                         .addAllKeyframeIntervalBytes(List.of(10, 20))
                         .addAllKeyframeIntervalPacketCounts(List.of(1, 2))
                         .build())),
@@ -285,11 +283,21 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
   }
 
   private static ProbeAttemptReport report(
-      StreamMeasurements.Builder measurements, List<ProbeStreamMeasurementPart> parts) {
-    return new ProbeAttemptReport(
+      StreamMeasurements.Builder measurements, List<StreamMeasurementIntervals> intervals) {
+    return report(
         result(media().setKeyframes(knownKeyframes()).setStreamMeasurements(measurements)),
-        List.of(keyframePart()),
-        parts);
+        intervals);
+  }
+
+  /** A report with the two keyframe positions that {@link #knownKeyframes()} counts. */
+  private static ProbeAttemptReport report(
+      ProbeAttemptResult result, List<StreamMeasurementIntervals> intervals) {
+    return ProbeAttemptReport.newBuilder()
+        .setResult(result)
+        .addAllKeyframePresentationTimeDeltas(List.of(0L, 90_000L))
+        .addAllKeyframeDecodeTimeDeltas(List.of(0L, 90_000L))
+        .addAllStreamMeasurementIntervals(intervals)
+        .build();
   }
 
   private static ProbeAttemptResult result(ProbeMediaInfo.Builder media) {
@@ -312,13 +320,6 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
                 .setTimeBaseDenominator(90_000)
                 .setSource(KeyframePositionSource.KEYFRAME_POSITION_SOURCE_CONTAINER_INDEX)
                 .setKeyframeCount(2));
-  }
-
-  private static ProbeKeyframePositionsPart keyframePart() {
-    return ProbeKeyframePositionsPart.newBuilder()
-        .addAllPresentationTimeDeltas(List.of(0L, 90_000L))
-        .addAllDecodeTimeDeltas(List.of(0L, 90_000L))
-        .build();
   }
 
   private static StreamMeasurements.Builder measurements(MeasuredStream.Builder... streams) {
@@ -351,16 +352,16 @@ class RemoteProbeResultStreamMeasurementsMapperTest {
   }
 
   /** One packet in each interval. */
-  private static ProbeStreamMeasurementPart intervals(int streamIndex, int... bytes) {
-    var part = part(streamIndex);
+  private static StreamMeasurementIntervals intervals(int streamIndex, int... bytes) {
+    var intervals = intervalsOf(streamIndex);
     for (var count : bytes) {
-      part.addKeyframeIntervalBytes(count).addKeyframeIntervalPacketCounts(1);
+      intervals.addKeyframeIntervalBytes(count).addKeyframeIntervalPacketCounts(1);
     }
 
-    return part.build();
+    return intervals.build();
   }
 
-  private static ProbeStreamMeasurementPart.Builder part(int streamIndex) {
-    return ProbeStreamMeasurementPart.newBuilder().setStreamIndex(streamIndex);
+  private static StreamMeasurementIntervals.Builder intervalsOf(int streamIndex) {
+    return StreamMeasurementIntervals.newBuilder().setStreamIndex(streamIndex);
   }
 }

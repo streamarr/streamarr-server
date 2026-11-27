@@ -89,8 +89,9 @@ public enum DecisionReason {
    */
   START_TIME_CORRECTION_UNKNOWN,
   /**
-   * A measured segment of the copy, with the audio beside it, would exceed the segment cap (ADR
-   * 0037).
+   * A segment of the copy, with the audio beside it, would exceed the segment cap (ADR 0037). The
+   * server sizes the segment from a measurement, or without a measurement of the copied video from
+   * an estimate.
    */
   SEGMENT_EXCEEDS_CAP,
   /**
