@@ -53,7 +53,9 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
@@ -117,6 +119,7 @@ class ProfileSharingServiceTest {
     service =
         new ProfileSharingService(
             authorization,
+            new ProfileAuthorityExplanation(authorization, profiles, accounts),
             shares,
             new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
             profiles,
@@ -627,6 +630,62 @@ class ProfileSharingServiceTest {
     var options = paginationOptions();
 
     assertThatThrownBy(() -> service.profileShares(identity, scope, options))
+        .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count only the offers that wait into each Household when a reader of every Household"
+          + " asks for several")
+  void shouldCountOnlyOffersThatWaitIntoEachHouseholdWhenReaderOfEveryHouseholdAsksForSeveral() {
+    var other = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var quiet = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    sharesOfEveryOutcomeInto(household);
+    sharesOfEveryOutcomeInto(other);
+
+    var counts =
+        service.pendingOfferCounts(
+            identity(), Set.of(household.getId(), other.getId(), quiet.getId()));
+
+    assertThat(counts)
+        .containsExactlyInAnyOrderEntriesOf(
+            Map.of(household.getId(), 1, other.getId(), 1, quiet.getId(), 0));
+  }
+
+  @Test
+  @DisplayName(
+      "Should count none of a Household's offers when the reader may not list the shares into it")
+  void shouldCountNoneOfHouseholdsOffersWhenReaderMayNotListSharesIntoIt() {
+    var other = households.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    pendingShare();
+    sharesOfEveryOutcomeInto(other);
+    administerHouseholdOnly();
+
+    var counts = service.pendingOfferCounts(identity(), Set.of(household.getId(), other.getId()));
+
+    assertThat(counts)
+        .containsExactlyInAnyOrderEntriesOf(Map.of(household.getId(), 1, other.getId(), 0));
+  }
+
+  @Test
+  @DisplayName("Should count no offer when the reader may list the shares into no Household")
+  void shouldCountNoOfferWhenReaderMayListSharesIntoNoHousehold() {
+    pendingShare();
+    authorization.denyAll();
+
+    var counts = service.pendingOfferCounts(identity(), Set.of(household.getId()));
+
+    assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(household.getId(), 0));
+  }
+
+  @Test
+  @DisplayName("Should fail closed when the authorization of a count is unavailable")
+  void shouldFailClosedWhenAuthorizationOfCountIsUnavailable() {
+    authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
+    var identity = identity();
+    var householdIds = Set.of(household.getId());
+
+    assertThatThrownBy(() -> service.pendingOfferCounts(identity, householdIds))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 

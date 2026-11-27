@@ -306,12 +306,17 @@ A subscriber who stops managing a Profile stops receiving its changes at once.
 An Account that is disabled after subscribing gets an `error` message with `FORBIDDEN` at the next change, and the operation ends.
 The HouseholdAdmin role comes from the access token, so a HouseholdAdmin who loses that role keeps receiving their Household's changes until the token expires, as with the queries.
 
+For a Household's waiting-invitation badge, select `pendingOfferCount(householdId: ...)` on each change.
+It gives the whole current count at delivery, including offers outside the pages the client loaded, and excludes expired offers before their stored status changes.
+Read `householdAdministration(householdId: ...) { pendingOfferCount }` for the initial count and after reconnecting.
+The event field returns zero for a missing Household or one whose shares the subscriber may not list.
+
 === The last change a Household receives
 
 The target Household's HouseholdAdmins follow a share while the offer is `PENDING` or the share is `ACTIVE`.
 They also receive the change that ends it: the offer is declined, canceled, expired or invalidated, or the share ends.
 That last change carries the share's own fields, such as `status`.
-Its `profile`, `visitor`, `offeredByDisplayName`, `household` and `invalidationReason` are `null`, as in the queries, which no longer list the share for them.
+Its `profile`, `visitor`, `offeredByDisplayName`, `offeredByReader`, `household` and `invalidationReason` are `null`, as in the queries, which no longer list the share for them.
 The client takes the share out of its lists when that change arrives.
 No later change of the share reaches them, not even its removal, and the share mutations answer `ShareNotFoundError` for it, as for a share that no longer exists.
 ServerAdmins and the Profile's managers receive every change of the share.

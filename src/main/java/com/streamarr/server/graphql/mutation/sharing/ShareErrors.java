@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.mutation.sharing;
 
 import com.streamarr.server.graphql.mutation.InputPath;
+import com.streamarr.server.services.identity.ProfileRejections;
 import com.streamarr.server.services.identity.ShareCodeRejections;
 import com.streamarr.server.services.identity.ShareRejections;
 import com.streamarr.server.services.serversettings.ChangeLifetimeRejection;
@@ -21,6 +22,7 @@ public final class ShareErrors {
     return switch (rejection) {
       case ShareRejections.ProfileNotFound _ ->
           new ProfileNotFoundError("No such Profile.", InputPath.of(PROFILE_ID));
+      case ProfileRejections.ManagersOnly managersOnly -> ProfileManagersOnlyError.of(managersOnly);
       case ShareCodeRejections.ShareCodeRefused _ -> shareCodeRefused("shareCode");
       case ShareRejections.AlreadyShared _ ->
           new ProfileAlreadySharedError(

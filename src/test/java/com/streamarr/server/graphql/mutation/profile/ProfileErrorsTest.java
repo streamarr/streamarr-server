@@ -6,11 +6,14 @@ import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.graphql.mutation.InputMutationError;
 import com.streamarr.server.graphql.mutation.MutationError;
 import com.streamarr.server.services.identity.ProfileRejections;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /** Every service rejection maps to exactly its schema error type and field-specific input path. */
 @Tag("UnitTest")
@@ -253,6 +256,33 @@ class ProfileErrorsTest {
         .isInstanceOf(ProfileNotDeletableError.class);
     assertThat(ProfileErrors.toDeleteProfileError(new ProfileRejections.ReauthenticationRequired()))
         .isInstanceOf(ReauthenticationRequiredError.class);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @EnumSource(ProfileRejections.ManagersOnlyReason.class)
+  @DisplayName("Should say only managers may do it when the service refuses a reader that sees it")
+  void shouldSayOnlyManagersMayDoItWhenServiceRefusesReaderThatSeesIt(
+      ProfileRejections.ManagersOnlyReason reason) {
+    var refusal = new ProfileRejections.ManagersOnly(reason);
+
+    assertThat(
+            List.<MutationError>of(
+                ProfileErrors.toRenameProfileError(refusal),
+                ProfileErrors.toSetProfilePictureError(refusal),
+                ProfileErrors.toChangeProfileKindError(refusal),
+                ProfileErrors.toSetProfileMaximumAllowedRatingAgeError(refusal),
+                ProfileErrors.toRemoveProfileMaximumAllowedRatingAgeError(refusal),
+                ProfileErrors.toSetProfilePinError(refusal),
+                ProfileErrors.toRemoveProfilePinError(refusal),
+                ProfileErrors.toDeleteProfileError(refusal)))
+        .hasSize(8)
+        .allSatisfy(
+            error ->
+                assertThat(error)
+                    .isInstanceOfSatisfying(
+                        ProfileManagersOnlyError.class,
+                        managersOnly -> assertThat(managersOnly.reason()).isEqualTo(reason))
+                    .isNotInstanceOf(InputMutationError.class));
   }
 
   private static <T extends InputMutationError> void assertInputError(

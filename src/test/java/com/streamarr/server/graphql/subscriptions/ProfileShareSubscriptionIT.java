@@ -71,7 +71,7 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
         profileShareChanged {
           shareId
           share {
-            id status profileId householdId invalidationReason
+            id status profileId householdId invalidationReason offeredByReader
             profile { id name } visitor offeredByDisplayName household { id name }
           }
         }
@@ -101,6 +101,16 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
             cursor orderKey node { id }
           }
           householdSharesEdge { cursor orderKey node { id } }
+        }
+      }
+      """;
+
+  private static final String PENDING_OFFER_COUNT =
+      """
+      subscription {
+        profileShareChanged {
+          shareId
+          pendingOfferCount(householdId: "%s")
         }
       }
       """;
@@ -150,6 +160,48 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should carry the whole current pending count when each share change is delivered")
+  void shouldCarryTheWholeCurrentPendingCountWhenEachShareChangeIsDelivered() {
+    var waiting = offer(managedProfile());
+    var expired = offer(managedProfile());
+    var expiredShare = shareRepository.findById(UUID.fromString(expired)).orElseThrow();
+    expiredShare.setExpiresAt(Instant.now().minusSeconds(1));
+    shareRepository.saveAndFlush(expiredShare);
+    var socket =
+        subscribedSocket(
+            authTestSupport.accountBearer(host),
+            PENDING_OFFER_COUNT.formatted(host.household().getId()));
+
+    var offered = offer(managedProfile());
+    var withOffer = changesUntil(socket, offered).getLast();
+    decide("acceptProfileShare", offered);
+    var withAcceptance = changesUntil(socket, offered).getLast();
+    cancel(waiting);
+    var withCancellation = changesUntil(socket, waiting).getLast();
+    var another = offer(managedProfile());
+    var withAnotherOffer = changesUntil(socket, another).getLast();
+
+    assertThat(List.of(withOffer, withAcceptance, withCancellation, withAnotherOffer))
+        .extracting(change -> change.path("pendingOfferCount").asInt())
+        .containsExactly(2, 1, 0, 1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should hide another Household's pending count when a Profile manager receives its change")
+  void shouldHideAnotherHouseholdsPendingCountWhenAProfileManagerReceivesItsChange() {
+    offer(managedProfile());
+    var socket =
+        subscribedSocket(
+            authTestSupport.accountBearer(owner),
+            PENDING_OFFER_COUNT.formatted(host.household().getId()));
+
+    var offered = offer(managedProfile());
+
+    assertThat(changesUntil(socket, offered).getLast().path("pendingOfferCount").asInt()).isZero();
+  }
+
+  @Test
   @DisplayName(
       "Should deliver the offer, acceptance and end to both sides when a share runs its course")
   void shouldDeliverTheOfferAcceptanceAndEndToBothSidesWhenAShareRunsItsCourse() {
@@ -195,6 +247,52 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
               // The offerer's name belongs to the target side, as in the share queries.
               assertThat(share.path("offeredByDisplayName").isNull()).isTrue();
             });
+    // The Profile's side is told whether it made the offer at every change; the Household's side
+    // only while the offer waits or the share is active.
+    assertThat(List.of(offeredToOwner, acceptedForOwner, endedForOwner))
+        .extracting(share -> share.path("offeredByReader").toString())
+        .containsOnly("true");
+    assertThat(List.of(offeredToHost, acceptedForHost))
+        .extracting(share -> share.path("offeredByReader").toString())
+        .containsOnly("false");
+  }
+
+  @Test
+  @DisplayName(
+      "Should tell the Household's side nothing about who made the offer when the change that"
+          + " ends it reaches the admin that made it")
+  void shouldTellHouseholdsSideNothingAboutWhoMadeOfferWhenEndingChangeReachesAdminThatMadeIt() {
+    var profile = managedProfile();
+    grantManagement(host, profile);
+    var hostSocket = subscribedSocket(authTestSupport.accountBearer(host));
+    var offered =
+        http.execute(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { offerProfileShare(input: {profileId: "%s", shareCode: "%s"}) {
+              share { id } userErrors { __typename } } }
+            """
+                .formatted(profile.getId(), authTestSupport.shareCodeFor(host)));
+    var shareId = offered.at("/data/offerProfileShare/share/id").asString();
+    var offeredWhileManaging = nextShare(hostSocket, shareId);
+
+    var relinquished =
+        http.execute(
+            authTestSupport.accountBearer(host),
+            """
+            mutation { relinquishProfileManagement(input: {profileId: "%s"}) {
+              profileId userErrors { __typename } } }
+            """
+                .formatted(profile.getId()));
+    var withdrawn = nextShare(hostSocket, shareId);
+
+    assertThat(relinquished.at("/data/relinquishProfileManagement/userErrors").isEmpty())
+        .as("relinquish in %s", relinquished)
+        .isTrue();
+    assertThat(offeredWhileManaging.path("offeredByReader").asBoolean()).isTrue();
+    assertThat(withdrawn.path("status").asString()).isEqualTo("INVALIDATED");
+    // The admin made the offer as a manager, and hears the end only as the Household's admin.
+    assertPartiesHidden(withdrawn);
   }
 
   @Test
@@ -1473,13 +1571,14 @@ class ProfileShareSubscriptionIT extends AbstractIntegrationTest {
   }
 
   // What the target Household's HouseholdAdmins still get once the offer or the share is over: the
-  // share's own fields, and none of the Profile's details, the offerer's name, or why the system
+  // share's own fields, and none of the Profile's details, who made the offer, or why the system
   // withdrew the offer (ADR 0024).
   private static void assertPartiesHidden(JsonNode share) {
     assertThat(share.path("id").asString()).as("id in %s", share).isNotEmpty();
     assertThat(share.path("profile").isNull()).as("profile in %s", share).isTrue();
     assertThat(share.path("visitor").isNull()).as("visitor in %s", share).isTrue();
     assertThat(share.path("offeredByDisplayName").isNull()).as("offerer in %s", share).isTrue();
+    assertThat(share.path("offeredByReader").isNull()).as("offeredByReader in %s", share).isTrue();
     assertThat(share.path("household").isNull()).as("household in %s", share).isTrue();
     assertThat(share.path("invalidationReason").isNull()).as("reason in %s", share).isTrue();
   }

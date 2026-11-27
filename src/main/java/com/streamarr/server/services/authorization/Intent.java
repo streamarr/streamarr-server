@@ -172,6 +172,13 @@ public sealed interface Intent {
   record AdministrativelyResetProfilePin(UUID profileId) implements UnitIntent {}
 
   /**
+   * Replace a Profile's own language preferences as one of its managers, whether or not the session
+   * has it selected (ADR 0024 §ProfileManager). A session that only has it selected uses {@link
+   * SetLanguagePreferences}.
+   */
+  record SetProfileLanguagePreferences(UUID profileId) implements UnitIntent {}
+
+  /**
    * Ordinary standalone deletion: an unlinked, unshared Profile by its sole remaining direct
    * manager; requiresFreshReauthentication.
    */

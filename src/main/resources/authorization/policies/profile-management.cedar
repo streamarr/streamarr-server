@@ -112,6 +112,20 @@ when {
   context.freshReauthentication
 };
 
+// A Profile's own language preferences, changed by its managers whether or not they watch as it.
+// Supervision covers only name, picture, Content Ceiling and PIN, ServerAdmin has no override here,
+// and a session that only watches as the Profile uses setLanguagePreferences (viewing.cedar).
+@id("set-profile-language-preferences-as-manager")
+permit (
+  principal,
+  action == Streamarr::Action::"setProfileLanguagePreferences",
+  resource
+)
+when {
+  principal has enabled && principal.enabled &&
+  resource has managedByPrincipal && resource.managedByPrincipal
+};
+
 // Ordinary standalone deletion: the sole remaining direct manager of an unlinked, unshared
 // Profile, freshly reauthenticated. ServerAdmin has no shortcut here — administrative deletion is
 // its own audited override.

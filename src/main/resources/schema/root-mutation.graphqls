@@ -55,15 +55,18 @@ type Mutation {
     """
     Renames a Profile; the name is unique among the Profiles available in each Household where it
     is. Its managers, a HouseholdAdmin who supervises the restricted Profile where it is available,
-    and ServerAdmins. A caller who may read profileAdministration of the Profile but may not do this
-    gets FORBIDDEN; everyone else, a device-bound session included, gets ProfileNotFoundError.
+    and ServerAdmins. A caller who may read profileAdministration of the Profile only as a
+    HouseholdAdmin where it is available, and may not do this, gets ProfileManagersOnlyError; any
+    other caller who may read it but may not do this gets FORBIDDEN; everyone else, a device-bound
+    session included, gets ProfileNotFoundError.
     """
     renameProfile(input: RenameProfileInput!): RenameProfilePayload
     """
     Sets a Profile's picture. Its managers, a HouseholdAdmin who supervises the restricted Profile
     where it is available, and ServerAdmins. A caller who may read profileAdministration of the
-    Profile but may not do this gets FORBIDDEN; everyone else, a device-bound session included, gets
-    ProfileNotFoundError.
+    Profile only as a HouseholdAdmin where it is available, and may not do this, gets
+    ProfileManagersOnlyError; any other caller who may read it but may not do this gets FORBIDDEN;
+    everyone else, a device-bound session included, gets ProfileNotFoundError.
     """
     setProfilePicture(input: SetProfilePictureInput!): SetProfilePicturePayload
     """
@@ -72,7 +75,9 @@ type Mutation {
     it (ReauthenticationRequiredError), and making someone's own unrestricted Adult Personal Profile
     a Kid is a ServerAdmin override that needs one too. profilePolicyChangePreview first says which
     Profiles the change would lock; the change is never refused for that. A caller who may read
-    profileAdministration of the Profile but may not do this gets FORBIDDEN; everyone else, a
+    profileAdministration of the Profile only as a HouseholdAdmin where it is available gets
+    ProfileManagersOnlyError; any other caller who may read it but may not do this, a manager
+    restricting someone's own Personal Profile included, gets FORBIDDEN; everyone else, a
     device-bound session included, gets ProfileNotFoundError.
     """
     changeProfileKind(input: ChangeProfileKindInput!): ChangeProfileKindPayload
@@ -83,7 +88,9 @@ type Mutation {
     override that needs a recent password (ReauthenticationRequiredError). A negative age gets
     MaximumAllowedRatingAgeInvalidError. profilePolicyChangePreview first says which Profiles the
     change would lock; the change is never refused for that. A caller who may read
-    profileAdministration of the Profile but may not do this gets FORBIDDEN; everyone else, a
+    profileAdministration of the Profile only as a HouseholdAdmin where it is available, and may not
+    do this, gets ProfileManagersOnlyError; any other caller who may read it but may not do this, a
+    manager restricting someone's own Personal Profile included, gets FORBIDDEN; everyone else, a
     device-bound session included, gets ProfileNotFoundError.
     """
     setProfileMaximumAllowedRatingAge(input: SetProfileMaximumAllowedRatingAgeInput!): SetProfileMaximumAllowedRatingAgePayload
@@ -92,17 +99,19 @@ type Mutation {
     managers and ServerAdmins may do that, with a recent password (ReauthenticationRequiredError). A
     Kid stays restricted without a Content Ceiling, so a HouseholdAdmin who supervises it where it
     is available may also remove its Content Ceiling. profilePolicyChangePreview first says which
-    Profiles the change would lock. A caller who may read profileAdministration of the Profile but
-    may not do this gets FORBIDDEN; everyone else, a device-bound session included, gets
-    ProfileNotFoundError.
+    Profiles the change would lock. A caller who may read profileAdministration of the Profile only
+    as a HouseholdAdmin where it is available, and may not do this, gets ProfileManagersOnlyError;
+    any other caller who may read it but may not do this gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ProfileNotFoundError.
     """
     removeProfileMaximumAllowedRatingAge(input: RemoveProfileMaximumAllowedRatingAgeInput!): RemoveProfileMaximumAllowedRatingAgePayload
     """
     Sets or changes a Profile's PIN, which goes with it into every Household. Its managers and a
     HouseholdAdmin who supervises the restricted Profile where it is available; a ServerAdmin uses
-    administrativelyResetProfilePin. A caller who may read profileAdministration of the Profile but
-    may not do this gets FORBIDDEN; everyone else, a device-bound session included, gets
-    ProfileNotFoundError.
+    administrativelyResetProfilePin. A caller who may read profileAdministration of the Profile only
+    as a HouseholdAdmin where it is available, and may not do this, gets ProfileManagersOnlyError;
+    any other caller who may read it but may not do this, a ServerAdmin included, gets FORBIDDEN;
+    everyone else, a device-bound session included, gets ProfileNotFoundError.
     """
     setProfilePin(input: SetProfilePinInput!): SetProfilePinPayload
     """
@@ -110,8 +119,10 @@ type Mutation {
     where it is available. Refused with ProfilePinRequiredError while removing it would lock the
     Profile in a Household where it is available; the refusal names that Household only to a caller
     who may use it, manages the Profile or is a ServerAdmin. A caller who may read
-    profileAdministration of the Profile but may not do this gets FORBIDDEN; everyone else, a
-    device-bound session included, gets ProfileNotFoundError.
+    profileAdministration of the Profile only as a HouseholdAdmin where it is available, and may not
+    do this, gets ProfileManagersOnlyError; any other caller who may read it but may not do this, a
+    ServerAdmin included, gets FORBIDDEN; everyone else, a device-bound session included, gets
+    ProfileNotFoundError.
     """
     removeProfilePin(input: RemoveProfilePinInput!): RemoveProfilePinPayload
     """
@@ -122,6 +133,17 @@ type Mutation {
     """
     administrativelyResetProfilePin(input: AdministrativelyResetProfilePinInput!): AdministrativelyResetProfilePinPayload
     """
+    Replaces a Profile's own language preferences, the ones its sessions start from. Its managers,
+    whether or not they have the Profile selected. A session that only has the Profile selected
+    uses setLanguagePreferences. A caller who may read profileAdministration of the Profile only as a
+    HouseholdAdmin where it is available, whether it supervises or hosts the Profile, gets
+    ProfileManagersOnlyError; a ServerAdmin that does not manage it gets FORBIDDEN; everyone else, a
+    device-bound session included, gets ProfileNotFoundError. Each of them gets that answer whatever
+    audio languages it sends: TooManyAudioLanguagesError and RepeatedAudioLanguageError go only to a
+    manager.
+    """
+    setProfileLanguagePreferences(input: SetProfileLanguagePreferencesInput!): SetProfileLanguagePreferencesPayload
+    """
     Deletes a Profile with its watch history, progress and preferences, for good. Only its last
     direct manager may, with a recent password (ReauthenticationRequiredError), and only while it is
     nobody's Personal Profile (ProfileAdministration.linked), has no active or pending share in any
@@ -129,8 +151,10 @@ type Mutation {
     holds a direct grant for it (profileManagers), and no invitation to manage it waits
     (pendingManagerInvitationsForProfile) until it is canceled or expires. A ServerAdmin has no
     shortcut here; administrativelyDeleteProfile is its override. A caller who may read
-    profileAdministration of the Profile but may not delete it gets ProfileNotDeletableError;
-    everyone else, a device-bound session included, gets ProfileNotFoundError.
+    profileAdministration of the Profile only as a HouseholdAdmin where it is available gets
+    ProfileManagersOnlyError; any other caller who may read it but may not delete it gets
+    ProfileNotDeletableError; everyone else, a device-bound session included, gets
+    ProfileNotFoundError.
     """
     deleteProfile(input: DeleteProfileInput!): DeleteProfilePayload
     """
@@ -159,7 +183,12 @@ type Mutation {
     present one code, exactly one is made. A code that does not work gets ShareCodeRefusedError,
     which names no Household. Each offer is a credential attempt by the Account that presents the
     code, counted as lookUpShareCode counts it; a device-bound session and a disabled Account get
-    FORBIDDEN. A newer offer of the same Profile to the same Household replaces a pending one.
+    FORBIDDEN. A newer offer of the same Profile to the same Household replaces a pending one. The
+    Profile's managers and ServerAdmins may offer it; someone's own unrestricted Personal Profile
+    only that Account or a ServerAdmin. A caller who may read profileAdministration of the Profile
+    only as a HouseholdAdmin where it is available gets ProfileManagersOnlyError; any other caller
+    who may read it but may not offer it, a manager offering someone's own Personal Profile
+    included, gets FORBIDDEN; everyone else gets ProfileNotFoundError.
     """
     offerProfileShare(input: OfferProfileShareInput!): OfferProfileSharePayload
     """
@@ -239,8 +268,10 @@ type Mutation {
     any case, replaces a pending one. At most ten invitations wait for one Profile
     (ManagerInvitationLimitReachedError), those that nobody can accept included. The invitation
     waits for the invitation lifetime that a ServerAdmin sets. The code appears once, in this
-    answer. A caller who may read profileAdministration of the Profile but may not invite gets
-    FORBIDDEN; everyone else, a device-bound session included, gets ProfileNotFoundError.
+    answer. A caller who may read profileAdministration of the Profile only as a HouseholdAdmin
+    where it is available gets ProfileManagersOnlyError; any other caller who may read it but may
+    not invite, a ServerAdmin included, gets FORBIDDEN; everyone else, a device-bound session
+    included, gets ProfileNotFoundError.
     """
     inviteProfileManager(input: InviteProfileManagerInput!): InviteProfileManagerPayload
     """

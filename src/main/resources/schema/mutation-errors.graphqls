@@ -256,6 +256,43 @@ type ProfileNotDeletableError implements MutationError {
     message: String!
 }
 
+"""
+Only the Profile's managers may do this, and the caller does not manage it, though it may still
+read the Profile as a HouseholdAdmin of a Household where it is available, or as the HouseholdAdmin
+its session's token says it was; reason says what the caller is to the Profile now. A caller that
+managed the Profile has stopped managing it, whichever reason it gets. Only a caller that may read
+the Profile gets this error. One that may not gets ProfileNotFoundError, as for a Profile that
+does not exist, whatever it was to the Profile before. A ServerAdmin or a manager that may not do
+this gets the mutation's other answers, FORBIDDEN among them.
+"""
+type ProfileManagersOnlyError implements MutationError {
+    "Says in a sentence that only the Profile's managers may do this, and why the caller is not one."
+    message: String!
+    "What the caller is to the Profile now."
+    reason: ProfileManagersOnlyReason!
+}
+
+"What a caller refused with ProfileManagersOnlyError is to the Profile now."
+enum ProfileManagersOnlyReason {
+    """
+    It supervises the restricted Profile as a HouseholdAdmin where it is available, and supervision
+    covers only the Profile's name, picture, Content Ceiling and PIN.
+    """
+    NOT_MANAGER
+    """
+    The Profile is not restricted, so the caller administers it as a HouseholdAdmin where it is
+    available without supervising it, which lets it change nothing about the Profile.
+    """
+    NOT_RESTRICTED
+    """
+    The caller is no longer a HouseholdAdmin of the Household where it read the Profile: it was
+    demoted or moved after its session's token was issued. That token still reads the Profile there
+    until it is renewed, within the access token's short lifetime; a renewed token gets
+    ProfileNotFoundError, as for a Profile that does not exist.
+    """
+    NOT_HOUSEHOLD_ADMIN
+}
+
 type EmailRequiredError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

@@ -76,6 +76,16 @@ public class FakeLanguagePreferenceRepository implements LanguagePreferenceRepos
   }
 
   @Override
+  public Map<UUID, ProfileLanguagePreferences> findProfilePreferences(Collection<UUID> profileIds) {
+    var result = new HashMap<UUID, ProfileLanguagePreferences>();
+    for (var profileId : profileIds) {
+      findProfilePreferences(profileId).ifPresent(found -> result.put(profileId, found));
+    }
+
+    return result;
+  }
+
+  @Override
   public boolean trySetProfilePreferences(UUID profileId, ProfileLanguagePreferences preferences) {
     if (deletedProfiles.contains(profileId)) {
       return false;
