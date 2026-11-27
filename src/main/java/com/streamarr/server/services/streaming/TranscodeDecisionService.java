@@ -461,8 +461,8 @@ public class TranscodeDecisionService {
       return choice;
     }
 
-    // A copy's last segment cannot take in the audio after the video's end, while an encode holds
-    // the last frame up to the advertised end (ADR 0037, early ends).
+    // A copy ends with the video, while its media playlist runs to the session's media end; an
+    // encode holds the last frame up to that end (ADR 0037, early ends).
     if (source.videoEndsEarly(properties.targetSegmentDuration())) {
       return new PlanChoice.Refused(List.of(DecisionReason.VIDEO_ENDS_EARLY));
     }
