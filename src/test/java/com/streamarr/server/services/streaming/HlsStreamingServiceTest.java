@@ -6886,6 +6886,36 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
   }
 
+  // Workers refuse an encode without an output frame rate, so no such encode can finish a resume.
+  @ParameterizedTest
+  @ValueSource(longs = {10, 26, 40})
+  @DisplayName(
+      "Should refuse a resume as it refuses playback from the start when every encoder is busy and"
+          + " the source has no frame rate")
+  void shouldRefuseAResumeAsItRefusesPlaybackFromTheStartWhenEveryEncoderIsBusyWithoutAFrameRate(
+      long startSeconds) {
+    probeResults.setDefaultProbe(
+        probeWithAudioEnd(Optional.empty()).framerate(OptionalDouble.empty()).build());
+    transcodeExecutor.setAvailableSlots(0);
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    var file = seedMediaFile();
+    var fromTheStart =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .build();
+    var refusalFromTheStart = rejectionOf(service.createSession(fromTheStart));
+    var resume =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .startPosition(Optional.of(Duration.ofSeconds(startSeconds)))
+            .build();
+
+    var outcome = service.createSession(resume);
+
+    assertThat(rejectionOf(outcome)).isEqualTo(refusalFromTheStart);
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   private static MediaProbe.MediaProbeBuilder probeWithAudioEnd(Optional<Duration> end) {
     return defaultProbeBuilder()
         .duration(Duration.ofSeconds(26))

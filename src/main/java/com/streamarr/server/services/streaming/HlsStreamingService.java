@@ -265,6 +265,7 @@ public class HlsStreamingService implements StreamingService {
     }
 
     return verifiedEncodeCandidate(request)
+        .filter(decision -> encodeRejection(request, decision).isEmpty())
         .filter(
             decision ->
                 resumesPastMediaEnd(
