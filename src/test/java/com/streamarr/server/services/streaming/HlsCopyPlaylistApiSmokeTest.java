@@ -309,7 +309,7 @@ class HlsCopyPlaylistApiSmokeTest {
   void shouldAdvertiseNoSegmentPastTheRealEndWhenThePacketScanPlacesTheKeyframesOfATruncatedSource(
       String fileName, List<String> mediaArguments) throws Exception {
     var source = generateSource(fileName, mediaArguments);
-    truncateToHalf(source);
+    truncateBeforePacketNearHalf(source);
     var realEnd = lastVideoPresentationTime(source);
     var file = storeProbeOutcome(source);
 
@@ -413,18 +413,20 @@ class HlsCopyPlaylistApiSmokeTest {
     return workerFixture.worker().generateMedia(sourceRoot.resolve(fileName), mediaArguments);
   }
 
-  private void truncateToHalf(Path source) throws Exception {
-    var half = Files.size(source) / 2;
-    // Cut before a packet so the stale index is the only defect, not a partial video NAL unit.
-    var boundary =
-        workerFixture.worker().videoPacketPositions(source).stream()
-            .mapToLong(Long::longValue)
-            .filter(position -> position < half)
-            .max()
-            .orElseThrow();
+  private void truncateBeforePacketNearHalf(Path source) throws Exception {
+    var positions = workerFixture.worker().videoPacketPositions(source);
+    var hashes = workerFixture.worker().videoPacketHashes(source);
+    var halfway = Files.size(source) / 2;
+    var cut = positions.stream().filter(position -> position >= halfway).findFirst().orElseThrow();
+    var keptPackets =
+        Math.toIntExact(positions.stream().filter(position -> position < cut).count());
     try (var channel = FileChannel.open(source, StandardOpenOption.WRITE)) {
-      channel.truncate(boundary);
+      channel.truncate(cut);
     }
+
+    assertThat(workerFixture.worker().videoPacketHashes(source))
+        .as("the cut preserves complete video packets before the missing tail")
+        .containsExactlyElementsOf(hashes.subList(0, keptPackets));
   }
 
   private double lastVideoPresentationTime(Path source) throws Exception {
