@@ -163,14 +163,13 @@ class HlsStreamingSmokeTest {
                     .build())
             .build();
     workerFixture.creditUploadsTo(producerLifecycle);
-    var unservedSegments = UnservedSegmentsFixture.unservedSegments();
+    var unservedSegments = UnservedSegmentsFixture.unservedSegmentsOf(segmentStore);
     streamingService =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
-            .segmentStore(segmentStore)
             .playbackProbeService(playbackProbeServiceBuilder(probeRepository).build())
             .transcodeDecisionService(decisionService)
             .qualityLadderService(qualityLadderService)
@@ -180,7 +179,6 @@ class HlsStreamingSmokeTest {
             .producerLifecycle(producerLifecycle)
             .deliveryCoordinator(
                 SegmentDeliveryCoordinator.builder()
-                    .segmentStore(segmentStore)
                     .producerLifecycle(producerLifecycle)
                     .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
                     .eventPublisher(new CapturingEventPublisher())

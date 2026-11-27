@@ -518,7 +518,6 @@ class WorkerPlaybackRecoveryIT {
               .meterRegistry(new SimpleMeterRegistry())
               .mediaFileRepository(files)
               .transcodeExecutor(executor)
-              .segmentStore(segments)
               .playbackProbeService(probeService)
               .transcodeDecisionService(
                   new TranscodeDecisionService(properties, new SimpleMeterRegistry()))

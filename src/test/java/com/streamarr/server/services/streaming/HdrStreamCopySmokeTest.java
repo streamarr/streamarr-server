@@ -150,7 +150,6 @@ class HdrStreamCopySmokeTest {
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
-            .segmentStore(segmentStore)
             .playbackProbeService(playbackProbeServiceBuilder(probeRepository).build())
             .transcodeDecisionService(
                 new TranscodeDecisionService(properties, new SimpleMeterRegistry()))

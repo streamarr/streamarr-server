@@ -122,11 +122,10 @@ class HlsRecoveryContinuitySmokeTest {
     workerFixture.creditUploadsTo(lifecycle);
     coordinator =
         SegmentDeliveryCoordinator.builder()
-            .segmentStore(segmentStore)
             .producerLifecycle(lifecycle)
             .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
             .eventPublisher(new CapturingEventPublisher())
-            .unservedSegments(UnservedSegmentsFixture.unservedSegments())
+            .unservedSegments(UnservedSegmentsFixture.unservedSegmentsOf(segmentStore))
             .build();
   }
 

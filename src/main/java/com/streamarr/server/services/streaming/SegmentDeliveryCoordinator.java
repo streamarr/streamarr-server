@@ -13,7 +13,6 @@ import org.springframework.context.ApplicationEventPublisher;
 @Builder
 public class SegmentDeliveryCoordinator {
 
-  private final SegmentStore segmentStore;
   private final ProducerLifecycleService producerLifecycle;
   private final HeldSegmentRequests heldRequests;
   @NonNull private final ApplicationEventPublisher eventPublisher;
@@ -140,8 +139,7 @@ public class SegmentDeliveryCoordinator {
 
   private SegmentDelivery tryRead(UUID sessionId, String segmentName) {
     return unservedSegments
-        .openForViewer(
-            sessionId, segmentName, () -> segmentStore.openSegment(sessionId, segmentName))
+        .openForViewer(sessionId, segmentName)
         .map(SegmentDelivery.Ready::new)
         .orElse(null);
   }

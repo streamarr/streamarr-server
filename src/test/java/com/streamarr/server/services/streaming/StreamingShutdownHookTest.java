@@ -4,11 +4,12 @@ import static com.streamarr.server.fixtures.PlaybackSessionFixture.acceptedPlayb
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackRequest;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServiceBuilder;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.startPlaybackBuilder;
-import static com.streamarr.server.fixtures.UnservedSegmentsFixture.unservedSegments;
+import static com.streamarr.server.fixtures.UnservedSegmentsFixture.unservedSegmentsOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.fakes.FakeCreatingStreamingService;
+import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeStreamingService;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
@@ -31,7 +32,8 @@ class StreamingShutdownHookTest {
     var initial = acceptedPlayback(playback.start(command));
     streams.addSession(StreamSessionFixture.buildActiveSession());
     streams.failNextDestroy(initial.currentFormatAttempt().streamSessionId());
-    var hook = new StreamingShutdownHook(streams, playback, unservedSegments());
+    var hook =
+        new StreamingShutdownHook(streams, playback, unservedSegmentsOf(new FakeSegmentStore()));
 
     assertThatNoException().isThrownBy(hook::onShutdown);
 
@@ -56,7 +58,8 @@ class StreamingShutdownHookTest {
         .isInstanceOf(PlaybackFormatAttempt.Pending.class);
     assertThat(streams.getAllSessions()).isEmpty();
 
-    new StreamingShutdownHook(streams, playback, unservedSegments()).onShutdown();
+    new StreamingShutdownHook(streams, playback, unservedSegmentsOf(new FakeSegmentStore()))
+        .onShutdown();
     work.forEach(Runnable::run);
 
     assertThat(playback.access(playbackRequest(initial, command))).isEmpty();
@@ -74,7 +77,9 @@ class StreamingShutdownHookTest {
 
     var hook =
         new StreamingShutdownHook(
-            service, playbackServiceBuilder(service).build(), unservedSegments());
+            service,
+            playbackServiceBuilder(service).build(),
+            unservedSegmentsOf(new FakeSegmentStore()));
     hook.onShutdown();
 
     assertThat(service.getActiveSessionCount()).isZero();
@@ -89,7 +94,9 @@ class StreamingShutdownHookTest {
 
     var hook =
         new StreamingShutdownHook(
-            service, playbackServiceBuilder(service).build(), unservedSegments());
+            service,
+            playbackServiceBuilder(service).build(),
+            unservedSegmentsOf(new FakeSegmentStore()));
     hook.onShutdown();
 
     assertThat(service.getActiveSessionCount()).isZero();

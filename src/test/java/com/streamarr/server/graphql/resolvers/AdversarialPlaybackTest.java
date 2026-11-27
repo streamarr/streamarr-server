@@ -341,7 +341,6 @@ class AdversarialPlaybackTest {
           .meterRegistry(new SimpleMeterRegistry())
           .mediaFileRepository(files)
           .transcodeExecutor(executor)
-          .segmentStore(segments)
           .playbackProbeService(
               playbackProbeServiceBuilder(outcomes).eventPublisher(events).build())
           .transcodeDecisionService(

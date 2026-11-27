@@ -2,13 +2,14 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import jakarta.annotation.PreDestroy;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
+import java.util.function.IntConsumer;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
@@ -18,14 +19,16 @@ import org.springframework.stereotype.Component;
  * Follows the media segments that each HLS stream session stores, from the session's start until
  * the server removes them, and counts those that it never answered a viewer's request with.
  *
- * <p>A stream session is followed from {@link #streamSessionStarts} until the call that reports the
- * removal of its segments. Each of those calls counts the session's unserved segments once and
- * stops following the session. Nothing is kept for a stream session that is not followed.
+ * <p>The streaming service reaches a session's stored segments through this component. It opens a
+ * segment for a viewer's request here, which marks the segment as served, and it deletes a
+ * session's segments here, which counts the unserved ones after the deletion and stops following
+ * the session. Nothing is kept for a stream session that is not followed.
  */
 @Component
 @RequiredArgsConstructor
 public class UnservedSegments {
 
+  @NonNull private final SegmentStore segmentStore;
   @NonNull private final UnservedSegmentMetrics metrics;
 
   private final ConcurrentHashMap<UUID, FollowedSegments> followedBySession =
@@ -47,17 +50,16 @@ public class UnservedSegments {
 
   /**
    * Opens a segment to answer a viewer's request with it, and marks the segment as served. Empty
-   * when {@code open} finds no segment. Also empty, with the opened segment closed, when the stream
-   * session's segments were removed and counted between the open and the mark: the answer would
-   * serve a segment that is already counted as unserved. A read that answers no viewer opens the
-   * segment in the segment store instead.
+   * when the segment store holds no such segment. Also empty, with the opened segment closed, when
+   * the stream session's segments were deleted and counted between the open and the mark: the
+   * answer would serve a segment that is already counted as unserved. A read that answers no viewer
+   * goes to the segment store instead.
    */
-  Optional<StoredSegment> openForViewer(
-      UUID sessionId, String storedSegmentName, Supplier<Optional<StoredSegment>> open) {
-    // Read before the open, so that the mark fails once these segments are removed and counted.
-    // A lookup after the open could not tell that removal from a stream session never followed.
+  Optional<StoredSegment> openForViewer(UUID sessionId, String storedSegmentName) {
+    // Read before the open, so that the mark fails once these segments are deleted and counted.
+    // A lookup after the open could not tell that deletion from a stream session never followed.
     var followed = followedBySession.get(sessionId);
-    var opened = open.get();
+    var opened = segmentStore.openSegment(sessionId, storedSegmentName);
     if (followed == null || opened.isEmpty() || followed.tryMarkServed(storedSegmentName)) {
       return opened;
     }
@@ -74,25 +76,44 @@ public class UnservedSegments {
     serverShuttingDown = true;
   }
 
-  /** Call after the ended stream session's stored segments are deleted. */
-  void streamSessionEnded(UUID sessionId) {
-    var unserved = stopFollowing(sessionId);
+  /**
+   * Stops following a stream session whose start was refused before any job attempt ran. Such a
+   * session stored nothing, so nothing is deleted or counted.
+   */
+  void streamSessionRefused(UUID sessionId) {
+    followedBySession.remove(sessionId);
+  }
+
+  void deleteSegmentsOfEndedSession(UUID sessionId) {
+    deleteThenCount(sessionId, this::countAfterSessionEnded);
+  }
+
+  /** For a stream session that a disk-pressure eviction ended. */
+  void deleteSegmentsOfEvictedSession(UUID sessionId) {
+    deleteThenCount(sessionId, metrics::countAfterDiskPressureEviction);
+  }
+
+  void deleteSegmentsOfSessionWhoseStartFailed(UUID sessionId) {
+    deleteThenCount(sessionId, metrics::countAfterSessionStartFailed);
+  }
+
+  // Counted after the deletion, from which on the segment store opens nothing of the session. A
+  // failed deletion still ends the session, so its unserved segments still count.
+  private void deleteThenCount(UUID sessionId, IntConsumer countUnserved) {
+    try {
+      segmentStore.deleteSession(sessionId);
+    } finally {
+      countUnserved.accept(stopFollowing(sessionId));
+    }
+  }
+
+  private void countAfterSessionEnded(int unserved) {
     if (serverShuttingDown) {
       metrics.countAtServerShutdown(unserved);
       return;
     }
 
     metrics.countAfterSessionEnded(unserved);
-  }
-
-  /** Call after the evicted stream session's stored segments are deleted. */
-  void streamSessionEvictedUnderDiskPressure(UUID sessionId) {
-    metrics.countAfterDiskPressureEviction(stopFollowing(sessionId));
-  }
-
-  /** Call after the stored segments of the stream session whose start failed are deleted. */
-  void streamSessionStartFailed(UUID sessionId) {
-    metrics.countAfterSessionStartFailed(stopFollowing(sessionId));
   }
 
   /**
@@ -107,7 +128,7 @@ public class UnservedSegments {
   }
 
   // The number of the stream session's unserved segments, or zero when it is not followed.
-  private long stopFollowing(UUID sessionId) {
+  private int stopFollowing(UUID sessionId) {
     var followed = followedBySession.remove(sessionId);
     if (followed == null) {
       return 0;
@@ -144,9 +165,9 @@ public class UnservedSegments {
     }
 
     /** Ends every later mark and answers how many stored segments were never served. */
-    synchronized long removeAll() {
+    synchronized int removeAll() {
       removed = true;
-      return servedByStoredName.values().stream().filter(served -> !served).count();
+      return Collections.frequency(servedByStoredName.values(), false);
     }
   }
 }

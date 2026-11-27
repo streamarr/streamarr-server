@@ -48,7 +48,6 @@ public class HlsStreamingService implements StreamingService {
 
   private final MediaFileRepository mediaFileRepository;
   private final TranscodeExecutor transcodeExecutor;
-  private final SegmentStore segmentStore;
   private final PlaybackProbeService playbackProbeService;
   private final TranscodeDecisionService transcodeDecisionService;
   private final QualityLadderService qualityLadderService;
@@ -223,7 +222,7 @@ public class HlsStreamingService implements StreamingService {
       // Another start took the last place under the transcode limit after this admission, so no
       // job attempt of this stream session was dispatched.
       runtimeRegistry.removeById(sessionId);
-      unservedSegments.streamSessionStartFailed(sessionId);
+      unservedSegments.streamSessionRefused(sessionId);
       return Outcome.rejected(
           refuseForLackOfCapacity(CapacityRefusal.NO_FREE_CONFIGURED_TRANSCODE_SLOT));
     } catch (RuntimeException startupFailure) {
@@ -502,10 +501,9 @@ public class HlsStreamingService implements StreamingService {
 
   private void rollbackFailedStartup(UUID sessionId, RuntimeException startupFailure) {
     suppressCleanupFailure(startupFailure, () -> transcodeExecutor.destroySession(sessionId));
-    suppressCleanupFailure(startupFailure, () -> segmentStore.deleteSession(sessionId));
-    suppressCleanupFailure(startupFailure, () -> runtimeRegistry.removeById(sessionId));
     suppressCleanupFailure(
-        startupFailure, () -> unservedSegments.streamSessionStartFailed(sessionId));
+        startupFailure, () -> unservedSegments.deleteSegmentsOfSessionWhoseStartFailed(sessionId));
+    suppressCleanupFailure(startupFailure, () -> runtimeRegistry.removeById(sessionId));
   }
 
   private static void suppressCleanupFailure(RuntimeException startupFailure, Runnable cleanup) {
@@ -543,7 +541,7 @@ public class HlsStreamingService implements StreamingService {
   @Override
   public void destroySession(UUID sessionId) {
     if (producerLifecycle.removeSession(sessionId)) {
-      cleanUpDestroyed(sessionId, unservedSegments::streamSessionEnded);
+      cleanUpDestroyed(sessionId, unservedSegments::deleteSegmentsOfEndedSession);
     }
   }
 
@@ -553,32 +551,22 @@ public class HlsStreamingService implements StreamingService {
       return false;
     }
 
-    cleanUpDestroyed(sessionId, unservedSegments::streamSessionEvictedUnderDiskPressure);
+    cleanUpDestroyed(sessionId, unservedSegments::deleteSegmentsOfEvictedSession);
     return true;
   }
 
-  private void cleanUpDestroyed(UUID sessionId, Consumer<UUID> countUnservedSegments) {
-    try {
-      stopAndDeleteSegments(sessionId);
-    } finally {
-      // Counted after the deletion, from which on no request is answered with a segment of the
-      // session.
-      countUnservedSegments.accept(sessionId);
-    }
-    log.info("Destroyed streaming session {}", sessionId);
-  }
-
-  private void stopAndDeleteSegments(UUID sessionId) {
+  private void cleanUpDestroyed(UUID sessionId, Consumer<UUID> deleteSegments) {
     try {
       producerLifecycle.stopForDestroy(sessionId);
     } finally {
       try {
         // The session is already unreachable; a failed stop must not orphan its segments.
-        segmentStore.deleteSession(sessionId);
+        deleteSegments.accept(sessionId);
       } finally {
         deliveryCoordinator.forgetSession(sessionId);
       }
     }
+    log.info("Destroyed streaming session {}", sessionId);
   }
 
   @Override

@@ -32,6 +32,8 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
 import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
@@ -96,7 +98,6 @@ class UnservedSegmentCountingTest {
             .languagePreferences(noLanguagePreferences())
             .mediaFileRepository(mediaFiles)
             .transcodeExecutor(transcodeExecutor)
-            .segmentStore(segmentStore)
             .playbackProbeService(playbackProbeServiceBuilder(probeResults).build())
             .transcodeDecisionService(new TranscodeDecisionService(properties, meters))
             .qualityLadderService(new QualityLadderService())
@@ -138,6 +139,23 @@ class UnservedSegmentCountingTest {
 
     assertThatThrownBy(() -> service.destroySession(sessionId))
         .isInstanceOf(TranscodeException.class);
+
+    assertThat(unservedSegments("session_ended")).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count a stream session's unserved segments when the session ends although deleting"
+          + " its segments failed")
+  void shouldCountAStreamSessionsUnservedSegmentsWhenItEndsAlthoughDeletingItsSegmentsFailed() {
+    segmentStore = new DeletionFailingSegmentStore();
+    startServer();
+    var session = startStreamSession();
+    var sessionId = session.getSessionId();
+    store(session, 0);
+
+    assertThatThrownBy(() -> service.destroySession(sessionId))
+        .isInstanceOf(UncheckedIOException.class);
 
     assertThat(unservedSegments("session_ended")).isEqualTo(1);
   }
@@ -209,10 +227,10 @@ class UnservedSegmentCountingTest {
   void shouldCountUnservedSegmentsAsSessionStartFailedWhenAStartFailsAfterAJobAttemptStoredOne() {
     transcodeExecutor = new StoringThenFailingExecutor();
     startServer();
-    var command = createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID());
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID()).build();
 
-    assertThatThrownBy(() -> service.createSession(command.build()))
-        .isInstanceOf(TranscodeException.class);
+    assertThatThrownBy(() -> service.createSession(command)).isInstanceOf(TranscodeException.class);
 
     assertThat(unservedSegments("session_start_failed")).isEqualTo(1);
   }
@@ -489,6 +507,14 @@ class UnservedSegmentCountingTest {
 
     private void release() {
       released.countDown();
+    }
+  }
+
+  private static final class DeletionFailingSegmentStore extends FakeSegmentStore {
+
+    @Override
+    public void deleteSession(UUID sessionId) {
+      throw new UncheckedIOException(new IOException("The segment folder is read-only"));
     }
   }
 
