@@ -6,6 +6,7 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.graphql.ClientIpAddressGraphQlInterceptor;
 import com.streamarr.server.graphql.Ids;
 import com.streamarr.server.graphql.cursor.ConnectionArguments;
 import com.streamarr.server.graphql.cursor.PositionCursorCodec;
@@ -29,6 +30,7 @@ import com.streamarr.server.graphql.mutation.sharing.RejectProfileSharePayload;
 import com.streamarr.server.graphql.mutation.sharing.ShareErrors;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.identity.ProfileSharingService;
+import com.streamarr.server.services.identity.ShareCodeCommand;
 import com.streamarr.server.services.identity.ShareListOrder;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.PageRequest;
@@ -54,12 +56,14 @@ public class ProfileSharingResolver {
 
   @DgsQuery
   public ProfileSharePreview profileSharePreview(
-      @InputArgument String profileId, @InputArgument String householdId) {
+      @InputArgument String profileId,
+      @InputArgument String shareCode,
+      DataFetchingEnvironment dfe) {
     return profileSharingService
         .sharePreflight(
             authorizationService.currentIdentity(),
             Ids.parseUuid(profileId),
-            Ids.parseUuid(householdId))
+            presented(shareCode, dfe))
         .map(preview -> new ProfileSharePreview(preview.wouldLock(), preview.nameConflict()))
         .orElse(null);
   }
@@ -95,13 +99,14 @@ public class ProfileSharingResolver {
   }
 
   @DgsMutation
-  public OfferProfileSharePayload offerProfileShare(@InputArgument OfferProfileShareInput input) {
+  public OfferProfileSharePayload offerProfileShare(
+      @InputArgument OfferProfileShareInput input, DataFetchingEnvironment dfe) {
     return MutationPayloads.payload(
         profileSharingService
             .offerProfileShare(
                 authorizationService.currentIdentity(),
                 Ids.parseUuid(input.profileId()),
-                Ids.parseUuid(input.householdId()))
+                presented(input.shareCode(), dfe))
             .map(this::details),
         ShareErrors::toOfferError,
         OfferProfileSharePayload::new);
@@ -165,6 +170,13 @@ public class ProfileSharingResolver {
             .map(this::details),
         ShareErrors::toAdministrativelyEndError,
         AdministrativelyEndProfileSharePayload::new);
+  }
+
+  private static ShareCodeCommand presented(String shareCode, DataFetchingEnvironment dfe) {
+    return ShareCodeCommand.builder()
+        .code(shareCode)
+        .ipAddress(ClientIpAddressGraphQlInterceptor.resolve(dfe))
+        .build();
   }
 
   private ProfileShareDetails details(ProfileHouseholdShare share) {

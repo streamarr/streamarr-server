@@ -27,6 +27,7 @@ import com.streamarr.server.fakes.FakeProfileManagerRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
+import com.streamarr.server.fakes.FakeShareCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -670,7 +671,9 @@ class HouseholdDeletionServiceTest {
             passwordResetCodes,
             sessions,
             registrationLifecycle,
-            Clock.fixed(NOW, ZoneOffset.UTC)),
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            new ShareCodeIssuerAuthority(
+                new FakeShareCodeRepository(), accountRepository, authorization)),
         households,
         accountRepository,
         profiles,

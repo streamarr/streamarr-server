@@ -236,6 +236,7 @@ public class JooqCredentialAttemptRepository implements CredentialAttemptReposit
       case PASSWORD_RESET_CODE -> CredentialKind.PASSWORD_RESET_CODE;
       case PROFILE_MANAGER_INVITATION_CODE -> CredentialKind.PROFILE_MANAGER_INVITATION_CODE;
       case DEVICE_PAIRING_CODE -> CredentialKind.DEVICE_PAIRING_CODE;
+      case SHARE_CODE -> CredentialKind.SHARE_CODE;
     };
   }
 

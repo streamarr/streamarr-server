@@ -56,12 +56,48 @@ type Mutation {
     issueAccountInvitationForExistingProfile(input: IssueAccountInvitationForExistingProfileInput!): IssueAccountInvitationForExistingProfilePayload
     cancelAccountInvitation(input: CancelAccountInvitationInput!): CancelAccountInvitationPayload
     issuePasswordReset(input: IssuePasswordResetInput!): IssuePasswordResetPayload
+    """
+    Offer a Profile to the Household that a share code names. A share code is the only way to name
+    the Household. The offer waits as PENDING until a HouseholdAdmin of that Household, or a
+    ServerAdmin, accepts or rejects it: holding a code consents to nothing, and the caller may offer
+    only a Profile they may already offer. The offer spends the code, and a spent code stays spent
+    whatever becomes of the offer. An offer that is refused spends nothing. Of two offers that
+    present one code, exactly one is made. A code that does not work gets ShareCodeRefusedError,
+    which names no Household. Each offer is a credential attempt by the Account that presents the
+    code, counted as lookUpShareCode counts it; a device-bound session and a disabled Account get
+    FORBIDDEN. A newer offer of the same Profile to the same Household replaces a pending one.
+    """
     offerProfileShare(input: OfferProfileShareInput!): OfferProfileSharePayload
     acceptProfileShare(input: AcceptProfileShareInput!): AcceptProfileSharePayload
     rejectProfileShare(input: RejectProfileShareInput!): RejectProfileSharePayload
     cancelProfileShare(input: CancelProfileShareInput!): CancelProfileSharePayload
     endProfileShare(input: EndProfileShareInput!): EndProfileSharePayload
     administrativelyEndProfileShare(input: AdministrativelyEndProfileShareInput!): AdministrativelyEndProfileSharePayload
+    """
+    Issue a share code for a Household, for its HouseholdAdmins and for ServerAdmins. The code
+    expires after the server's share code lifetime, 7 days unless the server sets another, and the
+    answer is the only place it appears. A Household may hold several live codes. Issuing a code
+    invites an offer and consents to nothing: every offer still waits for a HouseholdAdmin to accept
+    or reject it. Everyone else gets HouseholdNotFoundError, and so does a device-bound session.
+    """
+    issueShareCode(input: IssueShareCodeInput!): IssueShareCodePayload
+    """
+    Withdraw a live share code, so that no offer can present it. Any HouseholdAdmin of its
+    Household, or a ServerAdmin, may withdraw any of the Household's codes, whoever issued it. A
+    code that no longer works gets ShareCodeNotLiveError. Everyone else gets ShareCodeNotFoundError.
+    """
+    withdrawShareCode(input: WithdrawShareCodeInput!): WithdrawShareCodePayload
+    """
+    Look a share code up before offering a Profile with it. A live code answers with the name of
+    the Household it was issued for, and nothing else about that Household. Every other code gets
+    ShareCodeRefusedError, which names no Household. Any signed-in Account may look a code up; a
+    device-bound session and a disabled Account get FORBIDDEN. Every lookup counts as a credential
+    attempt by the Account that presents the code, and a lookup that succeeds does not clear its
+    failures. After too many failures the request ends with TOO_MANY_CREDENTIAL_ATTEMPTS and
+    retryAfterSeconds. It is a mutation because each lookup is recorded, and so that the code never
+    travels in a URL.
+    """
+    lookUpShareCode(input: LookUpShareCodeInput!): LookUpShareCodePayload
     inviteProfileManager(input: InviteProfileManagerInput!): InviteProfileManagerPayload
     cancelManagerInvitation(input: CancelManagerInvitationInput!): CancelManagerInvitationPayload
     acceptManagerInvitation(input: AcceptManagerInvitationInput!): AcceptManagerInvitationPayload

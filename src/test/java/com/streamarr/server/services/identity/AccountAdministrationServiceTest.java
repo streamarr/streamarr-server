@@ -15,6 +15,8 @@ import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileKind;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.auth.ShareCode;
+import com.streamarr.server.domain.auth.ShareCodeStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -25,6 +27,7 @@ import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakePasswordResetCodeRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeSecurityAuditEventRepository;
+import com.streamarr.server.fakes.FakeShareCodeRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -32,6 +35,7 @@ import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.auth.ShareCodesFixture;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -53,6 +57,7 @@ import org.springframework.security.access.AccessDeniedException;
 class AccountAdministrationServiceTest {
 
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
+  private final FakeShareCodeRepository shareCodes = new FakeShareCodeRepository();
   private final FakeAuthSessionRepository sessions = new FakeAuthSessionRepository();
   private final FakeDeviceRegistrationRepository registrations =
       new FakeDeviceRegistrationRepository();
@@ -76,6 +81,7 @@ class AccountAdministrationServiceTest {
           resetCodes,
           shares,
           new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
+          new ShareCodeIssuerAuthority(shareCodes, accounts, authorization),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           Clock.systemUTC());
@@ -272,6 +278,25 @@ class AccountAdministrationServiceTest {
         .singleElement()
         .extracting(PasswordResetCode::getStatus)
         .isEqualTo(PasswordResetCodeStatus.INVALIDATED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should disable the Account and invalidate its share codes when no code decision can be made")
+  void shouldDisableAccountAndInvalidateItsShareCodesWhenNoCodeDecisionCanBeMade() {
+    liveShareCodeIssuedBy(target.getId(), UUID.randomUUID());
+    liveShareCodeIssuedBy(target.getId(), UUID.randomUUID());
+    authorization.decideForAccountWith(
+        _ -> new Decision.Failed<>(Decision.FailureCause.EVALUATION_ERROR));
+
+    var outcome = service.disableAccount(identity(), target.getId());
+
+    assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
+    assertThat(accounts.findById(target.getId()).orElseThrow().isEnabled()).isFalse();
+    assertThat(shareCodes.findAll())
+        .hasSize(2)
+        .extracting(ShareCode::getStatus)
+        .containsOnly(ShareCodeStatus.INVALIDATED);
   }
 
   @Test
@@ -519,6 +544,16 @@ class AccountAdministrationServiceTest {
 
     assertThat(outcome).isInstanceOf(Outcome.Accepted.class);
     assertOfferInvalidated(offer.getId());
+  }
+
+  private void liveShareCodeIssuedBy(UUID issuerAccountId, UUID householdId) {
+    shareCodes.tryInsert(
+        ShareCode.builder()
+            .householdId(householdId)
+            .issuerAccountId(issuerAccountId)
+            .codeDigest(ShareCodesFixture.shareCodes().issue().digest())
+            .expiresAt(Instant.now().plus(Duration.ofHours(1)))
+            .build());
   }
 
   private ProfileHouseholdShare pendingOfferBy(UUID offererAccountId) {

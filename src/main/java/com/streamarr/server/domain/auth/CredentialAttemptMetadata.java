@@ -39,13 +39,16 @@ public record CredentialAttemptMetadata(
     }
   }
 
-  /** Which identifiers a kind resolves by; the approver's Account keys device pairing codes. */
+  /**
+   * Which identifiers a kind resolves by; the approver's Account keys device pairing codes, and the
+   * presenting Account keys share codes.
+   */
   private record Shape(Presence account, Presence profile, Presence credential) {
 
     static Shape of(CredentialKind kind) {
       return switch (kind) {
         case ACCOUNT_LOGIN -> new Shape(Presence.OPTIONAL, Presence.ABSENT, Presence.ABSENT);
-        case ACCOUNT_PASSWORD_VERIFICATION, DEVICE_PAIRING_CODE ->
+        case ACCOUNT_PASSWORD_VERIFICATION, DEVICE_PAIRING_CODE, SHARE_CODE ->
             new Shape(Presence.REQUIRED, Presence.ABSENT, Presence.ABSENT);
         case PROFILE_PIN -> new Shape(Presence.REQUIRED, Presence.REQUIRED, Presence.ABSENT);
         case ACCOUNT_INVITATION_CODE, PASSWORD_RESET_CODE, PROFILE_MANAGER_INVITATION_CODE ->

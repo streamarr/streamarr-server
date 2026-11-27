@@ -177,6 +177,25 @@ public sealed interface Intent {
   /** The ServerAdmin administrative end; requiresFreshReauthentication with a reason. */
   record AdministrativelyEndProfileShare(UUID shareId) implements UnitIntent {}
 
+  /**
+   * Issue a share code for a Household (ADR 0024 §Share codes): its live HouseholdAdmin, or
+   * ServerAdmin for any Household. A code issued under this intent stays live only while its issuer
+   * would still be allowed it.
+   */
+  record IssueShareCode(UUID householdId) implements UnitIntent {}
+
+  /** List a Household's share codes, never the codes themselves: the seats that may issue one. */
+  record ViewShareCodes(UUID householdId) implements UnitIntent {}
+
+  /** Withdraw any of a Household's live share codes, whoever issued it: the same seats. */
+  record WithdrawShareCode(UUID householdId) implements UnitIntent {}
+
+  /**
+   * Look a share code up to learn the name of the Household it names: any enabled Account, never a
+   * device-bound session. The code alone decides the Household, so nothing else is read.
+   */
+  record ViewShareCodeHousehold() implements UnitIntent {}
+
   /** Propose another eligible Account as a direct ProfileManager (ADR 0024 §ProfileManager). */
   record InviteProfileManager(UUID profileId) implements UnitIntent {}
 

@@ -62,6 +62,7 @@ import com.streamarr.server.jooq.generated.tables.SeriesPerson;
 import com.streamarr.server.jooq.generated.tables.ServerBootstrap;
 import com.streamarr.server.jooq.generated.tables.ServerSettings;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
+import com.streamarr.server.jooq.generated.tables.ShareCode;
 import com.streamarr.server.jooq.generated.tables.SkippedFile;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
@@ -170,6 +171,7 @@ public class Public extends SchemaImpl {
             ServerBootstrap.SERVER_BOOTSTRAP,
             ServerSettings.SERVER_SETTINGS,
             SessionProgress.SESSION_PROGRESS,
+            ShareCode.SHARE_CODE,
             SkippedFile.SKIPPED_FILE,
             UserAccount.USER_ACCOUNT,
             WatchHistory.WATCH_HISTORY

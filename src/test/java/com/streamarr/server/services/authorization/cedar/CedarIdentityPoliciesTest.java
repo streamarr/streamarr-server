@@ -1188,6 +1188,82 @@ class CedarIdentityPoliciesTest {
     }
   }
 
+  @Nested
+  @DisplayName("Share codes")
+  class ShareCodes {
+
+    @Test
+    @DisplayName(
+        "Should allow share code administration when the caller is the Household's live admin or ServerAdmin")
+    void shouldAllowShareCodeAdministrationWhenCallerIsHouseholdsLiveAdminOrServerAdmin() {
+      var home = account.getHouseholdId();
+
+      assertThat(administration(home)).allSatisfy(intent -> assertDecision(intent, ALLOWED));
+      assertThat(administration(visitedHouseholdId))
+          .allSatisfy(intent -> assertDecision(intent, DENIED));
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(administration(visitedHouseholdId))
+          .allSatisfy(intent -> assertDecision(intent, ALLOWED));
+    }
+
+    @Test
+    @DisplayName("Should deny share code administration when the live role is no longer admin")
+    void shouldDenyShareCodeAdministrationWhenLiveRoleIsNoLongerAdmin() {
+      var home = account.getHouseholdId();
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+
+      // The session still carries the admin role it was signed with.
+      assertThat(atHome().householdRole()).isEqualTo(HouseholdRole.ADMIN);
+      assertThat(administration(home)).allSatisfy(intent -> assertDecision(intent, DENIED));
+    }
+
+    @Test
+    @DisplayName(
+        "Should deny share code administration when the session is device-bound or the Account is disabled")
+    void shouldDenyShareCodeAdministrationWhenSessionIsDeviceBoundOrAccountIsDisabled() {
+      var home = account.getHouseholdId();
+      account.setServerAdmin(true);
+      accounts.save(account);
+
+      assertThat(administration(home))
+          .allSatisfy(intent -> assertThat(decide(onDevice(atHome()), intent)).isEqualTo(DENIED));
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(administration(home)).allSatisfy(intent -> assertDecision(intent, DENIED));
+    }
+
+    @Test
+    @DisplayName(
+        "Should let an enabled Account look a share code up when its session is not device-bound")
+    void shouldLetEnabledAccountLookShareCodeUpWhenItsSessionIsNotDeviceBound() {
+      var lookUp = new Intent.ViewShareCodeHousehold();
+      account.setHouseholdRole(HouseholdRole.MEMBER);
+      accounts.save(account);
+
+      assertThat(decide(member(), lookUp)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(member()), lookUp)).isEqualTo(DENIED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(member(), lookUp)).isEqualTo(DENIED);
+    }
+
+    private List<Intent.UnitIntent> administration(UUID householdId) {
+      return List.of(
+          new Intent.IssueShareCode(householdId),
+          new Intent.ViewShareCodes(householdId),
+          new Intent.WithdrawShareCode(householdId));
+    }
+
+    private void assertDecision(Intent.UnitIntent intent, Decision<AuthorizationUnit> expected) {
+      assertThat(decide(atHome(), intent)).as("%s", intent).isEqualTo(expected);
+    }
+  }
+
   private ProfileHouseholdShare.ProfileHouseholdShareBuilder<?, ?> pendingShareBuilder() {
     return ProfileHouseholdShare.builder().status(ProfileShareStatus.PENDING);
   }
@@ -1371,6 +1447,8 @@ class CedarIdentityPoliciesTest {
       assertThat(decide(device, new Intent.RenameProfile(personal.getId()))).isEqualTo(DENIED);
       assertThat(decide(device, new Intent.IssueAccountInvitation())).isEqualTo(DENIED);
       assertThat(decide(device, new Intent.OfferProfileShare(personal.getId()))).isEqualTo(DENIED);
+      assertThat(decide(device, new Intent.IssueShareCode(account.getHouseholdId())))
+          .isEqualTo(DENIED);
       assertThat(decide(device, new Intent.InviteProfileManager(personal.getId())))
           .isEqualTo(DENIED);
       assertThat(decide(device, new Intent.LinkDevice(UUID.randomUUID()))).isEqualTo(DENIED);
