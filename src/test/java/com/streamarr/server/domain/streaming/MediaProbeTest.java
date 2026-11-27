@@ -357,6 +357,52 @@ class MediaProbeTest {
                     .build()));
   }
 
+  @Test
+  @DisplayName("Should distinguish stated and learned ends when choosing another audio track")
+  void shouldDistinguishStatedAndLearnedEndsWhenChoosingAnotherAudioTrack() {
+    var stated = audioIn("eng").index(1).endTime(Optional.of(Duration.ofSeconds(10))).build();
+    var unknown = audioIn("fra").index(2).endTime(Optional.empty()).build();
+    var learned =
+        List.of(
+            LearnedStreamEnd.builder()
+                .mediaFileId(UUID.randomUUID())
+                .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+                .streamIndex(1)
+                .endTime(Duration.ofSeconds(12))
+                .build(),
+            LearnedStreamEnd.builder()
+                .mediaFileId(UUID.randomUUID())
+                .snapshot(new SourceFileSnapshot(1, Instant.EPOCH))
+                .streamIndex(2)
+                .endTime(Duration.ofSeconds(20))
+                .build());
+
+    var withEnds = probe(stated, unknown).withLearnedEndTimes(learned).withLearnedEndTimes(learned);
+
+    assertThat(withEnds.probedSessionAudioEnd()).contains(Duration.ofSeconds(10));
+    var switched = withEnds.withSessionAudioTrackAt(1);
+    assertThat(switched.audioStreams().getFirst().endTime()).contains(Duration.ofSeconds(20));
+    assertThat(switched.probedSessionAudioEnd()).isEmpty();
+    assertThat(switched.withSessionAudioTrackAt(0).probedSessionAudioEnd())
+        .contains(Duration.ofSeconds(10));
+  }
+
+  // A keyframe packet scan replaces the end that a job attempt learned, so the scanned end counts
+  // as a known end even when a job attempt learned the stream's end first.
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  @DisplayName("Should trust a scanned audio end when the header states no end")
+  void shouldTrustAScannedAudioEndWhenTheHeaderStatesNoEnd(boolean learnedByAttemptFirst) {
+    var probe = probe(audioIn("eng").index(1).endTime(Optional.empty()).build());
+    if (learnedByAttemptFirst) {
+      probe = probe.withLearnedEndTimes(List.of(attemptLearnedEnd(1, Duration.ofSeconds(10))));
+    }
+
+    var scanned = probe.withLearnedEndTimes(List.of(scannedEnd(1, Duration.ofSeconds(12))));
+
+    assertThat(scanned.probedSessionAudioEnd()).contains(Duration.ofSeconds(12));
+  }
+
   private static MediaProbe probeOf(VideoPlaybackFacts.VideoPlaybackFactsBuilder facts) {
     return StreamSessionFixture.defaultProbeBuilder()
         .videoPlaybackFacts(Optional.of(facts.build()))

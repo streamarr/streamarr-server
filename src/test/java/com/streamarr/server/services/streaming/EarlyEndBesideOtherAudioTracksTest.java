@@ -87,6 +87,8 @@ class EarlyEndBesideOtherAudioTracksTest {
           .build();
   private static final Duration EARLY_END = Duration.ofSeconds(10);
   private static final Duration LATE_END = Duration.ofSeconds(17);
+  // The end of the segment that holds the last sample of audio that ends at EARLY_END (ADR 0064).
+  private static final Duration EARLY_AUDIO_BOUNDARY = Duration.ofSeconds(12);
   private static final AudioTrack ENGLISH_TO_THE_EARLY_END =
       AudioTrack.builder().language("eng").end(Optional.of(EARLY_END)).build();
   private static final AudioTrack FRENCH_TO_THE_LATE_END =
@@ -155,10 +157,10 @@ class EarlyEndBesideOtherAudioTracksTest {
                 .advertisedEnd(LATE_END)),
         session(
             "a session on the second track, which ends more than a segment before the video",
-            audioEncodedForItsEarlyEnd()
+            copied()
                 .file(videoToTheLateEnd(FRENCH_TO_THE_LATE_END, ENGLISH_TO_THE_EARLY_END))
                 .language(Language.EN)
-                .advertisedEnd(LATE_END)),
+                .advertisedEnd(EARLY_AUDIO_BOUNDARY)),
         session(
             "a session on the second track, which ends with the video, after one that ends more"
                 + " than a segment before it",
@@ -223,8 +225,9 @@ class EarlyEndBesideOtherAudioTracksTest {
     assertStartedAsExpected(session);
   }
 
-  // The French track sets the container's 17 s, so the encode holds the picture and pads the
-  // English track up to it.
+  // The French track sets the container's 17 s. The copied English track ends playback at the end
+  // of
+  // the segment that holds its last sample, and the encode holds the picture up to it (ADR 0064).
   static Stream<Arguments> sessionsOnFilesWhoseHeaderAloneStatesTheEnds() {
     var englishBesideFrench = videoToTheEarlyEnd(ENGLISH_TO_THE_EARLY_END, FRENCH_TO_THE_LATE_END);
     return Stream.of(
@@ -235,9 +238,9 @@ class EarlyEndBesideOtherAudioTracksTest {
                 .language(Language.EN)
                 .quality(VideoQuality.AUTO)
                 .copiesVideo(false)
-                .audio(AudioMode.TRANSCODE)
-                .reasons(List.of(DecisionReason.VIDEO_ENDS_EARLY, DecisionReason.AUDIO_ENDS_EARLY))
-                .advertisedEnd(LATE_END)),
+                .audio(AudioMode.COPY)
+                .reasons(List.of(DecisionReason.VIDEO_ENDS_EARLY))
+                .advertisedEnd(EARLY_AUDIO_BOUNDARY)),
         session(
             "the same session at 360p, whose picture limit encodes the video",
             Session.builder()
@@ -245,13 +248,11 @@ class EarlyEndBesideOtherAudioTracksTest {
                 .language(Language.EN)
                 .quality(VideoQuality.LOW_360P)
                 .copiesVideo(false)
-                .audio(AudioMode.TRANSCODE)
+                .audio(AudioMode.COPY)
                 .reasons(
                     List.of(
-                        DecisionReason.VIDEO_ENDS_EARLY,
-                        DecisionReason.PICTURE_ABOVE_VIEWER_LIMIT,
-                        DecisionReason.AUDIO_ENDS_EARLY))
-                .advertisedEnd(LATE_END)),
+                        DecisionReason.VIDEO_ENDS_EARLY, DecisionReason.PICTURE_ABOVE_VIEWER_LIMIT))
+                .advertisedEnd(EARLY_AUDIO_BOUNDARY)),
         session(
             "a file whose one track ends with the video",
             copied().file(videoToTheEarlyEnd(ENGLISH_TO_THE_EARLY_END)).advertisedEnd(EARLY_END)),
@@ -302,15 +303,6 @@ class EarlyEndBesideOtherAudioTracksTest {
         .copiesVideo(false)
         .audio(AudioMode.COPY)
         .reasons(List.of(DecisionReason.VIDEO_ENDS_EARLY));
-  }
-
-  // The encode pads the session's audio with silence up to the media end.
-  private static Session.SessionBuilder audioEncodedForItsEarlyEnd() {
-    return Session.builder()
-        .quality(VideoQuality.AUTO)
-        .copiesVideo(true)
-        .audio(AudioMode.TRANSCODE)
-        .reasons(List.of(DecisionReason.AUDIO_ENDS_EARLY));
   }
 
   // ADR 0045: a switch moves direct play to an HLS stream session for the chosen track, which

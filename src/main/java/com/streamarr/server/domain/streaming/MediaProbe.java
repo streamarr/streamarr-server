@@ -6,6 +6,7 @@ import com.streamarr.server.domain.media.SourceFileSnapshot;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,7 +28,9 @@ import lombok.NonNull;
  * it, and is empty when the probe stored none, which every version before 7 does. {@code
  * sourceSnapshot} names the source file that the stored outcome describes, and is empty for a probe
  * that playback did not read from a stored outcome. {@code scannedEndTimes} holds, by stream index,
- * each end time that a keyframe packet scan read from the stream's packets.
+ * each end time that a keyframe packet scan read from the stream's packets. {@code
+ * streamsWithLearnedEnds} holds the index of each stream whose end time only a job attempt
+ * reported.
  */
 @Builder(toBuilder = true)
 public record MediaProbe(
@@ -48,7 +51,8 @@ public record MediaProbe(
     @NonNull Optional<VideoPlaybackFacts> videoPlaybackFacts,
     @NonNull Optional<StreamMeasurements> streamMeasurements,
     @NonNull Optional<SourceFileSnapshot> sourceSnapshot,
-    @NonNull Map<Integer, Duration> scannedEndTimes) {
+    @NonNull Map<Integer, Duration> scannedEndTimes,
+    @NonNull Set<Integer> streamsWithLearnedEnds) {
 
   /**
    * The least time by which a container's duration must run past the scanned media end before the
@@ -70,6 +74,7 @@ public record MediaProbe(
   private static final int STANDARD_DEFINITION_HEIGHT = 576;
 
   public MediaProbe {
+    streamsWithLearnedEnds = Set.copyOf(streamsWithLearnedEnds);
     if (audioChannels == null) {
       audioChannels = OptionalInt.empty();
     }
@@ -94,6 +99,7 @@ public record MediaProbe(
     private Optional<StreamMeasurements> streamMeasurements = Optional.empty();
     private Optional<SourceFileSnapshot> sourceSnapshot = Optional.empty();
     private Map<Integer, Duration> scannedEndTimes = Map.of();
+    private Set<Integer> streamsWithLearnedEnds = Set.of();
   }
 
   /**
@@ -449,6 +455,13 @@ public record MediaProbe(
     return audioStreams().stream().findFirst();
   }
 
+  /** The selected audio's header or scanned end, excluding an end learned by a job attempt. */
+  public Optional<Duration> probedSessionAudioEnd() {
+    return sessionAudioStream()
+        .filter(stream -> !streamsWithLearnedEnds.contains(stream.index()))
+        .flatMap(StreamInfo::endTime);
+  }
+
   private Optional<StreamInfo> chosenVideoStream() {
     return videoPlaybackFacts.flatMap(
         facts -> streams.stream().filter(s -> s.index() == facts.streamIndex()).findFirst());
@@ -497,7 +510,19 @@ public record MediaProbe(
             .collect(Collectors.toMap(LearnedStreamEnd::streamIndex, LearnedStreamEnd::endTime));
     var withLearned =
         streams.stream().map(stream -> withLearnedEndTime(stream, learnedByIndex)).toList();
-    return toBuilder().streams(withLearned).scannedEndTimes(scannedByIndex).build();
+    var learnedIndices = new HashSet<>(streamsWithLearnedEnds);
+    streams.stream()
+        .filter(stream -> stream.endTime().isEmpty())
+        .map(StreamInfo::index)
+        .filter(learnedByIndex::containsKey)
+        .filter(index -> !learnedByIndex.get(index).fromPacketScan())
+        .forEach(learnedIndices::add);
+    learnedIndices.removeAll(scannedByIndex.keySet());
+    return toBuilder()
+        .streams(withLearned)
+        .scannedEndTimes(scannedByIndex)
+        .streamsWithLearnedEnds(learnedIndices)
+        .build();
   }
 
   private static StreamInfo withLearnedEndTime(

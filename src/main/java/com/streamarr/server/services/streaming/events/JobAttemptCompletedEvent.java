@@ -9,10 +9,11 @@ import lombok.Builder;
 import lombok.NonNull;
 
 /**
- * A worker reports that a job attempt read its source to the end. The worker reports the completion
- * only after the server accepted the attempt's last segment. {@code sourceEndedEarly} is the
- * worker's report that the source ran out before the last advertised media segment. {@code
- * streamEnds} lists where the attempt read each chosen stream's last sample.
+ * A worker reports that a job attempt completed at natural EOF or the advertised media end. The
+ * worker reports completion only after the server accepted the attempt's last segment. {@code
+ * sourceEndedEarly} is the worker's report that the source ran out before the last advertised media
+ * segment. {@code streamEnds} lists where a naturally completed attempt read each chosen stream's
+ * last sample; planned completion at the advertised end reports no source ends.
  */
 @Builder
 public record JobAttemptCompletedEvent(

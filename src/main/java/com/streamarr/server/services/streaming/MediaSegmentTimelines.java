@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.DemuxerSeekTime;
 import com.streamarr.server.domain.streaming.ExactSegmentStarts;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
@@ -7,13 +8,15 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.MediaSegmentTimeline;
 import com.streamarr.server.domain.streaming.StreamCopySegments;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.properties.StreamingProperties;
+import java.time.Duration;
 import java.util.Optional;
 
 /**
  * The one derivation of a probed media file's media segment timeline, shared by the media playlist
  * and every job attempt so that both advertise the same media segments. Every timeline of a stream
- * session ends at the session probe's {@link MediaProbe#mediaEnd}, whether its variants copy or
+ * session ends at the session's {@link StreamSession#getMediaEnd}, whether its variants copy or
  * encode.
  */
 final class MediaSegmentTimelines {
@@ -21,7 +24,12 @@ final class MediaSegmentTimelines {
   private MediaSegmentTimelines() {}
 
   static MediaSegmentTimeline.PlainGrid of(MediaProbe probe, StreamingProperties properties) {
-    return new MediaSegmentTimeline.PlainGrid(probe.mediaEnd(), properties.targetSegmentDuration());
+    return gridEndingAt(probe.mediaEnd(), properties);
+  }
+
+  private static MediaSegmentTimeline.PlainGrid gridEndingAt(
+      Duration mediaEnd, StreamingProperties properties) {
+    return new MediaSegmentTimeline.PlainGrid(mediaEnd, properties.targetSegmentDuration());
   }
 
   /**
@@ -31,12 +39,33 @@ final class MediaSegmentTimelines {
    * when they are known.
    */
   static MediaSegmentTimeline of(StreamSession session, StreamingProperties properties) {
-    var probe = session.getMediaProbe();
-    if (!session.getTranscodeDecision().transcodeMode().copiesVideo()) {
-      return encodeOf(probe, properties);
+    var grid = gridEndingAt(session.getMediaEnd(), properties);
+    return of(session.getMediaProbe(), grid, session.getTranscodeDecision());
+  }
+
+  static Optional<Duration> endOfCopiedAudioSegment(
+      MediaProbe probe, TranscodeDecision decision, StreamingProperties properties) {
+    if (decision.audioDecision().mode() != AudioMode.COPY) {
+      return Optional.empty();
     }
 
-    return streamCopyOf(probe, properties)
+    return probe
+        .probedSessionAudioEnd()
+        .filter(Duration::isPositive)
+        .map(
+            audioEnd -> {
+              var timeline = of(probe, of(probe, properties), decision);
+              return timeline.mediaSegmentEnd(timeline.mediaSegmentIndexAt(audioEnd.minusNanos(1)));
+            });
+  }
+
+  private static MediaSegmentTimeline of(
+      MediaProbe probe, MediaSegmentTimeline.PlainGrid grid, TranscodeDecision decision) {
+    if (!decision.transcodeMode().copiesVideo()) {
+      return encodeIn(probe, grid);
+    }
+
+    return streamCopyIn(probe, grid)
         .orElseThrow(
             () -> new IllegalStateException("A stream copy session needs the source's keyframes"));
   }
@@ -65,8 +94,8 @@ final class MediaSegmentTimelines {
   }
 
   // Without the keyframes, the worker reads from one period before the attempt's first segment.
-  private static MediaSegmentTimeline encodeOf(MediaProbe probe, StreamingProperties properties) {
-    var grid = of(probe, properties);
+  private static MediaSegmentTimeline encodeIn(
+      MediaProbe probe, MediaSegmentTimeline.PlainGrid grid) {
     if (!(probe.keyframes() instanceof KeyframeKnowledge.Known(var positions))) {
       return grid;
     }
@@ -81,11 +110,15 @@ final class MediaSegmentTimelines {
    */
   static Optional<MediaSegmentTimeline.StreamCopy> streamCopyOf(
       MediaProbe probe, StreamingProperties properties) {
+    return streamCopyIn(probe, of(probe, properties));
+  }
+
+  private static Optional<MediaSegmentTimeline.StreamCopy> streamCopyIn(
+      MediaProbe probe, MediaSegmentTimeline.PlainGrid grid) {
     if (!(probe.keyframes() instanceof KeyframeKnowledge.Known(var positions))) {
       return Optional.empty();
     }
 
-    var grid = of(probe, properties);
     if (!(KeyframeSegmentBoundaries.forStreamCopy(positions, grid.targetSegmentDurationSeconds())
         instanceof StreamCopySegments.Starts starts)) {
       return Optional.empty();

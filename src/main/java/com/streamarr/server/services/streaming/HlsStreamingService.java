@@ -129,12 +129,6 @@ public class HlsStreamingService implements StreamingService {
               .build());
     }
 
-    // Every playlist of an HLS stream session ends at the media end, which can lie before or after
-    // the duration that the container header states.
-    if (startsAtOrPast(command, probe.mediaEnd())) {
-      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
-    }
-
     // Without a connected worker no encoder is verified. That moment must not read as faulty
     // workers and admit a copy over the viewer's limits once a worker connects.
     var verifiedWorkers = transcodeExecutor.verifiedVideoCodecFamiliesByWorker();
@@ -163,7 +157,10 @@ public class HlsStreamingService implements StreamingService {
             .directPlayRefusals(directPlay.refusals())
             .softwareEncodeCodecFamily(command.softwareEncodeCodecFamily())
             .build();
-    var candidate = transcodeDecisionService.decide(request);
+    var candidate =
+        transcodeDecisionService
+            .decide(request)
+            .or(() -> finishedEncodeCandidate(command, request));
     if (candidate.isEmpty()) {
       candidate = decideAfterStoppingALeftVariant(command.streamSessionId(), request);
     }
@@ -180,7 +177,10 @@ public class HlsStreamingService implements StreamingService {
 
     var admission = admission(request, decisionWithSessionAudio);
     var sessionId = command.streamSessionId();
-    var refusal = capacityRefusalFor(admission.decision());
+    var refusal =
+        resumesPastMediaEnd(command, probe, admission.decision())
+            ? Optional.<CapacityRefusal>empty()
+            : capacityRefusalFor(admission.decision());
     // A left variant only serves its own player's switch back, so it never keeps a new stream
     // session out (ADR 0019).
     if (refusal.isPresent() && isSlotShortage(refusal.get())) {
@@ -204,12 +204,18 @@ public class HlsStreamingService implements StreamingService {
             .authority(authority)
             .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
             .mediaProbe(probe)
+            .fixedMediaEnd(fixedMediaEndFor(command, probe, decision))
             .transcodeDecision(decision)
             .options(options)
             .variants(variants)
             .startPosition(command.startPosition().orElse(null))
             .createdAt(now)
             .build();
+    if (session.getNormalEnd().isPresent()) {
+      runtimeRegistry.save(session);
+      return Outcome.accepted(session);
+    }
+
     startAtTheStartSegment(session);
 
     try {
@@ -233,6 +239,37 @@ public class HlsStreamingService implements StreamingService {
         variants.size());
 
     return Outcome.accepted(session);
+  }
+
+  private Optional<Duration> fixedMediaEndFor(
+      CreateStreamSessionCommand command, MediaProbe probe, TranscodeDecision decision) {
+    return command
+        .fixedMediaEnd()
+        .or(() -> MediaSegmentTimelines.endOfCopiedAudioSegment(probe, decision, properties));
+  }
+
+  // Every playlist of an HLS stream session ends at its media end, which can lie before or after
+  // the
+  // duration that the container header states.
+  private boolean resumesPastMediaEnd(
+      CreateStreamSessionCommand command, MediaProbe probe, TranscodeDecision decision) {
+    var mediaEnd = fixedMediaEndFor(command, probe, decision).orElseGet(probe::mediaEnd);
+    return startsAtOrPast(command, mediaEnd);
+  }
+
+  // A finished resume needs a compatible format's grid, but no free encoder or job slot.
+  private Optional<TranscodeDecision> finishedEncodeCandidate(
+      CreateStreamSessionCommand command, TranscodeDecisionRequest request) {
+    if (command.startPosition().isEmpty()) {
+      return Optional.empty();
+    }
+
+    return verifiedEncodeCandidate(request)
+        .filter(decision -> encodeRejection(request, decision).isEmpty())
+        .filter(
+            decision ->
+                resumesPastMediaEnd(
+                    command, request.source(), admission(request, decision).decision()));
   }
 
   // The first-listed variant's first job attempt starts at the segment that holds the start

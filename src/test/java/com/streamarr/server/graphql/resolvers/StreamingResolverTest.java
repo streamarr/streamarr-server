@@ -804,6 +804,42 @@ class StreamingResolverTest {
         .isEqualTo(expected);
   }
 
+  @Test
+  @DisplayName("Should leave the terminal end unknown when playback has only a planned boundary")
+  void shouldLeaveTheTerminalEndUnknownWhenPlaybackHasOnlyAPlannedBoundary() {
+    STUB_SERVICE.setNextResult(
+        sessionBuilderLike(buildSession(UUID.randomUUID()))
+            .fixedMediaEnd(Optional.of(Duration.ofMillis(13_500)))
+            .build());
+
+    var created = startPlaybackReadingChoices(VideoQuality.ORIGINAL);
+
+    assertThat(
+            created.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.mediaEndSeconds",
+                Double.class))
+        .isNull();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"13.5", "20"})
+  @DisplayName("Should expose the terminal end when playback resumes at or beyond its fixed end")
+  void shouldExposeTheTerminalEndWhenPlaybackResumesAtOrBeyondItsFixedEnd(String position) {
+    var session =
+        sessionBuilderLike(buildSession(UUID.randomUUID()))
+            .fixedMediaEnd(Optional.of(Duration.ofMillis(13_500)))
+            .build();
+    STUB_SERVICE.setNextResult(session);
+
+    var created = startPlaybackAt(session.getMediaFileId().toString(), position);
+
+    assertThat(
+            created.read(
+                CREATED_PLAYBACK + ".currentFormatAttempt.streamSession.mediaEndSeconds",
+                Double.class))
+        .isEqualTo(13.5);
+  }
+
   // Every encode is SDR until the server encodes HDR (#397); a copy keeps the source's base.
   @ParameterizedTest
   @CsvSource({"SDR, SDR", "PQ, PQ", "HLG, HLG"})
@@ -1446,7 +1482,12 @@ class StreamingResolverTest {
           }) {
             playbackSession {
               currentFormatAttempt {
-                ... on ReadyPlaybackFormatAttempt { streamSession { startPositionSeconds } }
+                ... on ReadyPlaybackFormatAttempt {
+                  streamSession {
+                    startPositionSeconds
+                    ... on HlsStreamSession { mediaEndSeconds }
+                  }
+                }
               }
             }
             userErrors {
@@ -2670,6 +2711,7 @@ class StreamingResolverTest {
               .authority(nextResult.getAuthority())
               .sourcePath(nextResult.getSourcePath())
               .mediaProbe(nextResult.getMediaProbe())
+              .fixedMediaEnd(nextResult.getFixedMediaEnd())
               .transcodeDecision(nextResult.getTranscodeDecision())
               .delivery(nextResult.getDelivery())
               .sourceContainer(nextResult.getSourceContainer().orElse(null))
