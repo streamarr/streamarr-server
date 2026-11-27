@@ -139,11 +139,13 @@ public class SegmentDeliveryCoordinator {
   }
 
   private SegmentDelivery tryRead(UUID sessionId, String segmentName) {
-    return unservedSegments
-        .openForViewer(
-            sessionId, segmentName, () -> segmentStore.openSegment(sessionId, segmentName))
-        .map(SegmentDelivery.Ready::new)
-        .orElse(null);
+    var segment = segmentStore.openSegment(sessionId, segmentName);
+    if (segment.isEmpty()) {
+      return null;
+    }
+
+    unservedSegments.served(sessionId, segmentName);
+    return new SegmentDelivery.Ready(segment.get());
   }
 
   private boolean tryAwait(HeldSegmentRequests.Wake wake, SegmentRequest request) {

@@ -37,22 +37,22 @@ public class UnservedSegmentMetrics {
   }
 
   /** A stream session ended and the server deleted its stored segments. */
-  void countAfterSessionEnded(long segments) {
+  void countAfterSessionEnded(int segments) {
     afterSessionEnded.increment(segments);
   }
 
   /** The server ended an idle stream session early because the segment folder's disk ran short. */
-  void countAfterDiskPressureEviction(long segments) {
+  void countAfterDiskPressureEviction(int segments) {
     afterDiskPressureEviction.increment(segments);
   }
 
   /** A stream session's start failed after a job attempt had stored segments. */
-  void countAfterSessionStartFailed(long segments) {
+  void countAfterSessionStartFailed(int segments) {
     afterSessionStartFailed.increment(segments);
   }
 
   /** The server stopped while a stream session still stored segments. */
-  void countAtServerShutdown(long segments) {
+  void countAtServerShutdown(int segments) {
     atServerShutdown.increment(segments);
   }
 }

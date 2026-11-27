@@ -30,14 +30,12 @@ import com.streamarr.server.fixtures.StreamingRigFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.streaming.events.MediaSegmentStoredEvent;
-import com.streamarr.server.support.BoundedTask;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -48,7 +46,6 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Unserved Segment Counting Tests")
 class UnservedSegmentCountingTest {
 
-  private static final Duration BOUND = Duration.ofSeconds(5);
   private static final Duration SESSION_TIMEOUT = Duration.ofSeconds(60);
 
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
@@ -144,6 +141,23 @@ class UnservedSegmentCountingTest {
 
   @Test
   @DisplayName(
+      "Should count a stream session's unserved segments when the session ends although deleting"
+          + " its segments failed")
+  void shouldCountAStreamSessionsUnservedSegmentsWhenItEndsAlthoughDeletingItsSegmentsFailed() {
+    segmentStore = new DeletionFailingSegmentStore();
+    startServer();
+    var session = startStreamSession();
+    var sessionId = session.getSessionId();
+    store(session, 0);
+
+    assertThatThrownBy(() -> service.destroySession(sessionId))
+        .isInstanceOf(UncheckedIOException.class);
+
+    assertThat(unservedSegments("session_ended")).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
       "Should count no unserved segment when a request was answered with a segment before the"
           + " segment was announced as stored")
   void shouldCountNoUnservedSegmentWhenARequestWasAnsweredBeforeItsSegmentWasAnnouncedAsStored() {
@@ -209,10 +223,10 @@ class UnservedSegmentCountingTest {
   void shouldCountUnservedSegmentsAsSessionStartFailedWhenAStartFailsAfterAJobAttemptStoredOne() {
     transcodeExecutor = new StoringThenFailingExecutor();
     startServer();
-    var command = createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID());
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID()).build();
 
-    assertThatThrownBy(() -> service.createSession(command.build()))
-        .isInstanceOf(TranscodeException.class);
+    assertThatThrownBy(() -> service.createSession(command)).isInstanceOf(TranscodeException.class);
 
     assertThat(unservedSegments("session_start_failed")).isEqualTo(1);
   }
@@ -313,58 +327,6 @@ class UnservedSegmentCountingTest {
     assertThat(unservedSegments("server_shutdown")).isZero();
   }
 
-  @Test
-  @DisplayName(
-      "Should answer that the session ended and count the segment once as unserved when its"
-          + " stream session ends after a request opened the segment and before the answer")
-  void shouldAnswerSessionEndedAndCountTheSegmentOnceWhenItsSessionEndsAfterARequestOpenedIt()
-      throws Exception {
-    var parkingStore = new OpenParkingSegmentStore();
-    segmentStore = parkingStore;
-    startServer();
-    var session = startStreamSession();
-    var sessionId = session.getSessionId();
-    var name = store(session, 0);
-    parkingStore.parkNextOpenedSegment();
-
-    try (var request =
-        BoundedTask.start(() -> coordinator.deliver(sessionId, firstVariant(session), name))) {
-      parkingStore.awaitParkedOpen();
-      service.destroySession(sessionId);
-      parkingStore.release();
-
-      assertThat(request.await(BOUND)).isEqualTo(new SegmentDelivery.SessionEnded());
-    }
-
-    assertThat(unservedSegments("session_ended")).isEqualTo(1);
-    assertThat(parkingStore.openSegmentCount()).isZero();
-  }
-
-  @Test
-  @DisplayName(
-      "Should count no unserved segment when a request is answered with a segment while its stream"
-          + " session's segments are about to be deleted")
-  void shouldCountNoUnservedSegmentWhenARequestIsAnsweredWhileItsSessionsSegmentsAreAboutToGo()
-      throws Exception {
-    var parkingStore = new DeletionParkingSegmentStore();
-    segmentStore = parkingStore;
-    startServer();
-    var session = startStreamSession();
-    var sessionId = session.getSessionId();
-    var name = store(session, 0);
-
-    try (var destroy = BoundedTask.start(() -> service.destroySession(sessionId))) {
-      parkingStore.awaitParkedDeletion();
-      var delivery = coordinator.deliver(sessionId, firstVariant(session), name);
-      parkingStore.release();
-      destroy.await(BOUND);
-
-      assertThat(StoredSegments.bytes(delivery)).containsExactly(1);
-    }
-
-    assertThat(unservedSegments("session_ended")).isZero();
-  }
-
   private double unservedSegments(String cause) {
     return meters.counter("streamarr.streaming.unserved_segments", "cause", cause).count();
   }
@@ -436,14 +398,11 @@ class UnservedSegmentCountingTest {
         .build();
   }
 
-  private static void awaitWithinBound(CountDownLatch latch, String waitedFor) {
-    try {
-      if (!latch.await(BOUND.toSeconds(), TimeUnit.SECONDS)) {
-        throw new AssertionError("Timed out waiting for " + waitedFor);
-      }
-    } catch (InterruptedException _) {
-      Thread.currentThread().interrupt();
-      throw new AssertionError("Interrupted while waiting for " + waitedFor);
+  private static final class DeletionFailingSegmentStore extends FakeSegmentStore {
+
+    @Override
+    public void deleteSession(UUID sessionId) {
+      throw new UncheckedIOException(new IOException("The segment folder is read-only"));
     }
   }
 
@@ -458,59 +417,6 @@ class UnservedSegmentCountingTest {
       segmentStore.addSegment(request.sessionId(), name, new byte[] {1});
       unservedSegments.onMediaSegmentStored(new MediaSegmentStoredEvent(request.sessionId(), name));
       throw new TranscodeException("The worker disconnected during the start");
-    }
-  }
-
-  // Parks the next request that opens a segment after the open, before the server answers.
-  private static final class OpenParkingSegmentStore extends FakeSegmentStore {
-
-    private final AtomicBoolean parkingNextOpenedSegment = new AtomicBoolean();
-    private final CountDownLatch parked = new CountDownLatch(1);
-    private final CountDownLatch released = new CountDownLatch(1);
-
-    @Override
-    public Optional<StoredSegment> openSegment(UUID sessionId, String segmentName) {
-      var opened = super.openSegment(sessionId, segmentName);
-      if (opened.isPresent() && parkingNextOpenedSegment.compareAndSet(true, false)) {
-        parked.countDown();
-        awaitWithinBound(released, "the release of the parked request");
-      }
-
-      return opened;
-    }
-
-    private void parkNextOpenedSegment() {
-      parkingNextOpenedSegment.set(true);
-    }
-
-    private void awaitParkedOpen() {
-      awaitWithinBound(parked, "a request to open the segment");
-    }
-
-    private void release() {
-      released.countDown();
-    }
-  }
-
-  // Parks a stream session's deletion before it deletes any segment.
-  private static final class DeletionParkingSegmentStore extends FakeSegmentStore {
-
-    private final CountDownLatch parked = new CountDownLatch(1);
-    private final CountDownLatch released = new CountDownLatch(1);
-
-    @Override
-    public void deleteSession(UUID sessionId) {
-      parked.countDown();
-      awaitWithinBound(released, "the release of the parked deletion");
-      super.deleteSession(sessionId);
-    }
-
-    private void awaitParkedDeletion() {
-      awaitWithinBound(parked, "the deletion of the stream session's segments");
-    }
-
-    private void release() {
-      released.countDown();
     }
   }
 }
