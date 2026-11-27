@@ -551,6 +551,11 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private void cleanUpDestroyed(UUID sessionId) {
+    stopAndDeleteSegments(sessionId);
+    log.info("Destroyed streaming session {}", sessionId);
+  }
+
+  private void stopAndDeleteSegments(UUID sessionId) {
     try {
       producerLifecycle.stopForDestroy(sessionId);
     } finally {
@@ -561,7 +566,6 @@ public class HlsStreamingService implements StreamingService {
         deliveryCoordinator.forgetSession(sessionId);
       }
     }
-    log.info("Destroyed streaming session {}", sessionId);
   }
 
   @Override
