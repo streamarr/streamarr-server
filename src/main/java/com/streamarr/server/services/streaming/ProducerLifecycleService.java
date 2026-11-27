@@ -360,9 +360,9 @@ public class ProducerLifecycleService {
       return RecoveryResult.SESSION_GONE;
     }
 
-    var pastShortCopy = answerPastAShortCopy(session, segmentName);
-    if (pastShortCopy.isPresent()) {
-      return pastShortCopy.get();
+    var pastTheEnd = answerPastTheEnd(session, segmentName);
+    if (pastTheEnd.isPresent()) {
+      return pastTheEnd.get();
     }
 
     if (transcodeExecutor.terminalFailure(sessionId).isPresent()) {
@@ -1372,6 +1372,7 @@ public class ProducerLifecycleService {
   private boolean needsOnDemandStart(
       StreamSession session, String variantLabel, String segmentName) {
     if (!session.offersVariant(variantLabel)
+        || session.isFinishedResume()
         || session.getVariantHandle(variantLabel).isPresent()
         || isUnadvertisedMediaSegment(session, segmentName)
         || transcodeExecutor.hasHardwareEncoderFailed(session.getSessionId(), variantLabel)) {
@@ -1860,7 +1861,10 @@ public class ProducerLifecycleService {
     return Optional.of(shortCopy);
   }
 
-  /** Whether the segment lies past the normal end of the stream session's short copy. */
+  /**
+   * Whether the segment lies past the stream session's normal end: past its short copy, or in a
+   * stream session that has already ended normally because it resumes at or beyond its media end.
+   */
   public boolean liesPastTheNormalEnd(UUID sessionId, String segmentName) {
     return runtimeRegistry
         .findById(sessionId)
@@ -1869,15 +1873,19 @@ public class ProducerLifecycleService {
   }
 
   private static boolean liesPastTheNormalEnd(StreamSession session, String segmentName) {
-    return answerPastAShortCopy(session, segmentName)
+    return answerPastTheEnd(session, segmentName)
         .filter(RecoveryResult.PAST_THE_NORMAL_END::equals)
         .isPresent();
   }
 
-  // How recovery answers a segment past the stream session's short copy, which no job attempt of
-  // the copy can produce; empty for every other segment.
-  private static Optional<RecoveryResult> answerPastAShortCopy(
+  // How recovery answers a segment that no job attempt of the stream session can produce: every
+  // segment of a finished resume, and a segment past a short copy; empty for every other segment.
+  private static Optional<RecoveryResult> answerPastTheEnd(
       StreamSession session, String segmentName) {
+    if (session.isFinishedResume()) {
+      return Optional.of(RecoveryResult.PAST_THE_NORMAL_END);
+    }
+
     return session
         .getShortCopy()
         .filter(

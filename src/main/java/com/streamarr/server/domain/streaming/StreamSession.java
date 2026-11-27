@@ -276,7 +276,15 @@ public class StreamSession {
     return getShortCopy()
         .filter(ShortCopy::everySourceStreamEnded)
         .map(ShortCopy::mediaEnd)
-        .or(() -> Optional.of(getMediaEnd()).filter(this::startsAtOrPast));
+        .or(() -> Optional.of(getMediaEnd()).filter(_ -> isFinishedResume()));
+  }
+
+  /**
+   * Whether the stream session starts at or beyond its media end, so that playback has already
+   * ended normally and no job attempt of the stream session runs (ADR 0064).
+   */
+  public boolean isFinishedResume() {
+    return startsAtOrPast(getMediaEnd());
   }
 
   private boolean startsAtOrPast(Duration end) {

@@ -56,6 +56,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Segment Delivery Coordinator Tests")
@@ -415,6 +417,27 @@ class SegmentDeliveryCoordinatorTest {
       destroy(sessionId);
       assertThat(pastTheEnd.await(Duration.ofSeconds(2)))
           .isEqualTo(new SegmentDelivery.SessionEnded());
+    }
+  }
+
+  // ADR 0064: a resume at or past the media end has already ended normally, so no request of its
+  // stream session, the initialization segment included, starts a job attempt.
+  @ParameterizedTest
+  @ValueSource(strings = {"init.mp4", "segment0.m4s"})
+  @DisplayName(
+      "Should hold a request of a finished resume without a job attempt until the stream session"
+          + " ends")
+  void shouldHoldARequestOfAFinishedResumeWithoutAJobAttemptUntilTheStreamSessionEnds(
+      String segmentName) throws Exception {
+    var finished = defaultSessionBuilder().startPosition(Duration.ofDays(1)).build();
+    assertThat(finished.getNormalEnd()).isPresent();
+    runtimeRegistry.save(finished);
+    var sessionId = finished.getSessionId();
+
+    try (var held = deliveryHeldWithoutDeadline(sessionId, segmentName)) {
+      assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+      destroy(sessionId);
+      assertThat(held.await(Duration.ofSeconds(2))).isEqualTo(new SegmentDelivery.SessionEnded());
     }
   }
 
