@@ -4695,7 +4695,6 @@ class HlsStreamingServiceTest {
                             VideoCodecProfileCapability.builder()
                                 .profile(VideoCodecProfile.HEVC_MAIN_10)
                                 .maxLevel(51)
-                                .maxTier(Optional.of(VideoCodecTier.MAIN))
                                 .build()))
                     .build()));
   }
@@ -7845,7 +7844,6 @@ class HlsStreamingServiceTest {
                                             VideoCodecProfileCapability.builder()
                                                 .profile(VideoCodecProfile.HEVC_MAIN_10)
                                                 .maxLevel(41)
-                                                .maxTier(Optional.of(VideoCodecTier.MAIN))
                                                 .build()))
                                     .build(),
                                 hevcEntryBuilder()
@@ -7855,7 +7853,6 @@ class HlsStreamingServiceTest {
                                             VideoCodecProfileCapability.builder()
                                                 .profile(VideoCodecProfile.HEVC_MAIN)
                                                 .maxLevel(51)
-                                                .maxTier(Optional.of(VideoCodecTier.MAIN))
                                                 .build()))
                                     .build()))
                         .build())));

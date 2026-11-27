@@ -5,6 +5,7 @@ import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.a
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.defaultDeclarationBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.h264EntryBuilder;
 import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.hevcEntryBuilder;
+import static com.streamarr.server.fixtures.ClientCapabilityDeclarationFixture.upToLevel;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.AudioCodec;
@@ -34,7 +35,6 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntry;
 import com.streamarr.server.domain.streaming.VideoCapabilityEntryRefusal;
 import com.streamarr.server.domain.streaming.VideoCodecProfile;
-import com.streamarr.server.domain.streaming.VideoCodecProfileCapability;
 import com.streamarr.server.domain.streaming.VideoCodecTier;
 import com.streamarr.server.domain.streaming.VideoDynamicRange;
 import com.streamarr.server.domain.streaming.VideoQuality;
@@ -84,7 +84,7 @@ class TranscodeDecisionReasonTest {
     var mainOnly =
         client(
             h264EntryBuilder()
-                .codecProfiles(List.of(h264(VideoCodecProfile.H264_MAIN, 52)))
+                .codecProfiles(List.of(upToLevel(VideoCodecProfile.H264_MAIN, 52)))
                 .build());
 
     var decision = decide(Source.builder().build().probe(), mainOnly);
@@ -100,6 +100,52 @@ class TranscodeDecisionReasonTest {
 
     assertThat(decision.transcodeMode().copiesVideo()).isTrue();
     assertThat(decision.reasons()).isEmpty();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("highTierSources")
+  @DisplayName(
+      "Should copy a High tier source with no reason when an entry of its codec family accepts its"
+          + " codec profile, level and other properties")
+  void
+      shouldCopyAHighTierSourceWithNoReasonWhenAnEntryOfItsCodecFamilyAcceptsItsCodecProfileLevelAndOtherProperties(
+          Source.SourceBuilder source,
+          VideoCodecProfile profile,
+          ClientCapabilityDeclaration client) {
+    var highTier =
+        source
+            .videoProperties(
+                Optional.of(
+                    VideoStreamProperties.builder()
+                        .codecProfile(Optional.of(profile))
+                        .codecLevel(OptionalInt.of(51))
+                        .codecTier(Optional.of(VideoCodecTier.HIGH))
+                        .firstFramesRead(true)
+                        .build()))
+            .build()
+            .probe();
+
+    var decision = decide(highTier, client);
+
+    assertThat(decision.reasons()).isEmpty();
+    assertThat(decision.transcodeMode().copiesVideo()).isTrue();
+  }
+
+  // hvc1.2.4.H153.90 and av01.0.13H.10 are each in the High tier at level 5.1.
+  static Stream<Arguments> highTierSources() {
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "an HEVC Main 10 source at level 5.1 to an HEVC entry",
+                hevcMain10().codecString("hvc1.2.4.H153.90")),
+            VideoCodecProfile.HEVC_MAIN_10,
+            client(hevcEntryBuilder().build())),
+        Arguments.of(
+            Named.of(
+                "an AV1 Main source at level 5.1 to an AV1 entry",
+                Source.builder().codec("av1").codecString("av01.0.13H.10").bitDepth(10)),
+            VideoCodecProfile.AV1_MAIN,
+            client()));
   }
 
   @Test
@@ -163,7 +209,7 @@ class TranscodeDecisionReasonTest {
                 Source.builder().build().probe()),
             client(
                 h264EntryBuilder()
-                    .codecProfiles(List.of(h264(VideoCodecProfile.H264_HIGH, 31)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.H264_HIGH, 31)))
                     .build()),
             List.of(DecisionReason.VIDEO_CODEC_LEVEL_NOT_DECLARED)),
         Arguments.of(
@@ -171,7 +217,7 @@ class TranscodeDecisionReasonTest {
             client(
                 hevcEntryBuilder()
                     .maxBitDepth(8)
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED)),
         Arguments.of(
@@ -180,7 +226,7 @@ class TranscodeDecisionReasonTest {
                 hevcMain10().bitDepthUnreported(true).build().probe()),
             client(
                 hevcEntryBuilder()
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.VIDEO_BIT_DEPTH_UNKNOWN)),
         Arguments.of(
@@ -197,7 +243,7 @@ class TranscodeDecisionReasonTest {
                 hevcMain10().dynamicRange(range(CompatibleBase.PQ)).build().probe()),
             client(
                 hevcEntryBuilder()
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.DYNAMIC_RANGE_NOT_DECLARED)),
         Arguments.of(
@@ -207,7 +253,7 @@ class TranscodeDecisionReasonTest {
             client(
                 hevcEntryBuilder()
                     .compatibleBases(List.of(CompatibleBase.PQ))
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.DYNAMIC_RANGE_NOT_DECLARED)),
         Arguments.of(
@@ -216,7 +262,7 @@ class TranscodeDecisionReasonTest {
                 hevcMain10().dynamicRange(profile81()).build().probe()),
             client(
                 hevcEntryBuilder()
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(
                 DecisionReason.DOLBY_VISION_NOT_DECLARED,
@@ -238,7 +284,7 @@ class TranscodeDecisionReasonTest {
             client(
                 hevcEntryBuilder()
                     .compatibleBases(List.of())
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .dolbyVisionProfiles(
                         List.of(
                             DolbyVisionProfileCapability.builder()
@@ -277,7 +323,7 @@ class TranscodeDecisionReasonTest {
   }
 
   static Stream<Arguments> refusalsOfEachEntry() {
-    var level31 = List.of(h264(VideoCodecProfile.H264_HIGH, 31));
+    var level31 = List.of(upToLevel(VideoCodecProfile.H264_HIGH, 31));
     return Stream.of(
         Arguments.of(
             Named.of(
@@ -307,7 +353,7 @@ class TranscodeDecisionReasonTest {
                     .probe()),
             client(
                 hevcEntryBuilder()
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.VIDEO_CODEC_PROFILE_UNKNOWN),
             List.of(hls(0, DecisionReason.VIDEO_CODEC_PROFILE_UNKNOWN))),
@@ -341,11 +387,11 @@ class TranscodeDecisionReasonTest {
             client(
                 hevcEntryBuilder()
                     .hls(false)
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build(),
                 hevcEntryBuilder()
                     .maxBitDepth(8)
-                    .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                    .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                     .build()),
             List.of(DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED),
             List.of(hls(1, DecisionReason.VIDEO_BIT_DEPTH_NOT_DECLARED))));
@@ -362,7 +408,7 @@ class TranscodeDecisionReasonTest {
         client(
             hevcEntryBuilder()
                 .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
-                .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                 .build());
 
     var decision = decide(source, pqClient);
@@ -438,7 +484,7 @@ class TranscodeDecisionReasonTest {
         client(
             hevcEntryBuilder()
                 .compatibleBases(List.of(CompatibleBase.SDR, CompatibleBase.PQ))
-                .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+                .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
                 .build());
 
     var decision = decide(source, pqClient);
@@ -470,13 +516,13 @@ class TranscodeDecisionReasonTest {
             .maxWidth(1280)
             .maxHeight(720)
             .compatibleBases(pqBases)
-            .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+            .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
             .dolbyVisionProfiles(List.of(profile81Capability()))
             .build();
     var fullSizePq =
         hevcEntryBuilder()
             .compatibleBases(pqBases)
-            .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+            .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
             .build();
 
     var decision = decide(source, client(smallDolbyVision, fullSizePq));
@@ -1051,7 +1097,7 @@ class TranscodeDecisionReasonTest {
     return client(
         hevcEntryBuilder()
             .compatibleBases(everyBase)
-            .codecProfiles(List.of(mainTier(VideoCodecProfile.HEVC_MAIN_10)))
+            .codecProfiles(List.of(upToLevel(VideoCodecProfile.HEVC_MAIN_10, 51)))
             .dolbyVisionProfiles(List.of(profile81Capability()))
             .hdr10Plus(true)
             .build(),
@@ -1062,18 +1108,6 @@ class TranscodeDecisionReasonTest {
     return DolbyVisionProfileCapability.builder()
         .profile(DolbyVisionProfile.PROFILE_8_1)
         .maxLevel(13)
-        .build();
-  }
-
-  private static VideoCodecProfileCapability h264(VideoCodecProfile profile, int maxLevel) {
-    return VideoCodecProfileCapability.builder().profile(profile).maxLevel(maxLevel).build();
-  }
-
-  private static VideoCodecProfileCapability mainTier(VideoCodecProfile profile) {
-    return VideoCodecProfileCapability.builder()
-        .profile(profile)
-        .maxLevel(51)
-        .maxTier(Optional.of(VideoCodecTier.MAIN))
         .build();
   }
 

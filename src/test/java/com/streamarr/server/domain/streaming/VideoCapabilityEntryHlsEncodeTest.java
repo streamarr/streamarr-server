@@ -291,7 +291,6 @@ class VideoCapabilityEntryHlsEncodeTest {
                     VideoCodecProfileCapability.builder()
                         .profile(VideoCodecProfile.AV1_MAIN)
                         .maxLevel(40)
-                        .maxTier(Optional.of(VideoCodecTier.MAIN))
                         .build()))
             .build();
 
@@ -324,7 +323,6 @@ class VideoCapabilityEntryHlsEncodeTest {
                     VideoCodecProfileCapability.builder()
                         .profile(VideoCodecProfile.AV1_MAIN)
                         .maxLevel(40)
-                        .maxTier(Optional.of(VideoCodecTier.MAIN))
                         .build()))
             .build();
 
@@ -350,7 +348,6 @@ class VideoCapabilityEntryHlsEncodeTest {
                     VideoCodecProfileCapability.builder()
                         .profile(VideoCodecProfile.HEVC_MAIN)
                         .maxLevel(40)
-                        .maxTier(Optional.of(VideoCodecTier.MAIN))
                         .build()))
             .build();
 

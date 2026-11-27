@@ -29,7 +29,7 @@ maximum. A client whose limits depend on each other sends one entry for each com
 input VideoCapabilityEntryInput {
     "The codec family that every codec profile of this entry belongs to."
     codecFamily: VideoCodecFamily!
-    "The codec profiles that the player decodes, each with its own maximum level and tier. The entry needs at least one."
+    "The codec profiles that the player decodes, each with its own maximum level. The entry needs at least one."
     codecProfiles: [VideoCodecProfileCapabilityInput!]!
     "The highest bit depth that the player decodes."
     maxBitDepth: Int!
@@ -53,14 +53,12 @@ input VideoCapabilityEntryInput {
     directPlaySampleEntries: [VideoSampleEntry!]! = []
 }
 
-"A codec profile that the player decodes, with the highest level and tier it accepts for that profile."
+"A codec profile that the player decodes, with the highest level it accepts for that profile."
 input VideoCodecProfileCapabilityInput {
     "The codec profile, which must belong to the entry's codec family."
     profile: VideoCodecProfile!
     "The highest codec level, written as the major level × 10 plus the minor level for every codec family: level 5.1 is 51."
     maxLevel: Int!
-    "The highest codec tier. Required for HEVC and AV1 profiles, and absent for H.264 profiles, which have no tier."
-    maxTier: VideoCodecTier
 }
 
 "A Dolby Vision profile whose RPUs the player applies, with the highest Dolby Vision level it accepts for that profile."
@@ -165,12 +163,6 @@ enum VideoCodecProfile {
     AV1_PROFESSIONAL
 }
 
-"The tier of an HEVC or AV1 stream. The High tier is above the Main tier."
-enum VideoCodecTier {
-    MAIN
-    HIGH
-}
-
 "A standard picture format that a player displays without a stream's advanced HDR information."
 enum DeclaredCompatibleBase {
     "Standard dynamic range."
@@ -235,12 +227,6 @@ type CapabilityProfileMismatchError implements InputMutationError & MutationErro
 
 "An audio capability entry gives a minimum block size although its codec is not FLAC, or gives one outside FLAC's block sizes of 16 to 65,535 samples."
 type AudioMinBlockSizeInvalidError implements InputMutationError & MutationError {
-    message: String!
-    inputPath: [String!]!
-}
-
-"A codec profile's maximum tier is absent for an HEVC or AV1 profile, or present for an H.264 profile, which has no tier."
-type VideoCodecTierInvalidError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
 }
