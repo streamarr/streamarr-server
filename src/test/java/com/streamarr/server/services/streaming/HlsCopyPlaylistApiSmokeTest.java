@@ -4,6 +4,7 @@ import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.n
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
+import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 import com.streamarr.server.controllers.StreamController;
@@ -42,6 +43,7 @@ import com.streamarr.server.services.probe.PersistedProbeReader;
 import com.streamarr.server.services.probe.PlaybackProbeClaims;
 import com.streamarr.server.services.streaming.events.JobAttemptCompletedEvent;
 import com.streamarr.server.services.streaming.events.JobAttemptProgressedEvent;
+import com.streamarr.server.services.streaming.events.VideoCopyOutputMismatchEvent;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.RemoteFfprobeService;
@@ -118,6 +120,7 @@ class HlsCopyPlaylistApiSmokeTest {
       new FakeMediaFileContainerInfoRepository();
   private final CapturingKeyframePacketScanRequests packetScans =
       new CapturingKeyframePacketScanRequests();
+  private final CapturingEventPublisher workerEvents = new CapturingEventPublisher();
   private final AuthenticatedIdentity viewer =
       StreamSessionFixture.identityFor(
           StreamSessionFixture.defaultPlaybackAuthorityBuilder().build());
@@ -203,6 +206,7 @@ class HlsCopyPlaylistApiSmokeTest {
   // The application's listeners restart a job attempt's stall clock when its worker reports
   // progress, and settle a stream copy that ran short when its job attempt completes.
   private void onWorkerEvent(Object event) {
+    workerEvents.publishEvent(event);
     var lifecycle = producerLifecycle;
     if (lifecycle == null) {
       return;
@@ -348,6 +352,33 @@ class HlsCopyPlaylistApiSmokeTest {
         Arguments.of("truncated.mkv", INDEX_FIRST_MATROSKA));
   }
 
+  @Test
+  @DisplayName("Should report an output mismatch when a matrix rewrite meets a cut video packet")
+  void shouldReportAnOutputMismatchWhenAMatrixRewriteMeetsACutVideoPacket() throws Exception {
+    var source = generateSource("cut-video-packet.mp4", INDEX_FIRST_MP4);
+    var positions = workerFixture.worker().videoPacketPositions(source);
+    try (var channel = FileChannel.open(source, StandardOpenOption.WRITE)) {
+      // Keep the NAL length and header, but cut its payload.
+      channel.truncate(positions.get(positions.size() / 2) + 5);
+    }
+
+    storeProbeOutcome(source);
+    assertThat(runRequestedPacketScans()).containsExactly(new KeyframePacketScanResult.Completed());
+    var session = startCopyPlayback(source);
+    var playlist = mediaPlaylist();
+
+    assertThat(responseTo(playlist.segments().getLast().uri()).getStatus())
+        .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE.value());
+    await()
+        .atMost(RESPONSE_BOUND)
+        .untilAsserted(
+            () ->
+                assertThat(workerEvents.getEventsOfType(VideoCopyOutputMismatchEvent.class))
+                    .singleElement()
+                    .extracting(VideoCopyOutputMismatchEvent::streamSessionId)
+                    .isEqualTo(session.getSessionId()));
+  }
+
   // 24 fps video with a keyframe only where forced, and AAC audio of the same length.
   private static List<String> source(
       int seconds, List<String> keyframeArguments, List<String> formatArguments) {
@@ -382,9 +413,17 @@ class HlsCopyPlaylistApiSmokeTest {
     return workerFixture.worker().generateMedia(sourceRoot.resolve(fileName), mediaArguments);
   }
 
-  private static void truncateToHalf(Path source) throws Exception {
+  private void truncateToHalf(Path source) throws Exception {
+    var half = Files.size(source) / 2;
+    // Cut before a packet so the stale index is the only defect, not a partial video NAL unit.
+    var boundary =
+        workerFixture.worker().videoPacketPositions(source).stream()
+            .mapToLong(Long::longValue)
+            .filter(position -> position < half)
+            .max()
+            .orElseThrow();
     try (var channel = FileChannel.open(source, StandardOpenOption.WRITE)) {
-      channel.truncate(channel.size() / 2);
+      channel.truncate(boundary);
     }
   }
 

@@ -250,6 +250,13 @@ public final class WorkerContainerFixture implements AutoCloseable {
     return timestamps;
   }
 
+  public List<Long> videoPacketPositions(Path media) throws Exception {
+    return probePackets(media, "v:0", List.of("-show_entries", "packet=pos")).stream()
+        .map(line -> line.replace(",", ""))
+        .map(Long::parseLong)
+        .toList();
+  }
+
   public List<String> videoPacketHashes(Path media) throws Exception {
     return packetHashes(media, "v");
   }
