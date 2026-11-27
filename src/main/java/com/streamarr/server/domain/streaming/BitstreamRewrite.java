@@ -18,5 +18,7 @@ public enum BitstreamRewrite {
    * picture's RPU without its residual, as libdovi's mode 2 does. The copy then carries profile 8.1
    * on its PQ base and lists {@link #NORMALIZE_DOLBY_VISION_RECORD} for the profile 8.1 record.
    */
-  CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1
+  CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1,
+  /** Names the assumed matrix in every H.264 SPS and the sample entry's colour box (ADR 0013). */
+  NAME_ASSUMED_SOURCE_MATRIX
 }

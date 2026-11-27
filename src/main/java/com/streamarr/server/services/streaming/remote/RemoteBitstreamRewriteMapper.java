@@ -12,6 +12,8 @@ final class RemoteBitstreamRewriteMapper {
   @SuppressWarnings("checkstyle:fullyQualifiedName")
   static com.streamarr.transcode.v1.BitstreamRewrite toProto(BitstreamRewrite rewrite) {
     return switch (rewrite) {
+      case NAME_ASSUMED_SOURCE_MATRIX ->
+          com.streamarr.transcode.v1.BitstreamRewrite.BITSTREAM_REWRITE_NAME_ASSUMED_SOURCE_MATRIX;
       case STRIP_DOLBY_VISION ->
           com.streamarr.transcode.v1.BitstreamRewrite.BITSTREAM_REWRITE_STRIP_DOLBY_VISION;
       case STRIP_HDR10_PLUS ->
@@ -35,10 +37,9 @@ final class RemoteBitstreamRewriteMapper {
           Optional.of(BitstreamRewrite.NORMALIZE_DOLBY_VISION_RECORD);
       case BITSTREAM_REWRITE_CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1 ->
           Optional.of(BitstreamRewrite.CONVERT_DOLBY_VISION_PROFILE_7_TO_8_1);
-      case BITSTREAM_REWRITE_NAME_ASSUMED_SOURCE_MATRIX,
-          BITSTREAM_REWRITE_UNSPECIFIED,
-          UNRECOGNIZED ->
-          Optional.empty();
+      case BITSTREAM_REWRITE_NAME_ASSUMED_SOURCE_MATRIX ->
+          Optional.of(BitstreamRewrite.NAME_ASSUMED_SOURCE_MATRIX);
+      case BITSTREAM_REWRITE_UNSPECIFIED, UNRECOGNIZED -> Optional.empty();
       case null -> Optional.empty();
     };
   }
