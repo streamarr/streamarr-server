@@ -1,0 +1,263 @@
+package com.streamarr.server.graphql.resolvers;
+
+import static com.streamarr.server.support.GraphQlTestSupport.graphqlRequest;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.Profile;
+import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupport.TestIdentity;
+import com.streamarr.server.support.ProfileCastSupport;
+import com.streamarr.server.support.StatementCount;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
+/** A Household's Profiles, as Household settings lists them for each kind of reader. */
+@Tag("IntegrationTest")
+@DisplayName("Household Profiles Integration Tests")
+class HouseholdProfilesIT extends AbstractIntegrationTest {
+
+  private static final String HOUSEHOLD_PROFILES =
+      """
+      query { householdProfiles(householdId: "%s") {
+        edges { node { visitor locked available
+          profile { id name kind pinConfigured readerAuthority household { id name } } } } } }
+      """;
+
+  @Autowired private MockMvc mockMvc;
+  @Autowired private ObjectMapper objectMapper;
+  @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private ProfileCastSupport cast;
+  @Autowired private StatementCount statementCount;
+
+  private final List<TestIdentity> identities = new ArrayList<>();
+  private TestIdentity smith;
+  private TestIdentity cabin;
+
+  @BeforeEach
+  void setUp() {
+    smith = track(authTestSupport.createIdentity());
+    cabin = track(authTestSupport.createIdentity());
+  }
+
+  @AfterEach
+  void tearDown() {
+    identities.reversed().forEach(authTestSupport::deleteIdentity);
+  }
+
+  @Test
+  @DisplayName(
+      "Should list every available Profile, and the unavailable ones it manages, with its visitors"
+          + " when a HouseholdAdmin reads its Household")
+  void shouldListEveryAvailableProfileWithItsVisitorsWhenAHouseholdAdminReadsItsHousehold()
+      throws Exception {
+    var alex = cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder().name("Alex"));
+    var mara = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Mara"));
+    cast.makeAvailable(mara, smith);
+    var theo =
+        cast.unavailableProfileManagedBy(
+            smith, ProfileFixture.defaultProfileBuilder().name("Theo"));
+    var otherAdmin = cast.secondAdminOf(smith);
+    cast.unavailableProfileManagedBy(otherAdmin, ProfileFixture.defaultProfileBuilder());
+
+    var rows = householdProfiles(smith, smith);
+
+    assertThat(rows)
+        .extracting(row -> row.path("profile").path("id").asString())
+        .as("the available Profiles, and Theo, unavailable but managed by the reader")
+        .containsExactlyInAnyOrder(
+            idOf(alex), idOf(mara), idOf(otherAdmin.profile()), idOf(smith.profile()), idOf(theo));
+    assertThat(rows)
+        .filteredOn(row -> row.path("visitor").asBoolean())
+        .extracting(row -> row.path("profile").path("id").asString())
+        .as("the visitors: Mara alone belongs to another Household")
+        .containsExactly(idOf(mara));
+  }
+
+  @Test
+  @DisplayName(
+      "Should lock every available Adult without a PIN when a Kid is available in the Household")
+  void shouldLockEveryAvailableAdultWithoutAPinWhenAKidIsAvailableInTheHousehold()
+      throws Exception {
+    var alex = cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder().name("Alex"));
+    var mara = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Mara"));
+    cast.makeAvailable(mara, smith);
+    var theo =
+        cast.unavailableProfileManagedBy(
+            smith, ProfileFixture.defaultProfileBuilder().name("Theo"));
+
+    assertThat(householdProfiles(smith, smith))
+        .extracting(
+            row -> row.path("profile").path("id").asString(), row -> row.path("locked").asBoolean())
+        .as("locked: the Adults without a PIN while Kid Alex is available, never unavailable Theo")
+        .containsExactlyInAnyOrder(
+            tuple(idOf(alex), false),
+            tuple(idOf(mara), true),
+            tuple(idOf(smith.profile()), true),
+            tuple(idOf(theo), false));
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep where a visitor belongs from a HouseholdAdmin who only hosts it when that admin"
+          + " manages another visitor from the same Household")
+  void shouldKeepWhereAVisitorBelongsWhenItsHostManagesAnotherVisitorFromTheSameHousehold()
+      throws Exception {
+    var mara = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Mara"));
+    cast.grant(smith, mara);
+    cast.makeAvailable(mara, smith);
+    var nora = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Nora"));
+    cast.makeAvailable(nora, smith);
+
+    var rows = householdProfiles(smith, smith);
+
+    assertThat(rowOf(rows, mara).path("profile").path("household").path("id").asString())
+        .isEqualTo(cabin.household().getId().toString());
+    assertThat(rowOf(rows, nora).path("profile").path("household").isNull()).isTrue();
+  }
+
+  @Test
+  @DisplayName(
+      "Should list only the Profiles the member manages that belong there when a member who is no"
+          + " admin reads the Household")
+  void shouldListOnlyTheProfilesTheMemberManagesThatBelongThereWhenAMemberWhoIsNoAdminReadsIt()
+      throws Exception {
+    var member = authTestSupport.createHouseholdMemberIdentity(smith);
+    var alex = cast.profileManagedBy(smith, ProfileFixture.defaultProfileBuilder().name("Alex"));
+    cast.grant(member, alex);
+    cast.makeAvailable(alex, cabin);
+    cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder());
+    var mara = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Mara"));
+    cast.grant(member, mara);
+
+    assertThat(householdProfiles(member, smith))
+        .extracting(row -> row.path("profile").path("id").asString())
+        .containsExactlyInAnyOrder(idOf(alex), idOf(member.profile()));
+    assertThat(householdProfiles(member, cabin))
+        .extracting(row -> row.path("profile").path("id").asString())
+        .containsExactly(idOf(mara));
+  }
+
+  @Test
+  @DisplayName(
+      "Should say a Profile it manages is not available there when a HouseholdAdmin reads its"
+          + " Household")
+  void shouldSayAProfileItManagesIsNotAvailableThereWhenAHouseholdAdminReadsItsHousehold()
+      throws Exception {
+    var alex = cast.profileManagedBy(smith, ProfileFixture.defaultProfileBuilder().name("Alex"));
+    var mara =
+        cast.unavailableProfileManagedBy(
+            smith, ProfileFixture.defaultProfileBuilder().name("Mara"));
+
+    var rows = householdProfiles(smith, smith);
+
+    assertThat(rowOf(rows, alex).path("available").asBoolean()).isTrue();
+    assertThat(rowOf(rows, mara).path("available").asBoolean()).isFalse();
+    assertThat(rowOf(rows, mara).path("locked").asBoolean()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should list every available Profile when a ServerAdmin reads a Household it does not belong"
+          + " to")
+  void shouldListEveryAvailableProfileWhenAServerAdminReadsAHouseholdItDoesNotBelongTo()
+      throws Exception {
+    var serverAdmin = track(authTestSupport.createAdminIdentity());
+    var alex = cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder().name("Alex"));
+    var mara = cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder().name("Mara"));
+    cast.makeAvailable(mara, smith);
+    cast.unavailableProfileManagedBy(smith, ProfileFixture.defaultProfileBuilder().name("Theo"));
+
+    assertThat(householdProfiles(serverAdmin, smith))
+        .extracting(row -> row.path("profile").path("id").asString())
+        .containsExactlyInAnyOrder(idOf(alex), idOf(mara), idOf(smith.profile()));
+  }
+
+  @Test
+  @DisplayName("Should give an empty list when the reader's own Personal Profile is supervised")
+  void shouldGiveAnEmptyListWhenTheReadersOwnPersonalProfileIsSupervised() throws Exception {
+    var supervised = cast.supervisedMemberOf(smith);
+
+    assertThat(householdProfiles(supervised, smith)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should give an empty list when a device-bound session reads the Household")
+  void shouldGiveAnEmptyListWhenADeviceBoundSessionReadsTheHousehold() throws Exception {
+    assertThat(householdProfiles(authTestSupport.deviceBoundProfileBearer(smith), smith)).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should read a Household's Profiles in the same number of statements when it holds more")
+  void shouldReadAHouseholdsProfilesInTheSameNumberOfStatementsWhenItHoldsMore() throws Exception {
+    cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder());
+    cast.makeAvailable(cast.profileManagedBy(cabin, ProfileFixture.defaultProfileBuilder()), smith);
+    // The first request fills caches that later requests skip.
+    householdProfiles(smith, smith);
+    var forThreeProfiles = statementCount.statementsWhile(() -> householdProfiles(smith, smith));
+
+    cast.profileManagedBy(smith, ProfileFixture.kidProfileBuilder().maximumAllowedRatingAge(7));
+    cast.unavailableProfileManagedBy(smith, ProfileFixture.defaultProfileBuilder());
+    cast.makeAvailable(cast.profileManagedBy(cabin, ProfileFixture.kidProfileBuilder()), smith);
+    cast.supervisedMemberOf(smith);
+
+    assertThat(householdProfiles(smith, smith)).hasSize(7);
+    assertThat(statementCount.statementsWhile(() -> householdProfiles(smith, smith)))
+        .isEqualTo(forThreeProfiles);
+  }
+
+  private List<JsonNode> householdProfiles(TestIdentity reader, TestIdentity household)
+      throws Exception {
+    return householdProfiles(authTestSupport.accountBearer(reader), household);
+  }
+
+  private List<JsonNode> householdProfiles(String bearer, TestIdentity household) throws Exception {
+    var body =
+        mockMvc
+            .perform(
+                graphqlRequest(bearer, HOUSEHOLD_PROFILES.formatted(household.household().getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var nodes = new ArrayList<JsonNode>();
+    objectMapper
+        .readTree(body)
+        .path("data")
+        .path("householdProfiles")
+        .path("edges")
+        .forEach(edge -> nodes.add(edge.path("node")));
+    return nodes;
+  }
+
+  private static JsonNode rowOf(List<JsonNode> rows, Profile profile) {
+    return rows.stream()
+        .filter(row -> row.path("profile").path("id").asString().equals(idOf(profile)))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private static String idOf(Profile profile) {
+    return profile.getId().toString();
+  }
+
+  private TestIdentity track(TestIdentity identity) {
+    identities.add(identity);
+    return identity;
+  }
+}

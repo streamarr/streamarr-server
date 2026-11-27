@@ -23,6 +23,7 @@ import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.ProfileCastSupport;
 import com.streamarr.server.support.TestFixtureWork;
 import java.time.Duration;
 import java.util.UUID;
@@ -41,6 +42,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
@@ -50,6 +52,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
   @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private ProfileCastSupport cast;
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private ProfileHouseholdShareRepository shareRepository;
@@ -571,6 +574,92 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should leave the Household unnamed when a HouseholdAdmin who only supervises the visiting"
+          + " Kid removes the PIN its home requires")
+  void shouldLeaveTheHouseholdUnnamedWhenAHouseholdAdminWhoOnlySupervisesTheVisitingKidRemovesIt()
+      throws Exception {
+    var cabin = authTestSupport.createIdentity();
+    try {
+      var sam =
+          cast.profileManagedBy(
+              admin,
+              ProfileFixture.kidProfileBuilder()
+                  .name("Sam")
+                  .maximumAllowedRatingAge(13)
+                  .pinHash("{noop}a-pin-hash"));
+      cast.profileManagedBy(
+          admin, ProfileFixture.kidProfileBuilder().name("Mara").maximumAllowedRatingAge(10));
+      cast.makeAvailable(sam, cabin);
+
+      graphql(
+              authTestSupport.accountBearer(cabin),
+              """
+              mutation { removeProfilePin(input: {profileId: "%s"}) {
+                profile { id } userErrors { __typename
+                  ... on ProfilePinRequiredError { householdId message } } } }
+              """
+                  .formatted(sam.getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.removeProfilePin.userErrors[0].__typename")
+                  .value("ProfilePinRequiredError"))
+          .andExpect(jsonPath("$.data.removeProfilePin.userErrors[0].householdId").isEmpty())
+          .andExpect(
+              jsonPath("$.data.removeProfilePin.userErrors[0].message")
+                  .value("Another Household's safety policy requires this PIN."));
+    } finally {
+      authTestSupport.deleteIdentity(cabin);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should name the Household when a HouseholdAdmin who only supervises the visiting Kid"
+          + " removes the PIN its own Household requires")
+  void shouldNameTheHouseholdWhenAHouseholdAdminWhoOnlySupervisesTheVisitingKidRemovesThePin()
+      throws Exception {
+    var cabin = authTestSupport.createIdentity();
+    try {
+      var sam =
+          cast.profileManagedBy(
+              admin,
+              ProfileFixture.kidProfileBuilder()
+                  .name("Sam")
+                  .maximumAllowedRatingAge(13)
+                  .pinHash("{noop}a-pin-hash"));
+      cast.makeAvailable(sam, cabin);
+      cast.profileManagedBy(
+          cabin, ProfileFixture.kidProfileBuilder().name("Theo").maximumAllowedRatingAge(10));
+
+      graphql(
+              authTestSupport.accountBearer(cabin),
+              """
+              mutation { removeProfilePin(input: {profileId: "%s"}) {
+                profile { id } userErrors { __typename
+                  ... on ProfilePinRequiredError { householdId message } } } }
+              """
+                  .formatted(sam.getId()))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.removeProfilePin.userErrors[0].__typename")
+                  .value("ProfilePinRequiredError"))
+          .andExpect(
+              jsonPath("$.data.removeProfilePin.userErrors[0].householdId")
+                  .value(cabin.household().getId().toString()))
+          .andExpect(
+              jsonPath("$.data.removeProfilePin.userErrors[0].message")
+                  .value(
+                      "Removing this PIN would lock the Profile in \"%s\"."
+                          .formatted(cabin.household().getName())));
+    } finally {
+      authTestSupport.deleteIdentity(cabin);
+    }
+  }
+
+  @Test
   @DisplayName("Should return the removed PIN state when removal succeeds")
   void shouldReturnRemovedPinStateWhenRemovalSucceeds() throws Exception {
     graphql(
@@ -708,6 +797,58 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should refuse deletion until the invitation is canceled when an invitation to manage the"
+          + " Profile waits")
+  void shouldRefuseDeletionUntilTheInvitationIsCanceledWhenAnInvitationToManageTheProfileWaits()
+      throws Exception {
+    var orphan = unsharedManagedProfile();
+    var invitationId =
+        objectMapper
+            .readTree(
+                graphql(
+                        authTestSupport.accountBearer(admin),
+                        """
+                        mutation { inviteProfileManager(input: {profileId: "%s",
+                          email: "nobody.%s@example.com"}) { issued { invitation { id } } } }
+                        """
+                            .formatted(orphan.getId(), UUID.randomUUID()))
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString())
+            .at("/data/inviteProfileManager/issued/invitation/id")
+            .asString();
+    var delete =
+        """
+        mutation { deleteProfile(input: {profileId: "%s"}) {
+          deletedProfileId userErrors { __typename } } }
+        """
+            .formatted(orphan.getId());
+
+    graphql(authTestSupport.freshAccountBearer(admin), delete)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.deleteProfile.deletedProfileId").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.deleteProfile.userErrors[0].__typename")
+                .value("ProfileNotDeletableError"));
+    assertThat(profileRepository.findById(orphan.getId())).isPresent();
+
+    graphql(
+            authTestSupport.accountBearer(admin),
+            """
+            mutation { cancelManagerInvitation(input: {invitationId: "%s"}) {
+              userErrors { __typename } } }
+            """
+                .formatted(invitationId))
+        .andExpect(jsonPath("$.data.cancelManagerInvitation.userErrors").isEmpty());
+    graphql(authTestSupport.freshAccountBearer(admin), delete)
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.data.deleteProfile.deletedProfileId").value(orphan.getId().toString()));
+  }
+
+  @Test
   @DisplayName("Should reject deletion when a concurrent share commits first")
   void shouldRejectDeletionWhenConcurrentShareCommitsFirst() throws Exception {
     var orphan = unsharedManagedProfile();
@@ -808,7 +949,7 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     graphql(
             authTestSupport.accountBearer(admin),
             """
-            query { profileAdministration(profileId: "%s") { name kind householdId linked } }
+            query { profileAdministration(profileId: "%s") { name kind household { id } linked } }
             """
                 .formatted(kid.getId()))
         .andExpect(status().isOk())
@@ -829,6 +970,85 @@ class ProfileAdministrationEndpointsIT extends AbstractIntegrationTest {
     } finally {
       authTestSupport.deleteIdentity(stranger);
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should say what the reader is to a visiting Kid when its manager and a hosting"
+          + " HouseholdAdmin read it")
+  void shouldSayWhatTheReaderIsToAVisitingKidWhenItsManagerAndAHostingHouseholdAdminReadIt()
+      throws Exception {
+    var kid = kidProfile();
+    var host = authTestSupport.createIdentity();
+    try {
+      cast.makeAvailable(kid, host);
+
+      assertThat(readerAuthority(admin, kid)).isEqualTo("MANAGES");
+      assertThat(readerAuthority(host, kid)).isEqualTo("SUPERVISES");
+      assertThat(readerAuthority(serverAdmin, kid)).isNull();
+    } finally {
+      authTestSupport.deleteIdentity(host);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should leave the Household out when a hosting HouseholdAdmin reads a visiting Profile")
+  void shouldLeaveTheHouseholdOutWhenAHostingHouseholdAdminReadsAVisitingProfile()
+      throws Exception {
+    var kid = kidProfile();
+    var host = authTestSupport.createIdentity();
+    try {
+      cast.makeAvailable(kid, host);
+
+      assertThat(administration(host, kid).path("household").isNull()).isTrue();
+      assertThat(administration(admin, kid).path("household").path("name").asString())
+          .isEqualTo(admin.household().getName());
+      assertThat(administration(serverAdmin, kid).path("household").path("id").asString())
+          .isEqualTo(admin.household().getId().toString());
+    } finally {
+      authTestSupport.deleteIdentity(host);
+    }
+  }
+
+  private JsonNode administration(AuthTestSupport.TestIdentity reader, Profile profile)
+      throws Exception {
+    var body =
+        graphql(
+                authTestSupport.accountBearer(reader),
+                """
+                query { profileAdministration(profileId: "%s") { household { id name } } }
+                """
+                    .formatted(profile.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(body).path("data").path("profileAdministration");
+  }
+
+  private String readerAuthority(AuthTestSupport.TestIdentity reader, Profile profile)
+      throws Exception {
+    var body =
+        graphql(
+                authTestSupport.accountBearer(reader),
+                """
+                query { profileAdministration(profileId: "%s") { readerAuthority } }
+                """
+                    .formatted(profile.getId()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.errors").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var authority =
+        objectMapper
+            .readTree(body)
+            .path("data")
+            .path("profileAdministration")
+            .path("readerAuthority");
+    return authority.isNull() ? null : authority.asString();
   }
 
   private ResultActions graphql(String bearer, String query) throws Exception {

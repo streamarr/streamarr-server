@@ -22,17 +22,18 @@ import java.util.UUID;
 public interface NotificationRepository {
 
   /**
-   * Tells news to each recipient under the noise rule, in one statement: makes the recipient's
-   * unread news of the kind about the subject, or updates the one it has in place, keeping its
-   * identity. The later event's snapshot and time win; an earlier event that arrives late changes
-   * nothing. Two tells at the same moment update one Notification.
+   * Tells news to each recipient under the noise rule, in one statement whatever its recipients,
+   * none included: makes the recipient's unread news of the kind about the subject, or updates the
+   * one it has in place, keeping its identity. The later event's snapshot and time win; an earlier
+   * event that arrives late changes nothing. Two tells at the same moment update one Notification.
    */
   List<ChangedNotification> tellNews(NotificationTell tell);
 
   /**
-   * Makes a waiting request for each recipient, with the subject's expiry the tell carries. A
-   * request never updates in place: a recipient who already has the request about the subject gets
-   * no second one, and nothing of the first changes.
+   * Makes a waiting request for each recipient, with the subject's expiry the tell carries, in one
+   * statement whatever its recipients, none included. A request never updates in place: a recipient
+   * who already has the request about the subject gets no second one, and nothing of the first
+   * changes.
    */
   List<ChangedNotification> tellRequests(NotificationTell tell);
 

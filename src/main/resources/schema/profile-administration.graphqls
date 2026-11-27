@@ -1,31 +1,196 @@
 # Profile administration (ADR 0024 §ProfileManager, §Profile creation, §PIN safety; ADR 0026).
 
+"""
+A Profile as its administrators see it (ADR 0024): its managers, the HouseholdAdmins of a Household
+where it is available, and ServerAdmins.
+"""
 type ProfileAdministration {
+    "The Profile's id."
     id: ID!
+    "The Profile's name, unique among the Profiles of its Household."
     name: String!
+    "Whether the Profile is an Adult or a Kid."
     kind: ProfileKind!
+    "The oldest rating age the Profile may watch, its Content Ceiling; null for none."
     maximumAllowedRatingAge: Int
+    "The Profile's picture, or null for the default one."
     picture: String
+    "Whether the Profile has a PIN. The PIN itself is never read."
     pinConfigured: Boolean!
+    "Whether the Profile is restricted: a Kid, or an Adult with a Content Ceiling."
     restricted: Boolean!
-    householdId: ID!
+    """
+    The Household the Profile belongs to, for the Profile's managers, for ServerAdmins and for the
+    Accounts of that Household. Null for a HouseholdAdmin of a Household the Profile only visits:
+    where a visitor comes from is not that Household's business.
+    """
+    household: HouseholdSummary
+    "Whether the Profile is an Account's Personal Profile."
     linked: Boolean!
+    """
+    What the requesting Account is to the Profile. MANAGES for each of its ProfileManagers: the
+    Account whose Personal Profile it is while that Profile is an unrestricted Adult, and every
+    Account with a direct grant. SUPERVISES for a HouseholdAdmin who does not manage it while the
+    restricted Profile is available in that Account's Household. Null for everyone else, a
+    ServerAdmin who does not manage it included.
+    """
+    readerAuthority: ProfileAuthority
 }
 
-input CreateProfileInput {
-    householdId: ID!
+"One Profile an Account manages, in Household settings' list of them."
+type ManagedProfile {
+    "The Profile's administrative details, with the Household it belongs to."
+    profile: ProfileAdministration!
+    """
+    Whether the Profile is available in the Household it belongs to. Management outlasts the end of
+    its share there, so a Profile its manager can still open may not be.
+    """
+    available: Boolean!
+}
+
+"A page of the Profiles an Account manages."
+type ManagedProfileConnection {
+    "The Profiles the Account manages on this page, in the list's order."
+    edges: [ManagedProfileEdge!]!
+    "Where this page sits in the list, to ask for the page after or before it."
+    pageInfo: PageInfo!
+}
+
+"One Profile an Account manages and where it sits in the list."
+type ManagedProfileEdge {
+    "The Profile."
+    node: ManagedProfile!
+    "Where this Profile sits in the list, to page from it."
+    cursor: String!
+}
+
+"One row of a Household's Profiles in Household settings."
+type HouseholdProfile {
+    "The Profile's administrative details. Its household is null for a visitor the reader does not manage."
+    profile: ProfileAdministration!
+    "Whether the Profile belongs to another Household and is shared into this one. The row never says which."
+    visitor: Boolean!
+    """
+    Whether this Household's PIN safety rule keeps the Profile from being selected here until it
+    has a PIN. False while the Profile is not available here.
+    """
+    locked: Boolean!
+    """
+    Whether the Profile is available in this Household. False only for a Profile the reader manages
+    that belongs here after its share here ended; a HouseholdAdmin who does not manage it no longer
+    sees it in the list.
+    """
+    available: Boolean!
+}
+
+"A page of a Household's Profiles."
+type HouseholdProfileConnection {
+    "The Household's Profiles on this page, in the list's order."
+    edges: [HouseholdProfileEdge!]!
+    "Where this page sits in the list, to ask for the page after or before it."
+    pageInfo: PageInfo!
+}
+
+"One of a Household's Profiles and where it sits in the list."
+type HouseholdProfileEdge {
+    "The Profile."
+    node: HouseholdProfile!
+    "Where this Profile sits in the list, to page from it."
+    cursor: String!
+}
+
+"What an Account is to a Profile (ADR 0024)."
+enum ProfileAuthority {
+    "A ProfileManager: edits the Profile and its policy, manages its PIN, invites managers and offers it to Households."
+    MANAGES
+    """
+    A HouseholdAdmin where the restricted Profile is available: edits its name, picture, Content
+    Ceiling and PIN, never its kind, and never leaves it unrestricted.
+    """
+    SUPERVISES
+}
+
+"""
+What a change of a Profile's kind or Content Ceiling, or a new Profile, would lock (ADR 0024 §PIN
+safety), as the asking Account may already see it. The change itself is never refused for what it
+locks.
+"""
+type ProfileLockPreview {
+    """
+    Whether the changed Profile, or the new one, would itself be locked until it has a PIN in any
+    Household where it is available, whether or not households names that Household. A changed
+    Profile that is locked there already does not count.
+    """
+    locksThisProfile: Boolean!
+    """
+    One entry for each Household where something would be locked that is not locked now, among the
+    Households where the asking Account may already see that the Profile is available: those it
+    may use, every Household where the changed Profile is available when it manages that Profile,
+    and every one for a ServerAdmin. A new Profile's Household is always listed. Its own Household
+    comes first, then the others by name.
+    """
+    households: [HouseholdLockPreview!]!
+    """
+    Whether Profiles that households does not name would be locked too: Profiles in a Household it
+    leaves out, and Profiles in a listed Household that the asking Account may not see there. It
+    says neither which, nor how many, nor where.
+    """
+    otherProfilesWillLock: Boolean!
+}
+
+"What a change, or a new Profile, would lock in one Household."
+type HouseholdLockPreview {
+    "The Household where these Profiles would be locked."
+    household: HouseholdSummary!
+    """
+    The other Profiles that would be locked there until each has a PIN, by name: those the asking
+    Account may see there, because it may use the Household, manages the Profile, or is a
+    ServerAdmin. otherProfilesWillLock says whether there are more.
+    """
+    profiles: [LockedProfile!]!
+    """
+    Whether the changed Profile, or the new one, would itself be locked there until it has a PIN.
+    A changed Profile that is locked there already does not count.
+    """
+    locksThisProfile: Boolean!
+}
+
+"A Profile that a change would lock, as the Household's Profile picker shows it."
+type LockedProfile {
+    "The Profile's id."
+    id: ID!
+    "The Profile's name."
     name: String!
+    "The Profile's picture, or null for the default one."
+    picture: String
+}
+
+"What createProfile takes."
+input CreateProfileInput {
+    "The Household the new Profile belongs to and is available in."
+    householdId: ID!
+    "The Profile's name, unique among the Household's Profiles."
+    name: String!
+    "Whether the Profile is an Adult or a Kid."
     kind: ProfileKind!
+    """
+    The oldest rating age the Profile may watch, its Content Ceiling; null for none. It may not be
+    negative.
+    """
     maximumAllowedRatingAge: Int
     "Required when a remote ServerAdmin creates a restricted Profile."
     profileManagerAccountId: ID
 }
 
+"What createProfile answers: the change when it is made, and why when it is refused."
 type CreateProfilePayload {
+    "The Profile as it is after the change; null when the change was refused."
     profile: ProfileAdministration
+    "Why the change was refused; empty when it was made."
     userErrors: [CreateProfileError!]!
 }
 
+"The refusals createProfile may answer with, in userErrors."
 union CreateProfileError =
     HouseholdNotFoundError
   | ProfileNameRequiredError
@@ -35,43 +200,64 @@ union CreateProfileError =
   | AccountNotFoundError
   | MaximumAllowedRatingAgeInvalidError
 
+"What renameProfile takes."
 input RenameProfileInput {
+    "The Profile to rename."
     profileId: ID!
+    "The new name, unique among the Profiles of the Profile's Household."
     name: String!
 }
 
+"What renameProfile answers: the change when it is made, and why when it is refused."
 type RenameProfilePayload {
+    "The Profile as it is after the change; null when the change was refused."
     profile: ProfileAdministration
+    "Why the change was refused; empty when it was made."
     userErrors: [RenameProfileError!]!
 }
 
+"The refusals renameProfile may answer with, in userErrors."
 union RenameProfileError =
     ProfileNotFoundError
   | ProfileNameRequiredError
   | ProfileNameTakenError
 
+"What setProfilePicture takes."
 input SetProfilePictureInput {
+    "The Profile whose picture changes."
     profileId: ID!
+    "The picture to show for the Profile."
     picture: String!
 }
 
+"What setProfilePicture answers: the change when it is made, and why when it is refused."
 type SetProfilePicturePayload {
+    "The Profile as it is after the change; null when the change was refused."
     profile: ProfileAdministration
+    "Why the change was refused; empty when it was made."
     userErrors: [SetProfilePictureError!]!
 }
 
+"The refusals setProfilePicture may answer with, in userErrors."
 union SetProfilePictureError = ProfileNotFoundError
 
+"What changeProfileKind takes."
 input ChangeProfileKindInput {
+    "The Profile whose kind changes."
     profileId: ID!
+    "The kind to give the Profile."
     kind: ProfileKind!
 }
 
+"What changeProfileKind answers: the change when it is made, and why when it is refused."
 type ChangeProfileKindPayload {
+    "The Profile as it is after the change; null when the change was refused."
     profile: ProfileAdministration
+    "Why the change was refused; empty when it was made."
     userErrors: [ChangeProfileKindError!]!
 }
 
+"The refusals changeProfileKind may answer with, in userErrors."
 union ChangeProfileKindError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
@@ -80,16 +266,26 @@ union ChangeProfileKindError =
   | RestrictedProfileRequiresHouseholdAdminError
   | MaximumAllowedRatingAgeInvalidError
 
+"What setProfileMaximumAllowedRatingAge takes."
 input SetProfileMaximumAllowedRatingAgeInput {
+    "The Profile whose Content Ceiling changes."
     profileId: ID!
+    "The oldest rating age the Profile may watch, its Content Ceiling. It may not be negative."
     maximumAllowedRatingAge: Int!
 }
 
+"""
+What setProfileMaximumAllowedRatingAge answers: the change when it is made, and why when it is
+refused.
+"""
 type SetProfileMaximumAllowedRatingAgePayload {
+    "The Profile as it is after the change; null when the change was refused."
     profile: ProfileAdministration
+    "Why the change was refused; empty when it was made."
     userErrors: [SetProfileMaximumAllowedRatingAgeError!]!
 }
 
+"The refusals setProfileMaximumAllowedRatingAge may answer with, in userErrors."
 union SetProfileMaximumAllowedRatingAgeError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
@@ -98,15 +294,24 @@ union SetProfileMaximumAllowedRatingAgeError =
   | RestrictedProfileRequiresHouseholdAdminError
   | MaximumAllowedRatingAgeInvalidError
 
+"What removeProfileMaximumAllowedRatingAge takes."
 input RemoveProfileMaximumAllowedRatingAgeInput {
+    "The Profile whose Content Ceiling is removed."
     profileId: ID!
 }
 
+"""
+What removeProfileMaximumAllowedRatingAge answers: the change when it is made, and why when it is
+refused.
+"""
 type RemoveProfileMaximumAllowedRatingAgePayload {
+    "The Profile as it is after the change; null when the change was refused."
     profile: ProfileAdministration
+    "Why the change was refused; empty when it was made."
     userErrors: [RemoveProfileMaximumAllowedRatingAgeError!]!
 }
 
+"The refusals removeProfileMaximumAllowedRatingAge may answer with, in userErrors."
 union RemoveProfileMaximumAllowedRatingAgeError =
     ProfileNotFoundError
   | ReauthenticationRequiredError
@@ -115,55 +320,85 @@ union RemoveProfileMaximumAllowedRatingAgeError =
   | RestrictedProfileRequiresHouseholdAdminError
   | MaximumAllowedRatingAgeInvalidError
 
+"What setProfilePin takes."
 input SetProfilePinInput {
+    "The Profile whose PIN is set."
     profileId: ID!
+    "The new PIN, 4 to 8 digits."
     pin: String!
 }
 
+"What setProfilePin answers: the change when it is made, and why when it is refused."
 type SetProfilePinPayload {
+    "The Profile as it is after the change; null when the change was refused."
     profile: ProfileAdministration
+    "Why the change was refused; empty when it was made."
     userErrors: [SetProfilePinError!]!
 }
 
+"The refusals setProfilePin may answer with, in userErrors."
 union SetProfilePinError = ProfileNotFoundError | InvalidProfilePinError
 
+"What removeProfilePin takes."
 input RemoveProfilePinInput {
+    "The Profile whose PIN is removed."
     profileId: ID!
 }
 
+"What removeProfilePin answers: the change when it is made, and why when it is refused."
 type RemoveProfilePinPayload {
+    "The Profile as it is after the change; null when the change was refused."
     profile: ProfileAdministration
+    "Why the change was refused; empty when it was made."
     userErrors: [RemoveProfilePinError!]!
 }
 
+"The refusals removeProfilePin may answer with, in userErrors."
 union RemoveProfilePinError = ProfileNotFoundError | ProfilePinRequiredError
 
+"What administrativelyResetProfilePin takes."
 input AdministrativelyResetProfilePinInput {
+    "The Profile whose PIN the ServerAdmin resets."
     profileId: ID!
+    "The new PIN, 4 to 8 digits."
     pin: String!
+    "Why the ServerAdmin overrides, kept in the security audit log; it may not be blank."
     reason: String!
 }
 
+"""
+What administrativelyResetProfilePin answers: the change when it is made, and why when it is
+refused.
+"""
 type AdministrativelyResetProfilePinPayload {
+    "The Profile as it is after the change; null when the change was refused."
     profile: ProfileAdministration
+    "Why the change was refused; empty when it was made."
     userErrors: [AdministrativelyResetProfilePinError!]!
 }
 
+"The refusals administrativelyResetProfilePin may answer with, in userErrors."
 union AdministrativelyResetProfilePinError =
     ProfileNotFoundError
   | InvalidProfilePinError
   | ReasonRequiredError
   | ReauthenticationRequiredError
 
+"What deleteProfile takes."
 input DeleteProfileInput {
+    "The Profile to delete."
     profileId: ID!
 }
 
+"What deleteProfile answers: the change when it is made, and why when it is refused."
 type DeleteProfilePayload {
+    "The id the deleted Profile had; null when the deletion was refused."
     deletedProfileId: ID
+    "Why the change was refused; empty when it was made."
     userErrors: [DeleteProfileError!]!
 }
 
+"The refusals deleteProfile may answer with, in userErrors."
 union DeleteProfileError =
     ProfileNotFoundError
   | ProfileNotDeletableError

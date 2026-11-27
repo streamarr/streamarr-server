@@ -17,6 +17,10 @@ enum ProfileShareStatus {
     ENDED
 }
 
+"""
+A Profile's share into a Household (ADR 0024 §Profile sharing): an offer while PENDING, and the
+Profile available there while ACTIVE.
+"""
 type ProfileShare {
     id: ID!
     profileId: ID!
@@ -147,11 +151,13 @@ type ProfileShareChange {
     profileSharesEdge(statuses: [ProfileShareStatus!]): ProfileShareEdge
 }
 
+"A page of Profile shares."
 type ProfileShareConnection {
     edges: [ProfileShareEdge!]!
     pageInfo: PageInfo!
 }
 
+"One Profile share and where it sits in its list."
 type ProfileShareEdge implements OrderedEdge {
     node: ProfileShare!
     cursor: String!

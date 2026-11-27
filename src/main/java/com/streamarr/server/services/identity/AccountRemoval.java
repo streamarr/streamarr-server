@@ -11,11 +11,11 @@ import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.PasswordResetCodeRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
-import com.streamarr.server.repositories.auth.ProfileManagerInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import java.time.Clock;
 import java.time.Instant;
@@ -36,6 +36,7 @@ import org.springframework.stereotype.Component;
 class AccountRemoval {
 
   private static final String PROFILE_DELETED = "Profile deleted";
+  private static final String PROFILE_TRANSFERRED = "Profile transferred";
 
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
@@ -43,7 +44,7 @@ class AccountRemoval {
   private final ProfileShareLifecycle shareLifecycle;
   private final NotificationDismissals notificationDismissals;
   private final ProfileManagerRepository profileManagerRepository;
-  private final ProfileManagerInvitationRepository managerInvitationRepository;
+  private final ProfileManagerInvitationLifecycle managerInvitationLifecycle;
   private final AccountInvitationRepository accountInvitationRepository;
   private final PasswordResetCodeRepository passwordResetCodeRepository;
   private final AuthSessionRepository authSessionRepository;
@@ -72,7 +73,14 @@ class AccountRemoval {
 
     updateSourceHouseholdAccess(transfer);
     shareLifecycle.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
+    invalidateWaitingProposalsOfMovedProfile(profileId, now);
     shareCodeIssuers.afterIssuerChanged(transfer.accountId(), now);
+  }
+
+  // Runs after the destination share is in place: a waiting offer into the destination became it.
+  private void invalidateWaitingProposalsOfMovedProfile(UUID profileId, Instant now) {
+    managerInvitationLifecycle.invalidatePendingByProfileId(profileId, PROFILE_TRANSFERRED, now);
+    shareLifecycle.invalidatePendingByProfileId(profileId, PROFILE_TRANSFERRED, now);
   }
 
   private HouseholdRole destinationRole(UUID householdId) {
@@ -109,9 +117,9 @@ class AccountRemoval {
         account.getId(), "issuer deleted", now);
     passwordResetCodeRepository.invalidatePendingPasswordResetCodesIssuedBy(
         account.getId(), "issuer deleted", now);
-    managerInvitationRepository.invalidatePendingByRecipientAccountId(
+    managerInvitationLifecycle.invalidatePendingByRecipientAccountId(
         account.getId(), "recipient deleted", now);
-    managerInvitationRepository.invalidatePendingInvitedBy(
+    managerInvitationLifecycle.invalidatePendingInvitedBy(
         account.getId(), "inviting manager deleted", now);
     // A share write holds its Profile and then the Accounts it tells, so the removal holds the
     // Personal Profile before it holds the Account, in the same order.
@@ -139,6 +147,9 @@ class AccountRemoval {
     var now = deletion.now();
     // The preserved Profile needs its replacement anchor before the person leaves it behind.
     profileManagerRepository.tryGrantDirectManagement(replacementManagerAccountId, profileId);
+    // An invitation to the new manager must not outlive the grant (ADR 0024 §Invitations).
+    managerInvitationLifecycle.invalidatePendingByProfileIdAndRecipientAccountId(
+        profileId, replacementManagerAccountId, "named Account became a manager", now);
     shareLifecycle.convertMembershipShareToVisitorShare(profileId, sourceHouseholdId);
     deleteAccountRow(account);
     if (sourceHouseholdId.equals(destinationHouseholdId)) {
@@ -154,6 +165,7 @@ class AccountRemoval {
             share -> shareLifecycle.tryEndActive(share.getId(), deletion.sourceShareEnding(), now));
     shareLifecycle.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
     shareLifecycle.convertMembershipShareToVisitorShare(profileId, destinationHouseholdId);
+    invalidateWaitingProposalsOfMovedProfile(profileId, now);
   }
 
   /** Deletes an unlinked Profile with its selections and pending Profile-bound artifacts. */
@@ -161,7 +173,7 @@ class AccountRemoval {
     // Locked before its shares are read, so none ends unseen before they are announced.
     profileRepository.lockById(profileId);
     accountInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
-    managerInvitationRepository.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
+    managerInvitationLifecycle.invalidatePendingByProfileId(profileId, PROFILE_DELETED, now);
     // Read after any wait above, so an offer whose time ran out meanwhile is stored as expired.
     shareLifecycle.invalidatePendingByProfileId(profileId, PROFILE_DELETED, clock.instant());
     shareRepository

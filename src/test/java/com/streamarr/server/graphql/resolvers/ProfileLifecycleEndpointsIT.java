@@ -40,14 +40,14 @@ class ProfileLifecycleEndpointsIT extends IdentityLifecycleEndpointTestSupport {
             """
             mutation { transferProfile(input: {profileId: "%s",
               destinationHouseholdId: "%s", profileManagerAccountId: "%s"}) {
-              profile { householdId } userErrors { __typename } } }
+              profile { household { id } } userErrors { __typename } } }
             """
                 .formatted(orphan.getId(), host.household().getId(), host.account().getId()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.transferProfile.userErrors").isEmpty())
         .andExpect(
-            jsonPath("$.data.transferProfile.profile.householdId")
+            jsonPath("$.data.transferProfile.profile.household.id")
                 .value(host.household().getId().toString()));
 
     assertThat(

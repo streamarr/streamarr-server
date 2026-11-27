@@ -31,6 +31,7 @@ import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -43,8 +44,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -61,8 +62,9 @@ class ProfileManagerAdministrationServiceTest {
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
-  private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeProfileManagerRepository managers = new FakeProfileManagerRepository();
+  private final FakeUserAccountRepository accounts =
+      new FakeUserAccountRepository(profiles, managers);
   private final FakeProfileManagerInvitationRepository invitations =
       new FakeProfileManagerInvitationRepository();
   private final FakeSecurityAuditEventRepository audit = new FakeSecurityAuditEventRepository();
@@ -72,23 +74,7 @@ class ProfileManagerAdministrationServiceTest {
   private final FakeAuthorizationService authorization =
       new FakeAuthorizationService(AuthenticatedIdentityFixture.accountScopedBuilder().build());
 
-  private final ProfileManagerAdministrationService service =
-      new ProfileManagerAdministrationService(
-          authorization,
-          invitations,
-          managers,
-          profiles,
-          accounts,
-          new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
-          audit,
-          new OpaqueOneTimeCodes(),
-          credentialAttempts.gate(clock),
-          () -> INVITATION_LIFETIME,
-          new MutationTransactions(
-              new FakeTransactionManager(), new ConstraintViolationTranslator()),
-          new ProfileManagerInvitationsList(invitations, clock),
-          new ReceivedManagerInvitationsList(invitations, clock),
-          clock);
+  private final ProfileManagerAdministrationService service = serviceAt(clock);
 
   private UserAccount inviter;
   private UserAccount recipient;
@@ -102,17 +88,40 @@ class ProfileManagerAdministrationServiceTest {
     managers.tryGrantDirectManagement(inviter.getId(), orphan.getId());
   }
 
+  private ProfileManagerAdministrationService serviceAt(Clock clock) {
+    return new ProfileManagerAdministrationService(
+        authorization,
+        invitations,
+        new ProfileManagerInvitationLifecycle(invitations, new CapturingEventPublisher()),
+        managers,
+        profiles,
+        accounts,
+        new LeavingManagerProposals(
+            new ProfileManagerInvitationLifecycle(invitations, new CapturingEventPublisher()),
+            new ProfileShareLifecycle(shares, new CapturingEventPublisher())),
+        new ProfileManagementNotifications(profiles, new CapturingEventPublisher()),
+        audit,
+        new OpaqueOneTimeCodes(),
+        credentialAttempts.gate(clock),
+        () -> INVITATION_LIFETIME,
+        new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
+        new ProfileManagerInvitationsList(invitations, clock),
+        new ReceivedManagerInvitationsList(invitations, clock),
+        clock);
+  }
+
   @Test
   @DisplayName("Should replace the older pending invitation when the same pair is invited again")
   void shouldReplaceOlderPendingInvitationWhenSamePairIsInvitedAgain() {
-    var first = issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+    var first =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
     assertThat(first.code()).isNotBlank();
     assertThat(first.invitation().getProfileName()).isEqualTo("Joe");
     assertThat(first.invitation().getInviterDisplayName()).isEqualTo(inviter.getDisplayName());
     assertThat(first.toString()).doesNotContain(first.code());
 
     var second =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
     assertThat(invitations.findById(first.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(second.invitation().getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
@@ -123,17 +132,32 @@ class ProfileManagerAdministrationServiceTest {
       "Should expire the invitation after the invitation lifetime when a manager is invited")
   void shouldExpireInvitationAfterInvitationLifetimeWhenManagerIsInvited() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
 
     assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getExpiresAt())
         .isEqualTo(NOW.plus(INVITATION_LIFETIME));
   }
 
   @Test
+  @DisplayName(
+      "Should answer the expiry to the microsecond, as PostgreSQL stores it, when the clock reads"
+          + " nanoseconds")
+  void shouldAnswerTheExpiryToTheMicrosecondAsPostgresStoresItWhenTheClockReadsNanoseconds() {
+    var fine = Clock.fixed(NOW.plusNanos(445_953_526), ZoneOffset.UTC);
+
+    var issued =
+        issued(
+            serviceAt(fine).inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
+
+    assertThat(issued.invitation().getExpiresAt())
+        .isEqualTo(NOW.plusNanos(445_953_000).plus(INVITATION_LIFETIME));
+  }
+
+  @Test
   @DisplayName("Should cancel a pending invitation when its inviter acts")
   void shouldCancelPendingInvitationWhenInviterActs() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
 
     var canceled = service.cancelManagerInvitation(identity(), issued.invitation().getId());
 
@@ -149,7 +173,7 @@ class ProfileManagerAdministrationServiceTest {
   @DisplayName("Should hide an invitation when an unauthorized cancellation caller cannot view it")
   void shouldHideInvitationWhenUnauthorizedCancellationCallerCannotViewIt() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
     var outsider =
         AuthenticatedIdentityFixture.accountScopedBuilder().accountId(UUID.randomUUID()).build();
     authorization.denyAll();
@@ -162,8 +186,12 @@ class ProfileManagerAdministrationServiceTest {
   @DisplayName("Should forbid cancellation when an unauthorized caller can view the invitation")
   void shouldForbidCancellationWhenUnauthorizedCallerCanViewInvitation() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
-    authorization.denyAll();
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.ViewReceivedManagerInvitation
+                ? new Decision.Allowed<>(AuthorizationUnit.INSTANCE)
+                : new Decision.Denied<>(Decision.DenialReason.POLICY));
     var caller = recipientIdentity();
     var invitationId = issued.invitation().getId();
 
@@ -172,24 +200,63 @@ class ProfileManagerAdministrationServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should reject an invitation when the recipient is missing, ineligible, or already a manager")
-  void shouldRejectInvitationWhenRecipientIsMissingIneligibleOrAlreadyManager() {
+  @DisplayName("Should refuse the address when it is blank or not the shape of an email address")
+  void shouldRefuseTheAddressWhenItIsBlankOrNotTheShapeOfAnEmailAddress() {
+    assertThat(rejectionOf(service.inviteProfileManager(identity(), orphan.getId(), "  ")))
+        .isInstanceOf(ManagerRejections.EmailRequired.class);
+    assertThat(rejectionOf(service.inviteProfileManager(identity(), orphan.getId(), "mara")))
+        .isInstanceOf(ManagerRejections.EmailInvalid.class);
+    assertThat(invitations.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should refuse an eleventh invitation when ten wait for the Profile")
+  void shouldRefuseAnEleventhInvitationWhenTenWaitForTheProfile() {
+    inviteTenAddresses();
+
     assertThat(
             rejectionOf(
-                service.inviteProfileManager(identity(), orphan.getId(), UUID.randomUUID())))
-        .isInstanceOf(ManagerRejections.RecipientNotFound.class);
+                service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail())))
+        .isInstanceOf(ManagerRejections.ManagerInvitationLimitReached.class);
+    assertThat(waitingFor(orphan)).hasSize(10);
+  }
 
-    var restricted = accounts.save(AccountFixture.defaultAccountBuilder().build());
-    profiles.save(ProfileFixture.kidProfileBuilder().id(restricted.getPersonalProfileId()).build());
+  @Test
+  @DisplayName("Should count it toward the limit when nobody can answer the invitation")
+  void shouldCountItTowardTheLimitWhenNobodyCanAnswerTheInvitation() {
+    inviteTenAddresses();
+
+    assertThat(waitingFor(orphan))
+        .hasSize(10)
+        .allSatisfy(invitation -> assertThat(invitation.getRecipientAccountId()).isNull());
     assertThat(
             rejectionOf(
-                service.inviteProfileManager(identity(), orphan.getId(), restricted.getId())))
-        .isInstanceOf(ManagerRejections.RecipientNotEligible.class);
+                service.inviteProfileManager(identity(), orphan.getId(), "sam@example.com")))
+        .isInstanceOf(ManagerRejections.ManagerInvitationLimitReached.class);
+  }
 
-    assertThat(
-            rejectionOf(service.inviteProfileManager(identity(), orphan.getId(), inviter.getId())))
-        .isInstanceOf(ManagerRejections.AlreadyManager.class);
+  @Test
+  @DisplayName("Should make room when a waiting invitation expires")
+  void shouldMakeRoomWhenAWaitingInvitationExpires() {
+    inviteTenAddresses();
+    var lapsing = waitingFor(orphan).getFirst();
+    lapsing.setExpiresAt(NOW);
+
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
+
+    assertThat(issued.invitation().getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("Should replace the invitation when ten wait and the same address is invited again")
+  void shouldReplaceTheInvitationWhenTenWaitAndTheSameAddressIsInvitedAgain() {
+    inviteTenAddresses();
+
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), "Person.0@Example.com"));
+
+    assertThat(waitingFor(orphan)).hasSize(10).contains(issued.invitation());
   }
 
   @Test
@@ -198,7 +265,7 @@ class ProfileManagerAdministrationServiceTest {
     authorization.denyAll();
     assertThat(
             rejectionOf(
-                service.inviteProfileManager(identity(), orphan.getId(), recipient.getId())))
+                service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail())))
         .isInstanceOf(ManagerRejections.ProfileNotFound.class);
   }
 
@@ -209,7 +276,7 @@ class ProfileManagerAdministrationServiceTest {
 
     assertThat(
             rejectionOf(
-                service.inviteProfileManager(identity(), UUID.randomUUID(), recipient.getId())))
+                service.inviteProfileManager(identity(), UUID.randomUUID(), recipient.getEmail())))
         .isInstanceOf(ManagerRejections.ProfileNotFound.class);
     assertThat(authorization.recordedIntents()).isEmpty();
   }
@@ -224,33 +291,22 @@ class ProfileManagerAdministrationServiceTest {
                 : new Decision.Denied<>(Decision.DenialReason.POLICY));
     var caller = identity();
     var profileId = orphan.getId();
-    var recipientId = recipient.getId();
+    var address = recipient.getEmail();
 
-    assertThatThrownBy(() -> service.inviteProfileManager(caller, profileId, recipientId))
+    assertThatThrownBy(() -> service.inviteProfileManager(caller, profileId, address))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
   @Test
-  @DisplayName("Should allow only one decision when a pending invitation is presented again")
-  void shouldAllowOnlyOneDecisionWhenPendingInvitationIsPresentedAgain() {
+  @DisplayName("Should allow only one decision when the named Account accepts by id twice")
+  void shouldAllowOnlyOneDecisionWhenTheNamedAccountAcceptsByIdTwice() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
 
-    var accepted = service.acceptManagerInvitation(recipientIdentity(), code(issued.code()));
+    var accepted =
+        service.acceptManagerInvitation(recipientIdentity(), issued.invitation().getId());
     assertThat(accepted).isInstanceOf(Outcome.Accepted.class);
-    assertThat(credentialAttempts.attempts())
-        .singleElement()
-        .satisfies(
-            attempt -> {
-              assertThat(attempt.metadata())
-                  .isEqualTo(
-                      CredentialAttemptMetadata.builder()
-                          .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
-                          .credentialId(issued.invitation().getId())
-                          .ipAddress("192.0.2.30")
-                          .build());
-              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
-            });
+    assertThat(credentialAttempts.attempts()).isEmpty();
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isTrue();
     assertThat(audit.entries())
         .singleElement()
@@ -265,38 +321,137 @@ class ProfileManagerAdministrationServiceTest {
             });
 
     assertThat(
-            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(issued.code()))))
-        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+            rejectionOf(
+                service.acceptManagerInvitation(recipientIdentity(), issued.invitation().getId())))
+        .isInstanceOf(ManagerRejections.InvitationNotPending.class);
     assertThat(
             rejectionOf(service.cancelManagerInvitation(identity(), issued.invitation().getId())))
         .isInstanceOf(ManagerRejections.InvitationNotPending.class);
   }
 
   @Test
+  @DisplayName(
+      "Should answer as for a missing invitation when another Account decides by id or no"
+          + " invitation has the id")
+  void shouldAnswerAsForAMissingInvitationWhenAnotherAccountDecidesByIdOrNoInvitationHasTheId() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
+    // Cedar's named-recipient policy is stubbed as the denial here and proven in the policy tests.
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.AcceptManagerInvitation
+                    || intent instanceof Intent.DeclineManagerInvitation
+                ? new Decision.Denied<>(Decision.DenialReason.POLICY)
+                : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+
+    for (var invitationId : List.of(issued.invitation().getId(), UUID.randomUUID())) {
+      assertThat(rejectionOf(service.acceptManagerInvitation(identity(), invitationId)))
+          .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+      assertThat(rejectionOf(service.declineManagerInvitation(identity(), invitationId)))
+          .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    }
+
+    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.PENDING);
+  }
+
+  @Test
   @DisplayName("Should surface authorization unavailable when invitation acceptance cannot decide")
   void shouldSurfaceAuthorizationUnavailableWhenInvitationAcceptanceCannotDecide() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
     var caller = recipientIdentity();
-    var code = code(issued.code());
+    var invitationId = issued.invitation().getId();
 
-    assertThatThrownBy(() -> service.acceptManagerInvitation(caller, code))
+    assertThatThrownBy(() -> service.acceptManagerInvitation(caller, invitationId))
         .isInstanceOf(AuthorizationUnavailableException.class);
+  }
+
+  @Test
+  @DisplayName("Should answer the invitation when the named Account looks up its code")
+  void shouldAnswerTheInvitationWhenTheNamedAccountLooksUpItsCode() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
+
+    var found = service.lookUpManagerInvitationCode(recipientIdentity(), code(issued.code()));
+
+    assertThat(found)
+        .isEqualTo(
+            Outcome.accepted(invitations.findById(issued.invitation().getId()).orElseThrow()));
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt -> {
+              assertThat(attempt.metadata())
+                  .isEqualTo(
+                      CredentialAttemptMetadata.builder()
+                          .kind(CredentialKind.PROFILE_MANAGER_INVITATION_CODE)
+                          .credentialId(issued.invitation().getId())
+                          .ipAddress("192.0.2.30")
+                          .build());
+              assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.SUCCEEDED);
+            });
+    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
+        .isEqualTo(ProfileManagerInvitationStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName(
+      "Should count the lookup and answer as for a missing invitation when another Account"
+          + " presents the code")
+  void shouldCountTheLookupAndAnswerAsForAMissingInvitationWhenAnotherAccountPresentsTheCode() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.ViewReceivedManagerInvitation
+                ? new Decision.Denied<>(Decision.DenialReason.POLICY)
+                : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+
+    assertThat(rejectionOf(service.lookUpManagerInvitationCode(identity(), code(issued.code()))))
+        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+    assertThat(credentialAttempts.attempts())
+        .singleElement()
+        .satisfies(
+            attempt ->
+                assertThat(attempt.metadata().credentialId())
+                    .isEqualTo(issued.invitation().getId()));
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse a lookup before the code counts when the session may not read the"
+          + " invitations it received")
+  void shouldRefuseALookupBeforeTheCodeCountsWhenTheSessionMayNotReadTheInvitationsItReceived() {
+    var issued =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
+    authorization.decideUnitWith(
+        intent ->
+            intent instanceof Intent.ViewReceivedManagerInvitations
+                ? new Decision.Denied<>(Decision.DenialReason.POLICY)
+                : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
+    var caller = recipientIdentity();
+    var command = code(issued.code());
+
+    assertThatThrownBy(() -> service.lookUpManagerInvitationCode(caller, command))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(credentialAttempts.attempts()).isEmpty();
   }
 
   @Test
   @DisplayName("Should return a uniform miss for invalid codes and refuse when the journal blocks")
   void shouldReturnUniformMissForInvalidCodesAndRefuseWhenJournalBlocks() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
 
-    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code("garbage"))))
+    assertThat(
+            rejectionOf(service.lookUpManagerInvitationCode(recipientIdentity(), code("garbage"))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     assertThat(credentialAttempts.attempts()).isEmpty();
     assertThat(
             rejectionOf(
-                service.acceptManagerInvitation(recipientIdentity(), code("unknown.secret"))))
+                service.lookUpManagerInvitationCode(recipientIdentity(), code("unknown.secret"))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     assertThat(credentialAttempts.attempts())
         .singleElement()
@@ -312,38 +467,35 @@ class ProfileManagerAdministrationServiceTest {
             });
 
     var guess = issued.invitation().getPublicId() + ".guess";
-    assertThat(rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(guess))))
+    assertThat(rejectionOf(service.lookUpManagerInvitationCode(recipientIdentity(), code(guess))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     assertThat(credentialAttempts.attempts().getLast().metadata().credentialId())
         .isEqualTo(issued.invitation().getId());
 
     credentialAttempts.rejectReservations(Duration.ofMinutes(15));
-    var throttled = issued.code();
     var recipientIdentity = recipientIdentity();
-    var command = code(throttled);
-    assertThatThrownBy(() -> service.acceptManagerInvitation(recipientIdentity, command))
+    var command = code(issued.code());
+    assertThatThrownBy(() -> service.lookUpManagerInvitationCode(recipientIdentity, command))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
   }
 
   @Test
   @DisplayName(
-      "Should refuse a valid manager invitation when five wrong secrets exhaust its budget")
-  void shouldRefuseValidManagerInvitationWhenFiveWrongSecretsExhaustItsBudget() {
+      "Should refuse the code but not the invitation when five wrong secrets exhaust the code's"
+          + " budget")
+  void shouldRefuseTheCodeButNotTheInvitationWhenFiveWrongSecretsExhaustTheCodesBudget() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
     var wrong = code(issued.invitation().getPublicId() + ".wrong-secret");
     var caller = recipientIdentity();
     for (var i = 0; i < 5; i++) {
-      assertThat(rejectionOf(service.acceptManagerInvitation(caller, wrong)))
+      assertThat(rejectionOf(service.lookUpManagerInvitationCode(caller, wrong)))
           .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     }
 
     var correct = code(issued.code());
-    assertThatThrownBy(() -> service.acceptManagerInvitation(caller, correct))
+    assertThatThrownBy(() -> service.lookUpManagerInvitationCode(caller, correct))
         .isInstanceOf(TooManyCredentialAttemptsException.class);
-    assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
-    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileManagerInvitationStatus.PENDING);
     assertThat(credentialAttempts.attempts())
         .hasSize(5)
         .allSatisfy(
@@ -351,17 +503,28 @@ class ProfileManagerAdministrationServiceTest {
               assertThat(attempt.metadata().credentialId()).isEqualTo(issued.invitation().getId());
               assertThat(attempt.result()).isEqualTo(CredentialAttemptResult.FAILED);
             });
+
+    // The throttle guards the code; the named Account still decides by id, which is no credential.
+    assertThat(service.acceptManagerInvitation(caller, issued.invitation().getId()))
+        .isInstanceOf(Outcome.Accepted.class);
   }
 
   @Test
-  @DisplayName("Should return invitation not found when an acceptance code has expired")
-  void shouldReturnInvitationNotFoundWhenAcceptanceCodeHasExpired() {
+  @DisplayName(
+      "Should refuse acceptance as not pending and the code as unknown when the invitation has"
+          + " expired")
+  void shouldRefuseAcceptanceAsNotPendingAndTheCodeAsUnknownWhenTheInvitationHasExpired() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
     issued.invitation().setExpiresAt(NOW.minusSeconds(1));
 
     assertThat(
-            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(issued.code()))))
+            rejectionOf(
+                service.acceptManagerInvitation(recipientIdentity(), issued.invitation().getId())))
+        .isInstanceOf(ManagerRejections.InvitationNotPending.class);
+    assertThat(
+            rejectionOf(
+                service.lookUpManagerInvitationCode(recipientIdentity(), code(issued.code()))))
         .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
   }
@@ -370,48 +533,38 @@ class ProfileManagerAdministrationServiceTest {
   @DisplayName("Should invalidate the invitation when the inviting manager loses management")
   void shouldInvalidateInvitationWhenInvitingManagerLosesManagement() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
     managers.tryRevokeDirectManagement(inviter.getId(), orphan.getId());
 
     assertThat(
-            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(issued.code()))))
-        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+            rejectionOf(
+                service.acceptManagerInvitation(recipientIdentity(), issued.invitation().getId())))
+        .isInstanceOf(ManagerRejections.InvitationNotPending.class);
     assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
   }
 
   @Test
-  @DisplayName("Should preserve a replacement when stale acceptance finds its inviter gone")
-  void shouldPreserveReplacementWhenStaleAcceptanceFindsItsInviterGone() {
-    var stale = issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
-    managers.tryRevokeDirectManagement(inviter.getId(), orphan.getId());
+  @DisplayName(
+      "Should invalidate only the stale invitation when its acceptance finds its inviter gone")
+  void shouldInvalidateOnlyTheStaleInvitationWhenItsAcceptanceFindsItsInviterGone() {
+    var stale =
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
     var replacementInviter = eligibleAccount(UUID.randomUUID());
     managers.tryGrantDirectManagement(replacementInviter.getId(), orphan.getId());
-    var replacement =
-        new AtomicReference<ProfileManagerAdministrationService.IssuedManagerInvitation>();
-    authorization.decideUnitWith(
-        intent -> {
-          if (intent instanceof Intent.AcceptManagerInvitation) {
-            var replacementIdentity =
-                AuthenticatedIdentityFixture.accountScopedBuilder()
-                    .accountId(replacementInviter.getId())
-                    .build();
-            replacement.set(
-                issued(
-                    service.inviteProfileManager(
-                        replacementIdentity, orphan.getId(), recipient.getId())));
-          }
-
-          return new Decision.Allowed<>(AuthorizationUnit.INSTANCE);
-        });
+    // To the same Account for the same Profile, at another address it has had.
+    var other =
+        invitations.save(
+            pendingInvitation(orphan.getId(), recipient.getId(), replacementInviter.getId()));
+    managers.tryRevokeDirectManagement(inviter.getId(), orphan.getId());
 
     assertThat(
-            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(stale.code()))))
-        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+            rejectionOf(
+                service.acceptManagerInvitation(recipientIdentity(), stale.invitation().getId())))
+        .isInstanceOf(ManagerRejections.InvitationNotPending.class);
     assertThat(invitations.findById(stale.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
-    assertThat(
-            invitations.findById(replacement.get().invitation().getId()).orElseThrow().getStatus())
+    assertThat(invitations.findById(other.getId()).orElseThrow().statusToItsAccountAt(NOW))
         .isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 
@@ -419,39 +572,32 @@ class ProfileManagerAdministrationServiceTest {
   @DisplayName("Should refuse acceptance when the recipient became ineligible")
   void shouldRefuseAcceptanceWhenRecipientBecameIneligible() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
     profiles
         .findById(recipient.getPersonalProfileId())
         .orElseThrow()
         .setMaximumAllowedRatingAge(12);
 
     assertThat(
-            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(issued.code()))))
+            rejectionOf(
+                service.acceptManagerInvitation(recipientIdentity(), issued.invitation().getId())))
         .isInstanceOf(ManagerRejections.RecipientNotEligible.class);
   }
 
   @Test
-  @DisplayName("Should allow a single decline when the caller is the named recipient")
-  void shouldAllowSingleDeclineWhenCallerIsNamedRecipient() {
+  @DisplayName("Should allow a single decline when the named Account declines by id")
+  void shouldAllowASingleDeclineWhenTheNamedAccountDeclinesById() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
 
-    // A different authenticated holder of the code learns nothing beyond the one answer;
-    // Cedar's recipient policy is stubbed as the denial here and proven in the policy tests.
-    authorization.decideUnitWith(
-        intent ->
-            intent instanceof Intent.DeclineManagerInvitation
-                ? new Decision.Denied<>(Decision.DenialReason.POLICY)
-                : new Decision.Allowed<>(AuthorizationUnit.INSTANCE));
-    assertThat(rejectionOf(service.declineManagerInvitation(identity(), code(issued.code()))))
-        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
-
-    authorization.allowAll();
-    var declined = service.declineManagerInvitation(recipientIdentity(), code(issued.code()));
+    var declined =
+        service.declineManagerInvitation(recipientIdentity(), issued.invitation().getId());
     assertThat(declined).isInstanceOf(Outcome.Accepted.class);
+    assertThat(credentialAttempts.attempts()).isEmpty();
     assertThat(
-            rejectionOf(service.declineManagerInvitation(recipientIdentity(), code(issued.code()))))
-        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+            rejectionOf(
+                service.declineManagerInvitation(recipientIdentity(), issued.invitation().getId())))
+        .isInstanceOf(ManagerRejections.InvitationNotPending.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
   }
 
@@ -459,12 +605,12 @@ class ProfileManagerAdministrationServiceTest {
   @DisplayName("Should surface authorization unavailable when invitation decline cannot decide")
   void shouldSurfaceAuthorizationUnavailableWhenInvitationDeclineCannotDecide() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
     var caller = recipientIdentity();
-    var code = code(issued.code());
+    var invitationId = issued.invitation().getId();
 
-    assertThatThrownBy(() -> service.declineManagerInvitation(caller, code))
+    assertThatThrownBy(() -> service.declineManagerInvitation(caller, invitationId))
         .isInstanceOf(AuthorizationUnavailableException.class);
   }
 
@@ -475,13 +621,15 @@ class ProfileManagerAdministrationServiceTest {
     shares.share(kid.getId(), inviter.getHouseholdId(), false);
     inviter.setHouseholdRole(HouseholdRole.ADMIN);
     accounts.save(inviter);
-    var issued = issued(service.inviteProfileManager(identity(), kid.getId(), recipient.getId()));
+    var issued =
+        issued(service.inviteProfileManager(identity(), kid.getId(), recipient.getEmail()));
     // Share-derived supervision ends with the share and cannot keep portable authority standing.
     managers.tryRevokeDirectManagement(inviter.getId(), kid.getId());
 
     assertThat(
-            rejectionOf(service.acceptManagerInvitation(recipientIdentity(), code(issued.code()))))
-        .isInstanceOf(ManagerRejections.ManagerInvitationNotFound.class);
+            rejectionOf(
+                service.acceptManagerInvitation(recipientIdentity(), issued.invitation().getId())))
+        .isInstanceOf(ManagerRejections.InvitationNotPending.class);
     assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
   }
@@ -516,15 +664,15 @@ class ProfileManagerAdministrationServiceTest {
   @DisplayName("Should invalidate the redundant invitation when an override grant succeeds once")
   void shouldInvalidateRedundantInvitationWhenOverrideGrantSucceedsOnce() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
 
     var granted =
         service.administrativelyGrantProfileManager(
             identity(), orphan.getId(), recipient.getId(), "support");
     assertThat(granted).isInstanceOf(Outcome.Accepted.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isTrue();
-    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(invitations.findById(issued.invitation().getId()).orElseThrow())
+        .satisfies(ProfileManagerAdministrationServiceTest::invalidatedForItsAccountAlone);
     assertThat(audit.entries())
         .singleElement()
         .satisfies(
@@ -565,8 +713,8 @@ class ProfileManagerAdministrationServiceTest {
             identity(), orphan.getId(), recipient.getId(), "abuse");
     assertThat(removed).isInstanceOf(Outcome.Accepted.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), orphan.getId())).isFalse();
-    assertThat(invitations.findById(restorable.getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(invitations.findById(restorable.getId()).orElseThrow())
+        .satisfies(ProfileManagerAdministrationServiceTest::invalidatedForItsAccountAlone);
     assertThat(shares.findById(offered.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileShareStatus.INVALIDATED);
     assertThat(shares.findById(offered.getId()).orElseThrow().getLastModifiedOn()).isEqualTo(NOW);
@@ -593,7 +741,7 @@ class ProfileManagerAdministrationServiceTest {
   @DisplayName("Should invalidate the leaver's proposals when a manager relinquishes once")
   void shouldInvalidateLeaversProposalsWhenManagerRelinquishesOnce() {
     var issued =
-        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getId()));
+        issued(service.inviteProfileManager(identity(), orphan.getId(), recipient.getEmail()));
 
     var relinquished = service.relinquishProfileManagement(identity(), orphan.getId());
     assertThat(relinquished).isInstanceOf(Outcome.Accepted.class);
@@ -632,8 +780,8 @@ class ProfileManagerAdministrationServiceTest {
     assertThat(removed).isInstanceOf(Outcome.Accepted.class);
     assertThat(managers.existsByAccountIdAndProfileId(recipient.getId(), personal.getId()))
         .isFalse();
-    assertThat(invitations.findById(restorable.getId()).orElseThrow().getStatus())
-        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(invitations.findById(restorable.getId()).orElseThrow())
+        .satisfies(ProfileManagerAdministrationServiceTest::invalidatedForItsAccountAlone);
     assertThat(invitations.findById(proposed.getId()).orElseThrow().getStatus())
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(shares.findById(offered.getId()).orElseThrow().getStatus())
@@ -785,6 +933,21 @@ class ProfileManagerAdministrationServiceTest {
         .build();
   }
 
+  private void inviteTenAddresses() {
+    for (var person = 0; person < 10; person++) {
+      issued(
+          service.inviteProfileManager(
+              identity(), orphan.getId(), "person.%d@example.com".formatted(person)));
+    }
+  }
+
+  private List<ProfileManagerInvitation> waitingFor(Profile profile) {
+    return invitations.findAll().stream()
+        .filter(invitation -> profile.getId().equals(invitation.getProfileId()))
+        .filter(invitation -> invitation.statusAt(NOW) == ProfileManagerInvitationStatus.PENDING)
+        .toList();
+  }
+
   private AuthenticatedIdentity identity() {
     return authorization.currentIdentity();
   }
@@ -816,5 +979,12 @@ class ProfileManagerAdministrationServiceTest {
       case Outcome.Accepted<?, ?> accepted ->
           throw new AssertionError("expected a rejection but got " + accepted);
     };
+  }
+
+  // Its Account can no longer answer it; to the Profile's managers it still waits (ADR 0024).
+  private static void invalidatedForItsAccountAlone(ProfileManagerInvitation invitation) {
+    assertThat(invitation.statusToItsAccountAt(NOW))
+        .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
+    assertThat(invitation.statusAt(NOW)).isEqualTo(ProfileManagerInvitationStatus.PENDING);
   }
 }

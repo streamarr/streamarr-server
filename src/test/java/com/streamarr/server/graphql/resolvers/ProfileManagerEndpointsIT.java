@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import static com.streamarr.server.jooq.generated.enums.ProfileManagerInvitationStatus.PENDING;
 import static com.streamarr.server.jooq.generated.tables.CredentialAttempt.CREDENTIAL_ATTEMPT;
+import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.ProfileManagerInvitation.PROFILE_MANAGER_INVITATION;
 import static com.streamarr.server.jooq.generated.tables.SecurityAuditEvent.SECURITY_AUDIT_EVENT;
 import static com.streamarr.server.support.AuthTestSupport.remoteAddr;
@@ -32,9 +33,14 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport;
+import com.streamarr.server.support.PostgresLockTestSupport.HeldRowLock;
+import com.streamarr.server.support.PostgresLockTestSupport.RowLockTarget;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,6 +49,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntSupplier;
+import java.util.function.Supplier;
+import javax.sql.DataSource;
 import lombok.Builder;
 import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
@@ -55,6 +64,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -76,6 +86,8 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
+  @Autowired private DataSource dataSource;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private AuthTestSupport.TestIdentity owner;
   private AuthTestSupport.TestIdentity recipient;
@@ -95,12 +107,44 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should grant management when the named recipient accepts an invitation")
-  void shouldGrantManagementWhenNamedRecipientAcceptsInvitation() throws Exception {
+  @DisplayName(
+      "Should give an empty list when asked for the pending invitations of a Profile that does not"
+          + " exist")
+  void shouldGiveAnEmptyListWhenAskedForThePendingInvitationsOfAProfileThatDoesNotExist()
+      throws Exception {
+    graphql(
+            authTestSupport.accountBearer(owner),
+            """
+            query { pendingManagerInvitationsForProfile(profileId: "%s") {
+              edges { node { id } } } }
+            """
+                .formatted(UUID.randomUUID()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.pendingManagerInvitationsForProfile.edges").isEmpty());
+  }
+
+  @Test
+  @DisplayName(
+      "Should give a device-bound session an empty list when it asks for the invitations it"
+          + " received")
+  void shouldGiveADeviceBoundSessionAnEmptyListWhenItAsksForTheInvitationsItReceived()
+      throws Exception {
+    issueManagerInvitation(managedOrphan());
+
+    graphql(
+            authTestSupport.deviceBoundProfileBearer(recipient),
+            "query { pendingManagerInvitations { edges { node { id } } } }")
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.pendingManagerInvitations.edges").isEmpty());
+  }
+
+  @Test
+  @DisplayName("Should grant management when the named Account accepts by id without the code")
+  void shouldGrantManagementWhenTheNamedAccountAcceptsByIdWithoutTheCode() throws Exception {
     var orphan = managedOrphan();
-    var issued = issueManagerInvitation(orphan);
-    var code = issued.code();
-    var invitationId = issued.invitationId();
+    var invitationId = issueManagerInvitation(orphan).invitationId();
 
     graphql(
             authTestSupport.accountBearer(recipient),
@@ -109,13 +153,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         .andExpect(
             jsonPath("$.data.pendingManagerInvitations.edges[0].node.id").value(invitationId));
 
-    graphql(
-            authTestSupport.accountBearer(recipient),
-            """
-            mutation { acceptManagerInvitation(input: {code: "%s"}) {
-              invitation { status } userErrors { __typename } } }
-            """
-                .formatted(code))
+    graphql(authTestSupport.accountBearer(recipient), acceptManagerInvitation(invitationId))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.acceptManagerInvitation.invitation.status").value("ACCEPTED"));
@@ -124,19 +162,14 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
             profileManagerRepository.existsByAccountIdAndProfileId(
                 recipient.account().getId(), orphan.getId()))
         .isTrue();
+    assertThat(journaledAddresses(invitationId)).isEmpty();
 
-    // The consumed code answers exactly like an unknown one; the loser transition refuses.
-    graphql(
-            authTestSupport.accountBearer(recipient),
-            """
-            mutation { acceptManagerInvitation(input: {code: "%s"}) {
-              invitation { status } userErrors { __typename } } }
-            """
-                .formatted(code))
+    // The named Account learns that its own invitation was decided; the inviter learns the same.
+    graphql(authTestSupport.accountBearer(recipient), acceptManagerInvitation(invitationId))
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.data.acceptManagerInvitation.userErrors[0].__typename")
-                .value("ManagerInvitationNotFoundError"));
+                .value("InvitationNotPendingError"));
     graphql(
             authTestSupport.accountBearer(owner),
             """
@@ -151,21 +184,101 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should journal the client address when a manager invitation code is accepted")
-  void shouldJournalClientAddressWhenManagerInvitationCodeIsAccepted() throws Exception {
+  @DisplayName(
+      "Should refuse with ManagerInvitationNotFoundError when another Account decides by id or no"
+          + " invitation has the id")
+  void
+      shouldRefuseWithManagerInvitationNotFoundWhenAnotherAccountDecidesByIdOrNoInvitationHasTheId()
+          throws Exception {
+    var invitationId = issueManagerInvitation(managedOrphan()).invitationId();
+    var inviter = authTestSupport.accountBearer(owner);
+
+    for (var id : List.of(invitationId, UUID.randomUUID().toString())) {
+      graphql(inviter, acceptManagerInvitation(id))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.acceptManagerInvitation.userErrors[0].__typename")
+                  .value("ManagerInvitationNotFoundError"));
+      graphql(inviter, declineManagerInvitation(id))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.errors").doesNotExist())
+          .andExpect(
+              jsonPath("$.data.declineManagerInvitation.userErrors[0].__typename")
+                  .value("ManagerInvitationNotFoundError"));
+    }
+
+    assertThat(invitationRepository.findById(UUID.fromString(invitationId)).orElseThrow())
+        .extracting(invitation -> invitation.getStatus().name())
+        .isEqualTo("PENDING");
+  }
+
+  @Test
+  @DisplayName(
+      "Should refuse with InvitationNotPendingError when the named Account accepts an expired"
+          + " invitation")
+  void shouldRefuseWithInvitationNotPendingWhenTheNamedAccountAcceptsAnExpiredInvitation()
+      throws Exception {
+    var invitationId = issueManagerInvitation(managedOrphan()).invitationId();
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            dsl.update(PROFILE_MANAGER_INVITATION)
+                .set(PROFILE_MANAGER_INVITATION.EXPIRES_AT, OffsetDateTime.now().minusMinutes(1))
+                .where(PROFILE_MANAGER_INVITATION.ID.eq(UUID.fromString(invitationId)))
+                .execute());
+
+    graphql(authTestSupport.accountBearer(recipient), acceptManagerInvitation(invitationId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(
+            jsonPath("$.data.acceptManagerInvitation.userErrors[0].__typename")
+                .value("InvitationNotPendingError"));
+    assertThat(
+            profileManagerRepository.existsByAccountIdAndProfileId(
+                recipient.account().getId(), owner.profile().getId()))
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName("Should answer the invitation when the named Account looks up its code")
+  void shouldAnswerTheInvitationWhenTheNamedAccountLooksUpItsCode() throws Exception {
     var issued = issueManagerInvitation(managedOrphan());
 
-    graphql(authTestSupport.accountBearer(recipient), acceptManagerInvitation(issued.code()))
+    graphql(authTestSupport.accountBearer(recipient), lookUpManagerInvitationCode(issued.code()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").doesNotExist());
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.lookUpManagerInvitationCode.userErrors").isEmpty())
+        .andExpect(
+            jsonPath("$.data.lookUpManagerInvitationCode.invitation.id")
+                .value(issued.invitationId()))
+        .andExpect(
+            jsonPath("$.data.lookUpManagerInvitationCode.invitation.status").value("PENDING"));
 
     assertThat(journaledAddresses(issued.invitationId())).containsExactly("198.51.100.42");
   }
 
   @Test
   @DisplayName(
-      "Should keep the code out of the answer when an acceptance names a field the input lacks")
-  void shouldKeepCodeOutOfAnswerWhenAcceptanceNamesFieldInputLacks() throws Exception {
+      "Should count the lookup as a credential attempt when another Account presents the code")
+  void shouldCountTheLookupAsACredentialAttemptWhenAnotherAccountPresentsTheCode()
+      throws Exception {
+    var issued = issueManagerInvitation(managedOrphan());
+
+    graphql(authTestSupport.accountBearer(owner), lookUpManagerInvitationCode(issued.code()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.lookUpManagerInvitationCode.invitation").isEmpty())
+        .andExpect(
+            jsonPath("$.data.lookUpManagerInvitationCode.userErrors[0].__typename")
+                .value("ManagerInvitationNotFoundError"));
+
+    assertThat(journaledAddresses(issued.invitationId())).containsExactly("198.51.100.42");
+  }
+
+  @Test
+  @DisplayName(
+      "Should keep the code out of the answer when a code lookup names a field the input lacks")
+  void shouldKeepCodeOutOfAnswerWhenCodeLookupNamesFieldInputLacks() throws Exception {
     var orphan = managedOrphan();
     var code = issueManagerInvitation(orphan).code();
 
@@ -173,7 +286,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         graphql(
                 authTestSupport.accountBearer(recipient),
                 """
-                mutation { acceptManagerInvitation(input: {code: "%s", profileId: "%s"}) {
+                mutation { lookUpManagerInvitationCode(input: {code: "%s", profileId: "%s"}) {
                   invitation { status } } }
                 """
                     .formatted(code, orphan.getId()))
@@ -186,21 +299,37 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should throttle a GraphQL acceptance with a retry hint when wrong secrets exceed the limit")
-  void shouldThrottleGraphQlAcceptanceWithRetryHintWhenWrongSecretsExceedLimit() throws Exception {
+      "Should forbid the lookup before counting an attempt when the session is device-bound")
+  void shouldForbidTheLookupBeforeCountingAnAttemptWhenTheSessionIsDeviceBound() throws Exception {
+    var issued = issueManagerInvitation(managedOrphan());
+
+    graphql(
+            authTestSupport.deviceBoundProfileBearer(recipient),
+            lookUpManagerInvitationCode(issued.code()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.errorType").value("PERMISSION_DENIED"))
+        .andExpect(jsonPath("$.data.lookUpManagerInvitationCode").isEmpty());
+
+    assertThat(journaledAddresses(issued.invitationId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should throttle a code lookup with a retry hint when wrong secrets exceed the limit")
+  void shouldThrottleACodeLookupWithARetryHintWhenWrongSecretsExceedTheLimit() throws Exception {
     var issued = issueManagerInvitation(managedOrphan());
     var bearer = authTestSupport.accountBearer(recipient);
     var publicId = issued.code().substring(0, issued.code().indexOf('.'));
 
     for (var attempt = 0; attempt < 5; attempt++) {
-      graphql(bearer, acceptManagerInvitation(publicId + ".wrong-secret-" + attempt))
+      graphql(bearer, lookUpManagerInvitationCode(publicId + ".wrong-secret-" + attempt))
           .andExpect(status().isOk())
           .andExpect(
-              jsonPath("$.data.acceptManagerInvitation.userErrors[0].__typename")
+              jsonPath("$.data.lookUpManagerInvitationCode.userErrors[0].__typename")
                   .value("ManagerInvitationNotFoundError"));
     }
 
-    graphql(bearer, acceptManagerInvitation(issued.code()))
+    graphql(bearer, lookUpManagerInvitationCode(issued.code()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.errorType").value("UNAVAILABLE"))
         .andExpect(jsonPath("$.errors[0].extensions.code").value("TOO_MANY_CREDENTIAL_ATTEMPTS"))
@@ -344,52 +473,20 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should decline an invitation when the named recipient acts")
-  void shouldDeclineInvitationWhenNamedRecipientActs() throws Exception {
-    var orphan = managedOrphan();
-    var declining =
-        graphql(
-                authTestSupport.accountBearer(owner),
-                """
-                mutation { inviteProfileManager(input: {profileId: "%s",
-                  recipientAccountId: "%s"}) {
-                  issued { code } userErrors { __typename } } }
-                """
-                    .formatted(orphan.getId(), recipient.account().getId()))
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    var code =
-        objectMapper
-            .readTree(declining)
-            .path("data")
-            .path("inviteProfileManager")
-            .path("issued")
-            .path("code")
-            .asString();
+  @DisplayName("Should decline an invitation by id when the named Account declines it")
+  void shouldDeclineAnInvitationByIdWhenTheNamedAccountDeclinesIt() throws Exception {
+    var invitationId = issueManagerInvitation(managedOrphan()).invitationId();
 
-    graphql(
-            authTestSupport.accountBearer(recipient),
-            """
-            mutation { declineManagerInvitation(input: {code: "%s"}) {
-              invitation { status } userErrors { __typename } } }
-            """
-                .formatted(code))
+    graphql(authTestSupport.accountBearer(recipient), declineManagerInvitation(invitationId))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist())
         .andExpect(jsonPath("$.data.declineManagerInvitation.invitation.status").value("DECLINED"));
 
-    graphql(
-            authTestSupport.accountBearer(recipient),
-            """
-            mutation { declineManagerInvitation(input: {code: "%s"}) {
-              invitation { status } userErrors { __typename } } }
-            """
-                .formatted(code))
+    graphql(authTestSupport.accountBearer(recipient), declineManagerInvitation(invitationId))
         .andExpect(status().isOk())
         .andExpect(
             jsonPath("$.data.declineManagerInvitation.userErrors[0].__typename")
-                .value("ManagerInvitationNotFoundError"));
+                .value("InvitationNotPendingError"));
   }
 
   @Test
@@ -427,34 +524,22 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                 authTestSupport.accountBearer(owner),
                 """
                 mutation { inviteProfileManager(input: {profileId: "%s",
-                  recipientAccountId: "%s"}) {
+                  email: "%s"}) {
                   issued { code invitation { id } } userErrors { __typename } } }
                 """
-                    .formatted(orphan.getId(), recipient.account().getId()))
+                    .formatted(orphan.getId(), recipient.account().getEmail()))
             .andReturn()
             .getResponse()
             .getContentAsString();
     var issued = objectMapper.readTree(response).at("/data/inviteProfileManager/issued");
-    var code = issued.path("code").asString();
+    var invitationId = issued.path("invitation").path("id").asString();
     var bearer = authTestSupport.accountBearer(recipient);
 
     var outcomes =
         raceGraphql(
             new GraphqlRaceLock(RaceLockTarget.INVITATION, persistedInvitationId(issued)),
-            new ConcurrentGraphqlCall(
-                bearer,
-                """
-                mutation { acceptManagerInvitation(input: {code: "%s"}) {
-                  invitation { status } userErrors { __typename } } }
-                """
-                    .formatted(code)),
-            new ConcurrentGraphqlCall(
-                bearer,
-                """
-                mutation { declineManagerInvitation(input: {code: "%s"}) {
-                  invitation { status } userErrors { __typename } } }
-                """
-                    .formatted(code)));
+            new ConcurrentGraphqlCall(bearer, acceptManagerInvitation(invitationId)),
+            new ConcurrentGraphqlCall(bearer, declineManagerInvitation(invitationId)));
 
     var accepted =
         countText(outcomes, "/data/acceptManagerInvitation/invitation/status", "ACCEPTED");
@@ -464,11 +549,11 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
         countText(
                 outcomes,
                 "/data/acceptManagerInvitation/userErrors/0/__typename",
-                "ManagerInvitationNotFoundError")
+                "InvitationNotPendingError")
             + countText(
                 outcomes,
                 "/data/declineManagerInvitation/userErrors/0/__typename",
-                "ManagerInvitationNotFoundError");
+                "InvitationNotPendingError");
     assertThat(accepted + declined).isEqualTo(1);
     assertThat(misses).isEqualTo(1);
 
@@ -522,17 +607,17 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                 authTestSupport.accountBearer(owner),
                 """
                 mutation { inviteProfileManager(input: {profileId: "%s",
-                  recipientAccountId: "%s"}) {
+                  email: "%s"}) {
                   issued { code invitation { id } } userErrors { __typename } } }
                 """
-                    .formatted(owner.profile().getId(), recipient.account().getId()))
+                    .formatted(owner.profile().getId(), recipient.account().getEmail()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andReturn()
             .getResponse()
             .getContentAsString();
     var issued = objectMapper.readTree(invitationResponse).at("/data/inviteProfileManager/issued");
-    var code = issued.path("code").asString();
+    var invitationId = issued.path("invitation").path("id").asString();
     var restriction = new AtomicReference<Future<JsonNode>>();
     var acceptance = new AtomicReference<Future<JsonNode>>();
 
@@ -576,11 +661,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                       var response =
                           graphql(
                                   authTestSupport.accountBearer(recipient),
-                                  """
-                                  mutation { acceptManagerInvitation(input: {code: "%s"}) {
-                                    invitation { status } userErrors { __typename } } }
-                                  """
-                                      .formatted(code))
+                                  acceptManagerInvitation(invitationId))
                               .andExpect(status().isOk())
                               .andExpect(jsonPath("$.errors").doesNotExist())
                               .andReturn()
@@ -613,13 +694,17 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                     acceptanceOutcome
                         .at("/data/acceptManagerInvitation/userErrors/0/__typename")
                         .asString())
-                .isEqualTo("ManagerInvitationNotFoundError"),
+                .isEqualTo("InvitationNotPendingError"),
         () ->
             assertThat(
                     acceptanceOutcome
                         .at("/data/acceptManagerInvitation/invitation/status")
                         .asString())
                 .isEmpty(),
+        () ->
+            assertThat(invitationRepository.findById(UUID.fromString(invitationId)).orElseThrow())
+                .extracting(invitation -> invitation.getStatus().name())
+                .isEqualTo("INVALIDATED"),
         () ->
             assertThat(
                     profileManagerRepository.existsByAccountIdAndProfileId(
@@ -637,10 +722,10 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
             authTestSupport.accountBearer(owner),
             """
             mutation { inviteProfileManager(input: {profileId: "%s",
-              recipientAccountId: "%s"}) {
+              email: "%s"}) {
               issued { invitation { id status } } userErrors { __typename } } }
             """
-                .formatted(orphan.getId(), recipient.account().getId()));
+                .formatted(orphan.getId(), recipient.account().getEmail()));
 
     var outcomes =
         raceGraphql(new GraphqlRaceLock(RaceLockTarget.PROFILE, orphan.getId()), request, request);
@@ -648,6 +733,7 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
     assertThat(
             outcomes.stream()
                 .map(node -> node.at("/data/inviteProfileManager/issued/invitation/id").asString()))
+        .hasSize(2)
         .allSatisfy(id -> assertThat(id).isNotBlank())
         .doesNotHaveDuplicates();
     assertThat(invitationRepository.findAll())
@@ -678,11 +764,11 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                                     authTestSupport.accountBearer(owner),
                                     """
                                     mutation { inviteProfileManager(input: {profileId: "%s",
-                                      recipientAccountId: "%s"}) {
+                                      email: "%s"}) {
                                       issued { invitation { id } }
                                       userErrors { __typename } } }
                                     """
-                                        .formatted(orphan.getId(), recipient.account().getId()))
+                                        .formatted(orphan.getId(), recipient.account().getEmail()))
                                 .andExpect(status().isOk())
                                 .andReturn()
                                 .getResponse()
@@ -892,8 +978,12 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
             profileManagerRepository.existsByAccountIdAndProfileId(
                 recipient.account().getId(), orphan.getId()))
         .isFalse();
+    // Its Account can no longer answer it; to the Profile's managers it still waits.
     assertThat(
-            invitationRepository.findById(UUID.fromString(restorableId)).orElseThrow().getStatus())
+            invitationRepository
+                .findById(UUID.fromString(restorableId))
+                .orElseThrow()
+                .statusToItsAccountAt(Instant.now()))
         .isEqualTo(ProfileManagerInvitationStatus.INVALIDATED);
     assertThat(dsl.fetchCount(SECURITY_AUDIT_EVENT)).isEqualTo(2);
     assertAuditEvent(
@@ -974,6 +1064,135 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                     .build());
           }
         });
+  }
+
+  @Test
+  @DisplayName(
+      "Should issue both invitations when two Accounts invite each other to manage their own"
+          + " Profiles at once")
+  void shouldIssueBothInvitationsWhenTwoAccountsInviteEachOtherToManageTheirOwnProfilesAtOnce()
+      throws Exception {
+    try (var heldOwners = lockProfileRow(owner.profile().getId());
+        var heldRecipients = lockProfileRow(recipient.profile().getId());
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var ownerInvites = executor.submit(() -> inviteToOwnProfile(owner, recipient));
+      var recipientInvites = executor.submit(() -> inviteToOwnProfile(recipient, owner));
+      awaitWaiters(() -> waitersBehind(heldOwners) + waitersBehind(heldRecipients), 2);
+
+      // In turn: each invite then holds one Profile, and the other waits for it, whatever its
+      // order.
+      heldOwners.release();
+      awaitWaiters(() -> waitersBehind(heldRecipients), 2);
+      heldRecipients.release();
+
+      for (var invited : List.of(ownerInvites, recipientInvites)) {
+        var answer = invited.get(30, TimeUnit.SECONDS);
+        assertThat(answer.at("/errors").isMissingNode()).as(answer.toString()).isTrue();
+        assertThat(answer.at("/data/inviteProfileManager/issued/invitation/status").asString())
+            .isEqualTo("PENDING");
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "Should accept an invitation and issue another when a manager invites its inviter to the same"
+          + " Profile at once")
+  void shouldAcceptAnInvitationAndIssueAnotherWhenAManagerInvitesItsInviterToTheSameProfileAtOnce()
+      throws Exception {
+    var invitersProfileId = owner.profile().getId();
+    // Java compares a UUID's top bit as a sign and PostgreSQL does not, so they order these two
+    // ids oppositely.
+    var alex =
+        managedOrphanWithId(
+            new UUID(
+                invitersProfileId.getMostSignificantBits() ^ Long.MIN_VALUE,
+                invitersProfileId.getLeastSignificantBits()));
+    var coManager = authTestSupport.createHouseholdMemberIdentity(owner);
+    transactionTemplate.executeWithoutResult(
+        _ ->
+            profileManagerRepository.saveAndFlush(
+                ProfileManager.builder()
+                    .accountId(coManager.account().getId())
+                    .profileId(alex.getId())
+                    .build()));
+    var issued = issueManagerInvitation(alex);
+    var lockedLastByPostgres =
+        invitersProfileId.getMostSignificantBits() < 0 ? invitersProfileId : alex.getId();
+
+    try (var held = lockProfileRow(lockedLastByPostgres);
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var acceptance =
+          executor.submit(
+              () ->
+                  answer(
+                      authTestSupport.accountBearer(recipient),
+                      acceptManagerInvitation(issued.invitationId())));
+      awaitWaiters(() -> waitersBehind(held), 1);
+      var invitation =
+          executor.submit(
+              () ->
+                  answer(
+                      authTestSupport.accountBearer(coManager),
+                      """
+                      mutation { inviteProfileManager(input: {profileId: "%s", email: "%s"}) {
+                        issued { invitation { status } } userErrors { __typename } } }
+                      """
+                          .formatted(alex.getId(), owner.account().getEmail())));
+      awaitWaiters(() -> waitersBehind(held), 2);
+      held.release();
+
+      var accepted = acceptance.get(30, TimeUnit.SECONDS);
+      assertThat(accepted.at("/errors").isMissingNode()).as(accepted.toString()).isTrue();
+      assertThat(accepted.at("/data/acceptManagerInvitation/invitation/status").asString())
+          .isEqualTo("ACCEPTED");
+      var invited = invitation.get(30, TimeUnit.SECONDS);
+      assertThat(invited.at("/errors").isMissingNode()).as(invited.toString()).isTrue();
+      assertThat(invited.at("/data/inviteProfileManager/issued/invitation/status").asString())
+          .isEqualTo("PENDING");
+    }
+  }
+
+  private JsonNode answer(String bearer, String query) throws Exception {
+    var response =
+        graphql(bearer, query)
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response);
+  }
+
+  private HeldRowLock lockProfileRow(UUID profileId) throws SQLException {
+    return PostgresLockTestSupport.lockRow(
+        RowLockTarget.builder().dataSource(dataSource).table("profile").rowId(profileId).build());
+  }
+
+  private JsonNode inviteToOwnProfile(
+      AuthTestSupport.TestIdentity inviter, AuthTestSupport.TestIdentity invitee) throws Exception {
+    var response =
+        graphql(
+                authTestSupport.accountBearer(inviter),
+                """
+                mutation { inviteProfileManager(input: {profileId: "%s", email: "%s"}) {
+                  issued { invitation { status } } userErrors { __typename } } }
+                """
+                    .formatted(inviter.profile().getId(), invitee.account().getEmail()))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response);
+  }
+
+  private int waitersBehind(HeldRowLock held) {
+    return PostgresLockTestSupport.waitersBehind(jdbcTemplate, held.backendPid(), "%");
+  }
+
+  private static void awaitWaiters(IntSupplier waiters, int expected) {
+    Awaitility.await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(() -> assertThat(waiters.getAsInt()).isEqualTo(expected));
   }
 
   private List<JsonNode> raceGraphql(
@@ -1096,25 +1315,45 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
 
   /** An unlinked Profile the owner manages, available at home. */
   private Profile managedOrphan() {
+    return managedOrphan(
+        () ->
+            profileRepository
+                .saveAndFlush(
+                    ProfileFixture.defaultProfileBuilder()
+                        .householdId(owner.household().getId())
+                        .build())
+                .getId());
+  }
+
+  /** {@link #managedOrphan()} with the id given. */
+  private Profile managedOrphanWithId(UUID id) {
+    return managedOrphan(
+        () -> {
+          dsl.insertInto(PROFILE)
+              .set(PROFILE.ID, id)
+              .set(PROFILE.HOUSEHOLD_ID, owner.household().getId())
+              .set(PROFILE.NAME, "Alex")
+              .execute();
+          return id;
+        });
+  }
+
+  private Profile managedOrphan(Supplier<UUID> saved) {
     return transactionTemplate.execute(
         _ -> {
-          var profile =
-              profileRepository.saveAndFlush(
-                  ProfileFixture.defaultProfileBuilder()
-                      .householdId(owner.household().getId())
-                      .build());
+          var profileId = saved.get();
           profileManagerRepository.saveAndFlush(
               ProfileManager.builder()
                   .accountId(owner.account().getId())
-                  .profileId(profile.getId())
+                  .profileId(profileId)
                   .build());
           shareRepository.saveAndFlush(
               ProfileHouseholdShare.builder()
-                  .profileId(profile.getId())
+                  .profileId(profileId)
                   .householdId(owner.household().getId())
                   .status(ProfileShareStatus.ACTIVE)
                   .build());
-          return profile;
+          return profileRepository.findById(profileId).orElseThrow();
         });
   }
 
@@ -1124,11 +1363,11 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
                 authTestSupport.accountBearer(owner),
                 """
                 mutation { inviteProfileManager(input: {profileId: "%s",
-                  recipientAccountId: "%s"}) {
+                  email: "%s"}) {
                   issued { code invitation { id profileName status } }
                   userErrors { __typename } } }
                 """
-                    .formatted(profile.getId(), recipient.account().getId()))
+                    .formatted(profile.getId(), recipient.account().getEmail()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.errors").doesNotExist())
             .andExpect(
@@ -1144,10 +1383,26 @@ class ProfileManagerEndpointsIT extends AbstractIntegrationTest {
 
   private record IssuedManagerInvitation(String code, String invitationId) {}
 
-  private static String acceptManagerInvitation(String code) {
+  private static String acceptManagerInvitation(String invitationId) {
     return """
-        mutation { acceptManagerInvitation(input: {code: "%s"}) {
+        mutation { acceptManagerInvitation(input: {invitationId: "%s"}) {
           invitation { status } userErrors { __typename } } }
+        """
+        .formatted(invitationId);
+  }
+
+  private static String declineManagerInvitation(String invitationId) {
+    return """
+        mutation { declineManagerInvitation(input: {invitationId: "%s"}) {
+          invitation { status } userErrors { __typename } } }
+        """
+        .formatted(invitationId);
+  }
+
+  private static String lookUpManagerInvitationCode(String code) {
+    return """
+        mutation { lookUpManagerInvitationCode(input: {code: "%s"}) {
+          invitation { id status } userErrors { __typename } } }
         """
         .formatted(code);
   }

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationsFilter;
 import com.streamarr.server.domain.pagination.ListOrder;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.domain.pagination.SortValueKind;
@@ -68,7 +69,9 @@ class FakeProfileManagerInvitationRepositoryTest {
     saveInvitation(higherId, profileId, now);
     saveInvitation(lowerId, profileId, now);
 
-    var rows = fake.rowsPendingForProfile(profileId, now, firstSeek(NEWEST_FIRST, 2));
+    var rows =
+        fake.rowsPendingForProfile(
+            new ProfileManagerInvitationsFilter(profileId, true), now, firstSeek(NEWEST_FIRST, 2));
 
     assertThat(rows).extracting(row -> row.item().getId()).containsExactly(higherId, lowerId);
   }

@@ -105,12 +105,15 @@ public final class ProfileErrors {
       @NonNull ProfileRejections.RemoveProfilePin rejection) {
     return switch (rejection) {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
-      case ProfileRejections.WouldLockProfile(var householdId, var householdName) ->
-          new ProfilePinRequiredError(
-              householdName
-                  .map(ProfileErrors::removalWouldLockMessage)
-                  .orElse("A Household's safety policy requires this PIN."),
-              householdId);
+      case ProfileRejections.WouldLockProfile(var household) ->
+          household
+              .map(
+                  named ->
+                      new ProfilePinRequiredError(
+                          removalWouldLockMessage(named.getName()), named.getId()))
+              .orElse(
+                  new ProfilePinRequiredError(
+                      "Another Household's safety policy requires this PIN.", null));
     };
   }
 
@@ -131,7 +134,8 @@ public final class ProfileErrors {
       case ProfileRejections.ProfileNotFound _ -> profileNotFound();
       case ProfileRejections.ProfileNotDeletable _ ->
           new ProfileNotDeletableError(
-              "Deletion needs an unlinked, unshared Profile with you as its only manager.");
+              "Deletion needs an unlinked, unshared Profile with you as its only manager and no"
+                  + " invitation to manage it waiting.");
       case ProfileRejections.ReauthenticationRequired _ -> reauthenticationRequired();
     };
   }

@@ -1,10 +1,13 @@
 package com.streamarr.server.graphql.dto;
 
 import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.RequestAnswer;
 import com.streamarr.server.domain.notification.RequestResolution;
 import com.streamarr.server.domain.notification.StoredNotification;
 import com.streamarr.server.domain.notification.SubjectReference;
-import com.streamarr.server.services.events.notification.ProfileShareAnswer;
+import com.streamarr.server.services.events.notification.ProfileManagementRemovedSnapshot;
+import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnsweredSnapshot;
+import com.streamarr.server.services.events.notification.ProfileManagerInvitationReceivedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareEndedBy;
 import com.streamarr.server.services.events.notification.ProfileShareEndedSnapshot;
@@ -29,8 +32,10 @@ public record NotificationDetails(
     RequestResolution resolution,
     String resolvedAt,
     UUID shareId,
+    UUID invitationId,
+    UUID profileId,
     String profileName,
-    ProfileShareAnswer answer,
+    RequestAnswer answer,
     ProfileShareEndedBy endedBy) {
 
   public static NotificationDetails from(StoredNotification notification, Instant now) {
@@ -45,7 +50,9 @@ public record NotificationDetails(
             .expiresAt(notification.expiresAt().map(Instant::toString).orElse(null))
             .resolution(notification.resolutionAt(now).orElse(null))
             .resolvedAt(notification.resolutionTimeAt(now).map(Instant::toString).orElse(null))
-            .shareId(shareIdOf(notification.subject()));
+            .shareId(idOf(notification.subject(), SubjectReference.PROFILE_SHARE))
+            .invitationId(idOf(notification.subject(), SubjectReference.PROFILE_MANAGER_INVITATION))
+            .profileId(idOf(notification.subject(), SubjectReference.PROFILE));
     return switch (notification.snapshot()) {
       case ProfileShareOfferedSnapshot(var profileName, var answer) ->
           details.profileName(profileName).answer(answer.orElse(null)).build();
@@ -53,12 +60,19 @@ public record NotificationDetails(
           details.profileName(profileName).answer(answer).build();
       case ProfileShareEndedSnapshot(var profileName, var endedBy) ->
           details.profileName(profileName).endedBy(endedBy).build();
+      case ProfileManagerInvitationReceivedSnapshot(var profileName, var answer) ->
+          details.profileName(profileName).answer(answer.orElse(null)).build();
+      case ProfileManagerInvitationAnsweredSnapshot(var profileName, var answer) ->
+          details.profileName(profileName).answer(answer).build();
+      case ProfileManagementRemovedSnapshot(var profileName) ->
+          details.profileName(profileName).build();
       default -> details.build();
     };
   }
 
-  private static UUID shareIdOf(SubjectReference subject) {
-    if (!SubjectReference.PROFILE_SHARE.equals(subject.type())) {
+  // The subject's id, in the field named for its type; the other subject fields stay null.
+  private static UUID idOf(SubjectReference subject, String type) {
+    if (!type.equals(subject.type())) {
       return null;
     }
 

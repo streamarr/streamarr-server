@@ -1,7 +1,7 @@
 package com.streamarr.server.services.identity;
 
+import com.streamarr.server.domain.auth.Household;
 import java.util.Optional;
-import java.util.UUID;
 import lombok.NonNull;
 
 /**
@@ -82,10 +82,11 @@ public final class ProfileRejections {
 
   /**
    * Removing the PIN would lock the Profile where it is available. The Household is named only for
-   * a caller who may view that Household's administration; everyone else learns just that some
+   * a caller who may already see that the Profile is available there: one that may use it, manages
+   * the Profile, or is a ServerAdmin (ADR 0024 §PIN safety). Everyone else learns just that another
    * Household's safety policy requires the PIN.
    */
-  public record WouldLockProfile(@NonNull UUID householdId, @NonNull Optional<String> householdName)
+  public record WouldLockProfile(@NonNull Optional<Household> household)
       implements RemoveProfilePin {}
 
   /** Deletion needs an unlinked, unshared Profile and the caller as sole remaining manager. */

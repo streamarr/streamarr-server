@@ -103,9 +103,9 @@ class CredentialJournalOutageIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should refuse a GraphQL invitation acceptance as unavailable when the credential journal"
+      "Should refuse a GraphQL invitation code lookup as unavailable when the credential journal"
           + " cannot be written")
-  void shouldRefuseGraphQlInvitationAcceptanceAsUnavailableWhenCredentialJournalCannotBeWritten()
+  void shouldRefuseGraphQlInvitationCodeLookupAsUnavailableWhenCredentialJournalCannotBeWritten()
       throws Exception {
     mockMvc
         .perform(
@@ -115,7 +115,7 @@ class CredentialJournalOutageIT extends AbstractIntegrationTest {
                     HttpHeaders.AUTHORIZATION, "Bearer " + authTestSupport.accountBearer(identity))
                 .content(
                     """
-                    {"query": "mutation { acceptManagerInvitation(input: {code: \\"unknown.secret\\"}) { invitation { status } userErrors { __typename } } }"}
+                    {"query": "mutation { lookUpManagerInvitationCode(input: {code: \\"unknown.secret\\"}) { invitation { id } userErrors { __typename } } }"}
                     """))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors[0].extensions.errorType").value("UNAVAILABLE"))

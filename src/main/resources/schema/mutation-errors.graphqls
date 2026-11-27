@@ -239,10 +239,16 @@ type InvalidProfilePinError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The Profile must keep a PIN under its Household's safety policy."
+"The Profile must keep a PIN under a Household's safety policy."
 type ProfilePinRequiredError implements MutationError {
+    "Names the Household only for a caller who may already see that the Profile is available there."
     message: String!
-    householdId: ID!
+    """
+    The Household whose safety policy requires the PIN, for a caller who may use that Household,
+    manages the Profile or is a ServerAdmin. Null for anyone else, such as a HouseholdAdmin who
+    only supervises the Profile where it visits, who learns only that another Household needs it.
+    """
+    householdId: ID
 }
 
 "Deletion needs an unlinked, unshared Profile and the caller as its sole remaining manager."
@@ -278,6 +284,11 @@ type EligibleProfileManagerRequiredError implements InputMutationError & Mutatio
     inputPath: [String!]!
 }
 
+"""
+The invitation no longer waits for an answer: it was accepted, declined, canceled, replaced or
+withdrawn, or it expired. For a manager invitation, only a caller who may see the invitation gets
+this; everyone else gets ManagerInvitationNotFoundError.
+"""
 type InvitationNotPendingError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
@@ -390,7 +401,10 @@ type AlreadyManagerError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The invitation is unavailable."
+"""
+No invitation that the caller may see has that id, or the code does not work. An invitation that
+exists but names another Account gets the same answer.
+"""
 type ManagerInvitationNotFoundError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

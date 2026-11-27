@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -33,28 +34,53 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
 
   private final FakeProfileHouseholdShareRepository shares;
   private final Predicate<UUID> unrestrictedPersonalProfile;
+  private final BiPredicate<UUID, UUID> directlyManages;
 
   public FakeUserAccountRepository() {
-    this(new FakeProfileHouseholdShareRepository(), _ -> false);
+    this(new FakeProfileHouseholdShareRepository(), _ -> false, (_, _) -> false);
   }
 
   /** Pair with the share fake so "may use a Household" follows the Personal Profile's shares. */
   public FakeUserAccountRepository(FakeProfileHouseholdShareRepository shares) {
-    this(shares, _ -> false);
+    this(shares, _ -> false, (_, _) -> false);
   }
 
   /** Pair with the Profile fake when tests exercise Profile-manager eligibility. */
   public FakeUserAccountRepository(FakeProfileRepository profiles) {
+    this(profiles, new FakeProfileManagerRepository());
+  }
+
+  /**
+   * Pair with the Profile and manager fakes when tests also decide which Account may accept an
+   * invitation to manage a Profile.
+   */
+  public FakeUserAccountRepository(
+      FakeProfileRepository profiles, FakeProfileManagerRepository managers) {
     this(
         profiles.shares(),
         profileId ->
-            profiles.findById(profileId).filter(profile -> !profile.isRestricted()).isPresent());
+            profiles.findById(profileId).filter(profile -> !profile.isRestricted()).isPresent(),
+        managers::existsByAccountIdAndProfileId);
   }
 
   private FakeUserAccountRepository(
-      FakeProfileHouseholdShareRepository shares, Predicate<UUID> unrestrictedPersonalProfile) {
+      FakeProfileHouseholdShareRepository shares,
+      Predicate<UUID> unrestrictedPersonalProfile,
+      BiPredicate<UUID, UUID> directlyManages) {
     this.shares = shares;
     this.unrestrictedPersonalProfile = unrestrictedPersonalProfile;
+    this.directlyManages = directlyManages;
+  }
+
+  @Override
+  public Optional<UUID> lockAccountThatMayAcceptManagement(UUID profileId, String email) {
+    return database.values().stream()
+        .filter(account -> account.getEmail().equalsIgnoreCase(email))
+        .filter(account -> unrestrictedPersonalProfile.test(account.getPersonalProfileId()))
+        .filter(account -> !profileId.equals(account.getPersonalProfileId()))
+        .filter(account -> !directlyManages.test(account.getId(), profileId))
+        .map(UserAccount::getId)
+        .findFirst();
   }
 
   @Override
@@ -98,6 +124,12 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
                     account.getHouseholdId(),
                     account.getHouseholdRole(),
                     account.getPersonalProfileId()));
+  }
+
+  @Override
+  public List<Row<UserAccount>> rowsManaging(UUID profileId, Seek seek) {
+    throw new UnsupportedOperationException(
+        "The managers of a Profile are read only from PostgreSQL");
   }
 
   @Override

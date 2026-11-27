@@ -18,7 +18,9 @@ import com.streamarr.server.services.pagination.Pager;
 import com.streamarr.server.services.pagination.ServerScope;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -76,6 +78,20 @@ public class AdministrationQueryService {
   public ProfileAdministrationDetails profileAdministrationDetails(Profile profile) {
     var linked = userAccountRepository.findByPersonalProfileId(profile.getId()).isPresent();
     return new ProfileAdministrationDetails(profile, linked);
+  }
+
+  /** The details of each Profile of a page, with their Account linkage read in one statement. */
+  public ListPage<ProfileAdministrationDetails> profileAdministrationDetails(
+      ListPage<Profile> page) {
+    var profileIds = page.rows().stream().map(row -> row.item().getId()).toList();
+    var linked =
+        profileIds.isEmpty()
+            ? Set.<UUID>of()
+            : userAccountRepository.findByPersonalProfileIdIn(profileIds).stream()
+                .map(UserAccount::getPersonalProfileId)
+                .collect(Collectors.toSet());
+    return page.map(
+        profile -> new ProfileAdministrationDetails(profile, linked.contains(profile.getId())));
   }
 
   public record ProfileAdministrationDetails(Profile profile, boolean linked) {}

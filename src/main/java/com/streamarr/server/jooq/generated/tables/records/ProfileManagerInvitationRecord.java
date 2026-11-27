@@ -274,6 +274,38 @@ public class ProfileManagerInvitationRecord extends UpdatableRecordImpl<ProfileM
         return (byte[]) get(16);
     }
 
+    /**
+     * Setter for
+     * <code>public.profile_manager_invitation.recipient_invalidated_at</code>.
+     */
+    public void setRecipientInvalidatedAt(OffsetDateTime value) {
+        set(17, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.profile_manager_invitation.recipient_invalidated_at</code>.
+     */
+    public OffsetDateTime getRecipientInvalidatedAt() {
+        return (OffsetDateTime) get(17);
+    }
+
+    /**
+     * Setter for
+     * <code>public.profile_manager_invitation.recipient_invalidation_reason</code>.
+     */
+    public void setRecipientInvalidationReason(String value) {
+        set(18, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.profile_manager_invitation.recipient_invalidation_reason</code>.
+     */
+    public String getRecipientInvalidationReason() {
+        return (String) get(18);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -297,7 +329,7 @@ public class ProfileManagerInvitationRecord extends UpdatableRecordImpl<ProfileM
     /**
      * Create a detached, initialised ProfileManagerInvitationRecord
      */
-    public ProfileManagerInvitationRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID profileId, String profileName, UUID inviterAccountId, String inviterDisplayName, UUID recipientAccountId, String recipientEmail, ProfileManagerInvitationStatus status, OffsetDateTime expiresAt, OffsetDateTime decidedAt, String invalidationReason, String publicId, byte[] secretDigest) {
+    public ProfileManagerInvitationRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID profileId, String profileName, UUID inviterAccountId, String inviterDisplayName, UUID recipientAccountId, String recipientEmail, ProfileManagerInvitationStatus status, OffsetDateTime expiresAt, OffsetDateTime decidedAt, String invalidationReason, String publicId, byte[] secretDigest, OffsetDateTime recipientInvalidatedAt, String recipientInvalidationReason) {
         super(ProfileManagerInvitation.PROFILE_MANAGER_INVITATION);
 
         setId(id);
@@ -317,6 +349,8 @@ public class ProfileManagerInvitationRecord extends UpdatableRecordImpl<ProfileM
         setInvalidationReason(invalidationReason);
         setPublicId(publicId);
         setSecretDigest(secretDigest);
+        setRecipientInvalidatedAt(recipientInvalidatedAt);
+        setRecipientInvalidationReason(recipientInvalidationReason);
         resetTouchedOnNotNull();
     }
 }

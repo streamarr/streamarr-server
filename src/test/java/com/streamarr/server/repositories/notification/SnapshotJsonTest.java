@@ -4,6 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.notification.NotificationKind;
 import com.streamarr.server.domain.notification.NotificationSnapshot;
+import com.streamarr.server.services.events.notification.ProfileManagementNotificationKinds;
+import com.streamarr.server.services.events.notification.ProfileManagementRemovedSnapshot;
+import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnswer;
+import com.streamarr.server.services.events.notification.ProfileManagerInvitationAnsweredSnapshot;
+import com.streamarr.server.services.events.notification.ProfileManagerInvitationReceivedSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
 import com.streamarr.server.services.events.notification.ProfileShareEndedBy;
@@ -12,9 +17,6 @@ import com.streamarr.server.services.events.notification.ProfileShareOfferedSnap
 import com.streamarr.server.services.events.notification.SharingNotificationKinds;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.HouseholdNewsSnapshot;
-import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.InvitationAnswer;
-import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.InvitationReceivedSnapshot;
-import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.ManagementRemovedSnapshot;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.ScanOrRefreshFinishedSnapshot;
 import com.streamarr.server.support.SpecifiedOnlyNotificationKinds.UnmatchedItemsSnapshot;
 import java.util.List;
@@ -44,12 +46,17 @@ class SnapshotJsonTest {
           List.of(new ProfileShareAnsweredSnapshot(NAME, ProfileShareAnswer.REJECTED)),
           SharingNotificationKinds.PROFILE_SHARE_ENDED,
           List.of(new ProfileShareEndedSnapshot(NAME, ProfileShareEndedBy.HOUSEHOLD_SIDE)),
-          SpecifiedOnlyNotificationKinds.MANAGEMENT_REMOVED,
-          List.of(new ManagementRemovedSnapshot(NAME)),
-          SpecifiedOnlyNotificationKinds.INVITATION_RECEIVED,
+          ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_RECEIVED,
           List.of(
-              new InvitationReceivedSnapshot(NAME, Optional.empty()),
-              new InvitationReceivedSnapshot(NAME, Optional.of(InvitationAnswer.DECLINED))),
+              new ProfileManagerInvitationReceivedSnapshot(NAME, Optional.empty()),
+              new ProfileManagerInvitationReceivedSnapshot(
+                  NAME, Optional.of(ProfileManagerInvitationAnswer.DECLINED))),
+          ProfileManagementNotificationKinds.PROFILE_MANAGER_INVITATION_ANSWERED,
+          List.of(
+              new ProfileManagerInvitationAnsweredSnapshot(
+                  NAME, ProfileManagerInvitationAnswer.ACCEPTED)),
+          ProfileManagementNotificationKinds.PROFILE_MANAGEMENT_REMOVED,
+          List.of(new ProfileManagementRemovedSnapshot(NAME)),
           SpecifiedOnlyNotificationKinds.SCAN_OR_REFRESH_FINISHED,
           List.of(
               ScanOrRefreshFinishedSnapshot.builder()
@@ -63,10 +70,13 @@ class SnapshotJsonTest {
           SpecifiedOnlyNotificationKinds.HOUSEHOLD_NEWS,
           List.of(new HouseholdNewsSnapshot(NAME)));
 
-  // The sharing kinds, and the kinds that tests define to show the model fits them.
+  // The kinds the server tells, and the kinds that tests define to show the model fits them.
   static Stream<Arguments> everyKindsSnapshots() {
-    return Stream.concat(
-            SharingNotificationKinds.ALL.stream(), SpecifiedOnlyNotificationKinds.ALL.stream())
+    return Stream.of(
+            SharingNotificationKinds.ALL,
+            ProfileManagementNotificationKinds.ALL,
+            SpecifiedOnlyNotificationKinds.ALL)
+        .flatMap(List::stream)
         .flatMap(
             kind ->
                 samplesOf(kind).stream()

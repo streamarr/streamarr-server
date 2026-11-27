@@ -279,6 +279,11 @@ public class HouseholdDeletionService {
   /** A page of a managed Profile's viewing activity, most recent first; hidden reads as empty. */
   public ListPage<SessionProgress> profileActivity(
       AuthenticatedIdentity identity, UUID profileId, PageRequest request) {
+    // A decision about a Profile that does not exist fails rather than denies.
+    if (!profileRepository.existsById(profileId)) {
+      return new ListPage<>(List.of(), false, false);
+    }
+
     return switch (authorizationService.decide(
         identity, new Intent.ViewProfileActivity(profileId))) {
       case Decision.Allowed<AuthorizationUnit> _ ->

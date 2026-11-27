@@ -107,6 +107,16 @@ public class AuthTestSupport {
     return createIdentity(false);
   }
 
+  /** An identity like {@link #createIdentity()} whose Account has the given email address. */
+  public TestIdentity createIdentityWithEmail(String email) {
+    return transactionTemplate.execute(
+        _ ->
+            saveIdentityIn(
+                householdRepository.saveAndFlush(
+                    HouseholdFixture.defaultHouseholdBuilder().build()),
+                account -> account.householdRole(HouseholdRole.ADMIN).email(email)));
+  }
+
   /** A ServerAdmin (live row) who is also a HouseholdAdmin of its own Household. */
   public TestIdentity createAdminIdentity() {
     return createIdentity(true);

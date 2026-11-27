@@ -37,6 +37,7 @@ import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileManagerInvitationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -492,7 +493,7 @@ class HouseholdDeletionServiceTest {
   @Test
   @DisplayName("Should return only the requested Profile's activity when the caller may view it")
   void shouldReturnOnlyTheRequestedProfilesActivityWhenTheCallerMayViewIt() {
-    var profileId = UUID.randomUUID();
+    var profileId = profiles.save(ProfileFixture.defaultProfileBuilder().build()).getId();
     var older = progress.save(progressFor(profileId));
     var newer = progress.save(progressFor(profileId));
     var otherProfileActivity = progress.save(progressFor(UUID.randomUUID()));
@@ -508,7 +509,7 @@ class HouseholdDeletionServiceTest {
   @Test
   @DisplayName("Should hide Profile activity when the caller may not view the Profile")
   void shouldHideProfileActivityWhenCallerMayNotViewProfile() {
-    var profileId = UUID.randomUUID();
+    var profileId = profiles.save(ProfileFixture.defaultProfileBuilder().build()).getId();
     progress.save(progressFor(profileId));
     authorization.denyAll();
 
@@ -545,7 +546,7 @@ class HouseholdDeletionServiceTest {
   void shouldFailClosedWhenProfileActivityAuthorizationIsUnavailable() {
     authorization.failWith(Decision.FailureCause.ENGINE_FAILURE);
     var identity = identity();
-    var profileId = UUID.randomUUID();
+    var profileId = profiles.save(ProfileFixture.defaultProfileBuilder().build()).getId();
     var request = firstRows(10);
 
     assertThatThrownBy(() -> service.profileActivity(identity, profileId, request))
@@ -670,7 +671,8 @@ class HouseholdDeletionServiceTest {
             new ProfileShareLifecycle(shares, shareEvents),
             new NotificationDismissals(shares, managerInvitations, shareEvents),
             managers,
-            managerInvitations,
+            new ProfileManagerInvitationLifecycle(
+                managerInvitations, new CapturingEventPublisher()),
             accountInvitations,
             passwordResetCodes,
             sessions,

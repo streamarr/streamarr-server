@@ -7,12 +7,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileManagerInvitationStatus;
+import com.streamarr.server.domain.auth.ProfileManagerInvitationsFilter;
 import com.streamarr.server.domain.pagination.ListOrder;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.domain.pagination.SortValueKind;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.security.WithAccountContext;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import org.jooq.DSLContext;
@@ -54,12 +57,14 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
     var expired = saveInvitation(inviter, recipients.get(1), now.minusSeconds(1));
     var accepted = saveInvitation(inviter, recipients.get(2), now.plusSeconds(3600));
     transactionTemplate.executeWithoutResult(
-        _ -> assertThat(invitationRepository.tryAcceptPending(accepted.getId(), now)).isTrue());
+        _ -> assertThat(invitationRepository.tryAcceptPending(accepted.getId(), now)).isPresent());
 
     try {
       assertThat(
               invitationRepository.rowsPendingForProfile(
-                  inviter.profile().getId(), now, firstSeek(NEWEST_FIRST, 10)))
+                  new ProfileManagerInvitationsFilter(inviter.profile().getId(), true),
+                  now,
+                  firstSeek(NEWEST_FIRST, 10)))
           .extracting(row -> row.item().getId())
           .containsExactly(live.getId());
       assertThat(
@@ -107,10 +112,43 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
     }
   }
 
-  @ParameterizedTest(name = "Should invalidate a pending invitation when its {0} disappears")
-  @EnumSource(RequiredParty.class)
+  @Test
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
-  @DisplayName("Should invalidate a pending invitation when its required party disappears")
+  @DisplayName("Should return the stored expiry when a write changes an invitation")
+  void shouldReturnTheStoredExpiryWhenAWriteChangesAnInvitation() {
+    var inviter = authTestSupport.createAdminIdentity();
+    var recipient = authTestSupport.createIdentity();
+    var expiresAt = Instant.now().plus(Duration.ofDays(7)).truncatedTo(ChronoUnit.MICROS);
+    var invitation = saveInvitation(inviter, recipient, expiresAt);
+
+    try {
+      var canceled =
+          transactionTemplate.execute(
+              _ -> invitationRepository.tryCancelPending(invitation.getId(), Instant.now()));
+
+      assertThat(canceled)
+          .hasValueSatisfying(
+              changed ->
+                  assertThat(changed.expiresAt())
+                      .isEqualTo(expiresAt)
+                      .isEqualTo(
+                          invitationRepository
+                              .findById(invitation.getId())
+                              .orElseThrow()
+                              .getExpiresAt()));
+    } finally {
+      invitationRepository.deleteById(invitation.getId());
+      authTestSupport.deleteIdentity(recipient);
+      authTestSupport.deleteIdentity(inviter);
+    }
+  }
+
+  @ParameterizedTest(name = "Should invalidate a pending invitation when its {0} disappears")
+  @EnumSource(
+      value = RequiredParty.class,
+      names = {"PROFILE", "INVITER"})
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  @DisplayName("Should invalidate a pending invitation when its Profile or its inviter disappears")
   void shouldInvalidatePendingInvitationWhenRequiredPartyDisappears(RequiredParty requiredParty) {
     var inviter = authTestSupport.createAdminIdentity();
     var recipient = authTestSupport.createIdentity();
@@ -124,6 +162,31 @@ class ProfileManagerInvitationRepositoryCustomImplIT extends AbstractIntegration
       assertThat(resolved.getDecidedAt()).isNotNull();
       assertThat(resolved.getInvalidationReason()).isEqualTo(requiredParty.reason());
       assertThat(requiredParty.idOf(resolved)).isNull();
+    } finally {
+      invitationRepository.deleteById(pendingInvitation.getId());
+      authTestSupport.deleteIdentity(recipient);
+      authTestSupport.deleteIdentity(inviter);
+    }
+  }
+
+  @Test
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  @DisplayName(
+      "Should keep a pending invitation waiting to its Profile's side when the Account it names"
+          + " disappears")
+  void shouldKeepAPendingInvitationWaitingToItsProfilesSideWhenTheAccountItNamesDisappears() {
+    var inviter = authTestSupport.createAdminIdentity();
+    var recipient = authTestSupport.createIdentity();
+    var pendingInvitation = saveInvitation(inviter, recipient, Instant.now().plusSeconds(3600));
+
+    try {
+      clearRequiredParty(pendingInvitation.getId(), RequiredParty.RECIPIENT);
+
+      var kept = invitationRepository.findById(pendingInvitation.getId()).orElseThrow();
+      assertThat(kept.getStatus()).isEqualTo(ProfileManagerInvitationStatus.PENDING);
+      assertThat(kept.getRecipientAccountId()).isNull();
+      assertThat(kept.getRecipientInvalidatedAt()).isNotNull();
+      assertThat(kept.getRecipientInvalidationReason()).isEqualTo("recipient deleted");
     } finally {
       invitationRepository.deleteById(pendingInvitation.getId());
       authTestSupport.deleteIdentity(recipient);
