@@ -269,14 +269,14 @@ public class StreamSession {
   }
 
   /**
-   * Where playback has already ended normally: a resume at or beyond the fixed media end, or a copy
-   * that ran short after every source stream ended (ADR 0052).
+   * Where playback has already ended normally: a resume at or beyond the media end (ADR 0064), or a
+   * copy that ran short after every source stream ended (ADR 0052).
    */
   public Optional<Duration> getNormalEnd() {
     return getShortCopy()
         .filter(ShortCopy::everySourceStreamEnded)
         .map(ShortCopy::mediaEnd)
-        .or(() -> fixedMediaEnd.filter(this::startsAtOrPast));
+        .or(() -> Optional.of(getMediaEnd()).filter(this::startsAtOrPast));
   }
 
   private boolean startsAtOrPast(Duration end) {

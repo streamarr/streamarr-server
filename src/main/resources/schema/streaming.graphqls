@@ -66,7 +66,8 @@ type HlsStreamSession implements StreamSession {
     videoRange: VideoRange!
     """
     Seconds on the media timeline where playback has ended normally: a copy ran short after every
-    source stream ended (ADR 0052), or a resume starts at or beyond the chosen copied-audio boundary.
+    source stream ended (ADR 0052), or a resume starts at or beyond the stream session's media end, which
+    is the end of the segment that holds the last sample of copied audio with a known end (ADR 0064).
     The client ends playback at this time and requests no later media. Null for an ordinary planned
     end that the playlist already advertises; temporary buffering before that end is not completion.
     """

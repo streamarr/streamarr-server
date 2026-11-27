@@ -6810,6 +6810,82 @@ class HlsStreamingServiceTest {
     assertThat(capacityRefusals("no_encoder_with_free_slot")).isZero();
   }
 
+  // No stream states its end, so the session has no copied-audio boundary and its media ends at
+  // the container's 26 s.
+  @ParameterizedTest
+  @CsvSource({"26, 1", "40, 1", "26, 0"})
+  @DisplayName(
+      "Should finish without starting a worker when resuming at or past the media end of a session"
+          + " without a copied-audio boundary")
+  void shouldFinishWithoutStartingAWorkerWhenResumingAtOrPastTheMediaEndWithoutABoundary(
+      long startSeconds, int availableSlots) {
+    probeResults.setDefaultProbe(probeWithAudioEnd(Optional.empty()).build());
+    transcodeExecutor.setAvailableSlots(availableSlots);
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofSeconds(startSeconds)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getFixedMediaEnd()).isEmpty();
+    assertThat(session.getNormalEnd()).contains(Duration.ofSeconds(26));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(service.getAllSessions()).containsExactly(session);
+  }
+
+  @Test
+  @DisplayName(
+      "Should finish without reserving capacity when an eligible encode resumes past the media end")
+  void shouldFinishWithoutReservingCapacityWhenAnEligibleEncodeResumesPastTheMediaEnd() {
+    probeResults.setDefaultProbe(probeWithAudioEnd(Optional.empty()).build());
+    transcodeExecutor.setAvailableSlots(0);
+    transcodeExecutor.setEncodeSlots(Map.of("h264", 0));
+    var command =
+        createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
+            .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
+            .startPosition(Optional.of(Duration.ofSeconds(30)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getNormalEnd()).contains(Duration.ofSeconds(26));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+    assertThat(capacityRefusals("no_encoder_with_free_slot")).isZero();
+  }
+
+  // Only a job attempt learned where the audio ends, so the session pads the audio up to the media
+  // end instead of ending at a copied-audio boundary.
+  @Test
+  @DisplayName(
+      "Should finish a resume at the media end when the session pads audio whose end only a job"
+          + " learned")
+  void shouldFinishAResumeAtTheMediaEndWhenTheSessionPadsAudioWhoseEndOnlyAJobLearned() {
+    probeResults.setDefaultProbe(probeWithAudioEnd(Optional.empty()).build());
+    var file = seedMediaFile();
+    var snapshot = probeResults.findByMediaFileId(file.getId()).orElseThrow().getSnapshot();
+    assertThat(
+            learnedStreamEnds.store(
+                LearnedStreamEnd.builder()
+                    .mediaFileId(file.getId())
+                    .snapshot(snapshot)
+                    .streamIndex(1)
+                    .endTime(Duration.ofSeconds(10))
+                    .build()))
+        .isTrue();
+    var command =
+        createStreamSessionCommandBuilder(file.getId(), UUID.randomUUID())
+            .startPosition(Optional.of(Duration.ofSeconds(26)))
+            .build();
+
+    var session = accepted(service.createSession(command));
+
+    assertThat(session.getTranscodeDecision().audioDecision().mode())
+        .isEqualTo(AudioMode.TRANSCODE);
+    assertThat(session.getNormalEnd()).contains(Duration.ofSeconds(26));
+    assertThat(transcodeExecutor.getStartedRequests()).isEmpty();
+  }
+
   private static MediaProbe.MediaProbeBuilder probeWithAudioEnd(Optional<Duration> end) {
     return defaultProbeBuilder()
         .duration(Duration.ofSeconds(26))
@@ -6903,13 +6979,12 @@ class HlsStreamingServiceTest {
         .doesNotContain("#EXT-X-START");
   }
 
-  @ParameterizedTest
-  @ValueSource(longs = {-1, 7_200_000, 7_200_001})
-  @DisplayName("Should refuse a start position before zero or at or past the media's end")
-  void shouldRefuseAStartPositionBeforeZeroOrAtOrPastTheMediasEnd(long startMillis) {
+  @Test
+  @DisplayName("Should refuse a start position before zero")
+  void shouldRefuseAStartPositionBeforeZero() {
     var command =
         createStreamSessionCommandBuilder(seedMediaFile().getId(), UUID.randomUUID())
-            .startPosition(Optional.of(Duration.ofMillis(startMillis)))
+            .startPosition(Optional.of(Duration.ofMillis(-1)))
             .build();
 
     var outcome = service.createSession(command);

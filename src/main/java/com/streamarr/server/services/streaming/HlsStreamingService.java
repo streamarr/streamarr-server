@@ -129,15 +129,6 @@ public class HlsStreamingService implements StreamingService {
               .build());
     }
 
-    // Every playlist of an HLS stream session ends at the media end, which can lie before or after
-    // the duration that the container header states. A resume past a known copied-audio end is
-    // decided once the session's end is known.
-    if (startsAtOrPast(command, probe.mediaEnd())
-        && command.fixedMediaEnd().isEmpty()
-        && probe.probedSessionAudioEnd().isEmpty()) {
-      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
-    }
-
     // Without a connected worker no encoder is verified. That moment must not read as faulty
     // workers and admit a copy over the viewer's limits once a worker connects.
     var verifiedWorkers = transcodeExecutor.verifiedVideoCodecFamiliesByWorker();
@@ -225,10 +216,6 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.accepted(session);
     }
 
-    if (startsAtOrPast(command, session.getMediaEnd())) {
-      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
-    }
-
     startAtTheStartSegment(session);
 
     try {
@@ -261,11 +248,13 @@ public class HlsStreamingService implements StreamingService {
         .or(() -> MediaSegmentTimelines.endOfCopiedAudioSegment(probe, decision, properties));
   }
 
+  // Every playlist of an HLS stream session ends at its media end, which can lie before or after
+  // the
+  // duration that the container header states.
   private boolean resumesPastMediaEnd(
       CreateStreamSessionCommand command, MediaProbe probe, TranscodeDecision decision) {
-    return fixedMediaEndFor(command, probe, decision)
-        .filter(end -> startsAtOrPast(command, end))
-        .isPresent();
+    var mediaEnd = fixedMediaEndFor(command, probe, decision).orElseGet(probe::mediaEnd);
+    return startsAtOrPast(command, mediaEnd);
   }
 
   // A finished resume needs a compatible format's grid, but no free encoder or job slot.
