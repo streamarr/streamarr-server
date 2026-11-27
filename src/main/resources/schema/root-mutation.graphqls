@@ -122,6 +122,13 @@ type Mutation {
     deleteLastAccountAndHouseholdPreservingPersonalProfile(input: DeleteLastAccountAndHouseholdPreservingPersonalProfileInput!): DeleteLastAccountAndHouseholdPreservingPersonalProfilePayload
     changeEncoderPreset(input: ChangeEncoderPresetInput!): ChangeEncoderPresetPayload
     changeIdleSegmentRetention(input: ChangeIdleSegmentRetentionInput!): ChangeIdleSegmentRetentionPayload
+    """
+    Marks read the signed-in Account's unread Notifications among the ids sent, and no other
+    Notification. The same access as notifications.
+    """
+    markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload
+    "Changes how long the server keeps read news and resolved requests. Requires a ServerAdmin."
+    changeNotificationRetention(input: ChangeNotificationRetentionInput!): ChangeNotificationRetentionPayload
 }
 
 enum ImageRefreshMode {

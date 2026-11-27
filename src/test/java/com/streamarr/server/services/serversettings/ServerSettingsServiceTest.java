@@ -210,6 +210,88 @@ class ServerSettingsServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should keep Notification history for ninety days when no ServerAdmin has changed it")
+  void shouldKeepNotificationHistoryForNinetyDaysWhenNoServerAdminHasChangedIt() {
+    assertThat(serverSettingsService.notificationRetention()).isEqualTo(Duration.ofDays(90));
+  }
+
+  @Test
+  @DisplayName("Should keep Notification history for the stored days when the setting was changed")
+  void shouldKeepNotificationHistoryForTheStoredDaysWhenTheSettingWasChanged() {
+    var settings = serverSettingsRepository.findAll().getFirst();
+    settings.setNotificationRetentionDays(30);
+    serverSettingsRepository.save(settings);
+
+    assertThat(serverSettingsService.notificationRetention()).isEqualTo(Duration.ofDays(30));
+  }
+
+  @Test
+  @DisplayName(
+      "Should report ninety days and the allowed range when a ServerAdmin reads the Notification"
+          + " retention")
+  void shouldReportNinetyDaysAndTheAllowedRangeWhenAServerAdminReadsTheNotificationRetention() {
+    var settingsId = serverSettingsRepository.findAll().getFirst().getId();
+
+    var setting = serverSettingsService.readNotificationRetentionSetting(identity);
+
+    assertThat(setting.id()).isEqualTo(settingsId);
+    assertThat(setting.days()).isEqualTo(90);
+    assertThat(setting.minimumDays()).isEqualTo(1);
+    assertThat(setting.maximumDays()).isEqualTo(365);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 30, 365})
+  @DisplayName(
+      "Should keep Notification history for the new days when a ServerAdmin changes the retention")
+  void shouldKeepNotificationHistoryForTheNewDaysWhenAServerAdminChangesTheRetention(int days) {
+    var setting = accepted(serverSettingsService.changeNotificationRetention(identity, days));
+
+    assertThat(setting.days()).isEqualTo(days);
+    assertThat(setting.id()).isEqualTo(serverSettingsRepository.findAll().getFirst().getId());
+    assertThat(serverSettingsService.notificationRetention()).isEqualTo(Duration.ofDays(days));
+    assertThat(authorizationService.recordedIntents())
+        .startsWith(new Intent.ChangeNotificationRetention());
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {Integer.MIN_VALUE, -1, 0, 366, Integer.MAX_VALUE})
+  @DisplayName(
+      "Should reject the change and keep ninety days when the Notification retention is out of"
+          + " range")
+  void shouldRejectTheChangeAndKeepNinetyDaysWhenTheNotificationRetentionIsOutOfRange(int days) {
+    var outcome = serverSettingsService.changeNotificationRetention(identity, days);
+
+    assertThat(rejectionOf(outcome))
+        .isEqualTo(new ChangeNotificationRetentionRejection.OutOfRange());
+    assertThat(serverSettingsService.notificationRetention()).isEqualTo(Duration.ofDays(90));
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {30, 0})
+  @DisplayName(
+      "Should refuse a caller who is not a ServerAdmin and keep ninety days when the caller"
+          + " changes the Notification retention")
+  void shouldRefuseACallerWhoIsNotAServerAdminWhenTheCallerChangesTheNotificationRetention(
+      int days) {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> serverSettingsService.changeNotificationRetention(identity, days))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(serverSettingsService.notificationRetention()).isEqualTo(Duration.ofDays(90));
+  }
+
+  @Test
+  @DisplayName("Should refuse the Notification retention read when the caller is not a ServerAdmin")
+  void shouldRefuseTheNotificationRetentionReadWhenTheCallerIsNotAServerAdmin() {
+    authorizationService.denyAll();
+
+    assertThatThrownBy(() -> serverSettingsService.readNotificationRetentionSetting(identity))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
   @DisplayName("Should fail with a missing-settings error when the settings row is absent")
   void shouldFailWithMissingSettingsErrorWhenSettingsRowIsAbsent() {
     serverSettingsRepository.deleteAll();

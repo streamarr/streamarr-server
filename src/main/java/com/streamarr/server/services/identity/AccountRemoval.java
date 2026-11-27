@@ -3,6 +3,7 @@ package com.streamarr.server.services.identity;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AccountRemovalConflictException;
@@ -40,6 +41,7 @@ class AccountRemoval {
   private final ProfileRepository profileRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileShareLifecycle shareLifecycle;
+  private final NotificationDismissals notificationDismissals;
   private final ProfileManagerRepository profileManagerRepository;
   private final ProfileManagerInvitationRepository managerInvitationRepository;
   private final AccountInvitationRepository accountInvitationRepository;
@@ -64,6 +66,7 @@ class AccountRemoval {
       throw new AccountRemovalConflictException();
     }
 
+    notificationDismissals.accountLeftHousehold(transfer.accountId(), sourceHouseholdId, now);
     profileRepository.rehomePersonalProfile(profileId, sourceHouseholdId, destinationHouseholdId);
     shareLifecycle.announceMove(profileId, sourceHouseholdId, destinationHouseholdId);
 
@@ -110,6 +113,9 @@ class AccountRemoval {
         account.getId(), "recipient deleted", now);
     managerInvitationRepository.invalidatePendingInvitedBy(
         account.getId(), "inviting manager deleted", now);
+    // A share write holds its Profile and then the Accounts it tells, so the removal holds the
+    // Personal Profile before it holds the Account, in the same order.
+    profileRepository.lockById(account.getPersonalProfileId());
     // Read after any wait above, so an offer whose time ran out meanwhile is stored as expired.
     shareLifecycle.invalidatePendingOfferedBy(
         account.getId(), "offering manager deleted", clock.instant());
@@ -144,7 +150,8 @@ class AccountRemoval {
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareLifecycle.tryEndActive(share.getId(), now));
+        .ifPresent(
+            share -> shareLifecycle.tryEndActive(share.getId(), deletion.sourceShareEnding(), now));
     shareLifecycle.ensureActiveMembershipShare(profileId, destinationHouseholdId, now);
     shareLifecycle.convertMembershipShareToVisitorShare(profileId, destinationHouseholdId);
   }
@@ -164,6 +171,7 @@ class AccountRemoval {
                 authSessionRepository.clearProfileSelectionFromLiveSessions(
                     profileId, share.getHouseholdId()));
     shareLifecycle.announceDeletionWithProfile(profileId, now);
+    notificationDismissals.profileDeleted(profileId);
     profileRepository.deleteById(profileId);
     profileRepository.flush();
   }
@@ -176,7 +184,8 @@ class AccountRemoval {
     shareRepository
         .findByProfileIdAndHouseholdIdAndStatus(
             profileId, sourceHouseholdId, ProfileShareStatus.ACTIVE)
-        .ifPresent(share -> shareLifecycle.tryEndActive(share.getId(), now));
+        .ifPresent(
+            share -> shareLifecycle.tryEndActive(share.getId(), transfer.sourceShareEnding(), now));
     authSessionRepository.clearProfileSelectionFromLiveSessions(profileId, sourceHouseholdId);
     authSessionRepository.clearHouseholdContextFromAccountSessions(accountId, sourceHouseholdId);
     registrationLifecycle.revokeAllByAccountAndHousehold(
@@ -187,8 +196,14 @@ class AccountRemoval {
     if (!userAccountRepository.tryDelete(account.getId(), account.getHouseholdId())) {
       throw new AccountRemovalConflictException();
     }
+
+    notificationDismissals.recipientDeleted(account.getId());
   }
 
+  /**
+   * One Account's move. {@code sourceShareEnding} says how the share of its Personal Profile into
+   * the source Household ends when the move ends it.
+   */
   @Builder
   record Transfer(
       @NonNull UUID accountId,
@@ -196,12 +211,18 @@ class AccountRemoval {
       @NonNull UUID profileId,
       @NonNull UUID destinationHouseholdId,
       @NonNull SourceHouseholdAccess sourceHouseholdAccess,
+      @NonNull ShareAction.Ending sourceShareEnding,
       @NonNull Instant now) {}
 
+  /**
+   * One Account's deletion. {@code sourceShareEnding} says how the share of a preserved Personal
+   * Profile into the source Household ends when the Profile moves to another Household.
+   */
   @Builder
   record Deletion(
       @NonNull UserAccount account,
       @NonNull ProfileDisposition profileDisposition,
+      @NonNull ShareAction.Ending sourceShareEnding,
       @NonNull Instant now) {}
 
   sealed interface ProfileDisposition permits ErasePersonalProfile, PreservePersonalProfile {}

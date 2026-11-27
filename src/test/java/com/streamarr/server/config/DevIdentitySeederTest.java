@@ -15,6 +15,7 @@ import com.streamarr.server.properties.Argon2Properties;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.auth.SetupService;
 import com.streamarr.server.support.LogCapture;
+import java.time.Clock;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -40,7 +41,8 @@ class DevIdentitySeederTest {
           new FakeWatchHistoryRepository(),
           new PasswordEncoderConfig()
               .passwordEncoder(
-                  Argon2Properties.builder().memoryKib(4096).iterations(1).parallelism(1).build()));
+                  Argon2Properties.builder().memoryKib(4096).iterations(1).parallelism(1).build()),
+          Clock.systemUTC());
 
   @Test
   @DisplayName("Should seed admin identity when bootstrap unclaimed")

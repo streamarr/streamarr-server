@@ -117,6 +117,29 @@ public class UserAccountRepositoryCustomImpl implements UserAccountRepositoryCus
   }
 
   @Override
+  public Set<UUID> lockHouseholdAdminIds(UUID householdId) {
+    return dsl.select(USER_ACCOUNT.ID)
+        .from(USER_ACCOUNT)
+        .where(USER_ACCOUNT.HOUSEHOLD_ID.eq(householdId))
+        .and(USER_ACCOUNT.HOUSEHOLD_ROLE.eq(ADMIN))
+        .orderBy(USER_ACCOUNT.ID)
+        .forShare()
+        .fetchSet(USER_ACCOUNT.ID);
+  }
+
+  @Override
+  public Optional<UUID> lockSelfManagerId(UUID profileId) {
+    return dsl.select(USER_ACCOUNT.ID)
+        .from(USER_ACCOUNT)
+        .join(PROFILE)
+        .on(PROFILE.ID.eq(USER_ACCOUNT.PERSONAL_PROFILE_ID))
+        .where(PROFILE.ID.eq(profileId))
+        .and(PROFILE.RESTRICTED.isFalse())
+        .forShare()
+        .fetchOptional(USER_ACCOUNT.ID);
+  }
+
+  @Override
   public boolean mayUseHousehold(UUID accountId, UUID householdId) {
     var personalProfileShared =
         DSL.exists(

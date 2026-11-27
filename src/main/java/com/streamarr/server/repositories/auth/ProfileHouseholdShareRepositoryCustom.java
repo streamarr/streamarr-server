@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.HouseholdShareFilter;
+import com.streamarr.server.domain.auth.MembershipShareChanges;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.ShareStatusFilter;
@@ -27,6 +28,9 @@ public interface ProfileHouseholdShareRepositoryCustom {
 
   /** Whether the Profile has any ACTIVE share or unexpired PENDING share, read as a scalar. */
   boolean hasActiveOrPendingShares(UUID profileId, Instant now);
+
+  /** The ids of the offers into the Household that are pending and unexpired at the instant. */
+  List<UUID> findPendingOfferIdsInto(UUID householdId, Instant now);
 
   /** The shares the filter keeps into its Household, beyond the seek, by creation, then ID. */
   List<Row<ProfileHouseholdShare>> rowsIntoHousehold(HouseholdShareFilter filter, Seek seek);
@@ -87,9 +91,10 @@ public interface ProfileHouseholdShareRepositoryCustom {
 
   /**
    * Linking makes the Profile someone's Personal Profile: its home availability becomes the
-   * structural share, whether it was active, still pending, or missing.
+   * structural share, whether it was active, still pending, or missing. A pending offer into the
+   * Household, whether its time ran out or the structural share took its place, stopped waiting.
    */
-  List<ChangedShare> ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now);
+  MembershipShareChanges ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now);
 
   /** Stores EXPIRED on every PENDING share whose offer time has run out. */
   List<ChangedShare> materializeExpiredPending(Instant now);

@@ -1,0 +1,209 @@
+# Notifications (ADR 0063; ADR 0026 shapes).
+
+"How long the server keeps read news and resolved requests (ADR 0063)."
+type NotificationRetentionSetting {
+    "The same for every read and change, so a client cache can update the setting in place."
+    id: ID!
+    days: Int!
+    minimumDays: Int!
+    maximumDays: Int!
+}
+
+input ChangeNotificationRetentionInput {
+    days: Int!
+}
+
+type ChangeNotificationRetentionPayload {
+    notificationRetentionSetting: NotificationRetentionSetting
+    userErrors: [ChangeNotificationRetentionError!]!
+}
+
+union ChangeNotificationRetentionError = NotificationRetentionOutOfRangeError
+
+"""
+What the signed-in Account was told when something happened to a subject (ADR 0063). The
+concrete type names the kind and holds what the Account was told and the subject's id.
+"""
+interface Notification {
+    id: ID!
+    """
+    The Notification's line, in English, for a client that shows this type but handles it no
+    further. A client may word its own line from the typed fields. Never parse this one.
+    """
+    message: String!
+    "When the first event made the Notification, as an ISO-8601 instant."
+    createdAt: String!
+    "When its latest event happened, as an ISO-8601 instant. The list orders by it, newest first."
+    latestEventAt: String!
+    """
+    True until the recipient marks the Notification read. A request is also read once it
+    resolves, and it never becomes unread again.
+    """
+    unread: Boolean!
+}
+
+"""
+A Notification that waits for a decision on its subject. Its state is stored on it, and the
+subject's events write it. Once expiresAt has passed, an unresolved request reads as EXPIRED.
+A decision or a withdrawal made before expiresAt that arrives after it still replaces EXPIRED,
+and the change is pushed.
+"""
+interface RequestNotification implements Notification {
+    id: ID!
+    message: String!
+    createdAt: String!
+    latestEventAt: String!
+    unread: Boolean!
+    "When the subject expires unless someone decides it first. Null when the subject has no expiry."
+    expiresAt: String
+    "How the request resolved. Null while it waits."
+    resolution: RequestResolution
+    "When the request resolved, as an ISO-8601 instant; expiresAt for an expiry. Null while it waits."
+    resolvedAt: String
+}
+
+enum RequestResolution {
+    "Someone with the authority accepted, rejected or declined the subject."
+    DECIDED
+    "The proposer canceled the subject, a newer proposal replaced it, or the server invalidated it."
+    WITHDRAWN
+    "The subject's expiry passed with no decision."
+    EXPIRED
+}
+
+"""
+A Profile was offered to the Household that the recipient administered. Recipients: the
+Household's HouseholdAdmins when the offer was made, except the Account that made the offer.
+"""
+type ProfileShareOfferedNotification implements RequestNotification & Notification {
+    id: ID!
+    message: String!
+    createdAt: String!
+    latestEventAt: String!
+    unread: Boolean!
+    expiresAt: String
+    resolution: RequestResolution
+    resolvedAt: String
+    """
+    The id of the offer's ProfileShare, for the share queries. They answer by the share's own read
+    rule, so once the offer is over they answer the Household's HouseholdAdmins that it does not
+    exist.
+    """
+    shareId: ID!
+    "The Profile's name when the offer was made. A later rename does not change it."
+    profileName: String!
+    "Whether the offer was accepted or rejected, once resolution is DECIDED. Null otherwise."
+    answer: ProfileShareAnswer
+}
+
+"""
+A Household accepted or rejected an offer of a Profile on whose offering side the recipient
+stood. Recipients: the offering side when the offer was answered, except the Account that
+answered. Its latestEventAt is when the offer was answered.
+"""
+type ProfileShareAnsweredNotification implements Notification {
+    id: ID!
+    message: String!
+    createdAt: String!
+    latestEventAt: String!
+    unread: Boolean!
+    "The id of the offer's ProfileShare, for the share queries."
+    shareId: ID!
+    "The Profile's name when the offer was answered. A later rename does not change it."
+    profileName: String!
+    answer: ProfileShareAnswer!
+}
+
+enum ProfileShareAnswer {
+    ACCEPTED
+    REJECTED
+}
+
+"""
+An active share ended, and the recipient stood on a side that did not end it, or on either side
+when a ServerAdmin or another operation ended it. Its latestEventAt is when the share ended.
+"""
+type ProfileShareEndedNotification implements Notification {
+    id: ID!
+    message: String!
+    createdAt: String!
+    latestEventAt: String!
+    unread: Boolean!
+    """
+    The id of the ProfileShare, for the share queries. They answer the Household's
+    HouseholdAdmins that it does not exist.
+    """
+    shareId: ID!
+    "The Profile's name when the share ended. A later rename does not change it."
+    profileName: String!
+    endedBy: ProfileShareEndedBy!
+}
+
+enum ProfileShareEndedBy {
+    "A ProfileManager of the Profile ended the share. The Profile's own Account counts as one."
+    OFFERING_SIDE
+    "A HouseholdAdmin of the Household ended the share."
+    HOUSEHOLD_SIDE
+    "A ServerAdmin ended the share, or another operation ended it, such as an Account transfer."
+    SERVER
+}
+
+type NotificationConnection {
+    edges: [NotificationEdge]!
+    pageInfo: PageInfo!
+}
+
+type NotificationEdge implements OrderedEdge {
+    "Null when the Notification failed to resolve."
+    node: Notification
+    cursor: String!
+    "Compare as ascending ASCII strings. Includes latestEventAt descending and the ID tie-breaker."
+    orderKey: String!
+}
+
+input MarkNotificationsReadInput {
+    """
+    The ids of the rows that the client's page showed, from 1 to 100. An id that does not exist,
+    that is another Account's or that is already read is skipped, with no error.
+    """
+    notificationIds: [ID!]!
+}
+
+type MarkNotificationsReadPayload {
+    "The signed-in Account's unread count after the change."
+    unreadNotificationCount: Int
+    userErrors: [MarkNotificationsReadError!]!
+}
+
+union MarkNotificationsReadError = NotificationIdCountOutOfRangeError | InvalidIdError
+
+extend type Subscription {
+    """
+    The signed-in Account's Notifications changed: one was made or updated in place, a request
+    resolved, some were marked read, or some were dismissed. An expiry arrives when the subject's
+    domain stores it, within about a minute of the request's expiresAt, and the request already
+    reads as EXPIRED from expiresAt on. A deletion by retention is not pushed. The Account comes
+    from the access token that opened the socket, and no argument names it.
+    The same access as notifications, decided once when the field opens. Every open socket of the
+    Account receives the change, including the socket of the client that made it.
+    """
+    notificationsChanged: NotificationsChange
+}
+
+"One committed change to the signed-in Account's Notifications."
+type NotificationsChange {
+    "Each Notification that the change touched, once."
+    notifications: [NotificationChange]!
+    "The Account's unread count after the change. Null when the count could not be read."
+    unreadNotificationCount: Int
+}
+
+type NotificationChange {
+    notificationId: ID!
+    """
+    The same edge that the notifications query returns, or null when the Notification was
+    dismissed and no longer exists. Remove it from the list and the cache only for a null edge with
+    no error at this change's path.
+    """
+    edge: NotificationEdge
+}

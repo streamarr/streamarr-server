@@ -39,6 +39,12 @@ public interface ProfileRepositoryCustom {
   boolean lockById(UUID profileId);
 
   /**
+   * The Profile's name as it is stored now, read as a scalar so a managed copy loaded earlier in
+   * the transaction cannot answer instead. Empty when the Profile does not exist.
+   */
+  Optional<String> findNameById(UUID profileId);
+
+  /**
    * Shares the Profile's availability guards across its home Household and every active visit,
    * acquiring locks in PostgreSQL UUID order. The caller holds the Profile row lock, so this
    * Household set cannot change before commit.

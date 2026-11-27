@@ -34,11 +34,11 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.ProfilePinHasher;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
 import com.streamarr.server.services.authorization.ProfilePolicyTransition;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.identity.ProfileAdministrationService.CreateProfileCommand;
 import com.streamarr.server.services.mutation.ConstraintViolationTranslator;
 import com.streamarr.server.services.mutation.MutationTransactions;
@@ -95,6 +95,7 @@ class ProfileAdministrationServiceTest {
           managers,
           shares,
           new ProfileShareLifecycle(shares, shareEvents),
+          new NotificationDismissals(shares, managerInvitations, shareEvents),
           households,
           accounts,
           invitations,
@@ -1179,6 +1180,7 @@ class ProfileAdministrationServiceTest {
         managers,
         shares,
         new ProfileShareLifecycle(shares, shareEvents),
+        new NotificationDismissals(shares, managerInvitations, shareEvents),
         households,
         accounts,
         invitations,

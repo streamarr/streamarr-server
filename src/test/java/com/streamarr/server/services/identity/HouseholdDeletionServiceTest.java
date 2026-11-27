@@ -38,10 +38,10 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteEmptyHouseholdCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdCommand;
 import com.streamarr.server.services.identity.HouseholdDeletionService.DeleteLastAccountAndHouseholdPreservingPersonalProfileCommand;
@@ -52,6 +52,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -320,11 +321,13 @@ class HouseholdDeletionServiceTest {
         .filteredOn(ProfileShareChangedEvent::ended)
         .extracting(ProfileShareChangedEvent::share)
         .containsExactly(
-            new ChangedShare(
-                offer.getId(),
-                offer.getProfileId(),
-                doomed.getId(),
-                ProfileShareStatus.INVALIDATED));
+            ChangedShare.builder()
+                .shareId(offer.getId())
+                .profileId(offer.getProfileId())
+                .householdId(doomed.getId())
+                .status(ProfileShareStatus.INVALIDATED)
+                .expiresAt(Optional.of(NOW.plusSeconds(3600)))
+                .build());
   }
 
   @Test
@@ -665,6 +668,7 @@ class HouseholdDeletionServiceTest {
             profiles,
             shares,
             new ProfileShareLifecycle(shares, shareEvents),
+            new NotificationDismissals(shares, managerInvitations, shareEvents),
             managers,
             managerInvitations,
             accountInvitations,
@@ -679,6 +683,7 @@ class HouseholdDeletionServiceTest {
         profiles,
         shares,
         new ProfileShareLifecycle(shares, shareEvents),
+        new NotificationDismissals(shares, managerInvitations, shareEvents),
         sessions,
         registrationLifecycle,
         accountInvitations,

@@ -4,8 +4,11 @@ import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.core.domain.JavaCall.Predicates.target;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.RECORDS;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.assignableTo;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.belongToAnyOf;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.equivalentTo;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideOutsideOfPackage;
 import static com.tngtech.archunit.core.domain.properties.CanBeAnnotated.Predicates.annotatedWith;
 import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.name;
 import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.nameMatching;
@@ -41,9 +44,16 @@ import com.streamarr.server.domain.architecturefixture.ExceptionsPackageDomainFi
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.architecturefixture.PasswordEncodingResolverFixture;
+import com.streamarr.server.jooq.generated.enums.NotificationForm;
+import com.streamarr.server.jooq.generated.enums.RequestResolution;
+import com.streamarr.server.jooq.generated.tables.Notification;
+import com.streamarr.server.jooq.generated.tables.records.NotificationRecord;
 import com.streamarr.server.properties.architecturefixture.DomainDependentPropertiesFixture;
+import com.streamarr.server.repositories.JooqQueryHelper;
+import com.streamarr.server.repositories.Keyset;
 import com.streamarr.server.repositories.architecturefixture.RepositoryQueryFixture;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
+import com.streamarr.server.repositories.notification.architecturefixture.ForeignShareReadFixture;
 import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.CreditService;
 import com.streamarr.server.services.GenreService;
@@ -57,6 +67,7 @@ import com.streamarr.server.services.architecturefixture.IncomingWebRequestServi
 import com.streamarr.server.services.architecturefixture.ReactiveServiceFixture;
 import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
 import com.streamarr.server.services.auth.AccountPasswordVerifier;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordTimingEqualizer;
 import com.streamarr.server.services.auth.ProfilePinVerifier;
@@ -66,6 +77,7 @@ import com.streamarr.server.services.authorization.AuthorizationDecider;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.DirectAuthorizationDeciderFixture;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.services.events.notification.architecturefixture.ModuleBoundSnapshotFixture;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.CommonForkJoinPool;
@@ -84,6 +96,7 @@ import com.streamarr.server.services.library.architecturefixture.SystemWorkThrea
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryTimer;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.OrdinaryVirtualThreadStart;
 import com.streamarr.server.services.library.architecturefixture.SystemWorkThreadFixtures.SystemWorkThreads;
+import com.streamarr.server.services.notification.architecturefixture.ShareChangeListenerFixture;
 import com.streamarr.server.services.streaming.remote.architecturefixture.AllowedWorkerProtocolFixture;
 import com.streamarr.transcode.engine.architecturefixture.EngineImplementationFixture;
 import com.streamarr.transcode.probe.architecturefixture.ProbeImplementationFixture;
@@ -139,6 +152,10 @@ import reactor.core.publisher.Flux;
 class ArchitectureTest {
 
   private static final String SERVICES_PACKAGE = "com.streamarr.server.services";
+  private static final String[] NOTIFICATIONS_MODULE = {
+    "com.streamarr.server.services.notification..",
+    "com.streamarr.server.repositories.notification.."
+  };
 
   @Test
   @DisplayName("Should exclude worker implementations when importing production code")
@@ -459,6 +476,21 @@ class ArchitectureTest {
   @ArchTest
   static final ArchRule onlyTheShareLifecycleMayWriteShares = onlyTheShareLifecycleMayWriteShares();
 
+  // The Notifications module (ADR 0063) depends on no other domain's package, only on its own
+  // events in the shared events package, its types in domain and the server's shared parts, and
+  // reads no table it does not own. Other domains tell it what happened; it hears no other domain's
+  // events and never asks them.
+  @ArchTest
+  static final ArchRule notificationsMustKeepToTheirOwnPackagesAndTable =
+      notificationsMustKeepToTheirOwnPackagesAndTable();
+
+  // The events that tell the Notifications module what happened, and their snapshots, sit below
+  // every domain that publishes them (ADR 0063 §How the server builds it). They depend on nothing
+  // of the module they feed.
+  @ArchTest
+  static final ArchRule notificationEventsMustNotDependOnTheNotificationsModule =
+      notificationEventsMustNotDependOnTheNotificationsModule();
+
   // Authenticated Account-password checks share one throttle and timing contract. Login is exempt
   // because no authenticated Account exists yet.
   @ArchTest
@@ -715,6 +747,42 @@ class ArchitectureTest {
     assertThatThrownBy(() -> rule.check(directShareWrite))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("tryEndActive");
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a Notifications class when it reads another domain's repository or table")
+  void shouldRejectANotificationsClassWhenItReadsAnotherDomainsRepositoryOrTable() {
+    var foreignShareRead = new ClassFileImporter().importClasses(ForeignShareReadFixture.class);
+    var rule = notificationsMustKeepToTheirOwnPackagesAndTable();
+
+    assertThatThrownBy(() -> rule.check(foreignShareRead))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("ProfileHouseholdShareRepository")
+        .hasMessageContaining("PROFILE_HOUSEHOLD_SHARE");
+  }
+
+  @Test
+  @DisplayName("Should reject a Notifications class when it hears another domain's event")
+  void shouldRejectANotificationsClassWhenItHearsAnotherDomainsEvent() {
+    var shareListener = new ClassFileImporter().importClasses(ShareChangeListenerFixture.class);
+    var rule = notificationsMustKeepToTheirOwnPackagesAndTable();
+
+    assertThatThrownBy(() -> rule.check(shareListener))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("ProfileShareChangedEvent");
+  }
+
+  @Test
+  @DisplayName(
+      "Should reject a notification event type when it depends on the Notifications module")
+  void shouldRejectANotificationEventTypeWhenItDependsOnTheNotificationsModule() {
+    var moduleBound = new ClassFileImporter().importClasses(ModuleBoundSnapshotFixture.class);
+    var rule = notificationEventsMustNotDependOnTheNotificationsModule();
+
+    assertThatThrownBy(() -> rule.check(moduleBound))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("NotificationKindCatalog");
   }
 
   @ParameterizedTest
@@ -1037,6 +1105,50 @@ class ArchitectureTest {
             target(owner(assignableTo(ProfileHouseholdShareRepository.class)))
                 .and(target(not(nameMatching("(find|exists|count|is|has|lock|rows|flush).*")))))
         .as("Only ProfileShareLifecycle may write Profile shares");
+  }
+
+  private static ArchRule notificationEventsMustNotDependOnTheNotificationsModule() {
+    return noClasses()
+        .that()
+        .resideInAPackage("com.streamarr.server.services.events.notification..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage(NOTIFICATIONS_MODULE)
+        .as("The notification events depend on nothing of the Notifications module");
+  }
+
+  private static ArchRule notificationsMustKeepToTheirOwnPackagesAndTable() {
+    var module = NOTIFICATIONS_MODULE;
+    return classes()
+        .that()
+        .resideInAnyPackage(module)
+        .should()
+        .onlyDependOnClassesThat(
+            resideOutsideOfPackage("com.streamarr.server..")
+                .or(resideInAnyPackage(module))
+                .or(
+                    resideInAnyPackage(
+                        "com.streamarr.server.services.events.notification..",
+                        "com.streamarr.server.domain.notification..",
+                        "com.streamarr.server.domain.pagination..",
+                        "com.streamarr.server.services.pagination..",
+                        "com.streamarr.server.services.mutation..",
+                        "com.streamarr.server.services.authorization",
+                        "com.streamarr.server.services.serversettings..",
+                        "com.streamarr.server.services.audit.."))
+                .or(
+                    belongToAnyOf(
+                        AuthenticatedIdentity.class,
+                        Keyset.class,
+                        JooqQueryHelper.class,
+                        Notification.class,
+                        NotificationRecord.class,
+                        NotificationForm.class,
+                        RequestResolution.class)))
+        .as(
+            "The Notifications module depends only on its own packages, its own events in the shared"
+                + " events package, its types in domain and the server's shared parts, and reads only"
+                + " its own table");
   }
 
   private static ArchRule onlyCreditServiceMaySaveCredits() {

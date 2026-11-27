@@ -81,6 +81,41 @@ public class ServerSettingsService {
     return storedIdleSegmentRetention().duration();
   }
 
+  public NotificationRetentionSetting readNotificationRetentionSetting(
+      @NonNull AuthenticatedIdentity identity) {
+    authorizationService.requireAllowed(identity, new Intent.ViewNotificationRetention());
+    return notificationRetentionOf(storedSettings());
+  }
+
+  /** Last write wins; the audit columns record the ServerAdmin who made the change. */
+  @Transactional
+  public Outcome<NotificationRetentionSetting, ChangeNotificationRetentionRejection>
+      changeNotificationRetention(@NonNull AuthenticatedIdentity identity, int days) {
+    authorizationService.requireAllowed(identity, new Intent.ChangeNotificationRetention());
+    if (!NotificationRetentionSetting.allows(days)) {
+      return Outcome.rejected(new ChangeNotificationRetentionRejection.OutOfRange());
+    }
+
+    var settings = storedSettings();
+    settings.setNotificationRetentionDays(days);
+    serverSettingsRepository.save(settings);
+    return Outcome.accepted(notificationRetentionOf(settings));
+  }
+
+  /**
+   * How long the server keeps Notification history, the news that its recipient read and the
+   * requests that resolved, after its latest event. The retention sweep reads the setting for the
+   * system, not for a caller, so this read is not authorized.
+   */
+  public Duration notificationRetention() {
+    return notificationRetentionOf(storedSettings()).duration();
+  }
+
+  private static NotificationRetentionSetting notificationRetentionOf(ServerSettings settings) {
+    return new NotificationRetentionSetting(
+        settings.getId(), settings.getNotificationRetentionDays());
+  }
+
   private IdleSegmentRetentionSetting storedIdleSegmentRetention() {
     return idleSegmentRetentionOf(storedSettings());
   }

@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.UUID;
@@ -32,11 +32,12 @@ class ProfileShareEventListenerTest {
   void shouldPassEachShareChangeToEveryOperationWhenAShareChangeCommits() {
     var change =
         new ProfileShareChangedEvent(
-            new ChangedShare(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                ProfileShareStatus.PENDING),
+            ChangedShare.builder()
+                .shareId(UUID.randomUUID())
+                .profileId(UUID.randomUUID())
+                .householdId(UUID.randomUUID())
+                .status(ProfileShareStatus.PENDING)
+                .build(),
             true);
     var first = subscribe();
     var second = subscribe();

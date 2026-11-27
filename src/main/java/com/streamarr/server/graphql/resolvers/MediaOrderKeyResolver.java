@@ -12,6 +12,7 @@ import org.dataloader.DataLoader;
 public class MediaOrderKeyResolver {
   @DgsData(parentType = "ContinueWatchingEdge", field = "orderKey")
   @DgsData(parentType = "MediaEdge", field = "orderKey")
+  @DgsData(parentType = "NotificationEdge", field = "orderKey")
   public CompletableFuture<String> edgeOrderKey(DataFetchingEnvironment environment) {
     OrderedEdge<?> edge = environment.getSource();
     DataLoader<MediaOrder, String> loader = environment.getDataLoader("mediaOrderKey");

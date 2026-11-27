@@ -1,0 +1,58 @@
+package com.streamarr.server.services.events.notification;
+
+import com.streamarr.server.domain.notification.NotificationForm;
+import com.streamarr.server.domain.notification.NotificationKind;
+import com.streamarr.server.domain.notification.NotificationSnapshot;
+import com.streamarr.server.domain.notification.NotificationTell;
+import com.streamarr.server.domain.notification.RecipientReference;
+import com.streamarr.server.domain.notification.SubjectReference;
+import java.time.Instant;
+import java.util.Optional;
+import java.util.Set;
+import lombok.Builder;
+import lombok.NonNull;
+
+/**
+ * Tells the recipients what happened to a subject (ADR 0063 §How the server builds it). The
+ * publishing domain decided the recipients from the relationships as they stood at the event, and
+ * left out the Account that acted. It is heard inside the publisher's transaction, so its
+ * Notifications commit or roll back with the change that made them. A request carries its subject's
+ * expiry, which every request kind built now gives, so a request whose resolution is missed still
+ * stops waiting at that expiry; news carries none.
+ */
+@Builder
+public record TellNotificationEvent(
+    @NonNull NotificationKind kind,
+    @NonNull SubjectReference subject,
+    @NonNull Set<RecipientReference> recipients,
+    @NonNull NotificationSnapshot snapshot,
+    @NonNull Instant at,
+    @NonNull Optional<Instant> subjectExpiresAt)
+    implements NotificationTell {
+
+  /**
+   * @throws IllegalArgumentException when the subject or the snapshot is not of the kind's type,
+   *     when news carries an expiry, or when a request carries none
+   */
+  public TellNotificationEvent {
+    kind.requireAbout(subject);
+    kind.requireSnapshot(snapshot);
+    if (kind.form() == NotificationForm.NEWS && subjectExpiresAt.isPresent()) {
+      throw new IllegalArgumentException(
+          "A %s Notification is news, which has no expiry".formatted(kind.name()));
+    }
+
+    if (kind.form() == NotificationForm.REQUEST && subjectExpiresAt.isEmpty()) {
+      throw new IllegalArgumentException(
+          "A %s Notification is a request, which carries its subject's expiry"
+              .formatted(kind.name()));
+    }
+
+    recipients = Set.copyOf(recipients);
+  }
+
+  /** Leaves the subject's expiry empty unless the tell names one. */
+  public static class TellNotificationEventBuilder {
+    private Optional<Instant> subjectExpiresAt = Optional.empty();
+  }
+}

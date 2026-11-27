@@ -3,6 +3,7 @@ package com.streamarr.server.services.identity;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SecurityAuditEventRecordView;
+import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.SessionProgress;
@@ -63,6 +64,7 @@ public class HouseholdDeletionService {
   private final ProfileRepository profileRepository;
   private final ProfileHouseholdShareRepository shareRepository;
   private final ProfileShareLifecycle shareLifecycle;
+  private final NotificationDismissals notificationDismissals;
   private final AuthSessionRepository authSessionRepository;
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final AccountInvitationRepository accountInvitationRepository;
@@ -196,6 +198,7 @@ public class HouseholdDeletionService {
     endHostedVisits(request.householdId(), now);
     deleteResidentProfiles(request.householdId(), now);
     shareLifecycle.announceDeletionWithHousehold(request.householdId(), now);
+    notificationDismissals.householdDeleted(request.householdId());
     householdRepository.deleteById(request.householdId());
     householdRepository.flush();
     securityAuditEventRepository.append(
@@ -295,6 +298,7 @@ public class HouseholdDeletionService {
                   .profileId(resident.getPersonalProfileId())
                   .destinationHouseholdId(disposition.destinationHouseholdId())
                   .sourceHouseholdAccess(SourceHouseholdAccess.END)
+                  .sourceShareEnding(new ShareAction.EndedWithHousehold())
                   .now(now)
                   .build());
       case DELETE ->
@@ -302,6 +306,7 @@ public class HouseholdDeletionService {
               AccountRemoval.Deletion.builder()
                   .account(resident)
                   .profileDisposition(new AccountRemoval.ErasePersonalProfile())
+                  .sourceShareEnding(new ShareAction.EndedWithHousehold())
                   .now(now)
                   .build());
       case DELETE_KEEPING_PROFILE ->
@@ -312,6 +317,7 @@ public class HouseholdDeletionService {
                       new AccountRemoval.PreservePersonalProfile(
                           disposition.replacementManagerAccountId(),
                           disposition.destinationHouseholdId()))
+                  .sourceShareEnding(new ShareAction.EndedWithHousehold())
                   .now(now)
                   .build());
     }
@@ -322,7 +328,7 @@ public class HouseholdDeletionService {
         .findByHouseholdIdAndStatus(householdId, ProfileShareStatus.ACTIVE)
         .forEach(
             share -> {
-              shareLifecycle.tryEndActive(share.getId(), now);
+              shareLifecycle.tryEndActive(share.getId(), new ShareAction.EndedWithHousehold(), now);
               authSessionRepository.clearProfileSelectionFromLiveSessions(
                   share.getProfileId(), householdId);
               userAccountRepository

@@ -3,8 +3,9 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.ProfileHouseholdShare;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
+import com.streamarr.server.domain.auth.ShareAction;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
-import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
+import com.streamarr.server.services.events.auth.ProfileShareChangedEvent;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -39,78 +40,117 @@ public class ProfileShareLifecycle {
   private final ProfileHouseholdShareRepository shareRepository;
   private final ApplicationEventPublisher events;
 
-  /** Stores a new share. */
-  public ProfileHouseholdShare create(ProfileHouseholdShare share) {
+  /** Stores a new share at the instant; a pending one is announced as an offer made then. */
+  public ProfileHouseholdShare create(ProfileHouseholdShare share, Instant now) {
     var created = shareRepository.saveAndFlush(share);
-    announceAsStored(created);
+    events.publishEvent(
+        ProfileShareChangedEvent.builder()
+            .share(ChangedShare.of(created))
+            .live(created.getStatus().isLive())
+            .action(
+                created.getStatus() == ProfileShareStatus.PENDING
+                    ? new ShareAction.Offered()
+                    : new ShareAction.Other())
+            .changedAt(Optional.of(now))
+            .build());
     return created;
   }
 
   /** Withdraws the Profile's pending offer to the Household so a new one can be offered. */
   public void supersedePending(UUID profileId, UUID householdId, Instant now) {
-    announce(shareRepository.supersedePending(profileId, householdId, now));
+    announceStoppedWaiting(shareRepository.supersedePending(profileId, householdId, now), now);
   }
 
   /** Withdraws one pending offer with the reason it will later explain; false when not pending. */
   public boolean tryInvalidatePending(UUID shareId, String reason, Instant now) {
-    return announced(shareRepository.tryInvalidatePending(shareId, reason, now));
+    return announced(
+        shareRepository.tryInvalidatePending(shareId, reason, now),
+        new ShareAction.OfferStoppedWaiting(),
+        now);
   }
 
   /** Withdraws every unexpired pending offer the Account made; answers how many. */
   public int invalidatePendingOfferedBy(UUID offererAccountId, String reason, Instant now) {
     var withdrawn = shareRepository.invalidatePendingOfferedBy(offererAccountId, reason, now);
-    announce(withdrawn);
+    announceStoppedWaiting(withdrawn, now);
     return withdrawn.size();
   }
 
   /** Stores EXPIRED on every offer whose time ran out; answers how many. */
   public int expireLapsedOffers(Instant now) {
     var expired = shareRepository.materializeExpiredPending(now);
-    announce(expired);
+    announceStoppedWaiting(expired, now);
     return expired.size();
   }
 
-  /** Accepts a pending, unexpired offer; false when another decision won. */
-  public boolean tryActivatePending(UUID shareId, Instant now) {
-    return announced(shareRepository.tryActivatePending(shareId, now));
+  /** The Account accepts a pending, unexpired offer; false when another decision won. */
+  public boolean tryActivatePending(UUID shareId, UUID acceptingAccountId, Instant now) {
+    return announced(
+        shareRepository.tryActivatePending(shareId, now),
+        new ShareAction.Answered(acceptingAccountId),
+        now);
   }
 
-  /** Declines or cancels a pending offer; false when it was no longer pending. */
-  public boolean tryDeclinePending(UUID shareId, ProfileShareStatus target, Instant now) {
-    return announced(shareRepository.tryDeclinePending(shareId, target, now));
+  /**
+   * The Account rejects a pending offer, which stores EXPIRED instead when its time has already run
+   * out; false when it was no longer pending.
+   */
+  public boolean tryRejectPending(UUID shareId, UUID rejectingAccountId, Instant now) {
+    return announced(
+        shareRepository.tryDeclinePending(shareId, ProfileShareStatus.REJECTED, now),
+        new ShareAction.Answered(rejectingAccountId),
+        now);
   }
 
-  /** Ends an active share; false when it was not active. */
-  public boolean tryEndActive(UUID shareId, Instant now) {
-    return announced(shareRepository.tryEndActive(shareId, now));
+  /**
+   * Cancels a pending offer, which stores EXPIRED instead when its time has already run out; false
+   * when it was no longer pending.
+   */
+  public boolean tryCancelPending(UUID shareId, Instant now) {
+    return announced(
+        shareRepository.tryDeclinePending(shareId, ProfileShareStatus.CANCELED, now),
+        new ShareAction.OfferStoppedWaiting(),
+        now);
+  }
+
+  /** Ends an active share the way the ending says; false when it was not active. */
+  public boolean tryEndActive(UUID shareId, ShareAction.Ending ending, Instant now) {
+    return announced(shareRepository.tryEndActive(shareId, now), ending, now);
   }
 
   /** Makes the Profile's availability in its Account's Household the structural share. */
   public void ensureActiveMembershipShare(UUID profileId, UUID householdId, Instant now) {
-    announce(shareRepository.ensureActiveMembershipShare(profileId, householdId, now));
+    var changes = shareRepository.ensureActiveMembershipShare(profileId, householdId, now);
+    announceStoppedWaiting(changes.offersStoppedWaiting(), now);
+    changes.otherChanges().forEach(share -> announceWrite(share, new ShareAction.Other(), now));
   }
 
   /** Withdraws every pending offer of the Profile with the reason. */
   public void invalidatePendingByProfileId(UUID profileId, String reason, Instant now) {
-    announce(shareRepository.invalidatePendingByProfileId(profileId, reason, now));
+    announceStoppedWaiting(
+        shareRepository.invalidatePendingByProfileId(profileId, reason, now), now);
   }
 
   /** Withdraws every pending offer into the Household with the reason. */
   public void invalidatePendingByHouseholdId(UUID householdId, String reason, Instant now) {
-    announce(shareRepository.invalidatePendingByHouseholdId(householdId, reason, now));
+    announceStoppedWaiting(
+        shareRepository.invalidatePendingByHouseholdId(householdId, reason, now), now);
   }
 
   /** Turns the Profile's structural share into the Household into an ordinary visitor share. */
   public void convertMembershipShareToVisitorShare(UUID profileId, UUID householdId) {
-    announce(shareRepository.convertMembershipShareToVisitorShare(profileId, householdId));
+    shareRepository
+        .convertMembershipShareToVisitorShare(profileId, householdId)
+        .forEach(this::announce);
   }
 
   /** Withdraws the leaving manager's own pending offers of the Profile. */
   public void invalidatePendingOffersByProfileIdAndOffererAccountId(
       UUID profileId, UUID offererAccountId, String reason, Instant now) {
-    announce(
+    announceStoppedWaiting(
         shareRepository.invalidatePendingOffersByProfileIdAndOffererAccountId(
-            profileId, offererAccountId, reason, now));
+            profileId, offererAccountId, reason, now),
+        now);
   }
 
   /** Announces every share of the Profile, which the database deletes with the Profile. */
@@ -140,13 +180,23 @@ public class ProfileShareLifecycle {
         .forEach(this::announceAsStored);
   }
 
-  private boolean announced(Optional<ChangedShare> changed) {
-    changed.ifPresent(this::announce);
+  private boolean announced(Optional<ChangedShare> changed, ShareAction action, Instant now) {
+    changed.ifPresent(share -> announceWrite(share, action, now));
     return changed.isPresent();
   }
 
-  private void announce(List<ChangedShare> changed) {
-    changed.forEach(this::announce);
+  private void announceStoppedWaiting(List<ChangedShare> offers, Instant now) {
+    offers.forEach(offer -> announceWrite(offer, new ShareAction.OfferStoppedWaiting(), now));
+  }
+
+  private void announceWrite(ChangedShare changed, ShareAction action, Instant now) {
+    events.publishEvent(
+        ProfileShareChangedEvent.builder()
+            .share(changed)
+            .live(true)
+            .action(action)
+            .changedAt(Optional.of(now))
+            .build());
   }
 
   private void announce(ChangedShare changed) {
@@ -162,9 +212,7 @@ public class ProfileShareLifecycle {
   // announced as the expiry the sweep would have stored, the change that ends it, so its Household
   // hears that the offer expired and not that its Profile or the Household was deleted.
   private void announceRemoval(ProfileHouseholdShare share, Instant now) {
-    var removed =
-        new ChangedShare(
-            share.getId(), share.getProfileId(), share.getHouseholdId(), share.statusAt(now));
+    var removed = ChangedShare.of(share).toBuilder().status(share.statusAt(now)).build();
     events.publishEvent(new ProfileShareChangedEvent(removed, share.getStatus().isLive(), true));
   }
 }

@@ -4,6 +4,7 @@ import com.streamarr.server.domain.auth.ProfileManager;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManager>
@@ -30,6 +31,13 @@ public class FakeProfileManagerRepository extends FakeJpaRepository<ProfileManag
   @Override
   public boolean lockDirectManagement(UUID accountId, UUID profileId) {
     return existsByAccountIdAndProfileId(accountId, profileId);
+  }
+
+  @Override
+  public Set<UUID> lockManagerIds(UUID profileId) {
+    throw new UnsupportedOperationException(
+        "No unit test locks a Profile's managers yet: give the fake a contract test against the real repository"
+            + " before using it");
   }
 
   @Override
