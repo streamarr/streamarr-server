@@ -15,6 +15,7 @@ import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.KeyframeKnowledge;
 import com.streamarr.server.domain.streaming.KeyframePacketScanReason;
 import com.streamarr.server.domain.streaming.KeyframePosition;
@@ -25,6 +26,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.ProbeContainer;
 import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -321,6 +323,40 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
             tuple(0, Optional.empty()), tuple(15, Optional.of(Duration.ofSeconds(90))));
   }
 
+  @ParameterizedTest
+  @CsvSource({"6000, 6000, 0", "10000, 12000, 1"})
+  @DisplayName(
+      "Should end copied audio at its segment boundary when a new probe keeps earlier scanned positions")
+  void shouldEndCopiedAudioAtItsSegmentBoundaryWhenNewProbeKeepsEarlierScannedPositions(
+      long audioEndMillis, long playbackEndMillis, int lastSegment) {
+    var scanned =
+        storeOutcomeKeepingScannedPositions(
+            List.of(
+                new SourceStreamEnd(0, Duration.ofSeconds(120)),
+                new SourceStreamEnd(1, Duration.ofMillis(audioEndMillis))));
+
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+
+    assertThat(session.getTranscodeDecision().transcodeMode().copiesVideo()).isTrue();
+    assertThat(session.getTranscodeDecision().audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(session.getMediaProbe().keyframes())
+        .isEqualTo(
+            new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+                KeyframePacketScanReason.NO_CONTAINER_INDEX, scanned));
+    assertThat(session.getMediaEnd()).isEqualTo(Duration.ofMillis(playbackEndMillis));
+    assertThat(
+            playlistService.generateMediaPlaylist(session, StreamSession.defaultVariant(), "token"))
+        .contains("#EXTINF:6.000000,", "segment" + lastSegment + ".m4s?t=token", "#EXT-X-ENDLIST")
+        .doesNotContain("segment" + (lastSegment + 1) + ".m4s");
+    assertThat(startedRequests(session))
+        .singleElement()
+        .satisfies(
+            request -> {
+              assertThat(request.advertisedEnd()).contains(Duration.ofMillis(playbackEndMillis));
+              assertThat(request.mediaSegmentCount()).isEqualTo(lastSegment + 1);
+            });
+  }
+
   @Test
   @DisplayName(
       "Should copy the video at its scanned keyframes when every packet scan that the new probe"
@@ -371,6 +407,10 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   // An outcome of the current probe version that keeps the positions that the earlier version's
   // packet scan read: a keyframe every 6 s of a 120 s file.
   private KeyframePositions storeOutcomeKeepingScannedPositions() {
+    return storeOutcomeKeepingScannedPositions(List.of());
+  }
+
+  private KeyframePositions storeOutcomeKeepingScannedPositions(List<SourceStreamEnd> streamEnds) {
     var unscanned =
         ProbeFixture.completeProbeBuilder(
                 defaultProbeBuilder().duration(Duration.ofSeconds(120)).build())
@@ -397,6 +437,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
                     .snapshot(sourceSnapshot)
                     .probeVersion(ProbeVersion.CURRENT - 1)
                     .keyframes(new KeyframeKnowledge.Known(scanned))
+                    .streamEnds(streamEnds)
                     .build()))
         .isTrue();
     storeOutcome(unscanned, ProbeVersion.CURRENT);

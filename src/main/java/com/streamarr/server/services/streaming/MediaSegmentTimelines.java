@@ -112,10 +112,7 @@ final class MediaSegmentTimelines {
 
   private static Optional<MediaSegmentTimeline.StreamCopy> streamCopyIn(
       MediaProbe probe, MediaSegmentTimeline.PlainGrid grid) {
-    return probe
-        .keyframes()
-        .usablePositions()
-        .flatMap(positions -> streamCopyOf(positions, grid));
+    return probe.keyframes().usablePositions().flatMap(positions -> streamCopyOf(positions, grid));
   }
 
   private static Optional<MediaSegmentTimeline.StreamCopy> streamCopyOf(
