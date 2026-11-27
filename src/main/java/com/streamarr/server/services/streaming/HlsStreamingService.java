@@ -112,15 +112,6 @@ public class HlsStreamingService implements StreamingService {
       return Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments());
     }
 
-    // The media end is where every playlist of the stream session ends, which can lie before or
-    // after the duration that the container header states.
-    if (command
-        .startPosition()
-        .filter(start -> start.compareTo(probe.mediaEnd()) >= 0)
-        .isPresent()) {
-      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
-    }
-
     var picture = probe.displayedSize();
     if (picture.width() <= 0 || picture.height() <= 0) {
       return Outcome.rejected(new CreateStreamSessionRejection.InvalidPictureSize());
@@ -130,17 +121,18 @@ public class HlsStreamingService implements StreamingService {
     var directPlay =
         transcodeDecisionService.decideDirectPlay(DirectPlayRequest.of(command, probe));
     if (directPlay instanceof DirectPlayChoice.Accepted(var container, var audioTrackPosition)) {
-      var session =
+      return startDirectPlay(
+          command,
           directPlaySession(command, mediaFile, probe)
               .sourceContainer(container)
               .directPlayAudioTrackPosition(audioTrackPosition)
-              .build();
-      runtimeRegistry.save(session);
-      log.info(
-          "Created direct-play streaming session {} for media file {}",
-          command.streamSessionId(),
-          command.mediaFileId());
-      return Outcome.accepted(session);
+              .build());
+    }
+
+    // Every playlist of an HLS stream session ends at the media end, which can lie before or after
+    // the duration that the container header states.
+    if (startsAtOrPast(command, probe.mediaEnd())) {
+      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
     }
 
     // Without a connected worker no encoder is verified. That moment must not read as faulty
@@ -253,6 +245,30 @@ public class HlsStreamingService implements StreamingService {
 
     var timeline = MediaSegmentTimelines.of(session, properties);
     session.setCurrentSegment(timeline.mediaSegmentIndexAt(startPosition.get()));
+  }
+
+  // A direct-play stream session sends every audio track of the file, so its media end can lie
+  // past the end of the session's own audio track.
+  private Outcome<StreamSession, CreateStreamSessionRejection> startDirectPlay(
+      CreateStreamSessionCommand command, StreamSession session) {
+    if (session.getMediaEnd().isZero() || session.getMediaEnd().isNegative()) {
+      return Outcome.rejected(new CreateStreamSessionRejection.NoMediaSegments());
+    }
+
+    if (startsAtOrPast(command, session.getMediaEnd())) {
+      return Outcome.rejected(new CreateStreamSessionRejection.StartPositionOutOfRange());
+    }
+
+    runtimeRegistry.save(session);
+    log.info(
+        "Created direct-play streaming session {} for media file {}",
+        command.streamSessionId(),
+        command.mediaFileId());
+    return Outcome.accepted(session);
+  }
+
+  private static boolean startsAtOrPast(CreateStreamSessionCommand command, Duration mediaEnd) {
+    return command.startPosition().filter(start -> start.compareTo(mediaEnd) >= 0).isPresent();
   }
 
   // A direct-play stream session starts no job attempt, so it has no transcode decision, producer
