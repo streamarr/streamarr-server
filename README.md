@@ -43,6 +43,8 @@ Playback and media probing require the [standalone transcode worker](https://git
 See [Distributed Transcoding](docs/distributed-transcoding.adoc) for Docker Compose and Kubernetes deployments using the checked-in `worker-image.env` pin.
 Live library-administration changes use GraphQL subscriptions over a WebSocket on `/graphql`; a reverse proxy must pass WebSocket upgrades. See [GraphQL Subscriptions](docs/graphql-subscriptions.adoc).
 
+Every cursor list accepts at most 500 rows in `first` or `last`; use the returned cursors to request additional pages.
+
 ### TLS
 
 Terminate TLS at a reverse proxy or ingress and let it reach the server over plain HTTP.
