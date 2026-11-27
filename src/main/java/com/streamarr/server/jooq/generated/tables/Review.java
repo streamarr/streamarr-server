@@ -36,6 +36,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -101,7 +102,7 @@ public class Review extends TableImpl<ReviewRecord> {
     }
 
     private Review(Name alias, Table<ReviewRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -154,7 +155,7 @@ public class Review extends TableImpl<ReviewRecord> {
 
         @Override
         public ReviewPath as(Table<?> alias) {
-            return new ReviewPath(alias.getQualifiedName(), this);
+            return new ReviewPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -202,7 +203,7 @@ public class Review extends TableImpl<ReviewRecord> {
 
     @Override
     public Review as(Table<?> alias) {
-        return new Review(alias.getQualifiedName(), this);
+        return new Review(alias.getUnqualifiedName(), this);
     }
 
     /**

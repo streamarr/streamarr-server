@@ -42,6 +42,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -137,7 +138,7 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
     }
 
     private AuthSession(Name alias, Table<AuthSessionRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -190,7 +191,7 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
 
         @Override
         public AuthSessionPath as(Table<?> alias) {
-            return new AuthSessionPath(alias.getQualifiedName(), this);
+            return new AuthSessionPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -295,7 +296,7 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
 
     @Override
     public AuthSession as(Table<?> alias) {
-        return new AuthSession(alias.getQualifiedName(), this);
+        return new AuthSession(alias.getUnqualifiedName(), this);
     }
 
     /**

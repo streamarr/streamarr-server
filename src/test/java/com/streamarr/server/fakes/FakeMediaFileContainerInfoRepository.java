@@ -281,7 +281,8 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
             measured.streams().stream()
                 .sorted(Comparator.comparingInt(MeasuredStream::streamIndex))
                 .toList());
-    return Optional.of(new StoredMeasurement(snapshot, positionsDigest(positions.get()), byStreamIndex));
+    return Optional.of(
+        new StoredMeasurement(snapshot, positionsDigest(positions.get()), byStreamIndex));
   }
 
   // PostgreSQL's digest covers the chosen stream, its time base and the times, not their source.

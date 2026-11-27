@@ -39,6 +39,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -161,7 +162,7 @@ public class ProfileManagerInvitation extends TableImpl<ProfileManagerInvitation
     }
 
     private ProfileManagerInvitation(Name alias, Table<ProfileManagerInvitationRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -216,7 +217,7 @@ public class ProfileManagerInvitation extends TableImpl<ProfileManagerInvitation
 
         @Override
         public ProfileManagerInvitationPath as(Table<?> alias) {
-            return new ProfileManagerInvitationPath(alias.getQualifiedName(), this);
+            return new ProfileManagerInvitationPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -302,7 +303,7 @@ public class ProfileManagerInvitation extends TableImpl<ProfileManagerInvitation
 
     @Override
     public ProfileManagerInvitation as(Table<?> alias) {
-        return new ProfileManagerInvitation(alias.getQualifiedName(), this);
+        return new ProfileManagerInvitation(alias.getUnqualifiedName(), this);
     }
 
     /**

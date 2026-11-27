@@ -10,10 +10,8 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Probe version")
 class ProbeVersionTest {
 
-  // ADR 0032 decides this for every probe version through this one. Its section on the start time
-  // correction, probe version 9 on main and version 10 in streamarr/streamarr-adr#135, says:
-  // "Media time zero stays the container start time that the probe reads under its limits, so
-  // every other stored time keeps its meaning."
+  // ADR 0032 keeps the same media time zero through version 9. Raising the version must
+  // explicitly record whether the new probe preserves that timeline.
   private static final int LAST_VERSION_WITH_A_DECIDED_KEYFRAME_TIMELINE = 9;
 
   @Test

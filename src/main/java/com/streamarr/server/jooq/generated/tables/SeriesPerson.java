@@ -36,6 +36,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -86,7 +87,7 @@ public class SeriesPerson extends TableImpl<SeriesPersonRecord> {
     }
 
     private SeriesPerson(Name alias, Table<SeriesPersonRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -139,7 +140,7 @@ public class SeriesPerson extends TableImpl<SeriesPersonRecord> {
 
         @Override
         public SeriesPersonPath as(Table<?> alias) {
-            return new SeriesPersonPath(alias.getQualifiedName(), this);
+            return new SeriesPersonPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -199,7 +200,7 @@ public class SeriesPerson extends TableImpl<SeriesPersonRecord> {
 
     @Override
     public SeriesPerson as(Table<?> alias) {
-        return new SeriesPerson(alias.getQualifiedName(), this);
+        return new SeriesPerson(alias.getUnqualifiedName(), this);
     }
 
     /**

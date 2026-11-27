@@ -42,6 +42,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -97,7 +98,7 @@ public class Season extends TableImpl<SeasonRecord> {
     }
 
     private Season(Name alias, Table<SeasonRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -150,7 +151,7 @@ public class Season extends TableImpl<SeasonRecord> {
 
         @Override
         public SeasonPath as(Table<?> alias) {
-            return new SeasonPath(alias.getQualifiedName(), this);
+            return new SeasonPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -280,7 +281,7 @@ public class Season extends TableImpl<SeasonRecord> {
 
     @Override
     public Season as(Table<?> alias) {
-        return new Season(alias.getQualifiedName(), this);
+        return new Season(alias.getUnqualifiedName(), this);
     }
 
     /**

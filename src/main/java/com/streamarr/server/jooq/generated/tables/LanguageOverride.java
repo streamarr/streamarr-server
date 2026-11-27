@@ -41,6 +41,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -136,7 +137,7 @@ public class LanguageOverride extends TableImpl<LanguageOverrideRecord> {
     }
 
     private LanguageOverride(Name alias, Table<LanguageOverrideRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -189,7 +190,7 @@ public class LanguageOverride extends TableImpl<LanguageOverrideRecord> {
 
         @Override
         public LanguageOverridePath as(Table<?> alias) {
-            return new LanguageOverridePath(alias.getQualifiedName(), this);
+            return new LanguageOverridePath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -293,7 +294,7 @@ public class LanguageOverride extends TableImpl<LanguageOverrideRecord> {
 
     @Override
     public LanguageOverride as(Table<?> alias) {
-        return new LanguageOverride(alias.getQualifiedName(), this);
+        return new LanguageOverride(alias.getUnqualifiedName(), this);
     }
 
     /**

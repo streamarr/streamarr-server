@@ -45,6 +45,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -140,7 +141,7 @@ public class Library extends TableImpl<LibraryRecord> {
     }
 
     private Library(Name alias, Table<LibraryRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -193,7 +194,7 @@ public class Library extends TableImpl<LibraryRecord> {
 
         @Override
         public LibraryPath as(Table<?> alias) {
-            return new LibraryPath(alias.getQualifiedName(), this);
+            return new LibraryPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -302,7 +303,7 @@ public class Library extends TableImpl<LibraryRecord> {
 
     @Override
     public Library as(Table<?> alias) {
-        return new Library(alias.getQualifiedName(), this);
+        return new Library(alias.getUnqualifiedName(), this);
     }
 
     /**

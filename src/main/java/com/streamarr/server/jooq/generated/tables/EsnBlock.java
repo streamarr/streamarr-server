@@ -37,6 +37,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -107,7 +108,7 @@ public class EsnBlock extends TableImpl<EsnBlockRecord> {
     }
 
     private EsnBlock(Name alias, Table<EsnBlockRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -160,7 +161,7 @@ public class EsnBlock extends TableImpl<EsnBlockRecord> {
 
         @Override
         public EsnBlockPath as(Table<?> alias) {
-            return new EsnBlockPath(alias.getQualifiedName(), this);
+            return new EsnBlockPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -220,7 +221,7 @@ public class EsnBlock extends TableImpl<EsnBlockRecord> {
 
     @Override
     public EsnBlock as(Table<?> alias) {
-        return new EsnBlock(alias.getQualifiedName(), this);
+        return new EsnBlock(alias.getUnqualifiedName(), this);
     }
 
     /**

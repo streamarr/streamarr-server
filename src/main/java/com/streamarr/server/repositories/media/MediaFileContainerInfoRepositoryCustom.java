@@ -36,9 +36,9 @@ public interface MediaFileContainerInfoRepositoryCustom {
    * lock, in place of any positions that the outcome kept from an earlier scan. A {@link
    * KeyframesUnavailableReason#PACKET_SCAN_MEDIA_ERROR} replaces them too: bytes that an earlier
    * scan read and that no longer decode have changed under an unchanged size and modified time.
-   * Stores each scanned stream end (ADR 0037) and the scan's stream measurement (ADR 0054).
-   * Returns {@code false} without writing unless the stored outcome still requires a packet scan for
-   * the publication's source snapshot and probe version.
+   * Stores each scanned stream end (ADR 0037) and the scan's stream measurement (ADR 0054). Returns
+   * {@code false} without writing unless the stored outcome still requires a packet scan for the
+   * publication's source snapshot and probe version.
    */
   boolean publishKeyframePacketScan(KeyframePacketScanPublication publication);
 

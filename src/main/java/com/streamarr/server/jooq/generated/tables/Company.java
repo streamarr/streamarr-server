@@ -39,6 +39,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -104,7 +105,7 @@ public class Company extends TableImpl<CompanyRecord> {
     }
 
     private Company(Name alias, Table<CompanyRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -157,7 +158,7 @@ public class Company extends TableImpl<CompanyRecord> {
 
         @Override
         public CompanyPath as(Table<?> alias) {
-            return new CompanyPath(alias.getQualifiedName(), this);
+            return new CompanyPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -260,7 +261,7 @@ public class Company extends TableImpl<CompanyRecord> {
 
     @Override
     public Company as(Table<?> alias) {
-        return new Company(alias.getQualifiedName(), this);
+        return new Company(alias.getUnqualifiedName(), this);
     }
 
     /**

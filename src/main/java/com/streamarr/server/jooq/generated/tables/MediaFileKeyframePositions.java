@@ -34,6 +34,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -118,7 +119,7 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
     }
 
     private MediaFileKeyframePositions(Name alias, Table<MediaFileKeyframePositionsRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -174,7 +175,7 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
 
         @Override
         public MediaFileKeyframePositionsPath as(Table<?> alias) {
-            return new MediaFileKeyframePositionsPath(alias.getQualifiedName(), this);
+            return new MediaFileKeyframePositionsPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -229,7 +230,7 @@ public class MediaFileKeyframePositions extends TableImpl<MediaFileKeyframePosit
 
     @Override
     public MediaFileKeyframePositions as(Table<?> alias) {
-        return new MediaFileKeyframePositions(alias.getQualifiedName(), this);
+        return new MediaFileKeyframePositions(alias.getUnqualifiedName(), this);
     }
 
     /**

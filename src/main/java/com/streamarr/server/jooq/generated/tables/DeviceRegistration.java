@@ -41,6 +41,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -147,7 +148,7 @@ public class DeviceRegistration extends TableImpl<DeviceRegistrationRecord> {
     }
 
     private DeviceRegistration(Name alias, Table<DeviceRegistrationRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -200,7 +201,7 @@ public class DeviceRegistration extends TableImpl<DeviceRegistrationRecord> {
 
         @Override
         public DeviceRegistrationPath as(Table<?> alias) {
-            return new DeviceRegistrationPath(alias.getQualifiedName(), this);
+            return new DeviceRegistrationPath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -307,7 +308,7 @@ public class DeviceRegistration extends TableImpl<DeviceRegistrationRecord> {
 
     @Override
     public DeviceRegistration as(Table<?> alias) {
-        return new DeviceRegistration(alias.getQualifiedName(), this);
+        return new DeviceRegistration(alias.getUnqualifiedName(), this);
     }
 
     /**

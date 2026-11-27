@@ -46,6 +46,7 @@ import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.LazySchema;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -136,7 +137,7 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
     }
 
     private MediaFile(Name alias, Table<MediaFileRecord> aliased, Field<?>[] parameters, Condition where) {
-        super(alias, null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
+        super(alias, aliased == null ? new LazySchema(DSL.name("public"), DSL.comment(""), () -> Public.PUBLIC) : null, aliased, parameters, DSL.comment(""), TableOptions.table(), where);
     }
 
     /**
@@ -189,7 +190,7 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
 
         @Override
         public MediaFilePath as(Table<?> alias) {
-            return new MediaFilePath(alias.getQualifiedName(), this);
+            return new MediaFilePath(alias.getUnqualifiedName(), this);
         }
     }
 
@@ -335,7 +336,7 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
 
     @Override
     public MediaFile as(Table<?> alias) {
-        return new MediaFile(alias.getQualifiedName(), this);
+        return new MediaFile(alias.getUnqualifiedName(), this);
     }
 
     /**
