@@ -13,7 +13,8 @@ public final class DecimalSeconds {
   private DecimalSeconds() {}
 
   public static BigDecimal of(@NonNull Duration duration) {
-    return BigDecimal.valueOf(duration.toNanos(), NANOSECOND_DIGITS);
+    return BigDecimal.valueOf(duration.getSeconds())
+        .add(BigDecimal.valueOf(duration.getNano(), NANOSECOND_DIGITS));
   }
 
   // The seconds must carry at most nine decimal digits.

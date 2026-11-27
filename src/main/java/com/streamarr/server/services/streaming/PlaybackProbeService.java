@@ -173,7 +173,7 @@ public class PlaybackProbeService {
   }
 
   // Playback reads the file's stored outcome with the stream end times that job attempts learned
-  // for the same source file (ADR 0037, early ends).
+  // and that a keyframe packet scan read for the same source file (ADR 0037, early ends).
   private Outcome<MediaProbe, CreateStreamSessionRejection> playable(
       UUID mediaFileId, PersistedProbeOutcome stored) {
     return switch (stored.outcome()) {

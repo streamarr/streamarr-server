@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.media.LearnedStreamEnd;
 import com.streamarr.server.domain.media.MediaFileContainerInfo;
 import com.streamarr.server.domain.media.MediaFileStreamInfo;
 import com.streamarr.server.domain.media.SourceFileSnapshot;
@@ -45,6 +46,15 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private Optional<ProbeOutcome.Success> defaultProbe = Optional.empty();
   private final Set<UUID> deletedMediaFiles = ConcurrentHashMap.newKeySet();
   private final MediaFileRowLocks rowLocks = new MediaFileRowLocks();
+  private Optional<FakeLearnedStreamEndRepository> learnedStreamEnds = Optional.empty();
+
+  /**
+   * Stores each stream end that a published keyframe packet scan read in {@code learned}, as the
+   * database stores it among the learned stream end times.
+   */
+  void storeScannedStreamEndsIn(FakeLearnedStreamEndRepository learned) {
+    learnedStreamEnds = Optional.of(learned);
+  }
 
   /** Answers every media file id with this probe unless a row was stored for it. */
   public void setDefaultProbe(MediaProbe probe) {
@@ -131,7 +141,22 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
     }
 
     keyframes.put(mediaFileId, publication.keyframes());
+    learnedStreamEnds.ifPresent(learned -> storeScannedStreamEnds(learned, publication));
     return true;
+  }
+
+  private static void storeScannedStreamEnds(
+      FakeLearnedStreamEndRepository learned, KeyframePacketScanPublication publication) {
+    for (var end : publication.streamEnds()) {
+      learned.replace(
+          LearnedStreamEnd.builder()
+              .mediaFileId(publication.mediaFileId())
+              .snapshot(publication.snapshot())
+              .streamIndex(end.streamIndex())
+              .endTime(end.endTime())
+              .fromPacketScan(true)
+              .build());
+    }
   }
 
   @Override
@@ -444,6 +469,7 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
               _,
               var chosenVideoStream,
               var titlesOmitted,
+              _,
               _) ->
           builder
               .container(container)

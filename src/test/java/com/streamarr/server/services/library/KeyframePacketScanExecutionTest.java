@@ -2,7 +2,9 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
+import com.streamarr.server.domain.media.LearnedStreamEnd;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.ProbeVersion;
@@ -18,6 +20,7 @@ import com.streamarr.server.domain.streaming.ProbeError;
 import com.streamarr.server.domain.streaming.ProbeExecutionRequest;
 import com.streamarr.server.domain.streaming.ProbeOutcome;
 import com.streamarr.server.domain.streaming.ProbePriority;
+import com.streamarr.server.domain.streaming.SourceStreamEnd;
 import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.domain.streaming.StreamMeasurementSource;
 import com.streamarr.server.domain.streaming.StreamMeasurements;
@@ -31,6 +34,7 @@ import com.streamarr.server.exceptions.ProbeTimedOutException;
 import com.streamarr.server.exceptions.ProbeWorkersBusyException;
 import com.streamarr.server.fakes.CapturingKeyframePacketScanRequests;
 import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fakes.FakeLearnedStreamEndRepository;
 import com.streamarr.server.fakes.FakeMediaFileContainerInfoRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeTransactionManager;
@@ -49,6 +53,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -82,6 +87,8 @@ class KeyframePacketScanExecutionTest {
   private final FakeMediaFileRepository mediaFiles = new FakeMediaFileRepository();
   private final FakeMediaFileContainerInfoRepository outcomes =
       new FakeMediaFileContainerInfoRepository();
+  private final FakeLearnedStreamEndRepository learnedStreamEnds =
+      new FakeLearnedStreamEndRepository(outcomes);
   private final List<ProbeExecutionRequest> scanRequests = new ArrayList<>();
   private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
   private KeyframePacketScanner scanner = scanAnswering(success(known()));
@@ -143,19 +150,39 @@ class KeyframePacketScanExecutionTest {
   }
 
   @Test
+  @DisplayName(
+      "Should store each stream end that the packet scan read as a learned end of the scanned"
+          + " source")
+  void shouldStoreEachStreamEndThatThePacketScanReadAsALearnedEndOfTheScannedSource() {
+    var request = storePacketScanRequired();
+    var videoEnd = new SourceStreamEnd(0, Duration.ofMillis(14_167));
+    var audioEnd = new SourceStreamEnd(1, Duration.ofMillis(14_250));
+    scanner = scanAnswering(scanned(List.of(videoEnd, audioEnd)));
+
+    var result = execution().execute(request);
+
+    assertThat(result).isEqualTo(new KeyframePacketScanResult.Completed());
+    assertThat(learnedStreamEnds.findFor(mediaFile.getId(), request.snapshot()))
+        .extracting(LearnedStreamEnd::streamIndex, LearnedStreamEnd::endTime)
+        .containsExactlyInAnyOrder(
+            tuple(0, Duration.ofMillis(14_167)), tuple(1, Duration.ofMillis(14_250)));
+  }
+
+  @Test
   @DisplayName("Should discard a packet-scan result when the source changed during the scan")
   void shouldDiscardAPacketScanResultWhenTheSourceChangedDuringTheScan() {
     var request = storePacketScanRequired();
     scanner =
         scan -> {
           append(source);
-          return success(known());
+          return scanned(List.of(new SourceStreamEnd(0, Duration.ofMillis(14_167))));
         };
 
     var result = execution().execute(request);
 
     assertThat(result).isEqualTo(new KeyframePacketScanResult.Completed());
     assertThat(storedKeyframes()).isEqualTo(packetScanRequired());
+    assertThat(learnedStreamEnds.findFor(mediaFile.getId(), request.snapshot())).isEmpty();
   }
 
   @Test
@@ -421,6 +448,16 @@ class KeyframePacketScanExecutionTest {
 
   private static KeyframeKnowledge packetScanRequired() {
     return new KeyframeKnowledge.PacketScanRequired(KeyframePacketScanReason.NO_CONTAINER_INDEX);
+  }
+
+  // A packet scan's outcome with the stream ends that it read.
+  private static ProbeOutcome.Success scanned(List<SourceStreamEnd> streamEnds) {
+    return ProbeOutcome.Success.builder()
+        .container(ProbeContainer.builder().build())
+        .streams(List.of(StreamInfo.builder().codecType("video").build()))
+        .keyframes(known())
+        .scannedStreamEnds(streamEnds)
+        .build();
   }
 
   private static ProbeOutcome.Success success(KeyframeKnowledge keyframes) {
