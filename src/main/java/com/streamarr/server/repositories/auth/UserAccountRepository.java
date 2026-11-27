@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.UserAccount;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,4 +15,7 @@ public interface UserAccountRepository
   List<UserAccount> findByHouseholdId(UUID householdId);
 
   Optional<UserAccount> findByPersonalProfileId(UUID profileId);
+
+  /** The Accounts that these Profiles represent, one per Personal Profile among them. */
+  List<UserAccount> findByPersonalProfileIdIn(Collection<UUID> profileIds);
 }

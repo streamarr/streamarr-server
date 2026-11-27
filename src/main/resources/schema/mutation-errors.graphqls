@@ -283,6 +283,15 @@ type InvitationNotPendingError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
+"""
+No share with that id that the caller may see. Once an offer is declined, canceled, expired or
+withdrawn, or a share has ended, the target Household's HouseholdAdmins get this too, as for a share
+that no longer exists, unless they manage the Profile or are ServerAdmins. A HouseholdAdmin who
+only hosts the Profile gets it for every share of the Profile into another Household, at every
+status, required by Account membership or not. An Account that offered a share, and may no longer
+read it because it stopped managing the Profile, gets it too unless the offer is still pending,
+which it may still cancel.
+"""
 type ShareNotFoundError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!
@@ -293,7 +302,7 @@ type ShareNotPendingError implements InputMutationError & MutationError {
     inputPath: [String!]!
 }
 
-"The system withdrew the offer — its offerer lost the authority to make it — so it cannot be accepted; the offer's invalidationReason says why."
+"The system withdrew the offer, so it cannot be accepted. The message does not say why: the share's invalidationReason says why to the Profile's managers and ServerAdmins."
 type OfferInvalidatedError implements InputMutationError & MutationError {
     message: String!
     inputPath: [String!]!

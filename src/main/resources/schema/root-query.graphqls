@@ -21,11 +21,37 @@ type Query {
     accountInvitations(first: Int, after: String, last: Int, before: String): AccountInvitationConnection!
     accountInvitationProfilePreview(profileId: ID!): AccountInvitationProfilePreview
     profileSharePreview(profileId: ID!, householdId: ID!): ProfileSharePreview
-    pendingShareOffers(householdId: ID!, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
-    profileShares(profileId: ID!, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
+    """
+    The Profiles offered or shared to a Household, newest first, for its HouseholdAdmins and for
+    ServerAdmins. Everyone else gets an empty list. The HouseholdAdmins get only the offers still
+    waiting for a decision and the active shares: once an offer is declined, canceled, expired or
+    withdrawn, or a share has ended, it leaves their list. ServerAdmins get every status.
+    statuses keeps only shares in those statuses, and an offer past its expiry counts as EXPIRED.
+    Leave statuses out, or pass an empty list, to get every share the reader may list. Pass
+    [PENDING] for the offers waiting for a decision. visitorsOnly: true keeps
+    only shares of visitors: Profiles that belong to another Household, so the Household's own
+    Profiles are left out. Leave it out, or pass false, to get both. Pass visitorsOnly: true with
+    [PENDING, ACTIVE] for the Profiles shared with the Household, or waiting for its decision.
+    """
+    householdShares(householdId: ID!, statuses: [ProfileShareStatus!], visitorsOnly: Boolean, first: Int, after: String, last: Int, before: String): ProfileShareConnection!
+    """
+    A Profile's shares into every Household, newest first, for its managers and ServerAdmins. The
+    Account of a self-managed Personal Profile is one of its managers; the Account of a supervised
+    Personal Profile is not. Everyone else gets an empty list, including a HouseholdAdmin where the
+    Profile is available: householdShares gives them the share into their own Household.
+    statuses keeps only shares in those statuses, as householdShares does: pass [PENDING, ACTIVE]
+    for where the Profile is offered or available now.
+    """
+    profileShares(profileId: ID!, statuses: [ProfileShareStatus!], first: Int, after: String, last: Int, before: String): ProfileShareConnection!
     pendingManagerInvitationsForProfile(profileId: ID!, first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
     pendingManagerInvitations(first: Int, after: String, last: Int, before: String): ManagerInvitationConnection!
-    householdDevices(householdId: ID!, first: Int, after: String, last: Int, before: String): DeviceRegistrationConnection!
+    """
+    A Household's active Devices, newest first, for its HouseholdAdmins and for ServerAdmins.
+    Everyone else gets an empty list. visitorsOnly: true keeps only the Devices that visitors
+    linked: people who are not members of the Household. Leave it out, or pass false, to get every
+    Device.
+    """
+    householdDevices(householdId: ID!, visitorsOnly: Boolean, first: Int, after: String, last: Int, before: String): DeviceRegistrationConnection!
     esnBlocks(householdId: ID!, first: Int, after: String, last: Int, before: String): EsnBlockConnection!
     serverEsnBlocks(first: Int, after: String, last: Int, before: String): EsnBlockConnection!
     householdDeletionPreview(householdId: ID!): HouseholdDeletionPreview

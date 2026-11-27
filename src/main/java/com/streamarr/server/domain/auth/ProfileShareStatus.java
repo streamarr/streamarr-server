@@ -8,5 +8,10 @@ public enum ProfileShareStatus {
   CANCELED,
   EXPIRED,
   INVALIDATED,
-  ENDED
+  ENDED;
+
+  /** Whether the offer is still pending or the share is active; every other status is over. */
+  public boolean isLive() {
+    return this == PENDING || this == ACTIVE;
+  }
 }

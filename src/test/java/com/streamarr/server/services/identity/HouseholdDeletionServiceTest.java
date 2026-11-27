@@ -5,12 +5,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.AuditFieldSetter;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.ProfileHouseholdShare;
+import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -32,6 +36,8 @@ import com.streamarr.server.fixtures.PaginationFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -69,6 +75,8 @@ class HouseholdDeletionServiceTest {
 
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
+
+  private final CapturingEventPublisher shareEvents = new CapturingEventPublisher();
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
@@ -274,6 +282,51 @@ class HouseholdDeletionServiceTest {
   }
 
   @Test
+  @DisplayName("Should announce every share into the Household when deleting it")
+  void shouldAnnounceEveryShareIntoTheHouseholdWhenDeletingIt() {
+    var visit = shares.share(UUID.randomUUID(), doomed.getId(), false);
+    var declined =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(UUID.randomUUID())
+                .householdId(doomed.getId())
+                .status(ProfileShareStatus.REJECTED)
+                .build());
+
+    deleteEmptyHousehold("closing shop");
+
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .extracting(ProfileShareChangedEvent::share)
+        .contains(ChangedShare.of(visit), ChangedShare.of(declined));
+  }
+
+  @Test
+  @DisplayName("Should announce each offer into the Household as withdrawn when deleting it")
+  void shouldAnnounceEachOfferIntoTheHouseholdAsWithdrawnWhenDeletingIt() {
+    var offer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(UUID.randomUUID())
+                .householdId(doomed.getId())
+                .status(ProfileShareStatus.PENDING)
+                .expiresAt(NOW.plusSeconds(3600))
+                .build());
+
+    deleteEmptyHousehold("closing shop");
+
+    // The offer is withdrawn before it is deleted with the Household, so that is how it ends.
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .filteredOn(ProfileShareChangedEvent::ended)
+        .extracting(ProfileShareChangedEvent::share)
+        .containsExactly(
+            new ChangedShare(
+                offer.getId(),
+                offer.getProfileId(),
+                doomed.getId(),
+                ProfileShareStatus.INVALIDATED));
+  }
+
+  @Test
   @DisplayName(
       "Should transfer the final Account with its Personal Profile when transfer-and-delete is requested")
   void shouldTransferFinalAccountWithPersonalProfileWhenTransferAndDeleteIsRequested() {
@@ -352,6 +405,31 @@ class HouseholdDeletionServiceTest {
     assertThat(managers.existsByAccountIdAndProfileId(refugeAnchor.getId(), preserved.getId()))
         .isTrue();
     assertThat(households.findById(doomed.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce an earlier share into the destination when the final Account's Profile is"
+          + " kept there")
+  void shouldAnnounceEarlierShareIntoDestinationWhenFinalAccountsProfileIsKeptThere() {
+    var lastResident = residentOf(doomed, HouseholdRole.ADMIN);
+    // Nothing writes the declined offer, yet the Profile stops being a visitor there.
+    var declinedOffer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(lastResident.getPersonalProfileId())
+                .householdId(refuge.getId())
+                .status(ProfileShareStatus.REJECTED)
+                .build());
+
+    assertThat(
+            service.deleteLastAccountAndHouseholdPreservingPersonalProfile(
+                identity(), preservationCommand().build()))
+        .isInstanceOf(Outcome.Accepted.class);
+
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .extracting(ProfileShareChangedEvent::share)
+        .contains(ChangedShare.of(declinedOffer));
   }
 
   @Test
@@ -585,16 +663,19 @@ class HouseholdDeletionServiceTest {
             accountRepository,
             profiles,
             shares,
+            new ProfileShareLifecycle(shares, shareEvents),
             managers,
             managerInvitations,
             accountInvitations,
             passwordResetCodes,
             sessions,
-            registrationLifecycle),
+            registrationLifecycle,
+            Clock.fixed(NOW, ZoneOffset.UTC)),
         households,
         accountRepository,
         profiles,
         shares,
+        new ProfileShareLifecycle(shares, shareEvents),
         sessions,
         registrationLifecycle,
         accountInvitations,

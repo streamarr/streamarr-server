@@ -2,6 +2,8 @@ package com.streamarr.server.graphql.dto;
 
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
+import com.streamarr.server.services.identity.RegistrationAuthorizer;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -25,5 +27,14 @@ public record DeviceRegistrationDetails(
         .status(registration.getStatus())
         .pairedAt(registration.getCreatedOn().toString())
         .build();
+  }
+
+  /** Who linked the Device, in its Household; absent once either is gone. */
+  public Optional<RegistrationAuthorizer> authorizer() {
+    if (householdId == null || authorizingAccountId == null) {
+      return Optional.empty();
+    }
+
+    return Optional.of(new RegistrationAuthorizer(householdId, authorizingAccountId));
   }
 }

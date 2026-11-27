@@ -201,14 +201,17 @@ public class DeviceAdministrationService {
         "unblockEsnServerWide");
   }
 
-  /** A page of the Household's ACTIVE registrations, newest first; hidden reads as empty. */
+  /**
+   * A page of the Household's ACTIVE registrations in the scope, newest first; hidden reads as
+   * empty.
+   */
   public ListPage<DeviceRegistration> householdDevices(
-      AuthenticatedIdentity identity, UUID householdId, PageRequest request) {
-    if (!mayReadDevices(identity, new Intent.ViewDeviceAdministration(householdId))) {
+      AuthenticatedIdentity identity, HouseholdDevicesScope household, PageRequest request) {
+    if (!mayReadDevices(identity, new Intent.ViewDeviceAdministration(household.householdId()))) {
       return ListPage.empty();
     }
 
-    return Pager.page(householdDevicesList, householdId, request);
+    return Pager.page(householdDevicesList, household, request);
   }
 
   /** A page of the Household's ESN blocks, newest first; hidden reads as empty. */

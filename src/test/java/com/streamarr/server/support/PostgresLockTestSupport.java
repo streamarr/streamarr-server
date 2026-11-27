@@ -70,8 +70,9 @@ public final class PostgresLockTestSupport {
   }
 
   /**
-   * Takes one row's FOR UPDATE lock on a dedicated connection. Contenders block until the returned
-   * hold is released or closed; closing rolls the holding transaction back.
+   * Takes one row's lock on a dedicated connection: FOR UPDATE, or FOR SHARE when the target is
+   * shared. Contenders block until the returned hold is released or closed; closing rolls the
+   * holding transaction back.
    */
   public static HeldRowLock lockRow(RowLockTarget target) throws SQLException {
     var connection = target.dataSource().getConnection();
@@ -286,17 +287,22 @@ public final class PostgresLockTestSupport {
 
   private record BlockedBackend(int blockerPid, String waitEvent, String queryPattern) {}
 
-  /** The row to lock; rows are addressed by {@code id} unless {@code keyColumn} says otherwise. */
+  /**
+   * The row to lock; rows are addressed by {@code id} unless {@code keyColumn} says otherwise, and
+   * locked FOR SHARE when {@code shared}, otherwise FOR UPDATE.
+   */
   @Builder
   public record RowLockTarget(
       @NonNull DataSource dataSource,
       @NonNull String table,
       String keyColumn,
-      @NonNull UUID rowId) {
+      @NonNull UUID rowId,
+      boolean shared) {
 
     String lockSql() {
       var column = Objects.requireNonNullElse(keyColumn, "id");
-      return "SELECT " + column + " FROM " + table + " WHERE " + column + " = ? FOR UPDATE";
+      var strength = shared ? "SHARE" : "UPDATE";
+      return "SELECT " + column + " FROM " + table + " WHERE " + column + " = ? FOR " + strength;
     }
   }
 

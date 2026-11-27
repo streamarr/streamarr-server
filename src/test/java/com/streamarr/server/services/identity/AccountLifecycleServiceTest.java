@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.auth.AccountInvitation;
 import com.streamarr.server.domain.auth.AccountInvitationStatus;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.ChangedShare;
 import com.streamarr.server.domain.auth.DeviceRegistration;
 import com.streamarr.server.domain.auth.DeviceRegistrationStatus;
 import com.streamarr.server.domain.auth.Household;
@@ -20,6 +21,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SecurityAuditEntry;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -39,6 +41,8 @@ import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
+import com.streamarr.server.services.auth.events.ProfileShareChangedEvent;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -77,6 +81,8 @@ class AccountLifecycleServiceTest {
 
   private final FakeProfileHouseholdShareRepository shares =
       new FakeProfileHouseholdShareRepository();
+
+  private final CapturingEventPublisher shareEvents = new CapturingEventPublisher();
   private final FakeProfileRepository profiles = new FakeProfileRepository(shares);
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository(shares);
   private final FakeHouseholdRepository households = new FakeHouseholdRepository();
@@ -100,12 +106,14 @@ class AccountLifecycleServiceTest {
               accounts,
               profiles,
               shares,
+              new ProfileShareLifecycle(shares, shareEvents),
               managers,
               managerInvitations,
               accountInvitations,
               resetCodes,
               sessions,
-              new DeviceRegistrationLifecycle(registrations, sessions)),
+              new DeviceRegistrationLifecycle(registrations, sessions),
+              Clock.fixed(NOW, ZoneOffset.UTC)),
           accounts,
           profiles,
           households,
@@ -148,6 +156,28 @@ class AccountLifecycleServiceTest {
             shares.findByProfileIdAndHouseholdIdAndStatus(
                 mover.getPersonalProfileId(), source.getId(), ProfileShareStatus.ENDED))
         .isPresent();
+  }
+
+  @Test
+  @DisplayName(
+      "Should announce an earlier share into the destination when the Account and its Personal"
+          + " Profile move there")
+  void shouldAnnounceEarlierShareIntoDestinationWhenAccountAndPersonalProfileMoveThere() {
+    // Nothing writes the declined offer, yet the Profile stops being a visitor there.
+    var declinedOffer =
+        shares.save(
+            ProfileHouseholdShare.builder()
+                .profileId(mover.getPersonalProfileId())
+                .householdId(destination.getId())
+                .status(ProfileShareStatus.REJECTED)
+                .build());
+
+    assertThat(service.transferAccount(identity(), transferCommand().build()))
+        .isEqualTo(Outcome.accepted(mover));
+
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .extracting(ProfileShareChangedEvent::share)
+        .contains(ChangedShare.of(declinedOffer));
   }
 
   @ParameterizedTest
@@ -348,6 +378,24 @@ class AccountLifecycleServiceTest {
                 .reason(caller == DeletionCaller.SELF ? "self-deletion" : "household dispute")
                 .resource("accountId", mover.getId())
                 .build());
+  }
+
+  @ParameterizedTest
+  @EnumSource(DeletionCaller.class)
+  @DisplayName("Should announce every share of the Personal Profile when deletion is accepted")
+  void shouldAnnounceEveryShareOfThePersonalProfileWhenDeletionIsAccepted(DeletionCaller caller) {
+    shares.share(mover.getPersonalProfileId(), destination.getId(), false);
+    var personalShares =
+        shares.findByProfileId(mover.getPersonalProfileId()).stream()
+            .map(ChangedShare::of)
+            .toList();
+
+    deleteAccount(caller);
+
+    assertThat(personalShares).hasSize(2);
+    assertThat(shareEvents.getEventsOfType(ProfileShareChangedEvent.class))
+        .extracting(ProfileShareChangedEvent::share)
+        .containsAll(personalShares);
   }
 
   @ParameterizedTest

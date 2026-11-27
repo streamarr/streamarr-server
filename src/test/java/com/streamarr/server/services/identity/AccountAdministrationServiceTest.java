@@ -17,6 +17,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAccountInvitationRepository;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeAuthorizationService;
@@ -30,6 +31,7 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.AuthenticatedIdentityFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -73,6 +75,7 @@ class AccountAdministrationServiceTest {
           invitations,
           resetCodes,
           shares,
+          new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           Clock.systemUTC());
@@ -529,10 +532,10 @@ class AccountAdministrationServiceTest {
             .build());
   }
 
+  // The target Household may read the reason, so it names no fact about the offerer's Account.
   private void assertOfferInvalidated(UUID shareId) {
     var stored = shares.findById(shareId).orElseThrow();
     assertThat(stored.getStatus()).isEqualTo(ProfileShareStatus.INVALIDATED);
-    assertThat(stored.getInvalidationReason())
-        .hasValueSatisfying(reason -> assertThat(reason).isNotBlank());
+    assertThat(stored.getInvalidationReason()).contains("offerer no longer authorized");
   }
 }

@@ -16,6 +16,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.DeviceRegistrationLifecycle;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
@@ -61,6 +62,7 @@ public class HouseholdDeletionService {
   private final UserAccountRepository userAccountRepository;
   private final ProfileRepository profileRepository;
   private final ProfileHouseholdShareRepository shareRepository;
+  private final ProfileShareLifecycle shareLifecycle;
   private final AuthSessionRepository authSessionRepository;
   private final DeviceRegistrationLifecycle registrationLifecycle;
   private final AccountInvitationRepository accountInvitationRepository;
@@ -188,8 +190,12 @@ public class HouseholdDeletionService {
         request.householdId(), HOUSEHOLD_DELETED_REASON, now);
     accountInvitationRepository.invalidatePendingByHouseholdId(
         request.householdId(), HOUSEHOLD_DELETED_REASON, now);
+    // Read after any wait above, so an offer whose time ran out meanwhile is stored as expired.
+    shareLifecycle.invalidatePendingByHouseholdId(
+        request.householdId(), HOUSEHOLD_DELETED_REASON, clock.instant());
     endHostedVisits(request.householdId(), now);
     deleteResidentProfiles(request.householdId(), now);
+    shareLifecycle.announceDeletionWithHousehold(request.householdId(), now);
     householdRepository.deleteById(request.householdId());
     householdRepository.flush();
     securityAuditEventRepository.append(
@@ -316,7 +322,7 @@ public class HouseholdDeletionService {
         .findByHouseholdIdAndStatus(householdId, ProfileShareStatus.ACTIVE)
         .forEach(
             share -> {
-              shareRepository.tryEndActive(share.getId(), now);
+              shareLifecycle.tryEndActive(share.getId(), now);
               authSessionRepository.clearProfileSelectionFromLiveSessions(
                   share.getProfileId(), householdId);
               userAccountRepository

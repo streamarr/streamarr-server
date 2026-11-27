@@ -15,6 +15,7 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.TooManyCredentialAttemptsException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthorizationService;
 import com.streamarr.server.fakes.FakeCredentialAttemptRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -31,6 +32,7 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
+import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.authorization.AuthorizationUnit;
 import com.streamarr.server.services.authorization.Decision;
 import com.streamarr.server.services.authorization.Intent;
@@ -77,7 +79,7 @@ class ProfileManagerAdministrationServiceTest {
           managers,
           profiles,
           accounts,
-          shares,
+          new ProfileShareLifecycle(shares, new CapturingEventPublisher()),
           audit,
           new OpaqueOneTimeCodes(),
           credentialAttempts.gate(clock),

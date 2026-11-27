@@ -9,6 +9,7 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.exceptions.InvalidEmailAddressException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeHouseholdRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
@@ -62,7 +63,7 @@ class SetupServiceTest {
           userAccountRepository,
           householdRepository,
           profileRepository,
-          shareRepository,
+          new ProfileShareLifecycle(shareRepository, new CapturingEventPublisher()),
           bootstrapRepository,
           sessionProgressRepository,
           watchHistoryRepository,
@@ -196,7 +197,7 @@ class SetupServiceTest {
             throwingRepository,
             householdRepository,
             profileRepository,
-            shareRepository,
+            new ProfileShareLifecycle(shareRepository, new CapturingEventPublisher()),
             bootstrapRepository,
             sessionProgressRepository,
             watchHistoryRepository,

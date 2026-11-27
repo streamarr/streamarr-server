@@ -2,9 +2,11 @@ package com.streamarr.server;
 
 import com.streamarr.server.support.AuthTestSupportConfig;
 import com.streamarr.server.support.HibernateWorkCounterConfiguration;
+import com.streamarr.server.support.JooqStatementCounter;
 import com.streamarr.server.support.PausedContextConnectionRelease;
 import com.streamarr.server.support.RunningArtworkPrioritySchedulersConfiguration;
 import com.streamarr.server.support.RunningLibraryOperationSchedulerConfiguration;
+import com.streamarr.server.support.StatementCount;
 import com.streamarr.server.support.TestFixtureActorExtension;
 import com.streamarr.server.support.TestFixtureAuditActorConfiguration;
 import com.streamarr.server.support.TestManagedTransactionFixtureActorListener;
@@ -28,9 +30,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @Import({
   AuthTestSupportConfig.class,
   HibernateWorkCounterConfiguration.class,
+  JooqStatementCounter.class,
   PausedContextConnectionRelease.class,
   RunningArtworkPrioritySchedulersConfiguration.class,
   RunningLibraryOperationSchedulerConfiguration.class,
+  StatementCount.class,
   TestFixtureAuditActorConfiguration.class,
   UnstartedSchedulerConfiguration.class
 })

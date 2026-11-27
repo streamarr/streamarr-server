@@ -11,7 +11,7 @@ enum ProfileShareStatus {
     CANCELED
     "Timed out before a decision."
     EXPIRED
-    "Withdrawn by the system because its offerer lost authority; invalidationReason says why."
+    "Withdrawn by the system because the offer could no longer stand, as when its offerer lost authority or its Profile was transferred; invalidationReason says why."
     INVALIDATED
     "Ended after being active."
     ENDED
@@ -25,8 +25,126 @@ type ProfileShare {
     requiredByAccountMembership: Boolean!
     expiresAt: String
     endedAt: String
-    "Why the system withdrew this offer; set only when status is INVALIDATED."
+    """
+    Why the system withdrew this offer; set only when status is INVALIDATED. Shown to the same
+    readers as household: the Profile's managers and ServerAdmins. Null for everyone else,
+    including the target Household's HouseholdAdmins.
+    """
     invalidationReason: String
+    """
+    The Profile on offer or shared. Shown to the Profile's managers and to ServerAdmins at every
+    status. Shown to the target Household's HouseholdAdmins only while the offer is PENDING and not
+    past its expiresAt, or the share is ACTIVE: once it is over, they get null. Null for everyone
+    else.
+    """
+    profile: ProfileSummary
+    """
+    Whether the Profile is a visitor in the Household: it belongs to another Household. False for
+    the Household's own Profiles. It follows where the Profile belongs now, so it can change when
+    the Profile moves. Shown to the same readers as profile, and null for everyone else.
+    """
+    visitor: Boolean
+    """
+    The display name of the Account that offered the Profile. Shown to ServerAdmins, and to the
+    target Household's HouseholdAdmins while the offer is PENDING and not past its expiresAt, or
+    the share is ACTIVE. Null for everyone else, for a share that is over unless the reader is a
+    ServerAdmin, for a share the system made, and once that Account is deleted.
+    """
+    offeredByDisplayName: String
+    """
+    The Household the Profile is offered or shared to, at every status. Shown to the Profile's
+    managers and to ServerAdmins. Null for everyone else, including that Household's
+    HouseholdAdmins. The Account of a self-managed Personal Profile is one of its managers; the
+    Account of a supervised Personal Profile is not.
+    """
+    household: HouseholdSummary
+}
+
+"A Profile as a share shows it."
+type ProfileSummary {
+    id: ID!
+    name: String!
+    picture: String
+    kind: ProfileKind!
+    "Whether this is someone's Personal Profile, so accepting it lets that person use the Household."
+    personalProfile: Boolean!
+    "Whether the Profile is restricted, so the Household's HouseholdAdmins supervise it there."
+    restricted: Boolean!
+}
+
+extend type Subscription {
+    """
+    A Profile share changed. A change arrives when a share is created or offered, accepted,
+    declined, canceled, invalidated or ended, when an offer expires, when a share starts or stops
+    being required by Account membership, when a share is deleted with its Profile or its
+    Household, and, for the Profile's shares into the Households it leaves and joins, when the
+    Profile moves to another Household, since whether it is a visitor there changes. An offer
+    whose time runs out arrives as EXPIRED about a minute after its expiresAt;
+    the share queries show it as EXPIRED from expiresAt on. A change that rolls back never arrives.
+
+    Any signed-in session may subscribe, with or without a selected Profile. A device-bound session
+    gets FORBIDDEN, and so does a disabled Account. A change reaches a subscriber only when the
+    subscriber may read the share through householdShares or profileShares: the target
+    Household's HouseholdAdmins, the Profile's managers, and ServerAdmins. The Account of a
+    supervised Personal Profile is not one of its managers and receives none of its changes.
+    The server decides this for each change as it delivers it, so a subscriber who loses that
+    authority stops receiving the share's changes, and a share never reaches someone the queries
+    would not show it to. The share's fields are hidden from the same readers as in the queries.
+
+    The target Household's HouseholdAdmins follow a share while the offer is PENDING or the share
+    is ACTIVE. They also get the change that ends it: the offer declined, canceled, expired or
+    invalidated, or the share ended. That last change carries the share as that change left it,
+    taken when the change was made: its id, profileId, householdId and status, with
+    requiredByAccountMembership false and every other field null, so the client can take the share
+    out of its lists. It carries that status even when the share is deleted, with its Profile,
+    before the change is delivered. No change of that share reaches them after it, not even its
+    removal. ServerAdmins and the Profile's managers get every change.
+    A share deleted with its Profile reaches only those who may read its Household's shares, and
+    a share deleted with its Household reaches only those who may read its Profile's shares.
+    An operation whose Account may no longer follow share changes ends with FORBIDDEN.
+
+    To build current state, subscribe first, then query householdShares or profileShares, and
+    apply each change by shareId. For each list the client shows, select householdSharesEdge or
+    profileSharesEdge with the arguments of that list. The edge says whether that list holds the
+    share for the subscriber and where. When the edge is not null, place the share by its orderKey
+    among the list's edges. A share that sorts after the last loaded edge, while the list has a next
+    page, waits for that page. When the edge is null and the change has no errors, the list no
+    longer holds the share, so remove the share from that list. A change with errors removes
+    nothing: keep the share and run the queries again. Except for that last change to the target
+    Household's HouseholdAdmins, the server reads the share when it delivers the change, and it
+    delivers one operation's changes in order, so the last change for a share carries its latest
+    state. A share that stops being readable to the subscriber does not arrive
+    as removed; the queries stop listing it. The operation does not complete while the server runs.
+    """
+    profileShareChanged: ProfileShareChange
+}
+
+"One committed change to a Profile share."
+type ProfileShareChange {
+    shareId: ID!
+    """
+    The share as the server reads it on delivery, or null once the share no longer exists, as when
+    it was deleted with its Profile or its Household. The change that ends a share reaches a
+    HouseholdAdmin who reads the share only from its Household as that change left it, never as
+    null.
+    """
+    share: ProfileShare
+    """
+    Where householdShares lists the share for this subscriber, in the Household the share is into,
+    with these statuses and visitorsOnly. Pass the arguments of the list the client shows. The
+    query and this edge read the list the same way, so the edge's cursor and orderKey are the ones
+    the query gives the share. Null when that list does not hold the share for this subscriber,
+    including once the share is deleted, unless this change has errors.
+    """
+    householdSharesEdge(statuses: [ProfileShareStatus!], visitorsOnly: Boolean): ProfileShareEdge
+    """
+    Where profileShares lists the share for this subscriber, among the shares of the share's
+    Profile, with these statuses. Pass the arguments of the list the client shows. The query and
+    this edge read the list the same way, so the edge's cursor and orderKey are the ones the query
+    gives the share. Null when that list does not hold the share for this subscriber, including once
+    the share is deleted, unless this change has errors.
+    """
+    profileSharesEdge(statuses: [ProfileShareStatus!]): ProfileShareEdge
 }
 
 type ProfileShareConnection {
@@ -34,9 +152,11 @@ type ProfileShareConnection {
     pageInfo: PageInfo!
 }
 
-type ProfileShareEdge {
+type ProfileShareEdge implements OrderedEdge {
     node: ProfileShare!
     cursor: String!
+    "Server ordering key. Compare as ascending ASCII strings, only with keys from the same list."
+    orderKey: String!
 }
 
 "The effects of offering this Profile to the Household."

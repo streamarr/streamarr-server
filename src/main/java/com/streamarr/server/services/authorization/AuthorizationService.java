@@ -4,6 +4,7 @@ import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -83,7 +84,20 @@ public interface AuthorizationService {
    * it: denied is false, and an engine that could not decide fails closed as unavailable.
    */
   default boolean isAllowed(AuthenticatedIdentity identity, Intent.UnitIntent intent) {
-    return switch (decide(identity, intent)) {
+    return allows(decide(identity, intent));
+  }
+
+  /**
+   * The read intents among these that {@link #isAllowed} allows, each decided as it would be alone,
+   * with each fact family read once for them all: for a page that asks one question of each of its
+   * resources. An engine that could not decide fails closed as unavailable.
+   */
+  Set<Intent.UnitIntent> allowedAmong(
+      AuthenticatedIdentity identity, Set<Intent.UnitIntent> intents);
+
+  /** A decision as a yes/no: denied is false, and a failed decision throws as unavailable. */
+  static boolean allows(Decision<?> decision) {
+    return switch (decision) {
       case Decision.Allowed<?> _ -> true;
       case Decision.Denied<?> _ -> false;
       case Decision.Failed<?> _ -> throw new AuthorizationUnavailableException();

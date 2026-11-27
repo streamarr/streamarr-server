@@ -2,16 +2,20 @@ package com.streamarr.server.graphql.cursor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.pagination.ListOrder;
 import com.streamarr.server.domain.pagination.OrderMediaBy;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.Row;
 import com.streamarr.server.domain.pagination.SortDirection;
 import com.streamarr.server.domain.pagination.SortValue;
+import com.streamarr.server.domain.pagination.SortValueKind;
+import com.streamarr.server.graphql.dto.KeyedEdge;
 import com.streamarr.server.graphql.dto.OrderedEdge;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaOrder;
 import graphql.relay.Edge;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -119,6 +123,37 @@ class RelayConnectionAdapterTest {
           .isInstanceOfSatisfying(
               OrderedEdge.class, edge -> assertThat(edge.order()).isEqualTo(expected));
     }
+
+    @Test
+    @DisplayName(
+        "Should give keyed edges order keys that ascend in list order when the list sorts newest"
+            + " first")
+    void shouldGiveKeyedEdgesOrderKeysThatAscendInListOrderWhenTheListSortsNewestFirst() {
+      // Newest first, and a tie on the time falls to the larger ID first, as PostgreSQL orders
+      // uuid values byte by byte.
+      var newest = createdAt("2026-08-21T12:00:00Z", new UUID(0, 2));
+      var tieWithLargerId = createdAt("2026-08-21T11:00:00Z", new UUID(Long.MAX_VALUE, 1));
+      var tieWithSmallerId = createdAt("2026-08-21T11:00:00Z", new UUID(0, 1));
+      var newestFirst =
+          ListOrder.builder()
+              .valueKind(SortValueKind.INSTANT)
+              .direction(SortDirection.DESC)
+              .build();
+
+      var connection =
+          adapter.toKeyedConnection(
+              new ListPage<>(List.of(newest, tieWithLargerId, tieWithSmallerId), false, false),
+              LIST,
+              newestFirst);
+
+      assertThat(connection.getEdges())
+          .hasSize(3)
+          .allSatisfy(edge -> assertThat(edge).isInstanceOf(KeyedEdge.class));
+      var edges = connection.getEdges().stream().map(KeyedEdge.class::cast).toList();
+      assertThat(edges).extracting(KeyedEdge::orderKey).isSorted().doesNotHaveDuplicates();
+      assertThat(positionCursors.decode(LIST, edges.getLast().getCursor().getValue()))
+          .isEqualTo(tieWithSmallerId.position());
+    }
   }
 
   @Nested
@@ -147,6 +182,11 @@ class RelayConnectionAdapterTest {
       assertThat(connection.getPageInfo().isHasPreviousPage()).isTrue();
       assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
     }
+  }
+
+  private static Row<SourceItem> createdAt(String instant, UUID id) {
+    var value = new SortValue.OfInstant(Instant.parse(instant));
+    return new Row<>(new SourceItem(id, instant), new Position(value, id));
   }
 
   private static Row<SourceItem> row(String name) {

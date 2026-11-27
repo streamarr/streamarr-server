@@ -1,11 +1,14 @@
 package com.streamarr.server.graphql.cursor;
 
+import com.streamarr.server.domain.pagination.ListOrder;
 import com.streamarr.server.domain.pagination.Position;
 import com.streamarr.server.domain.pagination.Row;
+import com.streamarr.server.graphql.dto.KeyedEdge;
 import com.streamarr.server.graphql.dto.OrderedEdge;
 import com.streamarr.server.services.pagination.ListIdentity;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.MediaOrder;
+import com.streamarr.server.services.pagination.OrderKey;
 import graphql.relay.Connection;
 import graphql.relay.DefaultConnection;
 import graphql.relay.DefaultEdge;
@@ -46,6 +49,22 @@ public class RelayConnectionAdapter {
       Row<T> row, ListIdentity list, Function<Position, MediaOrder> orderOf) {
     return new OrderedEdge<>(
         row.item(), positionCursors.encode(list, row.position()), orderOf.apply(row.position()));
+  }
+
+  /** Builds edges whose cursors continue {@code list} and whose keys place each row in order. */
+  public <T> Connection<T> toKeyedConnection(ListPage<T> page, ListIdentity list, ListOrder order) {
+    return toConnection(
+        page.rows(),
+        page.hasPreviousPage(),
+        page.hasNextPage(),
+        row -> toKeyedEdge(row, list, order));
+  }
+
+  public <T> KeyedEdge<T> toKeyedEdge(Row<T> row, ListIdentity list, ListOrder order) {
+    return new KeyedEdge<>(
+        row.item(),
+        positionCursors.encode(list, row.position()),
+        OrderKey.encode(order, row.position()));
   }
 
   private <S, T> Connection<T> toConnection(

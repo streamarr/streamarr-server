@@ -2,6 +2,7 @@ package com.streamarr.server.services.authorization.cedar;
 
 import static com.streamarr.server.fixtures.ProfileHouseholdShareFixture.activeShareBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.cedarpolicy.BasicAuthorizationEngine;
 import com.streamarr.server.domain.auth.AuthSession;
@@ -15,6 +16,7 @@ import com.streamarr.server.domain.auth.ProfileManagerInvitation;
 import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AuthorizationUnavailableException;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeDeviceRegistrationRepository;
 import com.streamarr.server.fakes.FakeProfileHouseholdShareRepository;
@@ -38,7 +40,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -907,6 +911,90 @@ class CedarIdentityPoliciesTest {
     }
 
     @Test
+    @DisplayName(
+        "Should show a Profile's share Households when the caller manages it or is ServerAdmin")
+    void shouldShowProfileShareHouseholdsWhenCallerManagesItOrIsServerAdmin() {
+      assertThat(decide(atHome(), new Intent.ViewProfileShareHouseholds(personal.getId())))
+          .isEqualTo(ALLOWED);
+
+      // Hosting a Profile does not tell a HouseholdAdmin where else it is offered.
+      var orphan = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      var view = new Intent.ViewProfileShareHouseholds(orphan.getId());
+      shares.share(orphan.getId(), account.getHouseholdId(), false);
+      assertThat(decide(atHome(), view)).isEqualTo(DENIED);
+
+      managers.save(
+          ProfileManager.builder().accountId(account.getId()).profileId(orphan.getId()).build());
+      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), view)).isEqualTo(DENIED);
+      managers.deleteAll();
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), view)).isEqualTo(ALLOWED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), view)).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should not show a Profile's share Households when the caller's own Personal Profile is"
+            + " supervised")
+    void shouldNotShowProfileShareHouseholdsWhenCallersOwnPersonalProfileIsSupervised() {
+      var view = new Intent.ViewProfileShareHouseholds(personal.getId());
+      assertThat(decide(member(), view)).isEqualTo(ALLOWED);
+
+      // A supervised person is not a ProfileManager of their own Profile (ADR 0024).
+      personal.setMaximumAllowedRatingAge(12);
+      profiles.save(personal);
+      assertThat(decide(member(), view)).isEqualTo(DENIED);
+
+      personal.setMaximumAllowedRatingAge(null);
+      personal.setKind(ProfileKind.KID);
+      profiles.save(personal);
+      assertThat(decide(member(), view)).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should let a principal view a Household's share history only when it is a live"
+            + " ServerAdmin")
+    void shouldLetPrincipalViewHouseholdsShareHistoryOnlyWhenItIsLiveServerAdmin() {
+      var home = new Intent.ViewHouseholdShareHistory(account.getHouseholdId());
+      var elsewhere = new Intent.ViewHouseholdShareHistory(visitedHouseholdId);
+
+      // Administering the Household is not enough.
+      assertThat(decide(atHome(), home)).isEqualTo(DENIED);
+
+      account.setServerAdmin(true);
+      accounts.save(account);
+      assertThat(decide(atHome(), home)).isEqualTo(ALLOWED);
+      assertThat(decide(member(), elsewhere)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), home)).isEqualTo(DENIED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), home)).isEqualTo(DENIED);
+    }
+
+    @Test
+    @DisplayName(
+        "Should let an enabled Account follow share changes when its session is not device-bound")
+    void shouldLetAnEnabledAccountFollowShareChangesWhenItsSessionIsNotDeviceBound() {
+      var follow = new Intent.ViewProfileShareChanges();
+
+      assertThat(decide(atHome(), follow)).isEqualTo(ALLOWED);
+      assertThat(decide(member(), follow)).isEqualTo(ALLOWED);
+      assertThat(decide(onDevice(atHome()), follow)).isEqualTo(DENIED);
+
+      account.setEnabled(false);
+      accounts.save(account);
+      assertThat(decide(atHome(), follow)).isEqualTo(DENIED);
+    }
+
+    @Test
     @DisplayName("Should deny sovereign share ending when the Personal Profile is restricted")
     void shouldDenySovereignShareEndingWhenPersonalProfileIsRestricted() {
       var visit =
@@ -1564,6 +1652,101 @@ class CedarIdentityPoliciesTest {
       assertThat(
               decide(withReauthenticatedAt(atHome(), Instant.now()), new Intent.DeleteMyAccount()))
           .isEqualTo(DENIED);
+    }
+  }
+
+  @Nested
+  @DisplayName("Batches of reads")
+  class Batches {
+
+    @Test
+    @DisplayName(
+        "Should allow exactly the reads each allowed alone when reads are decided in a batch")
+    void shouldAllowExactlyTheReadsEachAllowedAloneWhenReadsAreDecidedInBatch() {
+      var managed = managedBy(account, ProfileFixture.defaultProfileBuilder());
+      var managedKid = managedBy(account, ProfileFixture.kidProfileBuilder());
+      var hosted = profiles.save(ProfileFixture.defaultProfileBuilder().build());
+      shares.share(hosted.getId(), account.getHouseholdId(), false);
+      var kid = profiles.save(ProfileFixture.kidProfileBuilder().build());
+      var reads =
+          Set.<Intent.UnitIntent>of(
+              new Intent.ViewProfileShareHouseholds(personal.getId()),
+              new Intent.ViewProfileShareHouseholds(managed.getId()),
+              new Intent.ViewProfileShareHouseholds(managedKid.getId()),
+              new Intent.ViewProfileShareHouseholds(hosted.getId()),
+              new Intent.ViewProfileShareHouseholds(kid.getId()),
+              new Intent.ViewProfileAdministration(hosted.getId()),
+              new Intent.ViewProfileAdministration(kid.getId()),
+              new Intent.ViewManagerInvitations(personal.getId()),
+              new Intent.ViewManagerInvitations(managed.getId()),
+              new Intent.ViewHouseholdAdministration(account.getHouseholdId()),
+              new Intent.ViewHouseholdAdministration(visitedHouseholdId),
+              new Intent.ViewHouseholdShareHistory(account.getHouseholdId()));
+
+      var allowed = authorizationService.allowedAmong(atHome(), reads);
+
+      assertThat(allowed)
+          .isEqualTo(
+              reads.stream()
+                  .filter(read -> authorizationService.isAllowed(atHome(), read))
+                  .collect(Collectors.toSet()))
+          .contains(
+              new Intent.ViewProfileShareHouseholds(personal.getId()),
+              new Intent.ViewProfileShareHouseholds(managedKid.getId()),
+              new Intent.ViewProfileAdministration(hosted.getId()),
+              new Intent.ViewHouseholdAdministration(account.getHouseholdId()))
+          .doesNotContain(
+              new Intent.ViewProfileShareHouseholds(hosted.getId()),
+              new Intent.ViewProfileShareHouseholds(kid.getId()),
+              new Intent.ViewProfileAdministration(kid.getId()),
+              new Intent.ViewHouseholdAdministration(visitedHouseholdId),
+              new Intent.ViewHouseholdShareHistory(account.getHouseholdId()));
+    }
+
+    @Test
+    @DisplayName(
+        "Should not count a supervised Personal Profile as managed in a batch when its own Account"
+            + " asks")
+    void shouldNotCountSupervisedPersonalProfileAsManagedInBatchWhenItsOwnAccountAsks() {
+      personal.setKind(ProfileKind.KID);
+      profiles.save(personal);
+      var reads =
+          Set.<Intent.UnitIntent>of(new Intent.ViewProfileShareHouseholds(personal.getId()));
+
+      assertThat(authorizationService.allowedAmong(member(), reads)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should fail the whole batch closed when one of its Profiles does not exist")
+    void shouldFailWholeBatchClosedWhenOneOfItsProfilesDoesNotExist() {
+      var reads =
+          Set.<Intent.UnitIntent>of(
+              new Intent.ViewProfileShareHouseholds(personal.getId()),
+              new Intent.ViewProfileShareHouseholds(UUID.randomUUID()));
+      var identity = atHome();
+
+      assertThatThrownBy(() -> authorizationService.allowedAmong(identity, reads))
+          .isInstanceOf(AuthorizationUnavailableException.class);
+    }
+
+    @Test
+    @DisplayName("Should fail the whole batch closed when a write is among its reads")
+    void shouldFailWholeBatchClosedWhenWriteIsAmongItsReads() {
+      var batch =
+          Set.<Intent.UnitIntent>of(
+              new Intent.ViewProfileShareHouseholds(personal.getId()),
+              new Intent.OfferProfileShare(personal.getId()));
+      var identity = atHome();
+
+      assertThatThrownBy(() -> authorizationService.allowedAmong(identity, batch))
+          .isInstanceOf(AuthorizationUnavailableException.class);
+    }
+
+    private Profile managedBy(UserAccount manager, Profile.ProfileBuilder<?, ?> builder) {
+      var profile = profiles.save(builder.build());
+      managers.save(
+          ProfileManager.builder().accountId(manager.getId()).profileId(profile.getId()).build());
+      return profile;
     }
   }
 

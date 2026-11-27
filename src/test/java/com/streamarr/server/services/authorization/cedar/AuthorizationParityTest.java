@@ -198,6 +198,7 @@ class AuthorizationParityTest {
   private static String administrationGroup(Action action) {
     return switch (action) {
       case CREATE_HOUSEHOLD, VIEW_HOUSEHOLDS -> "householdAdministration";
+      case VIEW_PROFILE_SHARE_CHANGES -> "shareAdministration";
       case ISSUE_ACCOUNT_INVITATION, CANCEL_ACCOUNT_INVITATION, VIEW_ACCOUNT_INVITATIONS ->
           "invitationAdministration";
       case ADD_LIBRARY,
@@ -226,6 +227,8 @@ class AuthorizationParityTest {
           VIEW_ACCOUNT_ADMINISTRATION,
           VIEW_PROFILE_ADMINISTRATION,
           VIEW_MANAGER_INVITATIONS,
+          VIEW_PROFILE_SHARE_HOUSEHOLDS,
+          VIEW_HOUSEHOLD_SHARE_HISTORY,
           GRANT_SERVER_ADMIN,
           REVOKE_SERVER_ADMIN,
           RENAME_HOUSEHOLD,
@@ -309,6 +312,9 @@ class AuthorizationParityTest {
         new Intent.ViewAccountAdministration(id),
         new Intent.ViewProfileAdministration(id),
         new Intent.ViewManagerInvitations(id),
+        new Intent.ViewProfileShareHouseholds(id),
+        new Intent.ViewHouseholdShareHistory(id),
+        new Intent.ViewProfileShareChanges(),
         new Intent.GrantServerAdmin(id),
         new Intent.RevokeServerAdmin(id),
         new Intent.CreateHousehold(),
