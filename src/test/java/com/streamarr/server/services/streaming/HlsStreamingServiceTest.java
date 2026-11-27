@@ -3613,6 +3613,7 @@ class HlsStreamingServiceTest {
     return HlsStreamingService.builder()
         .mediaFileRepository(mediaFileRepository)
         .transcodeExecutor(executor)
+        .segmentStore(segmentStore)
         .playbackProbeService(
             playbackProbeServiceBuilder(probeResults).eventPublisher(probeEvents).build())
         .transcodeDecisionService(new TranscodeDecisionService(properties, meters))

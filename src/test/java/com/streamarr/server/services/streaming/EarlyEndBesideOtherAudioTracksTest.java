@@ -513,6 +513,7 @@ class EarlyEndBesideOtherAudioTracksTest {
         .languagePreferences(noLanguagePreferences())
         .mediaFileRepository(mediaFiles)
         .transcodeExecutor(workers)
+        .segmentStore(segments)
         .playbackProbeService(playbackProbeServiceBuilder(probes).build())
         .transcodeDecisionService(new TranscodeDecisionService(PROPERTIES, meters))
         .qualityLadderService(new QualityLadderService())

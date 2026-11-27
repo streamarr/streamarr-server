@@ -117,10 +117,11 @@ class HlsEncodedEndSmokeTest {
     workerFixture.creditUploadsTo(lifecycle);
     coordinator =
         SegmentDeliveryCoordinator.builder()
+            .segmentStore(segmentStore)
             .producerLifecycle(lifecycle)
             .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
             .eventPublisher(new CapturingEventPublisher())
-            .unservedSegments(UnservedSegmentsFixture.unservedSegmentsOf(segmentStore))
+            .unservedSegments(UnservedSegmentsFixture.unservedSegments())
             .build();
     playlistService = new HlsPlaylistService(properties);
     decisionService = new TranscodeDecisionService(properties, new SimpleMeterRegistry());

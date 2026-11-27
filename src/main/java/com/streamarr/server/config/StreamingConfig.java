@@ -124,11 +124,13 @@ public class StreamingConfig {
 
   @Bean
   public SegmentDeliveryCoordinator segmentDeliveryCoordinator(
+      SegmentStore segmentStore,
       ProducerLifecycleService producerLifecycleService,
       HeldSegmentRequests heldSegmentRequests,
       ApplicationEventPublisher eventPublisher,
       UnservedSegments unservedSegments) {
     return SegmentDeliveryCoordinator.builder()
+        .segmentStore(segmentStore)
         .producerLifecycle(producerLifecycleService)
         .heldRequests(heldSegmentRequests)
         .eventPublisher(eventPublisher)
@@ -172,6 +174,7 @@ public class StreamingConfig {
   public StreamingService streamingService(
       MediaFileRepository mediaFileRepository,
       TranscodeExecutor transcodeExecutor,
+      SegmentStore segmentStore,
       PlaybackProbeService playbackProbeService,
       TranscodeDecisionService transcodeDecisionService,
       QualityLadderService qualityLadderService,
@@ -186,6 +189,7 @@ public class StreamingConfig {
     return HlsStreamingService.builder()
         .mediaFileRepository(mediaFileRepository)
         .transcodeExecutor(transcodeExecutor)
+        .segmentStore(segmentStore)
         .playbackProbeService(playbackProbeService)
         .transcodeDecisionService(transcodeDecisionService)
         .qualityLadderService(qualityLadderService)

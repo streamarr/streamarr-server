@@ -71,6 +71,7 @@ class SessionReaperDiskPressureTest {
         HlsStreamingService.builder()
             .mediaFileRepository(new FakeMediaFileRepository())
             .transcodeExecutor(executor)
+            .segmentStore(segmentStore)
             .playbackProbeService(
                 playbackProbeServiceBuilder(new FakeMediaFileContainerInfoRepository()).build())
             .transcodeDecisionService(new TranscodeDecisionService(properties, meters))

@@ -218,9 +218,10 @@ class HlsCopySeekSmokeTest {
             .build();
     workerFixture.creditUploadsTo(producerLifecycle);
     progressListener = new JobAttemptProgressListener(producerLifecycle);
-    var unservedSegments = UnservedSegmentsFixture.unservedSegmentsOf(segmentStore);
+    var unservedSegments = UnservedSegmentsFixture.unservedSegments();
     coordinator =
         SegmentDeliveryCoordinator.builder()
+            .segmentStore(segmentStore)
             .producerLifecycle(producerLifecycle)
             .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
             .eventPublisher(new CapturingEventPublisher())
@@ -234,6 +235,7 @@ class HlsCopySeekSmokeTest {
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
             .playbackProbeService(playbackProbeServiceBuilder(probeRepository).build())
             .transcodeDecisionService(
                 new TranscodeDecisionService(properties, new SimpleMeterRegistry()))

@@ -532,6 +532,7 @@ class CopiedAudioMeasuredCountTest {
     return HlsStreamingService.builder()
         .mediaFileRepository(mediaFileRepository)
         .transcodeExecutor(transcodeExecutor)
+        .segmentStore(segmentStore)
         .playbackProbeService(
             playbackProbeServiceBuilder(probeResults)
                 .eventPublisher(new CapturingEventPublisher())

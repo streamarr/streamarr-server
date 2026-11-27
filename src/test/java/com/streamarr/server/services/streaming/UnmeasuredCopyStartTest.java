@@ -70,6 +70,7 @@ class UnmeasuredCopyStartTest {
         HlsStreamingService.builder()
             .mediaFileRepository(mediaFiles)
             .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
             .playbackProbeService(playbackProbeServiceBuilder(probeResults).build())
             .transcodeDecisionService(new TranscodeDecisionService(properties, meters))
             .qualityLadderService(new QualityLadderService())

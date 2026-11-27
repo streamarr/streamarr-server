@@ -157,6 +157,7 @@ class RemoteFormatFailureIT {
               .producerLifecycle(rig.streaming.lifecycle())
               .deliveryCoordinator(rig.streaming.coordinator())
               .unservedSegments(rig.streaming.unservedSegments())
+              .segmentStore(rig.segments)
               .build();
 
       service.destroySession(rig.session.getSessionId());

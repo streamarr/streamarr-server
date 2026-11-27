@@ -124,6 +124,7 @@ class OnDemandVariantsIT {
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFiles)
             .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
             .playbackProbeService(playbackProbeServiceBuilder(probeResults).build())
             .transcodeDecisionService(
                 new TranscodeDecisionService(properties, new SimpleMeterRegistry()))

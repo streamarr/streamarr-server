@@ -172,6 +172,7 @@ class HlsCopyPlaylistApiSmokeTest {
             .meterRegistry(new SimpleMeterRegistry())
             .mediaFileRepository(mediaFiles)
             .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
             .playbackProbeService(playbackProbeServiceBuilder(probeOutcomes).build())
             .transcodeDecisionService(
                 new TranscodeDecisionService(properties, new SimpleMeterRegistry()))

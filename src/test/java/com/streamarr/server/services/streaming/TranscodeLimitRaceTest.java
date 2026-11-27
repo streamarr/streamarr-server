@@ -118,6 +118,7 @@ class TranscodeLimitRaceTest {
             .languagePreferences(noLanguagePreferences())
             .mediaFileRepository(mediaFileRepository)
             .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
             .playbackProbeService(playbackProbeServiceBuilder(probeResults).build())
             .transcodeDecisionService(new TranscodeDecisionService(properties, meters))
             .qualityLadderService(new QualityLadderService())

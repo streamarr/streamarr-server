@@ -169,10 +169,11 @@ class SegmentDeliveryCoordinatorTest {
     HlsStreamingService.builder()
         .languagePreferences(noLanguagePreferences())
         .meterRegistry(new SimpleMeterRegistry())
+        .segmentStore(segmentStore)
         .runtimeRegistry(runtimeRegistry)
         .producerLifecycle(lifecycle)
         .deliveryCoordinator(coordinator)
-        .unservedSegments(UnservedSegmentsFixture.unservedSegmentsOf(segmentStore))
+        .unservedSegments(UnservedSegmentsFixture.unservedSegments())
         .build()
         .destroySession(sessionId);
   }
@@ -1242,6 +1243,7 @@ class SegmentDeliveryCoordinatorTest {
             .languagePreferences(noLanguagePreferences())
             .meterRegistry(new SimpleMeterRegistry())
             .transcodeExecutor(gatingExecutor)
+            .segmentStore(segmentStore)
             .properties(properties)
             .runtimeRegistry(runtimeRegistry)
             .producerLifecycle(rig.lifecycle())

@@ -226,10 +226,11 @@ class SegmentRecoveryConcurrencyTest {
             .build();
     var coordinator =
         SegmentDeliveryCoordinator.builder()
+            .segmentStore(store)
             .producerLifecycle(lifecycle)
             .heldRequests(race.executor.heldSegmentRequests())
             .eventPublisher(new CapturingEventPublisher())
-            .unservedSegments(UnservedSegmentsFixture.unservedSegmentsOf(store))
+            .unservedSegments(UnservedSegmentsFixture.unservedSegments())
             .build();
     var session = defaultSessionBuilder().build();
     var sessionId = session.getSessionId();
