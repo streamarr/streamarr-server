@@ -33,7 +33,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 import lombok.Builder;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -158,7 +157,8 @@ public class HlsStreamingService implements StreamingService {
             .encodableVideoCodecFamilies(transcodeExecutor.encodableVideoCodecFamilies())
             .hardwareEncodableVideoCodecFamilies(
                 transcodeExecutor.hardwareEncodableVideoCodecFamilies())
-            .verifiedVideoCodecFamilies(codecFamiliesOf(verifiedWorkers))
+            .verifiedVideoCodecFamilies(
+                WorkerVerifiedCodecFamilies.codecFamiliesOfAny(verifiedWorkers))
             .viewerLimits(ViewerLimits.of(options))
             .videoCopySupport(transcodeExecutor.videoCopySupportByWorker())
             .videoEncoders(encodableVideoEncoders(command.softwareEncodeCodecFamily()))
@@ -484,12 +484,6 @@ public class HlsStreamingService implements StreamingService {
             .videoFormatConstraint(VideoFormatConstraint.ENCODE_ONLY)
             .encodableVideoCodecFamilies(encodableVideoCodecFamilies)
             .build());
-  }
-
-  private static Set<String> codecFamiliesOf(List<WorkerVerifiedCodecFamilies> workers) {
-    return workers.stream()
-        .flatMap(worker -> worker.codecFamilies().stream())
-        .collect(Collectors.toUnmodifiableSet());
   }
 
   private CreateStreamSessionRejection refuseForLackOfCapacity(CapacityRefusal refusal) {
