@@ -219,7 +219,6 @@ class PasswordResetServiceTest {
         new PlainPasswordEncoder(),
         new TransactionTemplate(new FakeTransactionManager()),
         CredentialCodeProperties.builder()
-            .invitationTtl(Duration.ofDays(7))
             .passwordResetTtl(Duration.ofHours(1))
             .replacementLockTimeout(Duration.ofSeconds(5))
             .build(),

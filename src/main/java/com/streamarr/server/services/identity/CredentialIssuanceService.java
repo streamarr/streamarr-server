@@ -23,6 +23,7 @@ import com.streamarr.server.repositories.auth.SecurityAuditEventRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.EmailAddressValidator;
+import com.streamarr.server.services.auth.InvitationLifetime;
 import com.streamarr.server.services.auth.OpaqueOneTimeCodes;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.authorization.Decision;
@@ -63,6 +64,7 @@ public class CredentialIssuanceService {
   private final SecurityAuditEventRepository securityAuditEventRepository;
   private final OpaqueOneTimeCodes opaqueCodes;
   private final CredentialCodeProperties properties;
+  private final InvitationLifetime invitationLifetime;
   private final MutationTransactions mutationTransactions;
   private final Clock clock;
 
@@ -310,7 +312,7 @@ public class CredentialIssuanceService {
                               : profile.getMaximumAllowedRatingAge())
                       .localManagerAccountId(command.localManagerAccountId())
                       .issuerAccountId(identity.accountId())
-                      .expiresAt(now.plus(properties.invitationTtl()))
+                      .expiresAt(now.plus(invitationLifetime.invitationLifetime()))
                       .publicId(issued.publicId())
                       .secretDigest(issued.digest())
                       .build());

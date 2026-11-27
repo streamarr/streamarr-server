@@ -91,6 +91,7 @@ class CredentialIssuanceServiceTest {
           audit,
           new OpaqueOneTimeCodes(),
           codeProperties(),
+          () -> INVITATION_TTL,
           new MutationTransactions(
               new FakeTransactionManager(), new ConstraintViolationTranslator()),
           Clock.fixed(NOW, ZoneOffset.UTC));
@@ -830,7 +831,6 @@ class CredentialIssuanceServiceTest {
 
   private static CredentialCodeProperties codeProperties() {
     return CredentialCodeProperties.builder()
-        .invitationTtl(INVITATION_TTL)
         .passwordResetTtl(PASSWORD_RESET_TTL)
         .replacementLockTimeout(Duration.ofSeconds(5))
         .build();
@@ -891,6 +891,7 @@ class CredentialIssuanceServiceTest {
         audit,
         new OpaqueOneTimeCodes(),
         codeProperties(),
+        () -> INVITATION_TTL,
         new MutationTransactions(new FakeTransactionManager(), new ConstraintViolationTranslator()),
         Clock.fixed(NOW, ZoneOffset.UTC));
   }

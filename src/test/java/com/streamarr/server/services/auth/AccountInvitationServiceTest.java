@@ -73,6 +73,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class AccountInvitationServiceTest {
 
   private static final Instant NOW = Instant.parse("2026-08-19T12:00:00Z");
+  private static final Duration INVITATION_LIFETIME = Duration.ofDays(2);
 
   private final FakeAccountInvitationRepository invitations = new FakeAccountInvitationRepository();
   private final FakeUserAccountRepository accounts = new FakeUserAccountRepository();
@@ -364,10 +365,10 @@ class AccountInvitationServiceTest {
         new TransactionTemplate(new FakeTransactionManager()),
         new ConstraintViolationTranslator(),
         CredentialCodeProperties.builder()
-            .invitationTtl(Duration.ofDays(7))
             .passwordResetTtl(Duration.ofHours(1))
             .replacementLockTimeout(Duration.ofSeconds(5))
             .build(),
+        () -> INVITATION_LIFETIME,
         clock);
   }
 
@@ -440,10 +441,11 @@ class AccountInvitationServiceTest {
         .extracting(ProfileHouseholdShare::getHouseholdId)
         .containsExactlyInAnyOrderElementsOf(fixture.reofferHouseholdIds());
     assertThat(reoffered)
+        .hasSize(2)
         .allSatisfy(
             share -> {
               assertThat(share.getOfferedByAccountId()).isEqualTo(accepted.account().getId());
-              assertThat(share.getExpiresAt()).isAfter(NOW);
+              assertThat(share.getExpiresAt()).isEqualTo(NOW.plus(INVITATION_LIFETIME));
             });
   }
 

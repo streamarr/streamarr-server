@@ -26,6 +26,13 @@ public interface HouseholdRepositoryCustom {
    */
   boolean lockById(UUID householdId);
 
+  /**
+   * Holds the Household row FOR NO KEY UPDATE until the caller's transaction ends, so issues of
+   * share codes for one Household run one after another, while writes that only reference the
+   * Household go on. False when the Household does not exist.
+   */
+  boolean lockForShareCodeIssue(UUID householdId);
+
   /** Locks existing Households in database ID order until the caller's transaction ends. */
   Set<UUID> lockByIds(Set<UUID> householdIds);
 

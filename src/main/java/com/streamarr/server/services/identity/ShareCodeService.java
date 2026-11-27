@@ -6,7 +6,6 @@ import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.ShareCode;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidOneTimeCodeException;
-import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ShareCodeRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
@@ -21,6 +20,7 @@ import com.streamarr.server.services.mutation.Outcome;
 import com.streamarr.server.services.pagination.ListPage;
 import com.streamarr.server.services.pagination.PageRequest;
 import com.streamarr.server.services.pagination.Pager;
+import com.streamarr.server.services.serversettings.ServerSettingsService;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Collection;
@@ -58,7 +58,7 @@ public class ShareCodeService {
   private final CredentialAttemptGate credentialAttempts;
   private final HouseholdShareCodesList householdShareCodesList;
   private final ShareCodes shareCodes;
-  private final CredentialCodeProperties credentialCodeProperties;
+  private final ServerSettingsService serverSettingsService;
   private final Clock clock;
 
   public Outcome<NewShareCode, ShareCodeRejections.Issue> issueShareCode(
@@ -75,11 +75,19 @@ public class ShareCodeService {
                   hiddenUnlessViewer(
                       identity, householdId, ShareCodeRejections.HouseholdNotFound::new))
               .ifPresent(ShareCodeService::reject);
-          if (householdRepository.findById(householdId).isEmpty()) {
+          // The Household's row is locked before its live codes are counted, so of two issues that
+          // find room for one more code, the second counts the first's code and is refused.
+          if (!householdRepository.lockForShareCodeIssue(householdId)) {
             reject(new ShareCodeRejections.HouseholdNotFound());
           }
 
-          return store(identity, householdId, clock.instant());
+          var now = clock.instant();
+          if (shareCodeRepository.countLiveInHousehold(householdId, now)
+              >= serverSettingsService.shareCodeLimit()) {
+            reject(new ShareCodeRejections.ShareCodeLimitReached());
+          }
+
+          return store(identity, householdId, now);
         },
         constraint ->
             FK_SHARE_CODE_HOUSEHOLD.equals(constraint)
@@ -209,6 +217,7 @@ public class ShareCodeService {
   }
 
   private NewShareCode store(AuthenticatedIdentity identity, UUID householdId, Instant now) {
+    var expiresAt = now.plus(serverSettingsService.shareCodeLifetime());
     for (var draw = 0; draw < DRAWS; draw++) {
       var issued = shareCodes.issue();
       var stored =
@@ -217,7 +226,7 @@ public class ShareCodeService {
                   .householdId(householdId)
                   .issuerAccountId(identity.accountId())
                   .codeDigest(issued.digest())
-                  .expiresAt(now.plus(credentialCodeProperties.shareCodeTtl()))
+                  .expiresAt(expiresAt)
                   .build());
       if (stored.isPresent()) {
         return new NewShareCode(

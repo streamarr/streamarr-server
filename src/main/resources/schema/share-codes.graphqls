@@ -58,7 +58,11 @@ type IssueShareCodePayload {
     userErrors: [IssueShareCodeError!]!
 }
 
-union IssueShareCodeError = HouseholdNotFoundError
+"""
+Why issuing a share code was refused. Only a HouseholdAdmin of the Household or a ServerAdmin gets
+ShareCodeLimitReachedError; everyone else gets HouseholdNotFoundError.
+"""
+union IssueShareCodeError = HouseholdNotFoundError | ShareCodeLimitReachedError
 
 input WithdrawShareCodeInput {
     shareCodeId: ID!

@@ -46,6 +46,9 @@ public interface ShareCodeRepositoryCustom {
    */
   int invalidateLiveIssuedFor(UUID issuerAccountId, UUID householdId, Instant now);
 
+  /** How many codes of one Household are live at the instant. */
+  int countLiveInHousehold(UUID householdId, Instant now);
+
   /** The codes of one Household that are live at the instant, newest first, beyond the seek. */
   List<Row<ShareCode>> liveRowsInHousehold(UUID householdId, Instant now, Seek seek);
 

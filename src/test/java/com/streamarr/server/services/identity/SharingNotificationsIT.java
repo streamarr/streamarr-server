@@ -15,7 +15,6 @@ import com.streamarr.server.domain.auth.ProfileShareStatus;
 import com.streamarr.server.domain.auth.SourceHouseholdAccess;
 import com.streamarr.server.domain.notification.RecipientReference;
 import com.streamarr.server.domain.notification.SubjectReference;
-import com.streamarr.server.properties.CredentialCodeProperties;
 import com.streamarr.server.repositories.auth.AccountInvitationRepository;
 import com.streamarr.server.repositories.auth.ProfileHouseholdShareRepository;
 import com.streamarr.server.repositories.auth.ProfileManagerRepository;
@@ -23,6 +22,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccountInvitationService;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.InvitationLifetime;
 import com.streamarr.server.services.auth.ProfileShareLifecycle;
 import com.streamarr.server.services.events.notification.ProfileShareAnswer;
 import com.streamarr.server.services.events.notification.ProfileShareAnsweredSnapshot;
@@ -86,7 +86,7 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
   @Autowired private ProfileRepository profileRepository;
   @Autowired private ProfileManagerRepository profileManagerRepository;
   @Autowired private UserAccountRepository userAccountRepository;
-  @Autowired private CredentialCodeProperties credentialCodeProperties;
+  @Autowired private InvitationLifetime invitationLifetime;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private TransactionTemplate transactionTemplate;
   @Autowired private DSLContext dsl;
@@ -145,7 +145,7 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
     var offer = steps.offer(sam, sam.profile(), riverside);
 
     var stored = stored(offer);
-    var offeredAt = stored.getExpiresAt().minus(credentialCodeProperties.invitationTtl());
+    var offeredAt = stored.getExpiresAt().minus(invitationLifetime.invitationLifetime());
     assertThat(requestsAbout(offer))
         .allSatisfy(
             request -> {
@@ -294,7 +294,7 @@ class SharingNotificationsIT extends AbstractIntegrationTest {
                           .householdId(riverside.household().getId())
                           .status(ProfileShareStatus.PENDING)
                           .offeredByAccountId(sam.account().getId())
-                          .expiresAt(now.plus(credentialCodeProperties.invitationTtl()))
+                          .expiresAt(now.plus(invitationLifetime.invitationLifetime()))
                           .build(),
                       now);
               status.setRollbackOnly();

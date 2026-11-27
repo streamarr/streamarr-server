@@ -94,4 +94,10 @@ type Query {
     idleSegmentRetentionSetting: IdleSegmentRetentionSetting!
     "How long the server keeps read news and resolved requests. Requires a ServerAdmin."
     notificationRetentionSetting: NotificationRetentionSetting!
+    "How long a share code stays live after it is issued. Requires a ServerAdmin."
+    shareCodeLifetimeSetting: ShareCodeLifetimeSetting!
+    "How long an invitation or an offer of a Profile waits for its answer. Requires a ServerAdmin."
+    invitationLifetimeSetting: InvitationLifetimeSetting!
+    "How many live share codes a Household may hold at once. Requires a ServerAdmin."
+    shareCodeLimitSetting: ShareCodeLimitSetting!
 }

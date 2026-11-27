@@ -5,6 +5,8 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 import com.streamarr.server.services.identity.ShareCodeRejections;
 import com.streamarr.server.services.identity.ShareRejections;
+import com.streamarr.server.services.serversettings.ChangeLifetimeRejection;
+import com.streamarr.server.services.serversettings.ChangeShareCodeLimitRejection;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -49,6 +51,28 @@ class ShareErrorsTest {
         .isEqualTo(
             new ProfileAlreadySharedError(
                 "That Profile is already available in that Household.", List.of("profileId")));
+  }
+
+  @Test
+  @DisplayName("Should name the hours input and the allowed range when a lifetime is out of range")
+  void shouldNameHoursInputAndAllowedRangeWhenLifetimeIsOutOfRange() {
+    assertThat(ShareErrors.toLifetimeError(new ChangeLifetimeRejection.OutOfRange()))
+        .isEqualTo(new LifetimeOutOfRangeError("Choose from 1 to 720 hours.", List.of("hours")));
+  }
+
+  @Test
+  @DisplayName("Should name the codes input and the allowed range when a limit is out of range")
+  void shouldNameCodesInputAndAllowedRangeWhenLimitIsOutOfRange() {
+    assertThat(ShareErrors.toShareCodeLimitError(new ChangeShareCodeLimitRejection.OutOfRange()))
+        .isEqualTo(
+            new ShareCodeLimitOutOfRangeError("Choose from 1 to 100 codes.", List.of("codes")));
+  }
+
+  @Test
+  @DisplayName("Should ask to withdraw a code when the Household holds the limit of live codes")
+  void shouldAskToWithdrawACodeWhenTheHouseholdHoldsTheLimitOfLiveCodes() {
+    assertThat(ShareErrors.toIssueShareCodeError(new ShareCodeRejections.ShareCodeLimitReached()))
+        .isEqualTo(new ShareCodeLimitReachedError("Withdraw a code before issuing another."));
   }
 
   @Test

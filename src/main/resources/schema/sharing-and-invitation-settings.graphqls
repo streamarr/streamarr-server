@@ -1,0 +1,101 @@
+# The Server settings section "Sharing and invitations" (ADR 0024 §Share codes, §Invitations; ADR
+# 0026 shapes). Only a ServerAdmin reads or changes these settings, and never from a session on a
+# TV. A change applies to what is issued after it.
+
+"""
+How long a share code stays live after it is issued, unless an offer spends it or it is withdrawn
+first. Only a ServerAdmin reads or changes it. A change applies to codes issued after it.
+"""
+type ShareCodeLifetimeSetting {
+    "The same for every read and change, so a client cache can update the setting in place."
+    id: ID!
+    "How long, in hours, a code issued now stays live. Only a ServerAdmin reads it."
+    hours: Int!
+    "The shortest lifetime a ServerAdmin can choose."
+    minimumHours: Int!
+    "The longest lifetime a ServerAdmin can choose."
+    maximumHours: Int!
+}
+
+"Only a ServerAdmin may change the share code lifetime."
+input ChangeShareCodeLifetimeInput {
+    "How long a code issued from now on stays live, from minimumHours to maximumHours."
+    hours: Int!
+}
+
+"The answer to a ServerAdmin's change of the share code lifetime."
+type ChangeShareCodeLifetimePayload {
+    "The setting as changed. Null when the change is refused."
+    shareCodeLifetimeSetting: ShareCodeLifetimeSetting
+    "Why the change was refused. Empty when the setting changed."
+    userErrors: [ChangeShareCodeLifetimeError!]!
+}
+
+"Why a ServerAdmin's change of the share code lifetime was refused."
+union ChangeShareCodeLifetimeError = LifetimeOutOfRangeError
+
+"""
+How long an Account invitation, a ProfileManager invitation, or an offer of a Profile waits for its
+answer after it is made. Only a ServerAdmin reads or changes it. A change applies to what is issued
+after it.
+"""
+type InvitationLifetimeSetting {
+    "The same for every read and change, so a client cache can update the setting in place."
+    id: ID!
+    "How long, in hours, what is issued now waits for its answer. Only a ServerAdmin reads it."
+    hours: Int!
+    "The shortest lifetime a ServerAdmin can choose."
+    minimumHours: Int!
+    "The longest lifetime a ServerAdmin can choose."
+    maximumHours: Int!
+}
+
+"Only a ServerAdmin may change the invitation lifetime."
+input ChangeInvitationLifetimeInput {
+    "How long what is issued from now on waits for its answer, from minimumHours to maximumHours."
+    hours: Int!
+}
+
+"The answer to a ServerAdmin's change of the invitation lifetime."
+type ChangeInvitationLifetimePayload {
+    "The setting as changed. Null when the change is refused."
+    invitationLifetimeSetting: InvitationLifetimeSetting
+    "Why the change was refused. Empty when the setting changed."
+    userErrors: [ChangeInvitationLifetimeError!]!
+}
+
+"Why a ServerAdmin's change of the invitation lifetime was refused."
+union ChangeInvitationLifetimeError = LifetimeOutOfRangeError
+
+"""
+How many live share codes a Household may hold at once. At the limit, issuing another answers
+ShareCodeLimitReachedError. Only a ServerAdmin reads or changes it. A lower limit ends no live code:
+it refuses the next issue until the Household holds fewer codes than the limit.
+"""
+type ShareCodeLimitSetting {
+    "The same for every read and change, so a client cache can update the setting in place."
+    id: ID!
+    "How many live share codes a Household may hold now. Only a ServerAdmin reads it."
+    codes: Int!
+    "The lowest limit a ServerAdmin can choose."
+    minimumCodes: Int!
+    "The highest limit a ServerAdmin can choose."
+    maximumCodes: Int!
+}
+
+"Only a ServerAdmin may change the share code limit."
+input ChangeShareCodeLimitInput {
+    "How many live share codes a Household may hold, from minimumCodes to maximumCodes."
+    codes: Int!
+}
+
+"The answer to a ServerAdmin's change of the share code limit."
+type ChangeShareCodeLimitPayload {
+    "The setting as changed. Null when the change is refused."
+    shareCodeLimitSetting: ShareCodeLimitSetting
+    "Why the change was refused. Empty when the setting changed."
+    userErrors: [ChangeShareCodeLimitError!]!
+}
+
+"Why a ServerAdmin's change of the share code limit was refused."
+union ChangeShareCodeLimitError = ShareCodeLimitOutOfRangeError

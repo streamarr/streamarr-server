@@ -39,6 +39,11 @@ public class FakeHouseholdRepository extends FakeJpaRepository<Household>
   }
 
   @Override
+  public boolean lockForShareCodeIssue(UUID householdId) {
+    return existsById(householdId);
+  }
+
+  @Override
   public void refresh(Household household) {
     // The fake stores and returns the same mutable instance.
   }

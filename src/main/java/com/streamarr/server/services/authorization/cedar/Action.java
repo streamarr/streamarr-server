@@ -488,6 +488,36 @@ enum Action {
       ResourceKind.SERVER,
       Authorizes.WRITE,
       FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_SHARE_CODE_LIFETIME(
+      "viewShareCodeLifetime",
+      ResourceKind.SERVER,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  CHANGE_SHARE_CODE_LIFETIME(
+      "changeShareCodeLifetime",
+      ResourceKind.SERVER,
+      Authorizes.WRITE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_INVITATION_LIFETIME(
+      "viewInvitationLifetime",
+      ResourceKind.SERVER,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  CHANGE_INVITATION_LIFETIME(
+      "changeInvitationLifetime",
+      ResourceKind.SERVER,
+      Authorizes.WRITE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  VIEW_SHARE_CODE_LIMIT(
+      "viewShareCodeLimit",
+      ResourceKind.SERVER,
+      Authorizes.READ,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
+  CHANGE_SHARE_CODE_LIMIT(
+      "changeShareCodeLimit",
+      ResourceKind.SERVER,
+      Authorizes.WRITE,
+      FactRequirement.LIVE_PRINCIPAL_AUTHORITY),
   VIEW_NOTIFICATIONS(
       "viewNotifications",
       ResourceKind.ACCOUNT,
