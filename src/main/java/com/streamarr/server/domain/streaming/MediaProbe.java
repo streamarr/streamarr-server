@@ -517,6 +517,7 @@ public record MediaProbe(
         .filter(learnedByIndex::containsKey)
         .filter(index -> !learnedByIndex.get(index).fromPacketScan())
         .forEach(learnedIndices::add);
+    learnedIndices.removeAll(scannedByIndex.keySet());
     return toBuilder()
         .streams(withLearned)
         .scannedEndTimes(scannedByIndex)
