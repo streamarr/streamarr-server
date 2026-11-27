@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Remote Probe Scanned Stream Ends Mapping Tests")
@@ -74,6 +75,18 @@ class RemoteProbeResultScannedStreamEndsMapperTest {
     assertThat(outcome.scannedStreamEnds())
         .extracting(end -> end.streamIndex(), end -> end.endTime())
         .containsExactly(tuple(VIDEO, Duration.ofSeconds(2)));
+  }
+
+  @ParameterizedTest
+  @ValueSource(longs = {9_223_372_037L, 315_576_000_000L})
+  @DisplayName("Should keep the chosen video stream's end when its nanoseconds exceed a long")
+  void shouldKeepTheChosenVideoStreamsEndWhenItsNanosecondsExceedALong(long seconds) {
+    var outcome =
+        success(VERSION_9, scannedMedia().addStreamEnds(end(VIDEO, seconds, 999_999_999)));
+
+    assertThat(outcome.scannedStreamEnds())
+        .extracting(end -> end.streamIndex(), end -> end.endTime())
+        .containsExactly(tuple(VIDEO, Duration.ofSeconds(seconds, 999_999_999)));
   }
 
   @Test
