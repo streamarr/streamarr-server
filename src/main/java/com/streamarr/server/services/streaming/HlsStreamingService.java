@@ -541,7 +541,7 @@ public class HlsStreamingService implements StreamingService {
   }
 
   @Override
-  public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+  public boolean evictSessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
     if (!producerLifecycle.removeSessionIfLastAccessedBefore(sessionId, cutoff)) {
       return false;
     }

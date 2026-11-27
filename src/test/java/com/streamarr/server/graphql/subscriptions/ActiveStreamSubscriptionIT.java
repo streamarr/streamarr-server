@@ -200,7 +200,7 @@ class ActiveStreamSubscriptionIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public boolean destroySessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
+    public boolean evictSessionIfLastAccessedBefore(UUID sessionId, Instant cutoff) {
       return registry.removeIfLastAccessedBefore(sessionId, cutoff);
     }
 
