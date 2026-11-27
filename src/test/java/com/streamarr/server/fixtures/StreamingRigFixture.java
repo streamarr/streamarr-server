@@ -11,6 +11,7 @@ import com.streamarr.server.services.streaming.SeekPriority;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.services.streaming.UnservedSegments;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
@@ -36,6 +37,7 @@ public final class StreamingRigFixture {
       ApplicationEventPublisher eventPublisher,
       MeterRegistry meterRegistry) {
     var meters = meterRegistry == null ? new SimpleMeterRegistry() : meterRegistry;
+    var unservedSegments = UnservedSegmentsFixture.unservedSegmentsCountingInto(meters);
     var held = heldRequests == null ? new HeldSegmentRequests(meters) : heldRequests;
     var lifecycle =
         ProducerLifecycleService.builder()
@@ -67,10 +69,17 @@ public final class StreamingRigFixture {
             .producerLifecycle(lifecycle)
             .heldRequests(held)
             .eventPublisher(eventPublisher == null ? new CapturingEventPublisher() : eventPublisher)
+            .unservedSegments(unservedSegments)
             .build();
-    return new StreamingRig(lifecycle, coordinator);
+    return new StreamingRig(lifecycle, coordinator, unservedSegments);
   }
 
+  /**
+   * The lifecycle and the coordinator of one server. A streaming service built on the rig takes the
+   * rig's unserved segments, so that it and the coordinator follow the same stream sessions.
+   */
   public record StreamingRig(
-      ProducerLifecycleService lifecycle, SegmentDeliveryCoordinator coordinator) {}
+      ProducerLifecycleService lifecycle,
+      SegmentDeliveryCoordinator coordinator,
+      UnservedSegments unservedSegments) {}
 }

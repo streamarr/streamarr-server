@@ -111,6 +111,7 @@ class CopyWorkerSlotsIT {
             .runtimeRegistry(registry)
             .producerLifecycle(rig.lifecycle())
             .deliveryCoordinator(rig.coordinator())
+            .unservedSegments(rig.unservedSegments())
             .build();
 
     worker = LoopbackWorker.register(channel, 1);

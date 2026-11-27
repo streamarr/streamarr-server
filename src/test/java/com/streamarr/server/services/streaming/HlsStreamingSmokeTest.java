@@ -28,6 +28,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.Fmp4Fixture;
 import com.streamarr.server.fixtures.ServerSettingsFixture;
 import com.streamarr.server.fixtures.StoredSegments;
+import com.streamarr.server.fixtures.UnservedSegmentsFixture;
 import com.streamarr.server.properties.StreamingProperties;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.filepath.FilepathCodec;
@@ -162,6 +163,7 @@ class HlsStreamingSmokeTest {
                     .build())
             .build();
     workerFixture.creditUploadsTo(producerLifecycle);
+    var unservedSegments = UnservedSegmentsFixture.unservedSegments();
     streamingService =
         HlsStreamingService.builder()
             .languagePreferences(noLanguagePreferences())
@@ -182,7 +184,9 @@ class HlsStreamingSmokeTest {
                     .producerLifecycle(producerLifecycle)
                     .heldRequests(workerFixture.workerSessions().heldSegmentRequests())
                     .eventPublisher(new CapturingEventPublisher())
+                    .unservedSegments(unservedSegments)
                     .build())
+            .unservedSegments(unservedSegments)
             .build();
 
     playlistService = new HlsPlaylistService(properties);

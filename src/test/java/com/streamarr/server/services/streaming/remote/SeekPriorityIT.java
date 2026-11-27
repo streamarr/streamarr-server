@@ -161,6 +161,7 @@ class SeekPriorityIT {
             .runtimeRegistry(registry)
             .producerLifecycle(rig.lifecycle())
             .deliveryCoordinator(coordinator)
+            .unservedSegments(rig.unservedSegments())
             .build();
   }
 

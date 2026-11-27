@@ -32,8 +32,10 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.Builder;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -57,6 +59,7 @@ public class HlsStreamingService implements StreamingService {
   private final SegmentDeliveryCoordinator deliveryCoordinator;
   private final MeterRegistry meterRegistry;
   private final PlaybackLanguagePreferences languagePreferences;
+  @NonNull private final UnservedSegments unservedSegments;
 
   @Override
   public Outcome<StreamSession, CreateStreamSessionRejection> createSession(
@@ -212,6 +215,7 @@ public class HlsStreamingService implements StreamingService {
             .build();
     startAtTheStartSegment(session);
 
+    unservedSegments.streamSessionStarts(sessionId);
     try {
       runtimeRegistry.save(session);
       session = producerLifecycle.startFirstListedVariant(session);
@@ -219,6 +223,7 @@ public class HlsStreamingService implements StreamingService {
       // Another start took the last place under the transcode limit after this admission, so no
       // job attempt of this stream session was dispatched.
       runtimeRegistry.removeById(sessionId);
+      unservedSegments.streamSessionStartFailed(sessionId);
       return Outcome.rejected(
           refuseForLackOfCapacity(CapacityRefusal.NO_FREE_CONFIGURED_TRANSCODE_SLOT));
     } catch (RuntimeException startupFailure) {
@@ -499,6 +504,8 @@ public class HlsStreamingService implements StreamingService {
     suppressCleanupFailure(startupFailure, () -> transcodeExecutor.destroySession(sessionId));
     suppressCleanupFailure(startupFailure, () -> segmentStore.deleteSession(sessionId));
     suppressCleanupFailure(startupFailure, () -> runtimeRegistry.removeById(sessionId));
+    suppressCleanupFailure(
+        startupFailure, () -> unservedSegments.streamSessionStartFailed(sessionId));
   }
 
   private static void suppressCleanupFailure(RuntimeException startupFailure, Runnable cleanup) {
@@ -536,7 +543,7 @@ public class HlsStreamingService implements StreamingService {
   @Override
   public void destroySession(UUID sessionId) {
     if (producerLifecycle.removeSession(sessionId)) {
-      cleanUpDestroyed(sessionId);
+      cleanUpDestroyed(sessionId, unservedSegments::streamSessionEnded);
     }
   }
 
@@ -546,12 +553,18 @@ public class HlsStreamingService implements StreamingService {
       return false;
     }
 
-    cleanUpDestroyed(sessionId);
+    cleanUpDestroyed(sessionId, unservedSegments::streamSessionEvictedUnderDiskPressure);
     return true;
   }
 
-  private void cleanUpDestroyed(UUID sessionId) {
-    stopAndDeleteSegments(sessionId);
+  private void cleanUpDestroyed(UUID sessionId, Consumer<UUID> countUnservedSegments) {
+    try {
+      stopAndDeleteSegments(sessionId);
+    } finally {
+      // Counted after the deletion, from which on no request is answered with a segment of the
+      // session.
+      countUnservedSegments.accept(sessionId);
+    }
     log.info("Destroyed streaming session {}", sessionId);
   }
 
