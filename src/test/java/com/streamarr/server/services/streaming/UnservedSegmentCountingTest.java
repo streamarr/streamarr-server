@@ -2,7 +2,9 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.PlaybackLanguagePreferencesFixture.noLanguagePreferences;
 import static com.streamarr.server.fixtures.PlaybackProbeServiceFixture.playbackProbeServiceBuilder;
+import static com.streamarr.server.fixtures.PlaybackSessionFixture.acceptedPlayback;
 import static com.streamarr.server.fixtures.PlaybackSessionFixture.playbackServiceBuilder;
+import static com.streamarr.server.fixtures.PlaybackSessionFixture.startPlaybackBuilder;
 import static com.streamarr.server.fixtures.ServerSettingsFixture.defaultServerSettings;
 import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommandBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
@@ -217,8 +219,28 @@ class UnservedSegmentCountingTest {
 
   @Test
   @DisplayName(
+      "Should count unserved segments with the cause server_shutdown when the shutdown hook ends a"
+          + " playback session's stream session")
+  void shouldCountUnservedSegmentsAsServerShutdownWhenTheShutdownHookEndsAPlaybacksStreamSession() {
+    var playback = playbackServiceBuilder(service).clock(clock).build();
+    var started =
+        acceptedPlayback(
+            playback.start(startPlaybackBuilder().mediaFileId(seedMediaFile().getId()).build()));
+    var session = registry.findById(started.currentFormatAttempt().streamSessionId()).orElseThrow();
+    store(session, 0);
+    store(session, 1);
+    serve(session, 0);
+
+    new StreamingShutdownHook(service, playback, unservedSegments).onShutdown();
+
+    assertThat(unservedSegments("server_shutdown")).isEqualTo(1);
+    assertThat(unservedSegments("session_ended")).isZero();
+  }
+
+  @Test
+  @DisplayName(
       "Should count unserved segments with the cause server_shutdown when the server stops while a"
-          + " stream session still stores segments")
+          + " stream session that nothing ended still stores segments")
   void shouldCountUnservedSegmentsAsServerShutdownWhenTheServerStopsWhileASessionStoresSegments() {
     var session = startStreamSession();
     store(session, 0);

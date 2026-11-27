@@ -30,6 +30,7 @@ public class UnservedSegments {
 
   private final ConcurrentHashMap<UUID, FollowedSegments> followedBySession =
       new ConcurrentHashMap<>();
+  private volatile boolean serverShuttingDown;
 
   /** Call before the stream session's first job attempt starts, so before it stores a segment. */
   void streamSessionStarts(UUID sessionId) {
@@ -65,9 +66,23 @@ public class UnservedSegments {
     return Optional.empty();
   }
 
+  /**
+   * Call before the server's shutdown ends the stream sessions. From then on, a stream session that
+   * ends is counted as removed by the shutdown.
+   */
+  void serverShutdownBegins() {
+    serverShuttingDown = true;
+  }
+
   /** Call after the ended stream session's stored segments are deleted. */
   void streamSessionEnded(UUID sessionId) {
-    metrics.countAfterSessionEnded(stopFollowing(sessionId));
+    var unserved = stopFollowing(sessionId);
+    if (serverShuttingDown) {
+      metrics.countAtServerShutdown(unserved);
+      return;
+    }
+
+    metrics.countAfterSessionEnded(unserved);
   }
 
   /** Call after the evicted stream session's stored segments are deleted. */
@@ -82,8 +97,8 @@ public class UnservedSegments {
 
   /**
    * Counts the unserved segments of every stream session that is still followed when the server
-   * stops: the segment store deletes those sessions' segments as it shuts down. A stream session
-   * that the shutdown ended before is counted as ended.
+   * stops: the segment store deletes those sessions' segments as it shuts down. The shutdown ends
+   * the other stream sessions before, and each of those is counted as it ends.
    */
   @PreDestroy
   public void serverShutsDown() {
