@@ -97,6 +97,7 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
   @Autowired private HlsPlaylistService playlists;
   @Autowired private BitrateScanRepository bitrateScans;
   @Autowired private MediaFileContainerInfoRepository outcomes;
+  @Autowired private KeyframePacketScanExecution keyframePacketScanExecution;
   @Autowired private DSLContext dsl;
   @Autowired private DataSource dataSource;
 
@@ -155,13 +156,20 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
 
     createCopySessionAndAwaitTheMovedScan(copied);
     startScanScheduler();
-    awaitCompletedScans(4);
+    awaitCompletedScans(5);
 
+    assertThat(outcomes.findKeyframeKnowledge(withoutKeyframePositions.mediaFileId()))
+        .as("The keyframe packet scan stored the file's keyframe positions")
+        .get()
+        .isInstanceOf(KeyframeKnowledge.Known.class);
+    // The packet scan stores no measurement, so it requests the file's bitrate scan at the
+    // priority of a file without a probed bitrate, after the scan of that priority that waited.
     assertThat(startedScans)
         .containsExactly(
             new StartedScan(KEYFRAME_PACKET_SCAN, sourceOf(withoutKeyframePositions)),
             new StartedScan(BITRATE_SCAN_CHUNK, sourceOf(copied)),
             new StartedScan(BITRATE_SCAN_CHUNK, sourceOf(withoutProbedBitrate)),
+            new StartedScan(BITRATE_SCAN_CHUNK, sourceOf(withoutKeyframePositions)),
             new StartedScan(BITRATE_SCAN_CHUNK, sourceOf(withProbedBitrate)));
   }
 
@@ -403,16 +411,13 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
     scanScheduler =
         scanSchedulerBuilder()
             .execution(
-                KeyframePacketScanExecution.builder()
-                    .reader(reader)
+                keyframePacketScanExecution.toBuilder()
                     .scanner(
                         request -> {
                           startedScans.add(
                               new StartedScan(KEYFRAME_PACKET_SCAN, request.sourcePath()));
                           return copyableOutcome(OptionalLong.empty(), ONE_CHUNK);
                         })
-                    .fileSystem(FileSystems.getDefault())
-                    .outcomes(outcomes)
                     .meterRegistry(meters)
                     .build())
             .bitrateScanExecution(
@@ -445,7 +450,11 @@ class PlaybackOfUnmeasuredFileIT extends AbstractProbeSchedulerIntegrationTest {
 
   private void awaitCompletedScans(int count) throws InterruptedException {
     for (var completed = 0; completed < count; completed++) {
-      assertThat(completedScans.poll(BOUND_SECONDS, TimeUnit.SECONDS)).isNotNull();
+      var scan = completedScans.poll(BOUND_SECONDS, TimeUnit.SECONDS);
+      assertThat(scan).isNotNull();
+      assertThat(scan.getResult())
+          .as("The result of scan %d", completed + 1)
+          .isEqualTo(ExecutionComplete.Result.OK);
     }
   }
 

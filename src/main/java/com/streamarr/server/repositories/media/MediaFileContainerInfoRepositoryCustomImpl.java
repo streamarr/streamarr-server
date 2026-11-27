@@ -125,6 +125,12 @@ public class MediaFileContainerInfoRepositoryCustomImpl
 
     scannedStreamEndRows.replaceWith(publication);
     measurementRows.deleteNotFollowingStoredOutcome(publication.mediaFileId());
+    publication
+        .streamMeasurements()
+        .ifPresent(
+            measured ->
+                measurementRows.replace(
+                    publication.mediaFileId(), snapshotMatches(publication.snapshot()), measured));
     return true;
   }
 
