@@ -708,7 +708,7 @@ public class MediaFileContainerInfoRepositoryCustomImpl
   // The caller holds the media file's row lock and deletes the stored outcome next.
   private Optional<KeyframePositions> scannedPositionsToKeep(ProbePublication publication) {
     if (!(publication.outcome() instanceof ProbeOutcome.Success success)
-        || !(success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired)
+        || !success.needsKeyframePacketScan()
         || success.chosenVideoStream().isEmpty()) {
       return Optional.empty();
     }

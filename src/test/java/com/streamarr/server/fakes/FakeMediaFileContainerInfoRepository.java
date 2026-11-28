@@ -152,7 +152,8 @@ public class FakeMediaFileContainerInfoRepository implements MediaFileContainerI
   private Optional<KeyframeKnowledge> scannedPositionsToKeep(
       ProbePublication publication, MediaFileContainerInfo existing) {
     if (!(publication.outcome() instanceof ProbeOutcome.Success success)
-        || !(success.keyframes() instanceof KeyframeKnowledge.PacketScanRequired(var reason))
+        || !(keyframesFromPublication(success.keyframes())
+            instanceof KeyframeKnowledge.PacketScanRequired(var reason))
         || success.chosenVideoStream().isEmpty()
         || !existing.getSnapshot().equals(publication.snapshot())
         || !ProbeVersion.isOnCurrentKeyframeTimeline(existing.getProbeVersion())) {

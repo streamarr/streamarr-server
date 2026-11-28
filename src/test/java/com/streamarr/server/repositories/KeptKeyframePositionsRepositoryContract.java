@@ -64,6 +64,32 @@ public interface KeptKeyframePositionsRepositoryContract {
 
   @Test
   @DisplayName(
+      "Should keep stored scanned positions when a publication supplies other kept positions")
+  default void shouldKeepStoredScannedPositionsWhenPublicationSuppliesOtherKeptPositions() {
+    var mediaFileId = createMediaFile();
+    storeScannedOutcome(mediaFileId, EARLIER_VERSION);
+    var supplied =
+        new KeyframeKnowledge.PacketScanRequiredWithKeptPositions(
+            KeyframePacketScanReason.NO_CONTAINER_INDEX,
+            positionsBuilder()
+                .keyframes(
+                    List.of(new KeyframePosition(0, 0), new KeyframePosition(180_000, 180_000)))
+                .build());
+
+    var published =
+        repository()
+            .publish(
+                publicationBuilder(mediaFileId)
+                    .probeVersion(ProbeVersion.CURRENT)
+                    .outcome(outcome(supplied))
+                    .build());
+
+    assertThat(published).isTrue();
+    assertThat(repository().findKeyframeKnowledge(mediaFileId)).contains(keptScanned());
+  }
+
+  @Test
+  @DisplayName(
       "Should require a packet scan with the scanned positions kept when a later probe version"
           + " publishes for the same snapshot")
   default void
